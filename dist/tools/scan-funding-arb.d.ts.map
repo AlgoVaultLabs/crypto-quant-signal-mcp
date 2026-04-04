@@ -1,0 +1,1 @@
+{"version":3,"file":"scan-funding-arb.d.ts","sourceRoot":"","sources":["../../src/tools/scan-funding-arb.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,gBAAgB,EAAyB,MAAM,aAAa,CAAC;AAE3E,UAAU,mBAAmB;IAC3B,YAAY,CAAC,EAAE,MAAM,CAAC;IACtB,KAAK,CAAC,EAAE,MAAM,CAAC;CAChB;AAWD,wBAAsB,cAAc,CAAC,KAAK,EAAE,mBAAmB,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAmF1F"}

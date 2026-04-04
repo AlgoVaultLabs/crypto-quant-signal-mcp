@@ -1,0 +1,1 @@
+{"version":3,"file":"get-market-regime.d.ts","sourceRoot":"","sources":["../../src/tools/get-market-regime.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,kBAAkB,EAA6C,MAAM,aAAa,CAAC;AAEjG,UAAU,iBAAiB;IACzB,IAAI,EAAE,MAAM,CAAC;IACb,SAAS,CAAC,EAAE,MAAM,CAAC;CACpB;AASD,wBAAsB,eAAe,CAAC,KAAK,EAAE,iBAAiB,GAAG,OAAO,CAAC,kBAAkB,CAAC,CAuG3F"}
