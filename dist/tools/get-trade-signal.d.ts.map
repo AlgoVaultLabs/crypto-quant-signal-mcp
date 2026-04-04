@@ -1,1 +1,0 @@
-{"version":3,"file":"get-trade-signal.d.ts","sourceRoot":"","sources":["../../src/tools/get-trade-signal.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAE,iBAAiB,EAAgD,MAAM,aAAa,CAAC;AAEnG,UAAU,gBAAgB;IACxB,IAAI,EAAE,MAAM,CAAC;IACb,SAAS,CAAC,EAAE,MAAM,CAAC;IACnB,gBAAgB,CAAC,EAAE,OAAO,CAAC;CAC5B;AAED,wBAAsB,cAAc,CAAC,KAAK,EAAE,gBAAgB,GAAG,OAAO,CAAC,iBAAiB,CAAC,CAyKxF"}
