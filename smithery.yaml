@@ -11,4 +11,4 @@ tags:
   - arbitrage
 transport:
   type: http
-  url: https://api.algovault.com/signal
+  url: https://api.algovault.com/mcp
