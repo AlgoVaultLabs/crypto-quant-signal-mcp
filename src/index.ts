@@ -151,7 +151,7 @@ async function startHttp() {
         if (req.method === 'GET') {
           if (sessionId && transports.has(sessionId)) {
             const transport = transports.get(sessionId)!;
-            await transport.handleRequest(req, res);
+            await transport.handleRequest(req, res, req.body);
           } else {
             res.status(400).json({ error: 'No active session. Send a POST first.' });
           }
@@ -161,7 +161,7 @@ async function startHttp() {
         if (req.method === 'DELETE') {
           if (sessionId && transports.has(sessionId)) {
             const transport = transports.get(sessionId)!;
-            await transport.handleRequest(req, res);
+            await transport.handleRequest(req, res, req.body);
             transports.delete(sessionId);
           } else {
             res.status(404).json({ error: 'Session not found' });
@@ -172,7 +172,7 @@ async function startHttp() {
         // POST — main request path
         if (sessionId && transports.has(sessionId)) {
           const transport = transports.get(sessionId)!;
-          await transport.handleRequest(req, res);
+          await transport.handleRequest(req, res, req.body);
         } else {
           // New session
           const transport = new StreamableHTTPServerTransport({
@@ -189,7 +189,7 @@ async function startHttp() {
 
           const server = createServer();
           await server.connect(transport);
-          await transport.handleRequest(req, res);
+          await transport.handleRequest(req, res, req.body);
         }
       } catch (err) {
         if (!res.headersSent) {
