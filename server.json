@@ -1,19 +1,20 @@
 {
-  "name": "crypto-quant-signal-mcp",
-  "description": "AI trading brain for crypto perps — composite signal interpretation, funding rate arb scanning, and market regime detection.",
-  "version": "1.0.0",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "AlgoVaultLabs/crypto-quant-signal-mcp",
+  "description": "Crypto perp signals, funding arb scanning, and market regime detection via MCP.",
+  "version": "1.1.0",
   "author": {
     "name": "AlgoVault Labs",
     "url": "https://algovault.com"
   },
   "repository": {
-    "type": "git",
-    "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp"
+    "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
+    "source": "github"
   },
   "transport": [
     {
       "type": "streamable-http",
-      "url": "https://api.algovault.com/signal/mcp"
+      "url": "https://api.algovault.com/mcp"
     },
     {
       "type": "stdio",
