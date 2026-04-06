@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="AlgoVault" width="120" />
+</p>
+
 # crypto-quant-signal-mcp
 
 AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Powered by Hyperliquid data. Remote-first with x402 micropayments.

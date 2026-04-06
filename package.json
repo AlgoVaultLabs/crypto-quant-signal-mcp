@@ -3,6 +3,7 @@
   "version": "1.1.0",
   "description": "AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Remote-first with x402 micropayments. Starting with Hyperliquid.",
   "main": "dist/index.js",
+  "module": "src/index.ts",
   "bin": {
     "crypto-quant-signal-mcp": "dist/index.js"
   },
@@ -52,6 +53,7 @@
     "dist",
     "README.md",
     "LICENSE",
+    "logo.png",
     "server.json",
     "smithery.yaml"
   ],
