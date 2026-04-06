@@ -1,31 +1,42 @@
 #!/usr/bin/env tsx
 /**
- * seed-signals.ts — Emit trade signals for top 10 HL perps and record to performance DB.
+ * seed-signals.ts — Emit trade signals for ALL Hyperliquid perps.
  *
- * Runs hourly via cron. Calls the same scoring logic as get_trade_signal,
- * bypassing license gates (internal pro license).
+ * Dynamically fetches the full HL universe, skips mixed-case symbols
+ * (e.g. kPEPE) that break the uppercase coin lookup.
  *
- * Idempotent: skips coins that already have a signal within the last 50 minutes.
+ * Supports --timeframe flag for multi-timeframe seeding:
+ *   --timeframe 1h   (default, idempotency window: 50 min)
+ *   --timeframe 4h   (idempotency window: 3h 50min)
+ *   --timeframe 1d   (idempotency window: 23h)
+ *
+ * Cron schedule:
+ *   0 * * * *           1h (every hour)
+ *   10 0,4,8,12,16,20 * * *  4h (every 4 hours, offset 10 min)
+ *   20 0 * * *          1d (daily at 00:20)
  *
  * Usage:
- *   npx tsx src/scripts/seed-signals.ts          (local dev)
- *   node dist/scripts/seed-signals.js            (production)
+ *   npx tsx src/scripts/seed-signals.ts                   (1h default)
+ *   npx tsx src/scripts/seed-signals.ts --timeframe 4h
+ *   node dist/scripts/seed-signals.js --timeframe 1d
  */
 
 import { getTradeSignal } from '../tools/get-trade-signal.js';
 import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
+import { getAdapter } from '../lib/exchange-adapter.js';
 import type { LicenseInfo } from '../types.js';
-
-// Top 10 Hyperliquid perps by OI (most liquid)
-// Top 10 Hyperliquid perps by volume/liquidity
-// Note: kPEPE excluded (mixed-case symbol breaks coin lookup). HYPE substituted (#4 by volume).
-const TOP_10 = ['BTC', 'ETH', 'SOL', 'HYPE', 'DOGE', 'XRP', 'WIF', 'SUI', 'AVAX', 'LINK'];
 
 // Internal license bypasses free-tier gating
 const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
 
-const IDEMPOTENCY_WINDOW_SEC = 50 * 60; // 50 minutes
-const DELAY_BETWEEN_CALLS_MS = 500;     // polite to HL public API
+const DELAY_BETWEEN_CALLS_MS = 500; // polite to HL public API
+
+// Idempotency windows per timeframe (slightly less than the interval)
+const IDEMPOTENCY_WINDOWS: Record<string, number> = {
+  '1h': 50 * 60,         // 50 minutes
+  '4h': 3 * 3600 + 50 * 60, // 3h 50min
+  '1d': 23 * 3600,       // 23 hours
+};
 
 function ts(): string {
   return new Date().toISOString();
@@ -35,19 +46,55 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+function parseArgs(): string {
+  const idx = process.argv.indexOf('--timeframe');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    const tf = process.argv[idx + 1];
+    if (['1h', '4h', '1d'].includes(tf)) return tf;
+    console.error(`Invalid timeframe: ${tf}. Use 1h, 4h, or 1d.`);
+    process.exit(1);
+  }
+  return '1h';
+}
+
+/**
+ * Fetch all uppercase coin symbols from Hyperliquid.
+ * Excludes mixed-case symbols (kPEPE, kBONK, etc.) that break the
+ * uppercase coin lookup in getTradeSignal.
+ */
+async function fetchAllCoins(): Promise<string[]> {
+  const adapter = getAdapter();
+  // getPredictedFundings returns all coins — but metaAndAssetCtxs is better
+  // Use a direct HL API call to get the universe
+  const res = await fetch('https://api.hyperliquid.xyz/info', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
+  });
+  const data = await res.json() as [{ universe: { name: string }[] }, unknown[]];
+  const names = data[0].universe.map(a => a.name);
+
+  // Filter: only uppercase symbols (skip kPEPE, kBONK, kSHIB, etc.)
+  return names.filter(name => name === name.toUpperCase());
+}
+
 async function main() {
-  console.log(`[${ts()}] Starting signal seed for ${TOP_10.length} assets...`);
+  const timeframe = parseArgs();
+  const idempotencyWindow = IDEMPOTENCY_WINDOWS[timeframe] || 50 * 60;
+
+  console.log(`[${ts()}] Fetching Hyperliquid universe...`);
+  const coins = await fetchAllCoins();
+  console.log(`[${ts()}] Starting ${timeframe} signal seed for ${coins.length} assets...`);
 
   let seeded = 0;
   let skipped = 0;
   let errors = 0;
 
-  for (const coin of TOP_10) {
+  for (const coin of coins) {
     try {
-      // Idempotency: skip if signal exists within last 50 min
-      const exists = await hasRecentSignalAsync(coin, '1h', IDEMPOTENCY_WINDOW_SEC);
+      // Idempotency: skip if signal exists within the window
+      const exists = await hasRecentSignalAsync(coin, timeframe, idempotencyWindow);
       if (exists) {
-        console.log(`[${ts()}] ${coin} -> skipped (recent signal exists)`);
         skipped++;
         continue;
       }
@@ -55,7 +102,7 @@ async function main() {
       // Call the same scoring pipeline as the MCP tool (records to DB internally)
       const result = await getTradeSignal({
         coin,
-        timeframe: '1h',
+        timeframe,
         includeReasoning: false,
         license: INTERNAL_LICENSE,
       });
@@ -66,8 +113,13 @@ async function main() {
       seeded++;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[${ts()}] ${coin} -> ERROR: ${msg}`);
-      errors++;
+      // Only log real errors, not "insufficient data" which is expected for illiquid coins
+      if (msg.includes('Insufficient candle')) {
+        skipped++;
+      } else {
+        console.error(`[${ts()}] ${coin} -> ERROR: ${msg}`);
+        errors++;
+      }
     }
 
     // Be polite to HL's public API
@@ -75,7 +127,7 @@ async function main() {
   }
 
   closeDb();
-  console.log(`[${ts()}] Seed complete: ${seeded} seeded, ${skipped} skipped, ${errors} errors.`);
+  console.log(`[${ts()}] Seed complete [${timeframe}]: ${seeded} seeded, ${skipped} skipped, ${errors} errors.`);
 }
 
 main().catch((err) => {
