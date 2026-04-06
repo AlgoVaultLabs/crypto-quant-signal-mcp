@@ -14,6 +14,10 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "seed": "tsx src/scripts/seed-signals.ts",
+    "backfill": "tsx src/scripts/backfill-outcomes.ts",
+    "cron:signals": "tsx src/scripts/seed-signals.ts && tsx src/scripts/backfill-outcomes.ts",
+    "cron:prod": "node dist/scripts/seed-signals.js && node dist/scripts/backfill-outcomes.js",
     "backtest": "npx tsx scripts/backtest.ts",
     "prepublishOnly": "npm run build"
   },
