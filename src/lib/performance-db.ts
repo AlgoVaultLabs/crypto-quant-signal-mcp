@@ -204,6 +204,34 @@ export function updateOutcome(
   );
 }
 
+/**
+ * Check if a signal for the given coin+timeframe was recorded within the last N seconds.
+ * Used by seed script for idempotency.
+ */
+export function hasRecentSignal(coin: string, timeframe: string, withinSeconds: number): boolean {
+  if (isPg) return false; // For PG, use async version
+  const b = getBackend();
+  const cutoff = Math.floor(Date.now() / 1000) - withinSeconds;
+  const rows = b.all(
+    `SELECT id FROM signals WHERE coin = ? AND timeframe = ? AND created_at >= ? LIMIT 1`,
+    coin, timeframe, cutoff
+  );
+  return rows.length > 0;
+}
+
+export async function hasRecentSignalAsync(coin: string, timeframe: string, withinSeconds: number): Promise<boolean> {
+  const b = getBackend();
+  const cutoff = Math.floor(Date.now() / 1000) - withinSeconds;
+  if (isPg && b instanceof PgBackend) {
+    const rows = await b.query(
+      `SELECT id FROM signals WHERE coin = ? AND timeframe = ? AND created_at >= ? LIMIT 1`,
+      [coin, timeframe, cutoff]
+    );
+    return rows.length > 0;
+  }
+  return hasRecentSignal(coin, timeframe, withinSeconds);
+}
+
 export function getPerformanceStats(): PerformanceStats {
   if (isPg) {
     // For PG, return empty stats — use async version
