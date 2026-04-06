@@ -17,9 +17,9 @@ import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
 import type { LicenseInfo } from '../types.js';
 
 // Top 10 Hyperliquid perps by OI (most liquid)
-// Top 10 Hyperliquid perps by OI (most liquid)
-// Note: PEPE is listed as kPEPE on Hyperliquid
-const TOP_10 = ['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'WIF', 'kPEPE', 'SUI', 'AVAX', 'LINK'];
+// Top 10 Hyperliquid perps by volume/liquidity
+// Note: kPEPE excluded (mixed-case symbol breaks coin lookup). HYPE substituted (#4 by volume).
+const TOP_10 = ['BTC', 'ETH', 'SOL', 'HYPE', 'DOGE', 'XRP', 'WIF', 'SUI', 'AVAX', 'LINK'];
 
 // Internal license bypasses free-tier gating
 const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
