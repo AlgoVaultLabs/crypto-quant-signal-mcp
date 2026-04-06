@@ -1,0 +1,14 @@
+name: crypto-quant-signal-mcp
+description: "AI trading brain for crypto perps — composite signal interpretation, funding rate arb scanning, and market regime detection."
+tags:
+  - trading
+  - crypto
+  - DeFi
+  - hyperliquid
+  - signals
+  - ai-agent
+  - quant
+  - arbitrage
+transport:
+  type: http
+  url: https://api.algovault.com/signal

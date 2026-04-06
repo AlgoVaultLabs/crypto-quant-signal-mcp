@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the hyperliquid module before importing the tool
-vi.mock('../src/lib/hyperliquid.js', () => ({
-  fetchCandles: vi.fn(),
-  fetchMetaAndAssetCtxs: vi.fn(),
-  fetchCurrentPrice: vi.fn(),
+// Mock the exchange adapter module
+vi.mock('../src/lib/exchange-adapter.js', () => ({
+  getAdapter: vi.fn(),
 }));
 
 // Mock performance-db to avoid SQLite in tests
@@ -14,10 +12,11 @@ vi.mock('../src/lib/performance-db.js', () => ({
 }));
 
 import { getTradeSignal } from '../src/tools/get-trade-signal.js';
-import { fetchCandles, fetchMetaAndAssetCtxs } from '../src/lib/hyperliquid.js';
+import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
+import type { ExchangeAdapter, Candle, AssetContext, FundingData } from '../src/types.js';
 
-const mockCandles = (count: number, basePrice: number = 3000, trend: 'up' | 'down' | 'flat' = 'flat') => {
+const mockCandles = (count: number, basePrice: number = 3000, trend: 'up' | 'down' | 'flat' = 'flat'): Candle[] => {
   return Array.from({ length: count }, (_, i) => {
     const offset = trend === 'up' ? i * 10 : trend === 'down' ? -i * 10 : Math.sin(i) * 20;
     const close = basePrice + offset;
@@ -32,32 +31,37 @@ const mockCandles = (count: number, basePrice: number = 3000, trend: 'up' | 'dow
   });
 };
 
-const mockMeta = (coin: string, funding: string = '0.0001', oi: string = '5000000') => ({
-  meta: {
-    universe: [{ name: coin, szDecimals: 2, maxLeverage: 50 }],
-  },
-  assetCtxs: [{
-    funding,
-    openInterest: oi,
-    prevDayPx: '2950',
-    dayNtlVlm: '125000000',
-    premium: '0.001',
-    oraclePx: '3000',
-    markPx: '3001',
-  }],
+const mockAssetContext = (coin: string, funding: number = 0.0001): AssetContext => ({
+  coin,
+  funding,
+  openInterest: 5000000,
+  prevDayPx: 2950,
+  volume24h: 125000000,
+  oraclePx: 3000,
+  markPx: 3001,
 });
+
+function createMockAdapter(overrides: Partial<ExchangeAdapter> = {}): ExchangeAdapter {
+  return {
+    getName: () => 'MockExchange',
+    getCandles: vi.fn().mockResolvedValue(mockCandles(100)),
+    getAssetContext: vi.fn().mockResolvedValue(mockAssetContext('ETH')),
+    getPredictedFundings: vi.fn().mockResolvedValue([]),
+    getCurrentPrice: vi.fn().mockResolvedValue(3000),
+    ...overrides,
+  };
+}
 
 describe('getTradeSignal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetLicenseCache();
-    // Set pro tier for tests
     process.env.CQS_API_KEY = 'test-key';
   });
 
   it('returns a valid signal for ETH', async () => {
-    vi.mocked(fetchCandles).mockResolvedValue(mockCandles(100));
-    vi.mocked(fetchMetaAndAssetCtxs).mockResolvedValue(mockMeta('ETH'));
+    const adapter = createMockAdapter();
+    vi.mocked(getAdapter).mockReturnValue(adapter);
 
     const result = await getTradeSignal({ coin: 'ETH', timeframe: '1h' });
 
@@ -73,9 +77,23 @@ describe('getTradeSignal', () => {
     expect(result.timestamp).toBeGreaterThan(0);
   });
 
+  it('includes _algovault metadata', async () => {
+    const adapter = createMockAdapter();
+    vi.mocked(getAdapter).mockReturnValue(adapter);
+
+    const result = await getTradeSignal({ coin: 'ETH' });
+    expect(result._algovault).toBeDefined();
+    expect(result._algovault.version).toBe('1.0.0');
+    expect(result._algovault.tool).toBe('get_trade_signal');
+    expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
+    expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');
+  });
+
   it('includes reasoning when requested', async () => {
-    vi.mocked(fetchCandles).mockResolvedValue(mockCandles(100));
-    vi.mocked(fetchMetaAndAssetCtxs).mockResolvedValue(mockMeta('BTC'));
+    const adapter = createMockAdapter({
+      getAssetContext: vi.fn().mockResolvedValue(mockAssetContext('BTC')),
+    });
+    vi.mocked(getAdapter).mockReturnValue(adapter);
 
     const result = await getTradeSignal({ coin: 'BTC', includeReasoning: true });
     expect(result.reasoning).toBeTruthy();
@@ -83,8 +101,10 @@ describe('getTradeSignal', () => {
   });
 
   it('omits reasoning when not requested', async () => {
-    vi.mocked(fetchCandles).mockResolvedValue(mockCandles(100));
-    vi.mocked(fetchMetaAndAssetCtxs).mockResolvedValue(mockMeta('BTC'));
+    const adapter = createMockAdapter({
+      getAssetContext: vi.fn().mockResolvedValue(mockAssetContext('BTC')),
+    });
+    vi.mocked(getAdapter).mockReturnValue(adapter);
 
     const result = await getTradeSignal({ coin: 'BTC', includeReasoning: false });
     expect(result.reasoning).toBe('');
@@ -107,27 +127,23 @@ describe('getTradeSignal', () => {
   });
 
   it('throws on insufficient candle data', async () => {
-    vi.mocked(fetchCandles).mockResolvedValue(mockCandles(5));
-    vi.mocked(fetchMetaAndAssetCtxs).mockResolvedValue(mockMeta('ETH'));
+    const adapter = createMockAdapter({
+      getCandles: vi.fn().mockResolvedValue(mockCandles(5)),
+    });
+    vi.mocked(getAdapter).mockReturnValue(adapter);
 
     await expect(getTradeSignal({ coin: 'ETH' }))
       .rejects.toThrow(/Insufficient/);
   });
 
-  it('throws when coin is not found on HL', async () => {
-    vi.mocked(fetchCandles).mockResolvedValue(mockCandles(100));
-    vi.mocked(fetchMetaAndAssetCtxs).mockResolvedValue(mockMeta('BTC'));
-
-    await expect(getTradeSignal({ coin: 'ETH' }))
-      .rejects.toThrow(/not found/);
-  });
-
   it('detects bullish conditions with negative funding', async () => {
-    vi.mocked(fetchCandles).mockResolvedValue(mockCandles(100, 3000, 'up'));
-    vi.mocked(fetchMetaAndAssetCtxs).mockResolvedValue(mockMeta('ETH', '-0.0012'));
+    const adapter = createMockAdapter({
+      getCandles: vi.fn().mockResolvedValue(mockCandles(100, 3000, 'up')),
+      getAssetContext: vi.fn().mockResolvedValue(mockAssetContext('ETH', -0.0012)),
+    });
+    vi.mocked(getAdapter).mockReturnValue(adapter);
 
     const result = await getTradeSignal({ coin: 'ETH' });
-    // With uptrend + negative funding, should lean bullish
     expect(['BUY', 'HOLD']).toContain(result.signal);
   });
 });

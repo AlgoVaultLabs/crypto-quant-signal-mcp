@@ -1,6 +1,6 @@
-import { getPerformanceStats } from '../lib/performance-db.js';
-import { getSignalsNeedingBackfill, updateOutcome } from '../lib/performance-db.js';
-import { fetchCurrentPrice } from '../lib/hyperliquid.js';
+import { getPerformanceStatsAsync } from '../lib/performance-db.js';
+import { getSignalsNeedingBackfillAsync, updateOutcome } from '../lib/performance-db.js';
+import { getAdapter } from '../lib/exchange-adapter.js';
 import type { PerformanceStats } from '../types.js';
 
 /**
@@ -9,12 +9,13 @@ import type { PerformanceStats } from '../types.js';
  */
 export async function runBackfill(): Promise<void> {
   const horizons = [1, 4, 24] as const;
+  const adapter = getAdapter();
 
   for (const h of horizons) {
-    const signals = getSignalsNeedingBackfill(h);
+    const signals = await getSignalsNeedingBackfillAsync(h);
     for (const sig of signals) {
       try {
-        const price = await fetchCurrentPrice(sig.coin);
+        const price = await adapter.getCurrentPrice(sig.coin);
         if (price === null) continue;
         const returnPct = ((price - sig.price_at_signal) / sig.price_at_signal) * 100;
         const field = `price_after_${h}h` as const;
@@ -37,5 +38,5 @@ export async function getSignalPerformance(): Promise<PerformanceStats> {
   } catch {
     // Don't fail the resource if backfill fails
   }
-  return getPerformanceStats();
+  return getPerformanceStatsAsync();
 }

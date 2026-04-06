@@ -1,0 +1,5 @@
+api.algovault.com {
+    handle /signal/* {
+        reverse_proxy localhost:3000
+    }
+}

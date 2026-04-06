@@ -1,13 +1,14 @@
-import { fetchCandles, fetchMetaAndAssetCtxs } from '../lib/hyperliquid.js';
+import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage } from '../lib/license.js';
 import { recordSignal } from '../lib/performance-db.js';
-import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType } from '../types.js';
+import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo } from '../types.js';
 
 interface TradeSignalInput {
   coin: string;
   timeframe?: string;
   includeReasoning?: boolean;
+  license?: LicenseInfo;
 }
 
 export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSignalResult> {
@@ -16,29 +17,24 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   const includeReasoning = input.includeReasoning !== false;
 
   // License gate
-  if (!canAccessCoin(coin) || !canAccessTimeframe(timeframe)) {
+  if (!canAccessCoin(coin, input.license) || !canAccessTimeframe(timeframe, input.license)) {
     const msg = freeGateMessage(coin, timeframe);
     throw new Error(msg);
   }
 
+  const adapter = getAdapter();
+
   // Fetch candles (100 candles back)
   const intervalMs = getIntervalMs(timeframe);
   const startTime = Date.now() - 100 * intervalMs;
-  const [candles, metaCtx] = await Promise.all([
-    fetchCandles(coin, timeframe, startTime),
-    fetchMetaAndAssetCtxs(),
+  const [candles, assetCtx] = await Promise.all([
+    adapter.getCandles(coin, timeframe, startTime),
+    adapter.getAssetContext(coin),
   ]);
 
   if (candles.length < 30) {
     throw new Error(`Insufficient candle data for ${coin} (got ${candles.length}, need >= 30)`);
   }
-
-  // Find asset context
-  const assetIdx = metaCtx.meta.universe.findIndex(a => a.name === coin);
-  if (assetIdx === -1) {
-    throw new Error(`${coin} not found on Hyperliquid`);
-  }
-  const assetCtx = metaCtx.assetCtxs[assetIdx];
 
   const closes = candles.map(c => c.close);
   const currentPrice = closes[closes.length - 1];
@@ -59,32 +55,27 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     const curr21 = ema21Series[len - 1];
     const prev21 = ema21Series[len - 2];
     if (!isNaN(curr9) && !isNaN(prev9) && !isNaN(curr21) && !isNaN(prev21)) {
-      if (curr9 > curr21 && prev9 <= prev21) emaCross = 'BULLISH'; // golden cross
-      else if (curr9 < curr21 && prev9 >= prev21) emaCross = 'BEARISH'; // death cross
+      if (curr9 > curr21 && prev9 <= prev21) emaCross = 'BULLISH';
+      else if (curr9 < curr21 && prev9 >= prev21) emaCross = 'BEARISH';
       else if (curr9 > curr21) emaCross = 'BULLISH';
       else if (curr9 < curr21) emaCross = 'BEARISH';
     }
   }
 
   // Funding data
-  const fundingRate = parseFloat(assetCtx.funding || '0');
-  // Use the rate as-is for now; 24h avg would require historical, approximate with current
+  const fundingRate = assetCtx.funding;
   const funding24hAvg = fundingRate; // simplified — same as current for MVP
 
   // OI change (approximate with prevDayPx for direction)
-  const openInterest = parseFloat(assetCtx.openInterest || '0');
-  const prevDayPx = parseFloat(assetCtx.prevDayPx || '0');
-  const priceChange = prevDayPx > 0 ? (currentPrice - prevDayPx) / prevDayPx : 0;
+  const priceChange = assetCtx.prevDayPx > 0 ? (currentPrice - assetCtx.prevDayPx) / assetCtx.prevDayPx : 0;
 
   // Volume
-  const volume24h = parseFloat(assetCtx.dayNtlVlm || '0');
-  // Average candle volume from the data
+  const volume24h = assetCtx.volume24h;
   const avgCandleVol = candles.reduce((s, c) => s + c.volume, 0) / candles.length;
   const lastCandleVol = candles[candles.length - 1].volume;
 
   // ── Score each indicator (-100 to +100) ──
 
-  // RSI score (25% weight)
   let rsiScore = 0;
   if (rsiVal !== null) {
     if (rsiVal < 30) rsiScore = 80;
@@ -94,33 +85,33 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     else rsiScore = -80;
   }
 
-  // EMA cross score (30% weight)
   let emaScore = 0;
   if (emaCross === 'BULLISH') emaScore = 100;
   else if (emaCross === 'BEARISH') emaScore = -100;
 
-  // Funding rate score (20% weight)
   let fundingScore = 0;
-  if (fundingRate < 0) fundingScore = 60; // shorts paying longs = bullish
-  else if (fundingRate > 0.0005) fundingScore = -60; // high positive = bearish
+  if (fundingRate < 0) fundingScore = 60;
+  else if (fundingRate > 0.0005) fundingScore = -60;
 
-  // OI score (15% weight)
   let oiScore = 0;
-  if (openInterest > 0) {
-    if (priceChange > 0) oiScore = 60; // OI + price up = confirmation
-    else if (priceChange < 0) oiScore = -40; // OI + price down = divergence
+  if (assetCtx.openInterest > 0) {
+    if (priceChange > 0) oiScore = 60;
+    else if (priceChange < 0) oiScore = -40;
   }
 
-  // Volume multiplier (10% weight but applied as multiplier)
-  let volumeMultiplier = 1.0;
-  if (avgCandleVol > 0 && lastCandleVol > 1.5 * avgCandleVol) {
-    volumeMultiplier = 1.1;
+  // Volume score (10% weight): above avg = bullish confirmation, below = lack of conviction
+  let volumeScore = 0;
+  if (avgCandleVol > 0) {
+    const volRatio = lastCandleVol / avgCandleVol;
+    if (volRatio > 2.0) volumeScore = 80;
+    else if (volRatio > 1.5) volumeScore = 60;
+    else if (volRatio > 1.0) volumeScore = 20;
+    else if (volRatio > 0.5) volumeScore = -20;
+    else volumeScore = -60;
   }
 
-  // Weighted sum
-  const rawScore = (rsiScore * 0.25 + emaScore * 0.30 + fundingScore * 0.20 + oiScore * 0.15) * volumeMultiplier;
+  const rawScore = rsiScore * 0.25 + emaScore * 0.30 + fundingScore * 0.20 + oiScore * 0.15 + volumeScore * 0.10;
 
-  // Map to signal
   let signal: SignalVerdict;
   if (rawScore > 25) signal = 'BUY';
   else if (rawScore < -25) signal = 'SELL';
@@ -128,12 +119,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
 
   const confidence = Math.min(Math.round(Math.abs(rawScore)), 100);
 
-  // Quick regime estimate (simplified — full version in get-market-regime)
   let regime: RegimeType = 'RANGING';
   if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) regime = 'TRENDING_UP';
   else if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) regime = 'TRENDING_DOWN';
 
-  // Reasoning
   let reasoning = '';
   if (includeReasoning) {
     const parts: string[] = [];
@@ -169,6 +158,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     timestamp: Math.floor(Date.now() / 1000),
     coin,
     timeframe,
+    _algovault: {
+      version: '1.0.0',
+      tool: 'get_trade_signal',
+      compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+    },
   };
 
   // Record for performance tracking
