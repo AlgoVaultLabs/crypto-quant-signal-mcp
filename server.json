@@ -1,0 +1,60 @@
+{
+  "name": "crypto-quant-signal-mcp",
+  "description": "AI trading brain for crypto perps — composite signal interpretation, funding rate arb scanning, and market regime detection.",
+  "version": "1.0.0",
+  "author": {
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp"
+  },
+  "transport": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.algovault.com/signal/mcp"
+    },
+    {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "crypto-quant-signal-mcp"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_trade_signal",
+      "description": "Returns a composite BUY/SELL/HOLD signal for a Hyperliquid perp with confidence score and reasoning."
+    },
+    {
+      "name": "scan_funding_arb",
+      "description": "Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arb opportunities."
+    },
+    {
+      "name": "get_market_regime",
+      "description": "Classifies current market regime (TRENDING_UP/DOWN, RANGING, VOLATILE) with cross-venue funding sentiment."
+    }
+  ],
+  "resources": [
+    {
+      "uri": "performance://signal-stats",
+      "name": "Signal performance track record",
+      "description": "Historical signal accuracy: win rate, Sharpe ratio, profit factor."
+    }
+  ],
+  "tags": ["trading", "crypto", "signals", "hyperliquid", "defi", "quant", "arbitrage"],
+  "license": "MIT",
+  "pricing": {
+    "model": "hybrid",
+    "x402": {
+      "get_trade_signal": "$0.02/call",
+      "scan_funding_arb": "$0.01/call",
+      "get_market_regime": "$0.02/call"
+    },
+    "subscription": {
+      "free": "100 calls/day, BTC+ETH only",
+      "pro": "$49/mo — 15K calls/mo, all assets",
+      "enterprise": "$299/mo — 100K calls/mo, SLA"
+    }
+  }
+}

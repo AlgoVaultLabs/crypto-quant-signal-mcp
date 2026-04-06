@@ -53,6 +53,31 @@ export interface Candle {
   time: number;
 }
 
+// ── Exchange Adapter Types ──
+
+export interface AssetContext {
+  coin: string;
+  funding: number;
+  openInterest: number;
+  prevDayPx: number;
+  volume24h: number;
+  oraclePx: number;
+  markPx: number;
+}
+
+export interface FundingData {
+  coin: string;
+  venues: { venue: string; fundingRate: number; nextFundingTime: number }[];
+}
+
+export interface ExchangeAdapter {
+  getCandles(coin: string, interval: string, startTime: number): Promise<Candle[]>;
+  getAssetContext(coin: string): Promise<AssetContext>;
+  getPredictedFundings(): Promise<FundingData[]>;
+  getCurrentPrice(coin: string): Promise<number | null>;
+  getName(): string;
+}
+
 // ── Signal Types ──
 
 export type SignalVerdict = 'BUY' | 'SELL' | 'HOLD';
@@ -60,6 +85,15 @@ export type EmaCrossDirection = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 export type RegimeType = 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'VOLATILE';
 export type TrendStrength = 'STRONG' | 'MODERATE' | 'WEAK';
 export type PriceStructure = 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED';
+export type CrossVenueFundingSentiment = 'BEARISH_BIAS' | 'NEUTRAL' | 'BULLISH_BIAS';
+
+// ── _algovault Metadata ──
+
+export interface AlgoVaultMeta {
+  version: string;
+  tool: string;
+  compatible_with: string[];
+}
 
 export interface TradeSignalResult {
   signal: SignalVerdict;
@@ -80,6 +114,7 @@ export interface TradeSignalResult {
   timestamp: number;
   coin: string;
   timeframe: string;
+  _algovault: AlgoVaultMeta;
 }
 
 export interface FundingArbOpportunity {
@@ -99,6 +134,7 @@ export interface FundingArbResult {
   opportunities: FundingArbOpportunity[];
   scannedPairs: number;
   timestamp: number;
+  _algovault: AlgoVaultMeta;
 }
 
 export interface MarketRegimeResult {
@@ -111,11 +147,14 @@ export interface MarketRegimeResult {
     volatility_interpretation: string;
     price_structure: PriceStructure;
     trend_strength: TrendStrength;
+    cross_venue_funding_sentiment: CrossVenueFundingSentiment;
+    funding_divergence_note: string;
   };
   suggestion: string;
   timestamp: number;
   coin: string;
   timeframe: string;
+  _algovault: AlgoVaultMeta;
 }
 
 // ── Performance Types ──
@@ -153,9 +192,22 @@ export interface PerformanceStats {
 
 // ── License Types ──
 
-export type LicenseTier = 'free' | 'pro';
+export type LicenseTier = 'free' | 'pro' | 'enterprise' | 'x402';
 
 export interface LicenseInfo {
   tier: LicenseTier;
   key: string | null;
+}
+
+// ── x402 Types ──
+
+export interface X402PaymentProof {
+  payload: string;
+  signature: string;
+}
+
+export interface X402ToolPricing {
+  get_trade_signal: number;
+  scan_funding_arb: number;
+  get_market_regime: number;
 }

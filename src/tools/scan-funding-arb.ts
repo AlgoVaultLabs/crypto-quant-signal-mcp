@@ -1,10 +1,11 @@
-import { fetchPredictedFundings } from '../lib/hyperliquid.js';
+import { getAdapter } from '../lib/exchange-adapter.js';
 import { getFundingArbLimit } from '../lib/license.js';
-import type { FundingArbResult, FundingArbOpportunity } from '../types.js';
+import type { FundingArbResult, FundingArbOpportunity, LicenseInfo } from '../types.js';
 
 interface ScanFundingArbInput {
   minSpreadBps?: number;
   limit?: number;
+  license?: LicenseInfo;
 }
 
 // Venue funding period in hours
@@ -19,15 +20,16 @@ const HOURS_PER_YEAR = 8760;
 export async function scanFundingArb(input: ScanFundingArbInput): Promise<FundingArbResult> {
   const minSpreadBps = input.minSpreadBps ?? 5;
   const requestedLimit = input.limit ?? 10;
-  const limit = getFundingArbLimit(requestedLimit);
+  const limit = getFundingArbLimit(requestedLimit, input.license);
 
-  const fundings = await fetchPredictedFundings();
+  const adapter = getAdapter();
+  const fundings = await adapter.getPredictedFundings();
 
   const opportunities: FundingArbOpportunity[] = [];
 
   for (const entry of fundings) {
-    const coin = entry[0];
-    const venueEntries = entry[1];
+    const coin = entry.coin;
+    const venueEntries = entry.venues;
 
     if (!venueEntries || venueEntries.length < 2) continue;
 
@@ -36,14 +38,12 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     const hourlyRates: Record<string, number> = {};
     const nextFundingTimes: Record<string, number> = {};
 
-    for (const [venue, data] of venueEntries) {
-      const rate = parseFloat(data.fundingRate);
-      if (isNaN(rate)) continue;
-      rates[venue] = rate;
-      // Normalize to hourly rate
-      const period = VENUE_PERIOD_HOURS[venue] || 8;
-      hourlyRates[venue] = rate / period;
-      nextFundingTimes[venue] = data.nextFundingTime;
+    for (const v of venueEntries) {
+      if (isNaN(v.fundingRate)) continue;
+      rates[v.venue] = v.fundingRate;
+      const period = VENUE_PERIOD_HOURS[v.venue] || 8;
+      hourlyRates[v.venue] = v.fundingRate / period;
+      nextFundingTimes[v.venue] = v.nextFundingTime;
     }
 
     const venues = Object.keys(hourlyRates);
@@ -57,8 +57,6 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     for (const longV of venues) {
       for (const shortV of venues) {
         if (longV === shortV) continue;
-        // Long where funding is most negative (you get paid), short where most positive
-        // Arb profit = short venue rate - long venue rate (when you long the low-rate venue and short the high-rate)
         const spread = hourlyRates[shortV] - hourlyRates[longV];
         if (spread > bestSpread) {
           bestSpread = spread;
@@ -98,5 +96,10 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     opportunities: opportunities.slice(0, limit),
     scannedPairs: fundings.length,
     timestamp: Math.floor(Date.now() / 1000),
+    _algovault: {
+      version: '1.0.0',
+      tool: 'scan_funding_arb',
+      compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+    },
   };
 }

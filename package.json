@@ -1,7 +1,7 @@
 {
   "name": "crypto-quant-signal-mcp",
-  "version": "1.0.0",
-  "description": "AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Starting with Hyperliquid.",
+  "version": "1.1.0",
+  "description": "AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Remote-first with x402 micropayments. Starting with Hyperliquid.",
   "main": "dist/index.js",
   "bin": {
     "crypto-quant-signal-mcp": "dist/index.js"
@@ -9,9 +9,11 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "start:stdio": "TRANSPORT=stdio node dist/index.js",
+    "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "backtest": "npx tsx scripts/backtest.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -26,24 +28,32 @@
     "arbitrage",
     "technical-analysis",
     "model-context-protocol",
-    "ai-agent"
+    "ai-agent",
+    "x402"
   ],
-  "author": "algovault",
+  "author": "AlgoVault Labs",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "better-sqlite3": "^11.8.2"
+    "better-sqlite3": "^11.8.2",
+    "express": "^4.21.2",
+    "pg": "^8.13.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.1",
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "vitest": "^3.1.1"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "server.json",
+    "smithery.yaml"
   ],
   "engines": {
     "node": ">=18"

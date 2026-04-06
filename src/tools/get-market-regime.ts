@@ -1,6 +1,6 @@
-import { fetchCandles } from '../lib/hyperliquid.js';
+import { getAdapter } from '../lib/exchange-adapter.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
-import type { MarketRegimeResult, RegimeType, TrendStrength, PriceStructure } from '../types.js';
+import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment } from '../types.js';
 
 interface MarketRegimeInput {
   coin: string;
@@ -22,7 +22,13 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const intervalMs = getIntervalMs(timeframe);
   const startTime = Date.now() - candleCount * intervalMs;
 
-  const candles = await fetchCandles(coin, timeframe, startTime);
+  const adapter = getAdapter();
+
+  // Fetch candles + predicted fundings in parallel
+  const [candles, allFundings] = await Promise.all([
+    adapter.getCandles(coin, timeframe, startTime),
+    adapter.getPredictedFundings(),
+  ]);
 
   if (candles.length < 30) {
     throw new Error(`Insufficient candle data for ${coin} regime analysis (got ${candles.length}, need >= 30)`);
@@ -41,19 +47,20 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const adxVal = adxResult?.adx ?? null;
   const volatilityRatio = atrVal !== null && currentPrice > 0 ? atrVal / currentPrice : 0;
 
+  // ── Cross-venue funding sentiment (Moat Layer 4) ──
+  const { sentiment, divergenceNote } = computeCrossVenueFundingSentiment(coin, allFundings);
+
   // Classify regime
   let regime: RegimeType;
   let confidence: number;
   let trendStrength: TrendStrength;
 
   if (adxVal !== null && adxVal > 25) {
-    // Trending market
     if (priceStructure === 'HIGHER_HIGHS') {
       regime = 'TRENDING_UP';
     } else if (priceStructure === 'LOWER_LOWS') {
       regime = 'TRENDING_DOWN';
     } else {
-      // ADX says trending but structure is mixed — use +DI vs -DI
       if (adxResult!.plusDI > adxResult!.minusDI) {
         regime = 'TRENDING_UP';
       } else {
@@ -72,7 +79,6 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       confidence = Math.round(adxVal * 1.5);
     }
   } else {
-    // Non-trending market
     trendStrength = 'WEAK';
     if (volatilityRatio > 0.03) {
       regime = 'VOLATILE';
@@ -98,7 +104,6 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   else if (volatilityRatio > 0.03) volInterpretation = 'High';
   else if (volatilityRatio < 0.01) volInterpretation = 'Low';
 
-  // Generate suggestion
   const suggestion = generateSuggestion(regime, trendStrength, volatilityRatio);
 
   return {
@@ -111,12 +116,77 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       volatility_interpretation: volInterpretation,
       price_structure: priceStructure,
       trend_strength: trendStrength,
+      cross_venue_funding_sentiment: sentiment,
+      funding_divergence_note: divergenceNote,
     },
     suggestion,
     timestamp: Math.floor(Date.now() / 1000),
     coin,
     timeframe,
+    _algovault: {
+      version: '1.0.0',
+      tool: 'get_market_regime',
+      compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+    },
   };
+}
+
+/**
+ * Compute cross-venue funding sentiment by comparing HL vs Binance/Bybit rates.
+ * - HL funding significantly below Binance/Bybit → shorts concentrated on HL → BEARISH_BIAS
+ * - HL funding significantly above → longs concentrated on HL → BULLISH_BIAS
+ * - Otherwise → NEUTRAL
+ */
+function computeCrossVenueFundingSentiment(
+  coin: string,
+  allFundings: { coin: string; venues: { venue: string; fundingRate: number; nextFundingTime: number }[] }[]
+): { sentiment: CrossVenueFundingSentiment; divergenceNote: string } {
+  const coinFunding = allFundings.find(f => f.coin === coin);
+  if (!coinFunding || coinFunding.venues.length < 2) {
+    return { sentiment: 'NEUTRAL', divergenceNote: 'Insufficient cross-venue data' };
+  }
+
+  const hlVenue = coinFunding.venues.find(v => v.venue === 'HlPerp');
+  const binVenue = coinFunding.venues.find(v => v.venue === 'BinPerp');
+  const bybitVenue = coinFunding.venues.find(v => v.venue === 'BybitPerp');
+
+  if (!hlVenue) {
+    return { sentiment: 'NEUTRAL', divergenceNote: 'HL funding data not available' };
+  }
+
+  // Normalize to hourly rates for comparison
+  const hlHourly = hlVenue.fundingRate; // HL is already hourly
+  const cexRates: number[] = [];
+  if (binVenue) cexRates.push(binVenue.fundingRate / 8); // Binance is 8h rate
+  if (bybitVenue) cexRates.push(bybitVenue.fundingRate / 8); // Bybit is 8h rate
+
+  if (cexRates.length === 0) {
+    return { sentiment: 'NEUTRAL', divergenceNote: 'No CEX funding data for comparison' };
+  }
+
+  const avgCexHourly = cexRates.reduce((a, b) => a + b, 0) / cexRates.length;
+  const diff = hlHourly - avgCexHourly;
+
+  // Threshold: 0.0001 (1 bps hourly) is a significant divergence
+  const THRESHOLD = 0.0001;
+
+  if (diff < -THRESHOLD) {
+    const venues = [binVenue && 'Binance', bybitVenue && 'Bybit'].filter(Boolean).join('/');
+    return {
+      sentiment: 'BEARISH_BIAS',
+      divergenceNote: `HL funding significantly below ${venues} — shorts concentrated on HL`,
+    };
+  }
+
+  if (diff > THRESHOLD) {
+    const venues = [binVenue && 'Binance', bybitVenue && 'Bybit'].filter(Boolean).join('/');
+    return {
+      sentiment: 'BULLISH_BIAS',
+      divergenceNote: `HL funding significantly above ${venues} — longs concentrated on HL`,
+    };
+  }
+
+  return { sentiment: 'NEUTRAL', divergenceNote: 'Funding rates aligned across venues' };
 }
 
 function generateSuggestion(regime: RegimeType, strength: TrendStrength, volRatio: number): string {

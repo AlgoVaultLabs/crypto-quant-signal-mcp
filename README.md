@@ -1,6 +1,6 @@
 # crypto-quant-signal-mcp
 
-AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Powered by Hyperliquid data.
+AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Powered by Hyperliquid data. Remote-first with x402 micropayments.
 
 ## What It Does
 
@@ -10,18 +10,38 @@ Three opinionated tools + one performance resource that combine multiple indicat
 |------|-------------|
 | `get_trade_signal` | Composite BUY/SELL/HOLD signal combining RSI(14), EMA(9/21), funding rate, OI momentum, and volume |
 | `scan_funding_arb` | Cross-venue funding rate arbitrage scanner (Hyperliquid vs Binance vs Bybit) |
-| `get_market_regime` | Market regime classification (TRENDING_UP/DOWN, RANGING, VOLATILE) with strategy suggestions |
+| `get_market_regime` | Market regime classification with cross-venue funding sentiment |
 | `signal-performance` | Historical signal track record — win rate, Sharpe ratio, profit factor |
+
+## Architecture
+
+```
+Remote Server (revenue-generating)
+  Agent → HTTP POST → api.algovault.com/signal/mcp
+    → x402 payment check → API key check → free tier
+    → MCP Server (Streamable HTTP)
+    → PostgreSQL (signal tracking)
+    → Hyperliquid API
+
+Local Mode (distribution magnet)
+  Claude Desktop → stdio → npx crypto-quant-signal-mcp
+    → Same tools, free tier only
+    → SQLite (local signal tracking)
+    → Hyperliquid API
+```
 
 ## Quick Start
 
-### Install
+### Remote HTTP (for AI agents)
 
-```bash
-npm install -g crypto-quant-signal-mcp
+Connect your MCP client to:
+```
+https://api.algovault.com/signal/mcp
 ```
 
-Or run directly with npx:
+Pay per call via x402 (USDC on Base) — no signup needed.
+
+### Local Install (for Claude Desktop / Cursor)
 
 ```bash
 npx -y crypto-quant-signal-mcp
@@ -38,6 +58,7 @@ Add to your `claude_desktop_config.json`:
       "command": "npx",
       "args": ["-y", "crypto-quant-signal-mcp"],
       "env": {
+        "TRANSPORT": "stdio",
         "CQS_API_KEY": "your-pro-key-here"
       }
     }
@@ -45,18 +66,26 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-No API key needed for free tier — just remove the `env` block.
+No API key needed for free tier — just remove the `CQS_API_KEY` line.
 
-## Free vs Pro
+## Pricing
 
-| Feature | Free | Pro ($29/mo) |
-|---------|------|-------------|
-| `get_trade_signal` | BTC + ETH, 1h only | All 200+ perps, 1h/4h/1d |
-| `scan_funding_arb` | Top 5 results | Unlimited |
-| `get_market_regime` | All assets, all timeframes | Same |
-| `signal-performance` | Full access | Full access |
+| Feature | Free | Pro ($49/mo) | Enterprise ($299/mo) | x402 (pay per call) |
+|---------|------|-------------|---------------------|---------------------|
+| `get_trade_signal` | BTC + ETH, 1h only | All 200+ perps, all timeframes | Same + SLA | Full access — $0.02/call |
+| `scan_funding_arb` | Top 5 results | Unlimited | Unlimited | Full access — $0.01/call |
+| `get_market_regime` | All assets | All assets | All assets + SLA | Full access — $0.02/call |
+| `signal-performance` | Full access | Full access | Full access | Free |
+| Monthly calls | ~100/day | 15,000/mo | 100,000/mo | Unlimited |
+| Overage | Hard cap | $0.01/call | $0.005/call | N/A |
 
-Set `CQS_API_KEY` environment variable for Pro access.
+### x402 Micropayments
+
+AI agents pay per HTTP call with USDC on Base chain — no signup, no API key, no billing. Payment receipt is the credential.
+
+### API Key
+
+Set `CQS_API_KEY` environment variable or pass `Authorization: Bearer <key>` header. Enterprise keys start with `ent_`.
 
 ## Example Agent Prompts
 
@@ -66,7 +95,7 @@ Set `CQS_API_KEY` environment variable for Pro access.
 **Funding arb scan:**
 > "Scan for funding rate arbitrage opportunities with at least 10 bps spread"
 
-**Market regime:**
+**Market regime with cross-venue sentiment:**
 > "What's the current market regime for BTC on the 4h chart?"
 
 **Multi-step analysis:**
@@ -99,7 +128,7 @@ Scans Hyperliquid's `predictedFundings` endpoint for cross-venue funding rate di
 
 ### get_market_regime
 
-Classifies market conditions using ADX(14), ATR(14)/price volatility ratio, and price structure (swing high/low analysis).
+Classifies market conditions using ADX(14), ATR(14)/price volatility ratio, price structure (swing high/low analysis), and cross-venue funding sentiment.
 
 **Parameters:**
 - `coin` (string, required): Asset symbol
@@ -107,17 +136,43 @@ Classifies market conditions using ADX(14), ATR(14)/price volatility ratio, and 
 
 ## Performance Tracking
 
-Every signal from `get_trade_signal` is stored locally in a SQLite database at `~/.crypto-quant-signal/performance.db`. The server automatically backfills outcome prices at 1h, 4h, and 24h intervals.
+Every signal from `get_trade_signal` is tracked with outcome prices at 1h, 4h, and 24h intervals. Access the track record via the `performance://signal-stats` MCP resource.
 
-Access the track record via the `performance://signal-stats` MCP resource — it returns win rate, average return, Sharpe ratio, max drawdown, and profit factor broken down by signal type and asset.
+- **Remote mode:** PostgreSQL (server-side, aggregated across all users)
+- **Local mode:** SQLite at `~/.crypto-quant-signal/performance.db` (private to your machine)
+
+## Self-Hosting
+
+```bash
+git clone https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp
+cd crypto-quant-signal-mcp
+cp .env.example .env  # Edit with your values
+npm ci && npm run build
+docker compose up -d
+```
 
 ## Technical Details
 
 - **Data source:** Hyperliquid public API (free, no auth required)
-- **Transport:** stdio (local MCP)
-- **Storage:** SQLite via better-sqlite3 (local to your machine)
-- **Zero dependencies on external services** — works fully offline after candle data is fetched
+- **Transports:** Streamable HTTP (default, port 3000) + stdio (via `TRANSPORT=stdio`)
+- **Storage:** PostgreSQL (remote) or SQLite (local)
+- **Exchange adapter:** Pluggable — Hyperliquid today, Binance/Bybit adapters in Phase 2
+- **x402 payments:** USDC on Base chain per x402.org spec
+
+## Suite Compatibility
+
+All tools output an `_algovault` metadata block for composability with future AlgoVault tools:
+
+| Tool output | Feeds into (Phase 2+) |
+|------------|----------------------|
+| `get_trade_signal` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
+| `scan_funding_arb` | `crypto-quant-risk-mcp`, `crypto-quant-execution-mcp` |
+| `get_market_regime` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
 
 ## License
 
 MIT
+
+---
+
+Built by [AlgoVault Labs](https://algovault.com)
