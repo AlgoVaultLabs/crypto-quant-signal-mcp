@@ -30,13 +30,10 @@ export async function runBackfill(): Promise<void> {
 
 /**
  * Get signal performance stats (the MCP resource handler).
+ * Backfill runs in the background — never blocks the response.
  */
 export async function getSignalPerformance(): Promise<PerformanceStats> {
-  // Best-effort backfill before returning stats
-  try {
-    await runBackfill();
-  } catch {
-    // Don't fail the resource if backfill fails
-  }
+  // Fire-and-forget backfill — don't block the resource response
+  runBackfill().catch(() => {});
   return getPerformanceStatsAsync();
 }
