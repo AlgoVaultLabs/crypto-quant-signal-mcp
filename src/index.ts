@@ -36,6 +36,7 @@ function createServer(): McpServer {
       timeframe: z.enum(['1h', '4h', '1d']).default('1h').describe('Candle timeframe (free: 1h only)'),
       includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ coin, timeframe, includeReasoning }) => {
       const startMs = Date.now();
       try {
@@ -69,6 +70,7 @@ function createServer(): McpServer {
       minSpreadBps: z.number().default(5).describe('Minimum spread in basis points to include'),
       limit: z.number().default(10).describe('Max results (free: max 5)'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ minSpreadBps, limit }) => {
       const startMs = Date.now();
       try {
@@ -98,6 +100,7 @@ function createServer(): McpServer {
       coin: z.string().describe("Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"),
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe('Candle timeframe'),
     },
+    { readOnlyHint: true, openWorldHint: true },
     async ({ coin, timeframe }) => {
       const startMs = Date.now();
       try {

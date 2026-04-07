@@ -163,6 +163,26 @@ docker compose up -d
 - **Exchange adapter:** Pluggable — Hyperliquid today, Binance/Bybit adapters in Phase 2
 - **x402 payments:** USDC on Base chain per x402.org spec
 
+## Examples
+
+**Get a trade signal:**
+```
+User: "Get me a trade signal for BTC on the 1h timeframe"
+→ Returns: BUY/SELL/HOLD with 72% confidence, RSI=66.7, EMA cross bullish, funding neutral
+```
+
+**Scan funding arbitrage:**
+```
+User: "Scan for funding rate arbitrage opportunities"
+→ Returns: Top 5 cross-venue spreads (HL vs Binance vs Bybit), annualized returns
+```
+
+**Check market regime:**
+```
+User: "What's the market regime for ETH?"
+→ Returns: TRENDING_UP, ADX=34.2, volatility moderate, cross-venue funding sentiment
+```
+
 ## Suite Compatibility
 
 All tools output an `_algovault` metadata block for composability with future AlgoVault tools:
@@ -172,6 +192,16 @@ All tools output an `_algovault` metadata block for composability with future Al
 | `get_trade_signal` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
 | `scan_funding_arb` | `crypto-quant-risk-mcp`, `crypto-quant-execution-mcp` |
 | `get_market_regime` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
+
+## Privacy Policy
+
+crypto-quant-signal-mcp connects to Hyperliquid's public API (api.hyperliquid.xyz) to fetch market data. In local/stdio mode:
+- No data is sent to AlgoVault Labs servers
+- Signal history is stored locally in SQLite (~/.crypto-quant-signal/performance.db)
+- No personal information is collected
+- No telemetry or analytics in local mode
+
+In remote mode (api.algovault.com/mcp), requests are logged for analytics (IP hashed, never stored raw). See https://algovault.com/privacy for full details.
 
 ## License
 
