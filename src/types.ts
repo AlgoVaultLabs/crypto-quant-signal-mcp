@@ -201,11 +201,6 @@ export interface LicenseInfo {
 
 // ── x402 Types ──
 
-export interface X402PaymentProof {
-  payload: string;
-  signature: string;
-}
-
 export interface X402ToolPricing {
   get_trade_signal: number;
   scan_funding_arb: number;
