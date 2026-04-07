@@ -186,11 +186,13 @@ async function startHttp() {
     res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.0.0' });
   });
 
-  // Admin analytics endpoint (only if ADMIN_API_KEY is set)
+  // Admin analytics (only if ADMIN_API_KEY is set)
   const adminKey = process.env.ADMIN_API_KEY;
   if (adminKey) {
+    // JSON API
     app.get('/analytics', async (req, res) => {
-      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
+        || (req.query.key as string);
       if (token !== adminKey) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
@@ -200,6 +202,15 @@ async function startHttp() {
       } catch (err) {
         res.status(500).json({ error: 'Failed to fetch analytics' });
       }
+    });
+
+    // Visual dashboard
+    app.get('/dashboard', (req, res) => {
+      const key = req.query.key as string;
+      if (key !== adminKey) {
+        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+      }
+      res.send(getDashboardHtml(key));
     });
   }
 
@@ -298,6 +309,107 @@ async function startHttp() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+// ── Dashboard HTML ──
+
+function getDashboardHtml(apiKey: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlgoVault Analytics</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: #8b949e; margin-bottom: 24px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; }
+  .card .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .card .value { font-size: 32px; font-weight: 700; color: #58a6ff; }
+  .card .value.green { color: #3fb950; }
+  .card .value.purple { color: #bc8cff; }
+  .card .value.orange { color: #d29922; }
+  .section { margin-bottom: 32px; }
+  .section h2 { font-size: 16px; color: #8b949e; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  td { font-size: 14px; }
+  .bar { height: 8px; background: #58a6ff; border-radius: 4px; min-width: 4px; }
+  .refresh { color: #8b949e; font-size: 12px; margin-top: 16px; }
+  #loading { color: #8b949e; font-size: 16px; padding: 40px; text-align: center; }
+  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .logo span { font-size: 28px; }
+</style>
+</head>
+<body>
+<div class="logo"><span>&#x1f4ca;</span><div><h1>AlgoVault Analytics</h1><div class="subtitle">crypto-quant-signal-mcp</div></div></div>
+<div id="loading">Loading analytics...</div>
+<div id="content" style="display:none">
+  <div class="grid">
+    <div class="card"><div class="label">Total Calls (All Time)</div><div class="value" id="total-all"></div></div>
+    <div class="card"><div class="label">Last 24 Hours</div><div class="value green" id="total-24h"></div></div>
+    <div class="card"><div class="label">Last 7 Days</div><div class="value purple" id="total-7d"></div></div>
+    <div class="card"><div class="label">Unique Sessions (24h)</div><div class="value orange" id="sessions-24h"></div></div>
+  </div>
+  <div class="grid">
+    <div class="section"><h2>Calls by Tool</h2><table><thead><tr><th>Tool</th><th>Calls</th><th></th></tr></thead><tbody id="by-tool"></tbody></table></div>
+    <div class="section"><h2>Calls by Tier</h2><table><thead><tr><th>Tier</th><th>Calls</th><th></th></tr></thead><tbody id="by-tier"></tbody></table></div>
+  </div>
+  <div class="grid">
+    <div class="section"><h2>Top Assets</h2><table><thead><tr><th>Asset</th><th>Calls</th><th></th></tr></thead><tbody id="top-assets"></tbody></table></div>
+    <div class="section"><h2>Avg Response Time</h2><table><thead><tr><th>Tool</th><th>ms</th></tr></thead><tbody id="avg-time"></tbody></table></div>
+  </div>
+  <div class="refresh">Auto-refreshes every 30s &middot; <span id="updated"></span></div>
+</div>
+<script>
+const KEY = '${apiKey}';
+function renderRows(id, obj, max) {
+  const el = document.getElementById(id);
+  const entries = Object.entries(obj);
+  if (!entries.length) { el.innerHTML = '<tr><td colspan="3" style="color:#8b949e">No data yet</td></tr>'; return; }
+  const m = max || Math.max(...entries.map(e => Number(e[1])));
+  el.innerHTML = entries.map(([k, v]) =>
+    '<tr><td>' + k + '</td><td>' + v + '</td><td style="width:50%"><div class="bar" style="width:' + Math.round(Number(v)/m*100) + '%"></div></td></tr>'
+  ).join('');
+}
+function renderAssets(data) {
+  const el = document.getElementById('top-assets');
+  if (!data.length) { el.innerHTML = '<tr><td colspan="3" style="color:#8b949e">No data yet</td></tr>'; return; }
+  const max = data[0]?.calls || 1;
+  el.innerHTML = data.map(d =>
+    '<tr><td>' + d.asset + '</td><td>' + d.calls + '</td><td style="width:50%"><div class="bar" style="width:' + Math.round(d.calls/max*100) + '%"></div></td></tr>'
+  ).join('');
+}
+async function load() {
+  try {
+    const r = await fetch('/analytics?key=' + KEY);
+    const d = await r.json();
+    document.getElementById('total-all').textContent = d.totalCalls.allTime;
+    document.getElementById('total-24h').textContent = d.totalCalls.last24h;
+    document.getElementById('total-7d').textContent = d.totalCalls.last7d;
+    document.getElementById('sessions-24h').textContent = d.uniqueSessions.last24h;
+    renderRows('by-tool', d.byTool);
+    renderRows('by-tier', d.byTier);
+    renderAssets(d.topAssets);
+    const timeEl = document.getElementById('avg-time');
+    const timeEntries = Object.entries(d.avgResponseTimeMs);
+    timeEl.innerHTML = timeEntries.length
+      ? timeEntries.map(([k,v]) => '<tr><td>'+k+'</td><td>'+v+'ms</td></tr>').join('')
+      : '<tr><td colspan="2" style="color:#8b949e">No data yet</td></tr>';
+    document.getElementById('updated').textContent = 'Updated: ' + new Date(d.generatedAt).toLocaleString();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  } catch(e) { document.getElementById('loading').textContent = 'Failed to load: ' + e.message; }
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>`;
 }
 
 // ── Smithery sandbox export ──
