@@ -1,18 +1,39 @@
 /**
  * x402 Payment Verification — USDC on Base chain.
  *
- * x402 protocol flow:
+ * Uses the official @x402/core SDK with the Coinbase Facilitator
+ * for real on-chain ERC-3009 signature verification and settlement.
+ *
+ * Flow:
  * 1. Agent sends HTTP request without payment
- * 2. Server responds 402 with payment instructions (price, token, chain, recipient)
- * 3. Agent pays on-chain, attaches proof to retry request
- * 4. Server verifies settlement, delivers response
+ * 2. Server responds 402 with PaymentRequired (price, asset, network, recipient)
+ * 3. Agent signs ERC-3009 transferWithAuthorization, attaches to x-payment header
+ * 4. Server verifies signature via Facilitator (~100ms)
+ * 5. Server responds immediately, settles on-chain asynchronously (~2s)
  *
- * See https://www.x402.org/ for the full spec.
- *
- * For MVP: we parse the x-payment header and do basic validation.
- * Full on-chain verification comes in Phase 2 when volume justifies gas costs.
+ * Graceful degradation: if X402_WALLET_ADDRESS is not set, x402 tier is
+ * skipped entirely and the server falls through to API key / free tiers.
  */
+import { HTTPFacilitatorClient, x402ResourceServer } from '@x402/core/server';
 import type { X402ToolPricing } from '../types.js';
+
+// ── Configuration ──
+
+const WALLET_ADDRESS = process.env.X402_WALLET_ADDRESS || '';
+const NETWORK = process.env.X402_NETWORK || 'base-mainnet';
+
+// CAIP-2 chain IDs
+const CAIP2: Record<string, string> = {
+  'base-mainnet': 'eip155:8453',
+  'base-sepolia': 'eip155:84532',
+};
+const CAIP2_NETWORK = CAIP2[NETWORK] || 'eip155:8453';
+
+// USDC contract addresses
+const USDC_ADDRESS: Record<string, string> = {
+  'eip155:8453': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  'eip155:84532': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+};
 
 // Tool pricing in USD
 export const TOOL_PRICING: X402ToolPricing = {
@@ -21,54 +42,220 @@ export const TOOL_PRICING: X402ToolPricing = {
   get_market_regime: 0.02,
 };
 
-const WALLET_ADDRESS = process.env.X402_WALLET_ADDRESS || '';
+// ── Singleton state ──
+
+let resourceServer: x402ResourceServer | null = null;
+let toolRequirements: Map<string, unknown[]> = new Map();
+let initialized = false;
+
+// ── Result types ──
 
 export interface X402VerificationResult {
   valid: boolean;
   paidAmount?: number;
   payer?: string;
+  /** Opaque refs needed for async settlement */
+  _settlement?: { paymentPayload: unknown; requirements: unknown };
 }
 
-/**
- * Parse and verify x402 payment proof from request headers.
- * Returns verification result. For MVP, checks the x-payment header exists
- * and contains a JSON payload with the required fields.
- *
- * Full on-chain USDC verification on Base will be implemented in Phase 2.
- */
-export function verifyX402Payment(headers: Record<string, string | undefined>): X402VerificationResult {
-  const paymentHeader = headers['x-payment'] || headers['X-Payment'];
+// ── Initialization ──
 
+/**
+ * Initialize the x402 resource server. Call once at startup.
+ * No-ops if x402 is not configured.
+ */
+export async function initX402(): Promise<void> {
+  if (!isX402Configured()) return;
+  if (initialized) return;
+
+  const facilitator = new HTTPFacilitatorClient();
+  resourceServer = new x402ResourceServer(facilitator);
+
+  // Register a server-side scheme for USDC price parsing on the target network.
+  // The facilitator handles actual cryptographic verification — the server scheme
+  // only needs to convert "$0.02" to { amount: "20000", asset: "0x..." }.
+  const usdcAddress = USDC_ADDRESS[CAIP2_NETWORK];
+  const caip2 = CAIP2_NETWORK as `${string}:${string}`;
+  resourceServer.register(caip2, {
+    scheme: 'exact',
+    async parsePrice(price: string | number | { amount: string; asset: string }) {
+      let usdAmount: number;
+      if (typeof price === 'string' && price.startsWith('$')) {
+        usdAmount = parseFloat(price.slice(1));
+      } else if (typeof price === 'number') {
+        usdAmount = price;
+      } else if (typeof price === 'object' && 'amount' in price) {
+        return { amount: price.amount, asset: price.asset };
+      } else {
+        usdAmount = parseFloat(String(price));
+      }
+      const atomicAmount = Math.round(usdAmount * 1_000_000).toString();
+      return { amount: atomicAmount, asset: usdcAddress };
+    },
+    getAssetDecimals() { return 6; },
+    async enhancePaymentRequirements(reqs: unknown) { return reqs; },
+  } as Parameters<typeof resourceServer.register>[1]);
+
+  await resourceServer.initialize();
+
+  // Pre-build payment requirements for each tool
+  for (const [tool, price] of Object.entries(TOOL_PRICING)) {
+    const reqs = await resourceServer.buildPaymentRequirements({
+      scheme: 'exact',
+      network: caip2,
+      payTo: WALLET_ADDRESS,
+      price: `$${price}`,
+      extra: { name: 'USDC', version: '2' },
+    });
+    toolRequirements.set(tool, reqs);
+  }
+
+  initialized = true;
+  console.log(`x402 initialized: network=${NETWORK} wallet=${WALLET_ADDRESS.slice(0, 6)}...`);
+}
+
+// ── Verification ──
+
+/**
+ * Verify an x402 payment proof from the x-payment header.
+ * Returns verification result with settlement refs for async settle.
+ */
+export async function verifyX402Payment(
+  headers: Record<string, string | undefined>,
+): Promise<X402VerificationResult> {
+  if (!resourceServer || !initialized) {
+    return { valid: false };
+  }
+
+  const paymentHeader = headers['x-payment'] || headers['X-Payment'];
   if (!paymentHeader) {
     return { valid: false };
   }
 
   try {
-    const proof = JSON.parse(paymentHeader);
+    const paymentPayload = JSON.parse(paymentHeader);
 
-    // Basic validation: check required fields exist
-    if (!proof.payload || !proof.signature) {
+    // Collect all requirements across tools to find a match
+    const allReqs = Array.from(toolRequirements.values()).flat();
+    const matchingReqs = resourceServer.findMatchingRequirements(
+      allReqs as Parameters<typeof resourceServer.findMatchingRequirements>[0],
+      paymentPayload,
+    );
+
+    if (!matchingReqs) {
       return { valid: false };
     }
 
-    // Parse the payload
-    const payload = typeof proof.payload === 'string' ? JSON.parse(proof.payload) : proof.payload;
+    // Verify via Facilitator (fast, ~100ms)
+    const verifyResult = await resourceServer.verifyPayment(paymentPayload, matchingReqs);
 
-    // Verify recipient matches our wallet
-    if (WALLET_ADDRESS && payload.recipient && payload.recipient.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+    if (!verifyResult.isValid) {
+      console.warn(`x402 verify failed: ${verifyResult.invalidReason} — ${verifyResult.invalidMessage}`);
       return { valid: false };
     }
 
-    // MVP: accept any well-formed payment proof
-    // Phase 2: verify on-chain USDC settlement on Base
     return {
       valid: true,
-      paidAmount: payload.amount ? parseFloat(payload.amount) : undefined,
-      payer: payload.payer || undefined,
+      payer: verifyResult.payer,
+      _settlement: { paymentPayload, requirements: matchingReqs },
     };
-  } catch {
+  } catch (err) {
+    console.error('x402 verify error:', err instanceof Error ? err.message : err);
     return { valid: false };
   }
+}
+
+// ── Settlement (fire-and-forget) ──
+
+/**
+ * Settle a verified payment asynchronously. Call after responding to the client.
+ * Logs success/failure for reconciliation — does not throw.
+ */
+export function settleX402Async(settlement: { paymentPayload: unknown; requirements: unknown }): void {
+  if (!resourceServer) return;
+
+  resourceServer
+    .settlePayment(
+      settlement.paymentPayload as Parameters<typeof resourceServer.settlePayment>[0],
+      settlement.requirements as Parameters<typeof resourceServer.settlePayment>[1],
+    )
+    .then((result) => {
+      if (result.success) {
+        console.log(`x402 settled: tx=${result.transaction} payer=${result.payer}`);
+      } else {
+        console.error(`x402 settle failed: ${result.errorReason} — ${result.errorMessage}`);
+      }
+    })
+    .catch((err) => {
+      console.error('x402 settle error:', err instanceof Error ? err.message : err);
+    });
+}
+
+// ── 402 Response Generation ──
+
+/**
+ * Generate a 402 Payment Required response body per x402 v2 spec.
+ */
+export function generate402Response(toolName: string): {
+  status: number;
+  body: Record<string, unknown>;
+} {
+  const reqs = toolRequirements.get(toolName);
+
+  // If x402 is initialized and we have pre-built requirements, use them
+  if (reqs && reqs.length > 0) {
+    return {
+      status: 402,
+      body: {
+        x402Version: 2,
+        error: 'Payment Required',
+        resource: {
+          url: `/mcp`,
+          description: `Payment for ${toolName} tool call`,
+          mimeType: 'application/json',
+        },
+        accepts: reqs,
+      },
+    };
+  }
+
+  // Fallback: return static requirements (x402 not initialized)
+  const price = TOOL_PRICING[toolName as keyof X402ToolPricing] ?? 0.02;
+  const usdcDecimals = 6;
+  const atomicAmount = Math.round(price * 10 ** usdcDecimals).toString();
+
+  return {
+    status: 402,
+    body: {
+      x402Version: 2,
+      error: 'Payment Required',
+      resource: {
+        url: `/mcp`,
+        description: `Payment for ${toolName} tool call`,
+        mimeType: 'application/json',
+      },
+      accepts: [
+        {
+          scheme: 'exact',
+          network: CAIP2_NETWORK,
+          asset: USDC_ADDRESS[CAIP2_NETWORK],
+          amount: atomicAmount,
+          payTo: WALLET_ADDRESS || 'not_configured',
+          maxTimeoutSeconds: 300,
+          extra: { name: 'USDC', version: '2' },
+        },
+      ],
+    },
+  };
+}
+
+// ── Helpers ──
+
+/**
+ * Check if x402 is configured (wallet address set).
+ */
+export function isX402Configured(): boolean {
+  return WALLET_ADDRESS.length > 0;
 }
 
 /**
@@ -79,36 +266,4 @@ export function isPaymentSufficient(toolName: string, paidAmount: number | undef
   const price = TOOL_PRICING[toolName as keyof X402ToolPricing];
   if (price === undefined) return false;
   return paidAmount >= price;
-}
-
-/**
- * Generate 402 Payment Required response body per x402 spec.
- */
-export function generate402Response(toolName: string): {
-  status: number;
-  body: Record<string, unknown>;
-} {
-  const price = TOOL_PRICING[toolName as keyof X402ToolPricing] ?? 0.02;
-  return {
-    status: 402,
-    body: {
-      error: 'Payment Required',
-      x402: {
-        version: '1',
-        price: price.toString(),
-        currency: 'USDC',
-        chain: 'base',
-        recipient: WALLET_ADDRESS || 'not_configured',
-        description: `Payment for ${toolName} tool call`,
-        accepts: ['x402-payment-proof'],
-      },
-    },
-  };
-}
-
-/**
- * Check if x402 is configured (wallet address set).
- */
-export function isX402Configured(): boolean {
-  return WALLET_ADDRESS.length > 0;
 }

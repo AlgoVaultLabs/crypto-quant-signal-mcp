@@ -3,3 +3,4 @@ dist/
 .env
 *.db
 .DS_Store
+.smithery/

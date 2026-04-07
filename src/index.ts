@@ -16,7 +16,8 @@ import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance } from './resources/signal-performance.js';
 import { closeDb } from './lib/performance-db.js';
-import { resolveLicense, requestContext, getRequestLicense, trackCall } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, trackCall } from './lib/license.js';
+import { initX402, settleX402Async } from './lib/x402.js';
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -107,9 +108,9 @@ async function startStdio() {
   const server = createServer();
   const transport = new StdioServerTransport();
 
-  // Stdio mode: resolve license from env once, set as persistent context.
+  // Stdio mode: resolve license from env synchronously (no x402 in stdio).
   // AsyncLocalStorage enterWith() keeps it active for all async work in this context.
-  const license = resolveLicense({});
+  const license = resolveLicenseSync({});
   requestContext.enterWith({ license });
 
   await server.connect(transport);
@@ -124,6 +125,9 @@ async function startStdio() {
 
 // ── HTTP Mode (Streamable HTTP) ──
 async function startHttp() {
+  // Initialize x402 on-chain verification (no-ops if not configured)
+  await initX402();
+
   const { default: express } = await import('express');
 
   const app = express();
@@ -140,7 +144,10 @@ async function startHttp() {
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
     // Resolve license per-request using 3-tier gate: x402 → API key → free
-    const license = resolveLicense(req.headers as Record<string, string | undefined>);
+    // Async because x402 verification hits the Facilitator
+    const { license, pendingSettlement } = await resolveLicense(
+      req.headers as Record<string, string | undefined>,
+    );
 
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
@@ -196,6 +203,11 @@ async function startHttp() {
           res.status(500).json({ error: 'Internal server error' });
         }
       }
+
+      // Fire-and-forget: settle x402 payment after response is sent
+      if (pendingSettlement) {
+        settleX402Async(pendingSettlement);
+      }
     });
   });
 
@@ -216,6 +228,13 @@ async function startHttp() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+// ── Smithery sandbox export ──
+// Allows Smithery to scan tools/resources without starting the server.
+// See https://smithery.ai/docs/deploy#sandbox-server
+export function createSandboxServer() {
+  return createServer();
 }
 
 // ── Entry Point ──

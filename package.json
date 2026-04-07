@@ -40,6 +40,8 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@x402/core": "^2.9.0",
+    "@x402/evm": "^2.9.0",
     "better-sqlite3": "^11.8.2",
     "express": "^4.21.2",
     "pg": "^8.13.3"

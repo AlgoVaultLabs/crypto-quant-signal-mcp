@@ -7,7 +7,7 @@
  * 3. Free tier (no key, no payment)
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { verifyX402Payment } from './x402.js';
+import { verifyX402Payment, isX402Configured } from './x402.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 
 const FREE_COINS = new Set(['BTC', 'ETH']);
@@ -34,18 +34,44 @@ export function getRequestLicense(): LicenseInfo {
   return resolveFromApiKey();
 }
 
+/** Settlement refs from a verified x402 payment, for async settle after response. */
+export interface PendingSettlement {
+  paymentPayload: unknown;
+  requirements: unknown;
+}
+
 /**
  * Resolve license from request headers using the 3-tier gate:
  * x402 payment → API key → free tier.
+ *
+ * Async because x402 verification hits the Facilitator (~100ms).
+ * If x402 is not configured (no wallet address), skips to API key / free.
  */
-export function resolveLicense(headers: Record<string, string | undefined>): LicenseInfo {
-  // Tier 1: x402 payment proof
-  const x402Result = verifyX402Payment(headers);
-  if (x402Result.valid) {
-    return { tier: 'x402', key: null };
+export async function resolveLicense(
+  headers: Record<string, string | undefined>,
+): Promise<{ license: LicenseInfo; pendingSettlement?: PendingSettlement }> {
+  // Tier 1: x402 payment proof (only if configured)
+  if (isX402Configured()) {
+    const x402Result = await verifyX402Payment(headers);
+    if (x402Result.valid) {
+      return {
+        license: { tier: 'x402', key: null },
+        pendingSettlement: x402Result._settlement
+          ? { paymentPayload: x402Result._settlement.paymentPayload, requirements: x402Result._settlement.requirements }
+          : undefined,
+      };
+    }
   }
 
   // Tier 2: API key (env var or Authorization header)
+  const authHeader = headers['authorization'] || headers['Authorization'];
+  return { license: resolveFromApiKey(authHeader) };
+}
+
+/**
+ * Synchronous license resolution (no x402). Used for stdio mode.
+ */
+export function resolveLicenseSync(headers: Record<string, string | undefined>): LicenseInfo {
   const authHeader = headers['authorization'] || headers['Authorization'];
   return resolveFromApiKey(authHeader);
 }
