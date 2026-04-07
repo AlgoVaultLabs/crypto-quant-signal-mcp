@@ -21,6 +21,7 @@ import type { X402ToolPricing } from '../types.js';
 
 const WALLET_ADDRESS = process.env.X402_WALLET_ADDRESS || '';
 const NETWORK = process.env.X402_NETWORK || 'base-mainnet';
+const FACILITATOR_URL = process.env.X402_FACILITATOR_URL || undefined; // default: https://x402.org/facilitator
 
 // CAIP-2 chain IDs
 const CAIP2: Record<string, string> = {
@@ -68,7 +69,7 @@ export async function initX402(): Promise<void> {
   if (!isX402Configured()) return;
   if (initialized) return;
 
-  const facilitator = new HTTPFacilitatorClient();
+  const facilitator = new HTTPFacilitatorClient(FACILITATOR_URL ? { url: FACILITATOR_URL } : undefined);
   resourceServer = new x402ResourceServer(facilitator);
 
   // Register a server-side scheme for USDC price parsing on the target network.
@@ -97,6 +98,18 @@ export async function initX402(): Promise<void> {
   } as Parameters<typeof resourceServer.register>[1]);
 
   await resourceServer.initialize();
+
+  // Check if the facilitator supports our network
+  const supported = resourceServer.getSupportedKind(2, caip2, 'exact');
+  if (!supported) {
+    console.warn(
+      `x402: Facilitator does not support exact on ${CAIP2_NETWORK}. ` +
+      `x402 payments disabled. Use X402_NETWORK=base-sepolia for testing, ` +
+      `or set X402_FACILITATOR_URL to a facilitator that supports mainnet.`,
+    );
+    resourceServer = null;
+    return;
+  }
 
   // Pre-build payment requirements for each tool
   for (const [tool, price] of Object.entries(TOOL_PRICING)) {
