@@ -166,9 +166,11 @@ export interface SignalRecord {
   confidence: number;
   timeframe: string;
   price_at_signal: number;
+  price_after_15m: number | null;
   price_after_1h: number | null;
   price_after_4h: number | null;
   price_after_24h: number | null;
+  return_pct_15m: number | null;
   return_pct_1h: number | null;
   return_pct_4h: number | null;
   return_pct_24h: number | null;
@@ -186,6 +188,7 @@ export interface PerformanceStats {
     profitFactor: number | null;
   };
   bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
+  byTimeframe: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
   byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
   recentSignals: SignalRecord[];
 }

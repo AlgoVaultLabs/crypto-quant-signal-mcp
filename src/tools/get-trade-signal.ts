@@ -26,8 +26,10 @@ const WEIGHTS = {
   volume: 0.20,
 };
 
-// Signal thresholds (raised from ±25 to ±35 for higher quality)
-const SIGNAL_THRESHOLD = 35;
+// Asymmetric signal thresholds (v3): BUY must be more convincing than SELL
+// Based on v1/v2 data: SELL signals are much more reliable than BUY signals
+const BUY_BASE_THRESHOLD = 45;   // Higher bar for BUY
+const SELL_BASE_THRESHOLD = 35;  // SELL signals already work well
 
 // Regime-aware asymmetry: BUY signals need higher conviction in downtrends
 const BUY_THRESHOLD_TRENDING_DOWN = 55;
@@ -160,24 +162,36 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   }
 
   // ── Weighted composite score ──
-  const rawScore =
+  let rawScore =
     rsiScore * WEIGHTS.rsi +
     emaScore * WEIGHTS.ema +
     fundingScore * WEIGHTS.funding +
     oiScore * WEIGHTS.oi +
     volumeScore * WEIGHTS.volume;
 
-  // ── Regime-aware signal determination ──
+  // ── Funding confirmation gate (v3) ──
+  // Penalize BUY when longs are crowded; bonus for contrarian BUY on negative funding
+  const fundingAdjustments: string[] = [];
+  if (rawScore > 0 && fundingRate > 0) {
+    rawScore -= 15;
+    fundingAdjustments.push(`Funding rate is positive (${(fundingRate * 100).toFixed(4)}%) — longs are crowded. BUY confidence penalized by 15 points.`);
+  }
+  if (rawScore > 0 && fundingRate < -0.0005) {
+    rawScore += 10;
+    fundingAdjustments.push(`Funding rate is strongly negative (${(fundingRate * 100).toFixed(4)}%) — shorts are paying. Contrarian BUY bonus +10 points.`);
+  }
+
+  // ── Regime-aware signal determination (v3: asymmetric thresholds) ──
   let signal: SignalVerdict;
   const absScore = Math.abs(rawScore);
 
   if (rawScore > 0) {
-    // Potential BUY — apply regime filter
-    const threshold = regime === 'TRENDING_DOWN' ? BUY_THRESHOLD_TRENDING_DOWN : SIGNAL_THRESHOLD;
+    // Potential BUY — higher bar required
+    const threshold = regime === 'TRENDING_DOWN' ? BUY_THRESHOLD_TRENDING_DOWN : BUY_BASE_THRESHOLD;
     signal = rawScore > threshold ? 'BUY' : 'HOLD';
   } else {
-    // Potential SELL — apply regime filter
-    const threshold = regime === 'TRENDING_UP' ? SELL_THRESHOLD_TRENDING_UP : SIGNAL_THRESHOLD;
+    // Potential SELL — lower bar (SELL signals are more reliable)
+    const threshold = regime === 'TRENDING_UP' ? SELL_THRESHOLD_TRENDING_UP : SELL_BASE_THRESHOLD;
     signal = absScore > threshold ? 'SELL' : 'HOLD';
   }
 
@@ -199,10 +213,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     else if (fundingRate < 0) parts.push('Negative funding — shorts paying longs.');
     else if (fundingRate > 0.001) parts.push('High positive funding — crowded longs (contrarian bearish).');
     else if (fundingRate > 0.0005) parts.push('Positive funding — longs paying shorts.');
-    if (regime === 'TRENDING_DOWN' && signal === 'HOLD' && rawScore > SIGNAL_THRESHOLD) {
+    // v3: Funding confirmation gate adjustments
+    parts.push(...fundingAdjustments);
+    if (regime === 'TRENDING_DOWN' && signal === 'HOLD' && rawScore > BUY_BASE_THRESHOLD) {
       parts.push(`Regime filter: potential BUY suppressed — market is trending down (requires ${BUY_THRESHOLD_TRENDING_DOWN}+ score, got ${absScore.toFixed(0)}).`);
     }
-    if (regime === 'TRENDING_UP' && signal === 'HOLD' && rawScore < -SIGNAL_THRESHOLD) {
+    if (regime === 'TRENDING_UP' && signal === 'HOLD' && rawScore < -SELL_BASE_THRESHOLD) {
       parts.push(`Regime filter: potential SELL suppressed — market is trending up (requires ${SELL_THRESHOLD_TRENDING_UP}+ score, got ${absScore.toFixed(0)}).`);
     }
     parts.push(`Confidence: ${confidence}%. Regime: ${regime}.`);
@@ -229,7 +245,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     coin,
     timeframe,
     _algovault: {
-      version: '2.0.0',
+      version: '3.0.0',
       tool: 'get_trade_signal',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },

@@ -485,7 +485,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v2 scoring &middot; admin only &middot; auto-refreshes</div></div>
+  <div><h1>Signal Performance</h1><div class="subtitle">v3 scoring &middot; admin only &middot; auto-refreshes</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -504,6 +504,14 @@ function getPerformanceDashboardHtml(apiKey: string): string {
     <table>
       <thead><tr><th>Type</th><th class="num">Count</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th>Bar</th></tr></thead>
       <tbody id="by-type"></tbody>
+    </table>
+  </div>
+
+  <!-- Performance by Timeframe -->
+  <div class="section"><h2>Performance by Timeframe</h2>
+    <table>
+      <thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th>Bar</th></tr></thead>
+      <tbody id="by-timeframe"></tbody>
     </table>
   </div>
 
@@ -591,7 +599,25 @@ async function load() {
         '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>'
       ).join('');
     } else {
-      typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet — v2 scoring just started</td></tr>';
+      typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet — v3 scoring just started</td></tr>';
+    }
+
+    // By timeframe
+    const tfEl = document.getElementById('by-timeframe');
+    const timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
+    if (timeframes.length) {
+      const tfOrder = ['15m', '1h', '4h', '24h'];
+      const sorted = timeframes.sort((a,b) => tfOrder.indexOf(a[0]) - tfOrder.indexOf(b[0]));
+      const maxTfCount = Math.max(...sorted.map(([,v]) => v.count), 1);
+      tfEl.innerHTML = sorted.map(([tf, v]) =>
+        '<tr><td><strong>' + tf + '</strong></td>' +
+        '<td class="num">' + v.count + '</td>' +
+        '<td class="num ' + (v.winRate != null && v.winRate >= 0.5 ? 'green' : v.winRate != null ? 'red' : 'muted') + '">' + pct(v.winRate) + '</td>' +
+        '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
+        '<td><div class="bar-wrap"><div class="bar g" style="width:' + Math.round(v.count/maxTfCount*100) + '%"></div></div></td></tr>'
+      ).join('');
+    } else {
+      tfEl.innerHTML = '<tr><td colspan="5" class="empty">Waiting for timeframe data...</td></tr>';
     }
 
     // Assets
@@ -626,6 +652,7 @@ async function load() {
           '<span class="muted" style="width:40px">' + s.timeframe + '</span>' +
           '<span style="width:80px">$' + (s.price_at_signal < 1 ? s.price_at_signal.toFixed(4) : s.price_at_signal.toLocaleString()) + '</span>' +
           '<span style="width:50px">' + s.confidence + '%</span>' +
+          '<span style="width:70px" class="' + retClass(s.return_pct_15m) + '">15m: ' + retPct(s.return_pct_15m) + '</span>' +
           '<span style="width:70px" class="' + retClass(s.return_pct_1h) + '">1h: ' + retPct(s.return_pct_1h) + '</span>' +
           '<span style="width:70px" class="' + retClass(s.return_pct_4h) + '">4h: ' + retPct(s.return_pct_4h) + '</span>' +
           '<span style="width:70px" class="' + retClass(s.return_pct_24h) + '">24h: ' + retPct(s.return_pct_24h) + '</span>' +
