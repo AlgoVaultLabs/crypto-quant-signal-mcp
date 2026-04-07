@@ -124,6 +124,31 @@ function createServer(): McpServer {
     }
   );
 
+  // ── Tool 4: get_signal_performance ──
+  server.tool(
+    'get_signal_performance',
+    'Returns the live track record of all signals — overall win rate, profit factor, Sharpe ratio, and per-asset breakdowns. 5,000+ signals tracked with 1h/4h/24h outcomes.',
+    {},
+    { readOnlyHint: true, openWorldHint: true },
+    async () => {
+      const startMs = Date.now();
+      try {
+        const stats = await getSignalPerformance();
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'get_signal_performance',
+          licenseTier: 'free',
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+        });
+        return { content: [{ type: 'text' as const, text: JSON.stringify(stats, null, 2) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }], isError: true };
+      }
+    }
+  );
+
   // ── Resource: signal-performance ──
   server.resource(
     'signal-stats',
