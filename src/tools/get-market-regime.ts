@@ -24,10 +24,10 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
 
   const adapter = getAdapter();
 
-  // Fetch candles + predicted fundings in parallel
+  // Fetch candles + predicted fundings in parallel (fundings are best-effort)
   const [candles, allFundings] = await Promise.all([
     adapter.getCandles(coin, timeframe, startTime),
-    adapter.getPredictedFundings(),
+    adapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
   ]);
 
   if (candles.length < 30) {
@@ -150,15 +150,15 @@ function computeCrossVenueFundingSentiment(
   const binVenue = coinFunding.venues.find(v => v.venue === 'BinPerp');
   const bybitVenue = coinFunding.venues.find(v => v.venue === 'BybitPerp');
 
-  if (!hlVenue) {
+  if (!hlVenue || isNaN(hlVenue.fundingRate)) {
     return { sentiment: 'NEUTRAL', divergenceNote: 'HL funding data not available' };
   }
 
   // Normalize to hourly rates for comparison
   const hlHourly = hlVenue.fundingRate; // HL is already hourly
   const cexRates: number[] = [];
-  if (binVenue) cexRates.push(binVenue.fundingRate / 8); // Binance is 8h rate
-  if (bybitVenue) cexRates.push(bybitVenue.fundingRate / 8); // Bybit is 8h rate
+  if (binVenue && !isNaN(binVenue.fundingRate)) cexRates.push(binVenue.fundingRate / 8); // Binance is 8h rate
+  if (bybitVenue && !isNaN(bybitVenue.fundingRate)) cexRates.push(bybitVenue.fundingRate / 8); // Bybit is 8h rate
 
   if (cexRates.length === 0) {
     return { sentiment: 'NEUTRAL', divergenceNote: 'No CEX funding data for comparison' };
