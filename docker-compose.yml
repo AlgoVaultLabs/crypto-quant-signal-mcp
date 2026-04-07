@@ -9,8 +9,10 @@ services:
       - X402_NETWORK=base-mainnet
     restart: unless-stopped
     depends_on:
-      - postgres
-      - facilitator
+      postgres:
+        condition: service_started
+      facilitator:
+        condition: service_healthy
   facilitator:
     build:
       context: .
@@ -18,6 +20,12 @@ services:
     environment:
       - FACILITATOR_PRIVATE_KEY=${FACILITATOR_PRIVATE_KEY}
       - FACILITATOR_PORT=4022
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4022/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
   postgres:
     image: postgres:16-alpine
