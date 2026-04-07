@@ -69,7 +69,13 @@ export async function initX402(): Promise<void> {
   if (!isX402Configured()) return;
   if (initialized) return;
 
-  const facilitator = new HTTPFacilitatorClient(FACILITATOR_URL ? { url: FACILITATOR_URL } : undefined);
+  let facilitator: HTTPFacilitatorClient;
+  try {
+    facilitator = new HTTPFacilitatorClient(FACILITATOR_URL ? { url: FACILITATOR_URL } : undefined);
+  } catch (err) {
+    console.warn('x402: Failed to create facilitator client:', err instanceof Error ? err.message : err);
+    return;
+  }
   resourceServer = new x402ResourceServer(facilitator);
 
   // Register a server-side scheme for USDC price parsing on the target network.
@@ -97,7 +103,14 @@ export async function initX402(): Promise<void> {
     async enhancePaymentRequirements(reqs: unknown) { return reqs; },
   } as Parameters<typeof resourceServer.register>[1]);
 
-  await resourceServer.initialize();
+  try {
+    await resourceServer.initialize();
+  } catch (err) {
+    console.warn('x402: Failed to initialize resource server (facilitator unreachable?):', err instanceof Error ? err.message : err);
+    console.warn('x402: Payments disabled — server will operate on free/API-key tiers only.');
+    resourceServer = null;
+    return;
+  }
 
   // Check if the facilitator supports our network
   const supported = resourceServer.getSupportedKind(2, caip2, 'exact');
@@ -112,15 +125,22 @@ export async function initX402(): Promise<void> {
   }
 
   // Pre-build payment requirements for each tool
-  for (const [tool, price] of Object.entries(TOOL_PRICING)) {
-    const reqs = await resourceServer.buildPaymentRequirements({
-      scheme: 'exact',
-      network: caip2,
-      payTo: WALLET_ADDRESS,
-      price: `$${price}`,
-      extra: { name: 'USDC', version: '2' },
-    });
-    toolRequirements.set(tool, reqs);
+  try {
+    for (const [tool, price] of Object.entries(TOOL_PRICING)) {
+      const reqs = await resourceServer.buildPaymentRequirements({
+        scheme: 'exact',
+        network: caip2,
+        payTo: WALLET_ADDRESS,
+        price: `$${price}`,
+        extra: { name: 'USDC', version: '2' },
+      });
+      toolRequirements.set(tool, reqs);
+    }
+  } catch (err) {
+    console.warn('x402: Failed to build payment requirements:', err instanceof Error ? err.message : err);
+    console.warn('x402: Payments disabled — server will operate on free/API-key tiers only.');
+    resourceServer = null;
+    return;
   }
 
   initialized = true;
