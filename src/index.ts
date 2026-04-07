@@ -16,8 +16,10 @@ import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance } from './resources/signal-performance.js';
 import { closeDb } from './lib/performance-db.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, trackCall } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, trackCall } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
+import { initAnalytics, logRequest, hashIp, getUsageStats } from './lib/analytics.js';
+import { getAnalyticsSummary } from './resources/analytics-summary.js';
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -35,10 +37,22 @@ function createServer(): McpServer {
       includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
     },
     async ({ coin, timeframe, includeReasoning }) => {
+      const startMs = Date.now();
       try {
         const license = getRequestLicense();
         trackCall(license);
         const result = await getTradeSignal({ coin, timeframe, includeReasoning, license });
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'get_trade_signal',
+          asset: coin,
+          timeframe,
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          verdict: result.signal,
+          confidence: result.confidence,
+          ipHash: getRequestIpHash(),
+        });
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -56,10 +70,18 @@ function createServer(): McpServer {
       limit: z.number().default(10).describe('Max results (free: max 5)'),
     },
     async ({ minSpreadBps, limit }) => {
+      const startMs = Date.now();
       try {
         const license = getRequestLicense();
         trackCall(license);
         const result = await scanFundingArb({ minSpreadBps, limit, license });
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'scan_funding_arb',
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+        });
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -77,10 +99,20 @@ function createServer(): McpServer {
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe('Candle timeframe'),
     },
     async ({ coin, timeframe }) => {
+      const startMs = Date.now();
       try {
         const license = getRequestLicense();
         trackCall(license);
         const result = await getMarketRegime({ coin, timeframe });
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'get_market_regime',
+          asset: coin,
+          timeframe,
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+        });
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -100,11 +132,23 @@ function createServer(): McpServer {
     }
   );
 
+  // ── Resource: analytics-summary (pro/enterprise/x402 only) ──
+  server.resource(
+    'usage-stats',
+    'analytics://usage-stats',
+    { description: 'Request analytics — call counts, tool breakdown, tier distribution, top assets, response times. Requires Pro or higher.' },
+    async () => {
+      const stats = await getAnalyticsSummary();
+      return { contents: [{ uri: 'analytics://usage-stats', mimeType: 'application/json', text: JSON.stringify(stats, null, 2) }] };
+    }
+  );
+
   return server;
 }
 
 // ── Stdio Mode ──
 async function startStdio() {
+  initAnalytics();
   const server = createServer();
   const transport = new StdioServerTransport();
 
@@ -127,6 +171,7 @@ async function startStdio() {
 async function startHttp() {
   // Initialize x402 on-chain verification (no-ops if not configured)
   await initX402();
+  initAnalytics();
 
   const { default: express } = await import('express');
 
@@ -141,6 +186,23 @@ async function startHttp() {
     res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.0.0' });
   });
 
+  // Admin analytics endpoint (only if ADMIN_API_KEY is set)
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (adminKey) {
+    app.get('/analytics', async (req, res) => {
+      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+      if (token !== adminKey) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const stats = await getUsageStats();
+        res.json(stats);
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+      }
+    });
+  }
+
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
     // Resolve license per-request using 3-tier gate: x402 → API key → free
@@ -149,9 +211,17 @@ async function startHttp() {
       req.headers as Record<string, string | undefined>,
     );
 
+    // Hash client IP for privacy-safe analytics
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || (req.headers['x-real-ip'] as string)
+      || req.socket.remoteAddress
+      || 'unknown';
+    const ipHash = hashIp(clientIp);
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
-    await requestContext.run({ license }, async () => {
+    await requestContext.run({ license, sessionId, ipHash }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 

@@ -148,6 +148,24 @@ export function closeDb(): void {
   }
 }
 
+// ── Generic DB access for other modules (analytics) ──
+
+export function dbExec(sql: string): void {
+  getBackend().exec(sql);
+}
+
+export function dbRun(sql: string, ...params: unknown[]): void {
+  getBackend().run(sql, ...params);
+}
+
+export async function dbQuery<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    return b.query(sql, params) as unknown as T[];
+  }
+  return b.all(sql, ...params) as unknown as T[];
+}
+
 export function recordSignal(
   coin: string,
   signal: SignalVerdict,
