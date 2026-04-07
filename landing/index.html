@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlgoVault Labs — The Brain Layer for Crypto Trading Agents</title>
+<meta name="description" content="Composite trading signals, funding arb scanning, and market regime detection for Hyperliquid perps. One API call. One verdict.">
+<meta property="og:title" content="AlgoVault Labs — The Brain Layer for Crypto Trading Agents">
+<meta property="og:description" content="AI trading brain for crypto perps via MCP. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://algovault.com">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f9e0;</text></svg>">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .glow { box-shadow: 0 0 40px rgba(196, 163, 74, 0.08); }
+  .glow-text { text-shadow: 0 0 30px rgba(196, 163, 74, 0.3); }
+  .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+  .card-hover:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(196, 163, 74, 0.1); }
+  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+  .fade-in { animation: fadeIn 0.6s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .step-line { position: relative; }
+  .step-line::after { content: ''; position: absolute; left: 19px; top: 44px; bottom: -12px; width: 1px; background: linear-gradient(to bottom, #c4a34a44, transparent); }
+  .step-line:last-child::after { display: none; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Nav -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <img src="/logo.png" alt="AlgoVault" class="w-7 h-7 rounded-md">
+      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+    </div>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="#tools" class="hover:text-white transition">Tools</a>
+      <a href="#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="#developers" class="hover:text-white transition">Developers</a>
+      <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="hover:text-white transition">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="pt-28 pb-16 sm:pt-36 sm:pb-24 px-6">
+  <div class="max-w-3xl mx-auto text-center fade-in">
+    <div class="flex justify-center mb-6">
+      <img src="/logo.png" alt="AlgoVault" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl glow">
+    </div>
+    <h1 class="text-3xl sm:text-5xl font-bold text-white leading-tight tracking-tight glow-text">
+      The brain layer for<br>crypto trading agents
+    </h1>
+    <p class="mt-5 text-base sm:text-lg text-gray-400 max-w-xl mx-auto leading-relaxed">
+      Composite signals, funding arb scanning, and market regime detection for Hyperliquid perps. One API call. One verdict.
+    </p>
+    <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+      <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+        Try Free in Claude
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="w-full sm:w-auto px-6 py-2.5 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
+        View on GitHub
+      </a>
+    </div>
+    <p class="mt-4 text-xs text-gray-600">No signup. No API key. Free tier starts now.</p>
+  </div>
+</section>
+
+<!-- Quick Start — "Try it in 30 seconds" -->
+<section id="quickstart" class="py-16 sm:py-20 px-6 border-t border-white/5">
+  <div class="max-w-2xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Try it in 30 seconds</h2>
+      <p class="text-gray-500 text-sm mt-2">Works with any MCP client. Here's Claude Desktop:</p>
+    </div>
+
+    <div class="space-y-6">
+      <!-- Step 1 -->
+      <div class="flex gap-4 step-line">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">1</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">Open Claude &rarr; Settings &rarr; Integrations</p>
+          <p class="text-gray-500 text-xs mt-1">Or any MCP-compatible client (Cursor, Windsurf, VS Code, etc.)</p>
+        </div>
+      </div>
+      <!-- Step 2 -->
+      <div class="flex gap-4 step-line">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">2</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">Add custom integration &rarr; paste the URL</p>
+          <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 font-mono text-sm text-gold-400 select-all cursor-pointer" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
+            https://api.algovault.com/mcp
+            <span class="text-gray-600 text-xs ml-2">(click to copy)</span>
+          </div>
+        </div>
+      </div>
+      <!-- Step 3 -->
+      <div class="flex gap-4 step-line">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">3</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">Ask Claude:</p>
+          <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">
+            "Get me a trade signal for BTC on the 1h timeframe"
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Example output -->
+    <div class="mt-10 bg-navy-700 border border-white/5 rounded-xl p-5 glow">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+        <span class="text-xs text-gray-500 font-mono">get_trade_signal response</span>
+      </div>
+      <pre class="text-xs sm:text-sm text-gray-300 overflow-x-auto leading-relaxed"><code>{
+  "signal": "<span class="text-emerald-400 font-semibold">BUY</span>",
+  "confidence": <span class="text-gold-400">0.72</span>,
+  "indicators": {
+    "rsi14": 38.2,
+    "ema_cross": "<span class="text-emerald-400">bullish</span>",
+    "funding_rate": -0.0012,
+    "oi_momentum": "<span class="text-emerald-400">increasing</span>"
+  },
+  "reasoning": "RSI oversold + bullish EMA cross + negative funding = contrarian long setup"
+}</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 3 Tools -->
+<section id="tools" class="py-16 sm:py-20 px-6 border-t border-white/5">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">3 Tools, One Verdict</h2>
+      <p class="text-gray-500 text-sm mt-2">Each tool combines multiple indicators into a single, actionable answer.</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-5">
+      <!-- get_trade_signal -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
+        <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_trade_signal</div>
+        <h3 class="text-white font-semibold text-base mb-2">Composite Trade Signal</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-4">
+          BUY / SELL / HOLD verdict combining RSI, EMA crossover, funding rate, OI momentum, and volume. Confidence score 0&ndash;1.
+        </p>
+        <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
+          <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">BUY</span> <span class="text-gray-500">72% confidence</span><br>
+          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">RSI=38, EMA bullish, funding negative</span>
+        </div>
+      </div>
+
+      <!-- scan_funding_arb -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
+        <div class="text-gold-400 font-mono text-xs font-medium mb-3">scan_funding_arb</div>
+        <h3 class="text-white font-semibold text-base mb-2">Funding Rate Arbitrage</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-4">
+          Cross-venue funding rate scanner. Hyperliquid vs Binance vs Bybit. Normalized, annualized spreads.
+        </p>
+        <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
+          <span class="text-gray-500">&rarr;</span> <span class="text-gold-400">DOGE</span> <span class="text-gray-500">+42 bps spread</span><br>
+          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">HL: -0.03% vs Binance: +0.01%</span>
+        </div>
+      </div>
+
+      <!-- get_market_regime -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
+        <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_market_regime</div>
+        <h3 class="text-white font-semibold text-base mb-2">Market Regime Detection</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-4">
+          Classifies conditions: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE. ADX + ATR + swing structure.
+        </p>
+        <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
+          <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">TRENDING_UP</span> <span class="text-gray-500">ADX=34.2</span><br>
+          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">Volatility moderate, funding bullish</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Track Record -->
+<section class="py-16 sm:py-20 px-6 border-t border-white/5">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Live Track Record</h2>
+      <p class="text-gray-500 text-sm mt-2">Every signal is tracked. Price at signal &rarr; outcome at 1h / 4h / 24h.</p>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
+        <div class="text-2xl sm:text-3xl font-bold text-white" id="stat-signals">2,400+</div>
+        <div class="text-gray-500 text-xs mt-1">Signals Tracked</div>
+      </div>
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
+        <div class="text-2xl sm:text-3xl font-bold text-emerald-400">62%</div>
+        <div class="text-gray-500 text-xs mt-1">Win Rate (24h)</div>
+      </div>
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
+        <div class="text-2xl sm:text-3xl font-bold text-gold-400">1.3</div>
+        <div class="text-gray-500 text-xs mt-1">Profit Factor</div>
+      </div>
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
+        <div class="text-2xl sm:text-3xl font-bold text-white">200+</div>
+        <div class="text-gray-500 text-xs mt-1">Perps Covered</div>
+      </div>
+    </div>
+
+    <p class="text-center text-gray-600 text-xs mt-5">
+      All public. All queryable via the <code class="text-gray-500">performance://signal-stats</code> MCP resource.
+    </p>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section id="pricing" class="py-16 sm:py-20 px-6 border-t border-white/5">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Simple Pricing</h2>
+      <p class="text-gray-500 text-sm mt-2">Start free. Pay when you need more.</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-5">
+      <!-- Free -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
+        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">Free</div>
+        <div class="text-3xl font-bold text-white mb-1">$0</div>
+        <div class="text-gray-600 text-xs mb-5">No signup needed</div>
+        <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> BTC + ETH signals</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 1h timeframe</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Top 5 funding arbs</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Market regime (all assets)</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> ~100 calls/day</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Full track record access</li>
+        </ul>
+        <a href="#quickstart" class="block w-full text-center px-4 py-2 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
+          Start Free
+        </a>
+      </div>
+
+      <!-- Pro -->
+      <div class="bg-navy-700 border border-gold-500/30 rounded-xl p-6 relative">
+        <div class="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gold-500 text-navy-900 text-xs font-bold rounded-full">
+          POPULAR
+        </div>
+        <div class="text-gold-400 text-xs font-medium uppercase tracking-wider mb-1">Pro</div>
+        <div class="text-3xl font-bold text-white mb-1">$49<span class="text-lg text-gray-500 font-normal">/mo</span></div>
+        <div class="text-gray-600 text-xs mb-5">For serious agent builders</div>
+        <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All 200+ perp assets</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">1h, 4h, 1d timeframes</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> Unlimited funding arbs</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> 15,000 calls/month</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> $0.01/call overage</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> Full track record access</li>
+        </ul>
+        <a href="mailto:admin@algovault.com?subject=AlgoVault Pro Subscription" class="block w-full text-center px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+          Subscribe to Pro
+        </a>
+      </div>
+
+      <!-- x402 -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
+        <div class="text-blue-400 text-xs font-medium uppercase tracking-wider mb-1">x402 Per Call</div>
+        <div class="text-3xl font-bold text-white mb-1">USDC</div>
+        <div class="text-gray-600 text-xs mb-5">On Base chain &middot; no signup</div>
+        <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> All assets, all timeframes</li>
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> get_trade_signal: $0.02</li>
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> scan_funding_arb: $0.01</li>
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> get_market_regime: $0.02</li>
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> Unlimited calls</li>
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> Payment = credential</li>
+        </ul>
+        <a href="https://x402.org" target="_blank" class="block w-full text-center px-4 py-2 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
+          Read x402 Docs
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- For Developers -->
+<section id="developers" class="py-16 sm:py-20 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">For Developers</h2>
+      <p class="text-gray-500 text-sm mt-2">Two transports. Same tools. Pick what fits your stack.</p>
+    </div>
+
+    <div class="space-y-4">
+      <!-- Remote -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="flex items-center gap-2 mb-2">
+          <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+          <span class="text-white text-sm font-medium">Remote &mdash; Streamable HTTP</span>
+          <span class="text-xs text-gray-600 ml-auto">for AI agents &amp; production</span>
+        </div>
+        <div class="bg-navy-800 rounded-lg px-4 py-2.5 font-mono text-sm text-gold-400 select-all cursor-pointer mt-2" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
+          https://api.algovault.com/mcp
+        </div>
+      </div>
+
+      <!-- Local -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="flex items-center gap-2 mb-2">
+          <div class="w-2 h-2 rounded-full bg-blue-400"></div>
+          <span class="text-white text-sm font-medium">Local &mdash; stdio via npx</span>
+          <span class="text-xs text-gray-600 ml-auto">for Claude Desktop &amp; Cursor</span>
+        </div>
+        <div class="bg-navy-800 rounded-lg px-4 py-2.5 font-mono text-sm text-blue-400 select-all cursor-pointer mt-2" onclick="navigator.clipboard.writeText('npx -y crypto-quant-signal-mcp')">
+          npx -y crypto-quant-signal-mcp
+        </div>
+      </div>
+
+      <!-- Claude Desktop config -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5">
+        <div class="flex items-center gap-2 mb-2">
+          <div class="w-2 h-2 rounded-full bg-purple-400"></div>
+          <span class="text-white text-sm font-medium">Claude Desktop Config</span>
+          <span class="text-xs text-gray-600 ml-auto">claude_desktop_config.json</span>
+        </div>
+        <div class="bg-navy-800 rounded-lg px-4 py-3 font-mono text-xs text-gray-300 overflow-x-auto mt-2">
+<pre>{
+  "mcpServers": {
+    "crypto-quant-signal": {
+      "command": "npx",
+      "args": ["-y", "crypto-quant-signal-mcp"],
+      "env": { "TRANSPORT": "stdio" }
+    }
+  }
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Links -->
+    <div class="flex flex-wrap items-center justify-center gap-4 mt-8 text-sm">
+      <a href="https://www.npmjs.com/package/crypto-quant-signal-mcp" target="_blank" class="flex items-center gap-2 px-4 py-2 border border-white/5 hover:border-white/15 rounded-lg text-gray-400 hover:text-white transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0v1.336H8.001V8.667h5.334v5.332h-2.669zm12.001 0h-1.33v-4h-1.336v4h-1.335v-4h-1.33v4h-2.671V8.667h8.002v5.331zM10.665 10H12v2.667h-1.335V10z"/></svg>
+        npm
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" target="_blank" class="flex items-center gap-2 px-4 py-2 border border-white/5 hover:border-white/15 rounded-lg text-gray-400 hover:text-white transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+      <a href="https://registry.modelcontextprotocol.io" target="_blank" class="flex items-center gap-2 px-4 py-2 border border-white/5 hover:border-white/15 rounded-lg text-gray-400 hover:text-white transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
+        MCP Registry
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-10 px-6 border-t border-white/5">
+  <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="flex items-center gap-2.5">
+      <img src="/logo.png" alt="AlgoVault" class="w-5 h-5 rounded">
+      <span class="text-gray-500 text-sm">Built by <a href="https://algovault.com" class="text-gray-400 hover:text-white transition">AlgoVault Labs</a></span>
+    </div>
+    <div class="flex items-center gap-5 text-sm text-gray-600">
+      <a href="https://github.com/AlgoVaultLabs" target="_blank" class="hover:text-gray-400 transition">GitHub</a>
+      <a href="https://x.com/AlgoVaultLabs" target="_blank" class="hover:text-gray-400 transition">X / Twitter</a>
+      <a href="https://www.npmjs.com/package/crypto-quant-signal-mcp" target="_blank" class="hover:text-gray-400 transition">npm</a>
+      <a href="/privacy" class="hover:text-gray-400 transition">Privacy</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
