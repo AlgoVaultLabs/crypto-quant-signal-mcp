@@ -1,0 +1,38 @@
+{
+  "manifest_version": "0.3",
+  "name": "crypto-quant-signal",
+  "display_name": "Crypto Quant Signal",
+  "description": "Composite trading signals, funding arb scanning, and market regime detection for Hyperliquid perps. BUY/SELL/HOLD verdicts with confidence scores.",
+  "version": "1.1.0",
+  "author": {
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  },
+  "homepage": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp"
+  },
+  "license": "MIT",
+  "privacy_policies": ["https://algovault.com/privacy"],
+  "icon": "logo.png",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "TRANSPORT": "stdio"
+      }
+    }
+  },
+  "user_config": {
+    "CQS_API_KEY": {
+      "title": "API Key",
+      "type": "string",
+      "description": "Optional Pro/Enterprise API key for full access. Leave blank for free tier (BTC/ETH, 1h only).",
+      "default": ""
+    }
+  }
+}
