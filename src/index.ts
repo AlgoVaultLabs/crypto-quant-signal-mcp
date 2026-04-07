@@ -124,41 +124,9 @@ function createServer(): McpServer {
     }
   );
 
-  // ── Tool 4: get_signal_performance ──
-  server.tool(
-    'get_signal_performance',
-    'Returns the live track record of all signals — overall win rate, profit factor, Sharpe ratio, and per-asset breakdowns. 5,000+ signals tracked with 1h/4h/24h outcomes.',
-    {},
-    { readOnlyHint: true, openWorldHint: true },
-    async () => {
-      const startMs = Date.now();
-      try {
-        const stats = await getSignalPerformance();
-        logRequest({
-          sessionId: getRequestSessionId(),
-          toolName: 'get_signal_performance',
-          licenseTier: 'free',
-          responseTimeMs: Date.now() - startMs,
-          ipHash: getRequestIpHash(),
-        });
-        return { content: [{ type: 'text' as const, text: JSON.stringify(stats, null, 2) }] };
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }], isError: true };
-      }
-    }
-  );
-
-  // ── Resource: signal-performance ──
-  server.resource(
-    'signal-stats',
-    'performance://signal-stats',
-    { description: 'Historical signal performance metrics — win rate, Sharpe ratio, profit factor, and per-asset breakdowns. Updated on each access with latest outcome data.' },
-    async () => {
-      const stats = await getSignalPerformance();
-      return { contents: [{ uri: 'performance://signal-stats', mimeType: 'application/json', text: JSON.stringify(stats, null, 2) }] };
-    }
-  );
+  // ── Signal performance: admin-only (via /dashboard and /analytics) ──
+  // Removed from public MCP tools — track record will be re-exposed
+  // once signal quality is improved via weight retuning.
 
   // ── Resource: analytics-summary (pro/enterprise/x402 only) ──
   server.resource(
@@ -239,6 +207,21 @@ async function startHttp() {
         return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
       }
       res.send(getDashboardHtml(key));
+    });
+
+    // Signal performance (admin-only)
+    app.get('/performance', async (req, res) => {
+      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
+        || (req.query.key as string);
+      if (token !== adminKey) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const stats = await getSignalPerformance();
+        res.json(stats);
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch performance stats' });
+      }
     });
   }
 
