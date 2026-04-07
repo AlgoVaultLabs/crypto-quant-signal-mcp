@@ -209,7 +209,7 @@ async function startHttp() {
       res.send(getDashboardHtml(key));
     });
 
-    // Signal performance (admin-only)
+    // Signal performance JSON (admin-only)
     app.get('/performance', async (req, res) => {
       const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
         || (req.query.key as string);
@@ -222,6 +222,15 @@ async function startHttp() {
       } catch (err) {
         res.status(500).json({ error: 'Failed to fetch performance stats' });
       }
+    });
+
+    // Signal performance dashboard (admin-only)
+    app.get('/performance-dashboard', (req, res) => {
+      const key = req.query.key as string;
+      if (key !== adminKey) {
+        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+      }
+      res.send(getPerformanceDashboardHtml(key));
     });
   }
 
@@ -415,6 +424,222 @@ async function load() {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
   } catch(e) { document.getElementById('loading').textContent = 'Failed to load: ' + e.message; }
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>`;
+}
+
+function getPerformanceDashboardHtml(apiKey: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlgoVault Signal Performance</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 24px; }
+  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+  @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; }
+  .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .card .value { font-size: 28px; font-weight: 700; color: #58a6ff; }
+  .green { color: #3fb950 !important; }
+  .red { color: #f85149 !important; }
+  .gold { color: #d29922 !important; }
+  .purple { color: #bc8cff !important; }
+  .muted { color: #8b949e !important; }
+  .section { margin-bottom: 28px; }
+  .section h2 { font-size: 14px; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
+  th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: #0d1117; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-wrap { width: 80px; display: inline-block; }
+  .bar { height: 6px; border-radius: 3px; min-width: 2px; }
+  .bar.g { background: #3fb950; }
+  .bar.r { background: #f85149; }
+  .bar.b { background: #58a6ff; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .badge-buy { background: #0d2818; color: #3fb950; }
+  .badge-sell { background: #2d0b0e; color: #f85149; }
+  .badge-hold { background: #1c1c1c; color: #8b949e; }
+  .refresh { color: #8b949e; font-size: 12px; margin-top: 16px; }
+  #loading { color: #8b949e; font-size: 16px; padding: 40px; text-align: center; }
+  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .recent-signal { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
+  .recent-signal:last-child { border-bottom: none; }
+  .recent-list { background: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; max-height: 480px; overflow-y: auto; }
+  .empty { color: #8b949e; padding: 40px; text-align: center; font-size: 14px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; }
+  .tab.active { background: #58a6ff20; color: #58a6ff; border-color: #58a6ff; }
+</style>
+</head>
+<body>
+<div class="logo">
+  <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
+  <div><h1>Signal Performance</h1><div class="subtitle">v2 scoring &middot; admin only &middot; auto-refreshes</div></div>
+</div>
+<div id="loading">Loading performance data...</div>
+<div id="content" style="display:none">
+  <!-- KPI Cards -->
+  <div class="grid">
+    <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div></div>
+    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div></div>
+    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div></div>
+    <div class="card"><div class="label">Avg Return</div><div class="value" id="avgret"></div></div>
+    <div class="card"><div class="label">Sharpe Ratio</div><div class="value" id="sharpe"></div></div>
+    <div class="card"><div class="label">Max Drawdown</div><div class="value red" id="maxdd"></div></div>
+  </div>
+
+  <!-- Signal type breakdown -->
+  <div class="section"><h2>By Signal Type</h2>
+    <table>
+      <thead><tr><th>Type</th><th class="num">Count</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th>Bar</th></tr></thead>
+      <tbody id="by-type"></tbody>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <!-- Top Performers -->
+    <div class="section"><h2>Top Performing Assets</h2>
+      <table>
+        <thead><tr><th>Asset</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th></tr></thead>
+        <tbody id="top-assets"></tbody>
+      </table>
+    </div>
+
+    <!-- Worst Performers -->
+    <div class="section"><h2>Worst Performing Assets</h2>
+      <table>
+        <thead><tr><th>Asset</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th></tr></thead>
+        <tbody id="worst-assets"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent signals -->
+  <div class="section"><h2>Recent Signals</h2>
+    <div class="recent-list" id="recent"></div>
+  </div>
+
+  <div class="refresh">Auto-refreshes every 30s &middot; <span id="updated"></span></div>
+</div>
+
+<script>
+const KEY = '${apiKey}';
+
+function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
+function retPct(v) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : '—'; }
+function retClass(v) { return v != null ? (v >= 0 ? 'green' : 'red') : 'muted'; }
+function badge(sig) { return '<span class="badge badge-' + sig.toLowerCase() + '">' + sig + '</span>'; }
+function timeAgo(ts) {
+  const s = Math.floor(Date.now()/1000 - ts);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+async function load() {
+  try {
+    const r = await fetch('/performance?key=' + KEY);
+    const d = await r.json();
+
+    // KPIs
+    document.getElementById('total').textContent = d.totalSignals.toLocaleString();
+    const wr = d.overall.winRate;
+    const wrEl = document.getElementById('winrate');
+    wrEl.textContent = pct(wr);
+    wrEl.className = 'value ' + (wr != null ? (wr >= 0.5 ? 'green' : wr >= 0.3 ? 'gold' : 'red') : 'muted');
+
+    const pf = d.overall.profitFactor;
+    const pfEl = document.getElementById('pf');
+    pfEl.textContent = pf != null ? pf.toFixed(2) : '—';
+    pfEl.className = 'value ' + (pf != null ? (pf >= 1.5 ? 'green' : pf >= 1.0 ? 'gold' : 'red') : 'muted');
+
+    const ar = d.overall.avgReturnPct;
+    const arEl = document.getElementById('avgret');
+    arEl.textContent = retPct(ar);
+    arEl.className = 'value ' + retClass(ar);
+
+    const sr = d.overall.sharpeRatio;
+    const srEl = document.getElementById('sharpe');
+    srEl.textContent = sr != null ? sr.toFixed(2) : '—';
+    srEl.className = 'value ' + (sr != null ? (sr > 0 ? 'green' : 'red') : 'muted');
+
+    const dd = d.overall.maxDrawdownPct;
+    document.getElementById('maxdd').textContent = dd != null ? dd.toFixed(1) + '%' : '—';
+
+    // By signal type
+    const typeEl = document.getElementById('by-type');
+    const types = Object.entries(d.bySignalType || {});
+    if (types.length) {
+      const maxCount = Math.max(...types.map(([,v]) => v.count));
+      typeEl.innerHTML = types.map(([type, v]) =>
+        '<tr><td>' + badge(type) + '</td>' +
+        '<td class="num">' + v.count + '</td>' +
+        '<td class="num ' + (v.winRate != null && v.winRate >= 0.5 ? 'green' : v.winRate != null ? 'red' : 'muted') + '">' + pct(v.winRate) + '</td>' +
+        '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
+        '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>'
+      ).join('');
+    } else {
+      typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet — v2 scoring just started</td></tr>';
+    }
+
+    // Assets
+    const assets = Object.entries(d.byAsset || {})
+      .filter(([,v]) => v.avgReturnPct != null)
+      .map(([coin, v]) => ({ coin, ...v }));
+
+    const topAssets = [...assets].sort((a,b) => (b.avgReturnPct||0) - (a.avgReturnPct||0)).slice(0, 15);
+    const worstAssets = [...assets].sort((a,b) => (a.avgReturnPct||0) - (b.avgReturnPct||0)).slice(0, 15);
+
+    function renderAssetTable(id, list) {
+      const el = document.getElementById(id);
+      if (!list.length) { el.innerHTML = '<tr><td colspan="4" class="empty">Waiting for outcome data...</td></tr>'; return; }
+      el.innerHTML = list.map(a =>
+        '<tr><td><strong>' + a.coin + '</strong></td>' +
+        '<td class="num">' + a.count + '</td>' +
+        '<td class="num ' + (a.winRate != null && a.winRate >= 0.5 ? 'green' : a.winRate != null ? 'red' : 'muted') + '">' + pct(a.winRate) + '</td>' +
+        '<td class="num ' + retClass(a.avgReturnPct) + '">' + retPct(a.avgReturnPct) + '</td></tr>'
+      ).join('');
+    }
+    renderAssetTable('top-assets', topAssets);
+    renderAssetTable('worst-assets', worstAssets);
+
+    // Recent signals
+    const recentEl = document.getElementById('recent');
+    const recent = d.recentSignals || [];
+    if (recent.length) {
+      recentEl.innerHTML = recent.map(s =>
+        '<div class="recent-signal">' +
+          badge(s.signal) +
+          '<strong style="width:60px">' + s.coin + '</strong>' +
+          '<span class="muted" style="width:40px">' + s.timeframe + '</span>' +
+          '<span style="width:80px">$' + (s.price_at_signal < 1 ? s.price_at_signal.toFixed(4) : s.price_at_signal.toLocaleString()) + '</span>' +
+          '<span style="width:50px">' + s.confidence + '%</span>' +
+          '<span style="width:70px" class="' + retClass(s.return_pct_1h) + '">1h: ' + retPct(s.return_pct_1h) + '</span>' +
+          '<span style="width:70px" class="' + retClass(s.return_pct_4h) + '">4h: ' + retPct(s.return_pct_4h) + '</span>' +
+          '<span style="width:70px" class="' + retClass(s.return_pct_24h) + '">24h: ' + retPct(s.return_pct_24h) + '</span>' +
+          '<span class="muted" style="margin-left:auto">' + timeAgo(s.created_at) + '</span>' +
+        '</div>'
+      ).join('');
+    } else {
+      recentEl.innerHTML = '<div class="empty">No signals yet — v2 scoring just started. Signals will appear as the cron job seeds them (confidence &ge; 40 only).</div>';
+    }
+
+    document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  } catch(e) { document.getElementById('loading').textContent = 'Error: ' + e.message; }
 }
 load();
 setInterval(load, 30000);
