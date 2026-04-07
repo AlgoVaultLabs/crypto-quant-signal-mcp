@@ -23,7 +23,21 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   const limit = getFundingArbLimit(requestedLimit, input.license);
 
   const adapter = getAdapter();
-  const fundings = await adapter.getPredictedFundings();
+  let fundings;
+  try {
+    fundings = await adapter.getPredictedFundings();
+  } catch {
+    return {
+      opportunities: [],
+      scannedPairs: 0,
+      timestamp: Math.floor(Date.now() / 1000),
+      _algovault: {
+        version: '1.0.0',
+        tool: 'scan_funding_arb',
+        compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+      },
+    };
+  }
 
   const opportunities: FundingArbOpportunity[] = [];
 

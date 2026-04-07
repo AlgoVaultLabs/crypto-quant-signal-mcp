@@ -88,11 +88,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const raw = await hlPost<HLPredictedFunding[]>({ type: 'predictedFundings' });
     return raw.map(entry => ({
       coin: entry[0],
-      venues: (entry[1] || []).map(([venue, data]) => ({
-        venue,
-        fundingRate: parseFloat(data.fundingRate),
-        nextFundingTime: data.nextFundingTime,
-      })),
+      venues: (entry[1] || [])
+        .filter(([, data]) => data != null && data.fundingRate != null)
+        .map(([venue, data]) => ({
+          venue,
+          fundingRate: parseFloat(data.fundingRate) || 0,
+          nextFundingTime: data.nextFundingTime ?? 0,
+        })),
     }));
   }
 
