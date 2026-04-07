@@ -4,9 +4,21 @@ services:
     ports:
       - "3000:3000"
     env_file: .env
+    environment:
+      - X402_FACILITATOR_URL=http://facilitator:4022
+      - X402_NETWORK=base-mainnet
     restart: unless-stopped
     depends_on:
       - postgres
+      - facilitator
+  facilitator:
+    build:
+      context: .
+      dockerfile: Dockerfile.facilitator
+    environment:
+      - FACILITATOR_PRIVATE_KEY=${FACILITATOR_PRIVATE_KEY}
+      - FACILITATOR_PORT=4022
+    restart: unless-stopped
   postgres:
     image: postgres:16-alpine
     environment:
