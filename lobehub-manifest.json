@@ -1,0 +1,83 @@
+{
+  "$schema": "https://chat-plugins.lobehub.com/schema/lobeChatPlugin.json",
+  "api": [
+    {
+      "url": "https://api.algovault.com/mcp",
+      "name": "get_trade_signal",
+      "description": "Returns a composite BUY/SELL/HOLD signal for a Hyperliquid perp. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "coin": {
+            "type": "string",
+            "description": "Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": ["1h", "4h", "1d"],
+            "default": "1h",
+            "description": "Candle timeframe (free: 1h only)"
+          },
+          "includeReasoning": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include human-readable reasoning"
+          }
+        },
+        "required": ["coin"]
+      }
+    },
+    {
+      "url": "https://api.algovault.com/mcp",
+      "name": "scan_funding_arb",
+      "description": "Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "minSpreadBps": {
+            "type": "number",
+            "default": 5,
+            "description": "Minimum spread in basis points to include"
+          },
+          "limit": {
+            "type": "number",
+            "default": 10,
+            "description": "Max results (free: max 5)"
+          }
+        }
+      }
+    },
+    {
+      "url": "https://api.algovault.com/mcp",
+      "name": "get_market_regime",
+      "description": "Classifies the current market regime (trending-up, trending-down, ranging, volatile) using ADX, Bollinger Band width, and correlation metrics across configurable assets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "coins": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Array of asset symbols to analyze"
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": ["1h", "4h", "1d"],
+            "default": "4h",
+            "description": "Candle timeframe"
+          }
+        }
+      }
+    }
+  ],
+  "author": "AlgoVault Labs",
+  "createAt": "2025-06-01",
+  "homepage": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
+  "identifier": "crypto-quant-signal-mcp",
+  "meta": {
+    "avatar": "https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png",
+    "tags": ["trading", "crypto", "signals", "defi", "hyperliquid", "quant", "mcp"],
+    "title": "Crypto Quant Signal MCP",
+    "description": "AI trading brain for crypto perps — composite BUY/SELL/HOLD signals, cross-venue funding rate arb scanning, and market regime detection for Hyperliquid perpetuals via MCP."
+  },
+  "version": "1"
+}
