@@ -18,6 +18,8 @@ const FREE_FUNDING_LIMIT = 5;
 
 interface RequestContext {
   license: LicenseInfo;
+  sessionId?: string;
+  ipHash?: string;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
@@ -32,6 +34,14 @@ export function getRequestLicense(): LicenseInfo {
   if (ctx) return ctx.license;
   // Stdio fallback — resolve from env only
   return resolveFromApiKey();
+}
+
+export function getRequestSessionId(): string | undefined {
+  return requestContext.getStore()?.sessionId;
+}
+
+export function getRequestIpHash(): string | undefined {
+  return requestContext.getStore()?.ipHash;
 }
 
 /** Settlement refs from a verified x402 payment, for async settle after response. */
