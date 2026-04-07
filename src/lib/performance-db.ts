@@ -116,9 +116,11 @@ const CREATE_TABLE_SQL = `
     confidence INTEGER NOT NULL,
     timeframe TEXT NOT NULL,
     price_at_signal REAL NOT NULL,
+    price_after_15m REAL,
     price_after_1h REAL,
     price_after_4h REAL,
     price_after_24h REAL,
+    return_pct_15m REAL,
     return_pct_1h REAL,
     return_pct_4h REAL,
     return_pct_24h REAL,
@@ -208,11 +210,30 @@ export async function getSignalsNeedingBackfillAsync(hoursAgo: 1 | 4 | 24): Prom
   return getSignalsNeedingBackfill(hoursAgo);
 }
 
+/**
+ * Find signals that need 15-minute outcome backfill.
+ */
+export async function getSignalsNeedingBackfill15mAsync(): Promise<SignalRecord[]> {
+  const b = getBackend();
+  const cutoff = Math.floor(Date.now() / 1000) - 15 * 60; // 15 minutes ago
+  if (isPg && b instanceof PgBackend) {
+    return b.query(
+      `SELECT * FROM signals WHERE price_after_15m IS NULL AND created_at <= ? ORDER BY created_at ASC LIMIT 50`,
+      [cutoff]
+    );
+  }
+  // SQLite fallback
+  return b.all(
+    `SELECT * FROM signals WHERE price_after_15m IS NULL AND created_at <= ? ORDER BY created_at ASC LIMIT 50`,
+    cutoff
+  );
+}
+
 export function updateOutcome(
   id: number,
-  field: 'price_after_1h' | 'price_after_4h' | 'price_after_24h',
+  field: 'price_after_15m' | 'price_after_1h' | 'price_after_4h' | 'price_after_24h',
   price: number,
-  returnPctField: 'return_pct_1h' | 'return_pct_4h' | 'return_pct_24h',
+  returnPctField: 'return_pct_15m' | 'return_pct_1h' | 'return_pct_4h' | 'return_pct_24h',
   returnPct: number
 ): void {
   const b = getBackend();
@@ -275,6 +296,7 @@ function emptyStats(): PerformanceStats {
     period: { from: '', to: '' },
     overall: { winRate: null, avgReturnPct: null, sharpeRatio: null, maxDrawdownPct: null, profitFactor: null },
     bySignalType: {},
+    byTimeframe: {},
     byAsset: {},
     recentSignals: [],
   };
@@ -295,7 +317,8 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
 
   const returns = evaluated.map(s => {
     const r = s.return_pct_4h ?? 0;
-    return s.signal === 'SELL' ? -r : r;
+    const pnl = s.signal === 'SELL' ? -r : r;
+    return Math.max(pnl, -100); // Cap individual loss at -100%
   });
 
   const winRate = evaluated.length > 0 ? wins.length / evaluated.length : null;
@@ -311,14 +334,18 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     }
   }
 
+  // Drawdown: sort chronologically (ascending), normalize by peak
+  const chronReturns = [...returns].reverse();
   let peak = 0;
   let maxDD = 0;
   let cumReturn = 0;
-  for (const r of returns) {
+  for (const r of chronReturns) {
     cumReturn += r;
     if (cumReturn > peak) peak = cumReturn;
-    const dd = peak - cumReturn;
-    if (dd > maxDD) maxDD = dd;
+    if (peak > 0) {
+      const dd = ((cumReturn - peak) / peak) * 100;
+      if (dd < maxDD) maxDD = dd;
+    }
   }
 
   const grossProfit = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
@@ -343,6 +370,35 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
       count: group.length,
       winRate: type === 'HOLD' ? null : (evalGroup.length > 0 ? winsGroup.length / evalGroup.length : null),
       avgReturnPct: type === 'HOLD' ? null : (returnsGroup.length > 0 ? returnsGroup.reduce((a, b) => a + b, 0) / returnsGroup.length : null),
+    };
+  }
+
+  // ── Performance by timeframe (15m / 1h / 4h / 24h) ──
+  const byTimeframe: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
+  const tfFields = [
+    { key: '15m', field: 'return_pct_15m' as keyof SignalRecord },
+    { key: '1h', field: 'return_pct_1h' as keyof SignalRecord },
+    { key: '4h', field: 'return_pct_4h' as keyof SignalRecord },
+    { key: '24h', field: 'return_pct_24h' as keyof SignalRecord },
+  ];
+  for (const { key, field } of tfFields) {
+    const withData = all.filter(s => s[field] !== null && s[field] !== undefined && s.signal !== 'HOLD');
+    if (withData.length === 0) {
+      byTimeframe[key] = { count: 0, winRate: null, avgReturnPct: null };
+      continue;
+    }
+    const tfWins = withData.filter(s => {
+      const ret = s[field] as number;
+      return s.signal === 'BUY' ? ret > 0 : ret < 0;
+    });
+    const tfReturns = withData.map(s => {
+      const ret = s[field] as number;
+      return s.signal === 'SELL' ? -ret : ret;
+    });
+    byTimeframe[key] = {
+      count: withData.length,
+      winRate: tfWins.length / withData.length,
+      avgReturnPct: tfReturns.reduce((a, b) => a + b, 0) / tfReturns.length,
     };
   }
 
@@ -378,10 +434,11 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
       winRate,
       avgReturnPct: avgReturn,
       sharpeRatio: sharpe,
-      maxDrawdownPct: maxDD > 0 ? -maxDD : null,
+      maxDrawdownPct: maxDD < 0 ? Math.round(maxDD * 100) / 100 : null,
       profitFactor,
     },
     bySignalType,
+    byTimeframe,
     byAsset,
     recentSignals: all.slice(0, 20),
   };
