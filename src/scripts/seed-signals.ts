@@ -98,11 +98,12 @@ function parseArgs(): { timeframe: string; top: number } {
 
 interface HLAssetInfo {
   name: string;
-  openInterest: number;
+  notionalOI: number; // OI in USD (openInterest * markPx)
 }
 
 /**
- * Fetch all uppercase coin symbols from Hyperliquid, sorted by open interest descending.
+ * Fetch all uppercase coin symbols from Hyperliquid, sorted by notional OI descending.
+ * Uses markPx × openInterest for proper USD ranking (raw OI is in coins, not dollars).
  * Excludes mixed-case symbols (kPEPE, kBONK, etc.) that break the uppercase coin lookup.
  */
 async function fetchAllCoins(topN: number): Promise<string[]> {
@@ -111,21 +112,21 @@ async function fetchAllCoins(topN: number): Promise<string[]> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
   });
-  const data = await res.json() as [{ universe: { name: string }[] }, { openInterest: string }[]];
+  const data = await res.json() as [{ universe: { name: string }[] }, { openInterest: string; markPx: string }[]];
   const universe = data[0].universe;
   const assetCtxs = data[1];
 
-  // Build asset list with OI
+  // Build asset list with notional OI (openInterest × markPx = USD value)
   const assets: HLAssetInfo[] = universe.map((u, i) => ({
     name: u.name,
-    openInterest: parseFloat(assetCtxs[i]?.openInterest || '0'),
+    notionalOI: parseFloat(assetCtxs[i]?.openInterest || '0') * parseFloat(assetCtxs[i]?.markPx || '0'),
   }));
 
   // Filter: only uppercase symbols (skip kPEPE, kBONK, kSHIB, etc.)
   const filtered = assets.filter(a => a.name === a.name.toUpperCase());
 
-  // Sort by open interest descending
-  filtered.sort((a, b) => b.openInterest - a.openInterest);
+  // Sort by notional OI descending (USD value)
+  filtered.sort((a, b) => b.notionalOI - a.notionalOI);
 
   // Apply top N limit if specified
   const limited = topN > 0 ? filtered.slice(0, topN) : filtered;
