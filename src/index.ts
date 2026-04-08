@@ -723,10 +723,28 @@ async function load() {
     const methEl = document.getElementById('methodology');
     const m = d.methodology || {};
     if (Object.keys(m).length) {
-      methEl.innerHTML = '<h3>How metrics are calculated</h3>' +
-        Object.entries(m).map(([key, desc]) =>
-          '<div class="metric"><span class="name">' + key.replace(/_/g, ' ') + '</span><span class="desc">' + desc + '</span></div>'
-        ).join('');
+      function boldFirst(name) {
+        return '<strong>' + name.charAt(0) + '</strong>' + name.slice(1);
+      }
+      function renderEvalTable(windows) {
+        var rows = Object.entries(windows).map(function(e) {
+          var tf = e[0], v = e[1];
+          return '<tr><td>' + tf + '</td><td>' + v.candles + ' candles</td><td>' + v.candles + '</td><td>' + v.total + '</td></tr>';
+        }).join('');
+        return '<table style="margin-top:8px;font-size:12px">' +
+          '<thead><tr><th>Signal TF</th><th>Window</th><th>Candles checked</th><th>Total time</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>';
+      }
+      var html = '<h3>How metrics are calculated</h3>';
+      Object.entries(m).forEach(function(e) {
+        var key = e[0], desc = e[1];
+        if (key === 'EvaluationWindows' && typeof desc === 'object') {
+          html += '<div class="metric" style="flex-direction:column"><span class="name">' + boldFirst(key) + '</span>' + renderEvalTable(desc) + '</div>';
+        } else {
+          html += '<div class="metric"><span class="name">' + boldFirst(key) + '</span><span class="desc">' + desc + '</span></div>';
+        }
+      });
+      methEl.innerHTML = html;
     } else {
       methEl.innerHTML = '<p class="muted">Methodology data will appear once signals are evaluated.</p>';
     }

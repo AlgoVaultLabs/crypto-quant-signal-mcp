@@ -445,22 +445,25 @@ export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
   return getPerformanceStats();
 }
 
-const METHODOLOGY = {
-  winRate: 'Percentage of signals where price moved in predicted direction after exactly 1 candle at the signal timeframe. wins / total_evaluated.',
-  pfeWinRate: 'Percentage of signals where price moved in predicted direction at any point within the evaluation window. PFE Win Rate >= Win Rate always.',
-  profitFactor: 'Sum of all positive 1-candle returns divided by absolute sum of all negative 1-candle returns. Above 1.0 = net profitable.',
-  perTimeframe: {
-    avgReturnPct: 'Mean 1-candle return for signals at that timeframe.',
-    avgPFE: 'Mean peak favorable excursion — best return achieved within the evaluation window.',
-    avgMAE: 'Mean maximum adverse excursion — worst drawdown before the move played out. Always <= 0.',
+const METHODOLOGY: Record<string, unknown> = {
+  WinRate: 'Percentage of signals where price moved in predicted direction after exactly 1 candle at the signal timeframe. wins / total_evaluated.',
+  PfeWinRate: 'Percentage of signals where price moved in predicted direction at any point within the evaluation window. PFE Win Rate >= Win Rate always.',
+  ProfitFactor: 'Sum of all positive 1-candle returns divided by absolute sum of all negative 1-candle returns. Above 1.0 = net profitable.',
+  AvgPFE: 'Mean Peak Favorable Excursion — the best return achieved in the signal direction at any point within the evaluation window. Higher = signals reach better peaks before reverting.',
+  AvgMAE: 'Mean Maximum Adverse Excursion — the worst drawdown against the signal direction within the evaluation window. Closer to 0 = tighter risk. Always negative for losing trades.',
+  EvaluationWindows: {
+    '5m': { candles: 12, total: '1 hour' },
+    '15m': { candles: 12, total: '3 hours' },
+    '30m': { candles: 8, total: '4 hours' },
+    '1h': { candles: 8, total: '8 hours' },
+    '2h': { candles: 6, total: '12 hours' },
+    '4h': { candles: 6, total: '24 hours' },
+    '8h': { candles: 4, total: '32 hours' },
+    '12h': { candles: 4, total: '48 hours' },
+    '1d': { candles: 3, total: '3 days' },
   },
-  evaluationWindows: {
-    '5m': '12 candles (1 hour)', '15m': '12 candles (3 hours)', '30m': '8 candles (4 hours)',
-    '1h': '8 candles (8 hours)', '2h': '6 candles (12 hours)', '4h': '6 candles (24 hours)',
-    '8h': '4 candles (32 hours)', '12h': '4 candles (48 hours)', '1d': '3 candles (3 days)',
-  },
-  dataSource: 'Hyperliquid public API (candleSnapshot + metaAndAssetCtxs). No data fabricated or cherry-picked.',
-  signalFilter: 'Only signals with confidence >= 40% and non-HOLD verdict are recorded and evaluated.',
+  DataSource: 'Hyperliquid public API (candleSnapshot + metaAndAssetCtxs).',
+  SignalFilter: 'Only signals with confidence >= 40% and non-HOLD verdict are recorded and evaluated.',
 };
 
 function emptyStats(): PerformanceStats {
