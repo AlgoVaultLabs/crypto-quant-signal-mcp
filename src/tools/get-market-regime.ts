@@ -124,7 +124,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     coin,
     timeframe,
     _algovault: {
-      version: '1.0.0',
+      version: '1.3.0',
       tool: 'get_market_regime',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },
