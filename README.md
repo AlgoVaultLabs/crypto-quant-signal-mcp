@@ -4,56 +4,71 @@
 
 # crypto-quant-signal-mcp
 
-AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Powered by Hyperliquid data. Remote-first with x402 micropayments.
+AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP.
+
+[![npm version](https://img.shields.io/npm/v/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
+[![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Try It in 30 Seconds
+
+No code. No API key. No install.
+
+**Step 1.** Open Claude → Settings → Integrations → Add custom connector
+
+**Step 2.** Enter the name and URL:
+
+| Field | Value |
+|-------|-------|
+| Name | `Crypto Quant Signal` |
+| URL | `https://api.algovault.com/mcp` |
+
+![Add Connector](docs/screenshots/add-connector.png)
+
+**Step 3.** Ask Claude anything:
+
+> "Get me a trade signal for BTC"
+
+![BTC Signal Result](docs/screenshots/btc-signal.png)
+
+That's it. You now have a crypto quant analyst inside Claude.
+
+---
 
 ## What It Does
 
-Three opinionated tools + one performance resource that combine multiple indicators into a single verdict with confidence score:
-
-| Tool | Description |
+| Tool | What you get |
 |------|-------------|
-| `get_trade_signal` | Composite BUY/SELL/HOLD signal combining RSI(14), EMA(9/21), funding rate, OI momentum, and volume |
-| `scan_funding_arb` | Cross-venue funding rate arbitrage scanner (Hyperliquid vs Binance vs Bybit) |
-| `get_market_regime` | Market regime classification with cross-venue funding sentiment |
-| `signal-performance` | Historical signal track record — win rate, Sharpe ratio, profit factor |
+| `get_trade_signal` | BUY/SELL/HOLD verdict with confidence score. Combines RSI, EMA crossover, funding rate, OI momentum, and volume. |
+| `scan_funding_arb` | Cross-venue funding rate arbitrage opportunities (Hyperliquid vs Binance vs Bybit) with annualized spreads. |
+| `get_market_regime` | Market regime classification — TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE — with cross-venue funding sentiment. |
 
-## Architecture
+Every signal is tracked. Outcomes are measured at 15m, 1h, 4h, and 24h. The track record ships from day one.
 
+---
+
+## For Developers
+
+### Remote endpoint (recommended)
+
+Point any MCP client at:
 ```
-Remote Server (revenue-generating)
-  Agent → HTTP POST → api.algovault.com/signal/mcp
-    → x402 payment check → API key check → free tier
-    → MCP Server (Streamable HTTP)
-    → PostgreSQL (signal tracking)
-    → Hyperliquid API
-
-Local Mode (distribution magnet)
-  Claude Desktop → stdio → npx crypto-quant-signal-mcp
-    → Same tools, free tier only
-    → SQLite (local signal tracking)
-    → Hyperliquid API
+https://api.algovault.com/mcp
 ```
 
-## Quick Start
+Supports Streamable HTTP transport. Pay per call with x402 (USDC on Base) — no signup needed.
 
-### Remote HTTP (for AI agents)
-
-Connect your MCP client to:
-```
-https://api.algovault.com/signal/mcp
-```
-
-Pay per call via x402 (USDC on Base) — no signup needed.
-
-### Local Install (for Claude Desktop / Cursor)
+### Local install via npx
 
 ```bash
 npx -y crypto-quant-signal-mcp
 ```
 
-### Claude Desktop Config
+### Claude Desktop / Cursor config
 
-Add to your `claude_desktop_config.json`:
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -61,89 +76,119 @@ Add to your `claude_desktop_config.json`:
     "crypto-quant-signal": {
       "command": "npx",
       "args": ["-y", "crypto-quant-signal-mcp"],
-      "env": {
-        "TRANSPORT": "stdio",
-        "CQS_API_KEY": "your-pro-key-here"
-      }
+      "env": { "TRANSPORT": "stdio" }
     }
   }
 }
 ```
 
-No API key needed for free tier — just remove the `CQS_API_KEY` line.
+### npm install
+
+```bash
+npm install crypto-quant-signal-mcp
+```
+
+---
 
 ## Pricing
 
-| Feature | Free | Pro ($49/mo) | Enterprise ($299/mo) | x402 (pay per call) |
-|---------|------|-------------|---------------------|---------------------|
-| `get_trade_signal` | BTC + ETH, 1h only | All 200+ perps, all timeframes | Same + SLA | Full access — $0.02/call |
-| `scan_funding_arb` | Top 5 results | Unlimited | Unlimited | Full access — $0.01/call |
-| `get_market_regime` | All assets | All assets | All assets + SLA | Full access — $0.02/call |
-| `signal-performance` | Full access | Full access | Full access | Free |
-| Monthly calls | ~100/day | 15,000/mo | 100,000/mo | Unlimited |
-| Overage | Hard cap | $0.01/call | $0.005/call | N/A |
+| Feature | Free | Pro ($49/mo) | x402 (per call) |
+|---------|------|-------------|-----------------|
+| Assets | BTC, ETH | All 200+ HL perps | All 200+ |
+| Timeframes | 1h | 1h, 4h, 1d | All |
+| Funding arb results | Top 5 | Unlimited | Unlimited |
+| Track record | Full access | Full access | Full access |
+| Monthly calls | ~100/day | 15,000/mo | Unlimited |
+| Price | $0 | $49/mo | $0.01-0.02/call |
 
-### x402 Micropayments
+**x402 micropayments:** AI agents pay per HTTP call with USDC on Base chain — no signup, no API key, no billing. Payment receipt is the credential. See [x402.org](https://x402.org).
 
-AI agents pay per HTTP call with USDC on Base chain — no signup, no API key, no billing. Payment receipt is the credential.
+**API key:** Set `CQS_API_KEY` env var or pass `Authorization: Bearer <key>` header.
 
-### API Key
-
-Set `CQS_API_KEY` environment variable or pass `Authorization: Bearer <key>` header. Enterprise keys start with `ent_`.
-
-## Example Agent Prompts
-
-**Quick signal check:**
-> "Get a trade signal for ETH on the 1h timeframe"
-
-**Funding arb scan:**
-> "Scan for funding rate arbitrage opportunities with at least 10 bps spread"
-
-**Market regime with cross-venue sentiment:**
-> "What's the current market regime for BTC on the 4h chart?"
-
-**Multi-step analysis:**
-> "Check the market regime for SOL, then get a trade signal. If it's a BUY, also scan for any funding arb opportunities on SOL."
+---
 
 ## Tools Reference
 
 ### get_trade_signal
 
-Returns a composite signal by weighting five indicators:
+Composite signal from five weighted indicators (v3 scoring):
 
-- **RSI(14)** — 25% weight: oversold/overbought detection
-- **EMA(9/21) crossover** — 30% weight: trend direction
-- **Funding rate** — 20% weight: sentiment from derivatives market
-- **OI momentum** — 15% weight: new money confirmation
-- **Volume** — 10% weight: conviction multiplier
+| Indicator | Weight | What it measures |
+|-----------|--------|-----------------|
+| RSI(14) | 30% | Oversold/overbought with 7-tier scoring |
+| EMA(9/21) | 20% | Trend direction via crossover |
+| Funding rate | 20% | Derivatives sentiment + crowding penalty |
+| OI momentum | 15% | New money confirmation |
+| Volume | 20% | Conviction from 24h volume vs moving average |
+
+v3 features: asymmetric thresholds (BUY requires higher conviction than SELL), funding confirmation gate (penalizes BUY when longs are crowded), regime-aware filtering.
 
 **Parameters:**
-- `coin` (string, required): Asset symbol (e.g. "ETH", "BTC", "SOL")
+- `coin` (string, required): e.g. "ETH", "BTC", "SOL"
 - `timeframe` (string, default "1h"): "1h", "4h", or "1d"
-- `includeReasoning` (boolean, default true): Include human-readable explanation
+- `includeReasoning` (boolean, default true): Human-readable explanation
 
 ### scan_funding_arb
 
-Scans Hyperliquid's `predictedFundings` endpoint for cross-venue funding rate differences. Normalizes HL hourly rates vs Binance/Bybit 8h rates and annualizes the spread.
+Scans cross-venue funding rate differences. Normalizes HL hourly rates vs Binance/Bybit 8h rates and annualizes the spread.
 
 **Parameters:**
 - `minSpreadBps` (number, default 5): Minimum spread in basis points
-- `limit` (number, default 10): Max results to return
+- `limit` (number, default 10): Max results
 
 ### get_market_regime
 
-Classifies market conditions using ADX(14), ATR(14)/price volatility ratio, price structure (swing high/low analysis), and cross-venue funding sentiment.
+Classifies market conditions using ADX(14), ATR(14)/price volatility ratio, swing high/low price structure, and cross-venue funding sentiment.
 
 **Parameters:**
-- `coin` (string, required): Asset symbol
+- `coin` (string, required): e.g. "BTC", "ETH"
 - `timeframe` (string, default "4h"): "1h", "4h", or "1d"
+
+---
 
 ## Performance Tracking
 
-Every signal from `get_trade_signal` is tracked with outcome prices at 1h, 4h, and 24h intervals. Access the track record via the `performance://signal-stats` MCP resource.
+Every signal is recorded with outcome prices at **15 minutes, 1 hour, 4 hours, and 24 hours**.
 
-- **Remote mode:** PostgreSQL (server-side, aggregated across all users)
-- **Local mode:** SQLite at `~/.crypto-quant-signal/performance.db` (private to your machine)
+- **Remote mode:** PostgreSQL — aggregated across all users, backfilled every 15 minutes
+- **Local mode:** SQLite at `~/.crypto-quant-signal/performance.db`
+
+Only signals with confidence >= 40 and a BUY or SELL verdict are tracked. HOLD signals are not recorded.
+
+---
+
+## Architecture
+
+```
+Remote Server (Hetzner VPS)
+  Agent → HTTPS → api.algovault.com/mcp
+    → x402 payment check → API key check → free tier
+    → MCP Server (Streamable HTTP, Express)
+    → PostgreSQL (signal tracking, 15m/1h/4h/24h outcomes)
+    → Hyperliquid public API
+
+Local Mode (stdio)
+  Claude Desktop → stdio → npx crypto-quant-signal-mcp
+    → Same 3 tools, free tier limits
+    → SQLite (local tracking)
+    → Hyperliquid public API
+```
+
+**Exchange adapter pattern:** code against the `ExchangeAdapter` interface, not raw API calls. Hyperliquid today, more exchanges in Phase 2.
+
+---
+
+## Suite Compatibility
+
+All tools output an `_algovault` metadata block for composability:
+
+| Tool | Feeds into (Phase 2+) |
+|------|----------------------|
+| `get_trade_signal` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
+| `scan_funding_arb` | `crypto-quant-risk-mcp`, `crypto-quant-execution-mcp` |
+| `get_market_regime` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
+
+---
 
 ## Self-Hosting
 
@@ -155,53 +200,13 @@ npm ci && npm run build
 docker compose up -d
 ```
 
-## Technical Details
+---
 
-- **Data source:** Hyperliquid public API (free, no auth required)
-- **Transports:** Streamable HTTP (default, port 3000) + stdio (via `TRANSPORT=stdio`)
-- **Storage:** PostgreSQL (remote) or SQLite (local)
-- **Exchange adapter:** Pluggable — Hyperliquid today, Binance/Bybit adapters in Phase 2
-- **x402 payments:** USDC on Base chain per x402.org spec
+## Privacy
 
-## Examples
+**Local mode:** No data sent to AlgoVault servers. Signal history stored locally. No telemetry.
 
-**Get a trade signal:**
-```
-User: "Get me a trade signal for BTC on the 1h timeframe"
-→ Returns: BUY/SELL/HOLD with 72% confidence, RSI=66.7, EMA cross bullish, funding neutral
-```
-
-**Scan funding arbitrage:**
-```
-User: "Scan for funding rate arbitrage opportunities"
-→ Returns: Top 5 cross-venue spreads (HL vs Binance vs Bybit), annualized returns
-```
-
-**Check market regime:**
-```
-User: "What's the market regime for ETH?"
-→ Returns: TRENDING_UP, ADX=34.2, volatility moderate, cross-venue funding sentiment
-```
-
-## Suite Compatibility
-
-All tools output an `_algovault` metadata block for composability with future AlgoVault tools:
-
-| Tool output | Feeds into (Phase 2+) |
-|------------|----------------------|
-| `get_trade_signal` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
-| `scan_funding_arb` | `crypto-quant-risk-mcp`, `crypto-quant-execution-mcp` |
-| `get_market_regime` | `crypto-quant-risk-mcp`, `crypto-quant-backtest-mcp` |
-
-## Privacy Policy
-
-crypto-quant-signal-mcp connects to Hyperliquid's public API (api.hyperliquid.xyz) to fetch market data. In local/stdio mode:
-- No data is sent to AlgoVault Labs servers
-- Signal history is stored locally in SQLite (~/.crypto-quant-signal/performance.db)
-- No personal information is collected
-- No telemetry or analytics in local mode
-
-In remote mode (api.algovault.com/mcp), requests are logged for analytics (IP hashed, never stored raw). See https://algovault.com/privacy for full details.
+**Remote mode:** Requests logged for analytics (IP hashed, never stored raw). See [privacy policy](https://algovault.com/privacy).
 
 ## License
 
@@ -209,4 +214,4 @@ MIT
 
 ---
 
-Built by [AlgoVault Labs](https://algovault.com)
+Built by [AlgoVault Labs](https://algovault.com) | [Landing page](https://algovault.com) | [API endpoint](https://api.algovault.com/mcp)
