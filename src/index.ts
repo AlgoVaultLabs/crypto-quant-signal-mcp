@@ -491,15 +491,15 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v1.4.1 &middot; 1-candle win rate &middot; admin only &middot; auto-refreshes</div></div>
+  <div><h1>Signal Performance</h1><div class="subtitle">v1.4.1</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
   <!-- KPI Cards (3) -->
   <div class="grid">
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
-    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">1-candle direction confirmation</div></div>
-    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">eval window gross wins / losses</div></div>
+    <div class="card"><div class="label">1-Candle Direction Hit Rate</div><div class="value" id="winrate"></div><div class="sub">wins / total signals after 1 candle</div></div>
+    <div class="card"><div class="label">Total Profit / Total Loss</div><div class="value" id="pf"></div><div class="sub">at eval window close</div></div>
   </div>
 
   <!-- Signal type breakdown -->
@@ -547,25 +547,26 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section">
     <h2>Methodology</h2>
     <div class="methodology" id="methodology">
-      <p><strong>Win Rate</strong> \\u2014 Price direction after exactly 1 candle at the signal\\u2019s timeframe (e.g., 15m signal checked 15 minutes later). Up for BUY = win. Down for SELL = win. <code>wins / evaluated</code>.</p>
-      <p><strong>Profit Factor</strong> \\u2014 Sum of positive returns \\u00f7 absolute sum of negative returns, measured at the close of the evaluation window. Above 1.0 = net profitable. Above 2.0 = strong. <code>gross_profit / gross_loss</code>.</p>
-      <p><strong>Avg Return</strong> \\u2014 Mean return at the close of the evaluation window for that timeframe.</p>
-      <p><strong>Evaluation Windows</strong>:</p>
+      <p><strong>Win Rate</strong> = Total Wins / Total Signals after 1 candle.</p>
+      <p><strong>Profit Factor</strong> = Total Profit / Total Loss at eval window close. [&gt;1.0 = profitable, &gt;2.0 = strong.]</p>
+      <p><strong>Avg Return</strong> = Mean return per signal at eval window close.</p>
+      <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table>
-        <tr><td>5m</td><td>12 candles (1 hour)</td></tr>
-        <tr><td>15m</td><td>12 candles (3 hours)</td></tr>
-        <tr><td>30m</td><td>8 candles (4 hours)</td></tr>
-        <tr><td>1h</td><td>8 candles (8 hours)</td></tr>
-        <tr><td>2h</td><td>6 candles (12 hours)</td></tr>
-        <tr><td>4h</td><td>6 candles (24 hours)</td></tr>
-        <tr><td>8h</td><td>4 candles (32 hours)</td></tr>
-        <tr><td>12h</td><td>4 candles (48 hours)</td></tr>
-        <tr><td>1d</td><td>3 candles (3 days)</td></tr>
+        <thead><tr><th style="background:transparent;color:#8b949e">Signal TF</th><th style="background:transparent;color:#8b949e">Window</th><th style="background:transparent;color:#8b949e">Candles</th><th style="background:transparent;color:#8b949e">Total time</th></tr></thead>
+        <tbody>
+          <tr><td>5m</td><td>12 candles</td><td>12</td><td>1 hour</td></tr>
+          <tr><td>15m</td><td>12 candles</td><td>12</td><td>3 hours</td></tr>
+          <tr><td>30m</td><td>8 candles</td><td>8</td><td>4 hours</td></tr>
+          <tr><td>1h</td><td>8 candles</td><td>8</td><td>8 hours</td></tr>
+          <tr><td>2h</td><td>6 candles</td><td>6</td><td>12 hours</td></tr>
+          <tr><td>4h</td><td>6 candles</td><td>6</td><td>24 hours</td></tr>
+          <tr><td>8h</td><td>4 candles</td><td>4</td><td>32 hours</td></tr>
+          <tr><td>12h</td><td>4 candles</td><td>4</td><td>48 hours</td></tr>
+          <tr><td>1d</td><td>3 candles</td><td>3</td><td>3 days</td></tr>
+        </tbody>
       </table>
-      <p><strong>Scoring Engine</strong> \\u2014 Weighted composite: RSI(14) 30%, EMA(9/21) 20%, Funding 20%, OI 10%, Volume 20%, plus Hurst Exponent filter, Funding Z-Score gate, and Bollinger/Keltner squeeze detection. BUY requires score &gt; 45 (or &gt; 55 in downtrend). SELL requires score &lt; -35.</p>
-      <p><strong>Signal Filter</strong> \\u2014 Only signals with confidence \\u2265 60% are recorded and evaluated. HOLD signals are excluded.</p>
-      <p><strong>Data Source</strong> \\u2014 Hyperliquid public API (<code>candleSnapshot</code> + <code>metaAndAssetCtxs</code>). Every qualifying signal is recorded. Raw data at <code>/performance</code>.</p>
-      <p style="color:#8b949e; font-size:11px; margin-top:16px;">Built by AlgoVault Labs &middot; v1.4.1 &middot; Updated every 30 seconds</p>
+      <p style="margin-top:16px"><strong>Signal Filter</strong> = Only confidence &ge; 60% signals recorded. HOLDs excluded.</p>
+      <p><strong>Data Source</strong> = Hyperliquid public API (<code>candleSnapshot</code> + <code>metaAndAssetCtxs</code>).</p>
     </div>
   </div>
 
