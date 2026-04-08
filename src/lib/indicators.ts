@@ -190,6 +190,140 @@ export function adx(
 }
 
 /**
+ * Rescaled Range (R/S) Hurst Exponent estimation.
+ * Returns a value between 0 and 1:
+ *   H > 0.55 = trending/persistent (good for directional signals)
+ *   H ≈ 0.50 = random walk (no edge)
+ *   H < 0.45 = mean-reverting/choppy (whipsaw territory)
+ */
+export function hurstExponent(closes: number[], window: number = 100): number | null {
+  if (closes.length < window) return null;
+
+  const data = closes.slice(-window);
+
+  // Compute log returns
+  const logReturns: number[] = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i - 1] <= 0) return null;
+    logReturns.push(Math.log(data[i] / data[i - 1]));
+  }
+
+  // R/S analysis across multiple sub-period sizes
+  const sizes = [8, 16, 32, 64].filter(s => s <= logReturns.length / 2);
+  if (sizes.length < 2) return null;
+
+  const logN: number[] = [];
+  const logRS: number[] = [];
+
+  for (const n of sizes) {
+    const numBlocks = Math.floor(logReturns.length / n);
+    let rsSum = 0;
+    let validBlocks = 0;
+
+    for (let b = 0; b < numBlocks; b++) {
+      const block = logReturns.slice(b * n, (b + 1) * n);
+      const mean = block.reduce((a, v) => a + v, 0) / n;
+      const stdDev = Math.sqrt(block.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+
+      if (stdDev === 0) continue;
+
+      let cumDev = 0;
+      let maxCum = -Infinity;
+      let minCum = Infinity;
+      for (const val of block) {
+        cumDev += val - mean;
+        if (cumDev > maxCum) maxCum = cumDev;
+        if (cumDev < minCum) minCum = cumDev;
+      }
+
+      rsSum += (maxCum - minCum) / stdDev;
+      validBlocks++;
+    }
+
+    if (validBlocks > 0) {
+      logN.push(Math.log(n));
+      logRS.push(Math.log(rsSum / validBlocks));
+    }
+  }
+
+  if (logN.length < 2) return null;
+
+  // Linear regression: slope = Hurst exponent
+  const cnt = logN.length;
+  const sumX = logN.reduce((a, v) => a + v, 0);
+  const sumY = logRS.reduce((a, v) => a + v, 0);
+  const sumXY = logN.reduce((a, v, i) => a + v * logRS[i], 0);
+  const sumX2 = logN.reduce((a, v) => a + v * v, 0);
+  const denom = cnt * sumX2 - sumX * sumX;
+  if (denom === 0) return null;
+
+  const slope = (cnt * sumXY - sumX * sumY) / denom;
+  return Math.max(0, Math.min(1, slope));
+}
+
+/**
+ * Bollinger Bands. Returns { upper, lower, middle, width } or null.
+ */
+export function bollingerBands(
+  closes: number[],
+  period: number = 20,
+  stdDevMultiplier: number = 2
+): { upper: number; lower: number; middle: number; width: number } | null {
+  if (closes.length < period) return null;
+
+  const recent = closes.slice(-period);
+  const middle = recent.reduce((a, v) => a + v, 0) / period;
+  const variance = recent.reduce((a, v) => a + (v - middle) ** 2, 0) / period;
+  const stdDev = Math.sqrt(variance);
+
+  const upper = middle + stdDevMultiplier * stdDev;
+  const lower = middle - stdDevMultiplier * stdDev;
+  const width = middle > 0 ? (upper - lower) / middle : 0;
+
+  return { upper, lower, middle, width };
+}
+
+/**
+ * Keltner Channel. Middle = EMA(period), bands = middle +/- multiplier * ATR.
+ */
+export function keltnerChannel(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period: number = 20,
+  atrMultiplier: number = 1.5
+): { upper: number; lower: number; middle: number; width: number } | null {
+  const emaVal = emaLast(closes, period);
+  const atrVal = atr(highs, lows, closes, period);
+  if (emaVal === null || atrVal === null) return null;
+
+  const upper = emaVal + atrMultiplier * atrVal;
+  const lower = emaVal - atrMultiplier * atrVal;
+  const width = emaVal > 0 ? (upper - lower) / emaVal : 0;
+
+  return { upper, lower, middle: emaVal, width };
+}
+
+/**
+ * Squeeze detection: BB width < Keltner width = volatility compressed.
+ * Returns true if squeeze is active (Bollinger Bands inside Keltner Channel).
+ */
+export function detectSqueeze(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  bbPeriod: number = 20,
+  bbStdDev: number = 2,
+  kcPeriod: number = 20,
+  kcMultiplier: number = 1.5
+): boolean {
+  const bb = bollingerBands(closes, bbPeriod, bbStdDev);
+  const kc = keltnerChannel(highs, lows, closes, kcPeriod, kcMultiplier);
+  if (!bb || !kc) return false;
+  return bb.width < kc.width;
+}
+
+/**
  * Detect price structure from candle data.
  * Looks at swing highs and lows over the last N candles.
  */

@@ -24,7 +24,7 @@ import { getAnalyticsSummary } from './resources/analytics-summary.js';
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.3.0',
+    version: '1.4.0',
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -179,7 +179,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.3.0' });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.4.0' });
   });
 
   // Admin analytics (only if ADMIN_API_KEY is set)
@@ -444,16 +444,18 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
   h1 { font-size: 24px; }
   .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
   @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; }
   .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .card .value { font-size: 28px; font-weight: 700; color: #58a6ff; }
+  .card .sub { color: #8b949e; font-size: 11px; margin-top: 4px; }
   .green { color: #3fb950 !important; }
   .red { color: #f85149 !important; }
   .gold { color: #d29922 !important; }
   .purple { color: #bc8cff !important; }
+  .cyan { color: #56d4dd !important; }
   .muted { color: #8b949e !important; }
   .section { margin-bottom: 28px; }
   .section h2 { font-size: 14px; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
@@ -476,28 +478,35 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   .recent-signal { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
   .recent-signal:last-child { border-bottom: none; }
-  .recent-list { background: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; max-height: 480px; overflow-y: auto; }
+  .recent-list { background: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; max-height: 520px; overflow-y: auto; }
   .empty { color: #8b949e; padding: 40px; text-align: center; font-size: 14px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-  .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; transition: all 0.15s; }
+  .tab:hover { border-color: #58a6ff80; }
   .tab.active { background: #58a6ff20; color: #58a6ff; border-color: #58a6ff; }
+  .methodology { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; }
+  .methodology h3 { font-size: 13px; color: #58a6ff; margin-bottom: 8px; }
+  .methodology p { font-size: 12px; color: #8b949e; line-height: 1.6; margin-bottom: 8px; }
+  .methodology .metric { display: flex; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+  .methodology .metric .name { color: #e1e4e8; font-weight: 600; min-width: 120px; }
+  .methodology .metric .desc { color: #8b949e; }
+  .pfe-bar { display: inline-block; height: 8px; border-radius: 4px; background: #3fb950; opacity: 0.7; vertical-align: middle; }
+  .mae-bar { display: inline-block; height: 8px; border-radius: 4px; background: #f85149; opacity: 0.7; vertical-align: middle; }
 </style>
 </head>
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v1.3 &middot; admin only &middot; auto-refreshes</div></div>
+  <div><h1>Signal Performance</h1><div class="subtitle">v1.4 &middot; PFE/MAE tracking &middot; admin only &middot; auto-refreshes</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
-  <!-- KPI Cards -->
+  <!-- KPI Cards (4) -->
   <div class="grid">
-    <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div></div>
-    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div></div>
-    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div></div>
-    <div class="card"><div class="label">Avg Return</div><div class="value" id="avgret"></div></div>
-    <div class="card"><div class="label">Sharpe Ratio</div><div class="value" id="sharpe"></div></div>
-    <div class="card"><div class="label">Max Drawdown</div><div class="value red" id="maxdd"></div></div>
+    <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
+    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">outcome return in signal direction</div></div>
+    <div class="card"><div class="label">PFE Win Rate</div><div class="value" id="pfe-winrate"></div><div class="sub">peak favorable excursion &gt; 0</div></div>
+    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">gross wins / gross losses</div></div>
   </div>
 
   <!-- Signal type breakdown -->
@@ -508,10 +517,12 @@ function getPerformanceDashboardHtml(apiKey: string): string {
     </table>
   </div>
 
-  <!-- Performance by Timeframe -->
-  <div class="section"><h2>Performance by Timeframe</h2>
+  <!-- Timeframe tabs + table -->
+  <div class="section">
+    <h2>Performance by Timeframe</h2>
+    <div class="tabs" id="tf-tabs"></div>
     <table>
-      <thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th>Bar</th></tr></thead>
+      <thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">PFE Win</th><th class="num">Avg Return</th><th class="num">Avg PFE</th><th class="num">Avg MAE</th><th class="num">Profit Factor</th></tr></thead>
       <tbody id="by-timeframe"></tbody>
     </table>
   </div>
@@ -534,9 +545,15 @@ function getPerformanceDashboardHtml(apiKey: string): string {
     </div>
   </div>
 
-  <!-- Recent signals -->
+  <!-- Recent signals with PFE/MAE -->
   <div class="section"><h2>Recent Signals</h2>
     <div class="recent-list" id="recent"></div>
+  </div>
+
+  <!-- Methodology section -->
+  <div class="section">
+    <h2>Methodology</h2>
+    <div class="methodology" id="methodology"></div>
   </div>
 
   <div class="refresh">Auto-refreshes every 30s &middot; <span id="updated"></span></div>
@@ -544,10 +561,14 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
 <script>
 const KEY = '${apiKey}';
+const TF_ORDER = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
+let activeTfFilter = 'all';
 
-function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
-function retPct(v) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : '—'; }
+function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '\\u2014'; }
+function retPct(v) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : '\\u2014'; }
 function retClass(v) { return v != null ? (v >= 0 ? 'green' : 'red') : 'muted'; }
+function wrClass(v) { return v != null ? (v >= 0.5 ? 'green' : v >= 0.3 ? 'gold' : 'red') : 'muted'; }
+function pfClass(v) { return v != null ? (v >= 1.5 ? 'green' : v >= 1.0 ? 'gold' : 'red') : 'muted'; }
 function badge(sig) { return '<span class="badge badge-' + sig.toLowerCase() + '">' + sig + '</span>'; }
 function timeAgo(ts) {
   const s = Math.floor(Date.now()/1000 - ts);
@@ -557,35 +578,98 @@ function timeAgo(ts) {
   return Math.floor(s/86400) + 'd ago';
 }
 
+function setTfFilter(tf) {
+  activeTfFilter = tf;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tf === tf));
+  renderTimeframes();
+  renderRecent();
+}
+
+let cachedData = null;
+
+function renderTimeframes() {
+  const d = cachedData;
+  if (!d) return;
+  const tfEl = document.getElementById('by-timeframe');
+  const timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
+  const filtered = activeTfFilter === 'all' ? timeframes : timeframes.filter(([tf]) => tf === activeTfFilter);
+  if (filtered.length) {
+    const sorted = filtered.sort((a,b) => TF_ORDER.indexOf(a[0]) - TF_ORDER.indexOf(b[0]));
+    tfEl.innerHTML = sorted.map(([tf, v]) =>
+      '<tr><td><strong>' + tf + '</strong></td>' +
+      '<td class="num">' + v.count + '</td>' +
+      '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
+      '<td class="num ' + wrClass(v.pfeWinRate) + '">' + pct(v.pfeWinRate) + '</td>' +
+      '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
+      '<td class="num ' + (v.avgPFE != null && v.avgPFE >= 0 ? 'green' : 'muted') + '">' + retPct(v.avgPFE) + '</td>' +
+      '<td class="num ' + (v.avgMAE != null ? 'red' : 'muted') + '">' + retPct(v.avgMAE) + '</td>' +
+      '<td class="num ' + pfClass(v.profitFactor) + '">' + (v.profitFactor != null ? v.profitFactor.toFixed(2) : '\\u2014') + '</td></tr>'
+    ).join('');
+  } else {
+    tfEl.innerHTML = '<tr><td colspan="8" class="empty">No data for this timeframe</td></tr>';
+  }
+}
+
+function renderRecent() {
+  const d = cachedData;
+  if (!d) return;
+  const recentEl = document.getElementById('recent');
+  let recent = d.recentSignals || [];
+  if (activeTfFilter !== 'all') recent = recent.filter(s => s.timeframe === activeTfFilter);
+
+  if (recent.length) {
+    recentEl.innerHTML = recent.map(s => {
+      const isBuy = s.signal === 'BUY';
+      const pfe = s.pfe_return_pct;
+      const mae = s.mae_return_pct;
+      // Direction-adjusted for display
+      const pfeDir = pfe != null ? (isBuy ? pfe : -pfe) : null;
+      const maeDir = mae != null ? (isBuy ? mae : -mae) : null;
+
+      return '<div class="recent-signal">' +
+        badge(s.signal) +
+        '<strong style="width:55px">' + s.coin + '</strong>' +
+        '<span class="muted" style="width:35px;text-align:center">' + s.timeframe + '</span>' +
+        '<span style="width:80px">$' + (s.price_at_signal < 1 ? s.price_at_signal.toFixed(4) : s.price_at_signal.toLocaleString()) + '</span>' +
+        '<span style="width:45px">' + s.confidence + '%</span>' +
+        '<span style="width:70px;text-align:right" class="' + retClass(s.outcome_return_pct) + '">' +
+          (s.outcome_return_pct != null ? retPct(s.outcome_return_pct) : '<span class="muted">\\u2026</span>') + '</span>' +
+        '<span style="width:70px;text-align:right" class="' + (pfeDir != null && pfeDir > 0 ? 'green' : 'muted') + '" title="PFE">' +
+          (pfeDir != null ? '+' + pfeDir.toFixed(2) + '%' : '') + '</span>' +
+        '<span style="width:70px;text-align:right" class="' + (maeDir != null && maeDir < 0 ? 'red' : 'muted') + '" title="MAE">' +
+          (maeDir != null ? maeDir.toFixed(2) + '%' : '') + '</span>' +
+        '<span class="muted" style="margin-left:auto">' + timeAgo(s.created_at) + '</span>' +
+      '</div>';
+    }).join('');
+  } else {
+    recentEl.innerHTML = '<div class="empty">No signals' + (activeTfFilter !== 'all' ? ' for ' + activeTfFilter : '') + ' yet.</div>';
+  }
+}
+
 async function load() {
   try {
     const r = await fetch('/performance?key=' + KEY);
     const d = await r.json();
+    cachedData = d;
 
     // KPIs
     document.getElementById('total').textContent = d.totalSignals.toLocaleString();
+    document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : '';
+
     const wr = d.overall.winRate;
     const wrEl = document.getElementById('winrate');
     wrEl.textContent = pct(wr);
-    wrEl.className = 'value ' + (wr != null ? (wr >= 0.5 ? 'green' : wr >= 0.3 ? 'gold' : 'red') : 'muted');
+    wrEl.className = 'value ' + wrClass(wr);
+
+    const pfeWr = d.overall.pfeWinRate;
+    const pfeWrEl = document.getElementById('pfe-winrate');
+    pfeWrEl.textContent = pct(pfeWr);
+    pfeWrEl.className = 'value ' + wrClass(pfeWr);
 
     const pf = d.overall.profitFactor;
     const pfEl = document.getElementById('pf');
-    pfEl.textContent = pf != null ? pf.toFixed(2) : '—';
-    pfEl.className = 'value ' + (pf != null ? (pf >= 1.5 ? 'green' : pf >= 1.0 ? 'gold' : 'red') : 'muted');
-
-    const ar = d.overall.avgReturnPct;
-    const arEl = document.getElementById('avgret');
-    arEl.textContent = retPct(ar);
-    arEl.className = 'value ' + retClass(ar);
-
-    const sr = d.overall.sharpeRatio;
-    const srEl = document.getElementById('sharpe');
-    srEl.textContent = sr != null ? sr.toFixed(2) : '—';
-    srEl.className = 'value ' + (sr != null ? (sr > 0 ? 'green' : 'red') : 'muted');
-
-    const dd = d.overall.maxDrawdownPct;
-    document.getElementById('maxdd').textContent = dd != null ? dd.toFixed(1) + '%' : '—';
+    pfEl.textContent = pf != null ? pf.toFixed(2) : '\\u2014';
+    pfEl.className = 'value ' + pfClass(pf);
 
     // By signal type
     const typeEl = document.getElementById('by-type');
@@ -595,7 +679,7 @@ async function load() {
       typeEl.innerHTML = types.map(([type, v]) =>
         '<tr><td>' + badge(type) + '</td>' +
         '<td class="num">' + v.count + '</td>' +
-        '<td class="num ' + (v.winRate != null && v.winRate >= 0.5 ? 'green' : v.winRate != null ? 'red' : 'muted') + '">' + pct(v.winRate) + '</td>' +
+        '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
         '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
         '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>'
       ).join('');
@@ -603,23 +687,13 @@ async function load() {
       typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet</td></tr>';
     }
 
-    // By timeframe
-    const tfEl = document.getElementById('by-timeframe');
-    const timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
-    if (timeframes.length) {
-      const tfOrder = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
-      const sorted = timeframes.sort((a,b) => tfOrder.indexOf(a[0]) - tfOrder.indexOf(b[0]));
-      const maxTfCount = Math.max(...sorted.map(([,v]) => v.count), 1);
-      tfEl.innerHTML = sorted.map(([tf, v]) =>
-        '<tr><td><strong>' + tf + '</strong></td>' +
-        '<td class="num">' + v.count + '</td>' +
-        '<td class="num ' + (v.winRate != null && v.winRate >= 0.5 ? 'green' : v.winRate != null ? 'red' : 'muted') + '">' + pct(v.winRate) + '</td>' +
-        '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
-        '<td><div class="bar-wrap"><div class="bar g" style="width:' + Math.round(v.count/maxTfCount*100) + '%"></div></div></td></tr>'
-      ).join('');
-    } else {
-      tfEl.innerHTML = '<tr><td colspan="5" class="empty">Waiting for timeframe data...</td></tr>';
-    }
+    // Timeframe tabs
+    const tabsEl = document.getElementById('tf-tabs');
+    const availTfs = d.byTimeframe ? Object.keys(d.byTimeframe).sort((a,b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b)) : [];
+    tabsEl.innerHTML = '<div class="tab' + (activeTfFilter === 'all' ? ' active' : '') + '" data-tf="all" onclick="setTfFilter(\'all\')">All</div>' +
+      availTfs.map(tf => '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\'' + tf + '\')">' + tf + '</div>').join('');
+
+    renderTimeframes();
 
     // Assets
     const assets = Object.entries(d.byAsset || {})
@@ -635,31 +709,26 @@ async function load() {
       el.innerHTML = list.map(a =>
         '<tr><td><strong>' + a.coin + '</strong></td>' +
         '<td class="num">' + a.count + '</td>' +
-        '<td class="num ' + (a.winRate != null && a.winRate >= 0.5 ? 'green' : a.winRate != null ? 'red' : 'muted') + '">' + pct(a.winRate) + '</td>' +
+        '<td class="num ' + wrClass(a.winRate) + '">' + pct(a.winRate) + '</td>' +
         '<td class="num ' + retClass(a.avgReturnPct) + '">' + retPct(a.avgReturnPct) + '</td></tr>'
       ).join('');
     }
     renderAssetTable('top-assets', topAssets);
     renderAssetTable('worst-assets', worstAssets);
 
-    // Recent signals — v1.3: single outcome column (evaluated at signal's own timeframe)
-    const recentEl = document.getElementById('recent');
-    const recent = d.recentSignals || [];
-    if (recent.length) {
-      recentEl.innerHTML = recent.map(s =>
-        '<div class="recent-signal">' +
-          badge(s.signal) +
-          '<strong style="width:60px">' + s.coin + '</strong>' +
-          '<span class="muted" style="width:40px;text-align:center">' + s.timeframe + '</span>' +
-          '<span style="width:80px">$' + (s.price_at_signal < 1 ? s.price_at_signal.toFixed(4) : s.price_at_signal.toLocaleString()) + '</span>' +
-          '<span style="width:50px">' + s.confidence + '%</span>' +
-          '<span style="width:100px;text-align:right" class="' + retClass(s.outcome_return_pct) + '">' +
-            (s.outcome_return_pct != null ? retPct(s.outcome_return_pct) : '<span class="muted">pending\u2026</span>') + '</span>' +
-          '<span class="muted" style="margin-left:auto">' + timeAgo(s.created_at) + '</span>' +
-        '</div>'
-      ).join('');
+    // Recent signals with PFE/MAE
+    renderRecent();
+
+    // Methodology
+    const methEl = document.getElementById('methodology');
+    const m = d.methodology || {};
+    if (Object.keys(m).length) {
+      methEl.innerHTML = '<h3>How metrics are calculated</h3>' +
+        Object.entries(m).map(([key, desc]) =>
+          '<div class="metric"><span class="name">' + key.replace(/_/g, ' ') + '</span><span class="desc">' + desc + '</span></div>'
+        ).join('');
     } else {
-      recentEl.innerHTML = '<div class="empty">No signals yet — signals will appear as the cron job seeds them (confidence &ge; 40 only).</div>';
+      methEl.innerHTML = '<p class="muted">Methodology data will appear once signals are evaluated.</p>';
     }
 
     document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();

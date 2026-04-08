@@ -108,6 +108,9 @@ export interface TradeSignalResult {
     funding_24h_avg: number;
     oi_change_pct: number;
     volume_24h: number;
+    hurst: number | null;
+    funding_z_score: number | null;
+    squeeze_active: boolean;
   };
   regime: RegimeType;
   reasoning: string;
@@ -178,6 +181,12 @@ export interface SignalRecord {
   // v1.3: unified outcome — evaluated at signal's own timeframe only
   outcome_price: number | null;
   outcome_return_pct: number | null;
+  // v1.4: Peak Favorable / Maximum Adverse Excursion
+  pfe_return_pct: number | null;
+  mae_return_pct: number | null;
+  pfe_price: number | null;
+  mae_price: number | null;
+  pfe_candles: number | null;
   created_at: number;
 }
 
@@ -186,15 +195,22 @@ export interface PerformanceStats {
   period: { from: string; to: string };
   overall: {
     winRate: number | null;
-    avgReturnPct: number | null;
-    sharpeRatio: number | null;
-    maxDrawdownPct: number | null;
+    pfeWinRate: number | null;
     profitFactor: number | null;
   };
   bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
-  byTimeframe: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
+  byTimeframe: Record<string, {
+    count: number;
+    winRate: number | null;
+    pfeWinRate: number | null;
+    avgReturnPct: number | null;
+    avgPFE: number | null;
+    avgMAE: number | null;
+    profitFactor: number | null;
+  }>;
   byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
   recentSignals: SignalRecord[];
+  methodology: Record<string, unknown>;
 }
 
 // ── License Types ──

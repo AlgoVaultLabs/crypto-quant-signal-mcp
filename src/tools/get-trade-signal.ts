@@ -1,7 +1,7 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { rsi, emaLast, ema } from '../lib/indicators.js';
+import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage } from '../lib/license.js';
-import { recordSignal } from '../lib/performance-db.js';
+import { recordSignal, recordFunding, getFundingZScore } from '../lib/performance-db.js';
 import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo } from '../types.js';
 
 interface TradeSignalInput {
@@ -68,6 +68,8 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   }
 
   const closes = candles.map(c => c.close);
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
   const currentPrice = closes[closes.length - 1];
 
   // ── Compute indicators ──
@@ -104,6 +106,16 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   const volume24h = assetCtx.volume24h;
   const avgCandleVol = candles.reduce((s, c) => s + c.volume, 0) / candles.length;
   const lastCandleVol = candles[candles.length - 1].volume;
+
+  // ── v1.4 indicators ──
+  const hurstVal = hurstExponent(closes);
+  const squeezeActive = detectSqueeze(highs, lows, closes);
+
+  // Record funding for Z-Score history (fire-and-forget)
+  try { recordFunding(coin, fundingRate); } catch { /* ignore */ }
+  // Fetch Z-Score (async — may return null if < 20 data points)
+  let fundingZScore: number | null = null;
+  try { fundingZScore = await getFundingZScore(coin, fundingRate); } catch { /* ignore */ }
 
   // ── Detect regime FIRST (used for asymmetric thresholds) ──
   let regime: RegimeType = 'RANGING';
@@ -169,16 +181,49 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     oiScore * WEIGHTS.oi +
     volumeScore * WEIGHTS.volume;
 
-  // ── Funding confirmation gate ──
-  // Penalize BUY when longs are crowded; bonus for contrarian BUY on negative funding
-  const fundingAdjustments: string[] = [];
-  if (rawScore > 0 && fundingRate > 0) {
-    rawScore -= 15;
-    fundingAdjustments.push(`Funding rate is positive (${(fundingRate * 100).toFixed(4)}%) — longs are crowded. BUY confidence penalized by 15 points.`);
+  // ── Funding Z-Score gate (v1.4 — replaces raw funding confirmation gate) ──
+  const scoreAdjustments: string[] = [];
+  if (fundingZScore !== null) {
+    // Z-Score available: use statistical extremity for crowd-positioning gate
+    if (rawScore > 0 && fundingZScore > 2.0) {
+      rawScore -= 20;
+      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (>+2.0) — extreme crowded longs. BUY penalized 20 pts.`);
+    }
+    if (rawScore < 0 && fundingZScore < -2.5) {
+      rawScore += 20;
+      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (<-2.5) — extreme short crowding. SELL softened 20 pts.`);
+    }
+    if (rawScore > 0 && fundingZScore < -1.5) {
+      rawScore += 10;
+      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (<-1.5) — contrarian bullish. BUY bonus +10 pts.`);
+    }
+  } else {
+    // Fallback: raw funding gate (pre-Z-Score history)
+    if (rawScore > 0 && fundingRate > 0) {
+      rawScore -= 15;
+      scoreAdjustments.push(`Funding rate positive (${(fundingRate * 100).toFixed(4)}%) — longs crowded. BUY penalized 15 pts (raw fallback).`);
+    }
+    if (rawScore > 0 && fundingRate < -0.0005) {
+      rawScore += 10;
+      scoreAdjustments.push(`Funding strongly negative (${(fundingRate * 100).toFixed(4)}%) — contrarian BUY bonus +10 pts (raw fallback).`);
+    }
   }
-  if (rawScore > 0 && fundingRate < -0.0005) {
-    rawScore += 10;
-    fundingAdjustments.push(`Funding rate is strongly negative (${(fundingRate * 100).toFixed(4)}%) — shorts are paying. Contrarian BUY bonus +10 points.`);
+
+  // ── Hurst filter (v1.4 — penalize choppy markets, reward trending) ──
+  if (hurstVal !== null) {
+    if (hurstVal < 0.45) {
+      rawScore = rawScore > 0 ? rawScore - 25 : rawScore + 25;
+      scoreAdjustments.push(`Hurst ${hurstVal.toFixed(3)} (<0.45) — mean-reverting/choppy regime. Directional signal penalized 25 pts.`);
+    } else if (hurstVal > 0.55) {
+      rawScore = rawScore > 0 ? rawScore + 10 : rawScore - 10;
+      scoreAdjustments.push(`Hurst ${hurstVal.toFixed(3)} (>0.55) — trending/persistent. Directional signal boosted 10 pts.`);
+    }
+  }
+
+  // ── Squeeze detection (v1.4 — boost conviction when volatility is compressed) ──
+  if (squeezeActive && Math.abs(rawScore) > 10) {
+    rawScore = rawScore > 0 ? rawScore + 12 : rawScore - 12;
+    scoreAdjustments.push(`Volatility squeeze detected (BB inside KC). Breakout setup — directional signal boosted 12 pts.`);
   }
 
   // ── Regime-aware signal determination (asymmetric thresholds) ──
@@ -213,8 +258,17 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     else if (fundingRate < 0) parts.push('Negative funding — shorts paying longs.');
     else if (fundingRate > 0.001) parts.push('High positive funding — crowded longs (contrarian bearish).');
     else if (fundingRate > 0.0005) parts.push('Positive funding — longs paying shorts.');
-    // Funding confirmation gate adjustments
-    parts.push(...fundingAdjustments);
+    // v1.4 scoring adjustments (Z-Score gate, Hurst filter, squeeze)
+    parts.push(...scoreAdjustments);
+    if (hurstVal !== null) {
+      parts.push(`Hurst exponent: ${hurstVal.toFixed(3)} (${hurstVal > 0.55 ? 'trending' : hurstVal < 0.45 ? 'mean-reverting' : 'random walk'}).`);
+    }
+    if (squeezeActive) {
+      parts.push('Bollinger/Keltner squeeze active — volatility compressed, breakout imminent.');
+    }
+    if (fundingZScore !== null) {
+      parts.push(`Funding Z-Score: ${fundingZScore.toFixed(2)} (${Math.abs(fundingZScore) > 2 ? 'extreme' : Math.abs(fundingZScore) > 1 ? 'elevated' : 'normal'}).`);
+    }
     if (regime === 'TRENDING_DOWN' && signal === 'HOLD' && rawScore > BUY_BASE_THRESHOLD) {
       parts.push(`Regime filter: potential BUY suppressed — market is trending down (requires ${BUY_THRESHOLD_TRENDING_DOWN}+ score, got ${absScore.toFixed(0)}).`);
     }
@@ -242,6 +296,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
       funding_24h_avg: funding24hAvg,
       oi_change_pct: parseFloat((priceChange * 100).toFixed(1)),
       volume_24h: volume24h,
+      hurst: hurstVal !== null ? parseFloat(hurstVal.toFixed(4)) : null,
+      funding_z_score: fundingZScore !== null ? parseFloat(fundingZScore.toFixed(2)) : null,
+      squeeze_active: squeezeActive,
     },
     regime,
     reasoning,
@@ -249,7 +306,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     coin,
     timeframe,
     _algovault: {
-      version: '1.3.0',
+      version: '1.4.0',
       tool: 'get_trade_signal',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },

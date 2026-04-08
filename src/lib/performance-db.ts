@@ -138,6 +138,24 @@ const MIGRATE_OUTCOME_COLS_2 = `
   ALTER TABLE signals ADD COLUMN IF NOT EXISTS outcome_return_pct REAL;
 `;
 
+// v1.4 migrations
+const MIGRATE_PFE_COLS = [
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_return_pct REAL;`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS mae_return_pct REAL;`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_price REAL;`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS mae_price REAL;`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_candles INTEGER;`,
+];
+
+const CREATE_FUNDING_HISTORY_SQL = `
+  CREATE TABLE IF NOT EXISTS funding_history (
+    id ${process.env.DATABASE_URL ? 'SERIAL' : 'INTEGER'} PRIMARY KEY${process.env.DATABASE_URL ? '' : ' AUTOINCREMENT'},
+    coin TEXT NOT NULL,
+    funding_rate REAL NOT NULL,
+    recorded_at INTEGER NOT NULL
+  );
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -153,6 +171,11 @@ function getBackend(): DbBackend {
   // Migrate: add outcome columns to existing tables (safe if already exists)
   try { backend.exec(MIGRATE_OUTCOME_COLS); } catch { /* column already exists */ }
   try { backend.exec(MIGRATE_OUTCOME_COLS_2); } catch { /* column already exists */ }
+  // v1.4: PFE/MAE columns + funding history table
+  for (const sql of MIGRATE_PFE_COLS) {
+    try { backend.exec(sql); } catch { /* column already exists */ }
+  }
+  try { backend.exec(CREATE_FUNDING_HISTORY_SQL); } catch { /* table already exists */ }
   return backend;
 }
 
@@ -269,6 +292,79 @@ export function updateUnifiedOutcome(
   );
 }
 
+/** v1.4: Record a funding rate observation for Z-Score computation. */
+export function recordFunding(coin: string, fundingRate: number): void {
+  const b = getBackend();
+  b.run(
+    `INSERT INTO funding_history (coin, funding_rate, recorded_at) VALUES (?, ?, ?)`,
+    coin, fundingRate, Math.floor(Date.now() / 1000)
+  );
+}
+
+/** v1.4: Compute Funding Z-Score from rolling 14-day history. */
+export async function getFundingZScore(coin: string, currentFunding: number): Promise<number | null> {
+  const b = getBackend();
+  const cutoff14d = Math.floor(Date.now() / 1000) - 14 * 86400;
+
+  let rows: { funding_rate: number }[];
+  if (isPg && b instanceof PgBackend) {
+    rows = await b.query(
+      'SELECT funding_rate FROM funding_history WHERE coin = ? AND recorded_at >= ? ORDER BY recorded_at',
+      [coin, cutoff14d]
+    ) as unknown as { funding_rate: number }[];
+  } else {
+    rows = b.all(
+      'SELECT funding_rate FROM funding_history WHERE coin = ? AND recorded_at >= ? ORDER BY recorded_at',
+      coin, cutoff14d
+    ) as unknown as { funding_rate: number }[];
+  }
+
+  if (rows.length < 20) return null; // Need minimum ~20 data points
+
+  const rates = rows.map(r => r.funding_rate);
+  const mean = rates.reduce((a, v) => a + v, 0) / rates.length;
+  const variance = rates.reduce((a, v) => a + (v - mean) ** 2, 0) / (rates.length - 1);
+  const stdDev = Math.sqrt(variance);
+
+  if (stdDev === 0) return 0;
+  return (currentFunding - mean) / stdDev;
+}
+
+/** v1.4: Update all outcome columns (unified + PFE/MAE). */
+export async function updateSignalOutcomes(id: number, data: {
+  outcome_price: number;
+  outcome_return_pct: number;
+  pfe_price: number;
+  pfe_return_pct: number;
+  mae_price: number;
+  mae_return_pct: number;
+  pfe_candles: number;
+}): Promise<void> {
+  const b = getBackend();
+  const sql = `UPDATE signals SET
+    outcome_price = ?, outcome_return_pct = ?,
+    pfe_price = ?, pfe_return_pct = ?,
+    mae_price = ?, mae_return_pct = ?,
+    pfe_candles = ?
+    WHERE id = ?`;
+
+  if (isPg && b instanceof PgBackend) {
+    await b.runAsync(sql,
+      data.outcome_price, data.outcome_return_pct,
+      data.pfe_price, data.pfe_return_pct,
+      data.mae_price, data.mae_return_pct,
+      data.pfe_candles, id
+    );
+  } else {
+    b.run(sql,
+      data.outcome_price, data.outcome_return_pct,
+      data.pfe_price, data.pfe_return_pct,
+      data.mae_price, data.mae_return_pct,
+      data.pfe_candles, id
+    );
+  }
+}
+
 /**
  * v1.3: Find signals that need unified outcome backfill.
  * Only returns signals where outcome_price IS NULL and enough time has passed
@@ -349,15 +445,34 @@ export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
   return getPerformanceStats();
 }
 
+const METHODOLOGY = {
+  winRate: 'Percentage of signals where price moved in predicted direction after exactly 1 candle at the signal timeframe. wins / total_evaluated.',
+  pfeWinRate: 'Percentage of signals where price moved in predicted direction at any point within the evaluation window. PFE Win Rate >= Win Rate always.',
+  profitFactor: 'Sum of all positive 1-candle returns divided by absolute sum of all negative 1-candle returns. Above 1.0 = net profitable.',
+  perTimeframe: {
+    avgReturnPct: 'Mean 1-candle return for signals at that timeframe.',
+    avgPFE: 'Mean peak favorable excursion — best return achieved within the evaluation window.',
+    avgMAE: 'Mean maximum adverse excursion — worst drawdown before the move played out. Always <= 0.',
+  },
+  evaluationWindows: {
+    '5m': '12 candles (1 hour)', '15m': '12 candles (3 hours)', '30m': '8 candles (4 hours)',
+    '1h': '8 candles (8 hours)', '2h': '6 candles (12 hours)', '4h': '6 candles (24 hours)',
+    '8h': '4 candles (32 hours)', '12h': '4 candles (48 hours)', '1d': '3 candles (3 days)',
+  },
+  dataSource: 'Hyperliquid public API (candleSnapshot + metaAndAssetCtxs). No data fabricated or cherry-picked.',
+  signalFilter: 'Only signals with confidence >= 40% and non-HOLD verdict are recorded and evaluated.',
+};
+
 function emptyStats(): PerformanceStats {
   return {
     totalSignals: 0,
     period: { from: '', to: '' },
-    overall: { winRate: null, avgReturnPct: null, sharpeRatio: null, maxDrawdownPct: null, profitFactor: null },
+    overall: { winRate: null, pfeWinRate: null, profitFactor: null },
     bySignalType: {},
     byTimeframe: {},
     byAsset: {},
     recentSignals: [],
+    methodology: METHODOLOGY,
   };
 }
 
@@ -367,10 +482,8 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const oldest = all[all.length - 1];
   const newest = all[0];
 
-  // v1.3: Use unified outcome_return_pct (evaluated at signal's own timeframe)
   const evaluated = all.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
 
-  // Helper: compute P&L-adjusted return (invert for SELL)
   function pnlReturn(s: SignalRecord): number {
     const r = s.outcome_return_pct ?? 0;
     return Math.max(s.signal === 'SELL' ? -r : r, -100);
@@ -386,36 +499,17 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const returns = evaluated.map(pnlReturn);
 
   const winRate = evaluated.length > 0 ? wins.length / evaluated.length : null;
-  const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : null;
-
-  let sharpe: number | null = null;
-  if (returns.length > 1) {
-    const mean = avgReturn!;
-    const variance = returns.reduce((sum, r) => sum + (r - mean) ** 2, 0) / (returns.length - 1);
-    const stdDev = Math.sqrt(variance);
-    if (stdDev > 0) {
-      sharpe = (mean / stdDev) * Math.sqrt(2190);
-    }
-  }
-
-  // Drawdown: sort chronologically (ascending), normalize by peak
-  const chronReturns = [...returns].reverse();
-  let peak = 0;
-  let maxDD = 0;
-  let cumReturn = 0;
-  for (const r of chronReturns) {
-    cumReturn += r;
-    if (cumReturn > peak) peak = cumReturn;
-    if (peak > 0) {
-      const dd = ((cumReturn - peak) / peak) * 100;
-      if (dd < maxDD) maxDD = dd;
-    }
-  }
 
   const grossProfit = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
   const grossLoss = Math.abs(returns.filter(r => r < 0).reduce((a, b) => a + b, 0));
   const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : null;
 
+  // v1.4: PFE-based win rate
+  const pfeEvaluated = all.filter(s => s.pfe_return_pct != null && s.signal !== 'HOLD');
+  const pfeWins = pfeEvaluated.filter(s => (s.pfe_return_pct ?? 0) > 0);
+  const pfeWinRate = pfeEvaluated.length > 0 ? pfeWins.length / pfeEvaluated.length : null;
+
+  // By signal type
   const bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
   for (const type of ['BUY', 'SELL', 'HOLD'] as const) {
     const group = all.filter(s => s.signal === type);
@@ -430,8 +524,8 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     };
   }
 
-  // v1.3: Performance by timeframe — group by signal's timeframe, using unified outcome
-  const byTimeframe: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
+  // v1.4: By timeframe with PFE/MAE metrics
+  const byTimeframe: PerformanceStats['byTimeframe'] = {};
   const allTimeframes = [...new Set(all.map(s => s.timeframe))];
   const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'];
   allTimeframes.sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b));
@@ -439,19 +533,33 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   for (const tf of allTimeframes) {
     const tfSignals = all.filter(s => s.timeframe === tf && s.signal !== 'HOLD');
     const tfEval = tfSignals.filter(s => s.outcome_return_pct != null);
+    const tfPfeEval = tfSignals.filter(s => s.pfe_return_pct != null);
+
     if (tfEval.length === 0) {
-      byTimeframe[tf] = { count: tfSignals.length, winRate: null, avgReturnPct: null };
+      byTimeframe[tf] = { count: tfSignals.length, winRate: null, pfeWinRate: null, avgReturnPct: null, avgPFE: null, avgMAE: null, profitFactor: null };
       continue;
     }
+
     const tfWins = tfEval.filter(isWin);
     const tfReturns = tfEval.map(pnlReturn);
+    const tfPfeWins = tfPfeEval.filter(s => (s.pfe_return_pct ?? 0) > 0);
+
+    const tfGrossProfit = tfReturns.filter(r => r > 0).reduce((a, b) => a + b, 0);
+    const tfGrossLoss = Math.abs(tfReturns.filter(r => r < 0).reduce((a, b) => a + b, 0));
+    const tfProfitFactor = tfGrossLoss > 0 ? tfGrossProfit / tfGrossLoss : (tfGrossProfit > 0 ? Infinity : null);
+
     byTimeframe[tf] = {
       count: tfEval.length,
       winRate: tfWins.length / tfEval.length,
+      pfeWinRate: tfPfeEval.length > 0 ? tfPfeWins.length / tfPfeEval.length : null,
       avgReturnPct: tfReturns.reduce((a, b) => a + b, 0) / tfReturns.length,
+      avgPFE: tfPfeEval.length > 0 ? tfPfeEval.reduce((a, s) => a + (s.pfe_return_pct ?? 0), 0) / tfPfeEval.length : null,
+      avgMAE: tfPfeEval.length > 0 ? tfPfeEval.reduce((a, s) => a + (s.mae_return_pct ?? 0), 0) / tfPfeEval.length : null,
+      profitFactor: tfProfitFactor,
     };
   }
 
+  // By asset
   const coins = [...new Set(all.map(s => s.coin))];
   const byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
   for (const coin of coins) {
@@ -475,14 +583,13 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     },
     overall: {
       winRate,
-      avgReturnPct: avgReturn,
-      sharpeRatio: sharpe,
-      maxDrawdownPct: maxDD < 0 ? Math.round(maxDD * 100) / 100 : null,
+      pfeWinRate,
       profitFactor,
     },
     bySignalType,
     byTimeframe,
     byAsset,
     recentSignals: all.slice(0, 20),
+    methodology: METHODOLOGY,
   };
 }
