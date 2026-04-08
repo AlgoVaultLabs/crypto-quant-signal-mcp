@@ -486,7 +486,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v3 scoring &middot; admin only &middot; auto-refreshes</div></div>
+  <div><h1>Signal Performance</h1><div class="subtitle">v1.3 &middot; admin only &middot; auto-refreshes</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -600,7 +600,7 @@ async function load() {
         '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>'
       ).join('');
     } else {
-      typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet — v3 scoring just started</td></tr>';
+      typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet</td></tr>';
     }
 
     // By timeframe
