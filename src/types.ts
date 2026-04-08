@@ -187,6 +187,8 @@ export interface SignalRecord {
   pfe_price: number | null;
   mae_price: number | null;
   pfe_candles: number | null;
+  // v1.4.1: 1-candle confirmation return
+  return_1candle: number | null;
   created_at: number;
 }
 
@@ -194,18 +196,16 @@ export interface PerformanceStats {
   totalSignals: number;
   period: { from: string; to: string };
   overall: {
+    totalSignals: number;
+    totalEvaluated: number;
     winRate: number | null;
-    pfeWinRate: number | null;
     profitFactor: number | null;
   };
   bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
   byTimeframe: Record<string, {
     count: number;
     winRate: number | null;
-    pfeWinRate: number | null;
     avgReturnPct: number | null;
-    avgPFE: number | null;
-    avgMAE: number | null;
     profitFactor: number | null;
   }>;
   byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;

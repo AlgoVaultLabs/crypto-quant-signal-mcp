@@ -145,6 +145,7 @@ const MIGRATE_PFE_COLS = [
   `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_price REAL;`,
   `ALTER TABLE signals ADD COLUMN IF NOT EXISTS mae_price REAL;`,
   `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_candles INTEGER;`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS return_1candle REAL;`,
 ];
 
 const CREATE_FUNDING_HISTORY_SQL = `
@@ -330,10 +331,11 @@ export async function getFundingZScore(coin: string, currentFunding: number): Pr
   return (currentFunding - mean) / stdDev;
 }
 
-/** v1.4: Update all outcome columns (unified + PFE/MAE). */
+/** v1.4.1: Update all outcome columns (unified + PFE/MAE + 1-candle). */
 export async function updateSignalOutcomes(id: number, data: {
   outcome_price: number;
   outcome_return_pct: number;
+  return_1candle: number;
   pfe_price: number;
   pfe_return_pct: number;
   mae_price: number;
@@ -342,7 +344,7 @@ export async function updateSignalOutcomes(id: number, data: {
 }): Promise<void> {
   const b = getBackend();
   const sql = `UPDATE signals SET
-    outcome_price = ?, outcome_return_pct = ?,
+    outcome_price = ?, outcome_return_pct = ?, return_1candle = ?,
     pfe_price = ?, pfe_return_pct = ?,
     mae_price = ?, mae_return_pct = ?,
     pfe_candles = ?
@@ -350,14 +352,14 @@ export async function updateSignalOutcomes(id: number, data: {
 
   if (isPg && b instanceof PgBackend) {
     await b.runAsync(sql,
-      data.outcome_price, data.outcome_return_pct,
+      data.outcome_price, data.outcome_return_pct, data.return_1candle,
       data.pfe_price, data.pfe_return_pct,
       data.mae_price, data.mae_return_pct,
       data.pfe_candles, id
     );
   } else {
     b.run(sql,
-      data.outcome_price, data.outcome_return_pct,
+      data.outcome_price, data.outcome_return_pct, data.return_1candle,
       data.pfe_price, data.pfe_return_pct,
       data.mae_price, data.mae_return_pct,
       data.pfe_candles, id
@@ -446,31 +448,23 @@ export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
 }
 
 const METHODOLOGY: Record<string, unknown> = {
-  WinRate: 'Percentage of signals where price moved in predicted direction after exactly 1 candle at the signal timeframe. wins / total_evaluated.',
-  PfeWinRate: 'Percentage of signals where price moved in predicted direction at any point within the evaluation window. PFE Win Rate >= Win Rate always.',
-  ProfitFactor: 'Sum of all positive 1-candle returns divided by absolute sum of all negative 1-candle returns. Above 1.0 = net profitable.',
-  AvgPFE: 'Mean Peak Favorable Excursion — the best return achieved in the signal direction at any point within the evaluation window. Higher = signals reach better peaks before reverting.',
-  AvgMAE: 'Mean Maximum Adverse Excursion — the worst drawdown against the signal direction within the evaluation window. Closer to 0 = tighter risk. Always negative for losing trades.',
-  EvaluationWindows: {
-    '5m': { candles: 12, total: '1 hour' },
-    '15m': { candles: 12, total: '3 hours' },
-    '30m': { candles: 8, total: '4 hours' },
-    '1h': { candles: 8, total: '8 hours' },
-    '2h': { candles: 6, total: '12 hours' },
-    '4h': { candles: 6, total: '24 hours' },
-    '8h': { candles: 4, total: '32 hours' },
-    '12h': { candles: 4, total: '48 hours' },
-    '1d': { candles: 3, total: '3 days' },
+  winRate: '1-candle confirmation. Did price move in the signal direction after exactly 1 candle? wins / evaluated.',
+  profitFactor: 'Sum of positive returns / abs(sum of negative returns) at evaluation window close. Above 1.0 = net profitable.',
+  avgReturnPct: 'Mean return at evaluation window close for the given timeframe.',
+  evaluationWindows: {
+    '5m': '12 candles (1 hour)', '15m': '12 candles (3 hours)', '30m': '8 candles (4 hours)',
+    '1h': '8 candles (8 hours)', '2h': '6 candles (12 hours)', '4h': '6 candles (24 hours)',
+    '8h': '4 candles (32 hours)', '12h': '4 candles (48 hours)', '1d': '3 candles (3 days)',
   },
-  DataSource: 'Hyperliquid public API (candleSnapshot + metaAndAssetCtxs).',
-  SignalFilter: 'Only signals with confidence >= 40% and non-HOLD verdict are recorded and evaluated.',
+  dataSource: 'Hyperliquid public API. Every qualifying signal recorded and evaluated.',
+  signalFilter: 'Confidence >= 60%. HOLD signals excluded.',
 };
 
 function emptyStats(): PerformanceStats {
   return {
     totalSignals: 0,
     period: { from: '', to: '' },
-    overall: { winRate: null, pfeWinRate: null, profitFactor: null },
+    overall: { totalSignals: 0, totalEvaluated: 0, winRate: null, profitFactor: null },
     bySignalType: {},
     byTimeframe: {},
     byAsset: {},
@@ -485,40 +479,32 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const oldest = all[all.length - 1];
   const newest = all[0];
 
-  const evaluated = all.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
+  const nonHold = all.filter(s => s.signal !== 'HOLD');
 
+  // v1.4.1: Win Rate = 1-candle confirmation (return_1candle)
+  const evaluated1c = nonHold.filter(s => s.return_1candle != null);
+  const wins1c = evaluated1c.filter(s => (s.return_1candle ?? 0) > 0);
+  const winRate = evaluated1c.length > 0 ? wins1c.length / evaluated1c.length : null;
+
+  // Profit Factor + Avg Return = evaluation window close (outcome_return_pct)
+  const evaluatedEW = nonHold.filter(s => s.outcome_return_pct != null);
   function pnlReturn(s: SignalRecord): number {
     const r = s.outcome_return_pct ?? 0;
     return Math.max(s.signal === 'SELL' ? -r : r, -100);
   }
-
-  function isWin(s: SignalRecord): boolean {
-    if (s.signal === 'BUY') return (s.outcome_return_pct ?? 0) > 0;
-    if (s.signal === 'SELL') return (s.outcome_return_pct ?? 0) < 0;
-    return false;
-  }
-
-  const wins = evaluated.filter(isWin);
-  const returns = evaluated.map(pnlReturn);
-
-  const winRate = evaluated.length > 0 ? wins.length / evaluated.length : null;
-
+  const returns = evaluatedEW.map(pnlReturn);
   const grossProfit = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
   const grossLoss = Math.abs(returns.filter(r => r < 0).reduce((a, b) => a + b, 0));
-  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : null;
-
-  // v1.4: PFE-based win rate
-  const pfeEvaluated = all.filter(s => s.pfe_return_pct != null && s.signal !== 'HOLD');
-  const pfeWins = pfeEvaluated.filter(s => (s.pfe_return_pct ?? 0) > 0);
-  const pfeWinRate = pfeEvaluated.length > 0 ? pfeWins.length / pfeEvaluated.length : null;
+  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? Infinity : null);
 
   // By signal type
   const bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
   for (const type of ['BUY', 'SELL', 'HOLD'] as const) {
     const group = all.filter(s => s.signal === type);
-    const evalGroup = group.filter(s => s.outcome_return_pct != null && type !== 'HOLD');
-    const winsGroup = evalGroup.filter(isWin);
-    const returnsGroup = evalGroup.map(pnlReturn);
+    const evalGroup = group.filter(s => s.return_1candle != null && type !== 'HOLD');
+    const winsGroup = evalGroup.filter(s => (s.return_1candle ?? 0) > 0);
+    const ewGroup = group.filter(s => s.outcome_return_pct != null && type !== 'HOLD');
+    const returnsGroup = ewGroup.map(pnlReturn);
 
     bySignalType[type] = {
       count: group.length,
@@ -527,37 +513,32 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     };
   }
 
-  // v1.4: By timeframe with PFE/MAE metrics
+  // v1.4.1: By timeframe — 4 metrics: count, winRate (1-candle), avgReturnPct (EW), profitFactor (EW)
   const byTimeframe: PerformanceStats['byTimeframe'] = {};
   const allTimeframes = [...new Set(all.map(s => s.timeframe))];
   const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'];
   allTimeframes.sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b));
 
   for (const tf of allTimeframes) {
-    const tfSignals = all.filter(s => s.timeframe === tf && s.signal !== 'HOLD');
-    const tfEval = tfSignals.filter(s => s.outcome_return_pct != null);
-    const tfPfeEval = tfSignals.filter(s => s.pfe_return_pct != null);
+    const tfSignals = nonHold.filter(s => s.timeframe === tf);
+    const tf1c = tfSignals.filter(s => s.return_1candle != null);
+    const tfEW = tfSignals.filter(s => s.outcome_return_pct != null);
 
-    if (tfEval.length === 0) {
-      byTimeframe[tf] = { count: tfSignals.length, winRate: null, pfeWinRate: null, avgReturnPct: null, avgPFE: null, avgMAE: null, profitFactor: null };
+    if (tf1c.length === 0 && tfEW.length === 0) {
+      byTimeframe[tf] = { count: tfSignals.length, winRate: null, avgReturnPct: null, profitFactor: null };
       continue;
     }
 
-    const tfWins = tfEval.filter(isWin);
-    const tfReturns = tfEval.map(pnlReturn);
-    const tfPfeWins = tfPfeEval.filter(s => (s.pfe_return_pct ?? 0) > 0);
-
+    const tfWins = tf1c.filter(s => (s.return_1candle ?? 0) > 0);
+    const tfReturns = tfEW.map(pnlReturn);
     const tfGrossProfit = tfReturns.filter(r => r > 0).reduce((a, b) => a + b, 0);
     const tfGrossLoss = Math.abs(tfReturns.filter(r => r < 0).reduce((a, b) => a + b, 0));
     const tfProfitFactor = tfGrossLoss > 0 ? tfGrossProfit / tfGrossLoss : (tfGrossProfit > 0 ? Infinity : null);
 
     byTimeframe[tf] = {
-      count: tfEval.length,
-      winRate: tfWins.length / tfEval.length,
-      pfeWinRate: tfPfeEval.length > 0 ? tfPfeWins.length / tfPfeEval.length : null,
-      avgReturnPct: tfReturns.reduce((a, b) => a + b, 0) / tfReturns.length,
-      avgPFE: tfPfeEval.length > 0 ? tfPfeEval.reduce((a, s) => a + (s.pfe_return_pct ?? 0), 0) / tfPfeEval.length : null,
-      avgMAE: tfPfeEval.length > 0 ? tfPfeEval.reduce((a, s) => a + (s.mae_return_pct ?? 0), 0) / tfPfeEval.length : null,
+      count: Math.max(tf1c.length, tfEW.length),
+      winRate: tf1c.length > 0 ? tfWins.length / tf1c.length : null,
+      avgReturnPct: tfReturns.length > 0 ? tfReturns.reduce((a, b) => a + b, 0) / tfReturns.length : null,
       profitFactor: tfProfitFactor,
     };
   }
@@ -567,9 +548,10 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
   for (const coin of coins) {
     const group = all.filter(s => s.coin === coin);
-    const evalGroup = group.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
-    const winsGroup = evalGroup.filter(isWin);
-    const returnsGroup = evalGroup.map(pnlReturn);
+    const evalGroup = group.filter(s => s.return_1candle != null && s.signal !== 'HOLD');
+    const winsGroup = evalGroup.filter(s => (s.return_1candle ?? 0) > 0);
+    const ewGroup = group.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
+    const returnsGroup = ewGroup.map(pnlReturn);
 
     byAsset[coin] = {
       count: group.length,
@@ -585,8 +567,9 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
       to: new Date(newest.created_at * 1000).toISOString().split('T')[0],
     },
     overall: {
+      totalSignals: nonHold.length,
+      totalEvaluated: evaluated1c.length,
       winRate,
-      pfeWinRate,
       profitFactor,
     },
     bySignalType,

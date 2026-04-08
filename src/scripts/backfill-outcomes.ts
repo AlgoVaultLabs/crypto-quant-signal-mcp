@@ -56,6 +56,7 @@ function sleep(ms: number): Promise<void> {
 interface PFEMAEResult {
   outcomePrice: number;
   outcomeReturnPct: number;
+  return1candle: number;
   pfePrice: number;
   pfeReturnPct: number;
   maePrice: number;
@@ -83,6 +84,11 @@ function computePFEMAE(
   // Outcome = close of the last candle in the evaluation window
   const outcomePrice = window[window.length - 1].close;
   const outcomeReturnPct = ((outcomePrice - entryPrice) / entryPrice) * 100;
+
+  // v1.4.1: 1-candle return — direction-adjusted (positive = correct direction)
+  const firstClose = window[0].close;
+  const raw1c = ((firstClose - entryPrice) / entryPrice) * 100;
+  const return1candle = isBuy ? raw1c : -raw1c;
 
   // PFE: best price in signal direction
   // MAE: worst price against signal direction
@@ -120,6 +126,7 @@ function computePFEMAE(
   return {
     outcomePrice: parseFloat(outcomePrice.toFixed(6)),
     outcomeReturnPct: parseFloat(outcomeReturnPct.toFixed(4)),
+    return1candle: parseFloat(return1candle.toFixed(4)),
     pfePrice: parseFloat(pfePrice.toFixed(6)),
     pfeReturnPct: parseFloat(pfeReturnPct.toFixed(4)),
     maePrice: parseFloat(maePrice.toFixed(6)),
@@ -202,6 +209,7 @@ async function main() {
         await updateSignalOutcomes(sig.id!, {
           outcome_price: result.outcomePrice,
           outcome_return_pct: result.outcomeReturnPct,
+          return_1candle: result.return1candle,
           pfe_price: result.pfePrice,
           pfe_return_pct: result.pfeReturnPct,
           mae_price: result.maePrice,

@@ -444,7 +444,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
   h1 { font-size: 24px; }
   .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
   @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; }
@@ -454,8 +454,6 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .green { color: #3fb950 !important; }
   .red { color: #f85149 !important; }
   .gold { color: #d29922 !important; }
-  .purple { color: #bc8cff !important; }
-  .cyan { color: #56d4dd !important; }
   .muted { color: #8b949e !important; }
   .section { margin-bottom: 28px; }
   .section h2 { font-size: 14px; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
@@ -476,37 +474,32 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .refresh { color: #8b949e; font-size: 12px; margin-top: 16px; }
   #loading { color: #8b949e; font-size: 16px; padding: 40px; text-align: center; }
   .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-  .recent-signal { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
-  .recent-signal:last-child { border-bottom: none; }
-  .recent-list { background: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; max-height: 520px; overflow-y: auto; }
   .empty { color: #8b949e; padding: 40px; text-align: center; font-size: 14px; }
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; transition: all 0.15s; }
   .tab:hover { border-color: #58a6ff80; }
   .tab.active { background: #58a6ff20; color: #58a6ff; border-color: #58a6ff; }
-  .methodology { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; }
-  .methodology h3 { font-size: 13px; color: #58a6ff; margin-bottom: 8px; }
-  .methodology p { font-size: 12px; color: #8b949e; line-height: 1.6; margin-bottom: 8px; }
-  .methodology .metric { display: flex; gap: 8px; margin-bottom: 6px; font-size: 12px; }
-  .methodology .metric .name { color: #e1e4e8; font-weight: 600; min-width: 120px; }
-  .methodology .metric .desc { color: #8b949e; }
-  .pfe-bar { display: inline-block; height: 8px; border-radius: 4px; background: #3fb950; opacity: 0.7; vertical-align: middle; }
-  .mae-bar { display: inline-block; height: 8px; border-radius: 4px; background: #f85149; opacity: 0.7; vertical-align: middle; }
+  .methodology { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; font-size: 13px; line-height: 1.7; color: #c9d1d9; }
+  .methodology p { margin-top: 12px; }
+  .methodology p:first-child { margin-top: 0; }
+  .methodology table { width: auto; background: transparent; border: none; margin-top: 8px; }
+  .methodology table td { border: none; padding: 2px 16px 2px 0; color: #c9d1d9; }
+  .methodology table td:first-child { color: #8b949e; }
+  .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v1.4 &middot; PFE/MAE tracking &middot; admin only &middot; auto-refreshes</div></div>
+  <div><h1>Signal Performance</h1><div class="subtitle">v1.4.1 &middot; 1-candle win rate &middot; admin only &middot; auto-refreshes</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
-  <!-- KPI Cards (4) -->
+  <!-- KPI Cards (3) -->
   <div class="grid">
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
-    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">outcome return in signal direction</div></div>
-    <div class="card"><div class="label">PFE Win Rate</div><div class="value" id="pfe-winrate"></div><div class="sub">peak favorable excursion &gt; 0</div></div>
-    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">gross wins / gross losses</div></div>
+    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">1-candle direction confirmation</div></div>
+    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">eval window gross wins / losses</div></div>
   </div>
 
   <!-- Signal type breakdown -->
@@ -518,25 +511,22 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   </div>
 
   <!-- Timeframe tabs + table -->
-  <div class="section">
+  <div class="section" id="tf-table-section">
     <h2>Performance by Timeframe</h2>
     <div class="tabs" id="tf-tabs"></div>
     <table>
-      <thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">PFE Win</th><th class="num">Avg Return</th><th class="num">Avg PFE</th><th class="num">Avg MAE</th><th class="num">Profit Factor</th></tr></thead>
+      <thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th class="num">Profit Factor</th></tr></thead>
       <tbody id="by-timeframe"></tbody>
     </table>
   </div>
 
   <div class="grid-2">
-    <!-- Top Performers -->
     <div class="section"><h2>Top Performing Assets</h2>
       <table>
         <thead><tr><th>Asset</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th></tr></thead>
         <tbody id="top-assets"></tbody>
       </table>
     </div>
-
-    <!-- Worst Performers -->
     <div class="section"><h2>Worst Performing Assets</h2>
       <table>
         <thead><tr><th>Asset</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th></tr></thead>
@@ -545,15 +535,38 @@ function getPerformanceDashboardHtml(apiKey: string): string {
     </div>
   </div>
 
-  <!-- Recent signals with PFE/MAE -->
+  <!-- Recent signals -->
   <div class="section"><h2>Recent Signals</h2>
-    <div class="recent-list" id="recent"></div>
+    <table>
+      <thead><tr><th>Time</th><th>Asset</th><th>Signal</th><th class="num">Confidence</th><th class="num">Return (1c)</th></tr></thead>
+      <tbody id="recent"></tbody>
+    </table>
   </div>
 
-  <!-- Methodology section -->
+  <!-- Methodology -->
   <div class="section">
     <h2>Methodology</h2>
-    <div class="methodology" id="methodology"></div>
+    <div class="methodology" id="methodology">
+      <p><strong>Win Rate</strong> \\u2014 Price direction after exactly 1 candle at the signal\\u2019s timeframe (e.g., 15m signal checked 15 minutes later). Up for BUY = win. Down for SELL = win. <code>wins / evaluated</code>.</p>
+      <p><strong>Profit Factor</strong> \\u2014 Sum of positive returns \\u00f7 absolute sum of negative returns, measured at the close of the evaluation window. Above 1.0 = net profitable. Above 2.0 = strong. <code>gross_profit / gross_loss</code>.</p>
+      <p><strong>Avg Return</strong> \\u2014 Mean return at the close of the evaluation window for that timeframe.</p>
+      <p><strong>Evaluation Windows</strong>:</p>
+      <table>
+        <tr><td>5m</td><td>12 candles (1 hour)</td></tr>
+        <tr><td>15m</td><td>12 candles (3 hours)</td></tr>
+        <tr><td>30m</td><td>8 candles (4 hours)</td></tr>
+        <tr><td>1h</td><td>8 candles (8 hours)</td></tr>
+        <tr><td>2h</td><td>6 candles (12 hours)</td></tr>
+        <tr><td>4h</td><td>6 candles (24 hours)</td></tr>
+        <tr><td>8h</td><td>4 candles (32 hours)</td></tr>
+        <tr><td>12h</td><td>4 candles (48 hours)</td></tr>
+        <tr><td>1d</td><td>3 candles (3 days)</td></tr>
+      </table>
+      <p><strong>Scoring Engine</strong> \\u2014 Weighted composite: RSI(14) 30%, EMA(9/21) 20%, Funding 20%, OI 10%, Volume 20%, plus Hurst Exponent filter, Funding Z-Score gate, and Bollinger/Keltner squeeze detection. BUY requires score &gt; 45 (or &gt; 55 in downtrend). SELL requires score &lt; -35.</p>
+      <p><strong>Signal Filter</strong> \\u2014 Only signals with confidence \\u2265 60% are recorded and evaluated. HOLD signals are excluded.</p>
+      <p><strong>Data Source</strong> \\u2014 Hyperliquid public API (<code>candleSnapshot</code> + <code>metaAndAssetCtxs</code>). Every qualifying signal is recorded. Raw data at <code>/performance</code>.</p>
+      <p style="color:#8b949e; font-size:11px; margin-top:16px;">Built by AlgoVault Labs &middot; v1.4.1 &middot; Updated every 30 seconds</p>
+    </div>
   </div>
 
   <div class="refresh">Auto-refreshes every 30s &middot; <span id="updated"></span></div>
@@ -571,7 +584,7 @@ function wrClass(v) { return v != null ? (v >= 0.5 ? 'green' : v >= 0.3 ? 'gold'
 function pfClass(v) { return v != null ? (v >= 1.5 ? 'green' : v >= 1.0 ? 'gold' : 'red') : 'muted'; }
 function badge(sig) { return '<span class="badge badge-' + sig.toLowerCase() + '">' + sig + '</span>'; }
 function timeAgo(ts) {
-  const s = Math.floor(Date.now()/1000 - ts);
+  var s = Math.floor(Date.now()/1000 - ts);
   if (s < 60) return s + 's ago';
   if (s < 3600) return Math.floor(s/60) + 'm ago';
   if (s < 86400) return Math.floor(s/3600) + 'h ago';
@@ -580,174 +593,129 @@ function timeAgo(ts) {
 
 function setTfFilter(tf) {
   activeTfFilter = tf;
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tf === tf));
-  renderTimeframes();
-  renderRecent();
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.toggle('active', t.dataset.tf === tf); });
+  renderAll();
 }
 
-let cachedData = null;
+var cachedData = null;
 
-function renderTimeframes() {
-  const d = cachedData;
+function renderAll() {
+  var d = cachedData;
   if (!d) return;
-  const tfEl = document.getElementById('by-timeframe');
-  const timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
-  const filtered = activeTfFilter === 'all' ? timeframes : timeframes.filter(([tf]) => tf === activeTfFilter);
-  if (filtered.length) {
-    const sorted = filtered.sort((a,b) => TF_ORDER.indexOf(a[0]) - TF_ORDER.indexOf(b[0]));
-    tfEl.innerHTML = sorted.map(([tf, v]) =>
-      '<tr><td><strong>' + tf + '</strong></td>' +
-      '<td class="num">' + v.count + '</td>' +
-      '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
-      '<td class="num ' + wrClass(v.pfeWinRate) + '">' + pct(v.pfeWinRate) + '</td>' +
-      '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
-      '<td class="num ' + (v.avgPFE != null && v.avgPFE >= 0 ? 'green' : 'muted') + '">' + retPct(v.avgPFE) + '</td>' +
-      '<td class="num ' + (v.avgMAE != null ? 'red' : 'muted') + '">' + retPct(v.avgMAE) + '</td>' +
-      '<td class="num ' + pfClass(v.profitFactor) + '">' + (v.profitFactor != null ? v.profitFactor.toFixed(2) : '\\u2014') + '</td></tr>'
-    ).join('');
+
+  // KPIs — update for selected TF
+  if (activeTfFilter === 'all') {
+    document.getElementById('total').textContent = (d.overall.totalEvaluated || d.totalSignals || 0).toLocaleString();
+    document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : '';
+    var wr = d.overall.winRate;
+    var wrEl = document.getElementById('winrate');
+    wrEl.textContent = pct(wr);
+    wrEl.className = 'value ' + wrClass(wr);
+    var pf = d.overall.profitFactor;
+    var pfEl = document.getElementById('pf');
+    pfEl.textContent = pf != null ? pf.toFixed(2) : '\\u2014';
+    pfEl.className = 'value ' + pfClass(pf);
   } else {
-    tfEl.innerHTML = '<tr><td colspan="8" class="empty">No data for this timeframe</td></tr>';
+    var v = (d.byTimeframe || {})[activeTfFilter];
+    if (v) {
+      document.getElementById('total').textContent = (v.count || 0).toLocaleString();
+      document.getElementById('period').textContent = activeTfFilter + ' timeframe';
+      var wr2 = v.winRate;
+      var wrEl2 = document.getElementById('winrate');
+      wrEl2.textContent = pct(wr2);
+      wrEl2.className = 'value ' + wrClass(wr2);
+      var pf2 = v.profitFactor;
+      var pfEl2 = document.getElementById('pf');
+      pfEl2.textContent = pf2 != null ? pf2.toFixed(2) : '\\u2014';
+      pfEl2.className = 'value ' + pfClass(pf2);
+    }
   }
-}
 
-function renderRecent() {
-  const d = cachedData;
-  if (!d) return;
-  const recentEl = document.getElementById('recent');
-  let recent = d.recentSignals || [];
-  if (activeTfFilter !== 'all') recent = recent.filter(s => s.timeframe === activeTfFilter);
-
-  if (recent.length) {
-    recentEl.innerHTML = recent.map(s => {
-      const isBuy = s.signal === 'BUY';
-      const pfe = s.pfe_return_pct;
-      const mae = s.mae_return_pct;
-      // Direction-adjusted for display
-      const pfeDir = pfe != null ? (isBuy ? pfe : -pfe) : null;
-      const maeDir = mae != null ? (isBuy ? mae : -mae) : null;
-
-      return '<div class="recent-signal">' +
-        badge(s.signal) +
-        '<strong style="width:55px">' + s.coin + '</strong>' +
-        '<span class="muted" style="width:35px;text-align:center">' + s.timeframe + '</span>' +
-        '<span style="width:80px">$' + (s.price_at_signal < 1 ? s.price_at_signal.toFixed(4) : s.price_at_signal.toLocaleString()) + '</span>' +
-        '<span style="width:45px">' + s.confidence + '%</span>' +
-        '<span style="width:70px;text-align:right" class="' + retClass(s.outcome_return_pct) + '">' +
-          (s.outcome_return_pct != null ? retPct(s.outcome_return_pct) : '<span class="muted">\\u2026</span>') + '</span>' +
-        '<span style="width:70px;text-align:right" class="' + (pfeDir != null && pfeDir > 0 ? 'green' : 'muted') + '" title="PFE">' +
-          (pfeDir != null ? '+' + pfeDir.toFixed(2) + '%' : '') + '</span>' +
-        '<span style="width:70px;text-align:right" class="' + (maeDir != null && maeDir < 0 ? 'red' : 'muted') + '" title="MAE">' +
-          (maeDir != null ? maeDir.toFixed(2) + '%' : '') + '</span>' +
-        '<span class="muted" style="margin-left:auto">' + timeAgo(s.created_at) + '</span>' +
-      '</div>';
+  // TF table
+  var tfEl = document.getElementById('by-timeframe');
+  var timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
+  var filtered = activeTfFilter === 'all' ? timeframes : timeframes.filter(function(e) { return e[0] === activeTfFilter; });
+  if (filtered.length) {
+    var sorted = filtered.sort(function(a,b) { return TF_ORDER.indexOf(a[0]) - TF_ORDER.indexOf(b[0]); });
+    tfEl.innerHTML = sorted.map(function(e) {
+      var tf = e[0], v = e[1];
+      return '<tr><td><strong>' + tf + '</strong></td>' +
+        '<td class="num">' + v.count + '</td>' +
+        '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
+        '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
+        '<td class="num ' + pfClass(v.profitFactor) + '">' + (v.profitFactor != null ? v.profitFactor.toFixed(2) : '\\u2014') + '</td></tr>';
     }).join('');
   } else {
-    recentEl.innerHTML = '<div class="empty">No signals' + (activeTfFilter !== 'all' ? ' for ' + activeTfFilter : '') + ' yet.</div>';
+    tfEl.innerHTML = '<tr><td colspan="5" class="empty">No data for this timeframe</td></tr>';
+  }
+
+  // Recent signals
+  var recentEl = document.getElementById('recent');
+  var recent = d.recentSignals || [];
+  if (activeTfFilter !== 'all') recent = recent.filter(function(s) { return s.timeframe === activeTfFilter; });
+  if (recent.length) {
+    recentEl.innerHTML = recent.map(function(s) {
+      return '<tr>' +
+        '<td class="muted">' + timeAgo(s.created_at) + '</td>' +
+        '<td><strong>' + s.coin + '</strong></td>' +
+        '<td>' + badge(s.signal) + '</td>' +
+        '<td class="num">' + s.confidence + '%</td>' +
+        '<td class="num ' + retClass(s.return_1candle) + '">' + (s.return_1candle != null ? retPct(s.return_1candle) : '<span class="muted">\\u2026</span>') + '</td></tr>';
+    }).join('');
+  } else {
+    recentEl.innerHTML = '<tr><td colspan="5" class="empty">No signals' + (activeTfFilter !== 'all' ? ' for ' + activeTfFilter : '') + ' yet.</td></tr>';
   }
 }
 
 async function load() {
   try {
-    const r = await fetch('/performance?key=' + KEY);
-    const d = await r.json();
+    var r = await fetch('/performance?key=' + KEY);
+    var d = await r.json();
     cachedData = d;
 
-    // KPIs
-    document.getElementById('total').textContent = d.totalSignals.toLocaleString();
-    document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : '';
-
-    const wr = d.overall.winRate;
-    const wrEl = document.getElementById('winrate');
-    wrEl.textContent = pct(wr);
-    wrEl.className = 'value ' + wrClass(wr);
-
-    const pfeWr = d.overall.pfeWinRate;
-    const pfeWrEl = document.getElementById('pfe-winrate');
-    pfeWrEl.textContent = pct(pfeWr);
-    pfeWrEl.className = 'value ' + wrClass(pfeWr);
-
-    const pf = d.overall.profitFactor;
-    const pfEl = document.getElementById('pf');
-    pfEl.textContent = pf != null ? pf.toFixed(2) : '\\u2014';
-    pfEl.className = 'value ' + pfClass(pf);
-
-    // By signal type
-    const typeEl = document.getElementById('by-type');
-    const types = Object.entries(d.bySignalType || {});
+    // Signal type
+    var typeEl = document.getElementById('by-type');
+    var types = Object.entries(d.bySignalType || {});
     if (types.length) {
-      const maxCount = Math.max(...types.map(([,v]) => v.count));
-      typeEl.innerHTML = types.map(([type, v]) =>
-        '<tr><td>' + badge(type) + '</td>' +
-        '<td class="num">' + v.count + '</td>' +
-        '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
-        '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
-        '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>'
-      ).join('');
+      var maxCount = Math.max.apply(null, types.map(function(e) { return e[1].count; }));
+      typeEl.innerHTML = types.map(function(e) {
+        var type = e[0], v = e[1];
+        return '<tr><td>' + badge(type) + '</td>' +
+          '<td class="num">' + v.count + '</td>' +
+          '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
+          '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
+          '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>';
+      }).join('');
     } else {
       typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet</td></tr>';
     }
 
-    // Timeframe tabs
-    const tabsEl = document.getElementById('tf-tabs');
-    const availTfs = d.byTimeframe ? Object.keys(d.byTimeframe).sort((a,b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b)) : [];
+    // TF tabs
+    var tabsEl = document.getElementById('tf-tabs');
+    var availTfs = d.byTimeframe ? Object.keys(d.byTimeframe).sort(function(a,b) { return TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b); }) : [];
     tabsEl.innerHTML = '<div class="tab' + (activeTfFilter === 'all' ? ' active' : '') + '" data-tf="all" onclick="setTfFilter(\\'all\\')">All</div>' +
-      availTfs.map(tf => '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\\'' + tf + '\\')">' + tf + '</div>').join('');
-
-    renderTimeframes();
+      availTfs.map(function(tf) { return '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\\'' + tf + '\\')">' + tf + '</div>'; }).join('');
 
     // Assets
-    const assets = Object.entries(d.byAsset || {})
-      .filter(([,v]) => v.avgReturnPct != null)
-      .map(([coin, v]) => ({ coin, ...v }));
-
-    const topAssets = [...assets].sort((a,b) => (b.avgReturnPct||0) - (a.avgReturnPct||0)).slice(0, 15);
-    const worstAssets = [...assets].sort((a,b) => (a.avgReturnPct||0) - (b.avgReturnPct||0)).slice(0, 15);
-
+    var assets = Object.entries(d.byAsset || {})
+      .filter(function(e) { return e[1].avgReturnPct != null; })
+      .map(function(e) { return Object.assign({ coin: e[0] }, e[1]); });
+    var topAssets = assets.slice().sort(function(a,b) { return (b.avgReturnPct||0) - (a.avgReturnPct||0); }).slice(0, 15);
+    var worstAssets = assets.slice().sort(function(a,b) { return (a.avgReturnPct||0) - (b.avgReturnPct||0); }).slice(0, 15);
     function renderAssetTable(id, list) {
-      const el = document.getElementById(id);
+      var el = document.getElementById(id);
       if (!list.length) { el.innerHTML = '<tr><td colspan="4" class="empty">Waiting for outcome data...</td></tr>'; return; }
-      el.innerHTML = list.map(a =>
-        '<tr><td><strong>' + a.coin + '</strong></td>' +
-        '<td class="num">' + a.count + '</td>' +
-        '<td class="num ' + wrClass(a.winRate) + '">' + pct(a.winRate) + '</td>' +
-        '<td class="num ' + retClass(a.avgReturnPct) + '">' + retPct(a.avgReturnPct) + '</td></tr>'
-      ).join('');
+      el.innerHTML = list.map(function(a) {
+        return '<tr><td><strong>' + a.coin + '</strong></td>' +
+          '<td class="num">' + a.count + '</td>' +
+          '<td class="num ' + wrClass(a.winRate) + '">' + pct(a.winRate) + '</td>' +
+          '<td class="num ' + retClass(a.avgReturnPct) + '">' + retPct(a.avgReturnPct) + '</td></tr>';
+      }).join('');
     }
     renderAssetTable('top-assets', topAssets);
     renderAssetTable('worst-assets', worstAssets);
 
-    // Recent signals with PFE/MAE
-    renderRecent();
-
-    // Methodology
-    const methEl = document.getElementById('methodology');
-    const m = d.methodology || {};
-    if (Object.keys(m).length) {
-      function boldFirst(name) {
-        return '<strong>' + name.charAt(0) + '</strong>' + name.slice(1);
-      }
-      function renderEvalTable(windows) {
-        var rows = Object.entries(windows).map(function(e) {
-          var tf = e[0], v = e[1];
-          return '<tr><td>' + tf + '</td><td>' + v.candles + ' candles</td><td>' + v.candles + '</td><td>' + v.total + '</td></tr>';
-        }).join('');
-        return '<table style="margin-top:8px;font-size:12px">' +
-          '<thead><tr><th>Signal TF</th><th>Window</th><th>Candles checked</th><th>Total time</th></tr></thead>' +
-          '<tbody>' + rows + '</tbody></table>';
-      }
-      var html = '<h3>How metrics are calculated</h3>';
-      Object.entries(m).forEach(function(e) {
-        var key = e[0], desc = e[1];
-        if (key === 'EvaluationWindows' && typeof desc === 'object') {
-          html += '<div class="metric" style="flex-direction:column"><span class="name">' + boldFirst(key) + '</span>' + renderEvalTable(desc) + '</div>';
-        } else {
-          html += '<div class="metric"><span class="name">' + boldFirst(key) + '</span><span class="desc">' + desc + '</span></div>';
-        }
-      });
-      methEl.innerHTML = html;
-    } else {
-      methEl.innerHTML = '<p class="muted">Methodology data will appear once signals are evaluated.</p>';
-    }
+    renderAll();
 
     document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();
     document.getElementById('loading').style.display = 'none';
