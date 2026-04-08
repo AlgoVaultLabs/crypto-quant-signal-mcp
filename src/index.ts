@@ -690,8 +690,8 @@ async function load() {
     // Timeframe tabs
     const tabsEl = document.getElementById('tf-tabs');
     const availTfs = d.byTimeframe ? Object.keys(d.byTimeframe).sort((a,b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b)) : [];
-    tabsEl.innerHTML = '<div class="tab' + (activeTfFilter === 'all' ? ' active' : '') + '" data-tf="all" onclick="setTfFilter(\'all\')">All</div>' +
-      availTfs.map(tf => '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\'' + tf + '\')">' + tf + '</div>').join('');
+    tabsEl.innerHTML = '<div class="tab' + (activeTfFilter === 'all' ? ' active' : '') + '" data-tf="all" onclick="setTfFilter(\\'all\\')">All</div>' +
+      availTfs.map(tf => '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\\'' + tf + '\\')">' + tf + '</div>').join('');
 
     renderTimeframes();
 
