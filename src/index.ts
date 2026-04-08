@@ -483,7 +483,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .methodology p { margin-top: 12px; }
   .methodology p:first-child { margin-top: 0; }
   .methodology table { width: auto; background: transparent; border: none; margin-top: 8px; }
-  .methodology table td { border: none; padding: 2px 16px 2px 0; color: #c9d1d9; }
+  .methodology table th { border: none; padding: 4px 24px 4px 0; color: #8b949e; font-weight: 600; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; }
+  .methodology table td { border: none; padding: 3px 24px 3px 0; color: #c9d1d9; }
   .methodology table td:first-child { color: #8b949e; }
   .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
@@ -498,8 +499,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <!-- KPI Cards (3) -->
   <div class="grid">
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
-    <div class="card"><div class="label">1-Candle Direction Hit Rate</div><div class="value" id="winrate"></div><div class="sub">wins / total signals after 1 candle</div></div>
-    <div class="card"><div class="label">Total Profit / Total Loss</div><div class="value" id="pf"></div><div class="sub">at eval window close</div></div>
+    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">1-candle direction hit rate</div></div>
+    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">total profit / total loss</div></div>
   </div>
 
   <!-- Signal type breakdown -->
@@ -552,17 +553,17 @@ function getPerformanceDashboardHtml(apiKey: string): string {
       <p><strong>Avg Return</strong> = Mean return per signal at eval window close.</p>
       <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table>
-        <thead><tr><th style="background:transparent;color:#8b949e">Signal TF</th><th style="background:transparent;color:#8b949e">Window</th><th style="background:transparent;color:#8b949e">Candles</th><th style="background:transparent;color:#8b949e">Total time</th></tr></thead>
+        <thead><tr><th>Timeframe</th><th>Candles</th><th>Total Time</th></tr></thead>
         <tbody>
-          <tr><td>5m</td><td>12 candles</td><td>12</td><td>1 hour</td></tr>
-          <tr><td>15m</td><td>12 candles</td><td>12</td><td>3 hours</td></tr>
-          <tr><td>30m</td><td>8 candles</td><td>8</td><td>4 hours</td></tr>
-          <tr><td>1h</td><td>8 candles</td><td>8</td><td>8 hours</td></tr>
-          <tr><td>2h</td><td>6 candles</td><td>6</td><td>12 hours</td></tr>
-          <tr><td>4h</td><td>6 candles</td><td>6</td><td>24 hours</td></tr>
-          <tr><td>8h</td><td>4 candles</td><td>4</td><td>32 hours</td></tr>
-          <tr><td>12h</td><td>4 candles</td><td>4</td><td>48 hours</td></tr>
-          <tr><td>1d</td><td>3 candles</td><td>3</td><td>3 days</td></tr>
+          <tr><td>5m</td><td>12</td><td>1 hour</td></tr>
+          <tr><td>15m</td><td>12</td><td>3 hours</td></tr>
+          <tr><td>30m</td><td>8</td><td>4 hours</td></tr>
+          <tr><td>1h</td><td>8</td><td>8 hours</td></tr>
+          <tr><td>2h</td><td>6</td><td>12 hours</td></tr>
+          <tr><td>4h</td><td>6</td><td>24 hours</td></tr>
+          <tr><td>8h</td><td>4</td><td>32 hours</td></tr>
+          <tr><td>12h</td><td>4</td><td>48 hours</td></tr>
+          <tr><td>1d</td><td>3</td><td>3 days</td></tr>
         </tbody>
       </table>
       <p style="margin-top:16px"><strong>Signal Filter</strong> = Only confidence &ge; 60% signals recorded. HOLDs excluded.</p>
