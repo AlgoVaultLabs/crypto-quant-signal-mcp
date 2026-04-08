@@ -36,11 +36,26 @@ const USDC_ADDRESS: Record<string, string> = {
   'eip155:84532': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 };
 
-// Tool pricing in USD
+// Tool pricing in USD (base price — timeframe-tiered pricing applied at request time)
 export const TOOL_PRICING: X402ToolPricing = {
   get_trade_signal: 0.02,
   scan_funding_arb: 0.01,
   get_market_regime: 0.02,
+};
+
+// Timeframe-specific pricing for get_trade_signal
+export const SIGNAL_TIMEFRAME_PRICING: Record<string, number> = {
+  '1m': 0.05,   // premium — HFT scalping
+  '3m': 0.04,   // premium — HFT scalping
+  '5m': 0.03,   // high demand, frequent use
+  '15m': 0.02,  // standard
+  '30m': 0.02,  // standard
+  '1h': 0.02,   // standard
+  '2h': 0.02,   // standard
+  '4h': 0.02,   // standard
+  '8h': 0.02,   // standard
+  '12h': 0.02,  // standard
+  '1d': 0.02,   // standard
 };
 
 // ── Singleton state ──

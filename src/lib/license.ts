@@ -11,7 +11,7 @@ import { verifyX402Payment, isX402Configured } from './x402.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 
 const FREE_COINS = new Set(['BTC', 'ETH']);
-const FREE_TIMEFRAMES = new Set(['1h']);
+const FREE_TIMEFRAMES = new Set(['15m', '1h']);
 const FREE_FUNDING_LIMIT = 5;
 
 // ── Per-request context ──
@@ -154,7 +154,7 @@ export function freeGateMessage(coin: string, timeframe: string): string {
     parts.push(`${coin} is a Pro asset (free tier: BTC and ETH only)`);
   }
   if (!FREE_TIMEFRAMES.has(timeframe)) {
-    parts.push(`${timeframe} is a Pro timeframe (free tier: 1h only)`);
+    parts.push(`${timeframe} is a Pro timeframe (free tier: 15m and 1h only)`);
   }
   if (parts.length === 0) return '';
   return `${parts.join('. ')}. Upgrade to Pro ($49/mo) or pay per call via x402.`;

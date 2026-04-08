@@ -166,6 +166,7 @@ export interface SignalRecord {
   confidence: number;
   timeframe: string;
   price_at_signal: number;
+  // Legacy per-horizon columns (kept for backward compat, no longer written)
   price_after_15m: number | null;
   price_after_1h: number | null;
   price_after_4h: number | null;
@@ -174,6 +175,9 @@ export interface SignalRecord {
   return_pct_1h: number | null;
   return_pct_4h: number | null;
   return_pct_24h: number | null;
+  // v1.3: unified outcome — evaluated at signal's own timeframe only
+  outcome_price: number | null;
+  outcome_return_pct: number | null;
   created_at: number;
 }
 

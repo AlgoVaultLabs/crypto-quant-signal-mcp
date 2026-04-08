@@ -24,7 +24,7 @@ import { getAnalyticsSummary } from './resources/analytics-summary.js';
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.0.0',
+    version: '1.3.0',
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -33,7 +33,7 @@ function createServer(): McpServer {
     "Returns a composite BUY/SELL/HOLD signal for a Hyperliquid perp. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.",
     {
       coin: z.string().describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
-      timeframe: z.enum(['1h', '4h', '1d']).default('1h').describe('Candle timeframe (free: 1h only)'),
+      timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: 15m and 1h only.'),
       includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
     },
     { readOnlyHint: true, openWorldHint: true },
@@ -179,7 +179,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.0.0' });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.3.0' });
   });
 
   // Admin analytics (only if ADMIN_API_KEY is set)
@@ -460,6 +460,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }
   th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
   th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: #0d1117; }
+  th.num { text-align: right; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .bar-wrap { width: 80px; display: inline-block; }
   .bar { height: 6px; border-radius: 3px; min-width: 2px; }
@@ -606,7 +607,7 @@ async function load() {
     const tfEl = document.getElementById('by-timeframe');
     const timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
     if (timeframes.length) {
-      const tfOrder = ['15m', '1h', '4h', '24h'];
+      const tfOrder = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
       const sorted = timeframes.sort((a,b) => tfOrder.indexOf(a[0]) - tfOrder.indexOf(b[0]));
       const maxTfCount = Math.max(...sorted.map(([,v]) => v.count), 1);
       tfEl.innerHTML = sorted.map(([tf, v]) =>
@@ -641,7 +642,7 @@ async function load() {
     renderAssetTable('top-assets', topAssets);
     renderAssetTable('worst-assets', worstAssets);
 
-    // Recent signals
+    // Recent signals — v1.3: single outcome column (evaluated at signal's own timeframe)
     const recentEl = document.getElementById('recent');
     const recent = d.recentSignals || [];
     if (recent.length) {
@@ -649,18 +650,16 @@ async function load() {
         '<div class="recent-signal">' +
           badge(s.signal) +
           '<strong style="width:60px">' + s.coin + '</strong>' +
-          '<span class="muted" style="width:40px">' + s.timeframe + '</span>' +
+          '<span class="muted" style="width:40px;text-align:center">' + s.timeframe + '</span>' +
           '<span style="width:80px">$' + (s.price_at_signal < 1 ? s.price_at_signal.toFixed(4) : s.price_at_signal.toLocaleString()) + '</span>' +
           '<span style="width:50px">' + s.confidence + '%</span>' +
-          '<span style="width:70px" class="' + retClass(s.return_pct_15m) + '">15m: ' + retPct(s.return_pct_15m) + '</span>' +
-          '<span style="width:70px" class="' + retClass(s.return_pct_1h) + '">1h: ' + retPct(s.return_pct_1h) + '</span>' +
-          '<span style="width:70px" class="' + retClass(s.return_pct_4h) + '">4h: ' + retPct(s.return_pct_4h) + '</span>' +
-          '<span style="width:70px" class="' + retClass(s.return_pct_24h) + '">24h: ' + retPct(s.return_pct_24h) + '</span>' +
+          '<span style="width:100px;text-align:right" class="' + retClass(s.outcome_return_pct) + '">' +
+            (s.outcome_return_pct != null ? retPct(s.outcome_return_pct) : '<span class="muted">pending\u2026</span>') + '</span>' +
           '<span class="muted" style="margin-left:auto">' + timeAgo(s.created_at) + '</span>' +
         '</div>'
       ).join('');
     } else {
-      recentEl.innerHTML = '<div class="empty">No signals yet — v2 scoring just started. Signals will appear as the cron job seeds them (confidence &ge; 40 only).</div>';
+      recentEl.innerHTML = '<div class="empty">No signals yet — signals will appear as the cron job seeds them (confidence &ge; 40 only).</div>';
     }
 
     document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();

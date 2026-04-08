@@ -221,6 +221,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     if (regime === 'TRENDING_UP' && signal === 'HOLD' && rawScore < -SELL_BASE_THRESHOLD) {
       parts.push(`Regime filter: potential SELL suppressed — market is trending up (requires ${SELL_THRESHOLD_TRENDING_UP}+ score, got ${absScore.toFixed(0)}).`);
     }
+    // v1.3: noise warning for ultra-low timeframes
+    if (['1m', '3m'].includes(timeframe)) {
+      parts.push(`Ultra-low timeframe warning: RSI/EMA indicators have minimal lookback on ${timeframe} candles. Signals may be noisier than longer timeframes. Consider 5m+ for higher reliability.`);
+    }
     parts.push(`Confidence: ${confidence}%. Regime: ${regime}.`);
     reasoning = parts.join(' ');
   }
@@ -245,7 +249,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     coin,
     timeframe,
     _algovault: {
-      version: '3.0.0',
+      version: '1.3.0',
       tool: 'get_trade_signal',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },

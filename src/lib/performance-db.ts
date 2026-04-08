@@ -124,8 +124,18 @@ const CREATE_TABLE_SQL = `
     return_pct_1h REAL,
     return_pct_4h REAL,
     return_pct_24h REAL,
+    outcome_price REAL,
+    outcome_return_pct REAL,
     created_at INTEGER NOT NULL
   );
+`;
+
+// Migration: add unified outcome columns if missing (runs on existing DBs)
+const MIGRATE_OUTCOME_COLS = `
+  ALTER TABLE signals ADD COLUMN IF NOT EXISTS outcome_price REAL;
+`;
+const MIGRATE_OUTCOME_COLS_2 = `
+  ALTER TABLE signals ADD COLUMN IF NOT EXISTS outcome_return_pct REAL;
 `;
 
 function getBackend(): DbBackend {
@@ -140,6 +150,9 @@ function getBackend(): DbBackend {
   }
 
   backend.exec(CREATE_TABLE_SQL);
+  // Migrate: add outcome columns to existing tables (safe if already exists)
+  try { backend.exec(MIGRATE_OUTCOME_COLS); } catch { /* column already exists */ }
+  try { backend.exec(MIGRATE_OUTCOME_COLS_2); } catch { /* column already exists */ }
   return backend;
 }
 
@@ -243,6 +256,52 @@ export function updateOutcome(
   );
 }
 
+/** v1.3: Update the unified outcome columns (signal evaluated at its own timeframe). */
+export function updateUnifiedOutcome(
+  id: number,
+  outcomePrice: number,
+  outcomeReturnPct: number
+): void {
+  const b = getBackend();
+  b.run(
+    `UPDATE signals SET outcome_price = ?, outcome_return_pct = ? WHERE id = ?`,
+    outcomePrice, outcomeReturnPct, id
+  );
+}
+
+/**
+ * v1.3: Find signals that need unified outcome backfill.
+ * Only returns signals where outcome_price IS NULL and enough time has passed
+ * for the signal's own timeframe.
+ */
+const TIMEFRAME_SECONDS: Record<string, number> = {
+  '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
+  '1h': 3600, '2h': 7200, '4h': 14400, '8h': 28800, '12h': 43200, '1d': 86400,
+};
+
+export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRecord[]> {
+  const b = getBackend();
+  const now = Math.floor(Date.now() / 1000);
+
+  // Build a CASE-based query: only select signals old enough for their timeframe
+  // We use a generous approach: fetch all pending, then filter in JS (simpler across SQLite/PG)
+  const sql = `SELECT * FROM signals WHERE outcome_price IS NULL ORDER BY created_at ASC LIMIT 200`;
+
+  let rows: SignalRecord[];
+  if (isPg && b instanceof PgBackend) {
+    rows = await b.query(sql);
+  } else {
+    rows = b.all(sql);
+  }
+
+  // Filter: only signals old enough for their timeframe
+  return rows.filter(s => {
+    const evalWindow = TIMEFRAME_SECONDS[s.timeframe];
+    if (!evalWindow) return false;
+    return (now - s.created_at) >= evalWindow;
+  });
+}
+
 /**
  * Check if a signal for the given coin+timeframe was recorded within the last N seconds.
  * Used by seed script for idempotency.
@@ -308,18 +367,23 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const oldest = all[all.length - 1];
   const newest = all[0];
 
-  const evaluated = all.filter(s => s.return_pct_4h !== null && s.signal !== 'HOLD');
-  const wins = evaluated.filter(s => {
-    if (s.signal === 'BUY') return (s.return_pct_4h ?? 0) > 0;
-    if (s.signal === 'SELL') return (s.return_pct_4h ?? 0) < 0;
-    return false;
-  });
+  // v1.3: Use unified outcome_return_pct (evaluated at signal's own timeframe)
+  const evaluated = all.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
 
-  const returns = evaluated.map(s => {
-    const r = s.return_pct_4h ?? 0;
-    const pnl = s.signal === 'SELL' ? -r : r;
-    return Math.max(pnl, -100); // Cap individual loss at -100%
-  });
+  // Helper: compute P&L-adjusted return (invert for SELL)
+  function pnlReturn(s: SignalRecord): number {
+    const r = s.outcome_return_pct ?? 0;
+    return Math.max(s.signal === 'SELL' ? -r : r, -100);
+  }
+
+  function isWin(s: SignalRecord): boolean {
+    if (s.signal === 'BUY') return (s.outcome_return_pct ?? 0) > 0;
+    if (s.signal === 'SELL') return (s.outcome_return_pct ?? 0) < 0;
+    return false;
+  }
+
+  const wins = evaluated.filter(isWin);
+  const returns = evaluated.map(pnlReturn);
 
   const winRate = evaluated.length > 0 ? wins.length / evaluated.length : null;
   const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : null;
@@ -355,16 +419,9 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
   for (const type of ['BUY', 'SELL', 'HOLD'] as const) {
     const group = all.filter(s => s.signal === type);
-    const evalGroup = group.filter(s => s.return_pct_4h !== null && type !== 'HOLD');
-    const winsGroup = evalGroup.filter(s => {
-      if (type === 'BUY') return (s.return_pct_4h ?? 0) > 0;
-      if (type === 'SELL') return (s.return_pct_4h ?? 0) < 0;
-      return false;
-    });
-    const returnsGroup = evalGroup.map(s => {
-      const r = s.return_pct_4h ?? 0;
-      return type === 'SELL' ? -r : r;
-    });
+    const evalGroup = group.filter(s => s.outcome_return_pct != null && type !== 'HOLD');
+    const winsGroup = evalGroup.filter(isWin);
+    const returnsGroup = evalGroup.map(pnlReturn);
 
     bySignalType[type] = {
       count: group.length,
@@ -373,31 +430,24 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     };
   }
 
-  // ── Performance by timeframe (15m / 1h / 4h / 24h) ──
+  // v1.3: Performance by timeframe — group by signal's timeframe, using unified outcome
   const byTimeframe: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
-  const tfFields = [
-    { key: '15m', field: 'return_pct_15m' as keyof SignalRecord },
-    { key: '1h', field: 'return_pct_1h' as keyof SignalRecord },
-    { key: '4h', field: 'return_pct_4h' as keyof SignalRecord },
-    { key: '24h', field: 'return_pct_24h' as keyof SignalRecord },
-  ];
-  for (const { key, field } of tfFields) {
-    const withData = all.filter(s => s[field] !== null && s[field] !== undefined && s.signal !== 'HOLD');
-    if (withData.length === 0) {
-      byTimeframe[key] = { count: 0, winRate: null, avgReturnPct: null };
+  const allTimeframes = [...new Set(all.map(s => s.timeframe))];
+  const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'];
+  allTimeframes.sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b));
+
+  for (const tf of allTimeframes) {
+    const tfSignals = all.filter(s => s.timeframe === tf && s.signal !== 'HOLD');
+    const tfEval = tfSignals.filter(s => s.outcome_return_pct != null);
+    if (tfEval.length === 0) {
+      byTimeframe[tf] = { count: tfSignals.length, winRate: null, avgReturnPct: null };
       continue;
     }
-    const tfWins = withData.filter(s => {
-      const ret = s[field] as number;
-      return s.signal === 'BUY' ? ret > 0 : ret < 0;
-    });
-    const tfReturns = withData.map(s => {
-      const ret = s[field] as number;
-      return s.signal === 'SELL' ? -ret : ret;
-    });
-    byTimeframe[key] = {
-      count: withData.length,
-      winRate: tfWins.length / withData.length,
+    const tfWins = tfEval.filter(isWin);
+    const tfReturns = tfEval.map(pnlReturn);
+    byTimeframe[tf] = {
+      count: tfEval.length,
+      winRate: tfWins.length / tfEval.length,
       avgReturnPct: tfReturns.reduce((a, b) => a + b, 0) / tfReturns.length,
     };
   }
@@ -406,16 +456,9 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
   for (const coin of coins) {
     const group = all.filter(s => s.coin === coin);
-    const evalGroup = group.filter(s => s.return_pct_4h !== null && s.signal !== 'HOLD');
-    const winsGroup = evalGroup.filter(s => {
-      if (s.signal === 'BUY') return (s.return_pct_4h ?? 0) > 0;
-      if (s.signal === 'SELL') return (s.return_pct_4h ?? 0) < 0;
-      return false;
-    });
-    const returnsGroup = evalGroup.map(s => {
-      const r = s.return_pct_4h ?? 0;
-      return s.signal === 'SELL' ? -r : r;
-    });
+    const evalGroup = group.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
+    const winsGroup = evalGroup.filter(isWin);
+    const returnsGroup = evalGroup.map(pnlReturn);
 
     byAsset[coin] = {
       count: group.length,
