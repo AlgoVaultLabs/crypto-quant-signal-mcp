@@ -25,13 +25,13 @@ No code. No API key. No install.
 | Name | `Crypto Quant Signal` |
 | URL | `https://api.algovault.com/mcp` |
 
-![Add Connector](docs/screenshots/add-connector.png)
+![Add Connector](docs/screenshots/Add-Connector.png)
 
 **Step 3.** Ask Claude anything:
 
 > "Get me a trade signal for BTC"
 
-![BTC Signal Result](docs/screenshots/btc-signal.png)
+![BTC Signal Result](docs/screenshots/BTC-signal.png)
 
 That's it. You now have a crypto quant analyst inside Claude.
 
