@@ -11,13 +11,13 @@ interface TradeSignalInput {
   license?: LicenseInfo;
 }
 
-// ── Retuned weights (v2) ──
-// Based on 5,400+ signal outcome analysis:
-// - EMA reduced from 30→20% (too dominant, caused false BUY signals)
-// - RSI increased from 25→30% (oversold/overbought is the best mean-reversion signal)
-// - Funding kept at 20% (correctly calibrated for SELL signals)
-// - OI reduced from 15→10% (lagging indicator, hurt BUY accuracy)
-// - Volume increased from 10→20% (volume confirmation reduces false signals)
+// ── Indicator weights (v1.3) ──
+// Tuned from 5,400+ signal outcome analysis:
+// - EMA 20% (trend confirmation, reduced from 30% — was too dominant)
+// - RSI 30% (best mean-reversion signal, increased from 25%)
+// - Funding 20% (correctly calibrated for SELL signals)
+// - OI 10% (lagging indicator, reduced from 15%)
+// - Volume 20% (confirmation filter, increased from 10%)
 const WEIGHTS = {
   rsi: 0.30,
   ema: 0.20,
@@ -26,8 +26,8 @@ const WEIGHTS = {
   volume: 0.20,
 };
 
-// Asymmetric signal thresholds (v3): BUY must be more convincing than SELL
-// Based on v1/v2 data: SELL signals are much more reliable than BUY signals
+// Asymmetric signal thresholds: BUY must be more convincing than SELL
+// Based on historical data: SELL signals are much more reliable than BUY signals
 const BUY_BASE_THRESHOLD = 45;   // Higher bar for BUY
 const SELL_BASE_THRESHOLD = 35;  // SELL signals already work well
 
@@ -169,7 +169,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     oiScore * WEIGHTS.oi +
     volumeScore * WEIGHTS.volume;
 
-  // ── Funding confirmation gate (v3) ──
+  // ── Funding confirmation gate ──
   // Penalize BUY when longs are crowded; bonus for contrarian BUY on negative funding
   const fundingAdjustments: string[] = [];
   if (rawScore > 0 && fundingRate > 0) {
@@ -181,7 +181,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     fundingAdjustments.push(`Funding rate is strongly negative (${(fundingRate * 100).toFixed(4)}%) — shorts are paying. Contrarian BUY bonus +10 points.`);
   }
 
-  // ── Regime-aware signal determination (v3: asymmetric thresholds) ──
+  // ── Regime-aware signal determination (asymmetric thresholds) ──
   let signal: SignalVerdict;
   const absScore = Math.abs(rawScore);
 
@@ -213,7 +213,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     else if (fundingRate < 0) parts.push('Negative funding — shorts paying longs.');
     else if (fundingRate > 0.001) parts.push('High positive funding — crowded longs (contrarian bearish).');
     else if (fundingRate > 0.0005) parts.push('Positive funding — longs paying shorts.');
-    // v3: Funding confirmation gate adjustments
+    // Funding confirmation gate adjustments
     parts.push(...fundingAdjustments);
     if (regime === 'TRENDING_DOWN' && signal === 'HOLD' && rawScore > BUY_BASE_THRESHOLD) {
       parts.push(`Regime filter: potential BUY suppressed — market is trending down (requires ${BUY_THRESHOLD_TRENDING_DOWN}+ score, got ${absScore.toFixed(0)}).`);
