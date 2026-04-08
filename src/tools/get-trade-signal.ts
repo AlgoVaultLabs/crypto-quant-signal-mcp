@@ -40,7 +40,7 @@ const SELL_THRESHOLD_TRENDING_UP = 55;
 const MAX_RAW_SCORE = 78;
 
 // Minimum confidence to record in track record (filters noise)
-const MIN_TRACKABLE_CONFIDENCE = 40;
+const MIN_TRACKABLE_CONFIDENCE = 60;
 
 export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSignalResult> {
   const coin = input.coin.toUpperCase();

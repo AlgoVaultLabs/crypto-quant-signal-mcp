@@ -61,7 +61,7 @@ function computePFEMAE(
   signal: SignalRecord,
   candles: Candle[],
   evalCount: number
-): { outcome_price: number; outcome_return_pct: number; pfe_price: number; pfe_return_pct: number; mae_price: number; mae_return_pct: number; pfe_candles: number } | null {
+): { outcome_price: number; outcome_return_pct: number; return_1candle: number; pfe_price: number; pfe_return_pct: number; mae_price: number; mae_return_pct: number; pfe_candles: number } | null {
   const window = candles.slice(0, evalCount);
   if (window.length === 0) return null;
 
@@ -70,6 +70,10 @@ function computePFEMAE(
 
   const outcomePrice = window[window.length - 1].close;
   const outcomeReturnPct = ((outcomePrice - entry) / entry) * 100;
+
+  // v1.4.1: 1-candle return — direction-adjusted
+  const raw1c = ((window[0].close - entry) / entry) * 100;
+  const return1candle = isBuy ? raw1c : -raw1c;
 
   let pfePrice = entry;
   let maePrice = entry;
@@ -89,6 +93,7 @@ function computePFEMAE(
   return {
     outcome_price: parseFloat(outcomePrice.toFixed(6)),
     outcome_return_pct: parseFloat(outcomeReturnPct.toFixed(4)),
+    return_1candle: parseFloat(return1candle.toFixed(4)),
     pfe_price: parseFloat(pfePrice.toFixed(6)),
     pfe_return_pct: parseFloat(((pfePrice - entry) / entry * 100).toFixed(4)),
     mae_price: parseFloat(maePrice.toFixed(6)),
