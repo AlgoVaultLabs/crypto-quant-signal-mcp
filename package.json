@@ -44,7 +44,8 @@
     "@x402/evm": "^2.9.0",
     "better-sqlite3": "^11.8.2",
     "express": "^4.21.2",
-    "pg": "^8.13.3"
+    "pg": "^8.13.3",
+    "stripe": "^22.0.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

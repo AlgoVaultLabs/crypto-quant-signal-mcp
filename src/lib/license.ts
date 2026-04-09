@@ -8,6 +8,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { verifyX402Payment, isX402Configured } from './x402.js';
+import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 
 const FREE_COINS = new Set(['BTC', 'ETH']);
@@ -73,9 +74,10 @@ export async function resolveLicense(
     }
   }
 
-  // Tier 2: API key (env var or Authorization header)
+  // Tier 2: API key (env var or Authorization header) — validated via Stripe
   const authHeader = headers['authorization'] || headers['Authorization'];
-  return { license: resolveFromApiKey(authHeader) };
+  const license = await resolveFromApiKeyAsync(authHeader);
+  return { license };
 }
 
 /**
@@ -87,9 +89,37 @@ export function resolveLicenseSync(headers: Record<string, string | undefined>):
 }
 
 /**
- * Resolve license from API key only (env var or Authorization header).
+ * Async license resolution — validates API key against Stripe.
+ * Falls back to prefix-based check if Stripe is not configured.
+ */
+async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo> {
+  const key = extractApiKey(authHeader);
+  if (!key) return { tier: 'free', key: null };
+
+  // Try Stripe validation (cached, 5-min TTL)
+  const stripeResult = await stripeValidateApiKey(key);
+  if (stripeResult.valid && stripeResult.tier) {
+    return { tier: stripeResult.tier, key };
+  }
+
+  // Fallback: prefix-based (for local dev / backward compat)
+  return resolveFromApiKey(authHeader);
+}
+
+/**
+ * Synchronous license resolution from API key (no Stripe call).
+ * Used for stdio mode and cache warming.
  */
 function resolveFromApiKey(authHeader?: string): LicenseInfo {
+  const key = extractApiKey(authHeader);
+  if (!key) return { tier: 'free', key: null };
+
+  // Prefix-based tier detection (backward compat)
+  const tier: LicenseTier = key.startsWith('ent_') ? 'enterprise' : 'pro';
+  return { tier, key };
+}
+
+function extractApiKey(authHeader?: string): string | null {
   const envKey = process.env.CQS_API_KEY || null;
 
   let headerKey: string | null = null;
@@ -99,14 +129,8 @@ function resolveFromApiKey(authHeader?: string): LicenseInfo {
   }
 
   const key = envKey || headerKey;
-
-  if (!key || key.trim().length === 0) {
-    return { tier: 'free', key: null };
-  }
-
-  // MVP: key prefix determines tier (Stripe validation in Phase 2)
-  const tier: LicenseTier = key.startsWith('ent_') ? 'enterprise' : 'pro';
-  return { tier, key };
+  if (!key || key.trim().length === 0) return null;
+  return key;
 }
 
 // ── For tests — reset env-based cache ──

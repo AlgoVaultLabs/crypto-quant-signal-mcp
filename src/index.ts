@@ -20,6 +20,14 @@ import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, 
 import { initX402, settleX402Async } from './lib/x402.js';
 import { initAnalytics, logRequest, hashIp, getUsageStats } from './lib/analytics.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
+import {
+  isStripeConfigured,
+  constructWebhookEvent,
+  handleSubscriptionCreated,
+  handleSubscriptionDeleted,
+  createCheckoutSession,
+  getCustomerApiKey,
+} from './lib/stripe.js';
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -179,7 +187,66 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.4.0' });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.4.0', stripe: isStripeConfigured() });
+  });
+
+  // ── Stripe Webhook (raw body required — must be before express.json()) ──
+  app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'] as string;
+    if (!sig) return res.status(400).json({ error: 'Missing stripe-signature header' });
+
+    try {
+      const event = constructWebhookEvent(req.body as Buffer, sig);
+      if (!event) return res.status(400).json({ error: 'Stripe not configured' });
+
+      switch (event.type) {
+        case 'customer.subscription.created':
+          await handleSubscriptionCreated(event);
+          break;
+        case 'customer.subscription.deleted':
+          await handleSubscriptionDeleted(event);
+          break;
+        default:
+          console.log(`Stripe webhook: unhandled event ${event.type}`);
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      console.error('Stripe webhook error:', err instanceof Error ? err.message : err);
+      res.status(400).json({ error: 'Webhook verification failed' });
+    }
+  });
+
+  // ── Signup (redirects to Stripe Checkout) ──
+  app.get('/signup', async (req, res) => {
+    const plan = req.query.plan as string;
+    if (plan !== 'pro' && plan !== 'enterprise') {
+      return res.status(400).send(getSignupPageHtml());
+    }
+
+    try {
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const url = await createCheckoutSession(plan, baseUrl);
+      if (!url) return res.status(500).send('Stripe not configured or missing price IDs');
+      res.redirect(303, url);
+    } catch (err) {
+      console.error('Stripe checkout error:', err instanceof Error ? err.message : err);
+      res.status(500).send('Failed to create checkout session');
+    }
+  });
+
+  // ── Welcome (shows API key after successful checkout) ──
+  app.get('/welcome', async (req, res) => {
+    const sessionId = req.query.session_id as string;
+    if (!sessionId) return res.status(400).send('Missing session_id');
+
+    try {
+      const { apiKey, tier, email } = await getCustomerApiKey(sessionId);
+      res.send(getWelcomePageHtml(apiKey, tier, email));
+    } catch (err) {
+      console.error('Welcome page error:', err instanceof Error ? err.message : err);
+      res.status(500).send('Failed to retrieve your API key. Please contact support@algovault.com');
+    }
   });
 
   // Admin analytics (only if ADMIN_API_KEY is set)
@@ -757,6 +824,119 @@ setInterval(load, 30000);
 // See https://smithery.ai/docs/deploy#sandbox-server
 export function createSandboxServer() {
   return createServer();
+}
+
+// ── Signup Page HTML ──
+
+function getSignupPageHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlgoVault — Subscribe</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
+  .container { max-width: 720px; width: 100%; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 600px) { .plans { grid-template-columns: 1fr; } }
+  .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; }
+  .plan h2 { font-size: 20px; margin-bottom: 4px; }
+  .plan .price { font-size: 36px; font-weight: 700; color: #58a6ff; margin: 12px 0; }
+  .plan .price span { font-size: 16px; font-weight: 400; color: #8b949e; }
+  .plan ul { list-style: none; margin: 16px 0 24px; }
+  .plan ul li { padding: 4px 0; color: #c9d1d9; font-size: 14px; }
+  .plan ul li::before { content: '\\2713'; color: #3fb950; margin-right: 8px; }
+  .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; transition: background 0.15s; }
+  .btn:hover { background: #2ea043; }
+  .btn.ent { background: #8957e5; }
+  .btn.ent:hover { background: #a371f7; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AlgoVault Subscriptions</h1>
+  <div class="subtitle">Unlock all assets, all timeframes, and higher call limits.</div>
+  <div class="plans">
+    <div class="plan">
+      <h2>Pro</h2>
+      <div class="price">$49<span>/mo</span></div>
+      <ul>
+        <li>15,000 calls/month</li>
+        <li>All assets (SOL, ARB, DOGE...)</li>
+        <li>All timeframes (1m to 1d)</li>
+        <li>Priority support</li>
+      </ul>
+      <a class="btn" href="/signup?plan=pro">Subscribe to Pro</a>
+    </div>
+    <div class="plan">
+      <h2>Enterprise</h2>
+      <div class="price">$299<span>/mo</span></div>
+      <ul>
+        <li>100,000 calls/month</li>
+        <li>All assets &amp; timeframes</li>
+        <li>SLA guarantee</li>
+        <li>Dedicated support</li>
+      </ul>
+      <a class="btn ent" href="/signup?plan=enterprise">Subscribe to Enterprise</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+// ── Welcome Page HTML ──
+
+function getWelcomePageHtml(apiKey: string | null, tier: string | null, email: string | null): string {
+  const keyDisplay = apiKey
+    ? `<div class="key-box"><div class="label">Your API Key</div><code id="api-key">${apiKey}</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>`
+    : `<div class="pending"><p>Your API key is being provisioned. This usually takes a few seconds.</p><p>Refresh this page in a moment, or check your email at <strong>${email || 'your registered address'}</strong>.</p></div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to AlgoVault ${tier ? `(${tier})` : ''}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
+  .container { max-width: 560px; width: 100%; text-align: center; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
+  .key-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: left; }
+  .key-box .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .key-box code { display: block; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px 16px; font-size: 16px; color: #3fb950; word-break: break-all; margin-bottom: 12px; }
+  .key-box button { background: #238636; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .key-box button:hover { background: #2ea043; }
+  .pending { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; color: #d29922; }
+  .usage { margin-top: 24px; text-align: left; }
+  .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Welcome to AlgoVault! &#x1f389;</h1>
+  <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : 'Setting up your account...'}</div>
+  ${keyDisplay}
+  <div class="usage">
+    <h2>Quick Start</h2>
+    <pre>curl -X POST https://api.algovault.com/mcp \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -d '{"jsonrpc":"2.0","method":"tools/call",
+       "params":{"name":"get_trade_signal",
+                 "arguments":{"coin":"SOL","timeframe":"5m"}},
+       "id":1}'</pre>
+  </div>
+</div>
+</body>
+</html>`;
 }
 
 // ── Entry Point ──

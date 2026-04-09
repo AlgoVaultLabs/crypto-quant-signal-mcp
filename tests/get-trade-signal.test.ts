@@ -83,7 +83,7 @@ describe('getTradeSignal', () => {
 
     const result = await getTradeSignal({ coin: 'ETH' });
     expect(result._algovault).toBeDefined();
-    expect(result._algovault.version).toBe('1.0.0');
+    expect(result._algovault.version).toBe('1.4.0');
     expect(result._algovault.tool).toBe('get_trade_signal');
     expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
     expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');
