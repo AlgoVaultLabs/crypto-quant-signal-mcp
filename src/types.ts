@@ -209,7 +209,11 @@ export interface PerformanceStats {
     profitFactor: number | null;
   }>;
   byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
-  recentSignals: SignalRecord[];
+  recentSignals: Array<{
+    coin: string; signal: string; confidence: number;
+    timeframe: string; return_1candle: number | null;
+    outcome_return_pct: number | null; created_at: number;
+  }>;
   methodology: Record<string, unknown>;
 }
 
