@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="AlgoVault" width="120" />
+  <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png" alt="AlgoVault" width="120" />
 </p>
 
 # crypto-quant-signal-mcp
@@ -25,13 +25,13 @@ No code. No API key. No install.
 | Name | `Crypto Quant Signal` |
 | URL | `https://api.algovault.com/mcp` |
 
-![Add Connector](docs/screenshots/Add-Connector.png)
+![Add Connector](https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/Add-Connector.png)
 
 **Step 3.** Ask Claude anything:
 
 > "Get me a trade signal for BTC"
 
-![BTC Signal Result](docs/screenshots/BTC-signal.png)
+![BTC Signal Result](https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/BTC-signal.png)
 
 That's it. You now have a crypto quant analyst inside Claude.
 
