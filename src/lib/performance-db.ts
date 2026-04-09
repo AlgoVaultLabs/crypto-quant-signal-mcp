@@ -507,7 +507,7 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     const returnsGroup = ewGroup.map(pnlReturn);
 
     bySignalType[type] = {
-      count: group.length,
+      count: type === 'HOLD' ? group.length : evalGroup.length,
       winRate: type === 'HOLD' ? null : (evalGroup.length > 0 ? winsGroup.length / evalGroup.length : null),
       avgReturnPct: type === 'HOLD' ? null : (returnsGroup.length > 0 ? returnsGroup.reduce((a, b) => a + b, 0) / returnsGroup.length : null),
     };
@@ -575,7 +575,11 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     bySignalType,
     byTimeframe,
     byAsset,
-    recentSignals: all.slice(0, 20),
+    recentSignals: all.map(s => ({
+      coin: s.coin, signal: s.signal, confidence: s.confidence,
+      timeframe: s.timeframe, return_1candle: s.return_1candle,
+      outcome_return_pct: s.outcome_return_pct, created_at: s.created_at,
+    })),
     methodology: METHODOLOGY,
   };
 }

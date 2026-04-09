@@ -361,7 +361,7 @@ function getDashboardHtml(apiKey: string): string {
   .bar { height: 8px; background: #58a6ff; border-radius: 4px; min-width: 4px; }
   .refresh { color: #8b949e; font-size: 12px; margin-top: 16px; }
   #loading { color: #8b949e; font-size: 16px; padding: 40px; text-align: center; }
-  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .logo { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 28px; }
   .logo span { font-size: 28px; }
 </style>
 </head>
@@ -442,8 +442,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
-  h1 { font-size: 24px; }
-  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
+  h1 { font-size: 24px; font-weight: 700; }
+  .subtitle { color: #6e7681; font-size: 12px; margin-top: 6px; letter-spacing: 0.5px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
   @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -499,8 +499,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <!-- KPI Cards (3) -->
   <div class="grid">
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
-    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">1-candle direction hit rate</div></div>
-    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">total profit / total loss</div></div>
+    <div class="card"><div class="label">Win Rate</div><div class="value" id="winrate"></div><div class="sub">1-Candle Direction Hit Rate</div></div>
+    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">Total Profit / Total Loss</div></div>
   </div>
 
   <!-- Signal type breakdown -->
@@ -651,10 +651,48 @@ function renderAll() {
     tfEl.innerHTML = '<tr><td colspan="5" class="empty">No data for this timeframe</td></tr>';
   }
 
-  // Recent signals
+  // Assets — filter by TF
+  var allSignals = d.recentSignals || [];
+  var tfSignals = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s) { return s.timeframe === activeTfFilter; });
+  var nonHoldSignals = tfSignals.filter(function(s) { return s.signal !== 'HOLD'; });
+
+  function computeAssets(signals) {
+    var map = {};
+    signals.forEach(function(s) {
+      if (!map[s.coin]) map[s.coin] = { coin: s.coin, count: 0, wins: 0, evaluated: 0, returns: [] };
+      var a = map[s.coin];
+      if (s.return_1candle != null) { a.evaluated++; if (s.return_1candle > 0) a.wins++; }
+      if (s.outcome_return_pct != null) {
+        var r = s.signal === 'SELL' ? -s.outcome_return_pct : s.outcome_return_pct;
+        r = Math.max(r, -100);
+        a.returns.push(r);
+        a.count++;
+      }
+    });
+    return Object.values(map).filter(function(a) { return a.returns.length > 0; }).map(function(a) {
+      var avg = a.returns.reduce(function(x,y){return x+y;}, 0) / a.returns.length;
+      return { coin: a.coin, count: a.count, winRate: a.evaluated > 0 ? a.wins / a.evaluated : null, avgReturnPct: avg };
+    });
+  }
+  var assets = computeAssets(nonHoldSignals);
+  var topAssets = assets.slice().sort(function(a,b) { return (b.avgReturnPct||0) - (a.avgReturnPct||0); }).slice(0, 15);
+  var worstAssets = assets.slice().sort(function(a,b) { return (a.avgReturnPct||0) - (b.avgReturnPct||0); }).slice(0, 15);
+  function renderAssetTable(id, list) {
+    var el = document.getElementById(id);
+    if (!list.length) { el.innerHTML = '<tr><td colspan="4" class="empty">Waiting for outcome data...</td></tr>'; return; }
+    el.innerHTML = list.map(function(a) {
+      return '<tr><td><strong>' + a.coin + '</strong></td>' +
+        '<td class="num">' + a.count + '</td>' +
+        '<td class="num ' + wrClass(a.winRate) + '">' + pct(a.winRate) + '</td>' +
+        '<td class="num ' + retClass(a.avgReturnPct) + '">' + retPct(a.avgReturnPct) + '</td></tr>';
+    }).join('');
+  }
+  renderAssetTable('top-assets', topAssets);
+  renderAssetTable('worst-assets', worstAssets);
+
+  // Recent signals (show latest 20)
   var recentEl = document.getElementById('recent');
-  var recent = d.recentSignals || [];
-  if (activeTfFilter !== 'all') recent = recent.filter(function(s) { return s.timeframe === activeTfFilter; });
+  var recent = tfSignals.slice(0, 20);
   if (recent.length) {
     recentEl.innerHTML = recent.map(function(s) {
       return '<tr>' +
@@ -697,25 +735,6 @@ async function load() {
     var availTfs = d.byTimeframe ? Object.keys(d.byTimeframe).sort(function(a,b) { return TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b); }) : [];
     tabsEl.innerHTML = '<div class="tab' + (activeTfFilter === 'all' ? ' active' : '') + '" data-tf="all" onclick="setTfFilter(\\'all\\')">All</div>' +
       availTfs.map(function(tf) { return '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\\'' + tf + '\\')">' + tf + '</div>'; }).join('');
-
-    // Assets
-    var assets = Object.entries(d.byAsset || {})
-      .filter(function(e) { return e[1].avgReturnPct != null; })
-      .map(function(e) { return Object.assign({ coin: e[0] }, e[1]); });
-    var topAssets = assets.slice().sort(function(a,b) { return (b.avgReturnPct||0) - (a.avgReturnPct||0); }).slice(0, 15);
-    var worstAssets = assets.slice().sort(function(a,b) { return (a.avgReturnPct||0) - (b.avgReturnPct||0); }).slice(0, 15);
-    function renderAssetTable(id, list) {
-      var el = document.getElementById(id);
-      if (!list.length) { el.innerHTML = '<tr><td colspan="4" class="empty">Waiting for outcome data...</td></tr>'; return; }
-      el.innerHTML = list.map(function(a) {
-        return '<tr><td><strong>' + a.coin + '</strong></td>' +
-          '<td class="num">' + a.count + '</td>' +
-          '<td class="num ' + wrClass(a.winRate) + '">' + pct(a.winRate) + '</td>' +
-          '<td class="num ' + retClass(a.avgReturnPct) + '">' + retPct(a.avgReturnPct) + '</td></tr>';
-      }).join('');
-    }
-    renderAssetTable('top-assets', topAssets);
-    renderAssetTable('worst-assets', worstAssets);
 
     renderAll();
 
