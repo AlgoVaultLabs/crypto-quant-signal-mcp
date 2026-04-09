@@ -373,6 +373,7 @@ function getDashboardHtml(apiKey: string): string {
     <div class="card"><div class="label">Total Calls (All Time)</div><div class="value" id="total-all"></div></div>
     <div class="card"><div class="label">Last 24 Hours</div><div class="value green" id="total-24h"></div></div>
     <div class="card"><div class="label">Last 7 Days</div><div class="value purple" id="total-7d"></div></div>
+    <div class="card"><div class="label">Unique Sessions (All Time)</div><div class="value" id="sessions-all"></div></div>
     <div class="card"><div class="label">Unique Sessions (24h)</div><div class="value orange" id="sessions-24h"></div></div>
   </div>
   <div class="grid">
@@ -411,6 +412,7 @@ async function load() {
     document.getElementById('total-all').textContent = d.totalCalls.allTime;
     document.getElementById('total-24h').textContent = d.totalCalls.last24h;
     document.getElementById('total-7d').textContent = d.totalCalls.last7d;
+    document.getElementById('sessions-all').textContent = d.uniqueSessions.allTime;
     document.getElementById('sessions-24h').textContent = d.uniqueSessions.last24h;
     renderRows('by-tool', d.byTool);
     renderRows('by-tier', d.byTier);

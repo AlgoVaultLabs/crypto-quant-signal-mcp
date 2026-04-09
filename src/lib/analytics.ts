@@ -83,6 +83,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     byTier,
     uniqueSessions24h,
     uniqueSessions7d,
+    uniqueSessionsAll,
     topAssets,
     avgResponseTime,
   ] = await Promise.all([
@@ -93,6 +94,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     dbQuery<{ license_tier: string; count: string }>('SELECT license_tier, COUNT(*) as count FROM request_log GROUP BY license_tier ORDER BY count DESC'),
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL', [dayAgo]),
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL', [weekAgo]),
+    dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE session_id IS NOT NULL'),
     dbQuery<{ asset: string; count: string }>('SELECT asset, COUNT(*) as count FROM request_log WHERE asset IS NOT NULL GROUP BY asset ORDER BY count DESC LIMIT 10'),
     dbQuery<{ tool_name: string; avg_ms: string }>('SELECT tool_name, AVG(response_time_ms) as avg_ms FROM request_log GROUP BY tool_name'),
   ]);
@@ -106,6 +108,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     byTool: Object.fromEntries(byTool.map(r => [r.tool_name, Number(r.count)])),
     byTier: Object.fromEntries(byTier.map(r => [r.license_tier, Number(r.count)])),
     uniqueSessions: {
+      allTime: Number(uniqueSessionsAll[0]?.count ?? 0),
       last24h: Number(uniqueSessions24h[0]?.count ?? 0),
       last7d: Number(uniqueSessions7d[0]?.count ?? 0),
     },
