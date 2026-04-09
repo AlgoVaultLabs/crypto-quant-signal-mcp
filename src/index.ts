@@ -28,6 +28,7 @@ import {
   createCheckoutSession,
   getCustomerApiKey,
 } from './lib/stripe.js';
+import { getTopAssetsByOI } from './lib/oi-ranking.js';
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -299,6 +300,22 @@ async function startHttp() {
       }
       res.send(getPerformanceDashboardHtml(key));
     });
+
+    // Top assets by OI (admin-only)
+    app.get('/api/top-assets', async (req, res) => {
+      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
+        || (req.query.key as string);
+      if (token !== adminKey) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
+        const assets = await getTopAssetsByOI(limit);
+        res.json({ assets, count: assets.length, cachedAt: new Date().toISOString() });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch OI ranking' });
+      }
+    });
   }
 
   // MCP endpoint
@@ -548,6 +565,10 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; transition: all 0.15s; }
   .tab:hover { border-color: #58a6ff80; }
   .tab.active { background: #58a6ff20; color: #58a6ff; border-color: #58a6ff; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+  .filter-row .label { font-size: 11px; color: #6e7681; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .tab.gold-active { background: #d2992220; color: #d29922; border-color: #d29922; }
+  .tab.gold-active:hover { border-color: #d29922; }
   .methodology { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; font-size: 13px; line-height: 1.7; color: #c9d1d9; }
   .methodology p { margin-top: 12px; }
   .methodology p:first-child { margin-top: 0; }
@@ -565,6 +586,14 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
+  <!-- Asset Filter -->
+  <div class="filter-row">
+    <span class="label">Assets:</span>
+    <div class="tab active" id="asset-all" onclick="setAssetFilter('all')">All Assets</div>
+    <div class="tab" id="asset-top50" onclick="setAssetFilter('top50')">Top 50 OI</div>
+    <span id="oi-status" style="font-size:11px;color:#6e7681;margin-left:4px"></span>
+  </div>
+
   <!-- KPI Cards (3) -->
   <div class="grid">
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
@@ -647,6 +676,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 const KEY = '${apiKey}';
 const TF_ORDER = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
 let activeTfFilter = 'all';
+let activeAssetFilter = 'all';
+let top50Coins = null; // null = not loaded yet, [] = loaded
 
 function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '\\u2014'; }
 function retPct(v) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : '\\u2014'; }
@@ -664,30 +695,138 @@ function timeAgo(ts) {
 
 function setTfFilter(tf) {
   activeTfFilter = tf;
-  document.querySelectorAll('.tab').forEach(function(t) { t.classList.toggle('active', t.dataset.tf === tf); });
+  document.querySelectorAll('#tf-tabs .tab').forEach(function(t) { t.classList.toggle('active', t.dataset.tf === tf); });
+  renderAll();
+}
+
+async function setAssetFilter(mode) {
+  activeAssetFilter = mode;
+  document.getElementById('asset-all').className = 'tab' + (mode === 'all' ? ' active' : '');
+  document.getElementById('asset-top50').className = 'tab' + (mode === 'top50' ? ' gold-active' : '');
+  if (mode === 'top50' && top50Coins === null) {
+    document.getElementById('oi-status').textContent = 'Loading...';
+    try {
+      var r = await fetch('/api/top-assets?key=' + KEY);
+      var j = await r.json();
+      top50Coins = j.assets.map(function(a) { return a.coin; });
+      document.getElementById('oi-status').textContent = top50Coins.length + ' coins loaded';
+    } catch(e) {
+      document.getElementById('oi-status').textContent = 'Failed to load OI data';
+      activeAssetFilter = 'all';
+      document.getElementById('asset-all').className = 'tab active';
+      document.getElementById('asset-top50').className = 'tab';
+      return;
+    }
+  }
+  if (mode === 'top50' && top50Coins) {
+    document.getElementById('oi-status').textContent = top50Coins.length + ' coins';
+  } else {
+    document.getElementById('oi-status').textContent = '';
+  }
   renderAll();
 }
 
 var cachedData = null;
 
+function pnlDir(s) { var r = s.outcome_return_pct || 0; return Math.max(s.signal === 'SELL' ? -r : r, -100); }
+
+function getFilteredSignals() {
+  var all = cachedData ? (cachedData.recentSignals || []) : [];
+  if (activeAssetFilter === 'top50' && top50Coins) {
+    return all.filter(function(s) { return top50Coins.indexOf(s.coin) !== -1; });
+  }
+  return all;
+}
+
+function recomputeOverall(signals) {
+  var nonHold = signals.filter(function(s) { return s.signal !== 'HOLD'; });
+  var eval1c = nonHold.filter(function(s) { return s.return_1candle != null; });
+  var wins1c = eval1c.filter(function(s) { return s.return_1candle > 0; });
+  var wr = eval1c.length > 0 ? wins1c.length / eval1c.length : null;
+  var evalEW = nonHold.filter(function(s) { return s.outcome_return_pct != null; });
+  var returns = evalEW.map(pnlDir);
+  var gp = returns.filter(function(r) { return r > 0; }).reduce(function(a,b){return a+b;}, 0);
+  var gl = Math.abs(returns.filter(function(r) { return r < 0; }).reduce(function(a,b){return a+b;}, 0));
+  var pf = gl > 0 ? gp / gl : (gp > 0 ? Infinity : null);
+  return { totalEvaluated: eval1c.length, total: signals.length, winRate: wr, profitFactor: pf };
+}
+
+function recomputeTF(signals) {
+  var nonHold = signals.filter(function(s) { return s.signal !== 'HOLD'; });
+  var tfs = {};
+  nonHold.forEach(function(s) { if (!tfs[s.timeframe]) tfs[s.timeframe] = []; tfs[s.timeframe].push(s); });
+  var result = {};
+  Object.keys(tfs).forEach(function(tf) {
+    var group = tfs[tf];
+    var e1c = group.filter(function(s) { return s.return_1candle != null; });
+    var w1c = e1c.filter(function(s) { return s.return_1candle > 0; });
+    var eEW = group.filter(function(s) { return s.outcome_return_pct != null; });
+    var rets = eEW.map(pnlDir);
+    var gp = rets.filter(function(r){return r>0;}).reduce(function(a,b){return a+b;},0);
+    var gl = Math.abs(rets.filter(function(r){return r<0;}).reduce(function(a,b){return a+b;},0));
+    var pf = gl > 0 ? gp/gl : (gp > 0 ? Infinity : null);
+    var avg = rets.length > 0 ? rets.reduce(function(a,b){return a+b;},0)/rets.length : null;
+    result[tf] = { count: Math.max(e1c.length, eEW.length), winRate: e1c.length > 0 ? w1c.length/e1c.length : null, avgReturnPct: avg, profitFactor: pf };
+  });
+  return result;
+}
+
+function renderSignalTypes() {
+  if (!cachedData) return;
+  var allSignals = getFilteredSignals();
+  var typeEl = document.getElementById('by-type');
+  var typeCounts = {};
+  ['BUY','SELL','HOLD'].forEach(function(type) {
+    var group = allSignals.filter(function(s) { return s.signal === type; });
+    var evalGroup = group.filter(function(s) { return s.return_1candle != null && type !== 'HOLD'; });
+    var winsGroup = evalGroup.filter(function(s) { return s.return_1candle > 0; });
+    var ewGroup = group.filter(function(s) { return s.outcome_return_pct != null && type !== 'HOLD'; });
+    var returnsGroup = ewGroup.map(pnlDir);
+    typeCounts[type] = {
+      count: type === 'HOLD' ? group.length : evalGroup.length,
+      winRate: type === 'HOLD' ? null : (evalGroup.length > 0 ? winsGroup.length / evalGroup.length : null),
+      avgReturnPct: type === 'HOLD' ? null : (returnsGroup.length > 0 ? returnsGroup.reduce(function(a,b){return a+b;},0)/returnsGroup.length : null),
+    };
+  });
+  var types = Object.entries(typeCounts);
+  if (types.length) {
+    var maxCount = Math.max.apply(null, types.map(function(e) { return e[1].count; }));
+    typeEl.innerHTML = types.map(function(e) {
+      var type = e[0], v = e[1];
+      return '<tr><td>' + badge(type) + '</td>' +
+        '<td class="num">' + v.count + '</td>' +
+        '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
+        '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
+        '<td><div class="bar-wrap"><div class="bar b" style="width:' + (maxCount > 0 ? Math.round(v.count/maxCount*100) : 0) + '%"></div></div></td></tr>';
+    }).join('');
+  } else {
+    typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet</td></tr>';
+  }
+}
+
 function renderAll() {
   var d = cachedData;
   if (!d) return;
 
+  var allSignals = getFilteredSignals();
+  var useRecomputed = activeAssetFilter === 'top50';
+  var overallStats = useRecomputed ? recomputeOverall(allSignals) : d.overall;
+  var tfStats = useRecomputed ? recomputeTF(allSignals) : d.byTimeframe;
+
   // KPIs — update for selected TF
   if (activeTfFilter === 'all') {
-    document.getElementById('total').textContent = (d.overall.totalEvaluated || d.totalSignals || 0).toLocaleString();
+    document.getElementById('total').textContent = (overallStats.totalEvaluated || overallStats.total || d.totalSignals || 0).toLocaleString();
     document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : '';
-    var wr = d.overall.winRate;
+    var wr = overallStats.winRate;
     var wrEl = document.getElementById('winrate');
     wrEl.textContent = pct(wr);
     wrEl.className = 'value ' + wrClass(wr);
-    var pf = d.overall.profitFactor;
+    var pf = overallStats.profitFactor;
     var pfEl = document.getElementById('pf');
     pfEl.textContent = pf != null ? pf.toFixed(2) : '\\u2014';
     pfEl.className = 'value ' + pfClass(pf);
   } else {
-    var v = (d.byTimeframe || {})[activeTfFilter];
+    var v = (tfStats || {})[activeTfFilter];
     if (v) {
       document.getElementById('total').textContent = (v.count || 0).toLocaleString();
       document.getElementById('period').textContent = activeTfFilter + ' timeframe';
@@ -704,7 +843,7 @@ function renderAll() {
 
   // TF table
   var tfEl = document.getElementById('by-timeframe');
-  var timeframes = d.byTimeframe ? Object.entries(d.byTimeframe) : [];
+  var timeframes = tfStats ? Object.entries(tfStats) : [];
   var filtered = activeTfFilter === 'all' ? timeframes : timeframes.filter(function(e) { return e[0] === activeTfFilter; });
   if (filtered.length) {
     var sorted = filtered.sort(function(a,b) { return TF_ORDER.indexOf(a[0]) - TF_ORDER.indexOf(b[0]); });
@@ -721,7 +860,6 @@ function renderAll() {
   }
 
   // Assets — filter by TF
-  var allSignals = d.recentSignals || [];
   var tfSignals = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s) { return s.timeframe === activeTfFilter; });
   var nonHoldSignals = tfSignals.filter(function(s) { return s.signal !== 'HOLD'; });
 
@@ -782,29 +920,15 @@ async function load() {
     var d = await r.json();
     cachedData = d;
 
-    // Signal type
-    var typeEl = document.getElementById('by-type');
-    var types = Object.entries(d.bySignalType || {});
-    if (types.length) {
-      var maxCount = Math.max.apply(null, types.map(function(e) { return e[1].count; }));
-      typeEl.innerHTML = types.map(function(e) {
-        var type = e[0], v = e[1];
-        return '<tr><td>' + badge(type) + '</td>' +
-          '<td class="num">' + v.count + '</td>' +
-          '<td class="num ' + wrClass(v.winRate) + '">' + pct(v.winRate) + '</td>' +
-          '<td class="num ' + retClass(v.avgReturnPct) + '">' + retPct(v.avgReturnPct) + '</td>' +
-          '<td><div class="bar-wrap"><div class="bar b" style="width:' + Math.round(v.count/maxCount*100) + '%"></div></div></td></tr>';
-      }).join('');
-    } else {
-      typeEl.innerHTML = '<tr><td colspan="5" class="empty">No signals yet</td></tr>';
-    }
-
-    // TF tabs
+    // TF tabs (use tfStats which respects asset filter)
     var tabsEl = document.getElementById('tf-tabs');
-    var availTfs = d.byTimeframe ? Object.keys(d.byTimeframe).sort(function(a,b) { return TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b); }) : [];
+    var filteredSigs = getFilteredSignals();
+    var tfStatsForTabs = (activeAssetFilter === 'top50') ? recomputeTF(filteredSigs) : d.byTimeframe;
+    var availTfs = tfStatsForTabs ? Object.keys(tfStatsForTabs).sort(function(a,b) { return TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b); }) : [];
     tabsEl.innerHTML = '<div class="tab' + (activeTfFilter === 'all' ? ' active' : '') + '" data-tf="all" onclick="setTfFilter(\\'all\\')">All</div>' +
       availTfs.map(function(tf) { return '<div class="tab' + (activeTfFilter === tf ? ' active' : '') + '" data-tf="' + tf + '" onclick="setTfFilter(\\'' + tf + '\\')">' + tf + '</div>'; }).join('');
 
+    renderSignalTypes();
     renderAll();
 
     document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();
