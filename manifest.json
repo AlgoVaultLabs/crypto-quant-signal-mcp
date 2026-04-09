@@ -3,7 +3,7 @@
   "name": "crypto-quant-signal",
   "display_name": "Crypto Quant Signal",
   "description": "Composite trading signals, funding arb scanning, and market regime detection for Hyperliquid perps. BUY/SELL/HOLD verdicts with confidence scores.",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "author": {
     "name": "AlgoVault Labs",
     "url": "https://algovault.com"
