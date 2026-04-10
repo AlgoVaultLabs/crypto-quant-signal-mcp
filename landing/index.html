@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlgoVault — AI Trading Brain for Crypto Agents | MCP Signals</title>
-<meta name="description" content="Composite trading signals across crypto and TradFi perpetuals on Hyperliquid. Multi-factor scoring engine with regime-aware filtering. MCP-native.">
-<meta name="keywords" content="crypto signals, MCP server, Hyperliquid perps, funding rate arbitrage, AI trading agent, market regime, x402, USDC payments, composite trade signal, Model Context Protocol">
+<title>AlgoVault — AI Trading Brain for Crypto Agents | MCP Trade Calls</title>
+<meta name="description" content="Composite trade calls across crypto and TradFi perpetuals on Hyperliquid. Multi-factor scoring engine with regime-aware filtering. MCP-native.">
+<meta name="keywords" content="crypto trade calls, MCP server, Hyperliquid perps, funding rate arbitrage, AI trading agent, market regime, x402, USDC payments, composite trade call, Model Context Protocol">
 <link rel="canonical" href="https://algovault.com">
 <meta property="og:title" content="AlgoVault — AI Trading Brain for Crypto Agents">
-<meta property="og:description" content="Composite quant signals across crypto and TradFi perps. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection via MCP.">
+<meta property="og:description" content="Composite quant trade calls across crypto and TradFi perps. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection via MCP.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://algovault.com">
 <meta property="og:image" content="https://algovault.com/logo.png">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:site" content="@AlgoVaultLabs">
 <meta name="twitter:title" content="AlgoVault — AI Trading Brain for Crypto Agents">
-<meta name="twitter:description" content="Composite signals, funding arb, and market regime detection for Hyperliquid perps via MCP.">
+<meta name="twitter:description" content="Composite trade calls, funding arb, and market regime detection for Hyperliquid perps via MCP.">
 <meta name="twitter:image" content="https://algovault.com/logo.png">
 <link rel="icon" type="image/png" href="/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -54,7 +54,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Signal intelligence for AI trading agents. Composite quant signals across crypto and TradFi perpetuals, cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
+  "description": "Trade call intelligence for AI trading agents. Composite quant trade calls across crypto and TradFi perpetuals, cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "BTC + ETH, 15m and 1h timeframes, ~100 calls/day" },
@@ -152,7 +152,7 @@ tailwind.config = {
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Ask Claude:</p>
           <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">
-            "Get me a trade signal for BTC on the 15m timeframe"
+            "Get me a trade call for BTC on the 15m timeframe"
           </div>
           <p class="text-gray-600 text-xs mt-1">Free tier includes 15m and 1h timeframes for BTC and ETH.</p>
         </div>
@@ -193,7 +193,7 @@ tailwind.config = {
       <span class="text-purple-400 text-lg">&#10038;</span>
       <div>
         <span class="text-white text-sm font-semibold">TradFi Perpetuals</span>
-        <span class="text-gray-400 text-sm"> &mdash; Stocks, commodities, indices, and FX via Hyperliquid&rsquo;s xyz dex. Trade signals for TSLA, GOLD, SP500, and more.</span>
+        <span class="text-gray-400 text-sm"> &mdash; Stocks, commodities, indices, and FX via Hyperliquid&rsquo;s xyz dex. Trade calls for TSLA, GOLD, SP500, and more.</span>
       </div>
     </div>
   </div>
@@ -211,10 +211,10 @@ tailwind.config = {
       <!-- get_trade_signal -->
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
         <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_trade_signal</div>
-        <h3 class="text-white font-semibold text-base mb-2">Composite Trade Signal</h3>
+        <h3 class="text-white font-semibold text-base mb-2">Composite Trade Call</h3>
         <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Multi-factor composite scoring</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Regime-aware signal filtering</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Regime-aware trade call filtering</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Crypto + TradFi perpetuals</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> 11 timeframes (1m &ndash; 1d)</li>
         </ul>
@@ -264,12 +264,12 @@ tailwind.config = {
   <div class="max-w-4xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-2xl sm:text-3xl font-bold text-white">Live Track Record</h2>
-      <p class="text-gray-500 text-sm mt-2 max-w-lg mx-auto">Every qualifying signal (confidence &ge; 60%) is tracked. PFE directional accuracy, profit factor, expected value, and excursion analysis. All public.</p>
+      <p class="text-gray-500 text-sm mt-2 max-w-lg mx-auto">Every qualifying trade call (confidence &ge; 60%) is tracked. PFE directional accuracy and excursion analysis. All public.</p>
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
-        <div class="text-2xl sm:text-3xl font-bold text-white">Every Signal</div>
+        <div class="text-2xl sm:text-3xl font-bold text-white">Every Trade Call</div>
         <div class="text-gray-500 text-xs mt-1">Tracked &amp; Measured</div>
       </div>
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
@@ -327,7 +327,7 @@ tailwind.config = {
         <div class="text-3xl font-bold text-white mb-1">$0</div>
         <div class="text-gray-600 text-xs mb-5">No signup needed</div>
         <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> BTC + ETH signals</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> BTC + ETH trade calls</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 15m + 1h timeframes</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Top 5 funding arbs</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Market regime (all assets)</li>
@@ -486,17 +486,17 @@ tailwind.config = {
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD signals, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid. It works with any MCP-compatible client including Claude, Cursor, and custom agents.
+          AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD trade calls, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid. It works with any MCP-compatible client including Claude, Cursor, and custom agents.
         </div>
       </details>
 
       <details class="bg-navy-700 border border-white/5 rounded-xl group">
         <summary class="px-6 py-4 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
-          How does the trade signal scoring work?
+          How does the trade call scoring work?
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          The scoring engine combines multiple orthogonal factors &mdash; momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction &mdash; into a single weighted composite score. Signals pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted. Only high-conviction signals are generated. Each signal includes a confidence percentage and human-readable reasoning.
+          The scoring engine combines multiple orthogonal factors &mdash; momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction &mdash; into a single weighted composite score. Trade calls pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted. Only high-conviction trade calls are generated. Each trade call includes a confidence percentage and human-readable reasoning.
         </div>
       </details>
 
@@ -516,7 +516,7 @@ tailwind.config = {
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          Yes. The free tier includes BTC and ETH trade signals on 15m and 1h timeframes, top 5 funding arbitrage opportunities, and market regime detection for all assets &mdash; with no signup required. For all crypto and TradFi assets across all 11 timeframes, upgrade to Pro ($49/month) or pay per call via x402 micropayments (USDC on Base, starting at $0.01/call).
+          Yes. The free tier includes BTC and ETH trade calls on 15m and 1h timeframes, top 5 funding arbitrage opportunities, and market regime detection for all assets &mdash; with no signup required. For all crypto and TradFi assets across all 11 timeframes, upgrade to Pro ($49/month) or pay per call via x402 micropayments (USDC on Base, starting at $0.01/call).
         </div>
       </details>
 
@@ -563,15 +563,15 @@ tailwind.config = {
       "name": "What is AlgoVault?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD signals, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid."
+        "text": "AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD trade calls, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid."
       }
     },
     {
       "@type": "Question",
-      "name": "How does the trade signal scoring work?",
+      "name": "How does the trade call scoring work?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The scoring engine combines multiple orthogonal factors — momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction — into a single weighted composite score. Signals pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted."
+        "text": "The scoring engine combines multiple orthogonal factors — momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction — into a single weighted composite score. Trade calls pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted."
       }
     },
     {
@@ -587,7 +587,7 @@ tailwind.config = {
       "name": "Is AlgoVault free to use?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. The free tier includes BTC and ETH signals on 15m and 1h timeframes, top 5 funding arbs, and market regime detection. Pro is $49/month for all crypto and TradFi assets across all 11 timeframes. x402 pay-per-call starts at $0.01."
+        "text": "Yes. The free tier includes BTC and ETH trade calls on 15m and 1h timeframes, top 5 funding arbs, and market regime detection. Pro is $49/month for all crypto and TradFi assets across all 11 timeframes. x402 pay-per-call starts at $0.01."
       }
     },
     {
