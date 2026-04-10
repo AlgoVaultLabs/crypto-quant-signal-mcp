@@ -593,3 +593,69 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     methodology: METHODOLOGY,
   };
 }
+
+// ── Confidence band analysis ──
+
+export interface ConfidenceBand {
+  band: string;
+  total: number;
+  evaluated: number;
+  pfeWinRate: number | null;
+  buyCount: number;
+  sellCount: number;
+  avgConfidence: number;
+  avgPfePct: number | null;
+}
+
+export async function getConfidenceBands(): Promise<ConfidenceBand[]> {
+  const b = getBackend();
+  if (!(isPg && b instanceof PgBackend)) {
+    return [];
+  }
+
+  const sql = `
+    SELECT
+      CASE
+        WHEN confidence >= 50 AND confidence < 55 THEN '50-54'
+        WHEN confidence >= 55 AND confidence < 60 THEN '55-59'
+        WHEN confidence >= 60 AND confidence < 65 THEN '60-64'
+        WHEN confidence >= 65 AND confidence < 70 THEN '65-69'
+        WHEN confidence >= 70 AND confidence < 75 THEN '70-74'
+        WHEN confidence >= 75 AND confidence < 80 THEN '75-79'
+        WHEN confidence >= 80 AND confidence < 85 THEN '80-84'
+        WHEN confidence >= 85 AND confidence < 90 THEN '85-89'
+        WHEN confidence >= 90 THEN '90+'
+      END as band,
+      COUNT(*) as total,
+      COUNT(CASE WHEN pfe_return_pct IS NOT NULL THEN 1 END) as evaluated,
+      COUNT(CASE
+        WHEN signal = 'BUY' AND pfe_return_pct > 0 THEN 1
+        WHEN signal = 'SELL' AND pfe_return_pct < 0 THEN 1
+      END) as pfe_wins,
+      COUNT(CASE WHEN signal = 'BUY' THEN 1 END) as buy_count,
+      COUNT(CASE WHEN signal = 'SELL' THEN 1 END) as sell_count,
+      ROUND(AVG(confidence)::numeric, 1) as avg_confidence,
+      ROUND(AVG(CASE
+        WHEN signal = 'BUY' AND pfe_return_pct > 0 THEN pfe_return_pct
+        WHEN signal = 'SELL' AND pfe_return_pct < 0 THEN ABS(pfe_return_pct)
+      END)::numeric, 3) as avg_pfe_pct
+    FROM signals
+    WHERE signal IN ('BUY', 'SELL')
+    GROUP BY band
+    ORDER BY band
+  `;
+
+  const rows = await b.query(sql);
+  return rows
+    .filter((r: any) => r.band !== null)
+    .map((r: any) => ({
+      band: r.band,
+      total: parseInt(r.total),
+      evaluated: parseInt(r.evaluated),
+      pfeWinRate: parseInt(r.evaluated) > 0 ? parseInt(r.pfe_wins) / parseInt(r.evaluated) : null,
+      buyCount: parseInt(r.buy_count),
+      sellCount: parseInt(r.sell_count),
+      avgConfidence: parseFloat(r.avg_confidence),
+      avgPfePct: r.avg_pfe_pct ? parseFloat(r.avg_pfe_pct) : null,
+    }));
+}

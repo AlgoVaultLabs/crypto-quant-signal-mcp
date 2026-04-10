@@ -37,7 +37,7 @@
 
 import { getTradeSignal } from '../tools/get-trade-signal.js';
 import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
-import { classifyAsset, warmTierCaches } from '../lib/asset-tiers.js';
+import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import type { LicenseInfo } from '../types.js';
 
 // Internal license bypasses free-tier gating
@@ -137,7 +137,8 @@ async function fetchAllCoins(topN: number): Promise<string[]> {
       const xyzData = await xyzRes.json() as [{ universe: { name: string }[] }, { openInterest: string; markPx: string }[]];
       const xyzAssets: HLAssetInfo[] = xyzData[0].universe
         .map((u, i) => ({
-          name: u.name,
+          // Strip 'xyz:' prefix — getDexForCoin() handles routing to xyz dex
+          name: u.name.replace(/^xyz:/i, ''),
           notionalOI: parseFloat(xyzData[1][i]?.openInterest || '0') * parseFloat(xyzData[1][i]?.markPx || '0'),
         }))
         .filter(a => a.notionalOI > 0); // skip unlisted/zero-OI xyz assets
@@ -152,7 +153,19 @@ async function fetchAllCoins(topN: number): Promise<string[]> {
   filtered.sort((a, b) => b.notionalOI - a.notionalOI);
 
   // Apply top N limit if specified
-  const limited = topN > 0 ? filtered.slice(0, topN) : filtered;
+  let limited = topN > 0 ? filtered.slice(0, topN) : filtered;
+
+  // Always include TradFi assets regardless of top-N cutoff
+  // (TradFi OI is lower than crypto perps, so they'd get filtered out)
+  if (topN > 0) {
+    const limitedNames = new Set(limited.map(a => a.name));
+    const tradfiMissed = filtered.filter(a =>
+      !limitedNames.has(a.name) && isKnownTradFi(a.name)
+    );
+    if (tradfiMissed.length > 0) {
+      limited = [...limited, ...tradfiMissed];
+    }
+  }
 
   return limited.map(a => a.name);
 }

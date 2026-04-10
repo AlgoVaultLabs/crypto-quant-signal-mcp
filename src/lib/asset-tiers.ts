@@ -73,7 +73,7 @@ async function getXyzSymbols(): Promise<Set<string>> {
   return TRADFI_FALLBACK;
 }
 
-function isKnownTradFi(symbol: string): boolean {
+export function isKnownTradFi(symbol: string): boolean {
   if (TRADFI_FALLBACK.has(symbol)) return true;
   if (dynamicXyzSymbols) return dynamicXyzSymbols.coins.has(symbol);
   return false;
