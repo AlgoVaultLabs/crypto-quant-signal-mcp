@@ -596,8 +596,6 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <!-- KPI Cards (4) -->
   <div class="grid">
     <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div><div class="sub">Directional Accuracy</div></div>
-    <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf"></div><div class="sub">Gross Profit / Loss</div></div>
-    <div class="card"><div class="label">Expected Value</div><div class="value" id="ev"></div><div class="sub">Edge per Signal</div></div>
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
   </div>
 
@@ -617,7 +615,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section">
     <h2>Performance by Timeframe</h2>
     <div class="tabs" id="tf-tabs"></div>
-    <table><thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th class="num">Profit Factor</th></tr></thead>
+    <table><thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
   </div>
 
@@ -642,8 +640,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section"><h2>Methodology</h2>
     <div class="methodology">
       <p><strong>PFE Win Rate</strong> = Percentage of signals where price moved in the signal direction at any point during the evaluation window. Measures directional accuracy regardless of entry timing.</p>
-      <p><strong>Expected Value</strong> = (Win Rate &times; Avg Win) &minus; (Loss Rate &times; Avg Loss). Positive EV = edge per signal.</p>
-      <p><strong>Profit Factor</strong> = Sum of positive returns / |Sum of negative returns| at evaluation window close. &gt;1.0 = net profitable, &gt;2.0 = strong.</p>
+      <p><strong>Note</strong>: AlgoVault provides directional entry signals. Exit timing is determined by your agent or strategy &mdash; PFE Win Rate measures whether the direction was correct, independent of exit.</p>
       <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table><thead><tr><th>Timeframe</th><th>Candles</th><th>Total Time</th></tr></thead><tbody>
         <tr><td>5m</td><td>12</td><td>1 hour</td></tr><tr><td>15m</td><td>12</td><td>3 hours</td></tr>
@@ -766,18 +763,12 @@ function renderAll() {
   if (activeTfFilter === 'all') {
     var pfeEl = document.getElementById('pfe-wr');
     pfeEl.textContent = pct(stats.pfeWinRate); pfeEl.className = 'value hero ' + pfeClass(stats.pfeWinRate);
-    var pfEl = document.getElementById('pf');
-    pfEl.textContent = stats.profitFactor != null ? stats.profitFactor.toFixed(2) : '\\u2014'; pfEl.className = 'value ' + pfClass(stats.profitFactor);
-    var evEl = document.getElementById('ev');
-    evEl.textContent = stats.expectedValue != null ? retPct(stats.expectedValue) : '\\u2014'; evEl.className = 'value ' + evClass(stats.expectedValue);
     document.getElementById('total').textContent = (stats.totalEvaluated || stats.total || 0).toLocaleString();
     document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : 'Tracked & Evaluated';
   } else {
     var v = (tfStats || {})[activeTfFilter];
     if (v) {
       document.getElementById('pfe-wr').textContent = '\\u2014'; document.getElementById('pfe-wr').className = 'value hero muted';
-      var pfEl2 = document.getElementById('pf'); pfEl2.textContent = v.profitFactor != null ? v.profitFactor.toFixed(2) : '\\u2014'; pfEl2.className = 'value ' + pfClass(v.profitFactor);
-      document.getElementById('ev').textContent = '\\u2014'; document.getElementById('ev').className = 'value muted';
       document.getElementById('total').textContent = (v.count || 0).toLocaleString();
       document.getElementById('period').textContent = activeTfFilter + ' timeframe';
     }
@@ -810,8 +801,6 @@ function renderAll() {
       '<div class="tc-assets">' + (assets || 'No signals yet') + '</div>' +
       (t.count > 0 ? '<div class="tc-stats">' +
         '<div class="tc-stat"><div class="tc-label">PFE WR</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
-        '<div class="tc-stat"><div class="tc-label">Profit Factor</div><div class="tc-val ' + pfClass(t.profitFactor) + '">' + (t.profitFactor != null ? t.profitFactor.toFixed(2) : '\\u2014') + '</div></div>' +
-        '<div class="tc-stat"><div class="tc-label">Expected Value</div><div class="tc-val ' + evClass(t.expectedValue) + '">' + (t.expectedValue != null ? retPct(t.expectedValue) : '\\u2014') + '</div></div>' +
         '<div class="tc-stat"><div class="tc-label">Signals</div><div class="tc-val muted">' + t.count + '</div></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No signals yet</div>') +
     '</div>';
@@ -837,8 +826,8 @@ function renderAll() {
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+wrClass(v.winRate)+'">'+pct(v.winRate)+'</td><td class="num '+retClass(v.avgReturnPct)+'">'+retPct(v.avgReturnPct)+'</td><td class="num '+pfClass(v.profitFactor)+'">'+(v.profitFactor!=null?v.profitFactor.toFixed(2):'\\u2014')+'</td></tr>';}).join('');
-  } else { tfEl.innerHTML = '<tr><td colspan="5" class="empty">No data for this timeframe</td></tr>'; }
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+wrClass(v.winRate)+'">'+pct(v.winRate)+'</td><td class="num '+retClass(v.avgReturnPct)+'">'+retPct(v.avgReturnPct)+'</td></tr>';}).join('');
+  } else { tfEl.innerHTML = '<tr><td colspan="4" class="empty">No data for this timeframe</td></tr>'; }
 
   // Asset tables
   var tfSigs = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s){return s.timeframe===activeTfFilter;});
