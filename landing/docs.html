@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlgoVault Docs — API Reference, Usage Examples & FAQ</title>
+<meta name="description" content="AlgoVault API documentation. Tool schemas, usage examples, pricing, and FAQ for AI trading agents and human developers.">
+<link rel="icon" type="image/png" href="/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+  pre { overflow-x: auto; }
+  .code-block { position: relative; }
+  .code-block .copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 10px; font-size: 11px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #8b949e; cursor: pointer; transition: all 0.15s; }
+  .code-block .copy-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: #6e7681; border-left: 2px solid transparent; transition: all 0.15s; }
+  .sidebar-link:hover { color: #d1d5db; border-left-color: #30363d; }
+  .sidebar-link.active { color: #d4b255; border-left-color: #d4b255; }
+  .example-card { transition: transform 0.15s; }
+  .example-card:hover { transform: translateY(-1px); }
+  .param-row td { padding: 8px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
+  .param-row td:first-child { font-family: 'SF Mono', monospace; color: #d4b255; font-size: 12px; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Nav -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <a href="/" class="flex items-center gap-2.5">
+        <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+        <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+      </a>
+    </div>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="/#tools" class="hover:text-white transition">Tools</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/docs.html" class="text-gold-400 font-medium">Docs</a>
+      <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="hover:text-white transition">GitHub</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-6xl mx-auto px-6 pt-24 pb-20 flex gap-10">
+
+  <!-- Sidebar -->
+  <aside class="hidden lg:block w-52 shrink-0 sticky top-20 self-start">
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3 px-3">On this page</div>
+    <a href="#quick-start" class="sidebar-link">Quick Start</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">API Reference</div>
+    <a href="#get-trade-signal" class="sidebar-link">get_trade_signal</a>
+    <a href="#scan-funding-arb" class="sidebar-link">scan_funding_arb</a>
+    <a href="#get-market-regime" class="sidebar-link">get_market_regime</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">More</div>
+    <a href="#usage-examples" class="sidebar-link">Usage Examples</a>
+    <a href="#pricing" class="sidebar-link">Pricing &amp; Limits</a>
+    <a href="#faq" class="sidebar-link">FAQ</a>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 min-w-0">
+
+    <h1 class="text-3xl font-bold text-white mb-2">Documentation</h1>
+    <p class="text-gray-500 text-sm mb-10">API reference, usage examples, and pricing for AI agents and human developers.</p>
+
+    <!-- ============ QUICK START ============ -->
+    <section id="quick-start" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> Quick Start
+      </h2>
+      <p class="text-gray-400 text-sm mb-4">Add AlgoVault to Claude Desktop in under 30 seconds. Paste this into your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">claude_desktop_config.json</code>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "mcpServers": {
+    "crypto-quant-signal": {
+      "command": "npx",
+      "args": ["-y", "crypto-quant-signal-mcp"]
+    }
+  }
+}</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-3">Then ask Claude:</p>
+      <div class="bg-navy-700 border border-white/5 rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
+        "Get me a trade call for BTC on the 1h timeframe"
+      </div>
+      <p class="text-gray-500 text-xs">Free tier: BTC + ETH on 15m and 1h timeframes. No signup needed. <a href="https://api.algovault.com/signup" class="text-gold-400 hover:underline">Upgrade to Pro</a> for all assets and timeframes.</p>
+    </section>
+
+    <!-- ============ API REFERENCE ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <!-- get_trade_signal -->
+    <section id="get-trade-signal" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> get_trade_signal
+      </h2>
+      <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <code class="text-xs bg-navy-800 px-1 rounded">BTC</code>, <code class="text-xs bg-navy-800 px-1 rounded">ETH</code>, <code class="text-xs bg-navy-800 px-1 rounded">TSLA</code>, <code class="text-xs bg-navy-800 px-1 rounded">GOLD</code>. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded">1m</code> <code class="text-xs bg-navy-800 px-1 rounded">3m</code> <code class="text-xs bg-navy-800 px-1 rounded">5m</code> <code class="text-xs bg-navy-800 px-1 rounded">15m</code> <code class="text-xs bg-navy-800 px-1 rounded">30m</code> <code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">2h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">8h</code> <code class="text-xs bg-navy-800 px-1 rounded">12h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">15m</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include human-readable reasoning. Default: <code class="text-xs bg-navy-800 px-1 rounded">true</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "signal": "BUY",
+  "confidence": 78,
+  "price": 84250.50,
+  "regime": "TRENDING_UP",
+  "reasoning": "Strong bullish momentum with trend confirmation...",
+  "timestamp": 1712764800,
+  "coin": "BTC",
+  "timeframe": "1h",
+  "_algovault": {
+    "version": "1.6.0",
+    "tool": "get_trade_signal",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- scan_funding_arb -->
+    <section id="scan-funding-arb" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> scan_funding_arb
+      </h2>
+      <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>minSpreadBps</td><td class="text-gray-400">number</td><td class="text-gray-400">Minimum spread in basis points to include. Default: <code class="text-xs bg-navy-800 px-1 rounded">5</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max results to return. Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code>. Free tier: max 5</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "opportunities": [
+    {
+      "coin": "ETH",
+      "rates": {
+        "HlPerp": 0.000125,
+        "BinPerp": -0.000042,
+        "BybitPerp": -0.000038
+      },
+      "bestArb": {
+        "longVenue": "Binance",
+        "shortVenue": "Hyperliquid",
+        "spreadBps": 13.4,
+        "annualizedPct": 117.3,
+        "direction": "Long Binance / Short Hyperliquid"
+      }
+    }
+  ],
+  "scannedPairs": 245,
+  "timestamp": 1712764800,
+  "_algovault": {
+    "version": "1.6.0",
+    "tool": "scan_funding_arb",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-execution-mcp"]
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- get_market_regime -->
+    <section id="get-market-regime" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> get_market_regime
+      </h2>
+      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "regime": "TRENDING_UP",
+  "confidence": 85,
+  "metrics": {
+    "adx_interpretation": "Strong trend",
+    "volatility_interpretation": "Normal",
+    "price_structure": "HIGHER_HIGHS",
+    "trend_strength": "STRONG",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 3.2x above CEX avg — longs concentrated on HL"
+  },
+  "suggestion": "Strong uptrend detected. Favor long positions with trend-following strategies.",
+  "timestamp": 1712764800,
+  "coin": "BTC",
+  "timeframe": "4h",
+  "_algovault": {
+    "version": "1.6.0",
+    "tool": "get_market_regime",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ USAGE EXAMPLES ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="usage-examples" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> Usage Examples
+      </h2>
+      <p class="text-gray-500 text-sm mb-8">20 real-world workflows for AI agents and human developers. From simple one-liners to multi-agent orchestration.</p>
+
+      <div class="grid gap-4">
+
+        <!-- 1 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">01</span>
+            <h3 class="text-white font-semibold text-sm">Quick BTC Check</h3>
+            <span class="text-xs text-gray-600 ml-auto">Beginner</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">The simplest possible call. Ask your agent for a single trade call.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get me a trade call for BTC on the 1h timeframe"</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code></div>
+        </div>
+
+        <!-- 2 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">02</span>
+            <h3 class="text-white font-semibold text-sm">Portfolio Scanner</h3>
+            <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Loop through the top 10 assets, get trade calls for each, and filter by high confidence.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK, DOT, and MATIC on the 15m timeframe. Only show me the ones with confidence above 70%."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code> &times; 10 &nbsp;|&nbsp; Pattern: batch calling, confidence filtering</div>
+        </div>
+
+        <!-- 3 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">03</span>
+            <h3 class="text-white font-semibold text-sm">Regime-Aware Trading</h3>
+            <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Check the market regime first. Only request trade calls when the regime is favorable for directional trading.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"First check the market regime for ETH on the 4h timeframe. If it's TRENDING_UP or TRENDING_DOWN, get me a trade call on the 15m timeframe. If it's RANGING or VOLATILE, skip it."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_signal</code> &nbsp;|&nbsp; Pattern: conditional chaining</div>
+        </div>
+
+        <!-- 4 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">04</span>
+            <h3 class="text-white font-semibold text-sm">Funding Arb Monitor</h3>
+            <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Scan for cross-venue funding rate arbitrage opportunities. Alert when the annualized spread exceeds your threshold.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan for funding arbitrage opportunities with a minimum spread of 10 basis points. Show me the top 5 ranked by annualized return."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: threshold-based alerting</div>
+        </div>
+
+        <!-- 5 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">05</span>
+            <h3 class="text-white font-semibold text-sm">Full 3-Tool Pipeline</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">The complete AlgoVault workflow: regime detection, trade call, then arb check for the same asset. Maximum context for one decision.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For SOL: first get the market regime on 4h, then get a trade call on 15m, then check if there are any funding arb opportunities. Give me a combined recommendation based on all three."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_signal</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: full pipeline composition</div>
+        </div>
+
+        <!-- 6 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">06</span>
+            <h3 class="text-white font-semibold text-sm">Multi-Timeframe Confirmation</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Get trade calls on multiple timeframes for the same asset. Only act when all timeframes agree on direction.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for ETH on the 5m, 15m, and 1h timeframes. Only tell me to trade if all three agree on the same direction (all BUY or all SELL)."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code> &times; 3 &nbsp;|&nbsp; Pattern: multi-timeframe consensus</div>
+        </div>
+
+        <!-- 7 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">07</span>
+            <h3 class="text-white font-semibold text-sm">TradFi Rotation</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Compare regime and direction across TradFi perpetuals. Rotate into the asset with the strongest trend.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime and trade call for TSLA, GOLD, and SP500 on the 4h timeframe. Which one has the strongest trend with the highest confidence trade call? Recommend the best one to trade."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 + <code class="text-xs">get_trade_signal</code> &times; 3 &nbsp;|&nbsp; Pattern: cross-asset comparison</div>
+        </div>
+
+        <!-- 8 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">08</span>
+            <h3 class="text-white font-semibold text-sm">Risk-Gated Entry</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Only enter trades when both confidence and regime alignment pass your risk filters. Skip everything else.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check BTC regime on 4h, then get a trade call on 15m. Only recommend entry if confidence is 75% or higher AND the regime is TRENDING (not VOLATILE or RANGING). Otherwise say 'no trade'."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_signal</code> &nbsp;|&nbsp; Pattern: dual risk filter</div>
+        </div>
+
+        <!-- 9 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">09</span>
+            <h3 class="text-white font-semibold text-sm">Funding Sentiment Dashboard</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Get market regime for major assets and use the cross-venue funding sentiment to gauge overall market bias.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for BTC, ETH, and SOL on the 4h timeframe. Summarize the cross-venue funding sentiment for each. Is the overall market leaning bullish or bearish based on where funding is concentrated?"</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 &nbsp;|&nbsp; Pattern: macro sentiment aggregation</div>
+        </div>
+
+        <!-- 10 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">10</span>
+            <h3 class="text-white font-semibold text-sm">Contrarian Meme Scanner</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Scan lower-tier assets for contrarian setups: high-confidence SELL calls during an uptrend may signal crowded longs about to unwind.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for DOGE, SHIB, PEPE, WIF, and BONK on 4h. For any that are TRENDING_UP, get a trade call on 15m. Flag any that return SELL with confidence above 70% &mdash; those might be crowded longs ready to unwind."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 + <code class="text-xs">get_trade_signal</code> (conditional) &nbsp;|&nbsp; Pattern: contrarian divergence detection</div>
+        </div>
+
+        <!-- 11 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">11</span>
+            <h3 class="text-white font-semibold text-sm">Divergence Detector</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Compare trade call direction vs market regime. When they disagree, flag it as a high-risk divergence.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For BTC and ETH: get the market regime on 4h and a trade call on 15m. If the trade call says BUY but the regime is TRENDING_DOWN (or vice versa), flag it as a divergence with a risk warning."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> + <code class="text-xs">get_trade_signal</code> per asset &nbsp;|&nbsp; Pattern: signal-regime divergence</div>
+        </div>
+
+        <!-- 12 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">12</span>
+            <h3 class="text-white font-semibold text-sm">Hourly Digest Bot</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Build an automated digest: scan all tier-1 and tier-2 assets every hour, summarize trade calls and market regime into a brief report.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan BTC, ETH, SOL, AVAX, LINK, DOGE, XRP, ADA for trade calls on 1h. Also get the market regime for BTC and ETH on 4h. Summarize as a brief market digest: how many BUYs vs SELLs, overall regime, and top 3 highest-confidence calls."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code> &times; 8 + <code class="text-xs">get_market_regime</code> &times; 2 &nbsp;|&nbsp; Pattern: periodic digest, notification-ready</div>
+        </div>
+
+        <!-- 13 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">13</span>
+            <h3 class="text-white font-semibold text-sm">Hedging Advisor</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">You hold a long ETH position. Check regime and trade call — if both turn bearish, look for a funding arb to hedge via the cheaper venue.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I'm currently long ETH. Get the market regime on 4h and a trade call on 1h. If both are bearish, scan funding arb for ETH and tell me which venue has the cheapest short to hedge my position."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_signal</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: defensive hedging</div>
+        </div>
+
+        <!-- 14 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">14</span>
+            <h3 class="text-white font-semibold text-sm">Volatility Breakout Watch</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Use regime detection as a screener: find assets in VOLATILE regime with high confidence — these are breakout candidates. Then get trade call for direction.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check the market regime for BTC, ETH, SOL, AVAX, LINK, and DOGE on 4h. For any in VOLATILE regime with confidence above 70%, get a trade call on 5m. Those are potential breakout trades."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 6 + <code class="text-xs">get_trade_signal</code> (conditional) &nbsp;|&nbsp; Pattern: regime as screener</div>
+        </div>
+
+        <!-- 15 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">15</span>
+            <h3 class="text-white font-semibold text-sm">Cross-Asset Correlation</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Get trade calls for BTC, ETH, SOL simultaneously. If all say SELL, it's a macro risk-off signal, not just one asset.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, and SOL on the 1h timeframe. If all three say the same direction, flag it as a market-wide move. If they disagree, note which ones are diverging."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code> &times; 3 &nbsp;|&nbsp; Pattern: correlation / macro signal</div>
+        </div>
+
+        <!-- 16 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">16</span>
+            <h3 class="text-white font-semibold text-sm">Funding Cash-and-Carry</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Find a funding arb spread, then get a trade call on the long side. If the trade call agrees with the long direction, you have double conviction.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan funding arb with minimum 10 bps spread. For the top opportunity, get a trade call for the asset on 15m. If the trade call agrees with the long side of the arb, flag it as a high-conviction cash-and-carry setup."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &rarr; <code class="text-xs">get_trade_signal</code> &nbsp;|&nbsp; Pattern: arb + directional alignment</div>
+        </div>
+
+        <!-- 17 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">17</span>
+            <h3 class="text-white font-semibold text-sm">Weekend vs Weekday Patterns</h3>
+            <span class="text-xs text-purple-400 ml-auto">Research</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Schedule trade calls every 4 hours, log results over time. Compare weekend vs weekday regime patterns to find exploitable edges.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Every 4 hours, get a trade call for BTC on 4h and log the regime, direction, and confidence. After a week, compare weekend vs weekday patterns. Are weekends more RANGING? Do SELL calls cluster on Sundays?"</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code> + <code class="text-xs">get_market_regime</code> (scheduled) &nbsp;|&nbsp; Pattern: data collection, research</div>
+        </div>
+
+        <!-- 18 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">18</span>
+            <h3 class="text-white font-semibold text-sm">Agent Portfolio Rebalance</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Daily regime check for each asset in your portfolio. Shift allocation toward TRENDING assets, reduce exposure to VOLATILE/RANGING positions.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"My portfolio holds BTC, ETH, SOL, AVAX, and LINK. Get the market regime for each on the 1d timeframe. Recommend which ones to overweight (TRENDING) and which to underweight (VOLATILE or RANGING)."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 &nbsp;|&nbsp; Pattern: regime-based portfolio allocation</div>
+        </div>
+
+        <!-- 19 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">19</span>
+            <h3 class="text-white font-semibold text-sm">Smart DCA Bot</h3>
+            <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Dollar-cost averaging, enhanced: skip buys when the trade call says SELL with high confidence. Only DCA when direction is neutral or favorable.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I DCA into BTC every day. Before today's buy, get a trade call on the 4h timeframe. If it says SELL with confidence above 70%, skip today's buy and wait. Otherwise proceed normally."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_signal</code> &nbsp;|&nbsp; Pattern: strategy enhancement, DCA optimization</div>
+        </div>
+
+        <!-- 20 -->
+        <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">20</span>
+            <h3 class="text-white font-semibold text-sm">Multi-Agent War Room</h3>
+            <span class="text-xs text-red-400 ml-auto">Expert</span>
+          </div>
+          <p class="text-gray-400 text-sm mb-3">Three specialized agents, one coordinator. Agent A handles regime detection, Agent B runs trade calls, Agent C monitors funding arbs. The coordinator synthesizes all three into a single decision.</p>
+          <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: All 3 tools in parallel &nbsp;|&nbsp; Pattern: multi-agent orchestration</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ PRICING ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="pricing" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> Pricing &amp; Limits
+      </h2>
+      <p class="text-gray-500 text-sm mb-6">Two payment rails: Stripe subscriptions for human developers, x402 micropayments (USDC on Base) for autonomous agents.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscription Tiers</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-8">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3"></th>
+          <th class="text-center text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Free</th>
+          <th class="text-center text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Pro</th>
+          <th class="text-center text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Enterprise</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Price</td><td class="text-center text-white text-sm px-4 py-2.5">$0</td><td class="text-center text-white text-sm px-4 py-2.5">$49/mo</td><td class="text-center text-white text-sm px-4 py-2.5">$299/mo</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Monthly calls</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">100</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">15,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">100,000</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Assets</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">BTC + ETH</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Timeframes</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">15m, 1h</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td></tr>
+          <tr><td class="text-gray-400 text-sm px-4 py-2.5">Funding arb results</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Top 5</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Unlimited</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Unlimited</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">x402 Pay-Per-Call (USDC on Base)</h3>
+      <p class="text-gray-500 text-sm mb-4">No signup. No API key. Your agent pays per call with USDC on Base. Works with any x402-compatible wallet.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Tool</th>
+          <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">get_trade_signal</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT timeframes: up to $0.05)</span></td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">scan_funding_arb</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.01</td></tr>
+          <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ FAQ ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="faq" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+        <span class="text-gold-400">&#9670;</span> FAQ
+      </h2>
+
+      <div class="space-y-3">
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            How often should I call get_trade_signal?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Match your call frequency to the timeframe. A 5m trade call is stale after ~5 minutes, while a 4h call is relevant for several hours. For most agents, calling once per candle close on your chosen timeframe is optimal.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            Can I combine multiple tools in one workflow?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Yes &mdash; and it's encouraged. The recommended flow is: <strong>regime &rarr; trade call &rarr; arb</strong>. Check the regime first to decide if conditions favor directional trading, then get a trade call for direction, then check if a funding arb exists on the same asset. See the <a href="#usage-examples" class="text-gold-400 hover:underline">usage examples</a> for 20 real-world workflows.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What's the latency per call?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Typically 1&ndash;3 seconds. Each call fetches live data from Hyperliquid (and Binance/Bybit for funding arb and regime). The response time depends on Hyperliquid's API latency and the number of assets scanned.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            How is trade call performance tracked?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Every trade call with confidence &ge; 60% is automatically recorded. After enough candles have passed, the system measures PFE (Peak Favorable Excursion) win rate &mdash; did price move in the called direction at any point during the evaluation window? Results are available via the <code class="text-xs bg-navy-800 px-1 rounded">performance://signal-stats</code> MCP resource and on the <a href="https://api.algovault.com/dashboard" class="text-gold-400 hover:underline">live dashboard</a>.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What assets are supported?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            All perpetuals listed on Hyperliquid &mdash; including standard crypto perps (BTC, ETH, SOL, etc.), TradFi perpetuals via the xyz dex (TSLA, GOLD, SP500, EUR, and more), and liquidity-filtered meme coins. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            Do you provide exit signals?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            No. AlgoVault provides <strong>directional entry calls only</strong> &mdash; BUY, SELL, or HOLD. Your agent or strategy determines exit timing. This is by design: exit logic depends on your risk tolerance, position size, and portfolio context, which only you know. PFE Win Rate measures whether the called direction was correct, independent of exit.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What is x402 and how do agent payments work?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            x402 is an open protocol for machine-to-machine micropayments. Your agent pays per API call with USDC on Base &mdash; no signup, no API key, no subscription. The agent signs an ERC-3009 authorization, the server verifies it on-chain, and the call proceeds. It's the native payment rail for autonomous agents that don't have credit cards.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            Can I run AlgoVault locally?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Yes. Install via <code class="text-xs bg-navy-800 px-1 rounded">npx -y crypto-quant-signal-mcp</code> and it runs locally in stdio mode for Claude Desktop. For remote access, the hosted version at <code class="text-xs bg-navy-800 px-1 rounded">api.algovault.com/mcp</code> supports Streamable HTTP transport.
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <div class="border-t border-white/5 pt-8 text-center">
+      <p class="text-gray-600 text-xs">Built by <a href="https://algovault.com" class="text-gray-500 hover:text-white transition">AlgoVault Labs</a></p>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>
