@@ -3,12 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlgoVault Labs — The Brain Layer for Crypto Trading Agents</title>
-<meta name="description" content="Composite trading signals, funding arb scanning, and market regime detection for Hyperliquid perps. One API call. One verdict.">
-<meta property="og:title" content="AlgoVault Labs — The Brain Layer for Crypto Trading Agents">
-<meta property="og:description" content="AI trading brain for crypto perps via MCP. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection.">
+<title>AlgoVault — AI Trading Brain for Crypto Agents | MCP Signals</title>
+<meta name="description" content="Composite trading signals across crypto and TradFi perpetuals on Hyperliquid. Multi-factor scoring engine with regime-aware filtering. MCP-native.">
+<meta name="keywords" content="crypto signals, MCP server, Hyperliquid perps, funding rate arbitrage, AI trading agent, market regime, x402, USDC payments, composite trade signal, Model Context Protocol">
+<link rel="canonical" href="https://algovault.com">
+<meta property="og:title" content="AlgoVault — AI Trading Brain for Crypto Agents">
+<meta property="og:description" content="Composite quant signals across crypto and TradFi perps. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection via MCP.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://algovault.com">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="twitter:title" content="AlgoVault — AI Trading Brain for Crypto Agents">
+<meta name="twitter:description" content="Composite signals, funding arb, and market regime detection for Hyperliquid perps via MCP.">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
 <link rel="icon" type="image/png" href="/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -38,6 +46,28 @@ tailwind.config = {
   .step-line::after { content: ''; position: absolute; left: 19px; top: 44px; bottom: -12px; width: 1px; background: linear-gradient(to bottom, #c4a34a44, transparent); }
   .step-line:last-child::after { display: none; }
 </style>
+<!-- Structured Data: SoftwareApplication -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "AlgoVault",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Any (MCP-compatible)",
+  "description": "Signal intelligence for AI trading agents. Composite quant signals across crypto and TradFi perpetuals, cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
+  "url": "https://algovault.com",
+  "offers": [
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "BTC + ETH, 15m and 1h timeframes, ~100 calls/day" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
+    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+  ],
+  "author": {
+    "@type": "Organization",
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  }
+}
+</script>
 </head>
 <body class="min-h-screen">
 
@@ -45,29 +75,33 @@ tailwind.config = {
 <nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
     <div class="flex items-center gap-2.5">
-      <img src="/logo.png" alt="AlgoVault" class="w-7 h-7 rounded-md">
+      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
       <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
     </div>
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="#tools" class="hover:text-white transition">Tools</a>
+      <a href="#track-record" class="hover:text-white transition">Track Record</a>
       <a href="#pricing" class="hover:text-white transition">Pricing</a>
       <a href="#developers" class="hover:text-white transition">Developers</a>
       <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="hover:text-white transition">GitHub</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
+
+<main>
 
 <!-- Hero -->
 <section class="pt-28 pb-16 sm:pt-36 sm:pb-24 px-6">
   <div class="max-w-3xl mx-auto text-center fade-in">
     <div class="flex justify-center mb-6">
-      <img src="/logo.png" alt="AlgoVault" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl glow">
+      <img src="/logo.png" alt="AlgoVault" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl glow" loading="eager">
     </div>
-    <h1 class="text-3xl sm:text-5xl font-bold text-white leading-tight tracking-tight glow-text">
-      The brain layer for<br>crypto trading agents
+    <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
+      The Brain Layer for<br>AI Trading Agents
     </h1>
     <p class="mt-5 text-base sm:text-lg text-gray-400 max-w-xl mx-auto leading-relaxed">
-      Composite signals, funding arb scanning, and market regime detection for Hyperliquid perps. One API call. One verdict.
+      Arm Your Agent with a Wall Street Quant Brain. One API Call Returns Direction, Confidence &amp; Regime &mdash; Gets Smarter with Every Verdict.
     </p>
     <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
       <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
@@ -77,11 +111,11 @@ tailwind.config = {
         View on GitHub
       </a>
     </div>
-    <p class="mt-4 text-xs text-gray-600">No signup. No API key. Free tier starts now.</p>
+    <p class="mt-4 text-xs text-gray-600">No signup required. Free tier includes BTC + ETH on 15m and 1h.</p>
   </div>
 </section>
 
-<!-- Quick Start — "Try it in 30 seconds" -->
+<!-- Quick Start -->
 <section id="quickstart" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-2xl mx-auto">
     <div class="text-center mb-10">
@@ -90,7 +124,6 @@ tailwind.config = {
     </div>
 
     <div class="space-y-6">
-      <!-- Step 1 -->
       <div class="flex gap-4 step-line">
         <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
           <span class="text-gold-400 font-bold text-sm">1</span>
@@ -100,7 +133,6 @@ tailwind.config = {
           <p class="text-gray-500 text-xs mt-1">Or any MCP-compatible client (Cursor, Windsurf, VS Code, etc.)</p>
         </div>
       </div>
-      <!-- Step 2 -->
       <div class="flex gap-4 step-line">
         <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
           <span class="text-gold-400 font-bold text-sm">2</span>
@@ -113,7 +145,6 @@ tailwind.config = {
           </div>
         </div>
       </div>
-      <!-- Step 3 -->
       <div class="flex gap-4 step-line">
         <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
           <span class="text-gold-400 font-bold text-sm">3</span>
@@ -121,8 +152,9 @@ tailwind.config = {
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Ask Claude:</p>
           <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">
-            "Get me a trade signal for BTC on the 1h timeframe"
+            "Get me a trade signal for BTC on the 15m timeframe"
           </div>
+          <p class="text-gray-600 text-xs mt-1">Free tier includes 15m and 1h timeframes for BTC and ETH.</p>
         </div>
       </div>
     </div>
@@ -135,15 +167,34 @@ tailwind.config = {
       </div>
       <pre class="text-xs sm:text-sm text-gray-300 overflow-x-auto leading-relaxed"><code>{
   "signal": "<span class="text-emerald-400 font-semibold">BUY</span>",
-  "confidence": <span class="text-gold-400">0.72</span>,
+  "confidence": <span class="text-gold-400">68</span>,
+  "price": <span class="text-gold-400">97245.50</span>,
   "indicators": {
-    "rsi14": 38.2,
-    "ema_cross": "<span class="text-emerald-400">bullish</span>",
-    "funding_rate": -0.0012,
-    "oi_momentum": "<span class="text-emerald-400">increasing</span>"
+    "rsi": 34.7,
+    "ema_cross": "<span class="text-emerald-400">BULLISH</span>",
+    "funding_rate": -0.0008,
+    "funding_z_score": <span class="text-gold-400">-1.82</span>,
+    "oi_change_pct": 3.1,
+    "hurst": <span class="text-gold-400">0.612</span>,
+    "squeeze_active": <span class="text-gray-500">false</span>
   },
-  "reasoning": "RSI oversold + bullish EMA cross + negative funding = contrarian long setup"
+  "regime": "<span class="text-emerald-400">TRENDING_UP</span>",
+  "reasoning": "RSI oversold at 34.7. Bullish EMA cross confirmed.
+    Funding Z-Score -1.82 (shorts crowded). Hurst 0.61 confirms trend."
 }</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- TradFi Callout -->
+<section class="px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto py-8">
+    <div class="bg-purple-500/5 border border-purple-500/20 rounded-xl px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+      <span class="text-purple-400 text-lg">&#10038;</span>
+      <div>
+        <span class="text-white text-sm font-semibold">TradFi Perpetuals</span>
+        <span class="text-gray-400 text-sm"> &mdash; Stocks, commodities, indices, and FX via Hyperliquid&rsquo;s xyz dex. Trade signals for TSLA, GOLD, SP500, and more.</span>
+      </div>
     </div>
   </div>
 </section>
@@ -153,7 +204,7 @@ tailwind.config = {
   <div class="max-w-5xl mx-auto">
     <div class="text-center mb-12">
       <h2 class="text-2xl sm:text-3xl font-bold text-white">3 Tools, One Verdict</h2>
-      <p class="text-gray-500 text-sm mt-2">Each tool combines multiple indicators into a single, actionable answer.</p>
+      <p class="text-gray-500 text-sm mt-2">Each tool combines multiple data sources into a single, actionable answer. Assets are classified into quality tiers with institutional-grade liquidity filtering.</p>
     </div>
 
     <div class="grid md:grid-cols-3 gap-5">
@@ -161,12 +212,15 @@ tailwind.config = {
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
         <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_trade_signal</div>
         <h3 class="text-white font-semibold text-base mb-2">Composite Trade Signal</h3>
-        <p class="text-gray-400 text-sm leading-relaxed mb-4">
-          BUY / SELL / HOLD verdict combining RSI, EMA crossover, funding rate, OI momentum, and volume. Confidence score 0&ndash;1.
-        </p>
+        <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Multi-factor composite scoring</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Regime-aware signal filtering</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Crypto + TradFi perpetuals</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> 11 timeframes (1m &ndash; 1d)</li>
+        </ul>
         <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
-          <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">BUY</span> <span class="text-gray-500">72% confidence</span><br>
-          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">RSI=38, EMA bullish, funding negative</span>
+          <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">BUY</span> <span class="text-gray-500">68% &middot; hurst 0.61</span><br>
+          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">funding_z: -1.82, squeeze: off</span>
         </div>
       </div>
 
@@ -174,9 +228,12 @@ tailwind.config = {
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
         <div class="text-gold-400 font-mono text-xs font-medium mb-3">scan_funding_arb</div>
         <h3 class="text-white font-semibold text-base mb-2">Funding Rate Arbitrage</h3>
-        <p class="text-gray-400 text-sm leading-relaxed mb-4">
-          Cross-venue funding rate scanner. Hyperliquid vs Binance vs Bybit. Normalized, annualized spreads.
-        </p>
+        <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Hyperliquid vs Binance vs Bybit</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Normalized hourly rates</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Annualized spreads in basis points</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Ranked by opportunity size</li>
+        </ul>
         <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
           <span class="text-gray-500">&rarr;</span> <span class="text-gold-400">DOGE</span> <span class="text-gray-500">+42 bps spread</span><br>
           <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">HL: -0.03% vs Binance: +0.01%</span>
@@ -187,12 +244,15 @@ tailwind.config = {
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
         <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_market_regime</div>
         <h3 class="text-white font-semibold text-base mb-2">Market Regime Detection</h3>
-        <p class="text-gray-400 text-sm leading-relaxed mb-4">
-          Classifies conditions: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE. ADX + ATR + swing structure.
-        </p>
+        <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Trending / Ranging / Volatile</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Multi-dimensional classification</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Cross-venue funding sentiment</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Strategy &amp; sizing suggestions</li>
+        </ul>
         <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
           <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">TRENDING_UP</span> <span class="text-gray-500">ADX=34.2</span><br>
-          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">Volatility moderate, funding bullish</span>
+          <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">Funding sentiment: BULLISH_BIAS</span>
         </div>
       </div>
     </div>
@@ -200,47 +260,67 @@ tailwind.config = {
 </section>
 
 <!-- Track Record -->
-<section class="py-16 sm:py-20 px-6 border-t border-white/5">
+<section id="track-record" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-4xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-2xl sm:text-3xl font-bold text-white">Live Track Record</h2>
-      <p class="text-gray-500 text-sm mt-2">Every signal is tracked. Price at signal &rarr; outcome at 1h / 4h / 24h.</p>
+      <p class="text-gray-500 text-sm mt-2 max-w-lg mx-auto">Every qualifying signal (confidence &ge; 60%) is tracked. PFE directional accuracy, profit factor, expected value, and excursion analysis. All public.</p>
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
-        <div class="text-2xl sm:text-3xl font-bold text-white" id="stat-signals">2,400+</div>
-        <div class="text-gray-500 text-xs mt-1">Signals Tracked</div>
+        <div class="text-2xl sm:text-3xl font-bold text-white">Every Signal</div>
+        <div class="text-gray-500 text-xs mt-1">Tracked &amp; Measured</div>
       </div>
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
-        <div class="text-2xl sm:text-3xl font-bold text-emerald-400">62%</div>
-        <div class="text-gray-500 text-xs mt-1">Win Rate (24h)</div>
+        <div class="text-2xl sm:text-3xl font-bold text-white">Crypto + TradFi</div>
+        <div class="text-gray-500 text-xs mt-1">Asset Coverage</div>
       </div>
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
-        <div class="text-2xl sm:text-3xl font-bold text-gold-400">1.3</div>
-        <div class="text-gray-500 text-xs mt-1">Profit Factor</div>
+        <div class="text-2xl sm:text-3xl font-bold text-white">11</div>
+        <div class="text-gray-500 text-xs mt-1">Timeframes</div>
       </div>
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
-        <div class="text-2xl sm:text-3xl font-bold text-white">200+</div>
-        <div class="text-gray-500 text-xs mt-1">Perps Covered</div>
+        <div class="text-2xl sm:text-3xl font-bold text-white">3</div>
+        <div class="text-gray-500 text-xs mt-1">Venues Compared</div>
+      </div>
+    </div>
+
+    <!-- Methodology row -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+      <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
+        <div class="text-sm font-semibold text-gold-400">1m &ndash; 1d</div>
+        <div class="text-gray-500 text-xs mt-1">All HL intervals</div>
+      </div>
+      <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
+        <div class="text-sm font-semibold text-gold-400">&ge; 60%</div>
+        <div class="text-gray-500 text-xs mt-1">Confidence filter</div>
+      </div>
+      <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
+        <div class="text-sm font-semibold text-gold-400">PFE / MAE</div>
+        <div class="text-gray-500 text-xs mt-1">Peak &amp; adverse excursion</div>
+      </div>
+      <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
+        <div class="text-sm font-semibold text-gold-400">Per-TF Eval</div>
+        <div class="text-gray-500 text-xs mt-1">5m=1hr, 1h=8hr, 4h=24hr</div>
       </div>
     </div>
 
     <p class="text-center text-gray-600 text-xs mt-5">
-      All public. All queryable via the <code class="text-gray-500">performance://signal-stats</code> MCP resource.
+      All queryable via the <code class="text-gray-500">performance://signal-stats</code> MCP resource.
     </p>
   </div>
 </section>
 
 <!-- Pricing -->
 <section id="pricing" class="py-16 sm:py-20 px-6 border-t border-white/5">
-  <div class="max-w-5xl mx-auto">
+  <div class="max-w-6xl mx-auto">
     <div class="text-center mb-12">
       <h2 class="text-2xl sm:text-3xl font-bold text-white">Simple Pricing</h2>
       <p class="text-gray-500 text-sm mt-2">Start free. Pay when you need more.</p>
     </div>
 
-    <div class="grid md:grid-cols-3 gap-5">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
       <!-- Free -->
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
         <div class="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">Free</div>
@@ -248,7 +328,7 @@ tailwind.config = {
         <div class="text-gray-600 text-xs mb-5">No signup needed</div>
         <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> BTC + ETH signals</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 1h timeframe</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 15m + 1h timeframes</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Top 5 funding arbs</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Market regime (all assets)</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> ~100 calls/day</li>
@@ -268,15 +348,33 @@ tailwind.config = {
         <div class="text-3xl font-bold text-white mb-1">$49<span class="text-lg text-gray-500 font-normal">/mo</span></div>
         <div class="text-gray-600 text-xs mb-5">For serious agent builders</div>
         <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All 200+ perp assets</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">1h, 4h, 1d timeframes</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All crypto + TradFi assets</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes (1m&ndash;1d)</span></li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> Unlimited funding arbs</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> 15,000 calls/month</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> $0.01/call overage</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> Full track record access</li>
         </ul>
-        <a href="mailto:admin@algovault.com?subject=AlgoVault Pro Subscription" class="block w-full text-center px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+        <a href="https://api.algovault.com/signup?plan=pro" class="block w-full text-center px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
           Subscribe to Pro
+        </a>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="bg-navy-700 border border-purple-500/30 rounded-xl p-6">
+        <div class="text-purple-400 text-xs font-medium uppercase tracking-wider mb-1">Enterprise</div>
+        <div class="text-3xl font-bold text-white mb-1">$299<span class="text-lg text-gray-500 font-normal">/mo</span></div>
+        <div class="text-gray-600 text-xs mb-5">For production trading desks</div>
+        <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> <span class="text-white">All crypto + TradFi assets</span></li>
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes (1m&ndash;1d)</span></li>
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> 100,000 calls/month</li>
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> $0.005/call overage</li>
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> SLA + priority support</li>
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> Unlimited funding arbs</li>
+        </ul>
+        <a href="https://api.algovault.com/signup?plan=enterprise" class="block w-full text-center px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white font-semibold text-sm rounded-lg transition">
+          Subscribe to Enterprise
         </a>
       </div>
 
@@ -320,6 +418,7 @@ tailwind.config = {
         <div class="bg-navy-800 rounded-lg px-4 py-2.5 font-mono text-sm text-gold-400 select-all cursor-pointer mt-2" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
           https://api.algovault.com/mcp
         </div>
+        <p class="text-gray-600 text-xs mt-2">Pro/Enterprise: add <code class="text-gray-500">Authorization: Bearer av_live_...</code> header</p>
       </div>
 
       <!-- Local -->
@@ -373,21 +472,135 @@ tailwind.config = {
   </div>
 </section>
 
+<!-- FAQ -->
+<section id="faq" class="py-16 sm:py-20 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Frequently Asked Questions</h2>
+    </div>
+
+    <div class="space-y-4">
+      <details class="bg-navy-700 border border-white/5 rounded-xl group" open>
+        <summary class="px-6 py-4 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+          What is AlgoVault?
+          <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
+          AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD signals, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid. It works with any MCP-compatible client including Claude, Cursor, and custom agents.
+        </div>
+      </details>
+
+      <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <summary class="px-6 py-4 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+          How does the trade signal scoring work?
+          <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
+          The scoring engine combines multiple orthogonal factors &mdash; momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction &mdash; into a single weighted composite score. Signals pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted. Only high-conviction signals are generated. Each signal includes a confidence percentage and human-readable reasoning.
+        </div>
+      </details>
+
+      <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <summary class="px-6 py-4 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+          What exchanges does AlgoVault support?
+          <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
+          AlgoVault uses Hyperliquid as its primary data source for price action, candles, and open interest. For cross-venue analysis (funding arbitrage and market regime sentiment), it also compares rates from Binance and Bybit. All data comes from public APIs &mdash; no exchange account or API keys required.
+        </div>
+      </details>
+
+      <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <summary class="px-6 py-4 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+          Is AlgoVault free to use?
+          <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
+          Yes. The free tier includes BTC and ETH trade signals on 15m and 1h timeframes, top 5 funding arbitrage opportunities, and market regime detection for all assets &mdash; with no signup required. For all crypto and TradFi assets across all 11 timeframes, upgrade to Pro ($49/month) or pay per call via x402 micropayments (USDC on Base, starting at $0.01/call).
+        </div>
+      </details>
+
+      <details class="bg-navy-700 border border-white/5 rounded-xl group">
+        <summary class="px-6 py-4 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+          What is MCP (Model Context Protocol)?
+          <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
+          MCP is an open standard by Anthropic that lets AI assistants connect to external tools and data sources. AlgoVault implements MCP so any compatible client (Claude, Cursor, VS Code, custom agents) can discover and use its trading tools automatically. Learn more at <a href="https://modelcontextprotocol.io" target="_blank" class="text-gold-400 hover:underline">modelcontextprotocol.io</a>.
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
 <!-- Footer -->
 <footer class="py-10 px-6 border-t border-white/5">
   <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
     <div class="flex items-center gap-2.5">
-      <img src="/logo.png" alt="AlgoVault" class="w-5 h-5 rounded">
+      <img src="/logo.png" alt="AlgoVault" class="w-5 h-5 rounded" loading="lazy">
       <span class="text-gray-500 text-sm">Built by <a href="https://algovault.com" class="text-gray-400 hover:text-white transition">AlgoVault Labs</a></span>
     </div>
     <div class="flex items-center gap-5 text-sm text-gray-600">
       <a href="https://github.com/AlgoVaultLabs" target="_blank" class="hover:text-gray-400 transition">GitHub</a>
       <a href="https://x.com/AlgoVaultLabs" target="_blank" class="hover:text-gray-400 transition">X / Twitter</a>
       <a href="https://www.npmjs.com/package/crypto-quant-signal-mcp" target="_blank" class="hover:text-gray-400 transition">npm</a>
+      <a href="https://api.algovault.com/signup" class="hover:text-gray-400 transition">Signup</a>
       <a href="/privacy" class="hover:text-gray-400 transition">Privacy</a>
     </div>
   </div>
 </footer>
+
+<!-- FAQ Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is AlgoVault?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD signals, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does the trade signal scoring work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The scoring engine combines multiple orthogonal factors — momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction — into a single weighted composite score. Signals pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What exchanges does AlgoVault support?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AlgoVault uses Hyperliquid as its primary data source. For cross-venue analysis, it also compares funding rates from Binance and Bybit. All data comes from public APIs with no exchange account required."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is AlgoVault free to use?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The free tier includes BTC and ETH signals on 15m and 1h timeframes, top 5 funding arbs, and market regime detection. Pro is $49/month for all crypto and TradFi assets across all 11 timeframes. x402 pay-per-call starts at $0.01."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is MCP (Model Context Protocol)?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "MCP is an open standard by Anthropic that lets AI assistants connect to external tools and data sources. AlgoVault implements MCP so any compatible client can discover and use its trading tools automatically."
+      }
+    }
+  ]
+}
+</script>
 
 </body>
 </html>
