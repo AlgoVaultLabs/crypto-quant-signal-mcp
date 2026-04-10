@@ -76,6 +76,7 @@ export interface ExchangeAdapter {
   getCandles(coin: string, interval: string, startTime: number, dex?: DexType): Promise<Candle[]>;
   getAssetContext(coin: string, dex?: DexType): Promise<AssetContext>;
   getPredictedFundings(): Promise<FundingData[]>;
+  getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]>;
   getCurrentPrice(coin: string, dex?: DexType): Promise<number | null>;
   getName(): string;
 }
@@ -122,6 +123,22 @@ export interface TradeSignalResult {
   _algovault: AlgoVaultMeta;
 }
 
+export interface FundingConviction {
+  score: number;               // 0-100 composite
+  label: 'LOW' | 'MEDIUM' | 'HIGH';
+  direction_consistency: number; // % of last 24h with same sign
+  magnitude_stability: number;   // inverse of coefficient of variation
+  spread_persistence: number;    // % of last 24h where spread > threshold
+  sample_hours: number;
+}
+
+export interface FundingUrgency {
+  score: number;               // 0-100 exponential decay
+  label: 'LOW' | 'MEDIUM' | 'HIGH';
+  nextCollectionMin: number;   // minutes to nearest funding settlement
+  effectiveVenue: string;      // which venue settles first
+}
+
 export interface FundingArbOpportunity {
   coin: string;
   rates: Record<string, number>;
@@ -131,7 +148,10 @@ export interface FundingArbOpportunity {
     spreadBps: number;
     annualizedPct: number;
     direction: string;
+    urgency: FundingUrgency;
+    rankScore: number;         // composite: spread + urgency + conviction
   };
+  conviction: FundingConviction;
   nextFundingTimes: Record<string, number>;
 }
 
@@ -142,15 +162,20 @@ export interface FundingArbResult {
   _algovault: AlgoVaultMeta;
 }
 
+export type AdxSlopeCategory = 'RISING' | 'FLAT' | 'FALLING';
+
 export interface MarketRegimeResult {
   regime: RegimeType;
   confidence: number;
   metrics: {
     adx: number | null;
     adx_interpretation: string;
+    adx_slope: number | null;
+    adx_slope_interpretation: string;
     volatility_ratio: number;
     volatility_interpretation: string;
     price_structure: PriceStructure;
+    pivot_quality: number;       // avg significance score of volume-weighted pivots (0-1)
     trend_strength: TrendStrength;
     cross_venue_funding_sentiment: CrossVenueFundingSentiment;
     funding_divergence_note: string;

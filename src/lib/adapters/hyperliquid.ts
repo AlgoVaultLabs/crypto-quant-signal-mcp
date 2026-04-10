@@ -94,12 +94,39 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       coin: entry[0],
       venues: (entry[1] || [])
         .filter(([, data]) => data != null && data.fundingRate != null)
+        .filter(([, data]) => {
+          const rate = parseFloat(data.fundingRate);
+          return !isNaN(rate); // Item 5: reject NaN instead of silently converting to 0
+        })
         .map(([venue, data]) => ({
           venue,
-          fundingRate: parseFloat(data.fundingRate) || 0,
+          fundingRate: parseFloat(data.fundingRate),
           nextFundingTime: data.nextFundingTime ?? 0,
         })),
     }));
+  }
+
+  /**
+   * Fetch historical HL funding rates for conviction scoring.
+   * Returns hourly funding records for the given coin.
+   * HL endpoint: { type: 'fundingHistory', coin, startTime }
+   */
+  async getFundingHistory(coin: string, startTime: number): Promise<{ time: number; fundingRate: number }[]> {
+    try {
+      const raw = await hlPost<{ time: number; coin: string; fundingRate: string; premium: string }[]>({
+        type: 'fundingHistory',
+        coin,
+        startTime,
+      });
+      return (raw || [])
+        .filter(r => r.fundingRate != null && !isNaN(parseFloat(r.fundingRate)))
+        .map(r => ({
+          time: r.time,
+          fundingRate: parseFloat(r.fundingRate),
+        }));
+    } catch {
+      return []; // Best-effort: return empty on failure
+    }
   }
 
   async getCurrentPrice(coin: string, dex: DexType = 'standard'): Promise<number | null> {

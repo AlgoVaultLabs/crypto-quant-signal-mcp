@@ -111,15 +111,21 @@ export function atr(
 }
 
 /**
- * Average Directional Index (ADX).
- * Returns { adx, plusDI, minusDI } or null if insufficient data.
+ * Average Directional Index (ADX) with slope analysis.
+ * Returns { adx, plusDI, minusDI, adxSlope } or null if insufficient data.
+ *
+ * adxSlope is the linear regression slope over the last `slopeLen` ADX values.
+ *   slope > +0.5  → trend strengthening (RISING)
+ *   slope between -0.5 and +0.5 → steady (FLAT)
+ *   slope < -0.5  → trend exhausting (FALLING)
  */
 export function adx(
   highs: number[],
   lows: number[],
   closes: number[],
-  period: number = 14
-): { adx: number; plusDI: number; minusDI: number } | null {
+  period: number = 14,
+  slopeLen: number = 5
+): { adx: number; plusDI: number; minusDI: number; adxSlope: number } | null {
   const len = highs.length;
   // Need period + 1 for TR, then period for smoothing +DM/-DM, then period for DX smoothing
   if (len < 2 * period + 1) return null;
@@ -173,7 +179,7 @@ export function adx(
     dxValues.push(diSum !== 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0);
   }
 
-  // Step 3: Smooth DX to get ADX (Wilder's smoothing)
+  // Step 3: Smooth DX to get ADX (Wilder's smoothing), storing recent values for slope
   if (dxValues.length < period) return null;
 
   let adxVal = 0;
@@ -182,11 +188,46 @@ export function adx(
   }
   adxVal /= period;
 
+  // Store ADX history for slope computation (keep last slopeLen + 1 values)
+  const adxHistory: number[] = [adxVal];
+
   for (let i = period; i < dxValues.length; i++) {
     adxVal = (adxVal * (period - 1) + dxValues[i]) / period;
+    adxHistory.push(adxVal);
+    // Only keep what we need for slope
+    if (adxHistory.length > slopeLen + 1) adxHistory.shift();
   }
 
-  return { adx: adxVal, plusDI, minusDI };
+  // Step 4: Compute ADX slope via linear regression over recent values
+  const adxSlope = linearRegressionSlope(adxHistory);
+
+  return { adx: adxVal, plusDI, minusDI, adxSlope };
+}
+
+/**
+ * Linear regression slope over an array of values.
+ * x = 0, 1, 2, ... n-1;  y = values.
+ * Returns the slope (change per bar).
+ */
+function linearRegressionSlope(values: number[]): number {
+  const n = values.length;
+  if (n < 2) return 0;
+
+  // Precomputed sums for x = 0..n-1
+  const sumX = (n * (n - 1)) / 2;
+  const sumX2 = (n * (n - 1) * (2 * n - 1)) / 6;
+  let sumY = 0;
+  let sumXY = 0;
+
+  for (let i = 0; i < n; i++) {
+    sumY += values[i];
+    sumXY += i * values[i];
+  }
+
+  const denom = n * sumX2 - sumX * sumX;
+  if (denom === 0) return 0;
+
+  return (n * sumXY - sumX * sumY) / denom;
 }
 
 /**
@@ -323,33 +364,142 @@ export function detectSqueeze(
   return bb.width < kc.width;
 }
 
+export interface PriceStructureResult {
+  structure: 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED';
+  pivotCount: number;      // how many qualified pivots were found
+  avgPivotScore: number;   // average significance score of accepted pivots (0-1)
+}
+
 /**
- * Detect price structure from candle data.
- * Looks at swing highs and lows over the last N candles.
+ * Volume-weighted price structure detection.
+ * Uses 3-bar pivots filtered by volume confirmation, close proximity, and swing magnitude.
+ *
+ * Each pivot gets a significance score:
+ *   40% relative volume (bar volume / 20-SMA volume)
+ *   30% close proximity (how close the close is to the swing extreme)
+ *   30% swing magnitude (% move from surrounding closes, normalized by ATR)
+ *
+ * Pivots with score < 0.4 are filtered out (likely wick noise).
+ * Falls back to close-based pivots if too few qualify (thin alts).
  */
 export function detectPriceStructure(
   highs: number[],
   lows: number[],
+  closes?: number[],
+  volumes?: number[],
   lookback: number = 5
-): 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED' {
-  if (highs.length < lookback * 2) return 'MIXED';
+): PriceStructureResult {
+  const mixed: PriceStructureResult = { structure: 'MIXED', pivotCount: 0, avgPivotScore: 0 };
+  if (highs.length < lookback * 2) return mixed;
 
-  // Find swing highs and lows using a simple 3-bar pivot
+  const hasVolume = volumes && volumes.length === highs.length && closes && closes.length === highs.length;
+
+  if (!hasVolume) {
+    // Legacy path: no volume data, use original simple detection
+    return detectPriceStructureSimple(highs, lows, lookback);
+  }
+
+  // Compute 20-period volume SMA at each bar (rolling)
+  const volSma = rollingMean(volumes!, 20);
+
+  // Compute ATR-based minimum magnitude threshold (adaptive per-asset)
+  const atrProxy = computeSimpleAtr(highs, lows, closes!, 14);
+
+  // Score and collect pivots
+  interface ScoredPivot { price: number; score: number; }
+  const swingHighs: ScoredPivot[] = [];
+  const swingLows: ScoredPivot[] = [];
+
+  for (let i = 1; i < highs.length - 1; i++) {
+    const barRange = highs[i] - lows[i];
+    if (barRange <= 0) continue;
+
+    // Check 3-bar pivot geometry
+    const isSwingHigh = highs[i] > highs[i - 1] && highs[i] > highs[i + 1];
+    const isSwingLow = lows[i] < lows[i - 1] && lows[i] < lows[i + 1];
+    if (!isSwingHigh && !isSwingLow) continue;
+
+    // Factor 1: Relative volume (0-1 capped at 2x)
+    const avgVol = volSma[i] || 1;
+    const relVol = Math.min(volumes![i] / avgVol, 2.0) / 2.0; // normalize 0-1
+
+    if (isSwingHigh) {
+      // Factor 2: Close proximity to high (1.0 = close at high, 0.0 = close at low)
+      const closeProx = (closes![i] - lows[i]) / barRange;
+      // Factor 3: Magnitude — how far the high extends above surrounding closes
+      const refPrice = Math.max(closes![i - 1], closes![i + 1]);
+      const magnitude = atrProxy > 0
+        ? Math.min((highs[i] - refPrice) / atrProxy, 1.5) / 1.5 // normalize 0-1
+        : 0.5;
+
+      const score = relVol * 0.4 + closeProx * 0.3 + magnitude * 0.3;
+      if (score >= 0.4) swingHighs.push({ price: highs[i], score });
+    }
+
+    if (isSwingLow) {
+      // Factor 2: Close proximity to low (1.0 = close at low, 0.0 = close at high)
+      const closeProx = (highs[i] - closes![i]) / barRange;
+      // Factor 3: Magnitude — how far the low extends below surrounding closes
+      const refPrice = Math.min(closes![i - 1], closes![i + 1]);
+      const magnitude = atrProxy > 0
+        ? Math.min((refPrice - lows[i]) / atrProxy, 1.5) / 1.5
+        : 0.5;
+
+      const score = relVol * 0.4 + closeProx * 0.3 + magnitude * 0.3;
+      if (score >= 0.4) swingLows.push({ price: lows[i], score });
+    }
+  }
+
+  // Fallback: if volume filtering was too aggressive, use close-based pivots
+  if (swingHighs.length < 2 || swingLows.length < 2) {
+    return detectPriceStructureSimple(highs, lows, lookback);
+  }
+
+  // Compare last few swings (weighted by score is implicit — low-score pivots already filtered)
+  const recentHighs = swingHighs.slice(-lookback);
+  const recentLows = swingLows.slice(-lookback);
+
+  let higherHighCount = 0;
+  let lowerLowCount = 0;
+
+  for (let i = 1; i < recentHighs.length; i++) {
+    if (recentHighs[i].price > recentHighs[i - 1].price) higherHighCount++;
+  }
+  for (let i = 1; i < recentLows.length; i++) {
+    if (recentLows[i].price < recentLows[i - 1].price) lowerLowCount++;
+  }
+
+  const hhRatio = recentHighs.length > 1 ? higherHighCount / (recentHighs.length - 1) : 0;
+  const llRatio = recentLows.length > 1 ? lowerLowCount / (recentLows.length - 1) : 0;
+
+  const allPivots = [...swingHighs, ...swingLows];
+  const avgScore = allPivots.reduce((s, p) => s + p.score, 0) / allPivots.length;
+
+  let structure: 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED' = 'MIXED';
+  if (hhRatio > 0.5) structure = 'HIGHER_HIGHS';
+  else if (llRatio > 0.5) structure = 'LOWER_LOWS';
+
+  return { structure, pivotCount: allPivots.length, avgPivotScore: parseFloat(avgScore.toFixed(3)) };
+}
+
+/** Original simple structure detection — fallback when no volume data */
+function detectPriceStructureSimple(
+  highs: number[],
+  lows: number[],
+  lookback: number
+): PriceStructureResult {
   const swingHighs: number[] = [];
   const swingLows: number[] = [];
 
   for (let i = 1; i < highs.length - 1; i++) {
-    if (highs[i] > highs[i - 1] && highs[i] > highs[i + 1]) {
-      swingHighs.push(highs[i]);
-    }
-    if (lows[i] < lows[i - 1] && lows[i] < lows[i + 1]) {
-      swingLows.push(lows[i]);
-    }
+    if (highs[i] > highs[i - 1] && highs[i] > highs[i + 1]) swingHighs.push(highs[i]);
+    if (lows[i] < lows[i - 1] && lows[i] < lows[i + 1]) swingLows.push(lows[i]);
   }
 
-  if (swingHighs.length < 2 || swingLows.length < 2) return 'MIXED';
+  if (swingHighs.length < 2 || swingLows.length < 2) {
+    return { structure: 'MIXED', pivotCount: 0, avgPivotScore: 0 };
+  }
 
-  // Compare last few swings
   const recentHighs = swingHighs.slice(-lookback);
   const recentLows = swingLows.slice(-lookback);
 
@@ -365,8 +515,40 @@ export function detectPriceStructure(
 
   const hhRatio = recentHighs.length > 1 ? higherHighCount / (recentHighs.length - 1) : 0;
   const llRatio = recentLows.length > 1 ? lowerLowCount / (recentLows.length - 1) : 0;
+  const pivotCount = swingHighs.length + swingLows.length;
 
-  if (hhRatio > 0.5) return 'HIGHER_HIGHS';
-  if (llRatio > 0.5) return 'LOWER_LOWS';
-  return 'MIXED';
+  let structure: 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'MIXED' = 'MIXED';
+  if (hhRatio > 0.5) structure = 'HIGHER_HIGHS';
+  else if (llRatio > 0.5) structure = 'LOWER_LOWS';
+
+  return { structure, pivotCount, avgPivotScore: 0 };
+}
+
+/** Rolling mean (SMA) at each index. Returns array same length as input. */
+function rollingMean(values: number[], window: number): number[] {
+  const result: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= window) sum -= values[i - window];
+    const count = Math.min(i + 1, window);
+    result.push(sum / count);
+  }
+  return result;
+}
+
+/** Simple ATR proxy (average true range) for magnitude normalization */
+function computeSimpleAtr(highs: number[], lows: number[], closes: number[], period: number): number {
+  if (highs.length < period + 1) return 0;
+  let sum = 0;
+  const start = highs.length - period;
+  for (let i = start; i < highs.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      i > 0 ? Math.abs(highs[i] - closes[i - 1]) : 0,
+      i > 0 ? Math.abs(lows[i] - closes[i - 1]) : 0
+    );
+    sum += tr;
+  }
+  return sum / period;
 }

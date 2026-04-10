@@ -322,7 +322,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     coin,
     timeframe,
     _algovault: {
-      version: '1.6.0',
+      version: '1.7.0',
       tool: 'get_trade_signal',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },
