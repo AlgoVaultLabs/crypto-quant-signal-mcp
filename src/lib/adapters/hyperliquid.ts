@@ -72,7 +72,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const raw = await hlPost<[HLMetaAndAssetCtxs['meta'], HLMetaAndAssetCtxs['assetCtxs']]>(body);
     const meta = raw[0];
     const ctxs = raw[1];
-    const idx = meta.universe.findIndex(a => a.name === coin);
+    // xyz universe names include 'xyz:' prefix (e.g. 'xyz:GOLD'), so match both formats
+    const lookupName = dex === 'xyz' ? `xyz:${coin}` : coin;
+    const idx = meta.universe.findIndex(a => a.name === lookupName);
     if (idx === -1) {
       throw new Error(`${coin} not found on Hyperliquid${dex === 'xyz' ? ' (xyz dex)' : ''}`);
     }

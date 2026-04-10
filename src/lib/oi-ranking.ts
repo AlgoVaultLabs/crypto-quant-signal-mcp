@@ -92,7 +92,8 @@ export async function getXyzAssetsByOI(): Promise<OIAsset[]> {
       .map((a, i) => {
         const oi = parseFloat(ctxs[i].openInterest || '0');
         const px = parseFloat(ctxs[i].markPx || '0');
-        return { coin: a.name, notionalOI: oi * px, markPx: px, openInterest: oi };
+        // Strip 'xyz:' prefix — internal code uses bare symbols (e.g. GOLD not xyz:GOLD)
+        return { coin: a.name.replace(/^xyz:/i, ''), notionalOI: oi * px, markPx: px, openInterest: oi };
       })
       .filter(a => a.notionalOI > 0); // skip unlisted/zero-OI assets
 

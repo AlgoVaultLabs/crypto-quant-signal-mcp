@@ -15,7 +15,7 @@ import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance } from './resources/signal-performance.js';
-import { closeDb } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands } from './lib/performance-db.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, trackCall } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
@@ -317,6 +317,21 @@ async function startHttp() {
         res.status(500).json({ error: 'Failed to fetch OI ranking' });
       }
     });
+
+    // Confidence band analysis (admin-only)
+    app.get('/api/confidence-bands', async (req, res) => {
+      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
+        || (req.query.key as string);
+      if (token !== adminKey) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const bands = await getConfidenceBands();
+        res.json({ bands, generatedAt: new Date().toISOString() });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch confidence bands' });
+      }
+    });
   }
 
   // MCP endpoint
@@ -591,7 +606,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Trade Calls Performance</h1><div class="subtitle">v1.6.0</div></div>
+  <div><h1>Trade Calls Performance</h1><div class="subtitle">v1.7.0</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -619,6 +634,13 @@ function getPerformanceDashboardHtml(apiKey: string): string {
     <div class="tabs" id="tf-tabs"></div>
     <table><thead><tr><th>Timeframe</th><th class="num">Trade Calls</th><th class="num">PFE Win Rate</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
+  </div>
+
+  <!-- Confidence Band Analysis -->
+  <div class="section" id="cb-section" style="display:none">
+    <h2>Performance by Confidence Band</h2>
+    <table><thead><tr><th>Band</th><th class="num">Signals</th><th class="num">Evaluated</th><th class="num">PFE WR</th><th class="num">Avg PFE %</th><th>BUY / SELL</th><th>Bar</th></tr></thead>
+    <tbody id="cb-body"></tbody></table>
   </div>
 
   <div class="grid-2">
@@ -761,14 +783,28 @@ function renderAll() {
   // Tier cards
   var tcEl = document.getElementById('tier-cards');
   var bt = d.byTier || {};
+  function tierAssetLabel(tier, assets) {
+    if (tier === 1) return (assets||[]).join(', ') || 'BTC, ETH';
+    if (tier === 2) {
+      var s2 = (assets||[]).slice(0,5).join(', ');
+      return '<span style="color:#58a6ff">Top 20 by Open Interest</span><br>' + s2 + (assets && assets.length > 5 ? ' +' + (assets.length-5) + ' more' : '');
+    }
+    if (tier === 3) {
+      var s3 = (assets||[]).slice(0,4).join(', ');
+      return '<span style="color:#8b949e">Stocks \\u00b7 Indices \\u00b7 Commodities \\u00b7 FX</span>' + (s3 ? '<br>' + s3 + (assets.length > 4 ? ' +' + (assets.length-4) + ' more' : '') : '');
+    }
+    if (tier === 4) {
+      return '<span style="color:#8b949e">Liquidity Filtered (Top 50 OI)</span><br>' + (assets ? assets.length : 0) + ' assets tracked';
+    }
+    return (assets||[]).join(', ');
+  }
   tcEl.innerHTML = ['tier1','tier2','tier3','tier4'].map(function(k){
     var t = bt[k]; if (!t) return '';
-    var assets = (t.assets||[]).slice(0,8).join(', ') + (t.assets && t.assets.length > 8 ? ' +' + (t.assets.length-8) + ' more' : '');
     var isTF = t.tier === 3;
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
-      '<div class="tc-assets">' + (assets || 'No trade calls yet') + '</div>' +
+      '<div class="tc-assets">' + tierAssetLabel(t.tier, t.assets) + '</div>' +
       (t.count > 0 ? '<div class="tc-stats">' +
         '<div class="tc-stat"><div class="tc-label">Trade Calls</div><div class="tc-val muted">' + t.count + '</div></div>' +
         '<div class="tc-stat"><div class="tc-label">PFE Win Rate</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
@@ -854,6 +890,28 @@ async function load() {
       availTfs.map(function(tf){return '<div class="tab'+(activeTfFilter===tf?' active':'')+'" data-tf="'+tf+'" onclick="setTfFilter(\\''+tf+'\\')">'+tf+'</div>';}).join('');
 
     renderAll();
+
+    // Confidence bands (separate fetch — Postgres only)
+    try {
+      var cbRes = await fetch('/api/confidence-bands?key=' + KEY);
+      if (cbRes.ok) {
+        var cbData = await cbRes.json();
+        var bands = cbData.bands || [];
+        if (bands.length > 0) {
+          var cbEl = document.getElementById('cb-body');
+          var maxB = Math.max.apply(null, bands.map(function(b){ return b.total; }));
+          cbEl.innerHTML = bands.map(function(b) {
+            var wr = b.pfeWinRate != null ? (b.pfeWinRate * 100).toFixed(1) + '%' : '\\u2014';
+            var wrC = b.pfeWinRate != null ? (b.pfeWinRate >= 0.6 ? 'green' : b.pfeWinRate >= 0.45 ? 'gold' : 'red') : 'muted';
+            var avgP = b.avgPfePct != null ? (b.avgPfePct * 100).toFixed(2) + '%' : '\\u2014';
+            var barW = maxB > 0 ? Math.round(b.total / maxB * 100) : 0;
+            return '<tr><td><strong>' + b.band + '%</strong></td><td class="num">' + b.total + '</td><td class="num">' + b.evaluated + '</td><td class="num ' + wrC + '">' + wr + '</td><td class="num">' + avgP + '</td><td>' + b.buyCount + ' / ' + b.sellCount + '</td><td><div class="bar-wrap"><div class="bar g" style="width:' + barW + '%"></div></div></td></tr>';
+          }).join('');
+          document.getElementById('cb-section').style.display = 'block';
+        }
+      }
+    } catch(e) { /* confidence bands are best-effort */ }
+
     document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
