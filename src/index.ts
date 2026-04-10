@@ -33,7 +33,7 @@ import { getTopAssetsByOI } from './lib/oi-ranking.js';
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.4.0',
+    version: '1.5.0',
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -188,7 +188,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.4.0', stripe: isStripeConfigured() });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.5.0', stripe: isStripeConfigured() });
   });
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──
@@ -582,7 +582,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v1.4.1</div></div>
+  <div><h1>Signal Performance</h1><div class="subtitle">v1.5.0</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">

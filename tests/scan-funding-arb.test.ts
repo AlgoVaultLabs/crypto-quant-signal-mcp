@@ -72,7 +72,7 @@ describe('scanFundingArb', () => {
 
     const result = await scanFundingArb({ minSpreadBps: 0 });
     expect(result._algovault).toBeDefined();
-    expect(result._algovault.version).toBe('1.4.0');
+    expect(result._algovault.version).toBe('1.5.0');
     expect(result._algovault.tool).toBe('scan_funding_arb');
     expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
     expect(result._algovault.compatible_with).toContain('crypto-quant-execution-mcp');

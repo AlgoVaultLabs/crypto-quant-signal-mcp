@@ -11,33 +11,33 @@ interface TradeSignalInput {
   license?: LicenseInfo;
 }
 
-// ── Indicator weights (v1.3) ──
-// Tuned from 5,400+ signal outcome analysis:
-// - EMA 20% (trend confirmation, reduced from 30% — was too dominant)
-// - RSI 30% (best mean-reversion signal, increased from 25%)
-// - Funding 20% (correctly calibrated for SELL signals)
-// - OI 10% (lagging indicator, reduced from 15%)
-// - Volume 20% (confirmation filter, increased from 10%)
+// ── Indicator weights (v1.5) ──
+// Rebalanced from PFE/MAE analysis: EMA was too dominant (death cross = -20 pts),
+// causing 97% SELL bias. Halved EMA, redistributed to funding (cross-venue edge) and OI.
+// - RSI 30% (best mean-reversion signal — unchanged)
+// - EMA 10% (halved — was too persistent, single death cross dominated scoring)
+// - Funding 25% (increased — cross-venue edge, Moat Layer 4)
+// - OI 15% (increased — real-time directional confirmation)
+// - Volume 20% (conviction filter — unchanged)
 const WEIGHTS = {
   rsi: 0.30,
-  ema: 0.20,
-  funding: 0.20,
-  oi: 0.10,
+  ema: 0.10,
+  funding: 0.25,
+  oi: 0.15,
   volume: 0.20,
 };
 
-// Asymmetric signal thresholds: BUY must be more convincing than SELL
-// Based on historical data: SELL signals are much more reliable than BUY signals
-const BUY_BASE_THRESHOLD = 45;   // Higher bar for BUY
-const SELL_BASE_THRESHOLD = 35;  // SELL signals already work well
+// v1.5: Symmetric signal thresholds — both directions require equal conviction
+const BUY_BASE_THRESHOLD = 40;
+const SELL_BASE_THRESHOLD = 40;
 
-// Regime-aware asymmetry: BUY signals need higher conviction in downtrends
-const BUY_THRESHOLD_TRENDING_DOWN = 55;
-const SELL_THRESHOLD_TRENDING_UP = 55;
+// Regime-aware gates: require higher conviction when trading against the regime
+const BUY_THRESHOLD_GATED = 55;   // BUY in TRENDING_DOWN
+const SELL_THRESHOLD_GATED = 55;   // SELL in TRENDING_UP or RANGING
 
 // Theoretical max |rawScore| for proper confidence scaling
-// RSI(80)*0.30 + EMA(100)*0.20 + Funding(60)*0.20 + OI(60)*0.10 + Vol(80)*0.20 = 24+20+12+6+16 = 78
-const MAX_RAW_SCORE = 78;
+// RSI(80)*0.30 + EMA(100)*0.10 + Funding(60)*0.25 + OI(60)*0.15 + Vol(80)*0.20 = 24+10+15+9+16 = 74
+const MAX_RAW_SCORE = 74;
 
 // Minimum confidence to record in track record (filters noise)
 const MIN_TRACKABLE_CONFIDENCE = 60;
@@ -136,12 +136,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     else rsiScore = -100;
   }
 
-  // EMA cross (20% weight): trend confirmation
+  // EMA cross (10% weight): trend confirmation
   let emaScore = 0;
   if (emaCross === 'BULLISH') emaScore = 100;
   else if (emaCross === 'BEARISH') emaScore = -100;
 
-  // Funding rate (20% weight): contrarian signal
+  // Funding rate (25% weight): contrarian signal
   // Negative funding = shorts paying = contrarian bullish
   // High positive funding = crowded longs = bearish
   let fundingScore = 0;
@@ -150,7 +150,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   else if (fundingRate > 0.001) fundingScore = -80;
   else if (fundingRate > 0.0005) fundingScore = -40;
 
-  // OI + price direction (10% weight): momentum confirmation
+  // OI + price direction (15% weight): momentum confirmation
   // Only score when price direction CONFIRMS the signal, not as standalone
   let oiScore = 0;
   if (assetCtx.openInterest > 0) {
@@ -226,17 +226,17 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     scoreAdjustments.push(`Volatility squeeze detected (BB inside KC). Breakout setup — directional signal boosted 12 pts.`);
   }
 
-  // ── Regime-aware signal determination (asymmetric thresholds) ──
+  // ── Regime-aware signal determination (v1.5: symmetric thresholds + symmetric regime gates) ──
   let signal: SignalVerdict;
   const absScore = Math.abs(rawScore);
 
   if (rawScore > 0) {
-    // Potential BUY — higher bar required
-    const threshold = regime === 'TRENDING_DOWN' ? BUY_THRESHOLD_TRENDING_DOWN : BUY_BASE_THRESHOLD;
+    // Potential BUY — gated in TRENDING_DOWN (requires stronger conviction)
+    const threshold = regime === 'TRENDING_DOWN' ? BUY_THRESHOLD_GATED : BUY_BASE_THRESHOLD;
     signal = rawScore > threshold ? 'BUY' : 'HOLD';
   } else {
-    // Potential SELL — lower bar (SELL signals are more reliable)
-    const threshold = regime === 'TRENDING_UP' ? SELL_THRESHOLD_TRENDING_UP : SELL_BASE_THRESHOLD;
+    // Potential SELL — gated in TRENDING_UP and RANGING (requires stronger conviction)
+    const threshold = (regime === 'TRENDING_UP' || regime === 'RANGING') ? SELL_THRESHOLD_GATED : SELL_BASE_THRESHOLD;
     signal = absScore > threshold ? 'SELL' : 'HOLD';
   }
 
@@ -270,10 +270,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
       parts.push(`Funding Z-Score: ${fundingZScore.toFixed(2)} (${Math.abs(fundingZScore) > 2 ? 'extreme' : Math.abs(fundingZScore) > 1 ? 'elevated' : 'normal'}).`);
     }
     if (regime === 'TRENDING_DOWN' && signal === 'HOLD' && rawScore > BUY_BASE_THRESHOLD) {
-      parts.push(`Regime filter: potential BUY suppressed — market is trending down (requires ${BUY_THRESHOLD_TRENDING_DOWN}+ score, got ${absScore.toFixed(0)}).`);
+      parts.push(`Regime filter: potential BUY suppressed — market is trending down (requires ${BUY_THRESHOLD_GATED}+ score, got ${absScore.toFixed(0)}).`);
     }
-    if (regime === 'TRENDING_UP' && signal === 'HOLD' && rawScore < -SELL_BASE_THRESHOLD) {
-      parts.push(`Regime filter: potential SELL suppressed — market is trending up (requires ${SELL_THRESHOLD_TRENDING_UP}+ score, got ${absScore.toFixed(0)}).`);
+    if ((regime === 'TRENDING_UP' || regime === 'RANGING') && signal === 'HOLD' && rawScore < -SELL_BASE_THRESHOLD) {
+      parts.push(`Regime filter: potential SELL suppressed — market is ${regime === 'TRENDING_UP' ? 'trending up' : 'ranging'} (requires ${SELL_THRESHOLD_GATED}+ score, got ${absScore.toFixed(0)}).`);
     }
     // v1.3: noise warning for ultra-low timeframes
     if (['1m', '3m'].includes(timeframe)) {
@@ -306,7 +306,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     coin,
     timeframe,
     _algovault: {
-      version: '1.4.0',
+      version: '1.5.0',
       tool: 'get_trade_signal',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },
