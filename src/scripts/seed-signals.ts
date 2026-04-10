@@ -37,6 +37,7 @@
 
 import { getTradeSignal } from '../tools/get-trade-signal.js';
 import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
+import { classifyAsset, warmTierCaches } from '../lib/asset-tiers.js';
 import type { LicenseInfo } from '../types.js';
 
 // Internal license bypasses free-tier gating
@@ -102,25 +103,47 @@ interface HLAssetInfo {
 }
 
 /**
- * Fetch all uppercase coin symbols from Hyperliquid, sorted by notional OI descending.
+ * Fetch all uppercase coin symbols from Hyperliquid (standard + xyz TradFi perps),
+ * sorted by notional OI descending.
  * Uses markPx × openInterest for proper USD ranking (raw OI is in coins, not dollars).
  * Excludes mixed-case symbols (kPEPE, kBONK, etc.) that break the uppercase coin lookup.
  */
 async function fetchAllCoins(topN: number): Promise<string[]> {
-  const res = await fetch('https://api.hyperliquid.xyz/info', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
-  });
-  const data = await res.json() as [{ universe: { name: string }[] }, { openInterest: string; markPx: string }[]];
-  const universe = data[0].universe;
-  const assetCtxs = data[1];
+  // Fetch standard perps and xyz (TradFi) perps in parallel
+  const [stdRes, xyzRes] = await Promise.all([
+    fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
+    }),
+    fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'metaAndAssetCtxs', dex: 'xyz' }),
+    }).catch(() => null), // xyz fetch is best-effort
+  ]);
 
-  // Build asset list with notional OI (openInterest × markPx = USD value)
-  const assets: HLAssetInfo[] = universe.map((u, i) => ({
+  const stdData = await stdRes.json() as [{ universe: { name: string }[] }, { openInterest: string; markPx: string }[]];
+
+  // Build standard perp assets
+  const assets: HLAssetInfo[] = stdData[0].universe.map((u, i) => ({
     name: u.name,
-    notionalOI: parseFloat(assetCtxs[i]?.openInterest || '0') * parseFloat(assetCtxs[i]?.markPx || '0'),
+    notionalOI: parseFloat(stdData[1][i]?.openInterest || '0') * parseFloat(stdData[1][i]?.markPx || '0'),
   }));
+
+  // Add xyz (TradFi) perps if available
+  if (xyzRes && xyzRes.ok) {
+    try {
+      const xyzData = await xyzRes.json() as [{ universe: { name: string }[] }, { openInterest: string; markPx: string }[]];
+      const xyzAssets: HLAssetInfo[] = xyzData[0].universe
+        .map((u, i) => ({
+          name: u.name,
+          notionalOI: parseFloat(xyzData[1][i]?.openInterest || '0') * parseFloat(xyzData[1][i]?.markPx || '0'),
+        }))
+        .filter(a => a.notionalOI > 0); // skip unlisted/zero-OI xyz assets
+      assets.push(...xyzAssets);
+    } catch { /* ignore xyz parse errors */ }
+  }
 
   // Filter: only uppercase symbols (skip kPEPE, kBONK, kSHIB, etc.)
   const filtered = assets.filter(a => a.name === a.name.toUpperCase());
@@ -138,7 +161,10 @@ async function main() {
   const { timeframe, top } = parseArgs();
   const idempotencyWindow = IDEMPOTENCY_WINDOWS[timeframe] || 50 * 60;
 
-  console.log(`[${ts()}] Fetching Hyperliquid universe...`);
+  console.log(`[${ts()}] Warming tier caches (xyz symbols, OI rankings)...`);
+  await warmTierCaches();
+
+  console.log(`[${ts()}] Fetching Hyperliquid universe (standard + TradFi)...`);
   const coins = await fetchAllCoins(top);
   console.log(`[${ts()}] Starting ${timeframe} signal seed for ${coins.length} assets${top ? ` (top ${top} by OI)` : ''}...`);
 
@@ -169,8 +195,8 @@ async function main() {
       seeded++;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Only log real errors, not "insufficient data" which is expected for illiquid coins
-      if (msg.includes('Insufficient candle')) {
+      // Only log real errors, not "insufficient data" or liquidity gates which are expected
+      if (msg.includes('Insufficient candle') || msg.includes('insufficient liquidity')) {
         skipped++;
       } else {
         console.error(`[${ts()}] ${coin} -> ERROR: ${msg}`);

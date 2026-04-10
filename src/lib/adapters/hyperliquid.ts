@@ -11,6 +11,7 @@ import type {
   HLCandle,
   HLMetaAndAssetCtxs,
   HLPredictedFunding,
+  DexType,
 } from '../../types.js';
 
 const BASE_URL = 'https://api.hyperliquid.xyz/info';
@@ -47,12 +48,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return 'Hyperliquid';
   }
 
-  async getCandles(coin: string, interval: string, startTime: number): Promise<Candle[]> {
+  async getCandles(coin: string, interval: string, startTime: number, dex: DexType = 'standard'): Promise<Candle[]> {
+    // xyz perps require the xyz: prefix for candle fetches
+    const apiCoin = dex === 'xyz' ? `xyz:${coin}` : coin;
     const raw = await hlPost<HLCandle[]>({
       type: 'candleSnapshot',
-      req: { coin, interval, startTime },
+      req: { coin: apiCoin, interval, startTime },
     });
-    return raw.map(c => ({
+    return (raw || []).map(c => ({
       open: parseFloat(c.o),
       high: parseFloat(c.h),
       low: parseFloat(c.l),
@@ -62,15 +65,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getAssetContext(coin: string): Promise<AssetContext> {
-    const raw = await hlPost<[HLMetaAndAssetCtxs['meta'], HLMetaAndAssetCtxs['assetCtxs']]>({
-      type: 'metaAndAssetCtxs',
-    });
+  async getAssetContext(coin: string, dex: DexType = 'standard'): Promise<AssetContext> {
+    const body: Record<string, unknown> = { type: 'metaAndAssetCtxs' };
+    if (dex === 'xyz') body.dex = 'xyz';
+
+    const raw = await hlPost<[HLMetaAndAssetCtxs['meta'], HLMetaAndAssetCtxs['assetCtxs']]>(body);
     const meta = raw[0];
     const ctxs = raw[1];
     const idx = meta.universe.findIndex(a => a.name === coin);
     if (idx === -1) {
-      throw new Error(`${coin} not found on Hyperliquid`);
+      throw new Error(`${coin} not found on Hyperliquid${dex === 'xyz' ? ' (xyz dex)' : ''}`);
     }
     const ctx = ctxs[idx];
     return {
@@ -98,9 +102,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getCurrentPrice(coin: string): Promise<number | null> {
+  async getCurrentPrice(coin: string, dex: DexType = 'standard'): Promise<number | null> {
     try {
-      const ctx = await this.getAssetContext(coin);
+      const ctx = await this.getAssetContext(coin, dex);
       return ctx.oraclePx || ctx.markPx;
     } catch {
       return null;

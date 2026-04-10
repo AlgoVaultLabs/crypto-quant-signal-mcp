@@ -4,7 +4,7 @@
 
 # crypto-quant-signal-mcp
 
-The signal intelligence layer for AI trading agents — composite quant signals, cross-venue arbitrage detection, and regime-aware market classification via MCP.
+The signal intelligence layer for AI trading agents — composite quant signals across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP.
 
 [![npm version](https://img.shields.io/npm/v/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
@@ -25,6 +25,7 @@ AlgoVault is different. We give your agent **one answer**: a directional verdict
 - **Cross-venue intelligence.** Funding rates from Hyperliquid, Binance, and Bybit are normalized and compared in real-time. Nobody else does cross-venue derivatives analysis via MCP.
 - **Published track record with every release.** Every signal is recorded with outcome prices at multiple horizons. Win rate, profit factor, and expected value are computed continuously. No cherry-picking, no survivorship bias.
 - **Adaptive scoring.** Indicator weights are retuned monthly from outcome data. The engine learns what works and adjusts — the signal you get today is better than the one from last month.
+- **Crypto + TradFi coverage.** 290+ assets — standard crypto perps, TradFi perpetuals (stocks, indices, commodities, FX via Hyperliquid's xyz dex), and liquidity-filtered meme coins. Assets are classified into quality tiers with institutional-grade signal filtering.
 
 ---
 
@@ -57,14 +58,14 @@ That's it. Your Claude now has a quant analyst built in.
 
 ### `get_trade_signal`
 
-Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any Hyperliquid perpetual.
+Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any supported asset — crypto perps, TradFi perpetuals (stocks, indices, commodities, FX), and liquidity-filtered meme coins on Hyperliquid.
 
 Under the hood: a multi-factor scoring engine evaluates momentum, trend structure, derivatives sentiment, open interest dynamics, and volume conviction. Scores pass through regime-aware filters and adaptive post-processing gates — including funding flow analysis, volatility regime detection, and trend persistence decay — before a final verdict is emitted.
 
 Only high-conviction signals are generated. The engine is designed to stay silent when the edge is unclear.
 
 **Parameters:**
-- `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, or any of 200+ HL perps
+- `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, `"GOLD"`, `"TSLA"`, or any of 290+ supported assets
 - `timeframe` (string, default `"15m"`): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`
 - `includeReasoning` (boolean, default `true`): Human-readable explanation of the signal logic
 
@@ -101,11 +102,12 @@ Uses a multi-dimensional classification approach combining directional strength 
 Every signal is tracked from emission to outcome. No exceptions.
 
 **What we measure:**
-- Outcome prices at multiple evaluation horizons (timeframe-appropriate windows)
-- 1-candle directional accuracy
-- Peak Favorable Excursion (PFE) — best price achieved in signal direction
-- Maximum Adverse Excursion (MAE) — worst drawdown before recovery
-- Running win rate, profit factor, and expected value per signal
+- Outcome prices at timeframe-appropriate evaluation windows
+- PFE Win Rate — did price move in the signal direction at any point during the evaluation window
+- Expected Value — probability-weighted average return per signal
+- Profit Factor — gross wins divided by gross losses
+- Peak Favorable Excursion (PFE) and Maximum Adverse Excursion (MAE)
+- Running statistics per asset, timeframe, and quality tier
 
 **Infrastructure:**
 - Remote mode: PostgreSQL with automated outcome backfill
@@ -118,7 +120,8 @@ Every signal is tracked from emission to outcome. No exceptions.
 
 | Feature | Free | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
 |---------|------|-------------|---------------------|-----------------|
-| Assets | BTC, ETH | All 200+ HL perps | All 200+ | All 200+ |
+| Assets | BTC, ETH | All 290+ assets | All 290+ | All 290+ |
+| Asset classes | Crypto only | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
 | Timeframes | 15m, 1h | All 11 | All 11 | All 11 |
 | Funding arb results | Top 5 | Unlimited | Unlimited | Unlimited |
 | Track record | Full access | Full access | Full access | Full access |
@@ -200,8 +203,12 @@ MCP Server (Express + @modelcontextprotocol/sdk)
   │    ├─ Regime-aware signal filtering
   │    └─ Adaptive post-processing gates
   │
+  ├─ Asset Classification Engine
+  │    ├─ 4-tier quality system (Blue Chip → Major Alt → TradFi → Meme)
+  │    └─ Liquidity filter for meme/micro assets
+  │
   ├─ Exchange Adapter Layer
-  │    └─ Hyperliquid (Phase 1) → Binance, Bybit (Phase 2)
+  │    └─ Hyperliquid (standard + xyz TradFi perps) · Binance, Bybit (funding data)
   │
   ├─ Performance Tracker
   │    └─ PostgreSQL (remote) / SQLite (local)
@@ -209,7 +216,7 @@ MCP Server (Express + @modelcontextprotocol/sdk)
   └─ Hyperliquid Public API (free, no auth)
 ```
 
-**Exchange adapter pattern:** All exchange interactions go through the `ExchangeAdapter` interface — Hyperliquid today, more venues in Phase 2.
+**Exchange adapter pattern:** All exchange interactions go through the `ExchangeAdapter` interface — supporting both standard crypto perps and xyz TradFi perps on Hyperliquid, with Binance and Bybit for cross-venue funding comparison.
 
 ---
 

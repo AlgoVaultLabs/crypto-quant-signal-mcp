@@ -32,7 +32,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       scannedPairs: 0,
       timestamp: Math.floor(Date.now() / 1000),
       _algovault: {
-        version: '1.5.0',
+        version: '1.6.0',
         tool: 'scan_funding_arb',
         compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
       },
@@ -111,7 +111,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     scannedPairs: fundings.length,
     timestamp: Math.floor(Date.now() / 1000),
     _algovault: {
-      version: '1.5.0',
+      version: '1.6.0',
       tool: 'scan_funding_arb',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
     },

@@ -55,6 +55,8 @@ export interface Candle {
 
 // ── Exchange Adapter Types ──
 
+export type DexType = 'standard' | 'xyz';
+
 export interface AssetContext {
   coin: string;
   funding: number;
@@ -71,10 +73,10 @@ export interface FundingData {
 }
 
 export interface ExchangeAdapter {
-  getCandles(coin: string, interval: string, startTime: number): Promise<Candle[]>;
-  getAssetContext(coin: string): Promise<AssetContext>;
+  getCandles(coin: string, interval: string, startTime: number, dex?: DexType): Promise<Candle[]>;
+  getAssetContext(coin: string, dex?: DexType): Promise<AssetContext>;
   getPredictedFundings(): Promise<FundingData[]>;
-  getCurrentPrice(coin: string): Promise<number | null>;
+  getCurrentPrice(coin: string, dex?: DexType): Promise<number | null>;
   getName(): string;
 }
 
@@ -200,6 +202,10 @@ export interface PerformanceStats {
     totalEvaluated: number;
     winRate: number | null;
     profitFactor: number | null;
+    pfeWinRate: number | null;
+    expectedValue: number | null;
+    avgWin: number;
+    avgLoss: number;
   };
   bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
   byTimeframe: Record<string, {
@@ -208,10 +214,34 @@ export interface PerformanceStats {
     avgReturnPct: number | null;
     profitFactor: number | null;
   }>;
-  byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
+  byAsset: Record<string, {
+    count: number;
+    tier: number;
+    winRate: number | null;
+    pfeWinRate: number | null;
+    avgReturnPct: number | null;
+    profitFactor: number | null;
+    expectedValue: number | null;
+  }>;
+  byTier: Record<string, {
+    tier: number;
+    name: string;
+    label: string;
+    color: string;
+    count: number;
+    evaluated: number;
+    winRate: number | null;
+    pfeWinRate: number | null;
+    profitFactor: number | null;
+    expectedValue: number | null;
+    avgReturnPct: number | null;
+    assets: string[];
+  }>;
   recentSignals: Array<{
     coin: string; signal: string; confidence: number;
-    timeframe: string; return_1candle: number | null;
+    timeframe: string; tier: number;
+    return_1candle: number | null;
+    pfe_return_pct: number | null;
     outcome_return_pct: number | null; created_at: number;
   }>;
   methodology: Record<string, unknown>;

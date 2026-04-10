@@ -2,6 +2,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore } from '../lib/performance-db.js';
+import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
 import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo } from '../types.js';
 
 interface TradeSignalInput {
@@ -53,14 +54,29 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     throw new Error(msg);
   }
 
+  // Determine which HL dex this coin trades on (standard vs xyz/TradFi)
+  const dex = getDexForCoin(coin);
+
+  // Meme coin liquidity gate — reject illiquid micro-caps before wasting API calls
+  const tier = classifyAsset(coin, null);
+  if (tier === 4) {
+    const liquid = await isMemeCoinLiquid(coin);
+    if (!liquid) {
+      throw new Error(
+        `Signal generation unavailable for ${coin}: insufficient liquidity (not in top 50 by OI and <$10M 24h volume). ` +
+        `TA signals are unreliable for illiquid micro-caps.`
+      );
+    }
+  }
+
   const adapter = getAdapter();
 
   // Fetch candles (100 candles back)
   const intervalMs = getIntervalMs(timeframe);
   const startTime = Date.now() - 100 * intervalMs;
   const [candles, assetCtx] = await Promise.all([
-    adapter.getCandles(coin, timeframe, startTime),
-    adapter.getAssetContext(coin),
+    adapter.getCandles(coin, timeframe, startTime, dex),
+    adapter.getAssetContext(coin, dex),
   ]);
 
   if (candles.length < 30) {
@@ -306,7 +322,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     coin,
     timeframe,
     _algovault: {
-      version: '1.5.0',
+      version: '1.6.0',
       tool: 'get_trade_signal',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },
