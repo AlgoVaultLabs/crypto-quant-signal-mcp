@@ -720,13 +720,11 @@ function recomputeTF(signals) {
   nh.forEach(function(s){if(!tfs[s.timeframe]) tfs[s.timeframe]=[];tfs[s.timeframe].push(s);});
   var result = {};
   Object.keys(tfs).forEach(function(tf){
-    var g=tfs[tf],e1c=g.filter(function(s){return s.return_1candle!=null;}),w1c=e1c.filter(function(s){return s.return_1candle>0;});
-    var eEW=g.filter(function(s){return s.outcome_return_pct!=null;}),rets=eEW.map(pnlDir);
-    var gp=rets.filter(function(r){return r>0;}).reduce(function(a,b){return a+b;},0);
-    var gl=Math.abs(rets.filter(function(r){return r<0;}).reduce(function(a,b){return a+b;},0));
-    var pf=gl>0?gp/gl:(gp>0?Infinity:null);
-    var avg=rets.length>0?rets.reduce(function(a,b){return a+b;},0)/rets.length:null;
-    result[tf]={count:Math.max(e1c.length,eEW.length),winRate:e1c.length>0?w1c.length/e1c.length:null,avgReturnPct:avg,profitFactor:pf};
+    var g=tfs[tf];
+    var ePFE=g.filter(function(s){return s.pfe_return_pct!=null;});
+    var pfeW=ePFE.filter(pfeWin);
+    var pfeWR=ePFE.length>0?pfeW.length/ePFE.length:null;
+    result[tf]={count:ePFE.length,pfeWinRate:pfeWR};
   });
   return result;
 }
@@ -792,14 +790,13 @@ function renderAll() {
   var typeCounts = {};
   ['BUY','SELL','HOLD'].forEach(function(type){
     var g=allSignals.filter(function(s){return s.signal===type;});
-    var eg=g.filter(function(s){return s.return_1candle!=null&&type!=='HOLD';});
-    var wg=eg.filter(function(s){return s.return_1candle>0;});
-    var ew=g.filter(function(s){return s.outcome_return_pct!=null&&type!=='HOLD';}); var rg=ew.map(pnlDir);
-    typeCounts[type]={count:type==='HOLD'?g.length:eg.length,winRate:type==='HOLD'?null:(eg.length>0?wg.length/eg.length:null),avgReturnPct:type==='HOLD'?null:(rg.length>0?rg.reduce(function(a,b){return a+b;},0)/rg.length:null)};
+    var ePFE=g.filter(function(s){return s.pfe_return_pct!=null&&type!=='HOLD';});
+    var pfeW=ePFE.filter(pfeWin);
+    typeCounts[type]={count:type==='HOLD'?g.length:ePFE.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
   });
   var types=Object.entries(typeCounts);
   var maxC=Math.max.apply(null,types.map(function(e){return e[1].count;}));
-  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+wrClass(v.winRate)+'">'+pct(v.winRate)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No signals yet</td></tr>';
+  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No signals yet</td></tr>';
 
   // TF table
   var tfEl = document.getElementById('by-timeframe');
@@ -807,7 +804,7 @@ function renderAll() {
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.winRate)+'">'+pct(v.winRate)+'</td></tr>';}).join('');
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('');
   } else { tfEl.innerHTML = '<tr><td colspan="3" class="empty">No data for this timeframe</td></tr>'; }
 
   // Asset tables
