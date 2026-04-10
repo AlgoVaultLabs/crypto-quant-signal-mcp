@@ -200,28 +200,14 @@ export interface PerformanceStats {
   overall: {
     totalSignals: number;
     totalEvaluated: number;
-    winRate: number | null;
-    profitFactor: number | null;
     pfeWinRate: number | null;
-    expectedValue: number | null;
-    avgWin: number;
-    avgLoss: number;
   };
-  bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }>;
-  byTimeframe: Record<string, {
-    count: number;
-    winRate: number | null;
-    avgReturnPct: number | null;
-    profitFactor: number | null;
-  }>;
+  bySignalType: Record<string, { count: number; pfeWinRate: number | null }>;
+  byTimeframe: Record<string, { count: number; pfeWinRate: number | null }>;
   byAsset: Record<string, {
     count: number;
     tier: number;
-    winRate: number | null;
     pfeWinRate: number | null;
-    avgReturnPct: number | null;
-    profitFactor: number | null;
-    expectedValue: number | null;
   }>;
   byTier: Record<string, {
     tier: number;
@@ -230,19 +216,14 @@ export interface PerformanceStats {
     color: string;
     count: number;
     evaluated: number;
-    winRate: number | null;
     pfeWinRate: number | null;
-    profitFactor: number | null;
-    expectedValue: number | null;
-    avgReturnPct: number | null;
     assets: string[];
   }>;
   recentSignals: Array<{
     coin: string; signal: string; confidence: number;
     timeframe: string; tier: number;
-    return_1candle: number | null;
     pfe_return_pct: number | null;
-    outcome_return_pct: number | null; created_at: number;
+    created_at: number;
   }>;
   methodology: Record<string, unknown>;
 }

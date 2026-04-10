@@ -627,7 +627,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
   <!-- Recent signals -->
   <div class="section"><h2>Recent Signals</h2>
-    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Signal</th><th class="num">Confidence</th><th class="num">Return (1c)</th></tr></thead>
+    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Signal</th><th class="num">Confidence</th><th class="num">PFE Return</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
@@ -690,28 +690,14 @@ function getFilteredSignals() {
   return all.filter(function(s) { return tierMatch(s.tier); });
 }
 
-function pnlDir(s) { var r = s.outcome_return_pct || 0; return Math.max(s.signal === 'SELL' ? -r : r, -100); }
 function pfeWin(s) { var p = s.pfe_return_pct; if (p == null) return false; return s.signal === 'BUY' ? p > 0 : p < 0; }
 
 function recomputeOverall(signals) {
   var nh = signals.filter(function(s){return s.signal!=='HOLD';});
-  var e1c = nh.filter(function(s){return s.return_1candle!=null;});
-  var w1c = e1c.filter(function(s){return s.return_1candle>0;});
-  var eEW = nh.filter(function(s){return s.outcome_return_pct!=null;});
-  var rets = eEW.map(pnlDir);
-  var gp = rets.filter(function(r){return r>0;}).reduce(function(a,b){return a+b;},0);
-  var gl = Math.abs(rets.filter(function(r){return r<0;}).reduce(function(a,b){return a+b;},0));
-  var pf = gl>0 ? gp/gl : (gp>0 ? Infinity : null);
   var ePFE = nh.filter(function(s){return s.pfe_return_pct!=null;});
   var pfeW = ePFE.filter(pfeWin);
   var pfeWR = ePFE.length>0 ? pfeW.length/ePFE.length : null;
-  var wr = rets.filter(function(r){return r>0;});
-  var lr = rets.filter(function(r){return r<0;});
-  var aw = wr.length>0 ? wr.reduce(function(a,b){return a+b;},0)/wr.length : 0;
-  var al = lr.length>0 ? Math.abs(lr.reduce(function(a,b){return a+b;},0)/lr.length) : 0;
-  var wrPct = eEW.length>0 ? wr.length/eEW.length : 0;
-  var ev = eEW.length>0 ? (wrPct*aw)-((1-wrPct)*al) : null;
-  return { totalEvaluated: e1c.length, total: signals.length, winRate: e1c.length>0?w1c.length/e1c.length:null, profitFactor: pf, pfeWinRate: pfeWR, expectedValue: ev };
+  return { totalEvaluated: ePFE.length, total: signals.length, pfeWinRate: pfeWR };
 }
 
 function recomputeTF(signals) {
@@ -811,10 +797,9 @@ function renderAll() {
   var tfSigs = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s){return s.timeframe===activeTfFilter;});
   var nhSigs = tfSigs.filter(function(s){return s.signal!=='HOLD';});
   function computeAst(sigs){
-    var m={};sigs.forEach(function(s){if(!m[s.coin])m[s.coin]={coin:s.coin,tier:s.tier,count:0,pfeEval:0,pfeWins:0,returns:[]};var a=m[s.coin];
-    if(s.pfe_return_pct!=null){a.pfeEval++;if(pfeWin(s))a.pfeWins++;}
-    if(s.outcome_return_pct!=null){a.returns.push(pnlDir(s));a.count++;}});
-    return Object.values(m).filter(function(a){return a.count>=5;}).map(function(a){var avg=a.returns.reduce(function(x,y){return x+y;},0)/a.returns.length;return{coin:a.coin,tier:a.tier,count:a.count,pfeWinRate:a.pfeEval>0?a.pfeWins/a.pfeEval:null,avgReturnPct:avg};});
+    var m={};sigs.forEach(function(s){if(!m[s.coin])m[s.coin]={coin:s.coin,tier:s.tier,count:0,pfeEval:0,pfeWins:0};var a=m[s.coin];a.count++;
+    if(s.pfe_return_pct!=null){a.pfeEval++;if(pfeWin(s))a.pfeWins++;}});
+    return Object.values(m).filter(function(a){return a.count>=5;}).map(function(a){return{coin:a.coin,tier:a.tier,count:a.count,pfeWinRate:a.pfeEval>0?a.pfeWins/a.pfeEval:null};});
   }
   var assets = computeAst(nhSigs);
   var topA = assets.slice().sort(function(a,b){return (b.pfeWinRate||0)-(a.pfeWinRate||0);}).slice(0,15);
@@ -830,7 +815,7 @@ function renderAll() {
   var recentEl = document.getElementById('recent');
   var recent = tfSigs.slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num '+retClass(s.return_1candle)+'">'+(s.return_1candle!=null?retPct(s.return_1candle):'<span class="muted">\\u2026</span>')+'</td></tr>';}).join('');
+    recentEl.innerHTML = recent.map(function(s){var dp=s.pfe_return_pct!=null?(s.signal==='SELL'?-s.pfe_return_pct:s.pfe_return_pct):null;return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num '+retClass(dp)+'">'+(dp!=null?retPct(dp):'<span class="muted">\\u2026</span>')+'</td></tr>';}).join('');
   } else { recentEl.innerHTML='<tr><td colspan="6" class="empty">No signals'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
