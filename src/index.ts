@@ -579,6 +579,13 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .methodology table th { border: none; padding: 4px 24px 4px 0; color: #8b949e; font-weight: 600; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; }
   .methodology table td { border: none; padding: 3px 24px 3px 0; color: #c9d1d9; }
   .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .recent-table { table-layout: fixed; }
+  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 90px; }
+  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 50px; }
+  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 100px; }
+  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 70px; }
+  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 100px; }
+  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 90px; }
 </style>
 </head>
 <body>
@@ -627,7 +634,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
   <!-- Recent signals -->
   <div class="section"><h2>Recent Trade Calls</h2>
-    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th></tr></thead>
+    <table class="recent-table"><thead><tr><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
