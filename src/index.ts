@@ -627,7 +627,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
   <!-- Recent signals -->
   <div class="section"><h2>Recent Signals</h2>
-    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Signal</th><th class="num">Confidence</th><th class="num">PFE Return</th></tr></thead>
+    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Signal</th><th class="num">Confidence</th><th>Timeframe</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
@@ -669,8 +669,6 @@ var activeTierFilter = 'tier12tf'; // default: Tier 1-2 + TradFi
 var cachedData = null;
 
 function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '\\u2014'; }
-function retPct(v) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : '\\u2014'; }
-function retClass(v) { return v != null ? (v >= 0 ? 'green' : 'red') : 'muted'; }
 function wrClass(v) { return v != null ? (v >= 0.5 ? 'green' : v >= 0.3 ? 'gold' : 'red') : 'muted'; }
 function pfeClass(v) { return v != null ? (v >= 0.6 ? 'green' : v >= 0.45 ? 'gold' : 'red') : 'muted'; }
 function pfClass(v) { return v != null ? (v >= 1.5 ? 'green' : v >= 1.0 ? 'gold' : 'red') : 'muted'; }
@@ -765,8 +763,8 @@ function renderAll() {
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
       '<div class="tc-assets">' + (assets || 'No signals yet') + '</div>' +
       (t.count > 0 ? '<div class="tc-stats">' +
-        '<div class="tc-stat"><div class="tc-label">PFE WR</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
         '<div class="tc-stat"><div class="tc-label">Signals</div><div class="tc-val muted">' + t.count + '</div></div>' +
+        '<div class="tc-stat"><div class="tc-label">PFE Win Rate</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No signals yet</div>') +
     '</div>';
   }).join('');
@@ -815,7 +813,7 @@ function renderAll() {
   var recentEl = document.getElementById('recent');
   var recent = tfSigs.slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){var dp=s.pfe_return_pct!=null?(s.signal==='SELL'?-s.pfe_return_pct:s.pfe_return_pct):null;return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num '+retClass(dp)+'">'+(dp!=null?retPct(dp):'<span class="muted">\\u2026</span>')+'</td></tr>';}).join('');
+    recentEl.innerHTML = recent.map(function(s){return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td>'+s.timeframe+'</td></tr>';}).join('');
   } else { recentEl.innerHTML='<tr><td colspan="6" class="empty">No signals'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
