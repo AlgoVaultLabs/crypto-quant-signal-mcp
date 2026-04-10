@@ -1,6 +1,6 @@
 {
   "name": "crypto-quant-signal-mcp",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "mcpName": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
   "description": "AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime detection via MCP. Remote-first with x402 micropayments. Starting with Hyperliquid.",
   "main": "dist/index.js",
