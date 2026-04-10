@@ -4,13 +4,13 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "get_trade_signal",
-      "description": "Returns a composite BUY/SELL/HOLD signal for a Hyperliquid perp. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.",
+      "description": "Returns a composite BUY/SELL/HOLD signal with confidence score for any supported asset. Multi-factor scoring engine evaluates momentum, trend structure, derivatives sentiment, and volume conviction across crypto and TradFi perpetuals.",
       "parameters": {
         "type": "object",
         "properties": {
           "coin": {
             "type": "string",
-            "description": "Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"
+            "description": "Asset symbol — e.g. 'ETH', 'BTC', 'SOL', 'GOLD', 'TSLA'"
           },
           "timeframe": {
             "type": "string",
@@ -50,7 +50,7 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "get_market_regime",
-      "description": "Classifies the current market regime (trending-up, trending-down, ranging, volatile) using ADX, Bollinger Band width, and correlation metrics across configurable assets.",
+      "description": "Classifies the current market regime (TRENDING_UP/DOWN, RANGING, VOLATILE) using multi-dimensional analysis with cross-venue funding sentiment.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -77,7 +77,7 @@
     "avatar": "https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png",
     "tags": ["trading", "crypto", "signals", "defi", "hyperliquid", "quant", "mcp"],
     "title": "Crypto Quant Signal MCP",
-    "description": "AI trading brain for crypto perps — composite BUY/SELL/HOLD signals, cross-venue funding rate arb scanning, and market regime detection for Hyperliquid perpetuals via MCP."
+    "description": "Signal intelligence for AI trading agents — composite quant signals across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP."
   },
   "version": "1"
 }

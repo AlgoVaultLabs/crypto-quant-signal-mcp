@@ -6,6 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js';
+import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 
 const DB_DIR = path.join(os.homedir(), '.crypto-quant-signal');
 const DB_PATH = path.join(DB_DIR, 'performance.db');
@@ -430,21 +431,22 @@ export async function hasRecentSignalAsync(coin: string, timeframe: string, with
 
 export function getPerformanceStats(): PerformanceStats {
   if (isPg) {
-    // For PG, return empty stats — use async version
     return emptyStats();
   }
   const b = getBackend();
   const all = b.all(`SELECT * FROM signals ORDER BY created_at DESC`);
-  return computeStats(all);
+  return computeStats(all, null);
 }
 
 export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
+  const top20 = await getTop20ByOI().catch(() => null);
   const b = getBackend();
   if (isPg && b instanceof PgBackend) {
     const all = await b.query(`SELECT * FROM signals ORDER BY created_at DESC`);
-    return computeStats(all);
+    return computeStats(all, top20);
   }
-  return getPerformanceStats();
+  const all = b.all(`SELECT * FROM signals ORDER BY created_at DESC`);
+  return computeStats(all, top20);
 }
 
 const METHODOLOGY: Record<string, unknown> = {
@@ -464,16 +466,17 @@ function emptyStats(): PerformanceStats {
   return {
     totalSignals: 0,
     period: { from: '', to: '' },
-    overall: { totalSignals: 0, totalEvaluated: 0, winRate: null, profitFactor: null },
+    overall: { totalSignals: 0, totalEvaluated: 0, winRate: null, profitFactor: null, pfeWinRate: null, expectedValue: null, avgWin: 0, avgLoss: 0 },
     bySignalType: {},
     byTimeframe: {},
     byAsset: {},
+    byTier: {},
     recentSignals: [],
     methodology: METHODOLOGY,
   };
 }
 
-function computeStats(all: SignalRecord[]): PerformanceStats {
+function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null): PerformanceStats {
   if (all.length === 0) return emptyStats();
 
   const oldest = all[all.length - 1];
@@ -481,7 +484,7 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
 
   const nonHold = all.filter(s => s.signal !== 'HOLD');
 
-  // v1.4.1: Win Rate = 1-candle confirmation (return_1candle)
+  // Win Rate = 1-candle confirmation (return_1candle)
   const evaluated1c = nonHold.filter(s => s.return_1candle != null);
   const wins1c = evaluated1c.filter(s => (s.return_1candle ?? 0) > 0);
   const winRate = evaluated1c.length > 0 ? wins1c.length / evaluated1c.length : null;
@@ -496,6 +499,22 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
   const grossProfit = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
   const grossLoss = Math.abs(returns.filter(r => r < 0).reduce((a, b) => a + b, 0));
   const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? Infinity : null);
+
+  // PFE Win Rate: did price move in signal direction during eval window?
+  const evaluatedPFE = nonHold.filter(s => s.pfe_return_pct != null);
+  const pfeWins = evaluatedPFE.filter(s => {
+    const pfe = s.pfe_return_pct ?? 0;
+    return s.signal === 'BUY' ? pfe > 0 : pfe < 0;
+  });
+  const pfeWinRate = evaluatedPFE.length > 0 ? pfeWins.length / evaluatedPFE.length : null;
+
+  // Expected Value per signal
+  const winReturns = returns.filter(r => r > 0);
+  const lossReturns = returns.filter(r => r < 0);
+  const avgWin = winReturns.length > 0 ? winReturns.reduce((a, b) => a + b, 0) / winReturns.length : 0;
+  const avgLoss = lossReturns.length > 0 ? Math.abs(lossReturns.reduce((a, b) => a + b, 0) / lossReturns.length) : 0;
+  const ewWR = evaluatedEW.length > 0 ? winReturns.length / evaluatedEW.length : 0;
+  const expectedValue = evaluatedEW.length > 0 ? (ewWR * avgWin) - ((1 - ewWR) * avgLoss) : null;
 
   // By signal type
   const bySignalType: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
@@ -513,7 +532,7 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     };
   }
 
-  // v1.4.1: By timeframe — 4 metrics: count, winRate (1-candle), avgReturnPct (EW), profitFactor (EW)
+  // By timeframe
   const byTimeframe: PerformanceStats['byTimeframe'] = {};
   const allTimeframes = [...new Set(all.map(s => s.timeframe))];
   const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'];
@@ -543,20 +562,77 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
     };
   }
 
-  // By asset
+  // By asset (with tier, PFE WR, PF, EV)
   const coins = [...new Set(all.map(s => s.coin))];
-  const byAsset: Record<string, { count: number; winRate: number | null; avgReturnPct: number | null }> = {};
+  const byAsset: PerformanceStats['byAsset'] = {};
   for (const coin of coins) {
     const group = all.filter(s => s.coin === coin);
-    const evalGroup = group.filter(s => s.return_1candle != null && s.signal !== 'HOLD');
+    const nh = group.filter(s => s.signal !== 'HOLD');
+    const evalGroup = nh.filter(s => s.return_1candle != null);
     const winsGroup = evalGroup.filter(s => (s.return_1candle ?? 0) > 0);
-    const ewGroup = group.filter(s => s.outcome_return_pct != null && s.signal !== 'HOLD');
+    const ewGroup = nh.filter(s => s.outcome_return_pct != null);
     const returnsGroup = ewGroup.map(pnlReturn);
+    const pfeGroup = nh.filter(s => s.pfe_return_pct != null);
+    const pfeWinsGroup = pfeGroup.filter(s => {
+      const pfe = s.pfe_return_pct ?? 0;
+      return s.signal === 'BUY' ? pfe > 0 : pfe < 0;
+    });
+    const wr = returnsGroup.filter(r => r > 0);
+    const lr = returnsGroup.filter(r => r < 0);
+    const gp = wr.reduce((a, b) => a + b, 0);
+    const gl = Math.abs(lr.reduce((a, b) => a + b, 0));
+    const aw = wr.length > 0 ? gp / wr.length : 0;
+    const al = lr.length > 0 ? gl / lr.length : 0;
+    const wrPct = ewGroup.length > 0 ? wr.length / ewGroup.length : 0;
 
     byAsset[coin] = {
       count: group.length,
+      tier: classifyAsset(coin, top20ByOI),
       winRate: evalGroup.length > 0 ? winsGroup.length / evalGroup.length : null,
+      pfeWinRate: pfeGroup.length > 0 ? pfeWinsGroup.length / pfeGroup.length : null,
       avgReturnPct: returnsGroup.length > 0 ? returnsGroup.reduce((a, b) => a + b, 0) / returnsGroup.length : null,
+      profitFactor: gl > 0 ? gp / gl : (gp > 0 ? Infinity : null),
+      expectedValue: ewGroup.length > 0 ? (wrPct * aw) - ((1 - wrPct) * al) : null,
+    };
+  }
+
+  // By tier
+  const byTier: PerformanceStats['byTier'] = {};
+  for (const tierDef of TIER_DEFINITIONS) {
+    const tierSignals = nonHold.filter(s => classifyAsset(s.coin, top20ByOI) === tierDef.tier);
+    const tier1c = tierSignals.filter(s => s.return_1candle != null);
+    const tierEW = tierSignals.filter(s => s.outcome_return_pct != null);
+    const tierPFE = tierSignals.filter(s => s.pfe_return_pct != null);
+    const tierWins1c = tier1c.filter(s => (s.return_1candle ?? 0) > 0);
+    const tierReturns = tierEW.map(pnlReturn);
+    const tierGP = tierReturns.filter(r => r > 0).reduce((a, b) => a + b, 0);
+    const tierGL = Math.abs(tierReturns.filter(r => r < 0).reduce((a, b) => a + b, 0));
+    const tierPF = tierGL > 0 ? tierGP / tierGL : (tierGP > 0 ? Infinity : null);
+    const tierPFEWins = tierPFE.filter(s => {
+      const pfe = s.pfe_return_pct ?? 0;
+      return s.signal === 'BUY' ? pfe > 0 : pfe < 0;
+    });
+    const tierWR = tierReturns.filter(r => r > 0);
+    const tierLR = tierReturns.filter(r => r < 0);
+    const taw = tierWR.length > 0 ? tierWR.reduce((a, b) => a + b, 0) / tierWR.length : 0;
+    const tal = tierLR.length > 0 ? Math.abs(tierLR.reduce((a, b) => a + b, 0) / tierLR.length) : 0;
+    const twr = tierEW.length > 0 ? tierWR.length / tierEW.length : 0;
+    const tierEV = tierEW.length > 0 ? (twr * taw) - ((1 - twr) * tal) : null;
+    const tierCoins = [...new Set(tierSignals.map(s => s.coin))].sort();
+
+    byTier[`tier${tierDef.tier}`] = {
+      tier: tierDef.tier,
+      name: tierDef.name,
+      label: tierDef.label,
+      color: tierDef.color,
+      count: tierSignals.length,
+      evaluated: Math.max(tier1c.length, tierEW.length),
+      winRate: tier1c.length > 0 ? tierWins1c.length / tier1c.length : null,
+      pfeWinRate: tierPFE.length > 0 ? tierPFEWins.length / tierPFE.length : null,
+      profitFactor: tierPF,
+      expectedValue: tierEV,
+      avgReturnPct: tierReturns.length > 0 ? tierReturns.reduce((a, b) => a + b, 0) / tierReturns.length : null,
+      assets: tierCoins,
     };
   }
 
@@ -571,13 +647,20 @@ function computeStats(all: SignalRecord[]): PerformanceStats {
       totalEvaluated: evaluated1c.length,
       winRate,
       profitFactor,
+      pfeWinRate,
+      expectedValue,
+      avgWin,
+      avgLoss,
     },
     bySignalType,
     byTimeframe,
     byAsset,
+    byTier,
     recentSignals: all.map(s => ({
       coin: s.coin, signal: s.signal, confidence: s.confidence,
-      timeframe: s.timeframe, return_1candle: s.return_1candle,
+      timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI),
+      return_1candle: s.return_1candle,
+      pfe_return_pct: s.pfe_return_pct,
       outcome_return_pct: s.outcome_return_pct, created_at: s.created_at,
     })),
     methodology: METHODOLOGY,

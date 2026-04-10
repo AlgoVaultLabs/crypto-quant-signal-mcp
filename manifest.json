@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "crypto-quant-signal",
   "display_name": "Crypto Quant Signal",
-  "description": "Composite trading signals, funding arb scanning, and market regime detection for Hyperliquid perps. BUY/SELL/HOLD verdicts with confidence scores.",
-  "version": "1.4.1",
+  "description": "Composite trading signals across crypto and TradFi perpetuals, cross-venue funding arb scanning, and regime-aware market classification via MCP. 290+ assets on Hyperliquid.",
+  "version": "1.6.0",
   "author": {
     "name": "AlgoVault Labs",
     "url": "https://algovault.com"

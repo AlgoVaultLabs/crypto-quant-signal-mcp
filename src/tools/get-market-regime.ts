@@ -1,5 +1,6 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
+import { getDexForCoin } from '../lib/asset-tiers.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment } from '../types.js';
 
 interface MarketRegimeInput {
@@ -23,10 +24,12 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const startTime = Date.now() - candleCount * intervalMs;
 
   const adapter = getAdapter();
+  const dex = getDexForCoin(coin);
 
   // Fetch candles + predicted fundings in parallel (fundings are best-effort)
+  // Note: predictedFundings does NOT include xyz perps — cross-venue comparison unavailable for TradFi
   const [candles, allFundings] = await Promise.all([
-    adapter.getCandles(coin, timeframe, startTime),
+    adapter.getCandles(coin, timeframe, startTime, dex),
     adapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
   ]);
 
@@ -124,7 +127,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     coin,
     timeframe,
     _algovault: {
-      version: '1.5.0',
+      version: '1.6.0',
       tool: 'get_market_regime',
       compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     },
