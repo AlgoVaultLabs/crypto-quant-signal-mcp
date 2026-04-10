@@ -527,7 +527,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlgoVault Signal Performance</title>
+<title>AlgoVault Trade Calls Performance</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
@@ -584,7 +584,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Signal Performance</h1><div class="subtitle">v1.6.0</div></div>
+  <div><h1>Trade Calls Performance</h1><div class="subtitle">v1.6.0</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -593,7 +593,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
   <!-- KPI Cards (4) -->
   <div class="grid">
-    <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
+    <div class="card"><div class="label">Total Trade Calls</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
     <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div><div class="sub">Directional Accuracy</div></div>
   </div>
 
@@ -601,7 +601,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section"><h2>Performance by Tier</h2><div class="tier-grid" id="tier-cards"></div></div>
 
   <!-- Signal type breakdown -->
-  <div class="section"><h2>By Signal Type</h2>
+  <div class="section"><h2>By Call Type</h2>
     <table><thead><tr><th>Type</th><th class="num">Count</th><th class="num">PFE Win Rate</th><th>Bar</th></tr></thead>
     <tbody id="by-type"></tbody></table>
   </div>
@@ -610,32 +610,32 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section">
     <h2>Performance by Timeframe</h2>
     <div class="tabs" id="tf-tabs"></div>
-    <table><thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">PFE Win Rate</th></tr></thead>
+    <table><thead><tr><th>Timeframe</th><th class="num">Trade Calls</th><th class="num">PFE Win Rate</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
   </div>
 
   <div class="grid-2">
     <div class="section"><h2>Top Performing Assets</h2>
-      <table><thead><tr><th></th><th>Asset</th><th class="num">Signals</th><th class="num">PFE WR</th></tr></thead>
+      <table><thead><tr><th></th><th>Asset</th><th class="num">Trade Calls</th><th class="num">PFE WR</th></tr></thead>
       <tbody id="top-assets"></tbody></table>
     </div>
     <div class="section"><h2>Worst Performing Assets</h2>
-      <table><thead><tr><th></th><th>Asset</th><th class="num">Signals</th><th class="num">PFE WR</th></tr></thead>
+      <table><thead><tr><th></th><th>Asset</th><th class="num">Trade Calls</th><th class="num">PFE WR</th></tr></thead>
       <tbody id="worst-assets"></tbody></table>
     </div>
   </div>
 
   <!-- Recent signals -->
-  <div class="section"><h2>Recent Signals</h2>
-    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Signal</th><th class="num">Confidence</th><th>Timeframe</th></tr></thead>
+  <div class="section"><h2>Recent Trade Calls</h2>
+    <table><thead><tr><th>Time</th><th></th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th>Timeframe</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
   <!-- Methodology -->
   <div class="section"><h2>Methodology</h2>
     <div class="methodology">
-      <p><strong>PFE Win Rate</strong> = Percentage of signals where price moved in the signal direction at any point during the evaluation window.</p>
-      <p><strong>Note</strong>: AlgoVault provides directional entry signals. Exit timing is determined by your agent or strategy &mdash; PFE Win Rate measures whether the direction was correct, independent of exit.</p>
+      <p><strong>PFE Win Rate</strong> = Percentage of trade calls where price moved in the called direction at any point during the evaluation window.</p>
+      <p><strong>Note</strong>: AlgoVault provides directional entry calls. Exit timing is determined by your agent or strategy &mdash; PFE Win Rate measures whether the direction was correct, independent of exit.</p>
       <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table><thead><tr><th>Timeframe</th><th>Candles</th><th>Total Time</th></tr></thead><tbody>
         <tr><td>5m</td><td>12</td><td>1 hour</td></tr><tr><td>15m</td><td>12</td><td>3 hours</td></tr>
@@ -651,7 +651,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
         <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX via HL xyz perps</td></tr>
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
-      <p style="margin-top:16px"><strong>Signal Filter</strong> = Only confidence &ge; 60% signals recorded. HOLDs excluded.</p>
+      <p style="margin-top:16px"><strong>Call Filter</strong> = Only confidence &ge; 60% trade calls recorded. HOLDs excluded.</p>
       <p><strong>Default view</strong> shows Tier 1-2 + TradFi only. Full coverage via &ldquo;All Assets&rdquo; tab.</p>
     </div>
   </div>
@@ -761,11 +761,11 @@ function renderAll() {
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
-      '<div class="tc-assets">' + (assets || 'No signals yet') + '</div>' +
+      '<div class="tc-assets">' + (assets || 'No trade calls yet') + '</div>' +
       (t.count > 0 ? '<div class="tc-stats">' +
-        '<div class="tc-stat"><div class="tc-label">Signals</div><div class="tc-val muted">' + t.count + '</div></div>' +
+        '<div class="tc-stat"><div class="tc-label">Trade Calls</div><div class="tc-val muted">' + t.count + '</div></div>' +
         '<div class="tc-stat"><div class="tc-label">PFE Win Rate</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
-      '</div>' : '<div style="color:#6e7681;font-size:12px">No signals yet</div>') +
+      '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
     '</div>';
   }).join('');
 
@@ -780,7 +780,7 @@ function renderAll() {
   });
   var types=Object.entries(typeCounts);
   var maxC=Math.max.apply(null,types.map(function(e){return e[1].count;}));
-  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No signals yet</td></tr>';
+  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No trade calls yet</td></tr>';
 
   // TF table
   var tfEl = document.getElementById('by-timeframe');
@@ -804,7 +804,7 @@ function renderAll() {
   var worstA = assets.slice().sort(function(a,b){return (a.pfeWinRate||0)-(b.pfeWinRate||0);}).slice(0,15);
   function renderAT(id,list){
     var el=document.getElementById(id);
-    if(!list.length){el.innerHTML='<tr><td colspan="4" class="empty">Waiting for outcome data (min 5 signals)...</td></tr>';return;}
+    if(!list.length){el.innerHTML='<tr><td colspan="4" class="empty">Waiting for outcome data (min 5 trade calls)...</td></tr>';return;}
     el.innerHTML=list.map(function(a){return '<tr><td>'+tierBadge(a.tier)+'</td><td><strong>'+a.coin+'</strong></td><td class="num">'+a.count+'</td><td class="num '+pfeClass(a.pfeWinRate)+'">'+pct(a.pfeWinRate)+'</td></tr>';}).join('');
   }
   renderAT('top-assets',topA); renderAT('worst-assets',worstA);
@@ -814,7 +814,7 @@ function renderAll() {
   var recent = tfSigs.slice(0,20);
   if (recent.length) {
     recentEl.innerHTML = recent.map(function(s){return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td>'+s.timeframe+'</td></tr>';}).join('');
-  } else { recentEl.innerHTML='<tr><td colspan="6" class="empty">No signals'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
+  } else { recentEl.innerHTML='<tr><td colspan="6" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
 async function load() {
