@@ -593,8 +593,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
   <!-- KPI Cards (4) -->
   <div class="grid">
-    <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div><div class="sub">Directional Accuracy</div></div>
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
+    <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div><div class="sub">Directional Accuracy</div></div>
   </div>
 
   <!-- Tier Performance Cards -->
@@ -634,7 +634,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <!-- Methodology -->
   <div class="section"><h2>Methodology</h2>
     <div class="methodology">
-      <p><strong>PFE Win Rate</strong> = Percentage of signals where price moved in the signal direction at any point during the evaluation window. Measures directional accuracy regardless of entry timing.</p>
+      <p><strong>PFE Win Rate</strong> = Percentage of signals where price moved in the signal direction at any point during the evaluation window.</p>
       <p><strong>Note</strong>: AlgoVault provides directional entry signals. Exit timing is determined by your agent or strategy &mdash; PFE Win Rate measures whether the direction was correct, independent of exit.</p>
       <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table><thead><tr><th>Timeframe</th><th>Candles</th><th>Total Time</th></tr></thead><tbody>
