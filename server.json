@@ -1,61 +1,35 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
-  "description": "Crypto & TradFi perp signals, cross-venue funding arb, and market regime detection via MCP.",
-  "version": "1.6.0",
-  "author": {
-    "name": "AlgoVault Labs",
-    "url": "https://algovault.com"
-  },
+  "title": "AlgoVault — Crypto Quant Trade Calls",
+  "description": "Crypto quant signals, cross-venue funding arb, and market regime detection for AI trading agents.",
+  "version": "1.6.1",
   "repository": {
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
     "source": "github"
   },
-  "transport": [
+  "remotes": [
     {
       "type": "streamable-http",
       "url": "https://api.algovault.com/mcp"
-    },
-    {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "crypto-quant-signal-mcp"]
     }
   ],
-  "tools": [
+  "packages": [
     {
-      "name": "get_trade_signal",
-      "description": "Returns a composite BUY/SELL/HOLD signal with confidence score for any supported asset — crypto perps, TradFi perpetuals, and liquidity-filtered meme coins."
-    },
-    {
-      "name": "scan_funding_arb",
-      "description": "Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arb opportunities."
-    },
-    {
-      "name": "get_market_regime",
-      "description": "Classifies current market regime (TRENDING_UP/DOWN, RANGING, VOLATILE) with cross-venue funding sentiment."
+      "registryType": "npm",
+      "identifier": "crypto-quant-signal-mcp",
+      "version": "1.6.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "npx",
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "-y"
+        }
+      ]
     }
   ],
-  "resources": [
-    {
-      "uri": "performance://signal-stats",
-      "name": "Signal performance track record",
-      "description": "Historical signal accuracy: win rate, Sharpe ratio, profit factor."
-    }
-  ],
-  "tags": ["trading", "crypto", "signals", "hyperliquid", "defi", "quant", "arbitrage", "funding-rate", "market-regime", "mcp", "ai-agent"],
-  "license": "MIT",
-  "pricing": {
-    "model": "hybrid",
-    "x402": {
-      "get_trade_signal": "$0.02/call",
-      "scan_funding_arb": "$0.01/call",
-      "get_market_regime": "$0.02/call"
-    },
-    "subscription": {
-      "free": "100 calls/day, BTC+ETH only",
-      "pro": "$49/mo — 15K calls/mo, all assets",
-      "enterprise": "$299/mo — 100K calls/mo, SLA"
-    }
-  }
+  "websiteUrl": "https://algovault.com"
 }
