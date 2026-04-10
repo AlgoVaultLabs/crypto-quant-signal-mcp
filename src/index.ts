@@ -560,8 +560,6 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .tier-tab:hover { border-color: #58a6ff80; } .tier-tab.active { border-width: 2px; }
   .tier-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
   .tradfi-badge { background: linear-gradient(135deg, #bc8cff20, #8957e520); border: 1px solid #bc8cff40; color: #bc8cff; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
-  .vol-bar { display: flex; height: 28px; border-radius: 8px; overflow: hidden; margin-bottom: 24px; border: 1px solid #30363d; }
-  .vol-segment { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; transition: width 0.3s; min-width: 0; }
   .tier-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; }
   @media (max-width: 768px) { .tier-grid { grid-template-columns: 1fr; } }
   .tier-card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; }
@@ -599,15 +597,12 @@ function getPerformanceDashboardHtml(apiKey: string): string {
     <div class="card"><div class="label">Total Signals</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
   </div>
 
-  <!-- Volume Distribution Bar -->
-  <div class="section"><h2>Volume Distribution</h2><div class="vol-bar" id="vol-bar"></div></div>
-
   <!-- Tier Performance Cards -->
   <div class="section"><h2>Performance by Tier</h2><div class="tier-grid" id="tier-cards"></div></div>
 
   <!-- Signal type breakdown -->
   <div class="section"><h2>By Signal Type</h2>
-    <table><thead><tr><th>Type</th><th class="num">Count</th><th class="num">Win Rate</th><th class="num">Avg Return</th><th>Bar</th></tr></thead>
+    <table><thead><tr><th>Type</th><th class="num">Count</th><th class="num">PFE Win Rate</th><th>Bar</th></tr></thead>
     <tbody id="by-type"></tbody></table>
   </div>
 
@@ -615,17 +610,17 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section">
     <h2>Performance by Timeframe</h2>
     <div class="tabs" id="tf-tabs"></div>
-    <table><thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">Win Rate</th><th class="num">Avg Return</th></tr></thead>
+    <table><thead><tr><th>Timeframe</th><th class="num">Signals</th><th class="num">PFE Win Rate</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
   </div>
 
   <div class="grid-2">
     <div class="section"><h2>Top Performing Assets</h2>
-      <table><thead><tr><th></th><th>Asset</th><th class="num">Signals</th><th class="num">PFE WR</th><th class="num">Avg Return</th></tr></thead>
+      <table><thead><tr><th></th><th>Asset</th><th class="num">Signals</th><th class="num">PFE WR</th></tr></thead>
       <tbody id="top-assets"></tbody></table>
     </div>
     <div class="section"><h2>Worst Performing Assets</h2>
-      <table><thead><tr><th></th><th>Asset</th><th class="num">Signals</th><th class="num">PFE WR</th><th class="num">Avg Return</th></tr></thead>
+      <table><thead><tr><th></th><th>Asset</th><th class="num">Signals</th><th class="num">PFE WR</th></tr></thead>
       <tbody id="worst-assets"></tbody></table>
     </div>
   </div>
@@ -774,20 +769,6 @@ function renderAll() {
     }
   }
 
-  // Volume bar
-  var volEl = document.getElementById('vol-bar');
-  var allSigs = cachedData.recentSignals || [];
-  var tierCounts = {1:0,2:0,3:0,4:0};
-  allSigs.forEach(function(s){tierCounts[s.tier]=(tierCounts[s.tier]||0)+1;});
-  var totalVol = allSigs.length || 1;
-  volEl.innerHTML = [1,2,3,4].map(function(t){
-    var p = Math.round(100*tierCounts[t]/totalVol);
-    if (p < 1 && tierCounts[t] > 0) p = 1;
-    if (p === 0) return '';
-    var label = p >= 5 ? (TIER_NAMES[t]+' '+p+'%') : (p >= 3 ? p+'%' : '');
-    return '<div class="vol-segment" style="width:'+p+'%;background:'+TIER_COLORS[t]+'" title="'+TIER_NAMES[t]+': '+tierCounts[t]+' signals ('+p+'%)"><span>'+label+'</span></div>';
-  }).join('');
-
   // Tier cards
   var tcEl = document.getElementById('tier-cards');
   var bt = d.byTier || {};
@@ -818,7 +799,7 @@ function renderAll() {
   });
   var types=Object.entries(typeCounts);
   var maxC=Math.max.apply(null,types.map(function(e){return e[1].count;}));
-  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+wrClass(v.winRate)+'">'+pct(v.winRate)+'</td><td class="num '+retClass(v.avgReturnPct)+'">'+retPct(v.avgReturnPct)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="5" class="empty">No signals yet</td></tr>';
+  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+wrClass(v.winRate)+'">'+pct(v.winRate)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No signals yet</td></tr>';
 
   // TF table
   var tfEl = document.getElementById('by-timeframe');
@@ -826,8 +807,8 @@ function renderAll() {
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+wrClass(v.winRate)+'">'+pct(v.winRate)+'</td><td class="num '+retClass(v.avgReturnPct)+'">'+retPct(v.avgReturnPct)+'</td></tr>';}).join('');
-  } else { tfEl.innerHTML = '<tr><td colspan="4" class="empty">No data for this timeframe</td></tr>'; }
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.winRate)+'">'+pct(v.winRate)+'</td></tr>';}).join('');
+  } else { tfEl.innerHTML = '<tr><td colspan="3" class="empty">No data for this timeframe</td></tr>'; }
 
   // Asset tables
   var tfSigs = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s){return s.timeframe===activeTfFilter;});
@@ -843,8 +824,8 @@ function renderAll() {
   var worstA = assets.slice().sort(function(a,b){return (a.pfeWinRate||0)-(b.pfeWinRate||0);}).slice(0,15);
   function renderAT(id,list){
     var el=document.getElementById(id);
-    if(!list.length){el.innerHTML='<tr><td colspan="5" class="empty">Waiting for outcome data (min 5 signals)...</td></tr>';return;}
-    el.innerHTML=list.map(function(a){return '<tr><td>'+tierBadge(a.tier)+'</td><td><strong>'+a.coin+'</strong></td><td class="num">'+a.count+'</td><td class="num '+pfeClass(a.pfeWinRate)+'">'+pct(a.pfeWinRate)+'</td><td class="num '+retClass(a.avgReturnPct)+'">'+retPct(a.avgReturnPct)+'</td></tr>';}).join('');
+    if(!list.length){el.innerHTML='<tr><td colspan="4" class="empty">Waiting for outcome data (min 5 signals)...</td></tr>';return;}
+    el.innerHTML=list.map(function(a){return '<tr><td>'+tierBadge(a.tier)+'</td><td><strong>'+a.coin+'</strong></td><td class="num">'+a.count+'</td><td class="num '+pfeClass(a.pfeWinRate)+'">'+pct(a.pfeWinRate)+'</td></tr>';}).join('');
   }
   renderAT('top-assets',topA); renderAT('worst-assets',worstA);
 
