@@ -642,6 +642,7 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
     <div class="card"><div class="label">Total Trade Calls</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
     <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div><div class="sub">Directional Accuracy</div></div>
   </div>
+  <div id="eval-indicator" style="text-align:center;color:#8b949e;font-size:13px;margin:-8px 0 12px 0"></div>
 
   <!-- Tier Performance Cards -->
   <div class="section"><h2>Performance by Tier</h2><div class="tier-grid" id="tier-cards"></div></div>
@@ -704,7 +705,7 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
         <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX via HL xyz perps</td></tr>
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
-      <p style="margin-top:16px"><strong>Call Filter</strong> = Only confidence &ge; 60% trade calls recorded. HOLDs excluded.</p>
+      <p style="margin-top:16px"><strong>Call Filter</strong> = Only confidence &ge; 60% trade calls evaluated. HOLDs excluded.</p>
       <p><strong>Default view</strong> shows Tier 1-2 + TradFi only. Full coverage via &ldquo;All Assets&rdquo; tab.</p>
     </div>
   </div>
@@ -749,7 +750,7 @@ function recomputeOverall(signals) {
   var ePFE = nh.filter(function(s){return s.pfe_return_pct!=null;});
   var pfeW = ePFE.filter(pfeWin);
   var pfeWR = ePFE.length>0 ? pfeW.length/ePFE.length : null;
-  return { totalEvaluated: ePFE.length, total: signals.length, pfeWinRate: pfeWR };
+  return { totalAll: nh.length, totalEvaluated: ePFE.length, total: signals.length, pfeWinRate: pfeWR };
 }
 
 function recomputeTF(signals) {
@@ -766,7 +767,7 @@ function recomputeTF(signals) {
     var sellC=g.filter(function(s){return s.signal==='SELL';}).length;
     var wins=pfeW.map(function(s){var p=Math.abs(s.pfe_return_pct);return p;});
     var avgPfe=wins.length>0?wins.reduce(function(a,b){return a+b;},0)/wins.length:null;
-    result[tf]={count:ePFE.length,pfeWinRate:pfeWR,avgPfePct:avgPfe,buyCount:buyC,sellCount:sellC};
+    result[tf]={count:g.length,evaluated:ePFE.length,pfeWinRate:pfeWR,avgPfePct:avgPfe,buyCount:buyC,sellCount:sellC};
   });
   return result;
 }
@@ -798,7 +799,7 @@ function renderAll() {
   if (activeTfFilter === 'all') {
     var pfeEl = document.getElementById('pfe-wr');
     pfeEl.textContent = pct(stats.pfeWinRate); pfeEl.className = 'value hero ' + pfeClass(stats.pfeWinRate);
-    document.getElementById('total').textContent = (stats.totalEvaluated || stats.total || 0).toLocaleString();
+    document.getElementById('total').textContent = (stats.totalAll || 0).toLocaleString();
     document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : 'Tracked & Evaluated';
   } else {
     var v = (tfStats || {})[activeTfFilter];
@@ -807,6 +808,12 @@ function renderAll() {
       document.getElementById('total').textContent = (v.count || 0).toLocaleString();
       document.getElementById('period').textContent = activeTfFilter + ' timeframe';
     }
+  }
+
+  // Evaluated indicator
+  var evalEl = document.getElementById('eval-indicator');
+  if (evalEl) {
+    evalEl.textContent = 'Total: ' + (stats.totalAll||0) + ' \\u00b7 Evaluated: ' + (stats.totalEvaluated||0) + ' \\u00b7 PFE Win Rate: ' + pct(stats.pfeWinRate);
   }
 
   // Tier cards
@@ -848,7 +855,7 @@ function renderAll() {
     var g=allSignals.filter(function(s){return s.signal===type;});
     var ePFE=g.filter(function(s){return s.pfe_return_pct!=null&&type!=='HOLD';});
     var pfeW=ePFE.filter(pfeWin);
-    typeCounts[type]={count:type==='HOLD'?g.length:ePFE.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
+    typeCounts[type]={count:g.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
   });
   var types=Object.entries(typeCounts);
   typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('') : '<tr><td colspan="3" class="empty">No trade calls yet</td></tr>';
