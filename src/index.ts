@@ -699,7 +699,7 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
 </head>
 <body>
 <div class="logo">
-  <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
+  <a href="https://algovault.com" style="display:flex;align-items:center;text-decoration:none"><img src="/logo.png" width="36" height="36" style="border-radius:8px;cursor:pointer" onerror="this.style.display='none'"></a>
   <div><h1>Live Track Record</h1><div class="subtitle">v1.7.0</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
