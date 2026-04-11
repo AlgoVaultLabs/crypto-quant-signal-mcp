@@ -80,7 +80,7 @@ tailwind.config = {
     </div>
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="#tools" class="hover:text-white transition">Tools</a>
-      <a href="#track-record" class="hover:text-white transition">Track Record</a>
+      <a href="/track-record" class="hover:text-white transition">Track Record</a>
       <a href="#pricing" class="hover:text-white transition">Pricing</a>
       <a href="#developers" class="hover:text-white transition">Developers</a>
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
@@ -108,8 +108,8 @@ tailwind.config = {
       <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
         Try Free in Claude
       </a>
-      <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="w-full sm:w-auto px-6 py-2.5 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
-        View on GitHub
+      <a href="/track-record" class="w-full sm:w-auto px-6 py-2.5 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
+        View Track Record
       </a>
     </div>
     <p class="mt-4 text-xs text-gray-600">No signup required. Free tier includes BTC + ETH on 15m and 1h.</p>
@@ -307,9 +307,12 @@ tailwind.config = {
       </div>
     </div>
 
-    <p class="text-center text-gray-600 text-xs mt-5">
-      All queryable via the <code class="text-gray-500">performance://signal-stats</code> MCP resource.
-    </p>
+    <div class="text-center mt-8">
+      <a href="/track-record" class="inline-block px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+        View Live Track Record &rarr;
+      </a>
+      <p class="text-gray-600 text-xs mt-3">Updated live. Also queryable via <code class="text-gray-500">performance://signal-stats</code> MCP resource.</p>
+    </div>
   </div>
 </section>
 
@@ -321,7 +324,7 @@ tailwind.config = {
       <p class="text-gray-500 text-sm mt-2">Start free. Pay when you need more.</p>
     </div>
 
-    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-5">
       <!-- Free -->
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
         <div class="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">Free</div>
@@ -331,12 +334,26 @@ tailwind.config = {
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> BTC + ETH trade calls</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 15m + 1h timeframes</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Top 5 funding arbs</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Market regime (all assets)</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> ~100 calls/day</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Full track record access</li>
         </ul>
         <a href="#quickstart" class="block w-full text-center px-4 py-2 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
           Start Free
+        </a>
+      </div>
+
+      <!-- Starter -->
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
+        <div class="text-emerald-400 text-xs font-medium uppercase tracking-wider mb-1">Starter</div>
+        <div class="text-3xl font-bold text-white mb-1">$9.99<span class="text-lg text-gray-500 font-normal">/mo</span></div>
+        <div class="text-gray-600 text-xs mb-5">For indie builders</div>
+        <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> <span class="text-white">All crypto + TradFi</span></li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes</span></li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 3,000 calls/month</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> $0.015/call overage</li>
+        </ul>
+        <a href="https://api.algovault.com/signup?plan=starter" class="block w-full text-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+          Subscribe to Starter
         </a>
       </div>
 
@@ -351,10 +368,8 @@ tailwind.config = {
         <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All crypto + TradFi assets</span></li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes (1m&ndash;1d)</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> Unlimited funding arbs</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> 15,000 calls/month</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> $0.01/call overage</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> Full track record access</li>
         </ul>
         <a href="https://api.algovault.com/signup?plan=pro" class="block w-full text-center px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
           Subscribe to Pro

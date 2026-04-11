@@ -222,7 +222,7 @@ async function startHttp() {
   // ── Signup (redirects to Stripe Checkout) ──
   app.get('/signup', async (req, res) => {
     const plan = req.query.plan as string;
-    if (plan !== 'pro' && plan !== 'enterprise') {
+    if (plan !== 'starter' && plan !== 'pro' && plan !== 'enterprise') {
       return res.status(400).send(getSignupPageHtml());
     }
 
@@ -333,6 +333,29 @@ async function startHttp() {
       }
     });
   }
+
+  // ── Public track record (no auth) ──
+  app.get('/api/performance-public', async (_req, res) => {
+    try {
+      const stats = await getSignalPerformance();
+      res.json(stats);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch performance stats' });
+    }
+  });
+
+  app.get('/api/confidence-bands-public', async (_req, res) => {
+    try {
+      const bands = await getConfidenceBands();
+      res.json({ bands, generatedAt: new Date().toISOString() });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch confidence bands' });
+    }
+  });
+
+  app.get('/track-record', (_req, res) => {
+    res.send(getPerformanceDashboardHtml('', { isPublic: true }));
+  });
 
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
@@ -536,13 +559,16 @@ setInterval(load, 30000);
 </html>`;
 }
 
-function getPerformanceDashboardHtml(apiKey: string): string {
+function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean }): string {
+  const isPublic = opts?.isPublic ?? false;
+  const perfEndpoint = isPublic ? '/api/performance-public' : '/performance?key=' + apiKey;
+  const cbEndpoint = isPublic ? '/api/confidence-bands-public' : '/api/confidence-bands?key=' + apiKey;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlgoVault Trade Calls Performance</title>
+<title>Live Track Record — AlgoVault Labs</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
@@ -559,12 +585,10 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   .green { color: #3fb950 !important; } .red { color: #f85149 !important; } .gold { color: #d29922 !important; } .muted { color: #8b949e !important; }
   .section { margin-bottom: 28px; }
   .section h2 { font-size: 14px; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-  table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }
-  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
+  table { width: 100%; max-width: 800px; border-collapse: collapse; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }
+  th, td { padding: 12px 16px; border-bottom: 1px solid #21262d; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+  td:first-child, th:first-child { text-align: left; }
   th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: #0d1117; }
-  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .bar-wrap { width: 80px; display: inline-block; } .bar { height: 6px; border-radius: 3px; min-width: 2px; }
-  .bar.g { background: #3fb950; } .bar.r { background: #f85149; } .bar.b { background: #58a6ff; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
   .badge-buy { background: #0d2818; color: #3fb950; } .badge-sell { background: #2d0b0e; color: #f85149; } .badge-hold { background: #1c1c1c; color: #8b949e; }
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -606,7 +630,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 <body>
 <div class="logo">
   <img src="/logo.png" width="36" height="36" style="border-radius:8px" onerror="this.style.display='none'">
-  <div><h1>Trade Calls Performance</h1><div class="subtitle">v1.7.0</div></div>
+  <div><h1>Live Track Record</h1><div class="subtitle">v1.7.0</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -624,7 +648,7 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 
   <!-- Signal type breakdown -->
   <div class="section"><h2>By Call Type</h2>
-    <table><thead><tr><th style="width:20%">Type</th><th class="num" style="width:25%">Count</th><th class="num" style="width:25%">PFE Win Rate</th><th class="num" style="width:30%">Relative Call Volume</th></tr></thead>
+    <table><thead><tr><th>Type</th><th>Count</th><th>PFE Win Rate</th></tr></thead>
     <tbody id="by-type"></tbody></table>
   </div>
 
@@ -632,14 +656,14 @@ function getPerformanceDashboardHtml(apiKey: string): string {
   <div class="section">
     <h2>Performance by Timeframe</h2>
     <div class="tabs" id="tf-tabs"></div>
-    <table><thead><tr><th style="width:18%">Timeframe</th><th class="num" style="width:18%">Trade Calls</th><th class="num" style="width:18%">PFE Win Rate</th><th class="num" style="width:18%">Avg PFE %</th><th class="num" style="width:28%">BUY / SELL</th></tr></thead>
+    <table><thead><tr><th>Timeframe</th><th>Trade Calls</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
   </div>
 
   <!-- Confidence Band Analysis -->
   <div class="section" id="cb-section" style="display:none">
     <h2>Performance by Confidence Band</h2>
-    <table><thead><tr><th style="width:20%">Band</th><th class="num" style="width:20%">Trade Calls</th><th class="num" style="width:20%">PFE WR</th><th class="num" style="width:20%">Avg PFE %</th><th class="num" style="width:20%">BUY / SELL</th></tr></thead>
+    <table><thead><tr><th>Band</th><th>Trade Calls</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
     <tbody id="cb-body"></tbody></table>
   </div>
 
@@ -689,7 +713,8 @@ function getPerformanceDashboardHtml(apiKey: string): string {
 </div>
 
 <script>
-var KEY = '${apiKey}';
+var PERF_URL = '${perfEndpoint}';
+var CB_URL = '${cbEndpoint}';
 var TF_ORDER = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
 var TIER_COLORS = {1:'#58a6ff',2:'#3fb950',3:'#bc8cff',4:'#d29922'};
 var TIER_NAMES = {1:'Blue Chip',2:'Major Alts',3:'TradFi',4:'Meme & Micro'};
@@ -826,8 +851,7 @@ function renderAll() {
     typeCounts[type]={count:type==='HOLD'?g.length:ePFE.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
   });
   var types=Object.entries(typeCounts);
-  var maxC=Math.max.apply(null,types.map(function(e){return e[1].count;}));
-  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td><div class="bar-wrap"><div class="bar b" style="width:'+(maxC>0?Math.round(v.count/maxC*100):0)+'%"></div></div></td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No trade calls yet</td></tr>';
+  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('') : '<tr><td colspan="3" class="empty">No trade calls yet</td></tr>';
 
   // TF table
   var tfEl = document.getElementById('by-timeframe');
@@ -835,7 +859,7 @@ function renderAll() {
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'\\u2014';return '<tr><td><strong>'+tf+'</strong></td><td class="num">'+v.count+'</td><td class="num '+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td class="num">'+ap+'</td><td class="num">'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'\\u2014';return '<tr><td><strong>'+tf+'</strong></td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>'+ap+'</td><td>'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
   } else { tfEl.innerHTML = '<tr><td colspan="5" class="empty">No data for this timeframe</td></tr>'; }
 
   // Asset tables
@@ -866,7 +890,7 @@ function renderAll() {
 
 async function load() {
   try {
-    var r = await fetch('/performance?key=' + KEY);
+    var r = await fetch(PERF_URL);
     var d = await r.json();
     cachedData = d;
 
@@ -897,7 +921,7 @@ async function load() {
 
     // Confidence bands (separate fetch — Postgres only)
     try {
-      var cbRes = await fetch('/api/confidence-bands?key=' + KEY);
+      var cbRes = await fetch(CB_URL);
       if (cbRes.ok) {
         var cbData = await cbRes.json();
         var bands = cbData.bands || [];
@@ -907,7 +931,7 @@ async function load() {
             var wr = b.pfeWinRate != null ? (b.pfeWinRate * 100).toFixed(1) + '%' : '\\u2014';
             var wrC = b.pfeWinRate != null ? (b.pfeWinRate >= 0.6 ? 'green' : b.pfeWinRate >= 0.45 ? 'gold' : 'red') : 'muted';
             var avgP = b.avgPfePct != null ? b.avgPfePct.toFixed(2) + '%' : '\\u2014';
-            return '<tr><td><strong>' + b.band + '%</strong></td><td class="num">' + b.evaluated + '</td><td class="num ' + wrC + '">' + wr + '</td><td class="num">' + avgP + '</td><td class="num">' + b.buyCount + ' / ' + b.sellCount + '</td></tr>';
+            return '<tr><td><strong>' + b.band + '%</strong></td><td>' + b.evaluated + '</td><td class="' + wrC + '">' + wr + '</td><td>' + avgP + '</td><td>' + b.buyCount + ' / ' + b.sellCount + '</td></tr>';
           }).join('');
           document.getElementById('cb-section').style.display = 'block';
         }
@@ -945,12 +969,13 @@ function getSignupPageHtml(): string {
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
-  .container { max-width: 720px; width: 100%; }
+  .container { max-width: 960px; width: 100%; }
   h1 { font-size: 28px; margin-bottom: 8px; }
   .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
-  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 600px) { .plans { grid-template-columns: 1fr; } }
-  .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; }
+  .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 768px) { .plans { grid-template-columns: 1fr; } }
+  .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; position: relative; }
+  .plan.popular { border-color: #d4a017; }
   .plan h2 { font-size: 20px; margin-bottom: 4px; }
   .plan .price { font-size: 36px; font-weight: 700; color: #58a6ff; margin: 12px 0; }
   .plan .price span { font-size: 16px; font-weight: 400; color: #8b949e; }
@@ -961,6 +986,7 @@ function getSignupPageHtml(): string {
   .btn:hover { background: #2ea043; }
   .btn.ent { background: #8957e5; }
   .btn.ent:hover { background: #a371f7; }
+  .pop-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #d4a017; color: #0f1117; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; letter-spacing: 0.5px; }
 </style>
 </head>
 <body>
@@ -969,11 +995,23 @@ function getSignupPageHtml(): string {
   <div class="subtitle">Unlock all assets, all timeframes, and higher call limits.</div>
   <div class="plans">
     <div class="plan">
+      <h2>Starter</h2>
+      <div class="price">$9.99<span>/mo</span></div>
+      <ul>
+        <li>3,000 calls/month</li>
+        <li>All assets (crypto + TradFi)</li>
+        <li>All timeframes (1m to 1d)</li>
+        <li>Email support</li>
+      </ul>
+      <a class="btn" href="/signup?plan=starter">Subscribe to Starter</a>
+    </div>
+    <div class="plan popular">
+      <div class="pop-badge">MOST POPULAR</div>
       <h2>Pro</h2>
       <div class="price">$49<span>/mo</span></div>
       <ul>
         <li>15,000 calls/month</li>
-        <li>All assets (SOL, ARB, DOGE...)</li>
+        <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
         <li>Priority support</li>
       </ul>
