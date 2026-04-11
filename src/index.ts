@@ -15,9 +15,9 @@ import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance } from './resources/signal-performance.js';
-import { closeDb, getConfidenceBands } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats } from './lib/performance-db.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, trackCall } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, trackCall } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
 import { initAnalytics, logRequest, hashIp, getUsageStats } from './lib/analytics.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
@@ -51,8 +51,12 @@ function createServer(): McpServer {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        trackCall(license);
         const result = await getTradeSignal({ coin, timeframe, includeReasoning, license });
+        // Free HOLDs: only count BUY/SELL against quota, skip settlement for HOLD
+        setRequestVerdict(result.signal);
+        if (result.signal !== 'HOLD') {
+          trackCall(license);
+        }
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'get_trade_signal',
@@ -286,8 +290,8 @@ async function startHttp() {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
-        const stats = await getSignalPerformance();
-        res.json(stats);
+        const [stats, holdStats] = await Promise.all([getSignalPerformance(), getHoldStats()]);
+        res.json({ ...stats, ...holdStats });
       } catch (err) {
         res.status(500).json({ error: 'Failed to fetch performance stats' });
       }
@@ -337,8 +341,8 @@ async function startHttp() {
   // ── Public track record (no auth) ──
   app.get('/api/performance-public', async (_req, res) => {
     try {
-      const stats = await getSignalPerformance();
-      res.json(stats);
+      const [stats, holdStats] = await Promise.all([getSignalPerformance(), getHoldStats()]);
+      res.json({ ...stats, ...holdStats });
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch performance stats' });
     }
@@ -429,7 +433,8 @@ async function startHttp() {
       }
 
       // Fire-and-forget: settle x402 payment after response is sent
-      if (pendingSettlement) {
+      // Free HOLDs: skip settlement when get_trade_signal returned HOLD
+      if (pendingSettlement && getRequestVerdict() !== 'HOLD') {
         settleX402Async(pendingSettlement);
       }
     });
@@ -810,10 +815,13 @@ function renderAll() {
     }
   }
 
-  // Evaluated indicator
+  // Evaluated indicator (with HOLD rate)
   var evalEl = document.getElementById('eval-indicator');
   if (evalEl) {
-    evalEl.textContent = 'Total: ' + (stats.totalAll||0) + ' \\u00b7 Evaluated: ' + (stats.totalEvaluated||0) + ' \\u00b7 PFE Win Rate: ' + pct(stats.pfeWinRate);
+    var th = cachedData.totalHolds || 0;
+    var totalGenerated = (stats.totalAll||0) + th;
+    var holdRate = totalGenerated > 0 ? ((th / totalGenerated) * 100).toFixed(0) + '%' : '\\u2014';
+    evalEl.textContent = 'Total: ' + (stats.totalAll||0) + ' \\u00b7 Evaluated: ' + (stats.totalEvaluated||0) + ' \\u00b7 PFE Win Rate: ' + pct(stats.pfeWinRate) + ' \\u00b7 HOLD Rate: ' + holdRate;
   }
 
   // Tier cards
@@ -834,9 +842,12 @@ function renderAll() {
     }
     return (assets||[]).join(', ');
   }
+  var hbt = d.holdsByTier || {};
   tcEl.innerHTML = ['tier1','tier2','tier3','tier4'].map(function(k){
     var t = bt[k]; if (!t) return '';
     var isTF = t.tier === 3;
+    var tierHolds = hbt[String(t.tier)] || 0;
+    var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' signals rejected \\u2014 engine is selective</div>' : '';
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
@@ -845,6 +856,7 @@ function renderAll() {
         '<div class="tc-stat"><div class="tc-label">Trade Calls</div><div class="tc-val muted">' + t.count + '</div></div>' +
         '<div class="tc-stat"><div class="tc-label">PFE Win Rate</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
+      holdLine +
     '</div>';
   }).join('');
 
