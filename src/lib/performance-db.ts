@@ -394,6 +394,34 @@ export async function getHoldStats(): Promise<{ totalHolds: number; holdsByTier:
   return { totalHolds, holdsByTier };
 }
 
+// ── TradFi gate queries ──
+
+export async function getTradFiPfeWinRate(tradfiSymbols: string[]): Promise<{ winRate: number; evaluated: number }> {
+  if (tradfiSymbols.length === 0) return { winRate: 100, evaluated: 0 };
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    const placeholders = tradfiSymbols.map((_, i) => `$${i + 1}`).join(',');
+    const rows = await b.query(
+      `SELECT signal, pfe_return_pct FROM signals WHERE coin IN (${placeholders}) AND pfe_return_pct IS NOT NULL`,
+      tradfiSymbols
+    );
+    if (rows.length === 0) return { winRate: 100, evaluated: 0 };
+    const wins = rows.filter((r: any) =>
+      r.signal === 'BUY' ? r.pfe_return_pct > 0 : r.pfe_return_pct < 0
+    );
+    return { winRate: (wins.length / rows.length) * 100, evaluated: rows.length };
+  }
+  // SQLite fallback
+  const all = b.all(`SELECT coin, signal, pfe_return_pct FROM signals WHERE pfe_return_pct IS NOT NULL`);
+  const tfSet = new Set(tradfiSymbols);
+  const tfSignals = all.filter(s => tfSet.has(s.coin));
+  if (tfSignals.length === 0) return { winRate: 100, evaluated: 0 };
+  const wins = tfSignals.filter(s =>
+    s.signal === 'BUY' ? (s.pfe_return_pct ?? 0) > 0 : (s.pfe_return_pct ?? 0) < 0
+  );
+  return { winRate: (wins.length / tfSignals.length) * 100, evaluated: tfSignals.length };
+}
+
 // ── Merkle batch queries ──
 
 /** Get un-batched signals that have a hash but no batch ID. */

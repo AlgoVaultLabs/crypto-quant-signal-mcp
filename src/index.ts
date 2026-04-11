@@ -921,6 +921,12 @@ function renderAll() {
     var isTF = t.tier === 3;
     var tierHolds = hbt[String(t.tier)] || 0;
     var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' HOLD calls \\u2014 engine is selective</div>' : '';
+    var gateLine = '';
+    if (isTF && t.pfeWinRate != null) {
+      gateLine = t.pfeWinRate >= 85
+        ? '<div style="color:#3fb950;font-size:11px;margin-top:4px">All TradFi assets seeded (PFE WR \\u2265 85%)</div>'
+        : '<div style="color:#d29922;font-size:11px;margin-top:4px">\\u26a0\\ufe0f Limited to Top 20 OI \\u2014 PFE WR below 85%</div>';
+    }
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
@@ -929,7 +935,7 @@ function renderAll() {
         '<div class="tc-stat"><div class="tc-label">Trade Calls</div><div class="tc-val muted">' + t.count + '</div></div>' +
         '<div class="tc-stat"><div class="tc-label">PFE Win Rate</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
-      holdLine +
+      holdLine + gateLine +
     '</div>';
   }).join('');
 

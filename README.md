@@ -9,6 +9,7 @@ The signal intelligence layer for AI trading agents — composite quant signals 
 [![npm version](https://img.shields.io/npm/v/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![On-Chain Verified](https://img.shields.io/badge/Track_Record-On--Chain_Verified-blue?logo=ethereum)](https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81)
 
 **[Live Track Record](https://algovault.com/track-record)** — 90%+ directional accuracy across 900+ trade calls. Public, no login required.
 
@@ -111,10 +112,23 @@ Every signal is tracked from emission to outcome. No exceptions.
 - Peak Favorable Excursion (PFE) and Maximum Adverse Excursion (MAE)
 - Running statistics per asset, timeframe, and quality tier
 
+**HOLD signals are free** — when the engine says "don't trade," you don't pay. Only BUY and SELL verdicts are charged via x402 or count against subscription quotas. This aligns our incentives: you only pay when we see a tradeable opportunity.
+
+- **HOLD Rate**: Percentage of scans where the engine declines to issue a trade call. A high HOLD rate (currently ~84%) means the engine is selective — it only calls BUY/SELL when conditions align across multiple indicators.
+
 **Infrastructure:**
 - Remote mode: PostgreSQL with automated outcome backfill
 - Local mode: SQLite at `~/.crypto-quant-signal/performance.db`
 - Only high-confidence BUY/SELL signals are tracked — HOLD is excluded
+
+### On-Chain Verification
+
+Every signal is hashed (keccak256) at creation time and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof — we cannot edit past signals.
+
+- **Contract**: [`0x6485...0f81`](https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81) (Base L2)
+- **Verify any signal**: `https://api.algovault.com/api/verify-signal?signalId=<ID>`
+- **View all batches**: `https://api.algovault.com/api/merkle-batches`
+- **Visual verification**: [algovault.com/verify](https://algovault.com/verify)
 
 ---
 
@@ -130,6 +144,9 @@ Every signal is tracked from emission to outcome. No exceptions.
 | Monthly calls | ~100/day | 3,000/mo | 15,000/mo | 100,000/mo | Unlimited |
 | Support | Community | Email | Priority | Dedicated | — |
 | Price | $0 | $9.99/mo | $49/mo | $299/mo | $0.01–0.05/call |
+| HOLD signals | Free | Free | Free | Free | Free |
+
+\* HOLD verdicts (engine says "don't trade") are always free across all tiers — no x402 charge, no quota deduction.
 
 **x402 micropayments:** AI agents pay per HTTP call with USDC on Base — no signup, no API key, no billing. The payment receipt is the credential. See [x402.org](https://x402.org).
 
