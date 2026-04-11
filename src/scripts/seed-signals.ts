@@ -36,7 +36,7 @@
  */
 
 import { getTradeSignal } from '../tools/get-trade-signal.js';
-import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
+import { hasRecentSignalAsync, closeDb, getTradFiPfeWinRate } from '../lib/performance-db.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import type { LicenseInfo } from '../types.js';
 
@@ -178,7 +178,27 @@ async function main() {
   await warmTierCaches();
 
   console.log(`[${ts()}] Fetching Hyperliquid universe (standard + TradFi)...`);
-  const coins = await fetchAllCoins(top);
+  let coins = await fetchAllCoins(top);
+
+  // ── TradFi Conditional Gate ──
+  // When TradFi PFE win rate drops below 85%, limit TradFi seeding to
+  // Top 20 OI assets with >= $10M 24h volume.
+  const allTradFi = coins.filter(c => isKnownTradFi(c));
+  if (allTradFi.length > 0) {
+    const { winRate, evaluated } = await getTradFiPfeWinRate(allTradFi);
+    if (evaluated === 0) {
+      console.log(`[${ts()}] TradFi gate: no evaluated signals yet — seeding full universe (${allTradFi.length} TradFi assets)`);
+    } else if (winRate >= 85) {
+      console.log(`[${ts()}] TradFi PFE WR: ${winRate.toFixed(1)}% (${evaluated} evaluated) — seeding full universe (${allTradFi.length} TradFi assets)`);
+    } else {
+      // Degraded mode: keep only top 20 TradFi by OI (they're already sorted by OI)
+      const topTradFi = new Set(allTradFi.slice(0, 20));
+      const beforeCount = coins.length;
+      coins = coins.filter(c => !isKnownTradFi(c) || topTradFi.has(c));
+      console.log(`[${ts()}] TradFi PFE WR: ${winRate.toFixed(1)}% (below 85%, ${evaluated} evaluated) — limiting to Top ${topTradFi.size} TradFi by OI (dropped ${beforeCount - coins.length} assets)`);
+    }
+  }
+
   console.log(`[${ts()}] Starting ${timeframe} signal seed for ${coins.length} assets${top ? ` (top ${top} by OI)` : ''}...`);
 
   let seeded = 0;

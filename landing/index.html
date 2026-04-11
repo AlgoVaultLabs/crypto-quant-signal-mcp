@@ -84,6 +84,7 @@ tailwind.config = {
       <a href="#pricing" class="hover:text-white transition">Pricing</a>
       <a href="#developers" class="hover:text-white transition">Developers</a>
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="hover:text-white transition">GitHub</a>
       <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
@@ -312,7 +313,26 @@ tailwind.config = {
         View Live Track Record &rarr;
       </a>
       <p class="text-gray-600 text-xs mt-3">Updated live. Also queryable via <code class="text-gray-500">performance://signal-stats</code> MCP resource.</p>
-      <p class="text-gray-500 text-xs mt-2">&#x1f517; On-chain verified &mdash; every signal hashed on Base L2 before outcome is known.</p>
+      <p class="text-gray-500 text-xs mt-2">&#x1f517; On-chain verified &mdash; every signal hashed on Base L2 before outcome is known. <a href="/verify" class="text-gold-400 hover:underline">Verify any signal &rarr;</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- Tamper-Proof Trust Signal -->
+<section class="px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto py-8">
+    <div class="bg-blue-500/5 border border-blue-500/20 rounded-xl px-6 py-5">
+      <div class="flex items-start gap-3">
+        <span class="text-blue-400 text-lg mt-0.5">&#x1f517;</span>
+        <div>
+          <span class="text-white text-sm font-semibold">Tamper-Proof Track Record</span>
+          <p class="text-gray-400 text-sm mt-1">Every signal hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can't edit history.</p>
+          <div class="mt-3 flex flex-wrap gap-3 text-xs">
+            <a href="/verify" class="text-gold-400 hover:underline">Verify a Signal &rarr;</a>
+            <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-gold-400 hover:underline">View Contract &rarr;</a>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -336,6 +356,7 @@ tailwind.config = {
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 15m + 1h timeframes</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Top 5 funding arbs</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> ~100 calls/day</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> HOLD signals always free</li>
         </ul>
         <a href="#quickstart" class="block w-full text-center px-4 py-2 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
           Start Free
@@ -352,6 +373,7 @@ tailwind.config = {
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes</span></li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 3,000 calls/month</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> $0.015/call overage</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> HOLD signals always free</li>
         </ul>
         <a href="https://api.algovault.com/signup?plan=starter" class="block w-full text-center px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-navy-900 font-semibold text-sm rounded-lg transition">
           Subscribe to Starter
@@ -371,6 +393,7 @@ tailwind.config = {
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes (1m&ndash;1d)</span></li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> 15,000 calls/month</li>
           <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> $0.01/call overage</li>
+          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> HOLD signals always free</li>
         </ul>
         <a href="https://api.algovault.com/signup?plan=pro" class="block w-full text-center px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
           Subscribe to Pro
@@ -389,6 +412,7 @@ tailwind.config = {
           <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> $0.005/call overage</li>
           <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> SLA + priority support</li>
           <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> Unlimited funding arbs</li>
+          <li class="flex items-start gap-2"><span class="text-purple-400 mt-0.5">&#10003;</span> HOLD signals always free</li>
         </ul>
         <a href="https://api.algovault.com/signup?plan=enterprise" class="block w-full text-center px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white font-semibold text-sm rounded-lg transition">
           Subscribe to Enterprise
@@ -407,6 +431,7 @@ tailwind.config = {
           <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> get_market_regime: $0.02</li>
           <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> Unlimited calls</li>
           <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> Payment = credential</li>
+          <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">&#10003;</span> HOLD signals always free</li>
         </ul>
         <a href="https://x402.org" target="_blank" class="block w-full text-center px-4 py-2 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
           Read x402 Docs

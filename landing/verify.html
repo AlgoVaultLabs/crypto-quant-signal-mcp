@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verify Signal Integrity — AlgoVault</title>
+<meta name="description" content="Verify any AlgoVault trade signal on-chain. Every signal is hashed and anchored on Base L2 via daily Merkle batches.">
+<link rel="icon" type="image/png" href="/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+  .hash-text { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; word-break: break-all; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Nav -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <a href="/" class="flex items-center gap-2.5">
+        <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+        <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+      </a>
+    </div>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="/#tools" class="hover:text-white transition">Tools</a>
+      <a href="/track-record" class="hover:text-white transition">Track Record</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/verify" class="text-gold-400 font-medium">Verify</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-3xl mx-auto px-6 pt-24 pb-20">
+
+  <!-- Header -->
+  <div class="text-center mb-12">
+    <h1 class="text-3xl font-bold text-white mb-3">Verify Signal Integrity</h1>
+    <p class="text-gray-400 text-sm max-w-lg mx-auto">Every AlgoVault signal is hashed and anchored on Base L2. Look up any signal to verify it was recorded before the outcome was known.</p>
+  </div>
+
+  <!-- Signal Lookup -->
+  <section class="mb-16">
+    <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
+      <div class="flex gap-3">
+        <input type="number" id="signal-id" placeholder="Enter Signal ID" min="1"
+          class="flex-1 bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50">
+        <button onclick="verifySignal()" id="verify-btn"
+          class="px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition whitespace-nowrap">
+          Verify
+        </button>
+      </div>
+    </div>
+
+    <!-- Result card -->
+    <div id="result" class="mt-5 hidden"></div>
+  </section>
+
+  <!-- Recent Batches -->
+  <section class="mb-16">
+    <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+      <span class="text-gold-400">&#9670;</span> Published Batches
+    </h2>
+    <p class="text-gray-500 text-sm mb-5">Every day at 00:05 UTC, all new signal hashes are batched into a Merkle tree and the root is published on Base L2.</p>
+    <div id="batches-table" class="bg-navy-700 border border-white/5 rounded-xl overflow-hidden">
+      <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading batches...</div>
+    </div>
+    <div id="contract-info" class="mt-3 text-center text-xs text-gray-500"></div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="mb-16">
+    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+      <span class="text-gold-400">&#9670;</span> How It Works
+    </h2>
+
+    <div class="space-y-5">
+      <div class="flex gap-4">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">1</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">Signal Created</p>
+          <p class="text-gray-500 text-xs mt-1">Every BUY/SELL signal is hashed using keccak256(coin, signal, confidence, timeframe, timestamp, price) at the moment it's generated, BEFORE the outcome is known.</p>
+        </div>
+      </div>
+      <div class="flex gap-4">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">2</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">Hash Stored</p>
+          <p class="text-gray-500 text-xs mt-1">The hash is stored alongside the signal in our database. The hash is deterministic and can be independently recomputed by anyone with the signal data.</p>
+        </div>
+      </div>
+      <div class="flex gap-4">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">3</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">Daily Batch</p>
+          <p class="text-gray-500 text-xs mt-1">At 00:05 UTC, all new signal hashes are assembled into a Merkle tree. Each leaf is a signal hash; the tree produces a single root that commits to the entire set.</p>
+        </div>
+      </div>
+      <div class="flex gap-4">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
+          <span class="text-gold-400 font-bold text-sm">4</span>
+        </div>
+        <div class="pt-1.5">
+          <p class="text-white text-sm font-medium">On-Chain Anchor</p>
+          <p class="text-gray-500 text-xs mt-1">The Merkle root is published to a smart contract on Base L2 &mdash; permanent, immutable, publicly verifiable by anyone.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 bg-navy-700/60 border border-white/5 rounded-xl p-5">
+      <p class="text-gray-400 text-sm leading-relaxed">This means we cannot retroactively edit, delete, or fabricate signals. Every signal in our track record existed before the market moved. Verify any signal above, or inspect the contract directly on Basescan.</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <div class="border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
+    <div class="flex items-center gap-4">
+      <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="hover:text-white transition">View Contract on Basescan</a>
+      <span class="text-gray-700">&middot;</span>
+      <a href="/track-record" class="hover:text-white transition">Track Record</a>
+      <span class="text-gray-700">&middot;</span>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+    </div>
+    <p>Built by <a href="/" class="text-gray-400 hover:text-white transition">AlgoVault Labs</a></p>
+  </div>
+
+</main>
+
+<script>
+var API_BASE = 'https://api.algovault.com';
+
+function truncHash(h) {
+  if (!h) return '';
+  return h.slice(0, 6) + '...' + h.slice(-4);
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  var dt = new Date(typeof d === 'number' ? d * 1000 : d);
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
+         dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false }) + ' UTC';
+}
+
+async function verifySignal() {
+  var id = document.getElementById('signal-id').value;
+  var el = document.getElementById('result');
+  var btn = document.getElementById('verify-btn');
+  if (!id) { el.className = 'mt-5 hidden'; return; }
+
+  btn.textContent = 'Checking...';
+  btn.disabled = true;
+
+  try {
+    var res = await fetch(API_BASE + '/api/verify-signal?signalId=' + id);
+    var data = await res.json();
+
+    if (data.error === 'Signal not found') {
+      el.innerHTML = '<div class="bg-red-500/5 border border-red-500/20 rounded-xl p-6 text-center">' +
+        '<div class="text-red-400 text-lg font-bold mb-1">NOT FOUND</div>' +
+        '<p class="text-gray-400 text-sm">No signal with ID ' + id + ' exists.</p></div>';
+      el.className = 'mt-5';
+      return;
+    }
+
+    if (data.verified === false && data.reason) {
+      el.innerHTML = '<div class="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-6 text-center">' +
+        '<div class="text-yellow-400 text-lg font-bold mb-1">PENDING</div>' +
+        '<p class="text-gray-400 text-sm">Signal recorded, awaiting next daily batch (00:05 UTC).</p>' +
+        '<div class="mt-3 text-gray-500 text-xs">' + data.signal.coin + ' &middot; ' + data.signal.direction + ' &middot; ' + data.signal.confidence + '% confidence</div></div>';
+      el.className = 'mt-5';
+      return;
+    }
+
+    var s = data.signal;
+    var b = data.batch;
+    el.innerHTML =
+      '<div class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">' +
+        '<div class="flex items-center gap-2 mb-4">' +
+          '<div class="w-2 h-2 rounded-full bg-emerald-400"></div>' +
+          '<span class="text-emerald-400 font-bold text-sm">VERIFIED ON-CHAIN</span>' +
+        '</div>' +
+        '<div class="text-white font-semibold text-lg mb-1">Signal #' + s.id + '</div>' +
+        '<p class="text-gray-400 text-sm mb-4">' + s.coin + ' &middot; ' + s.direction + ' &middot; ' + s.confidence + '% confidence &middot; ' + (s.timeframe || '') + '</p>' +
+        '<div class="grid sm:grid-cols-2 gap-4 mb-4">' +
+          '<div>' +
+            '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Price at Signal</div>' +
+            '<div class="text-white text-sm">$' + Number(s.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6}) + '</div>' +
+          '</div>' +
+          '<div>' +
+            '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Timestamp</div>' +
+            '<div class="text-white text-sm">' + fmtDate(s.timestamp) + '</div>' +
+          '</div>' +
+          '<div>' +
+            '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Batch</div>' +
+            '<div class="text-white text-sm">#' + b.id + ' &middot; ' + b.signalCount + ' signals</div>' +
+          '</div>' +
+          '<div>' +
+            '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Published</div>' +
+            '<div class="text-white text-sm">' + fmtDate(b.publishedAt) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="border-t border-white/5 pt-4 space-y-2">' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Signal Hash</span><span class="hash-text text-gray-300">' + s.hash + '</span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Merkle Root</span><span class="hash-text text-gray-300">' + b.root + '</span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Tx Hash</span><span class="hash-text text-gray-300">' + truncHash(b.txHash) + ' <a href="' + b.basescanUrl + '" target="_blank" class="text-gold-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Contract</span><span class="hash-text text-gray-300">' + truncHash(data.contractAddress) + ' <a href="https://basescan.org/address/' + data.contractAddress + '" target="_blank" class="text-gold-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Chain</span><span class="text-gray-300 text-xs">Base (8453)</span></div>' +
+        '</div>' +
+      '</div>';
+    el.className = 'mt-5';
+  } catch (err) {
+    el.innerHTML = '<div class="bg-red-500/5 border border-red-500/20 rounded-xl p-6 text-center">' +
+      '<div class="text-red-400 text-sm">Verification request failed. Try again.</div></div>';
+    el.className = 'mt-5';
+  } finally {
+    btn.textContent = 'Verify';
+    btn.disabled = false;
+  }
+}
+
+// Enter key triggers verify
+document.getElementById('signal-id').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') verifySignal();
+});
+
+// URL param auto-lookup
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var id = params.get('signalId') || params.get('id');
+  if (id) {
+    document.getElementById('signal-id').value = id;
+    verifySignal();
+  }
+})();
+
+// Load batches
+(async function() {
+  try {
+    var res = await fetch(API_BASE + '/api/merkle-batches');
+    var data = await res.json();
+
+    if (!data.batches || data.batches.length === 0) {
+      document.getElementById('batches-table').innerHTML = '<div class="px-5 py-8 text-center text-gray-500 text-sm">No batches published yet.</div>';
+      return;
+    }
+
+    var html = '<table class="w-full"><thead><tr class="border-b border-white/5">' +
+      '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Batch</th>' +
+      '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Signals</th>' +
+      '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Published</th>' +
+      '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Tx</th>' +
+      '</tr></thead><tbody>';
+
+    data.batches.forEach(function(b) {
+      html += '<tr class="border-b border-white/5">' +
+        '<td class="text-white text-sm px-4 py-2.5 font-medium">#' + b.batch_id + '</td>' +
+        '<td class="text-gray-300 text-sm px-4 py-2.5">' + b.signal_count.toLocaleString() + '</td>' +
+        '<td class="text-gray-400 text-sm px-4 py-2.5">' + fmtDate(b.published_at) + '</td>' +
+        '<td class="text-sm px-4 py-2.5"><a href="' + b.basescanUrl + '" target="_blank" class="text-gold-400 hover:underline hash-text">' + truncHash(b.tx_hash) + ' &rarr;</a></td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('batches-table').innerHTML = html;
+    document.getElementById('contract-info').innerHTML = 'Contract: <code class="text-gray-400">' + data.contractAddress + '</code> &middot; Chain: ' + data.chain;
+  } catch (err) {
+    document.getElementById('batches-table').innerHTML = '<div class="px-5 py-8 text-center text-gray-500 text-sm">Failed to load batches.</div>';
+  }
+})();
+</script>
+
+</body>
+</html>
