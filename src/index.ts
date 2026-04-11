@@ -903,7 +903,7 @@ async function load() {
           cbEl.innerHTML = bands.map(function(b) {
             var wr = b.pfeWinRate != null ? (b.pfeWinRate * 100).toFixed(1) + '%' : '\\u2014';
             var wrC = b.pfeWinRate != null ? (b.pfeWinRate >= 0.6 ? 'green' : b.pfeWinRate >= 0.45 ? 'gold' : 'red') : 'muted';
-            var avgP = b.avgPfePct != null ? (b.avgPfePct * 100).toFixed(2) + '%' : '\\u2014';
+            var avgP = b.avgPfePct != null ? b.avgPfePct.toFixed(2) + '%' : '\\u2014';
             var barW = maxB > 0 ? Math.round(b.total / maxB * 100) : 0;
             return '<tr><td><strong>' + b.band + '%</strong></td><td class="num">' + b.total + '</td><td class="num">' + b.evaluated + '</td><td class="num ' + wrC + '">' + wr + '</td><td class="num">' + avgP + '</td><td>' + b.buyCount + ' / ' + b.sellCount + '</td><td><div class="bar-wrap"><div class="bar g" style="width:' + barW + '%"></div></div></td></tr>';
           }).join('');
