@@ -46,13 +46,16 @@
     "better-sqlite3": "^11.8.2",
     "express": "^4.21.2",
     "pg": "^8.13.3",
-    "stripe": "^22.0.1"
+    "stripe": "^22.0.1",
+    "viem": "^2.47.12"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-viem": "^3.0.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.11.11",
+    "hardhat": "^3.3.0",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "vitest": "^3.1.1"

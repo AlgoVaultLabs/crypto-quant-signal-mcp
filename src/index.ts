@@ -15,7 +15,8 @@ import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance } from './resources/signal-performance.js';
-import { closeDb, getConfidenceBands, getHoldStats } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch } from './lib/performance-db.js';
+import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, trackCall } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
@@ -361,6 +362,65 @@ async function startHttp() {
     res.send(getPerformanceDashboardHtml('', { isPublic: true }));
   });
 
+  // ── Merkle verification endpoints (public, no auth) ──
+  const MERKLE_CONTRACT_ADDR = process.env.MERKLE_CONTRACT_ADDRESS || '';
+
+  app.get('/api/verify-signal', async (req, res) => {
+    const signalId = parseInt(req.query.signalId as string);
+    if (!signalId || isNaN(signalId)) {
+      return res.status(400).json({ error: 'signalId required (integer)' });
+    }
+    try {
+      const s = await getSignalWithBatch(signalId);
+      if (!s) return res.status(404).json({ error: 'Signal not found' });
+
+      if (!s.signal_hash || !s.merkle_batch_id) {
+        return res.json({
+          verified: false,
+          reason: 'Signal not yet included in a Merkle batch',
+          signal: { id: s.id, coin: s.coin, direction: s.signal, confidence: s.confidence },
+        });
+      }
+
+      const proof = typeof s.merkle_proof === 'string' ? JSON.parse(s.merkle_proof) : s.merkle_proof;
+      const isValid = verifyProof(s.signal_hash as `0x${string}`, proof, s.merkle_root as `0x${string}`);
+
+      res.json({
+        verified: isValid,
+        signal: {
+          id: s.id, coin: s.coin, direction: s.signal, confidence: s.confidence,
+          timeframe: s.timeframe, price: s.price_at_signal, timestamp: s.created_at, hash: s.signal_hash,
+        },
+        batch: {
+          id: s.merkle_batch_id, root: s.merkle_root, signalCount: s.signal_count,
+          txHash: s.tx_hash, blockNumber: s.block_number, publishedAt: s.published_at,
+          basescanUrl: `https://basescan.org/tx/${s.tx_hash}`,
+        },
+        proof,
+        contractAddress: MERKLE_CONTRACT_ADDR,
+        howToVerify: 'Check the Merkle root on-chain at the contract address on Base. The signal hash + proof should reconstruct the published root.',
+      });
+    } catch {
+      res.status(500).json({ error: 'Verification failed' });
+    }
+  });
+
+  app.get('/api/merkle-batches', async (_req, res) => {
+    try {
+      const batches = await getMerkleBatches();
+      res.json({
+        batches: batches.map((b: any) => ({
+          ...b,
+          basescanUrl: `https://basescan.org/tx/${b.tx_hash}`,
+        })),
+        contractAddress: MERKLE_CONTRACT_ADDR,
+        chain: 'Base (8453)',
+      });
+    } catch {
+      res.status(500).json({ error: 'Failed to load batches' });
+    }
+  });
+
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
     // Resolve license per-request using 3-tier gate: x402 → API key → free
@@ -604,6 +664,11 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
   .tier-tab:hover { border-color: #58a6ff80; } .tier-tab.active { border-width: 2px; }
   .tier-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
   .tradfi-badge { background: linear-gradient(135deg, #bc8cff20, #8957e520); border: 1px solid #bc8cff40; color: #bc8cff; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
+  .onchain-badge { display: flex; align-items: center; gap: 10px; background: #0d1117; border: 1px solid #238636; border-radius: 10px; padding: 12px 18px; margin-bottom: 20px; }
+  .onchain-badge .badge-icon { font-size: 18px; }
+  .onchain-badge .badge-text { color: #3fb950; font-weight: 700; font-size: 14px; }
+  .onchain-badge .badge-detail { color: #8b949e; font-size: 12px; }
+  #merkle-stats { text-align:center; color:#8b949e; font-size:12px; margin-bottom:16px; }
   .tier-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; }
   @media (max-width: 768px) { .tier-grid { grid-template-columns: 1fr; } }
   .tier-card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; }
@@ -639,6 +704,13 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
+  <!-- On-Chain Verification Badge -->
+  <div class="onchain-badge" id="onchain-badge" style="display:none">
+    <span class="badge-icon">&#x1f517;</span>
+    <div><span class="badge-text">On-Chain Verified</span><br><span class="badge-detail">Every signal hashed on Base L2 \\u2014 daily Merkle root published on-chain</span></div>
+  </div>
+  <div id="merkle-stats"></div>
+
   <!-- Tier Filter Tabs -->
   <div class="tier-tabs" id="tier-tabs"></div>
 
@@ -721,6 +793,7 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
 <script>
 var PERF_URL = '${perfEndpoint}';
 var CB_URL = '${cbEndpoint}';
+var MERKLE_URL = '/api/merkle-batches';
 var TF_ORDER = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
 var TIER_COLORS = {1:'#58a6ff',2:'#3fb950',3:'#bc8cff',4:'#d29922'};
 var TIER_NAMES = {1:'Blue Chip',2:'Major Alts',3:'TradFi',4:'Meme & Micro'};
@@ -956,6 +1029,18 @@ async function load() {
         }
       }
     } catch(e) { /* confidence bands are best-effort */ }
+
+    // Merkle on-chain badge
+    try {
+      var mr = await fetch(MERKLE_URL);
+      var md = await mr.json();
+      if (md.batches && md.batches.length > 0) {
+        document.getElementById('onchain-badge').style.display = 'flex';
+        var totalVerified = md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
+        var latest = md.batches[0];
+        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published \\u00b7 ' + totalVerified.toLocaleString() + ' signals verified \\u00b7 <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan \\u2192</a>';
+      }
+    } catch(e) { /* merkle stats are best-effort */ }
 
     document.getElementById('updated').textContent = 'Updated: ' + new Date().toLocaleString();
     document.getElementById('loading').style.display = 'none';

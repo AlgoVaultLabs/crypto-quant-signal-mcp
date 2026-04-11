@@ -2,6 +2,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
+import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
 import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo } from '../types.js';
 
@@ -331,7 +332,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   // Record for performance tracking — only high-confidence actionable signals
   if (signal !== 'HOLD' && confidence >= MIN_TRACKABLE_CONFIDENCE) {
     try {
-      recordSignal(coin, signal, confidence, timeframe, currentPrice);
+      const sigHash = hashSignal({
+        coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe,
+        timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
+      });
+      recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash);
     } catch {
       // Don't fail the tool if db write fails
     }
