@@ -10,6 +10,8 @@ The signal intelligence layer for AI trading agents — composite quant signals 
 [![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**[Live Track Record](https://algovault.com/track-record)** — 90%+ directional accuracy across 900+ trade calls. Public, no login required.
+
 ---
 
 ## Why AlgoVault
@@ -73,7 +75,7 @@ Only high-conviction signals are generated. The engine is designed to stay silen
 
 ### `scan_funding_arb`
 
-Scans cross-venue funding rate differentials across Hyperliquid, Binance, and Bybit. Normalizes hourly vs 8-hour rate conventions, computes basis-point spreads, and ranks opportunities by annualized return.
+Scans cross-venue funding rate differentials across Hyperliquid, Binance, and Bybit. Normalizes hourly vs 8-hour rate conventions, computes basis-point spreads, and ranks opportunities by composite score (spread magnitude, time urgency, and funding conviction from 24h history).
 
 This is the only MCP server that provides cross-venue funding arbitrage intelligence — long one exchange, short another, capture the spread.
 
@@ -87,7 +89,7 @@ This is the only MCP server that provides cross-venue funding arbitrage intellig
 
 Classifies the current market environment into one of four regimes: **TRENDING_UP**, **TRENDING_DOWN**, **RANGING**, or **VOLATILE**.
 
-Uses a multi-dimensional classification approach combining directional strength measurement, normalized volatility analysis, price structure pattern recognition, and cross-venue funding sentiment divergence. The regime classification directly informs how `get_trade_signal` filters its output — agents can also use it independently for strategy selection and position sizing.
+Uses a multi-dimensional classification approach combining directional strength measurement with ADX slope analysis (detecting trend strengthening vs exhaustion), volume-weighted pivot detection, ATR-adaptive funding thresholds, and cross-venue funding sentiment divergence. The regime classification directly informs how `get_trade_signal` filters its output — agents can also use it independently for strategy selection and position sizing.
 
 **Parameters:**
 - `coin` (string, required): Asset symbol
@@ -118,20 +120,20 @@ Every signal is tracked from emission to outcome. No exceptions.
 
 ## Pricing
 
-| Feature | Free | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
-|---------|------|-------------|---------------------|-----------------|
-| Assets | BTC, ETH | All 290+ assets | All 290+ | All 290+ |
-| Asset classes | Crypto only | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
-| Timeframes | 15m, 1h | All 11 | All 11 | All 11 |
-| Funding arb results | Top 5 | Unlimited | Unlimited | Unlimited |
-| Track record | Full access | Full access | Full access | Full access |
-| Monthly calls | ~100/day | 15,000/mo | Unlimited | Unlimited |
-| Support | Community | Email | Priority | — |
-| Price | $0 | $49/mo | $299/mo | $0.01–0.05/call |
+| Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
+|---------|------|-------------------|-------------|---------------------|-----------------|
+| Assets | BTC, ETH | All 290+ | All 290+ | All 290+ | All 290+ |
+| Asset classes | Crypto only | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
+| Timeframes | 15m, 1h | All 11 | All 11 | All 11 | All 11 |
+| Funding arb results | Top 5 | Unlimited | Unlimited | Unlimited | Unlimited |
+| Track record | Full access | Full access | Full access | Full access | Full access |
+| Monthly calls | ~100/day | 3,000/mo | 15,000/mo | 100,000/mo | Unlimited |
+| Support | Community | Email | Priority | Dedicated | — |
+| Price | $0 | $9.99/mo | $49/mo | $299/mo | $0.01–0.05/call |
 
 **x402 micropayments:** AI agents pay per HTTP call with USDC on Base — no signup, no API key, no billing. The payment receipt is the credential. See [x402.org](https://x402.org).
 
-**Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). API key delivered instantly after checkout.
+**Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). Starter ($9.99/mo) unlocks all assets and timeframes. API key delivered instantly after checkout.
 
 ---
 
