@@ -115,7 +115,7 @@ function resolveFromApiKey(authHeader?: string): LicenseInfo {
   if (!key) return { tier: 'free', key: null };
 
   // Prefix-based tier detection (backward compat)
-  const tier: LicenseTier = key.startsWith('ent_') ? 'enterprise' : 'pro';
+  const tier: LicenseTier = key.startsWith('ent_') ? 'enterprise' : key.startsWith('av_starter_') ? 'starter' : 'pro';
   return { tier, key };
 }
 
@@ -181,7 +181,7 @@ export function freeGateMessage(coin: string, timeframe: string): string {
     parts.push(`${timeframe} is a Pro timeframe (free tier: 15m and 1h only)`);
   }
   if (parts.length === 0) return '';
-  return `${parts.join('. ')}. Upgrade to Pro ($49/mo) or pay per call via x402.`;
+  return `${parts.join('. ')}. Upgrade to Starter ($9.99/mo) or Pro ($49/mo), or pay per call via x402.`;
 }
 
 // ── Call count tracking for quota enforcement ──
@@ -205,6 +205,7 @@ function getCallTracker(key: string): CallTracker {
 
 export function getMonthlyQuota(tier: LicenseTier): number {
   switch (tier) {
+    case 'starter': return 3_000;
     case 'pro': return 15_000;
     case 'enterprise': return 100_000;
     case 'x402': return Infinity;

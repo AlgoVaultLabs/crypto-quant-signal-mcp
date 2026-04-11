@@ -17,6 +17,7 @@ const StripeClient = DefaultStripe as unknown as typeof DefaultStripe & { new(ke
 // ── Configuration ──
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STARTER_PRICE_ID = process.env.STRIPE_STARTER_PRICE_ID || '';
 const PRO_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || '';
 const ENTERPRISE_PRICE_ID = process.env.STRIPE_ENTERPRISE_PRICE_ID || '';
 
@@ -30,7 +31,7 @@ if (STRIPE_SECRET_KEY) {
 
 export interface StripeValidation {
   valid: boolean;
-  tier?: 'pro' | 'enterprise';
+  tier?: 'starter' | 'pro' | 'enterprise';
   customerId?: string;
 }
 
@@ -92,7 +93,7 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
       limit: 10,
     });
 
-    let tier: 'pro' | 'enterprise' | undefined;
+    let tier: 'starter' | 'pro' | 'enterprise' | undefined;
 
     for (const sub of subscriptions.data) {
       for (const item of sub.items.data) {
@@ -103,6 +104,9 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
         }
         if (priceId === PRO_PRICE_ID) {
           tier = 'pro';
+        }
+        if (priceId === STARTER_PRICE_ID && !tier) {
+          tier = 'starter';
         }
       }
       if (tier === 'enterprise') break; // enterprise wins
@@ -122,10 +126,10 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
 
 // ── Checkout Session Creation ──
 
-export async function createCheckoutSession(plan: 'pro' | 'enterprise', baseUrl: string): Promise<string | null> {
+export async function createCheckoutSession(plan: 'starter' | 'pro' | 'enterprise', baseUrl: string): Promise<string | null> {
   if (!stripe) return null;
 
-  const priceId = plan === 'enterprise' ? ENTERPRISE_PRICE_ID : PRO_PRICE_ID;
+  const priceId = plan === 'enterprise' ? ENTERPRISE_PRICE_ID : plan === 'starter' ? STARTER_PRICE_ID : PRO_PRICE_ID;
   if (!priceId) return null;
 
   const session = await stripe.checkout.sessions.create({
@@ -162,6 +166,7 @@ export async function getCustomerApiKey(sessionId: string): Promise<{ apiKey: st
     for (const item of sub.items.data) {
       if (item.price.id === ENTERPRISE_PRICE_ID) { tier = 'enterprise'; break; }
       if (item.price.id === PRO_PRICE_ID) { tier = 'pro'; }
+      if (item.price.id === STARTER_PRICE_ID && !tier) { tier = 'starter'; }
     }
   }
 
@@ -189,9 +194,10 @@ export async function handleSubscriptionCreated(event: any): Promise<void> {
     : subscription.customer.id;
 
   // Determine tier
-  let tier = 'pro';
+  let tier = 'starter';
   for (const item of subscription.items.data) {
     if (item.price.id === ENTERPRISE_PRICE_ID) { tier = 'enterprise'; break; }
+    if (item.price.id === PRO_PRICE_ID) { tier = 'pro'; }
   }
 
   // Generate API key and store on customer metadata

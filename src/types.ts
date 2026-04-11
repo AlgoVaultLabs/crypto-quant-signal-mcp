@@ -255,7 +255,7 @@ export interface PerformanceStats {
 
 // ── License Types ──
 
-export type LicenseTier = 'free' | 'pro' | 'enterprise' | 'x402';
+export type LicenseTier = 'free' | 'starter' | 'pro' | 'enterprise' | 'x402';
 
 export interface LicenseInfo {
   tier: LicenseTier;
