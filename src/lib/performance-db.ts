@@ -139,6 +139,24 @@ const MIGRATE_OUTCOME_COLS_2 = `
   ALTER TABLE signals ADD COLUMN IF NOT EXISTS outcome_return_pct REAL;
 `;
 
+// Merkle proof columns
+const MIGRATE_MERKLE_COLS = [
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_hash VARCHAR(66);`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS merkle_batch_id INTEGER;`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS merkle_proof JSONB;`,
+];
+
+const CREATE_MERKLE_BATCHES_SQL = `
+  CREATE TABLE IF NOT EXISTS merkle_batches (
+    batch_id INTEGER PRIMARY KEY,
+    merkle_root VARCHAR(66) NOT NULL,
+    signal_count INTEGER NOT NULL,
+    tx_hash VARCHAR(66) NOT NULL,
+    block_number VARCHAR(20) NOT NULL,
+    published_at ${process.env.DATABASE_URL ? 'TIMESTAMP NOT NULL DEFAULT NOW()' : 'TEXT NOT NULL DEFAULT (datetime(\'now\'))'}
+  );
+`;
+
 // v1.4 migrations
 const MIGRATE_PFE_COLS = [
   `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_return_pct REAL;`,
@@ -195,6 +213,11 @@ function getBackend(): DbBackend {
   }
   try { backend.exec(CREATE_FUNDING_HISTORY_SQL); } catch { /* table already exists */ }
   try { backend.exec(CREATE_HOLD_COUNTS_SQL); } catch { /* table already exists */ }
+  // Merkle proof tables + columns
+  try { backend.exec(CREATE_MERKLE_BATCHES_SQL); } catch { /* table already exists */ }
+  for (const sql of MIGRATE_MERKLE_COLS) {
+    try { backend.exec(sql); } catch { /* column already exists */ }
+  }
   return backend;
 }
 
@@ -228,13 +251,14 @@ export function recordSignal(
   signal: SignalVerdict,
   confidence: number,
   timeframe: string,
-  priceAtSignal: number
+  priceAtSignal: number,
+  signalHash?: string
 ): void {
   const b = getBackend();
   b.run(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, price_at_signal, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    coin, signal, confidence, timeframe, priceAtSignal, Math.floor(Date.now() / 1000)
+    `INSERT INTO signals (coin, signal, confidence, timeframe, price_at_signal, created_at, signal_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    coin, signal, confidence, timeframe, priceAtSignal, Math.floor(Date.now() / 1000), signalHash || null
   );
 }
 
@@ -368,6 +392,98 @@ export async function getHoldStats(): Promise<{ totalHolds: number; holdsByTier:
   }
 
   return { totalHolds, holdsByTier };
+}
+
+// ── Merkle batch queries ──
+
+/** Get un-batched signals that have a hash but no batch ID. */
+export async function getUnbatchedSignals(): Promise<{ id: number; signal_hash: string }[]> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    return b.query(
+      `SELECT id, signal_hash FROM signals WHERE signal_hash IS NOT NULL AND merkle_batch_id IS NULL ORDER BY created_at ASC`
+    ) as any;
+  }
+  return b.all(
+    `SELECT id, signal_hash FROM signals WHERE signal_hash IS NOT NULL AND merkle_batch_id IS NULL ORDER BY created_at ASC`
+  ) as any;
+}
+
+/** Get the next batch ID. */
+export async function getNextBatchId(): Promise<number> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    const rows = await b.query(`SELECT COALESCE(MAX(batch_id), 0) as last_id FROM merkle_batches`);
+    return parseInt((rows[0] as any).last_id) + 1;
+  }
+  const rows = b.all(`SELECT COALESCE(MAX(batch_id), 0) as last_id FROM merkle_batches`);
+  return parseInt((rows[0] as any).last_id) + 1;
+}
+
+/** Store a published Merkle batch. */
+export async function storeMerkleBatch(
+  batchId: number, merkleRoot: string, signalCount: number, txHash: string, blockNumber: string
+): Promise<void> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    await b.runAsync(
+      `INSERT INTO merkle_batches (batch_id, merkle_root, signal_count, tx_hash, block_number) VALUES (?, ?, ?, ?, ?)`,
+      batchId, merkleRoot, signalCount, txHash, blockNumber
+    );
+  } else {
+    b.run(
+      `INSERT INTO merkle_batches (batch_id, merkle_root, signal_count, tx_hash, block_number) VALUES (?, ?, ?, ?, ?)`,
+      batchId, merkleRoot, signalCount, txHash, blockNumber
+    );
+  }
+}
+
+/** Update a signal with its batch ID and Merkle proof. */
+export async function updateSignalMerkleProof(signalId: number, batchId: number, proof: string): Promise<void> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    await b.runAsync(
+      `UPDATE signals SET merkle_batch_id = ?, merkle_proof = ? WHERE id = ?`,
+      batchId, proof, signalId
+    );
+  } else {
+    b.run(
+      `UPDATE signals SET merkle_batch_id = ?, merkle_proof = ? WHERE id = ?`,
+      batchId, proof, signalId
+    );
+  }
+}
+
+/** Get all Merkle batches (most recent first). */
+export async function getMerkleBatches(limit = 100): Promise<any[]> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    return b.query(
+      `SELECT batch_id, merkle_root, signal_count, tx_hash, block_number, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT ${limit}`
+    );
+  }
+  return b.all(
+    `SELECT batch_id, merkle_root, signal_count, tx_hash, block_number, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT ${limit}`
+  ) as any;
+}
+
+/** Get a signal with its batch info for verification. */
+export async function getSignalWithBatch(signalId: number): Promise<any | null> {
+  const b = getBackend();
+  const sql = `
+    SELECT s.id, s.coin, s.signal, s.confidence, s.timeframe, s.price_at_signal,
+           s.created_at, s.signal_hash, s.merkle_batch_id, s.merkle_proof,
+           mb.merkle_root, mb.tx_hash, mb.block_number, mb.signal_count, mb.published_at
+    FROM signals s
+    LEFT JOIN merkle_batches mb ON s.merkle_batch_id = mb.batch_id
+    WHERE s.id = ?
+  `;
+  if (isPg && b instanceof PgBackend) {
+    const rows = await b.query(sql, [signalId]);
+    return rows.length > 0 ? rows[0] : null;
+  }
+  const rows = b.all(sql, signalId);
+  return rows.length > 0 ? rows[0] : null;
 }
 
 /** v1.4: Compute Funding Z-Score from rolling 14-day history. */
