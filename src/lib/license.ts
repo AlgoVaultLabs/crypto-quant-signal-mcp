@@ -21,6 +21,8 @@ interface RequestContext {
   license: LicenseInfo;
   sessionId?: string;
   ipHash?: string;
+  /** Set by tool handler so HTTP layer can skip x402 settlement for HOLD. */
+  lastVerdict?: string;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
@@ -43,6 +45,16 @@ export function getRequestSessionId(): string | undefined {
 
 export function getRequestIpHash(): string | undefined {
   return requestContext.getStore()?.ipHash;
+}
+
+/** Store the tool verdict so HTTP handler can skip x402 settlement for HOLD. */
+export function setRequestVerdict(verdict: string): void {
+  const ctx = requestContext.getStore();
+  if (ctx) ctx.lastVerdict = verdict;
+}
+
+export function getRequestVerdict(): string | undefined {
+  return requestContext.getStore()?.lastVerdict;
 }
 
 /** Settlement refs from a verified x402 payment, for async settle after response. */

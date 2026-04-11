@@ -1,7 +1,7 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage } from '../lib/license.js';
-import { recordSignal, recordFunding, getFundingZScore } from '../lib/performance-db.js';
+import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
 import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo } from '../types.js';
 
@@ -334,6 +334,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
       recordSignal(coin, signal, confidence, timeframe, currentPrice);
     } catch {
       // Don't fail the tool if db write fails
+    }
+  } else if (signal === 'HOLD') {
+    try {
+      recordHoldCount(coin, timeframe);
+    } catch {
+      // Don't fail the tool if hold counter fails
     }
   }
 

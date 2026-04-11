@@ -158,6 +158,22 @@ const CREATE_FUNDING_HISTORY_SQL = `
   );
 `;
 
+const CREATE_HOLD_COUNTS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS hold_counts (
+      date DATE NOT NULL,
+      timeframe VARCHAR(10) NOT NULL,
+      coin VARCHAR(20) NOT NULL,
+      hold_count INTEGER DEFAULT 0,
+      PRIMARY KEY (date, timeframe, coin)
+    );`
+  : `CREATE TABLE IF NOT EXISTS hold_counts (
+      date TEXT NOT NULL,
+      timeframe TEXT NOT NULL,
+      coin TEXT NOT NULL,
+      hold_count INTEGER DEFAULT 0,
+      PRIMARY KEY (date, timeframe, coin)
+    );`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -178,6 +194,7 @@ function getBackend(): DbBackend {
     try { backend.exec(sql); } catch { /* column already exists */ }
   }
   try { backend.exec(CREATE_FUNDING_HISTORY_SQL); } catch { /* table already exists */ }
+  try { backend.exec(CREATE_HOLD_COUNTS_SQL); } catch { /* table already exists */ }
   return backend;
 }
 
@@ -301,6 +318,56 @@ export function recordFunding(coin: string, fundingRate: number): void {
     `INSERT INTO funding_history (coin, funding_rate, recorded_at) VALUES (?, ?, ?)`,
     coin, fundingRate, Math.floor(Date.now() / 1000)
   );
+}
+
+/** Increment the HOLD counter for a coin/timeframe/day. Lightweight — one row per combo. */
+export function recordHoldCount(coin: string, timeframe: string): void {
+  const b = getBackend();
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  if (isPg) {
+    b.run(
+      `INSERT INTO hold_counts (date, timeframe, coin, hold_count)
+       VALUES (?, ?, ?, 1)
+       ON CONFLICT (date, timeframe, coin)
+       DO UPDATE SET hold_count = hold_counts.hold_count + 1`,
+      today, timeframe, coin
+    );
+  } else {
+    b.run(
+      `INSERT INTO hold_counts (date, timeframe, coin, hold_count)
+       VALUES (?, ?, ?, 1)
+       ON CONFLICT (date, timeframe, coin)
+       DO UPDATE SET hold_count = hold_count + 1`,
+      today, timeframe, coin
+    );
+  }
+}
+
+/** Get total HOLD count and per-tier breakdown. */
+export async function getHoldStats(): Promise<{ totalHolds: number; holdsByTier: Record<string, number> }> {
+  const b = getBackend();
+  const top20 = await getTop20ByOI().catch(() => null);
+
+  let rows: { coin: string; holds: number }[];
+  if (isPg && b instanceof PgBackend) {
+    const raw = await b.query(
+      `SELECT coin, SUM(hold_count)::int as holds FROM hold_counts GROUP BY coin`
+    );
+    rows = raw.map((r: any) => ({ coin: r.coin, holds: parseInt(r.holds) || 0 }));
+  } else {
+    const raw = b.all(`SELECT coin, SUM(hold_count) as holds FROM hold_counts GROUP BY coin`);
+    rows = (raw as any[]).map(r => ({ coin: r.coin, holds: r.holds || 0 }));
+  }
+
+  let totalHolds = 0;
+  const holdsByTier: Record<string, number> = {};
+  for (const r of rows) {
+    totalHolds += r.holds;
+    const tier = String(classifyAsset(r.coin, top20));
+    holdsByTier[tier] = (holdsByTier[tier] || 0) + r.holds;
+  }
+
+  return { totalHolds, holdsByTier };
 }
 
 /** v1.4: Compute Funding Z-Score from rolling 14-day history. */
