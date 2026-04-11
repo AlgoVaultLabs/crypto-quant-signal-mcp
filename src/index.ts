@@ -847,7 +847,7 @@ function renderAll() {
     var t = bt[k]; if (!t) return '';
     var isTF = t.tier === 3;
     var tierHolds = hbt[String(t.tier)] || 0;
-    var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' signals rejected \\u2014 engine is selective</div>' : '';
+    var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' HOLD calls \\u2014 engine is selective</div>' : '';
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
