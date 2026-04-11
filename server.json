@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
   "title": "AlgoVault — Crypto Quant Trade Calls",
-  "description": "Crypto quant signals, cross-venue funding arb, and market regime detection for AI trading agents.",
-  "version": "1.6.1",
+  "description": "Quant trading signals, funding rate arb scanning, and market regime detection for crypto perps.",
+  "version": "1.7.0",
   "repository": {
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
     "source": "github"
@@ -18,7 +18,7 @@
     {
       "registryType": "npm",
       "identifier": "crypto-quant-signal-mcp",
-      "version": "1.6.1",
+      "version": "1.7.0",
       "transport": {
         "type": "stdio"
       },
