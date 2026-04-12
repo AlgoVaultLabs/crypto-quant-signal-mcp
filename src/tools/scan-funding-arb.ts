@@ -1,5 +1,5 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { getFundingArbLimit } from '../lib/license.js';
+import { getFundingArbLimit, isFreeTier, trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
 import type {
   FundingArbResult,
   FundingArbOpportunity,
@@ -34,7 +34,14 @@ const URGENCY_DECAY = 0.5;
 export async function scanFundingArb(input: ScanFundingArbInput): Promise<FundingArbResult> {
   const minSpreadBps = input.minSpreadBps ?? 5;
   const requestedLimit = input.limit ?? 10;
-  const limit = getFundingArbLimit(requestedLimit, input.license);
+  const license = input.license || { tier: 'free' as const, key: null };
+  const limit = getFundingArbLimit(requestedLimit, license);
+
+  // Quota tracking (all tiers)
+  const quota = trackCall(license);
+  if (!quota.allowed) {
+    throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
+  }
 
   const adapter = getAdapter();
   let fundings;
@@ -46,7 +53,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       scannedPairs: 0,
       timestamp: Math.floor(Date.now() / 1000),
       _algovault: {
-        version: '1.7.0',
+        version: '1.7.1',
         tool: 'scan_funding_arb',
         compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
       },
@@ -173,15 +180,29 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   // Sort by composite rank score descending (not just annualized spread)
   opportunities.sort((a, b) => b.bestArb.rankScore - a.bestArb.rankScore);
 
+  const totalFound = opportunities.length;
+  const capped = opportunities.slice(0, limit);
+
+  // Upgrade hint: capped results take priority, then quota usage
+  const upgradeHint = getUpgradeHint(license, {
+    cappedResults: capped.length < totalFound ? limit : undefined,
+    totalResults: totalFound,
+    used: quota.used,
+    total: quota.total,
+  });
+
+  const meta: FundingArbResult['_algovault'] = {
+    version: '1.7.1',
+    tool: 'scan_funding_arb',
+    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+  };
+  if (upgradeHint) meta.upgrade_hint = upgradeHint;
+
   return {
-    opportunities: opportunities.slice(0, limit),
+    opportunities: capped,
     scannedPairs: fundings.length,
     timestamp: Math.floor(Date.now() / 1000),
-    _algovault: {
-      version: '1.7.0',
-      tool: 'scan_funding_arb',
-      compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
-    },
+    _algovault: meta,
   };
 }
 

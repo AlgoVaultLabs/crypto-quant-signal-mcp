@@ -187,13 +187,13 @@ export function getFundingArbLimit(requestedLimit: number, license?: LicenseInfo
 export function freeGateMessage(coin: string, timeframe: string): string {
   const parts: string[] = [];
   if (!FREE_COINS.has(coin.toUpperCase())) {
-    parts.push(`${coin} is a Pro asset (free tier: BTC and ETH only)`);
+    parts.push(`${coin} requires Starter ($9.99/mo) or higher (free tier: BTC and ETH only)`);
   }
   if (!FREE_TIMEFRAMES.has(timeframe)) {
-    parts.push(`${timeframe} is a Pro timeframe (free tier: 15m and 1h only)`);
+    parts.push(`${timeframe} requires Starter ($9.99/mo) or higher (free tier: 15m and 1h only)`);
   }
   if (parts.length === 0) return '';
-  return `${parts.join('. ')}. Upgrade to Starter ($9.99/mo) or Pro ($49/mo), or pay per call via x402.`;
+  return `${parts.join('. ')}. Upgrade → https://api.algovault.com/signup?plan=starter`;
 }
 
 // ── Call count tracking for quota enforcement ──
@@ -225,12 +225,20 @@ export function getMonthlyQuota(tier: LicenseTier): number {
   }
 }
 
-export function trackCall(license: LicenseInfo): { allowed: boolean; remaining: number; overage: number } {
-  if (license.tier === 'free' || license.tier === 'x402') {
-    return { allowed: true, remaining: Infinity, overage: 0 };
+export interface TrackCallResult {
+  allowed: boolean;
+  remaining: number;
+  overage: number;
+  used: number;
+  total: number;
+}
+
+export function trackCall(license: LicenseInfo): TrackCallResult {
+  if (license.tier === 'x402') {
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
   }
 
-  const key = license.key || 'unknown';
+  const key = license.tier === 'free' ? `free:${getRequestIpHash() || 'anon'}` : (license.key || 'unknown');
   const tracker = getCallTracker(key);
   const quota = getMonthlyQuota(license.tier);
 
@@ -239,5 +247,41 @@ export function trackCall(license: LicenseInfo): { allowed: boolean; remaining: 
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);
 
-  return { allowed: true, remaining, overage };
+  // Free tier: block when quota exhausted
+  if (license.tier === 'free' && tracker.count > quota) {
+    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
+  }
+
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+}
+
+// ── Upgrade hint for free-tier users ──
+
+const UPGRADE_URL = 'https://api.algovault.com/signup?plan=starter';
+
+export function getUpgradeHint(
+  license: LicenseInfo,
+  context?: { used?: number; total?: number; cappedResults?: number; totalResults?: number },
+): string | undefined {
+  if (license.tier !== 'free') return undefined;
+
+  // Capped results hint (funding arb)
+  if (context?.cappedResults && context?.totalResults && context.totalResults > context.cappedResults) {
+    return `Showing top ${context.cappedResults} of ${context.totalResults} opportunities. Unlock all results with Starter at $9.99/mo → ${UPGRADE_URL}`;
+  }
+
+  // Quota usage hint (80%+ used)
+  if (context?.used && context?.total) {
+    const pctUsed = context.used / context.total;
+    if (pctUsed >= 1.0) return undefined; // Handled by quota block
+    if (pctUsed >= 0.8) {
+      return `You've used ${context.used}/${context.total} free calls this month. Unlock 3,000 calls/mo with Starter at $9.99/mo → ${UPGRADE_URL}`;
+    }
+  }
+
+  return undefined;
+}
+
+export function getQuotaExhaustedMessage(used: number, total: number): string {
+  return `Free tier limit reached (${used}/${total} calls this month). Upgrade to Starter ($9.99/mo) for 3,000 calls/mo, or pay per call via x402. → ${UPGRADE_URL}`;
 }

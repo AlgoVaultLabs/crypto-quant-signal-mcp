@@ -96,6 +96,7 @@ export interface AlgoVaultMeta {
   version: string;
   tool: string;
   compatible_with: string[];
+  upgrade_hint?: string;
 }
 
 export interface TradeSignalResult {
