@@ -738,8 +738,8 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
 
   <!-- Tier Performance Cards -->
   <div class="section"><h2>Performance by Tier</h2>
-    <div style="text-align:center;color:#9ca3af;font-size:12px;margin:-4px 0 12px;padding:6px 12px;background:rgba(212,178,85,0.06);border:1px solid rgba(212,178,85,0.12);border-radius:8px;display:inline-block;width:100%">&#x1f4a1; HOLD calls are always free &mdash; You only pay for BUY and SELL verdicts</div>
     <div class="tier-grid" id="tier-cards"></div>
+    <div style="text-align:center;color:#9ca3af;font-size:12px;margin:12px 0 0;padding:6px 12px;background:rgba(212,178,85,0.06);border:1px solid rgba(212,178,85,0.12);border-radius:8px">&#x1f4a1; HOLD calls are always free &mdash; You only pay for BUY and SELL verdicts</div>
   </div>
 
   <!-- Signal type breakdown -->
