@@ -35,7 +35,7 @@ import { getTopAssetsByOI } from './lib/oi-ranking.js';
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.7.0',
+    version: '1.7.1',
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -194,7 +194,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.7.0', stripe: isStripeConfigured() });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.7.1', stripe: isStripeConfigured() });
   });
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──
