@@ -721,8 +721,26 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
   </div>
   <div id="eval-indicator" style="text-align:center;color:#8b949e;font-size:13px;margin:-8px 0 12px 0"></div>
 
+  <!-- Tamper-Proof Track Record -->
+  <div style="max-width:640px;margin:16px auto 24px;background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:16px 20px">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <span style="color:#60a5fa;font-size:16px;margin-top:2px">&#x1f517;</span>
+      <div>
+        <span style="color:#fff;font-size:13px;font-weight:600">Tamper-Proof Track Record</span>
+        <p style="color:#9ca3af;font-size:13px;margin:4px 0 0">Every signal hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can&rsquo;t edit history.</p>
+        <div style="margin-top:10px;display:flex;gap:16px;font-size:12px">
+          <a href="/verify" style="color:#d4b255;text-decoration:none">Verify a Signal &rarr;</a>
+          <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" style="color:#d4b255;text-decoration:none">View Contract &rarr;</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Tier Performance Cards -->
-  <div class="section"><h2>Performance by Tier</h2><div class="tier-grid" id="tier-cards"></div></div>
+  <div class="section"><h2>Performance by Tier</h2>
+    <div style="text-align:center;color:#9ca3af;font-size:12px;margin:-4px 0 12px;padding:6px 12px;background:rgba(212,178,85,0.06);border:1px solid rgba(212,178,85,0.12);border-radius:8px;display:inline-block;width:100%">&#x1f4a1; HOLD calls are always free &mdash; You only pay for BUY and SELL verdicts</div>
+    <div class="tier-grid" id="tier-cards"></div>
+  </div>
 
   <!-- Signal type breakdown -->
   <div class="section"><h2>By Call Type</h2>
