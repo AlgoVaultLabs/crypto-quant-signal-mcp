@@ -112,7 +112,7 @@ Every signal is tracked from emission to outcome. No exceptions.
 - Peak Favorable Excursion (PFE) and Maximum Adverse Excursion (MAE)
 - Running statistics per asset, timeframe, and quality tier
 
-**HOLD signals are free** — when the engine says "don't trade," you don't pay. Only BUY and SELL verdicts are charged via x402 or count against subscription quotas. This aligns our incentives: you only pay when we see a tradeable opportunity.
+**HOLD calls are free** — when the engine says "don't trade," you don't pay. Only BUY and SELL verdicts are charged via x402 or count against subscription quotas. This aligns our incentives: you only pay when we see a tradeable opportunity.
 
 - **HOLD Rate**: Percentage of scans where the engine declines to issue a trade call. A high HOLD rate (currently ~84%) means the engine is selective — it only calls BUY/SELL when conditions align across multiple indicators.
 
@@ -144,7 +144,7 @@ Every signal is hashed (keccak256) at creation time and anchored on Base L2 via 
 | Monthly calls | ~100/day | 3,000/mo | 15,000/mo | 100,000/mo | Unlimited |
 | Support | Community | Email | Priority | Dedicated | — |
 | Price | $0 | $9.99/mo | $49/mo | $299/mo | $0.01–0.05/call |
-| HOLD signals | Free | Free | Free | Free | Free |
+| HOLD calls | Free | Free | Free | Free | Free |
 
 \* HOLD verdicts (engine says "don't trade") are always free across all tiers — no x402 charge, no quota deduction.
 
