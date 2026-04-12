@@ -1,6 +1,6 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage } from '../lib/license.js';
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
@@ -53,6 +53,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   if (!canAccessCoin(coin, input.license) || !canAccessTimeframe(timeframe, input.license)) {
     const msg = freeGateMessage(coin, timeframe);
     throw new Error(msg);
+  }
+
+  // Quota tracking (all tiers)
+  const quota = trackCall(input.license || { tier: 'free', key: null });
+  if (!quota.allowed) {
+    throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
   }
 
   // Determine which HL dex this coin trades on (standard vs xyz/TradFi)
@@ -300,6 +306,19 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     reasoning = parts.join(' ');
   }
 
+  // Upgrade hint: only for free tier, never for HOLD signals
+  const license = input.license || { tier: 'free' as const, key: null };
+  const upgradeHint = signal !== 'HOLD'
+    ? getUpgradeHint(license, { used: quota.used, total: quota.total })
+    : undefined;
+
+  const meta: TradeSignalResult['_algovault'] = {
+    version: '1.7.1',
+    tool: 'get_trade_signal',
+    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+  };
+  if (upgradeHint) meta.upgrade_hint = upgradeHint;
+
   const result: TradeSignalResult = {
     signal,
     confidence,
@@ -322,11 +341,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     timestamp: Math.floor(Date.now() / 1000),
     coin,
     timeframe,
-    _algovault: {
-      version: '1.7.0',
-      tool: 'get_trade_signal',
-      compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
-    },
+    _algovault: meta,
   };
 
   // Record for performance tracking — only high-confidence actionable signals

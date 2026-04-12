@@ -88,7 +88,7 @@ describe('getMarketRegime', () => {
 
     const result = await getMarketRegime({ coin: 'BTC' });
     expect(result._algovault).toBeDefined();
-    expect(result._algovault.version).toBe('1.6.0');
+    expect(result._algovault.version).toBe('1.7.1');
     expect(result._algovault.tool).toBe('get_market_regime');
     expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
     expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');

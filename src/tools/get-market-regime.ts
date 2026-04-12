@@ -1,11 +1,13 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
-import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory } from '../types.js';
+import { trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
+import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo } from '../types.js';
 
 interface MarketRegimeInput {
   coin: string;
   timeframe?: string;
+  license?: LicenseInfo;
 }
 
 // How many candles to fetch per timeframe for 7 days of data
@@ -22,6 +24,13 @@ const ADX_SLOPE_FALLING = -0.5;
 export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketRegimeResult> {
   const coin = input.coin.toUpperCase();
   const timeframe = input.timeframe || '4h';
+  const license = input.license || { tier: 'free' as const, key: null };
+
+  // Quota tracking (all tiers)
+  const quota = trackCall(license);
+  if (!quota.allowed) {
+    throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
+  }
 
   const candleCount = CANDLE_COUNTS[timeframe] || 168;
   const intervalMs = getIntervalMs(timeframe);
@@ -170,6 +179,16 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
 
   const suggestion = generateSuggestion(regime, trendStrength, volatilityRatio, slopeCategory);
 
+  // Upgrade hint: only for free tier
+  const upgradeHint = getUpgradeHint(license, { used: quota.used, total: quota.total });
+
+  const meta: MarketRegimeResult['_algovault'] = {
+    version: '1.7.1',
+    tool: 'get_market_regime',
+    compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+  };
+  if (upgradeHint) meta.upgrade_hint = upgradeHint;
+
   return {
     regime,
     confidence,
@@ -190,11 +209,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     timestamp: Math.floor(Date.now() / 1000),
     coin,
     timeframe,
-    _algovault: {
-      version: '1.7.0',
-      tool: 'get_market_regime',
-      compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
-    },
+    _algovault: meta,
   };
 }
 

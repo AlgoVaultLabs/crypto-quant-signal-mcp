@@ -83,7 +83,7 @@ describe('getTradeSignal', () => {
 
     const result = await getTradeSignal({ coin: 'ETH' });
     expect(result._algovault).toBeDefined();
-    expect(result._algovault.version).toBe('1.6.0');
+    expect(result._algovault.version).toBe('1.7.1');
     expect(result._algovault.tool).toBe('get_trade_signal');
     expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
     expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');
@@ -115,7 +115,7 @@ describe('getTradeSignal', () => {
     resetLicenseCache();
 
     await expect(getTradeSignal({ coin: 'SOL', timeframe: '1h' }))
-      .rejects.toThrow(/Pro/);
+      .rejects.toThrow(/Starter/);
   });
 
   it('throws on free tier for non-1h timeframe', async () => {
@@ -123,7 +123,7 @@ describe('getTradeSignal', () => {
     resetLicenseCache();
 
     await expect(getTradeSignal({ coin: 'BTC', timeframe: '4h' }))
-      .rejects.toThrow(/Pro/);
+      .rejects.toThrow(/Starter/);
   });
 
   it('throws on insufficient candle data', async () => {
