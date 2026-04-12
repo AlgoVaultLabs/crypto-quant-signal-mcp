@@ -81,6 +81,10 @@ export interface ExchangeAdapter {
   getName(): string;
 }
 
+// ── Exchange Types ──
+
+export type ExchangeId = 'HL' | 'BINANCE';
+
 // ── Signal Types ──
 
 export type SignalVerdict = 'BUY' | 'SELL' | 'HOLD';

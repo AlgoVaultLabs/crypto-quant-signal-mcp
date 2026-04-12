@@ -4,12 +4,13 @@ import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, trackCa
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
-import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo } from '../types.js';
+import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
 
 interface TradeSignalInput {
   coin: string;
   timeframe?: string;
   includeReasoning?: boolean;
+  exchange?: ExchangeId;
   license?: LicenseInfo;
 }
 
@@ -61,22 +62,28 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
   }
 
+  const exchange = input.exchange || 'HL';
+
   // Determine which HL dex this coin trades on (standard vs xyz/TradFi)
-  const dex = getDexForCoin(coin);
+  // Only applicable for Hyperliquid — Binance doesn't have dex types
+  const dex = exchange === 'HL' ? getDexForCoin(coin) : undefined;
 
   // Meme coin liquidity gate — reject illiquid micro-caps before wasting API calls
-  const tier = classifyAsset(coin, null);
-  if (tier === 4) {
-    const liquid = await isMemeCoinLiquid(coin);
-    if (!liquid) {
-      throw new Error(
-        `Signal generation unavailable for ${coin}: insufficient liquidity (not in top 50 by OI and <$10M 24h volume). ` +
-        `TA signals are unreliable for illiquid micro-caps.`
-      );
+  // Only applicable for HL where we have tier data
+  if (exchange === 'HL') {
+    const tier = classifyAsset(coin, null);
+    if (tier === 4) {
+      const liquid = await isMemeCoinLiquid(coin);
+      if (!liquid) {
+        throw new Error(
+          `Signal generation unavailable for ${coin}: insufficient liquidity (not in top 50 by OI and <$10M 24h volume). ` +
+          `TA signals are unreliable for illiquid micro-caps.`
+        );
+      }
     }
   }
 
-  const adapter = getAdapter();
+  const adapter = getAdapter(exchange);
 
   // Fetch candles (100 candles back)
   const intervalMs = getIntervalMs(timeframe);
@@ -351,7 +358,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
         coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe,
         timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
       });
-      recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash);
+      recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange);
     } catch {
       // Don't fail the tool if db write fails
     }

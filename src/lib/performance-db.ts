@@ -116,6 +116,7 @@ const CREATE_TABLE_SQL = `
     signal TEXT NOT NULL,
     confidence INTEGER NOT NULL,
     timeframe TEXT NOT NULL,
+    exchange TEXT NOT NULL DEFAULT 'HL',
     price_at_signal REAL NOT NULL,
     price_after_15m REAL,
     price_after_1h REAL,
@@ -156,6 +157,9 @@ const CREATE_MERKLE_BATCHES_SQL = `
     published_at ${process.env.DATABASE_URL ? 'TIMESTAMP NOT NULL DEFAULT NOW()' : 'TEXT NOT NULL DEFAULT (datetime(\'now\'))'}
   );
 `;
+
+// v1.5: exchange column for multi-exchange support
+const MIGRATE_EXCHANGE_COL = `ALTER TABLE signals ADD COLUMN IF NOT EXISTS exchange TEXT NOT NULL DEFAULT 'HL';`;
 
 // v1.4 migrations
 const MIGRATE_PFE_COLS = [
@@ -213,6 +217,8 @@ function getBackend(): DbBackend {
   }
   try { backend.exec(CREATE_FUNDING_HISTORY_SQL); } catch { /* table already exists */ }
   try { backend.exec(CREATE_HOLD_COUNTS_SQL); } catch { /* table already exists */ }
+  // v1.5: exchange column for multi-exchange support
+  try { backend.exec(MIGRATE_EXCHANGE_COL); } catch { /* column already exists */ }
   // Merkle proof tables + columns
   try { backend.exec(CREATE_MERKLE_BATCHES_SQL); } catch { /* table already exists */ }
   for (const sql of MIGRATE_MERKLE_COLS) {
@@ -252,13 +258,14 @@ export function recordSignal(
   confidence: number,
   timeframe: string,
   priceAtSignal: number,
-  signalHash?: string
+  signalHash?: string,
+  exchange: string = 'HL'
 ): void {
   const b = getBackend();
   b.run(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, price_at_signal, created_at, signal_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    coin, signal, confidence, timeframe, priceAtSignal, Math.floor(Date.now() / 1000), signalHash || null
+    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    coin, signal, confidence, timeframe, exchange, priceAtSignal, Math.floor(Date.now() / 1000), signalHash || null
   );
 }
 
@@ -616,28 +623,28 @@ export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRec
  * Check if a signal for the given coin+timeframe was recorded within the last N seconds.
  * Used by seed script for idempotency.
  */
-export function hasRecentSignal(coin: string, timeframe: string, withinSeconds: number): boolean {
+export function hasRecentSignal(coin: string, timeframe: string, withinSeconds: number, exchange: string = 'HL'): boolean {
   if (isPg) return false; // For PG, use async version
   const b = getBackend();
   const cutoff = Math.floor(Date.now() / 1000) - withinSeconds;
   const rows = b.all(
-    `SELECT id FROM signals WHERE coin = ? AND timeframe = ? AND created_at >= ? LIMIT 1`,
-    coin, timeframe, cutoff
+    `SELECT id FROM signals WHERE coin = ? AND timeframe = ? AND exchange = ? AND created_at >= ? LIMIT 1`,
+    coin, timeframe, exchange, cutoff
   );
   return rows.length > 0;
 }
 
-export async function hasRecentSignalAsync(coin: string, timeframe: string, withinSeconds: number): Promise<boolean> {
+export async function hasRecentSignalAsync(coin: string, timeframe: string, withinSeconds: number, exchange: string = 'HL'): Promise<boolean> {
   const b = getBackend();
   const cutoff = Math.floor(Date.now() / 1000) - withinSeconds;
   if (isPg && b instanceof PgBackend) {
     const rows = await b.query(
-      `SELECT id FROM signals WHERE coin = ? AND timeframe = ? AND created_at >= ? LIMIT 1`,
-      [coin, timeframe, cutoff]
+      `SELECT id FROM signals WHERE coin = ? AND timeframe = ? AND exchange = ? AND created_at >= ? LIMIT 1`,
+      [coin, timeframe, exchange, cutoff]
     );
     return rows.length > 0;
   }
-  return hasRecentSignal(coin, timeframe, withinSeconds);
+  return hasRecentSignal(coin, timeframe, withinSeconds, exchange);
 }
 
 export function getPerformanceStats(): PerformanceStats {
