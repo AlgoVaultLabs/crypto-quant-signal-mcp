@@ -1,9 +1,9 @@
 #!/usr/bin/env tsx
 /**
- * seed-signals.ts — Emit trade signals for Hyperliquid + Binance perps.
+ * seed-signals.ts — Emit trade signals across 5 exchanges.
  *
- * Dynamically fetches the full HL universe and Binance top-50 USDT-M pairs,
- * skips mixed-case symbols that break uppercase coin lookup.
+ * Dynamically fetches tradeable universe per exchange (sorted by OI),
+ * seeds signals via getTradeSignal(), and stores results in performance DB.
  *
  * Supports --timeframe, --top, and --exchange flags:
  *   --timeframe 5m   (idempotency window: 4 min)
@@ -39,7 +39,14 @@ import type { LicenseInfo, ExchangeId } from '../types.js';
 // Internal license bypasses free-tier gating
 const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
 
-const DELAY_BETWEEN_CALLS_MS = 500; // polite to public APIs
+// Per-exchange delay between API calls (ms)
+const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
+  'HL':      500,  // polite to public API
+  'BINANCE': 200,  // generous rate limits
+  'BYBIT':   200,  // 50 req/sec
+  'OKX':     150,  // 10 req/sec — keep margin
+  'BITGET':  200,  // 20-50 req/sec
+};
 
 // Idempotency windows per timeframe (slightly less than the interval)
 const IDEMPOTENCY_WINDOWS: Record<string, number> = {
@@ -173,69 +180,87 @@ async function fetchHLCoins(topN: number): Promise<string[]> {
   return limited.map(a => a.name);
 }
 
+// Binance 1000-prefix overrides for low-price coins
+const BINANCE_OVERRIDES: Record<string, string> = {
+  '1000PEPE': 'PEPE', '1000SHIB': 'SHIB', '1000FLOKI': 'FLOKI',
+  '1000BONK': 'BONK', '1000LUNC': 'LUNC', '1000XEC': 'XEC',
+  '1000SATS': 'SATS', '1000RATS': 'RATS', '1000CAT': 'CAT',
+  '1000CHEEMS': 'CHEEMS', '1000WHINE': 'WHINE', '1000APU': 'APU',
+  '1000X': 'X', '1000MOGCOIN': 'MOGCOIN',
+};
+
 /**
- * Fetch top-50 Binance USDT-M pairs by 24h quote volume.
+ * Fetch Binance USDT-M pairs sorted by 24h quoteVolume (proxy for OI —
+ * Binance has no bulk OI endpoint; quoteVolume is highly correlated).
  */
-async function fetchBinanceTopCoins(limit: number = 50): Promise<string[]> {
+async function fetchBinanceCoins(topN: number): Promise<string[]> {
   const res = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
-  const data = await res.json() as Array<{ symbol: string; quoteVolume: string }>;
+  const data = await res.json() as Array<{ symbol: string; quoteVolume: string; lastPrice: string }>;
 
   const usdtPairs = data
     .filter(t => t.symbol.endsWith('USDT'))
-    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
-    .slice(0, limit);
+    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
 
-  const knownOverrides: Record<string, string> = {
-    '1000PEPE': 'PEPE', '1000SHIB': 'SHIB', '1000FLOKI': 'FLOKI',
-    '1000BONK': 'BONK', '1000LUNC': 'LUNC', '1000XEC': 'XEC',
-    '1000SATS': 'SATS', '1000RATS': 'RATS', '1000CAT': 'CAT',
-    '1000CHEEMS': 'CHEEMS', '1000WHINE': 'WHINE', '1000APU': 'APU',
-    '1000X': 'X', '1000MOGCOIN': 'MOGCOIN',
-  };
+  const limited = topN > 0 ? usdtPairs.slice(0, topN) : usdtPairs;
 
-  return usdtPairs.map(t => {
+  return limited.map(t => {
     const coin = t.symbol.replace(/USDT$/, '');
-    return knownOverrides[coin] || coin;
+    return BINANCE_OVERRIDES[coin] || coin;
   });
 }
 
 /**
- * Fetch top-50 Bybit USDT linear pairs by 24h turnover.
+ * Fetch Bybit USDT linear pairs sorted by notional OI (openInterest × lastPrice).
  */
-async function fetchBybitTopCoins(limit: number = 50): Promise<string[]> {
+async function fetchBybitCoins(topN: number): Promise<string[]> {
   const res = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
-  const data = await res.json() as { result: { list: Array<{ symbol: string; turnover24h: string }> } };
-  return (data.result?.list || [])
+  const data = await res.json() as { result: { list: Array<{ symbol: string; openInterest: string; lastPrice: string }> } };
+
+  const usdtPairs = (data.result?.list || [])
     .filter(t => t.symbol.endsWith('USDT'))
-    .sort((a, b) => parseFloat(b.turnover24h) - parseFloat(a.turnover24h))
-    .slice(0, limit)
-    .map(t => t.symbol.replace(/USDT$/, ''));
+    .map(t => ({
+      symbol: t.symbol,
+      notionalOI: parseFloat(t.openInterest || '0') * parseFloat(t.lastPrice || '0'),
+    }))
+    .sort((a, b) => b.notionalOI - a.notionalOI);
+
+  const limited = topN > 0 ? usdtPairs.slice(0, topN) : usdtPairs;
+  return limited.map(t => t.symbol.replace(/USDT$/, ''));
 }
 
 /**
- * Fetch top-50 OKX USDT-SWAP pairs by 24h volume.
+ * Fetch OKX USDT-margined swaps sorted by notional OI (oiUsd).
+ * Uses /api/v5/public/open-interest?instType=SWAP for bulk OI data.
  */
-async function fetchOKXTopCoins(limit: number = 50): Promise<string[]> {
-  const res = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP');
-  const data = await res.json() as { data: Array<{ instId: string; volCcy24h: string }> };
-  return (data.data || [])
+async function fetchOKXCoins(topN: number): Promise<string[]> {
+  const res = await fetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
+  const data = await res.json() as { data: Array<{ instId: string; oiUsd: string }> };
+
+  const usdtSwaps = (data.data || [])
     .filter(t => t.instId.endsWith('-USDT-SWAP'))
-    .sort((a, b) => parseFloat(b.volCcy24h) - parseFloat(a.volCcy24h))
-    .slice(0, limit)
-    .map(t => t.instId.replace(/-USDT-SWAP$/, ''));
+    .sort((a, b) => parseFloat(b.oiUsd || '0') - parseFloat(a.oiUsd || '0'));
+
+  const limited = topN > 0 ? usdtSwaps.slice(0, topN) : usdtSwaps;
+  return limited.map(t => t.instId.replace(/-USDT-SWAP$/, ''));
 }
 
 /**
- * Fetch top-50 Bitget USDT-FUTURES pairs by 24h quote volume.
+ * Fetch Bitget USDT-M futures sorted by notional OI (holdingAmount × lastPr).
  */
-async function fetchBitgetTopCoins(limit: number = 50): Promise<string[]> {
+async function fetchBitgetCoins(topN: number): Promise<string[]> {
   const res = await fetch('https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES');
-  const data = await res.json() as { data: Array<{ symbol: string; quoteVolume: string }> };
-  return (data.data || [])
+  const data = await res.json() as { data: Array<{ symbol: string; holdingAmount: string; lastPr: string }> };
+
+  const usdtPairs = (data.data || [])
     .filter(t => t.symbol.endsWith('USDT'))
-    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
-    .slice(0, limit)
-    .map(t => t.symbol.replace(/USDT$/, ''));
+    .map(t => ({
+      symbol: t.symbol,
+      notionalOI: parseFloat(t.holdingAmount || '0') * parseFloat(t.lastPr || '0'),
+    }))
+    .sort((a, b) => b.notionalOI - a.notionalOI);
+
+  const limited = topN > 0 ? usdtPairs.slice(0, topN) : usdtPairs;
+  return limited.map(t => t.symbol.replace(/USDT$/, ''));
 }
 
 async function seedExchange(
@@ -244,6 +269,7 @@ async function seedExchange(
   timeframe: string,
   idempotencyWindow: number
 ): Promise<{ seeded: number; skipped: number; errors: number }> {
+  const delayMs = DELAY_PER_EXCHANGE[exchangeId] || 500;
   let seeded = 0;
   let skipped = 0;
   let errors = 0;
@@ -278,7 +304,7 @@ async function seedExchange(
       }
     }
 
-    await sleep(DELAY_BETWEEN_CALLS_MS);
+    await sleep(delayMs);
   }
 
   return { seeded, skipped, errors };
@@ -324,9 +350,9 @@ async function main() {
 
   // ── Seed Binance ──
   if (exchanges.includes('BINANCE')) {
-    console.log(`[${ts()}] Fetching Binance top-50 USDT-M pairs by volume...`);
-    const binCoins = await fetchBinanceTopCoins(50);
-    console.log(`[${ts()}] Starting ${timeframe} BINANCE signal seed for ${binCoins.length} assets...`);
+    console.log(`[${ts()}] Fetching Binance USDT-M pairs by volume${top ? ` (top ${top})` : ''}...`);
+    const binCoins = await fetchBinanceCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} BINANCE signal seed for ${binCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.BINANCE}ms)...`);
     const result = await seedExchange('BINANCE', binCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BINANCE seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -336,9 +362,9 @@ async function main() {
 
   // ── Seed Bybit ──
   if (exchanges.includes('BYBIT')) {
-    console.log(`[${ts()}] Fetching Bybit top-50 USDT linear pairs by turnover...`);
-    const bybitCoins = await fetchBybitTopCoins(50);
-    console.log(`[${ts()}] Starting ${timeframe} BYBIT signal seed for ${bybitCoins.length} assets...`);
+    console.log(`[${ts()}] Fetching Bybit USDT linear pairs by OI${top ? ` (top ${top})` : ''}...`);
+    const bybitCoins = await fetchBybitCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} BYBIT signal seed for ${bybitCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.BYBIT}ms)...`);
     const result = await seedExchange('BYBIT', bybitCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BYBIT seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -348,9 +374,9 @@ async function main() {
 
   // ── Seed OKX ──
   if (exchanges.includes('OKX')) {
-    console.log(`[${ts()}] Fetching OKX top-50 USDT-SWAP pairs by volume...`);
-    const okxCoins = await fetchOKXTopCoins(50);
-    console.log(`[${ts()}] Starting ${timeframe} OKX signal seed for ${okxCoins.length} assets...`);
+    console.log(`[${ts()}] Fetching OKX USDT-SWAP pairs by OI${top ? ` (top ${top})` : ''}...`);
+    const okxCoins = await fetchOKXCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} OKX signal seed for ${okxCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.OKX}ms)...`);
     const result = await seedExchange('OKX', okxCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] OKX seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -360,9 +386,9 @@ async function main() {
 
   // ── Seed Bitget ──
   if (exchanges.includes('BITGET')) {
-    console.log(`[${ts()}] Fetching Bitget top-50 USDT-FUTURES pairs by volume...`);
-    const bitgetCoins = await fetchBitgetTopCoins(50);
-    console.log(`[${ts()}] Starting ${timeframe} BITGET signal seed for ${bitgetCoins.length} assets...`);
+    console.log(`[${ts()}] Fetching Bitget USDT-FUTURES pairs by OI${top ? ` (top ${top})` : ''}...`);
+    const bitgetCoins = await fetchBitgetCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} BITGET signal seed for ${bitgetCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.BITGET}ms)...`);
     const result = await seedExchange('BITGET', bitgetCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BITGET seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;

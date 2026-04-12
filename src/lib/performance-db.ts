@@ -133,18 +133,20 @@ const CREATE_TABLE_SQL = `
 `;
 
 // Migration: add unified outcome columns if missing (runs on existing DBs)
+// Note: no IF NOT EXISTS — SQLite doesn't support it for ALTER TABLE.
+// try/catch handles "column already exists" for both SQLite and PostgreSQL.
 const MIGRATE_OUTCOME_COLS = `
-  ALTER TABLE signals ADD COLUMN IF NOT EXISTS outcome_price REAL;
+  ALTER TABLE signals ADD COLUMN outcome_price REAL;
 `;
 const MIGRATE_OUTCOME_COLS_2 = `
-  ALTER TABLE signals ADD COLUMN IF NOT EXISTS outcome_return_pct REAL;
+  ALTER TABLE signals ADD COLUMN outcome_return_pct REAL;
 `;
 
 // Merkle proof columns
 const MIGRATE_MERKLE_COLS = [
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_hash VARCHAR(66);`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS merkle_batch_id INTEGER;`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS merkle_proof JSONB;`,
+  `ALTER TABLE signals ADD COLUMN signal_hash VARCHAR(66);`,
+  `ALTER TABLE signals ADD COLUMN merkle_batch_id INTEGER;`,
+  `ALTER TABLE signals ADD COLUMN merkle_proof JSONB;`,
 ];
 
 const CREATE_MERKLE_BATCHES_SQL = `
@@ -159,16 +161,16 @@ const CREATE_MERKLE_BATCHES_SQL = `
 `;
 
 // v1.5: exchange column for multi-exchange support
-const MIGRATE_EXCHANGE_COL = `ALTER TABLE signals ADD COLUMN IF NOT EXISTS exchange TEXT NOT NULL DEFAULT 'HL';`;
+const MIGRATE_EXCHANGE_COL = `ALTER TABLE signals ADD COLUMN exchange TEXT NOT NULL DEFAULT 'HL';`;
 
 // v1.4 migrations
 const MIGRATE_PFE_COLS = [
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_return_pct REAL;`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS mae_return_pct REAL;`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_price REAL;`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS mae_price REAL;`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS pfe_candles INTEGER;`,
-  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS return_1candle REAL;`,
+  `ALTER TABLE signals ADD COLUMN pfe_return_pct REAL;`,
+  `ALTER TABLE signals ADD COLUMN mae_return_pct REAL;`,
+  `ALTER TABLE signals ADD COLUMN pfe_price REAL;`,
+  `ALTER TABLE signals ADD COLUMN mae_price REAL;`,
+  `ALTER TABLE signals ADD COLUMN pfe_candles INTEGER;`,
+  `ALTER TABLE signals ADD COLUMN return_1candle REAL;`,
 ];
 
 const CREATE_FUNDING_HISTORY_SQL = `
