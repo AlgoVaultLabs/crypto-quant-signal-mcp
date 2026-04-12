@@ -40,7 +40,9 @@
   "author": "AlgoVault Labs",
   "license": "MIT",
   "dependencies": {
+    "@buildersgarden/siwa": "^0.0.24",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@slicekit/erc8128": "^0.3.3",
     "@x402/core": "^2.9.0",
     "@x402/evm": "^2.9.0",
     "better-sqlite3": "^11.8.2",
