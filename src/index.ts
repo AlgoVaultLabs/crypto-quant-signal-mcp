@@ -642,6 +642,10 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
   @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+  .call-type-verification-row { display: flex; gap: 1.5rem; align-items: flex-start; }
+  .call-type-verification-row .call-type-section { flex: 0 0 auto; }
+  .call-type-verification-row .tamper-proof-card { flex: 1; }
+  @media (max-width: 768px) { .call-type-verification-row { flex-direction: column; } .call-type-verification-row .call-type-section, .call-type-verification-row .tamper-proof-card { width: 100%; } }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; }
   .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .card .value { font-size: 28px; font-weight: 700; color: #58a6ff; }
@@ -721,31 +725,31 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
   </div>
   <div id="eval-indicator" style="text-align:center;color:#8b949e;font-size:13px;margin:-8px 0 12px 0"></div>
 
-  <!-- Tamper-Proof Track Record -->
-  <div style="max-width:640px;margin:16px auto 24px;background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:16px 20px">
-    <div style="display:flex;align-items:flex-start;gap:10px">
-      <span style="color:#60a5fa;font-size:16px;margin-top:2px">&#x1f517;</span>
-      <div>
-        <span style="color:#fff;font-size:13px;font-weight:600">Tamper-Proof Track Record</span>
-        <p style="color:#9ca3af;font-size:13px;margin:4px 0 0">Every signal hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can&rsquo;t edit history.</p>
-        <div style="margin-top:10px;display:flex;gap:16px;font-size:12px">
-          <a href="/verify" style="color:#d4b255;text-decoration:none">Verify a Signal &rarr;</a>
-          <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" style="color:#d4b255;text-decoration:none">View Contract &rarr;</a>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Tier Performance Cards -->
   <div class="section"><h2>Performance by Tier</h2>
     <div class="tier-grid" id="tier-cards"></div>
     <div style="text-align:center;color:#9ca3af;font-size:12px;margin:12px 0 0;padding:6px 12px;background:rgba(212,178,85,0.06);border:1px solid rgba(212,178,85,0.12);border-radius:8px">&#x1f4a1; HOLD calls are always free &mdash; You only pay for BUY and SELL verdicts</div>
   </div>
 
-  <!-- Signal type breakdown -->
-  <div class="section"><h2>By Call Type</h2>
-    <table><thead><tr><th>Type</th><th>Count</th><th>PFE Win Rate</th></tr></thead>
-    <tbody id="by-type"></tbody></table>
+  <!-- Signal type + Tamper-Proof row -->
+  <div class="call-type-verification-row">
+    <div class="call-type-section section"><h2>By Call Type</h2>
+      <table><thead><tr><th>Type</th><th>Count</th><th>PFE Win Rate</th></tr></thead>
+      <tbody id="by-type"></tbody></table>
+    </div>
+    <div class="tamper-proof-card" style="background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:20px;margin-top:28px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="color:#60a5fa;font-size:16px;margin-top:2px">&#x1f517;</span>
+        <div>
+          <span style="color:#fff;font-size:14px;font-weight:600">Tamper-Proof Track Record</span>
+          <p style="color:#9ca3af;font-size:13px;margin:6px 0 0">Every signal hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can&rsquo;t edit history.</p>
+          <div style="margin-top:12px;display:flex;gap:16px;font-size:12px">
+            <a href="/verify" style="color:#d4b255;text-decoration:none">Verify a Signal &rarr;</a>
+            <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" style="color:#d4b255;text-decoration:none">View Contract &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Timeframe tabs + table -->
@@ -776,7 +780,7 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
 
   <!-- Recent signals -->
   <div class="section"><h2>Recent Trade Calls</h2>
-    <table class="recent-table"><thead><tr><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th></tr></thead>
+    <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
@@ -995,8 +999,8 @@ function renderAll() {
   var recentEl = document.getElementById('recent');
   var recent = tfSigs.slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td></tr>';}).join('');
-  } else { recentEl.innerHTML='<tr><td colspan="6" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
+    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+(s.id||'')+'" style="color:#60a5fa;text-decoration:none">#'+(s.id||'')+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td></tr>';}).join('');
+  } else { recentEl.innerHTML='<tr><td colspan="7" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
 async function load() {
