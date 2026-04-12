@@ -504,9 +504,10 @@ async function publishMoltbook(post: Post): Promise<string | null> {
       console.error(`[moltbook] Retry failed: ${retry.status} — ${body}`);
       return null;
     }
-    const data = await retry.json() as { id?: string; url?: string };
-    console.log(`[moltbook] Published (retry): ${data.url || data.id}`);
-    return data.url || data.id || 'published';
+    const data = await retry.json() as Record<string, unknown>;
+    const postUrl = (data.url as string) || (data.slug ? `https://www.moltbook.com/post/${data.slug}` : null) || (data.id ? `https://www.moltbook.com/post/${data.id}` : null);
+    console.log(`[moltbook] Published (retry): ${postUrl || 'ok (no URL in response)'}`);
+    return postUrl || 'published';
   }
 
   if (!res.ok) {
@@ -515,9 +516,11 @@ async function publishMoltbook(post: Post): Promise<string | null> {
     return null;
   }
 
-  const data = await res.json() as { id?: string; url?: string };
-  console.log(`[moltbook] Published: ${data.url || data.id}`);
-  return data.url || data.id || 'published';
+  const data = await res.json() as Record<string, unknown>;
+  const postUrl = (data.url as string) || (data.slug ? `https://www.moltbook.com/post/${data.slug}` : null) || (data.id ? `https://www.moltbook.com/post/${data.id}` : null);
+  console.log(`[moltbook] Published: ${postUrl || 'ok (no URL in response)'}`);
+  console.log(`[moltbook] Response keys: ${Object.keys(data).join(', ')}`);
+  return postUrl || 'published';
 }
 
 async function publishDevTo(post: Post): Promise<string | null> {
