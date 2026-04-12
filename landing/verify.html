@@ -70,13 +70,6 @@ tailwind.config = {
       </div>
     </div>
 
-    <p style="text-align:center;color:#888;font-size:0.85rem;margin-top:0.5rem;">
-      Find signal IDs in the <a href="/track-record" style="color:#60a5fa;">Live Track Record</a> &mdash;
-      every row in Recent Trade Calls has a clickable ID, or use the
-      <a href="/docs.html" style="color:#60a5fa;">API</a>:
-      <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:3px;">GET /api/performance-public</code>
-    </p>
-
     <!-- Result card -->
     <div id="result" class="mt-5 hidden"></div>
   </section>
@@ -91,6 +84,10 @@ tailwind.config = {
       <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading batches...</div>
     </div>
     <div id="contract-info" class="mt-3 text-center text-xs text-gray-500"></div>
+    <div id="try-it-section" style="text-align:center;margin-top:1rem;display:none">
+      <span style="color:#888;font-size:0.9rem;">Try it &mdash; click any ID to verify:</span>
+      <div id="sample-ids" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:center;margin-top:0.5rem"></div>
+    </div>
   </section>
 
   <!-- How to Verify -->
@@ -105,7 +102,20 @@ tailwind.config = {
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Pick a Signal</p>
-          <p class="text-gray-500 text-xs mt-1">Find any signal ID from the <a href="/track-record" class="text-blue-400 hover:underline">Live Track Record</a> &mdash; every row in the Recent Trade Calls table has a clickable ID that links here.</p>
+          <div class="mt-2 space-y-2.5">
+            <div>
+              <p class="text-gray-300 text-xs font-semibold">From the Track Record</p>
+              <p class="text-gray-500 text-xs mt-0.5">Every row in the <a href="/track-record" class="text-blue-400 hover:underline">Live Track Record</a> Recent Trade Calls table has a clickable ID. Recent signals are recorded but pending the next daily batch (00:05 UTC).</p>
+            </div>
+            <div>
+              <p class="text-gray-300 text-xs font-semibold">From the API</p>
+              <p class="text-gray-500 text-xs mt-0.5"><code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px">GET /api/performance-public</code> &mdash; each signal in the response includes an <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px">id</code> field.</p>
+            </div>
+            <div>
+              <p class="text-gray-300 text-xs font-semibold">From above</p>
+              <p class="text-gray-500 text-xs mt-0.5">Click any ID in &ldquo;Try it&rdquo; under Published Batches to instantly verify a hashed signal.</p>
+            </div>
+          </div>
         </div>
       </div>
       <div class="flex gap-4">
@@ -346,6 +356,46 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
   } catch (err) {
     document.getElementById('batches-table').innerHTML = '<div class="px-5 py-8 text-center text-gray-500 text-sm">Failed to load batches.</div>';
   }
+})();
+
+// Load sample signal IDs for "Try it" pills
+(async function() {
+  try {
+    var res = await fetch('/api/performance-public');
+    var data = await res.json();
+    if (!data.recentSignals || data.recentSignals.length === 0) return;
+
+    // Pick oldest signals (more likely to be in a published batch) with variety
+    var signals = data.recentSignals.slice().reverse();
+    var seen = {};
+    var picks = [];
+    for (var i = 0; i < signals.length && picks.length < 8; i++) {
+      var s = signals[i];
+      if (!s.id || seen[s.coin]) continue;
+      seen[s.coin] = true;
+      picks.push(s);
+    }
+
+    if (picks.length === 0) return;
+
+    var container = document.getElementById('sample-ids');
+    picks.forEach(function(s) {
+      var btn = document.createElement('button');
+      btn.dataset.id = s.id;
+      btn.textContent = '#' + s.id;
+      btn.title = s.coin + ' ' + s.signal;
+      btn.style.cssText = 'background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:4px 14px;color:#60a5fa;cursor:pointer;font-size:0.85rem;transition:background 0.2s';
+      btn.onmouseenter = function() { this.style.background = 'rgba(255,255,255,0.15)'; };
+      btn.onmouseleave = function() { this.style.background = 'rgba(255,255,255,0.08)'; };
+      btn.onclick = function() {
+        document.getElementById('signal-id').value = this.dataset.id;
+        verifySignal();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+      container.appendChild(btn);
+    });
+    document.getElementById('try-it-section').style.display = 'block';
+  } catch (e) {}
 })();
 </script>
 
