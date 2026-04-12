@@ -517,9 +517,12 @@ async function publishMoltbook(post: Post): Promise<string | null> {
   }
 
   const data = await res.json() as Record<string, unknown>;
-  const postUrl = (data.url as string) || (data.slug ? `https://www.moltbook.com/post/${data.slug}` : null) || (data.id ? `https://www.moltbook.com/post/${data.id}` : null);
-  console.log(`[moltbook] Published: ${postUrl || 'ok (no URL in response)'}`);
-  console.log(`[moltbook] Response keys: ${Object.keys(data).join(', ')}`);
+  const post = data.post as Record<string, unknown> | undefined;
+  const postUrl = (data.url as string)
+    || (post?.slug ? `https://www.moltbook.com/post/${post.slug}` : null)
+    || (post?.id ? `https://www.moltbook.com/post/${post.id}` : null)
+    || (data.slug ? `https://www.moltbook.com/post/${data.slug}` : null);
+  console.log(`[moltbook] Published: ${postUrl || 'ok'}`);
   return postUrl || 'published';
 }
 
