@@ -18,7 +18,10 @@
  *   --top 50         (limit to top N by open interest, default: all)
  *   --exchange HL       (Hyperliquid only)
  *   --exchange BINANCE  (Binance only)
- *   --exchange ALL      (both HL + Binance, default)
+ *   --exchange BYBIT    (Bybit only)
+ *   --exchange OKX      (OKX only)
+ *   --exchange BITGET   (Bitget only)
+ *   --exchange ALL      (all 5 exchanges, default)
  *
  * Usage:
  *   npx tsx src/scripts/seed-signals.ts                         (15m default, all exchanges)
@@ -87,15 +90,19 @@ function parseArgs(): { timeframe: string; top: number; exchanges: ExchangeId[] 
     top = n;
   }
 
-  let exchanges: ExchangeId[] = ['HL', 'BINANCE'];
+  let exchanges: ExchangeId[] = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'];
   const exIdx = args.indexOf('--exchange');
   if (exIdx !== -1 && args[exIdx + 1]) {
     const ex = args[exIdx + 1].toUpperCase();
-    if (ex === 'HL') exchanges = ['HL'];
-    else if (ex === 'BINANCE') exchanges = ['BINANCE'];
-    else if (ex === 'ALL') exchanges = ['HL', 'BINANCE'];
-    else {
-      console.error(`Invalid exchange: ${ex}. Use HL, BINANCE, or ALL.`);
+    const validSingle: Record<string, ExchangeId> = {
+      'HL': 'HL', 'BINANCE': 'BINANCE', 'BYBIT': 'BYBIT', 'OKX': 'OKX', 'BITGET': 'BITGET',
+    };
+    if (ex === 'ALL') {
+      exchanges = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'];
+    } else if (validSingle[ex]) {
+      exchanges = [validSingle[ex]];
+    } else {
+      console.error(`Invalid exchange: ${ex}. Use HL, BINANCE, BYBIT, OKX, BITGET, or ALL.`);
       process.exit(1);
     }
   }
@@ -192,6 +199,45 @@ async function fetchBinanceTopCoins(limit: number = 50): Promise<string[]> {
   });
 }
 
+/**
+ * Fetch top-50 Bybit USDT linear pairs by 24h turnover.
+ */
+async function fetchBybitTopCoins(limit: number = 50): Promise<string[]> {
+  const res = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
+  const data = await res.json() as { result: { list: Array<{ symbol: string; turnover24h: string }> } };
+  return (data.result?.list || [])
+    .filter(t => t.symbol.endsWith('USDT'))
+    .sort((a, b) => parseFloat(b.turnover24h) - parseFloat(a.turnover24h))
+    .slice(0, limit)
+    .map(t => t.symbol.replace(/USDT$/, ''));
+}
+
+/**
+ * Fetch top-50 OKX USDT-SWAP pairs by 24h volume.
+ */
+async function fetchOKXTopCoins(limit: number = 50): Promise<string[]> {
+  const res = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP');
+  const data = await res.json() as { data: Array<{ instId: string; volCcy24h: string }> };
+  return (data.data || [])
+    .filter(t => t.instId.endsWith('-USDT-SWAP'))
+    .sort((a, b) => parseFloat(b.volCcy24h) - parseFloat(a.volCcy24h))
+    .slice(0, limit)
+    .map(t => t.instId.replace(/-USDT-SWAP$/, ''));
+}
+
+/**
+ * Fetch top-50 Bitget USDT-FUTURES pairs by 24h quote volume.
+ */
+async function fetchBitgetTopCoins(limit: number = 50): Promise<string[]> {
+  const res = await fetch('https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES');
+  const data = await res.json() as { data: Array<{ symbol: string; quoteVolume: string }> };
+  return (data.data || [])
+    .filter(t => t.symbol.endsWith('USDT'))
+    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
+    .slice(0, limit)
+    .map(t => t.symbol.replace(/USDT$/, ''));
+}
+
 async function seedExchange(
   exchangeId: ExchangeId,
   coins: string[],
@@ -283,6 +329,42 @@ async function main() {
     console.log(`[${ts()}] Starting ${timeframe} BINANCE signal seed for ${binCoins.length} assets...`);
     const result = await seedExchange('BINANCE', binCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BINANCE seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
+    totals.seeded += result.seeded;
+    totals.skipped += result.skipped;
+    totals.errors += result.errors;
+  }
+
+  // ── Seed Bybit ──
+  if (exchanges.includes('BYBIT')) {
+    console.log(`[${ts()}] Fetching Bybit top-50 USDT linear pairs by turnover...`);
+    const bybitCoins = await fetchBybitTopCoins(50);
+    console.log(`[${ts()}] Starting ${timeframe} BYBIT signal seed for ${bybitCoins.length} assets...`);
+    const result = await seedExchange('BYBIT', bybitCoins, timeframe, idempotencyWindow);
+    console.log(`[${ts()}] BYBIT seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
+    totals.seeded += result.seeded;
+    totals.skipped += result.skipped;
+    totals.errors += result.errors;
+  }
+
+  // ── Seed OKX ──
+  if (exchanges.includes('OKX')) {
+    console.log(`[${ts()}] Fetching OKX top-50 USDT-SWAP pairs by volume...`);
+    const okxCoins = await fetchOKXTopCoins(50);
+    console.log(`[${ts()}] Starting ${timeframe} OKX signal seed for ${okxCoins.length} assets...`);
+    const result = await seedExchange('OKX', okxCoins, timeframe, idempotencyWindow);
+    console.log(`[${ts()}] OKX seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
+    totals.seeded += result.seeded;
+    totals.skipped += result.skipped;
+    totals.errors += result.errors;
+  }
+
+  // ── Seed Bitget ──
+  if (exchanges.includes('BITGET')) {
+    console.log(`[${ts()}] Fetching Bitget top-50 USDT-FUTURES pairs by volume...`);
+    const bitgetCoins = await fetchBitgetTopCoins(50);
+    console.log(`[${ts()}] Starting ${timeframe} BITGET signal seed for ${bitgetCoins.length} assets...`);
+    const result = await seedExchange('BITGET', bitgetCoins, timeframe, idempotencyWindow);
+    console.log(`[${ts()}] BITGET seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
     totals.skipped += result.skipped;
     totals.errors += result.errors;

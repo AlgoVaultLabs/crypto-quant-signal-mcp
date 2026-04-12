@@ -9,6 +9,9 @@
 import type { ExchangeAdapter, ExchangeId } from '../types.js';
 import { HyperliquidAdapter } from './adapters/hyperliquid.js';
 import { BinanceAdapter } from './adapters/binance.js';
+import { BybitAdapter } from './adapters/bybit.js';
+import { OKXAdapter } from './adapters/okx.js';
+import { BitgetAdapter } from './adapters/bitget.js';
 
 const adapters = new Map<ExchangeId, ExchangeAdapter>();
 
@@ -19,6 +22,15 @@ export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
     switch (id) {
       case 'BINANCE':
         adapter = new BinanceAdapter();
+        break;
+      case 'BYBIT':
+        adapter = new BybitAdapter();
+        break;
+      case 'OKX':
+        adapter = new OKXAdapter();
+        break;
+      case 'BITGET':
+        adapter = new BitgetAdapter();
         break;
       case 'HL':
       default:

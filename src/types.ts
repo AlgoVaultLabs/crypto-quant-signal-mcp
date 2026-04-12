@@ -83,7 +83,7 @@ export interface ExchangeAdapter {
 
 // ── Exchange Types ──
 
-export type ExchangeId = 'HL' | 'BINANCE';
+export type ExchangeId = 'HL' | 'BINANCE' | 'BYBIT' | 'OKX' | 'BITGET';
 
 // ── Signal Types ──
 
