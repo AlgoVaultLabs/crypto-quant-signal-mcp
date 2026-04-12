@@ -643,9 +643,9 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
   @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
   .call-type-verification-row { display: flex; gap: 1.5rem; align-items: flex-start; }
-  .call-type-verification-row .call-type-section { flex: 0 0 auto; }
-  .call-type-verification-row .tamper-proof-card { flex: 1; }
-  @media (max-width: 768px) { .call-type-verification-row { flex-direction: column; } .call-type-verification-row .call-type-section, .call-type-verification-row .tamper-proof-card { width: 100%; } }
+  .call-type-verification-row .call-type-section { flex: 1; min-width: 0; }
+  .call-type-verification-row .tamper-proof-card { flex: 0 0 340px; }
+  @media (max-width: 768px) { .call-type-verification-row { flex-direction: column; } .call-type-verification-row .call-type-section, .call-type-verification-row .tamper-proof-card { width: 100%; flex: none; } }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; }
   .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .card .value { font-size: 28px; font-weight: 700; color: #58a6ff; }
