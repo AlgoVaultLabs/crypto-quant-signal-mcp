@@ -257,13 +257,13 @@ tailwind.config = {
       <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
         <span class="text-gold-400">&#9670;</span> On-Chain Verification
       </h2>
-      <p class="text-gray-500 text-sm mb-6">Every signal is hashed and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof.</p>
+      <p class="text-gray-500 text-sm mb-6">Every call is hashed and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">How It Works</h3>
       <div class="space-y-3 mb-8">
         <div class="flex gap-3 items-start">
           <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">1</span>
-          <p class="text-gray-400 text-sm">Every BUY/SELL signal is hashed using <code class="text-xs bg-navy-800 px-1 rounded">keccak256(coin, signal, confidence, timeframe, timestamp, price)</code> at the moment it's generated</p>
+          <p class="text-gray-400 text-sm">Every BUY/SELL call is hashed using <code class="text-xs bg-navy-800 px-1 rounded">keccak256(coin, signal, confidence, timeframe, timestamp, price)</code> at the moment it's generated</p>
         </div>
         <div class="flex gap-3 items-start">
           <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">2</span>
@@ -279,7 +279,7 @@ tailwind.config = {
         </div>
         <div class="flex gap-3 items-start">
           <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">5</span>
-          <p class="text-gray-400 text-sm">Anyone can verify that a specific signal existed in a batch by checking its Merkle proof against the on-chain root</p>
+          <p class="text-gray-400 text-sm">Anyone can verify that a specific call existed in a batch by checking its Merkle proof against the on-chain root</p>
         </div>
       </div>
 
@@ -287,16 +287,16 @@ tailwind.config = {
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
         <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/verify-signal?signalId=<ID>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">GET /api/verify-signal?signalId=&lt;ID&gt;</code></pre>
-        <p class="text-gray-500 text-xs mt-2">Returns: signal details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
+        <p class="text-gray-500 text-xs mt-2">Returns: call details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
       </div>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
         <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/merkle-batches');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">GET /api/merkle-batches</code></pre>
-        <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, signal counts, tx hashes, and Basescan links.</p>
+        <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, call counts, tx hashes, and Basescan links.</p>
       </div>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Visual Verification</h3>
-      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-gold-400 hover:underline">algovault.com/verify</a> to look up any signal and see its on-chain proof in a human-readable format.</p>
+      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-gold-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
@@ -309,9 +309,9 @@ tailwind.config = {
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What This Proves</h3>
       <ul class="space-y-2 text-sm text-gray-400">
-        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Signals were recorded BEFORE outcomes were known</li>
-        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No signal can be retroactively edited or deleted</li>
-        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> The complete set of signals in each batch is locked &mdash; cherry-picking is detectable via sequential signal IDs</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Calls were recorded BEFORE outcomes were known</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No call can be retroactively edited or deleted</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> The complete set of calls in each batch is locked &mdash; cherry-picking is detectable via sequential call IDs</li>
       </ul>
     </section>
 
@@ -684,7 +684,7 @@ tailwind.config = {
 
         <details class="bg-navy-700 border border-white/5 rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
-            Do you provide exit signals?
+            Do you provide exit calls?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
@@ -708,17 +708,17 @@ tailwind.config = {
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. A high HOLD rate (~84%) means the engine is selective &mdash; it only signals when multiple indicators align. HOLD calls are always free across all tiers.
+            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. A high HOLD rate (~84%) means the engine is selective &mdash; it only calls when multiple indicators align. HOLD calls are always free across all tiers.
           </div>
         </details>
 
         <details class="bg-navy-700 border border-white/5 rounded-xl group">
           <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
-            How do I verify a signal's integrity?
+            How do I verify a call's integrity?
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Every signal is hashed and anchored on Base L2 via daily Merkle batches. Visit <a href="/verify" class="text-gold-400 hover:underline">algovault.com/verify</a> to look up any signal by ID. You'll see its hash, Merkle proof, batch details, and a direct link to the transaction on Basescan. You can also call the API directly: <code class="text-xs bg-navy-800 px-1 rounded">GET /api/verify-signal?signalId=&lt;ID&gt;</code>.
+            Every call is hashed and anchored on Base L2 via daily Merkle batches. Visit <a href="/verify" class="text-gold-400 hover:underline">algovault.com/verify</a> to look up any call by ID. You'll see its hash, Merkle proof, batch details, and a direct link to the transaction on Basescan. You can also call the API directly: <code class="text-xs bg-navy-800 px-1 rounded">GET /api/verify-signal?signalId=&lt;ID&gt;</code>.
           </div>
         </details>
 

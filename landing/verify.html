@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Verify Signal Integrity — AlgoVault</title>
-<meta name="description" content="Verify any AlgoVault trade signal on-chain. Every signal is hashed and anchored on Base L2 via daily Merkle batches.">
+<title>Verify Call Integrity — AlgoVault</title>
+<meta name="description" content="Verify any AlgoVault trade call on-chain. Every call is hashed and anchored on Base L2 via daily Merkle batches.">
 <link rel="icon" type="image/png" href="/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -53,15 +53,15 @@ tailwind.config = {
 
   <!-- Header -->
   <div class="text-center mb-12">
-    <h1 class="text-3xl font-bold text-white mb-3">Verify Signal Integrity</h1>
-    <p class="text-gray-400 text-sm max-w-lg mx-auto">Every AlgoVault signal is hashed and anchored on Base L2. Look up any signal to verify it was recorded before the outcome was known.</p>
+    <h1 class="text-3xl font-bold text-white mb-3">Verify Call Integrity</h1>
+    <p class="text-gray-400 text-sm max-w-lg mx-auto">Every AlgoVault call is hashed and anchored on Base L2. Look up any call to verify it was recorded before the outcome was known.</p>
   </div>
 
   <!-- Signal Lookup -->
   <section class="mb-16">
     <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
       <div class="flex gap-3">
-        <input type="number" id="signal-id" placeholder="Enter Signal ID" min="1"
+        <input type="number" id="signal-id" placeholder="Enter Call ID" min="1"
           class="flex-1 bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50">
         <button onclick="verifySignal()" id="verify-btn"
           class="px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition whitespace-nowrap">
@@ -79,7 +79,7 @@ tailwind.config = {
     <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
       <span class="text-gold-400">&#9670;</span> Published Batches
     </h2>
-    <p class="text-gray-500 text-sm mb-5">Every day at 00:05 UTC, all new signal hashes are batched into a Merkle tree and the root is published on Base L2.</p>
+    <p class="text-gray-500 text-sm mb-5">Every day at 00:05 UTC, all new call hashes are batched into a Merkle tree and the root is published on Base L2.</p>
     <div id="batches-table" class="bg-navy-700 border border-white/5 rounded-xl overflow-hidden">
       <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading batches...</div>
     </div>
@@ -101,19 +101,19 @@ tailwind.config = {
           <span class="text-gold-400 font-bold text-sm">1</span>
         </div>
         <div class="pt-1.5">
-          <p class="text-white text-sm font-medium">Pick a Signal</p>
+          <p class="text-white text-sm font-medium">Pick a Call</p>
           <div class="mt-2 space-y-2.5">
             <div>
               <p class="text-gray-300 text-xs font-semibold">From the Track Record</p>
-              <p class="text-gray-500 text-xs mt-0.5">Every row in the <a href="/track-record" class="text-blue-400 hover:underline">Live Track Record</a> Recent Trade Calls table has a clickable ID. Recent signals are recorded but pending the next daily batch (00:05 UTC).</p>
+              <p class="text-gray-500 text-xs mt-0.5">Every row in the <a href="/track-record" class="text-blue-400 hover:underline">Live Track Record</a> Recent Trade Calls table has a clickable ID. Recent calls are recorded but pending the next daily batch (00:05 UTC).</p>
             </div>
             <div>
               <p class="text-gray-300 text-xs font-semibold">From the API</p>
-              <p class="text-gray-500 text-xs mt-0.5"><code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px">GET /api/performance-public</code> &mdash; each signal in the response includes an <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px">id</code> field.</p>
+              <p class="text-gray-500 text-xs mt-0.5"><code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px">GET /api/performance-public</code> &mdash; each call in the response includes an <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px">id</code> field.</p>
             </div>
             <div>
               <p class="text-gray-300 text-xs font-semibold">From above</p>
-              <p class="text-gray-500 text-xs mt-0.5">Click any ID in &ldquo;Try it&rdquo; under Published Batches to instantly verify a hashed signal.</p>
+              <p class="text-gray-500 text-xs mt-0.5">Click any ID in &ldquo;Try it&rdquo; under Published Batches to instantly verify a hashed call.</p>
             </div>
           </div>
         </div>
@@ -124,7 +124,7 @@ tailwind.config = {
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Check the Proof</p>
-          <p class="text-gray-500 text-xs mt-1">Enter the ID above (or click directly from the track record). You&rsquo;ll see the signal&rsquo;s hash, its Merkle proof, and the on-chain batch it belongs to.</p>
+          <p class="text-gray-500 text-xs mt-1">Enter the ID above (or click directly from the track record). You&rsquo;ll see the call&rsquo;s hash, its Merkle proof, and the on-chain batch it belongs to.</p>
         </div>
       </div>
       <div class="flex gap-4">
@@ -133,7 +133,7 @@ tailwind.config = {
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Verify On-Chain</p>
-          <p class="text-gray-500 text-xs mt-1">Click the Basescan link to see the transaction. The Merkle root in the smart contract proves this signal existed before the outcome was known. No signal can be added, removed, or modified after the batch is published.</p>
+          <p class="text-gray-500 text-xs mt-1">Click the Basescan link to see the transaction. The Merkle root in the smart contract proves this call existed before the outcome was known. No call can be added, removed, or modified after the batch is published.</p>
         </div>
       </div>
     </div>
@@ -151,8 +151,8 @@ tailwind.config = {
           <span class="text-gold-400 font-bold text-sm">1</span>
         </div>
         <div class="pt-1.5">
-          <p class="text-white text-sm font-medium">Signal Created</p>
-          <p class="text-gray-500 text-xs mt-1">Every BUY/SELL signal is hashed using keccak256(coin, signal, confidence, timeframe, timestamp, price) at the moment it's generated, BEFORE the outcome is known.</p>
+          <p class="text-white text-sm font-medium">Call Created</p>
+          <p class="text-gray-500 text-xs mt-1">Every BUY/SELL call is hashed using keccak256(coin, signal, confidence, timeframe, timestamp, price) at the moment it's generated, BEFORE the outcome is known.</p>
         </div>
       </div>
       <div class="flex gap-4">
@@ -161,7 +161,7 @@ tailwind.config = {
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Hash Stored</p>
-          <p class="text-gray-500 text-xs mt-1">The hash is stored alongside the signal in our database. The hash is deterministic and can be independently recomputed by anyone with the signal data.</p>
+          <p class="text-gray-500 text-xs mt-1">The hash is stored alongside the call in our database. The hash is deterministic and can be independently recomputed by anyone with the call data.</p>
         </div>
       </div>
       <div class="flex gap-4">
@@ -170,7 +170,7 @@ tailwind.config = {
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Daily Batch</p>
-          <p class="text-gray-500 text-xs mt-1">At 00:05 UTC, all new signal hashes are assembled into a Merkle tree. Each leaf is a signal hash; the tree produces a single root that commits to the entire set.</p>
+          <p class="text-gray-500 text-xs mt-1">At 00:05 UTC, all new call hashes are assembled into a Merkle tree. Each leaf is a call hash; the tree produces a single root that commits to the entire set.</p>
         </div>
       </div>
       <div class="flex gap-4">
@@ -185,7 +185,7 @@ tailwind.config = {
     </div>
 
     <div class="mt-8 bg-navy-700/60 border border-white/5 rounded-xl p-5">
-      <p class="text-gray-400 text-sm leading-relaxed">This means we cannot retroactively edit, delete, or fabricate signals. Every signal in our track record existed before the market moved. Verify any signal above, or inspect the contract directly on Basescan.</p>
+      <p class="text-gray-400 text-sm leading-relaxed">This means we cannot retroactively edit, delete, or fabricate calls. Every call in our track record existed before the market moved. Verify any call above, or inspect the contract directly on Basescan.</p>
     </div>
   </section>
 
@@ -234,7 +234,7 @@ async function verifySignal() {
     if (data.error === 'Signal not found') {
       el.innerHTML = '<div class="bg-red-500/5 border border-red-500/20 rounded-xl p-6 text-center">' +
         '<div class="text-red-400 text-lg font-bold mb-1">NOT FOUND</div>' +
-        '<p class="text-gray-400 text-sm">No signal with ID ' + id + ' exists.</p></div>';
+        '<p class="text-gray-400 text-sm">No call with ID ' + id + ' exists.</p></div>';
       el.className = 'mt-5';
       return;
     }
@@ -242,7 +242,7 @@ async function verifySignal() {
     if (data.verified === false && data.reason) {
       el.innerHTML = '<div class="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-6 text-center">' +
         '<div class="text-yellow-400 text-lg font-bold mb-1">PENDING</div>' +
-        '<p class="text-gray-400 text-sm">Signal recorded, awaiting next daily batch (00:05 UTC).</p>' +
+        '<p class="text-gray-400 text-sm">Call recorded, awaiting next daily batch (00:05 UTC).</p>' +
         '<div class="mt-3 text-gray-500 text-xs">' + data.signal.coin + ' &middot; ' + data.signal.direction + ' &middot; ' + data.signal.confidence + '% confidence</div></div>';
       el.className = 'mt-5';
       return;
@@ -256,11 +256,11 @@ async function verifySignal() {
           '<div class="w-2 h-2 rounded-full bg-emerald-400"></div>' +
           '<span class="text-emerald-400 font-bold text-sm">VERIFIED ON-CHAIN</span>' +
         '</div>' +
-        '<div class="text-white font-semibold text-lg mb-1">Signal #' + s.id + '</div>' +
+        '<div class="text-white font-semibold text-lg mb-1">Call #' + s.id + '</div>' +
         '<p class="text-gray-400 text-sm mb-4">' + s.coin + ' &middot; ' + s.direction + ' &middot; ' + s.confidence + '% confidence &middot; ' + (s.timeframe || '') + '</p>' +
         '<div class="grid sm:grid-cols-2 gap-4 mb-4">' +
           '<div>' +
-            '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Price at Signal</div>' +
+            '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Price at Call</div>' +
             '<div class="text-white text-sm">$' + Number(s.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6}) + '</div>' +
           '</div>' +
           '<div>' +
@@ -269,7 +269,7 @@ async function verifySignal() {
           '</div>' +
           '<div>' +
             '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Batch</div>' +
-            '<div class="text-white text-sm">#' + b.id + ' &middot; ' + b.signalCount + ' signals</div>' +
+            '<div class="text-white text-sm">#' + b.id + ' &middot; ' + b.signalCount + ' calls</div>' +
           '</div>' +
           '<div>' +
             '<div class="text-gray-500 text-xs uppercase tracking-wider mb-1">Published</div>' +
@@ -277,7 +277,7 @@ async function verifySignal() {
           '</div>' +
         '</div>' +
         '<div class="border-t border-white/5 pt-4 space-y-2">' +
-          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Signal Hash</span><span class="hash-text text-gray-300">' + s.hash + '</span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Call Hash</span><span class="hash-text text-gray-300">' + s.hash + '</span></div>' +
           '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Merkle Root</span><span class="hash-text text-gray-300">' + b.root + '</span></div>' +
           '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Tx Hash</span><span class="hash-text text-gray-300">' + truncHash(b.txHash) + ' <a href="' + b.basescanUrl + '" target="_blank" class="text-gold-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
           '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Contract</span><span class="hash-text text-gray-300">' + truncHash(data.contractAddress) + ' <a href="https://basescan.org/address/' + data.contractAddress + '" target="_blank" class="text-gold-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
@@ -336,7 +336,7 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
 
     var html = '<table class="w-full"><thead><tr class="border-b border-white/5">' +
       '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Batch</th>' +
-      '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Signals</th>' +
+      '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Calls</th>' +
       '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Published</th>' +
       '<th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Tx</th>' +
       '</tr></thead><tbody>';

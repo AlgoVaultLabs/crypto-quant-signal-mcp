@@ -711,7 +711,7 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
   <!-- On-Chain Verification Badge -->
   <div class="onchain-badge" id="onchain-badge" style="display:none">
     <span class="badge-icon">&#x1f517;</span>
-    <div><span class="badge-text">On-Chain Verified</span><br><span class="badge-detail">Every signal hashed on Base L2 \\u2014 daily Merkle root published on-chain</span></div>
+    <div><span class="badge-text">On-Chain Verified</span><br><span class="badge-detail">Every call hashed on Base L2 \\u2014 daily Merkle root published on-chain</span></div>
   </div>
   <div id="merkle-stats"></div>
 
@@ -742,9 +742,9 @@ function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean
         <span style="color:#60a5fa;font-size:16px;margin-top:2px">&#x1f517;</span>
         <div>
           <span style="color:#fff;font-size:14px;font-weight:600">Tamper-Proof Track Record</span>
-          <p style="color:#9ca3af;font-size:13px;margin:6px 0 0">Every signal hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can&rsquo;t edit history.</p>
+          <p style="color:#9ca3af;font-size:13px;margin:6px 0 0">Every call hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can&rsquo;t edit history.</p>
           <div style="margin-top:12px;display:flex;gap:16px;font-size:12px">
-            <a href="/verify" style="color:#d4b255;text-decoration:none">Verify a Signal &rarr;</a>
+            <a href="/verify" style="color:#d4b255;text-decoration:none">Verify a Call &rarr;</a>
             <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" style="color:#d4b255;text-decoration:none">View Contract &rarr;</a>
           </div>
         </div>
@@ -1061,7 +1061,7 @@ async function load() {
         document.getElementById('onchain-badge').style.display = 'flex';
         var totalVerified = md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
         var latest = md.batches[0];
-        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published \\u00b7 ' + totalVerified.toLocaleString() + ' signals verified \\u00b7 <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan \\u2192</a>';
+        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published \\u00b7 ' + totalVerified.toLocaleString() + ' calls verified \\u00b7 <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan \\u2192</a>';
       }
     } catch(e) { /* merkle stats are best-effort */ }
 

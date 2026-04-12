@@ -4,7 +4,7 @@
 
 # crypto-quant-signal-mcp
 
-The signal intelligence layer for AI trading agents — composite quant signals across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP.
+The call intelligence layer for AI trading agents — composite quant calls across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP.
 
 [![npm version](https://img.shields.io/npm/v/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
@@ -19,16 +19,16 @@ The signal intelligence layer for AI trading agents — composite quant signals 
 
 Most MCP trading servers give you raw data — prices, order books, candles. Your agent still has to figure out what to do with it.
 
-AlgoVault is different. We give your agent **one answer**: a directional verdict with a confidence score, built from a multi-factor composite scoring engine tuned on production quant systems. Every signal is tracked, every outcome is measured, and the full track record is public from day one.
+AlgoVault is different. We give your agent **one answer**: a directional verdict with a confidence score, built from a multi-factor composite scoring engine tuned on production quant systems. Every call is tracked, every outcome is measured, and the full track record is public from day one.
 
 **What makes this not just another indicator wrapper:**
 
 - **Composite scoring, not single-indicator noise.** Multiple orthogonal signals — momentum oscillators, trend structure, derivatives positioning, volume dynamics, open interest flow — fused into a single weighted verdict. The weights are calibrated from live market outcome data, not textbook defaults.
-- **Regime-aware signal generation.** Signals are filtered through a market regime classifier before emission. The engine knows when to signal and when to stay silent — a trend-following setup in a ranging market gets suppressed, not broadcast.
+- **Regime-aware call generation.** Calls are filtered through a market regime classifier before emission. The engine knows when to issue calls and when to stay silent — a trend-following setup in a ranging market gets suppressed, not broadcast.
 - **Cross-venue intelligence.** Funding rates from Hyperliquid, Binance, and Bybit are normalized and compared in real-time. Nobody else does cross-venue derivatives analysis via MCP.
-- **Published track record with every release.** Every signal is recorded with outcome prices at multiple horizons. Win rate, profit factor, and expected value are computed continuously. No cherry-picking, no survivorship bias.
-- **Adaptive scoring.** Indicator weights are retuned monthly from outcome data. The engine learns what works and adjusts — the signal you get today is better than the one from last month.
-- **Crypto + TradFi coverage.** 290+ assets — standard crypto perps, TradFi perpetuals (stocks, indices, commodities, FX via Hyperliquid's xyz dex), and liquidity-filtered meme coins. Assets are classified into quality tiers with institutional-grade signal filtering.
+- **Published track record with every release.** Every call is recorded with outcome prices at multiple horizons. Win rate, profit factor, and expected value are computed continuously. No cherry-picking, no survivorship bias.
+- **Adaptive scoring.** Indicator weights are retuned monthly from outcome data. The engine learns what works and adjusts — the call you get today is better than the one from last month.
+- **Crypto + TradFi coverage.** 290+ assets — standard crypto perps, TradFi perpetuals (stocks, indices, commodities, FX via Hyperliquid's xyz dex), and liquidity-filtered meme coins. Assets are classified into quality tiers with institutional-grade call filtering.
 
 ---
 
@@ -65,14 +65,14 @@ Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any 
 
 Under the hood: a multi-factor scoring engine evaluates momentum, trend structure, derivatives sentiment, open interest dynamics, and volume conviction. Scores pass through regime-aware filters and adaptive post-processing gates — including funding flow analysis, volatility regime detection, and trend persistence decay — before a final verdict is emitted.
 
-Only high-conviction signals are generated. The engine is designed to stay silent when the edge is unclear.
+Only high-conviction calls are generated. The engine is designed to stay silent when the edge is unclear.
 
 **Parameters:**
 - `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, `"GOLD"`, `"TSLA"`, or any of 290+ supported assets
 - `timeframe` (string, default `"15m"`): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`
-- `includeReasoning` (boolean, default `true`): Human-readable explanation of the signal logic
+- `includeReasoning` (boolean, default `true`): Human-readable explanation of the call logic
 
-**Output includes:** signal direction, confidence score (0–100), all computed indicator values, detected market regime, reasoning narrative, and `_algovault` metadata for downstream tool composability.
+**Output includes:** call direction, confidence score (0–100), all computed indicator values, detected market regime, reasoning narrative, and `_algovault` metadata for downstream tool composability.
 
 ### `scan_funding_arb`
 
@@ -102,12 +102,12 @@ Uses a multi-dimensional classification approach combining directional strength 
 
 ## Performance Tracking
 
-Every signal is tracked from emission to outcome. No exceptions.
+Every call is tracked from emission to outcome. No exceptions.
 
 **What we measure:**
 - Outcome prices at timeframe-appropriate evaluation windows
-- PFE Win Rate — did price move in the signal direction at any point during the evaluation window
-- Expected Value — probability-weighted average return per signal
+- PFE Win Rate — did price move in the call direction at any point during the evaluation window
+- Expected Value — probability-weighted average return per call
 - Profit Factor — gross wins divided by gross losses
 - Peak Favorable Excursion (PFE) and Maximum Adverse Excursion (MAE)
 - Running statistics per asset, timeframe, and quality tier
@@ -119,14 +119,14 @@ Every signal is tracked from emission to outcome. No exceptions.
 **Infrastructure:**
 - Remote mode: PostgreSQL with automated outcome backfill
 - Local mode: SQLite at `~/.crypto-quant-signal/performance.db`
-- Only high-confidence BUY/SELL signals are tracked — HOLD is excluded
+- Only high-confidence BUY/SELL calls are tracked — HOLD is excluded
 
 ### On-Chain Verification
 
-Every signal is hashed (keccak256) at creation time and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof — we cannot edit past signals.
+Every call is hashed (keccak256) at creation time and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof — we cannot edit past calls.
 
 - **Contract**: [`0x6485...0f81`](https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81) (Base L2)
-- **Verify any signal**: `https://api.algovault.com/api/verify-signal?signalId=<ID>`
+- **Verify any call**: `https://api.algovault.com/api/verify-signal?signalId=<ID>`
 - **View all batches**: `https://api.algovault.com/api/merkle-batches`
 - **Visual verification**: [algovault.com/verify](https://algovault.com/verify)
 
@@ -255,7 +255,7 @@ Schemas are designed for composability. All tools share consistent `timestamp`, 
 
 ## Privacy
 
-**Local mode:** Zero telemetry. No data sent to AlgoVault servers. Signal history stored on your machine only.
+**Local mode:** Zero telemetry. No data sent to AlgoVault servers. Call history stored on your machine only.
 
 **Remote mode:** Request metadata logged for analytics (IP hashed, never stored raw). See [privacy policy](https://api.algovault.com/privacy).
 
@@ -267,6 +267,6 @@ MIT
 
 ---
 
-Built by [AlgoVault Labs](https://algovault.com) — signal intelligence for the autonomous trading era.
+Built by [AlgoVault Labs](https://algovault.com) — call intelligence for the autonomous trading era.
 
 [Landing page](https://algovault.com) · [API endpoint](https://api.algovault.com/mcp)
