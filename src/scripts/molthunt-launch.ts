@@ -63,9 +63,9 @@ All signals include a published track record (win rates, Sharpe ratio, max drawd
 Pay-per-call via x402 (USDC on Base) or subscribe via Stripe. Free tier available (5 signals/day).
 
 Built on Streamable HTTP transport — works with Claude Desktop, Cursor, any MCP client.`,
-  github_url: 'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp',
-  website_url: 'https://api.algovault.com',
-  category_ids: ['cat_ai', 'cat_developer-tools'],
+  githubUrl: 'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp',
+  websiteUrl: 'https://api.algovault.com',
+  categoryIds: ['wLuw2qhCk5-9qJlAcL0fa', 'EX00lYS85yufxV6PWevhF', 'rR8N6GQ0bC0DkFMdSVVGP'],  // AI, Developer Tools, Web3 & Crypto
 };
 
 // ── Helpers ──
@@ -92,17 +92,21 @@ async function registerOnChain(): Promise<number> {
   const { account, publicClient, walletClient } = getClients();
   console.log(`[register] Wallet: ${account.address}`);
 
-  // Check if already registered
-  const existingId = await publicClient.readContract({
-    address: ERC8004_REGISTRY,
-    abi: REGISTRY_ABI,
-    functionName: 'agentIdOf',
-    args: [account.address],
-  });
+  // Check if already registered (contract reverts if not found)
+  try {
+    const existingId = await publicClient.readContract({
+      address: ERC8004_REGISTRY,
+      abi: REGISTRY_ABI,
+      functionName: 'agentIdOf',
+      args: [account.address],
+    });
 
-  if (existingId > 0n) {
-    console.log(`[register] Already registered with agent ID: ${existingId}`);
-    return Number(existingId);
+    if (existingId > 0n) {
+      console.log(`[register] Already registered with agent ID: ${existingId}`);
+      return Number(existingId);
+    }
+  } catch {
+    console.log('[register] Not yet registered on-chain');
   }
 
   // Build agent URI as base64 data URI
@@ -122,16 +126,17 @@ async function registerOnChain(): Promise<number> {
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   console.log(`[register] Confirmed in block ${receipt.blockNumber}`);
 
-  // Read back the agent ID
-  const agentId = await publicClient.readContract({
-    address: ERC8004_REGISTRY,
-    abi: REGISTRY_ABI,
-    functionName: 'agentIdOf',
-    args: [account.address],
-  });
-
+  // Extract agent ID from Transfer event (topic[3] is the token ID)
+  const transferLog = receipt.logs.find(
+    (l: { topics: string[] }) => l.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+  );
+  if (!transferLog || !transferLog.topics[3]) {
+    console.error('[register] Could not find agent ID in tx logs');
+    process.exit(1);
+  }
+  const agentId = Number(BigInt(transferLog.topics[3]));
   console.log(`[register] Agent ID: ${agentId}`);
-  return Number(agentId);
+  return agentId;
 }
 
 // ── Step 2: SIWA auth + launch project ──
@@ -164,33 +169,30 @@ async function launchProject(agentId: number): Promise<void> {
   const { nonce, issuedAt, expirationTime } = nonceData.data;
   console.log(`[siwa] Got nonce: ${nonce.slice(0, 8)}...`);
 
-  // 2b. Build and sign SIWA message
-  const { signSIWAMessage } = await import('@buildersgarden/siwa');
-  const { createLocalAccountSigner } = await import('@buildersgarden/siwa/signer');
+  // 2b. Build SIWA message (matches @buildersgarden/siwa buildSIWAMessage format)
+  const message = [
+    `molthunt.com wants you to sign in with your Agent account:`,
+    account.address,
+    ``,
+    ``,
+    `URI: https://www.molthunt.com/siwa`,
+    `Version: 1`,
+    `Agent ID: ${agentId}`,
+    `Agent Registry: ${REGISTRY_CAIP10}`,
+    `Chain ID: 8453`,
+    `Nonce: ${nonce}`,
+    `Issued At: ${issuedAt}`,
+    `Expiration Time: ${expirationTime}`,
+  ].join('\n');
 
-  const signer = createLocalAccountSigner(account);
-
-  const signed = await signSIWAMessage({
-    domain: 'www.molthunt.com',
-    uri: 'https://www.molthunt.com/siwa',
-    agentId,
-    agentRegistry: REGISTRY_CAIP10,
-    chainId: 8453,
-    nonce,
-    issuedAt,
-    expirationTime,
-  }, signer);
-
+  const signature = await account.signMessage({ message });
   console.log('[siwa] Message signed, verifying...');
 
   // 2c. Verify with Molthunt
   const verifyRes = await fetch(`${MOLTHUNT_API}/siwa/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: signed.message,
-      signature: signed.signature,
-    }),
+    body: JSON.stringify({ message, signature }),
   });
 
   if (!verifyRes.ok) {
@@ -206,16 +208,30 @@ async function launchProject(agentId: number): Promise<void> {
   const receipt = verifyData.data.receipt;
   console.log(`[siwa] Authenticated! Receipt expires: ${verifyData.data.expiresAt}`);
 
-  // 2d. Create project
+  // 2d. Create project with ERC-8128 signed request via SIWA SDK
   console.log('[molthunt] Creating project...');
-  const projectRes = await fetch(`${MOLTHUNT_API}/projects`, {
+
+  // Use SIWA SDK's high-level signAuthenticatedRequest
+  const { signAuthenticatedRequest } = await import('@buildersgarden/siwa/erc8128');
+
+  // Inline the local-account signer (avoids barrel import that pulls in Circle/Privy/etc.)
+  const siwaSigner = {
+    getAddress: async () => account.address,
+    signMessage: async (message: string) => account.signMessage({ message }),
+    signRawMessage: async (rawHex: `0x${string}`) => account.signMessage({ message: { raw: rawHex } }),
+    signTransaction: async (tx: unknown) => account.signTransaction(tx as any),
+  };
+
+  const projectUrl = `${MOLTHUNT_API}/projects`;
+  const projectBody = JSON.stringify(PROJECT);
+  const req = new Request(projectUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${receipt}`,
-    },
-    body: JSON.stringify(PROJECT),
+    headers: { 'Content-Type': 'application/json' },
+    body: projectBody,
   });
+
+  const signedReq = await signAuthenticatedRequest(req, receipt, siwaSigner, 8453);
+  const projectRes = await fetch(signedReq);
 
   if (!projectRes.ok) {
     const body = await projectRes.text();
@@ -247,20 +263,10 @@ async function main() {
 
   if (doLaunch) {
     if (!agentId) {
-      // Read existing agent ID
-      const { account, publicClient } = getClients();
-      const id = await publicClient.readContract({
-        address: ERC8004_REGISTRY,
-        abi: REGISTRY_ABI,
-        functionName: 'agentIdOf',
-        args: [account.address],
-      });
-      if (id === 0n) {
-        console.error('[launch] No agent ID found — run --register first');
-        process.exit(1);
-      }
-      agentId = Number(id);
-      console.log(`[launch] Using existing agent ID: ${agentId}`);
+      // Hardcoded from successful registration tx 0xd2c1983e...
+      // Token ID 0xae00 = 44544 minted to 0x804B82544E0B779c69192Ff5FC64a4c5d1017B80
+      agentId = 44544;
+      console.log(`[launch] Using known agent ID: ${agentId}`);
     }
     await launchProject(agentId);
   }
