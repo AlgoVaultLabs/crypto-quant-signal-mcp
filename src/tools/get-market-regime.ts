@@ -2,11 +2,12 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
 import { trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
-import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo } from '../types.js';
+import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId } from '../types.js';
 
 interface MarketRegimeInput {
   coin: string;
   timeframe?: string;
+  exchange?: ExchangeId;
   license?: LicenseInfo;
 }
 
@@ -36,14 +37,15 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const intervalMs = getIntervalMs(timeframe);
   const startTime = Date.now() - candleCount * intervalMs;
 
-  const adapter = getAdapter();
-  const dex = getDexForCoin(coin);
+  const exchange = input.exchange || 'HL';
+  const adapter = getAdapter(exchange);
+  const dex = exchange === 'HL' ? getDexForCoin(coin) : undefined;
 
-  // Fetch candles + predicted fundings in parallel (fundings are best-effort)
-  // Note: predictedFundings does NOT include xyz perps — cross-venue comparison unavailable for TradFi
+  // Fetch candles from selected exchange + cross-venue fundings from HL (best-effort)
+  const hlAdapter = getAdapter('HL');
   const [candles, allFundings] = await Promise.all([
     adapter.getCandles(coin, timeframe, startTime, dex),
-    adapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
+    hlAdapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
   ]);
 
   if (candles.length < 30) {

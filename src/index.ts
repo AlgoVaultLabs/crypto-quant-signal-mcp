@@ -46,13 +46,14 @@ function createServer(): McpServer {
       coin: z.string().describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
       timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: 15m and 1h only.'),
       includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
+      exchange: z.enum(['HL', 'BINANCE']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures."),
     },
     { readOnlyHint: true, openWorldHint: true },
-    async ({ coin, timeframe, includeReasoning }) => {
+    async ({ coin, timeframe, includeReasoning, exchange }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        const result = await getTradeSignal({ coin, timeframe, includeReasoning, license });
+        const result = await getTradeSignal({ coin, timeframe, includeReasoning, exchange, license });
         // Free HOLDs: only count BUY/SELL against quota, skip settlement for HOLD
         setRequestVerdict(result.signal);
         if (result.signal !== 'HOLD') {
@@ -114,14 +115,15 @@ function createServer(): McpServer {
     {
       coin: z.string().describe("Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"),
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe('Candle timeframe'),
+      exchange: z.enum(['HL', 'BINANCE']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures."),
     },
     { readOnlyHint: true, openWorldHint: true },
-    async ({ coin, timeframe }) => {
+    async ({ coin, timeframe, exchange }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
         trackCall(license);
-        const result = await getMarketRegime({ coin, timeframe });
+        const result = await getMarketRegime({ coin, timeframe, exchange });
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'get_market_regime',

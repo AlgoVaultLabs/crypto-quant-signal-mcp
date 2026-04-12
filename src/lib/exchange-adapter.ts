@@ -1,21 +1,37 @@
 /**
- * Exchange adapter interface — all tools call through this,
- * never raw API fetch calls. Enables future Binance/Bybit adapters.
+ * Exchange adapter factory — all tools call through this,
+ * never raw API fetch calls. Supports HL + Binance adapters.
+ *
+ * getAdapter()           → HyperliquidAdapter (backward compatible)
+ * getAdapter('HL')       → HyperliquidAdapter
+ * getAdapter('BINANCE')  → BinanceAdapter
  */
-import type { ExchangeAdapter } from '../types.js';
+import type { ExchangeAdapter, ExchangeId } from '../types.js';
 import { HyperliquidAdapter } from './adapters/hyperliquid.js';
+import { BinanceAdapter } from './adapters/binance.js';
 
-let defaultAdapter: ExchangeAdapter | null = null;
+const adapters = new Map<ExchangeId, ExchangeAdapter>();
 
-export function getAdapter(): ExchangeAdapter {
-  if (!defaultAdapter) {
-    defaultAdapter = new HyperliquidAdapter();
+export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
+  const id = exchange || 'HL';
+  let adapter = adapters.get(id);
+  if (!adapter) {
+    switch (id) {
+      case 'BINANCE':
+        adapter = new BinanceAdapter();
+        break;
+      case 'HL':
+      default:
+        adapter = new HyperliquidAdapter();
+        break;
+    }
+    adapters.set(id, adapter);
   }
-  return defaultAdapter;
+  return adapter;
 }
 
 export function setAdapter(adapter: ExchangeAdapter): void {
-  defaultAdapter = adapter;
+  adapters.set('HL', adapter);
 }
 
 export type { ExchangeAdapter };
