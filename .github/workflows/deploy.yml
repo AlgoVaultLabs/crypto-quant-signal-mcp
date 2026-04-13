@@ -17,15 +17,15 @@ jobs:
           script: |
             cd /opt/crypto-quant-signal-mcp
 
-            # Capture current version before pull
-            OLD_VERSION=$(node -e "console.log(require('./package.json').version)" 2>/dev/null || echo "0.0.0")
+            # Capture current version before pull (grep — no node on host)
+            OLD_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
 
             git pull origin main
             docker compose up -d --build
             docker compose ps
 
-            # Capture new version after build
-            NEW_VERSION=$(node -e "console.log(require('./package.json').version)" 2>/dev/null || echo "0.0.0")
+            # Capture new version after pull
+            NEW_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
 
             # Auto-publish release post if version changed
             if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ "$NEW_VERSION" != "0.0.0" ]; then
