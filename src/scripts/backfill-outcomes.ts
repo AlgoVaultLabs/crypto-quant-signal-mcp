@@ -27,7 +27,7 @@
 
 import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, closeDb } from '../lib/performance-db.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
-import type { Candle, SignalRecord } from '../types.js';
+import type { Candle, ExchangeId, SignalRecord } from '../types.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 300; // polite to HL API
 
@@ -138,7 +138,6 @@ function computePFEMAE(
 async function main() {
   console.log(`[${ts()}] Starting v1.4 PFE/MAE outcome backfill (looping until queue empty)...`);
 
-  const adapter = getAdapter();
   let totalFilled = 0;
   let totalSkipped = 0;
   let totalErrors = 0;
@@ -193,7 +192,8 @@ async function main() {
             continue;
           }
 
-          // Fetch candles from signal time forward
+          // Fetch candles from signal's own exchange
+          const adapter = getAdapter((sig.exchange as ExchangeId) || 'HL');
           const candles = await adapter.getCandles(coin, timeframe, signalTimeMs);
 
           // Filter candles: only those AFTER signal creation
