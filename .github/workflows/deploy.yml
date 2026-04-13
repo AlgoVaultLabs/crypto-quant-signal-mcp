@@ -16,6 +16,22 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd /opt/crypto-quant-signal-mcp
+
+            # Capture current version before pull
+            OLD_VERSION=$(node -e "console.log(require('./package.json').version)" 2>/dev/null || echo "0.0.0")
+
             git pull origin main
             docker compose up -d --build
             docker compose ps
+
+            # Capture new version after build
+            NEW_VERSION=$(node -e "console.log(require('./package.json').version)" 2>/dev/null || echo "0.0.0")
+
+            # Auto-publish release post if version changed
+            if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ "$NEW_VERSION" != "0.0.0" ]; then
+              echo "Version changed: $OLD_VERSION → $NEW_VERSION — publishing release post..."
+              sleep 10  # wait for container to fully start
+              docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/agent-forum-post.js --type=release --version="$NEW_VERSION" >> /var/log/agent-forum.log 2>&1 || echo "Release post failed (non-fatal)"
+            else
+              echo "No version change ($OLD_VERSION) — skipping release post"
+            fi
