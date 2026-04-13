@@ -65,14 +65,14 @@ class PgBackend implements DbBackend {
 
   exec(sql: string): void {
     // Fire and forget — init schema
-    this.pool.query(sql).catch(() => {});
+    this.pool.query(sql).catch((err) => { console.error('PG exec error:', err.message); });
   }
 
   run(sql: string, ...params: unknown[]): void {
     // Convert ? placeholders to $1, $2, etc. for pg
     let idx = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-    this.pool.query(pgSql, params).catch(() => {});
+    this.pool.query(pgSql, params).catch((err) => { console.error('PG run error:', err.message); });
   }
 
   all(sql: string, ...params: unknown[]): SignalRecord[] {
@@ -274,10 +274,15 @@ export function recordSignal(
 /**
  * Find signals that need outcome backfill.
  */
+// Allowlist for dynamic column names — prevents SQL injection
+const VALID_OUTCOME_FIELDS = new Set(['price_after_1h', 'price_after_4h', 'price_after_24h', 'price_after_15m']);
+const VALID_RETURN_FIELDS = new Set(['return_pct_1h', 'return_pct_4h', 'return_pct_24h', 'return_pct_15m']);
+
 export function getSignalsNeedingBackfill(hoursAgo: 1 | 4 | 24): SignalRecord[] {
   if (isPg) return []; // For PG, use async version
   const b = getBackend();
   const field = `price_after_${hoursAgo}h`;
+  if (!VALID_OUTCOME_FIELDS.has(field)) throw new Error(`Invalid backfill field: ${field}`);
   const cutoff = Math.floor(Date.now() / 1000) - hoursAgo * 3600;
   return b.all(
     `SELECT * FROM signals WHERE ${field} IS NULL AND created_at <= ? ORDER BY created_at ASC LIMIT 50`,
@@ -288,6 +293,7 @@ export function getSignalsNeedingBackfill(hoursAgo: 1 | 4 | 24): SignalRecord[] 
 export async function getSignalsNeedingBackfillAsync(hoursAgo: 1 | 4 | 24): Promise<SignalRecord[]> {
   const b = getBackend();
   const field = `price_after_${hoursAgo}h`;
+  if (!VALID_OUTCOME_FIELDS.has(field)) throw new Error(`Invalid backfill field: ${field}`);
   const cutoff = Math.floor(Date.now() / 1000) - hoursAgo * 3600;
   if (isPg && b instanceof PgBackend) {
     return b.query(
@@ -324,6 +330,8 @@ export function updateOutcome(
   returnPctField: 'return_pct_15m' | 'return_pct_1h' | 'return_pct_4h' | 'return_pct_24h',
   returnPct: number
 ): void {
+  if (!VALID_OUTCOME_FIELDS.has(field)) throw new Error(`Invalid outcome field: ${field}`);
+  if (!VALID_RETURN_FIELDS.has(returnPctField)) throw new Error(`Invalid return field: ${returnPctField}`);
   const b = getBackend();
   b.run(
     `UPDATE signals SET ${field} = ?, ${returnPctField} = ? WHERE id = ?`,
@@ -493,14 +501,17 @@ export async function updateSignalMerkleProof(signalId: number, batchId: number,
 
 /** Get all Merkle batches (most recent first). */
 export async function getMerkleBatches(limit = 100): Promise<any[]> {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
   const b = getBackend();
   if (isPg && b instanceof PgBackend) {
     return b.query(
-      `SELECT batch_id, merkle_root, signal_count, tx_hash, block_number, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT ${limit}`
+      `SELECT batch_id, merkle_root, signal_count, tx_hash, block_number, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT ?`,
+      [safeLimit]
     );
   }
   return b.all(
-    `SELECT batch_id, merkle_root, signal_count, tx_hash, block_number, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT ${limit}`
+    `SELECT batch_id, merkle_root, signal_count, tx_hash, block_number, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT ?`,
+    safeLimit
   ) as any;
 }
 
