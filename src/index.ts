@@ -983,7 +983,11 @@ function getFilteredSignals() {
 function setExchangeFilter(ex) {
   activeExchangeFilter = ex;
   document.querySelectorAll('#exchange-tabs .tab').forEach(function(t){
-    t.classList.toggle('active', t.dataset.ex === ex);
+    var isActive = t.dataset.ex === ex;
+    t.classList.toggle('active', isActive);
+    t.style.borderColor = isActive ? '#58a6ff' : '#30363d';
+    t.style.color = isActive ? '#58a6ff' : '#8b949e';
+    t.style.background = isActive ? '#58a6ff20' : '#161b22';
   });
   renderAll();
 }
