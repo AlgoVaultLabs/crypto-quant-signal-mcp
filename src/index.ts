@@ -937,7 +937,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
         <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX via HL xyz perps</td></tr>
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
-      <p><strong>Default view</strong> shows Tier 1-2 + TradFi only. Full coverage via &ldquo;All Assets&rdquo; tab.</p>
+      <p><strong>Default view</strong> shows all assets across all tiers. Use tier tabs to filter by quality tier.</p>
       <p style="margin-top:16px;color:#6e7681;font-size:11px"><em>AlgoVault provides directional entry interpretation for AI agents. Exit timing is determined by your agent or strategy. This is not financial advice. Past performance does not guarantee future results.</em></p>
     </div>
   </div>
@@ -953,7 +953,7 @@ var TF_ORDER = ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'];
 var TIER_COLORS = {1:'#58a6ff',2:'#3fb950',3:'#bc8cff',4:'#d29922'};
 var TIER_NAMES = {1:'Blue Chip',2:'Major Alts',3:'TradFi',4:'Meme & Micro'};
 var activeTfFilter = 'all';
-var activeTierFilter = 'tier12tf'; // default: Tier 1-2 + TradFi
+var activeTierFilter = 'all'; // default: All Assets
 var activeExchangeFilter = 'all'; // default: show ALL exchanges
 var cachedData = null;
 
@@ -968,7 +968,6 @@ function timeAgo(ts) { var s=Math.floor(Date.now()/1000-ts); if(s<60) return s+'
 
 function tierMatch(tier) {
   if (activeTierFilter === 'all') return true;
-  if (activeTierFilter === 'tier12tf') return tier === 1 || tier === 2 || tier === 3;
   return tier === parseInt(activeTierFilter);
 }
 
@@ -1065,9 +1064,18 @@ function renderAll() {
     evalEl.textContent = 'Trade Calls: ' + (stats.totalAll||0) + ' · Evaluated: ' + (stats.totalEvaluated||0) + ' · PFE Win Rate: ' + pct(stats.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
   }
 
-  // Tier cards
+  // Tier cards — recompute from filtered signals so exchange filter works
   var tcEl = document.getElementById('tier-cards');
   var bt = d.byTier || {};
+  // Compute per-tier stats from filtered signals
+  var tierComputed = {};
+  allSignals.forEach(function(s) {
+    if (s.signal === 'HOLD') return;
+    var k = 'tier' + s.tier;
+    if (!tierComputed[k]) tierComputed[k] = { count: 0, evaluated: 0, pfeWins: 0 };
+    tierComputed[k].count++;
+    if (s.pfe_return_pct != null) { tierComputed[k].evaluated++; if (pfeWin(s)) tierComputed[k].pfeWins++; }
+  });
   function tierAssetLabel(tier, assets) {
     if (tier === 1) return (assets||[]).join(', ') || 'BTC, ETH';
     if (tier === 2) {
@@ -1086,20 +1094,21 @@ function renderAll() {
   var hbt = d.holdsByTier || {};
   tcEl.innerHTML = ['tier1','tier2','tier3','tier4'].map(function(k){
     var t = bt[k]; if (!t) return '';
+    var tc = tierComputed[k] || { count: 0, evaluated: 0, pfeWins: 0 };
+    var tcPfeWR = tc.evaluated > 0 ? tc.pfeWins / tc.evaluated : null;
     var isTF = t.tier === 3;
     var tierHolds = hbt[String(t.tier)] || 0;
     var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' HOLD calls — engine is selective</div>' : '';
-    var gateLine = '';
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault ✦</span>' : '') + '</div>' +
       '<div class="tc-assets">' + tierAssetLabel(t.tier, t.assets) + '</div>' +
-      (t.count > 0 ? '<div class="tc-stats">' +
-        '<div class="tc-stat"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + t.count.toLocaleString() + '</span></div>' +
-        '<div class="tc-stat"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + (t.evaluated || 0).toLocaleString() + '</span></div>' +
-        '<div class="tc-stat"><span class="tc-label">PFE Win Rate</span><span class="tc-val pfe-hero ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</span></div>' +
+      (tc.count > 0 ? '<div class="tc-stats">' +
+        '<div class="tc-stat"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + tc.count.toLocaleString() + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + tc.evaluated.toLocaleString() + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">PFE Win Rate</span><span class="tc-val pfe-hero ' + pfeClass(tcPfeWR) + '">' + pct(tcPfeWR) + '</span></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
-      holdLine + gateLine +
+      holdLine +
     '</div>';
   }).join('');
 
@@ -1159,7 +1168,6 @@ async function load() {
     // Tier filter tabs
     var ttEl = document.getElementById('tier-tabs');
     ttEl.innerHTML = [
-      {id:'tier12tf',label:'Tier 1-2 + TradFi',color:'#58a6ff'},
       {id:'all',label:'All Assets',color:'#8b949e'},
       {id:'1',label:'Tier 1',color:'#58a6ff'},
       {id:'2',label:'Tier 2',color:'#3fb950'},
