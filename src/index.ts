@@ -44,7 +44,7 @@ function safeCompare(a: string, b: string): boolean {
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.7.1',
+    version: '1.8.0',
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -247,7 +247,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.7.1', stripe: isStripeConfigured() });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.8.0', stripe: isStripeConfigured() });
   });
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──
@@ -818,16 +818,19 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 <body>
 <div class="logo">
   <a href="https://algovault.com" style="display:flex;align-items:center;text-decoration:none"><img src="/logo.png" width="36" height="36" style="border-radius:8px;cursor:pointer" onerror="this.style.display='none'"></a>
-  <div><h1>Live Track Record</h1><div class="subtitle">v1.7.0</div></div>
+  <div><h1>Live Track Record</h1><div class="subtitle">v1.8.0</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
   <!-- On-Chain Verification Badge -->
   <div class="onchain-badge" id="onchain-badge" style="display:none">
     <span class="badge-icon">&#x1f517;</span>
-    <div><span class="badge-text">On-Chain Verified</span><br><span class="badge-detail">Every call hashed on Base L2 \\u2014 daily Merkle root published on-chain</span></div>
+    <div><span class="badge-text">On-Chain Verified</span><br><span class="badge-detail">Every call hashed on Base L2 — daily Merkle root published on-chain</span></div>
   </div>
   <div id="merkle-stats"></div>
+
+  <!-- Exchange Filter Tabs -->
+  <div class="tabs" id="exchange-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
 
   <!-- Tier Filter Tabs -->
   <div class="tier-tabs" id="tier-tabs"></div>
@@ -918,8 +921,9 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
         <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX via HL xyz perps</td></tr>
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
-      <p style="margin-top:16px"><strong>Call Filter</strong> = Only confidence &ge; 60% trade calls evaluated. HOLDs excluded.</p>
+      <p style="margin-top:16px"><strong>Total Trade Calls</strong> = BUY + SELL only. HOLDs excluded (stored separately). Only confidence ≥ 60% signals are recorded and evaluated.</p>
       <p><strong>Default view</strong> shows Tier 1-2 + TradFi only. Full coverage via &ldquo;All Assets&rdquo; tab.</p>
+      <p style="margin-top:16px;color:#6e7681;font-size:11px"><em>AlgoVault provides directional entry interpretation for AI agents. Exit timing is determined by your agent or strategy. This is not financial advice. Past performance does not guarantee future results.</em></p>
     </div>
   </div>
 
@@ -935,9 +939,10 @@ var TIER_COLORS = {1:'#58a6ff',2:'#3fb950',3:'#bc8cff',4:'#d29922'};
 var TIER_NAMES = {1:'Blue Chip',2:'Major Alts',3:'TradFi',4:'Meme & Micro'};
 var activeTfFilter = 'all';
 var activeTierFilter = 'tier12tf'; // default: Tier 1-2 + TradFi
+var activeExchangeFilter = 'all'; // default: show ALL exchanges
 var cachedData = null;
 
-function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '\\u2014'; }
+function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
 function wrClass(v) { return v != null ? (v >= 0.5 ? 'green' : v >= 0.3 ? 'gold' : 'red') : 'muted'; }
 function pfeClass(v) { return v != null ? (v >= 0.6 ? 'green' : v >= 0.45 ? 'gold' : 'red') : 'muted'; }
 function pfClass(v) { return v != null ? (v >= 1.5 ? 'green' : v >= 1.0 ? 'gold' : 'red') : 'muted'; }
@@ -954,7 +959,19 @@ function tierMatch(tier) {
 
 function getFilteredSignals() {
   var all = cachedData ? (cachedData.recentSignals || []) : [];
-  return all.filter(function(s) { return tierMatch(s.tier); });
+  return all.filter(function(s) {
+    if (!tierMatch(s.tier)) return false;
+    if (activeExchangeFilter !== 'all' && s.exchange !== activeExchangeFilter) return false;
+    return true;
+  });
+}
+
+function setExchangeFilter(ex) {
+  activeExchangeFilter = ex;
+  document.querySelectorAll('#exchange-tabs .tab').forEach(function(t){
+    t.classList.toggle('active', t.dataset.ex === ex);
+  });
+  renderAll();
 }
 
 function pfeWin(s) { var p = s.pfe_return_pct; if (p == null) return false; return s.signal === 'BUY' ? p > 0 : p < 0; }
@@ -1014,11 +1031,11 @@ function renderAll() {
     var pfeEl = document.getElementById('pfe-wr');
     pfeEl.textContent = pct(stats.pfeWinRate); pfeEl.className = 'value hero ' + pfeClass(stats.pfeWinRate);
     document.getElementById('total').textContent = (stats.totalAll || 0).toLocaleString();
-    document.getElementById('period').textContent = d.period ? d.period.from + ' \\u2192 ' + d.period.to : 'Tracked & Evaluated';
+    document.getElementById('period').textContent = d.period ? d.period.from + ' → ' + d.period.to : 'Tracked & Evaluated';
   } else {
     var v = (tfStats || {})[activeTfFilter];
     if (v) {
-      document.getElementById('pfe-wr').textContent = '\\u2014'; document.getElementById('pfe-wr').className = 'value hero muted';
+      document.getElementById('pfe-wr').textContent = '—'; document.getElementById('pfe-wr').className = 'value hero muted';
       document.getElementById('total').textContent = (v.count || 0).toLocaleString();
       document.getElementById('period').textContent = activeTfFilter + ' timeframe';
     }
@@ -1029,8 +1046,8 @@ function renderAll() {
   if (evalEl) {
     var th = cachedData.totalHolds || 0;
     var totalGenerated = (stats.totalAll||0) + th;
-    var holdRate = totalGenerated > 0 ? ((th / totalGenerated) * 100).toFixed(0) + '%' : '\\u2014';
-    evalEl.textContent = 'Total: ' + (stats.totalAll||0) + ' \\u00b7 Evaluated: ' + (stats.totalEvaluated||0) + ' \\u00b7 PFE Win Rate: ' + pct(stats.pfeWinRate) + ' \\u00b7 HOLD Rate: ' + holdRate;
+    var holdRate = totalGenerated > 0 ? ((th / totalGenerated) * 100).toFixed(0) + '%' : '—';
+    evalEl.textContent = 'Trade Calls: ' + (stats.totalAll||0) + ' · Evaluated (\u226560% conf): ' + (stats.totalEvaluated||0) + ' · PFE Win Rate: ' + pct(stats.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
   }
 
   // Tier cards
@@ -1044,7 +1061,7 @@ function renderAll() {
     }
     if (tier === 3) {
       var s3 = (assets||[]).slice(0,4).join(', ');
-      return '<span style="color:#8b949e">Stocks \\u00b7 Indices \\u00b7 Commodities \\u00b7 FX</span>' + (s3 ? '<br>' + s3 + (assets.length > 4 ? ' +' + (assets.length-4) + ' more' : '') : '');
+      return '<span style="color:#8b949e">Stocks · Indices · Commodities · FX</span>' + (s3 ? '<br>' + s3 + (assets.length > 4 ? ' +' + (assets.length-4) + ' more' : '') : '');
     }
     if (tier === 4) {
       return '<span style="color:#8b949e">Liquidity Filtered (Top 50 OI)</span><br>' + (assets ? assets.length : 0) + ' assets tracked';
@@ -1056,15 +1073,16 @@ function renderAll() {
     var t = bt[k]; if (!t) return '';
     var isTF = t.tier === 3;
     var tierHolds = hbt[String(t.tier)] || 0;
-    var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' HOLD calls \\u2014 engine is selective</div>' : '';
+    var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' HOLD calls — engine is selective</div>' : '';
     var gateLine = '';
     return '<div class="tier-card" style="border-color:'+t.color+'40">' +
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
-      (isTF ? ' <span class="tradfi-badge">Only on AlgoVault \\u2726</span>' : '') + '</div>' +
+      (isTF ? ' <span class="tradfi-badge">Only on AlgoVault ✦</span>' : '') + '</div>' +
       '<div class="tc-assets">' + tierAssetLabel(t.tier, t.assets) + '</div>' +
-      (t.count > 0 ? '<div class="tc-stats">' +
-        '<div class="tc-stat"><div class="tc-label">Trade Calls</div><div class="tc-val muted">' + t.count + '</div></div>' +
-        '<div class="tc-stat"><div class="tc-label">PFE Win Rate</div><div class="tc-val ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</div></div>' +
+      (t.count > 0 ? '<div class="tc-stats" style="display:flex;flex-direction:column;gap:4px">' +
+        '<div style="display:flex;justify-content:space-between"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + t.count.toLocaleString() + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + (t.evaluated || 0).toLocaleString() + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span class="tc-label">PFE Win Rate</span><span style="font-weight:700;font-size:20px" class="' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</span></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
       holdLine + gateLine +
     '</div>';
@@ -1088,7 +1106,7 @@ function renderAll() {
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'\\u2014';return '<tr><td><strong>'+tf+'</strong></td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>'+ap+'</td><td>'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'—';return '<tr><td><strong>'+tf+'</strong></td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>'+ap+'</td><td>'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
   } else { tfEl.innerHTML = '<tr><td colspan="5" class="empty">No data for this timeframe</td></tr>'; }
 
   // Asset tables
@@ -1130,12 +1148,20 @@ async function load() {
       {id:'all',label:'All Assets',color:'#8b949e'},
       {id:'1',label:'Tier 1',color:'#58a6ff'},
       {id:'2',label:'Tier 2',color:'#3fb950'},
-      {id:'3',label:'Tier 3 \\u2726',color:'#bc8cff'},
+      {id:'3',label:'Tier 3 ✦',color:'#bc8cff'},
       {id:'4',label:'Tier 4',color:'#d29922'},
     ].map(function(t){
       var isActive = activeTierFilter === t.id;
       var style = isActive ? 'border-color:'+t.color+';color:'+t.color+';background:'+t.color+'20' : '';
       return '<div class="tier-tab'+(isActive?' active':'')+'" data-tier="'+t.id+'" data-color="'+t.color+'" style="'+style+'" onclick="setTierFilter(\\''+t.id+'\\')">'+t.label+'</div>';
+    }).join('');
+
+    // Exchange filter tabs
+    var exTabs = document.getElementById('exchange-tabs');
+    var exchanges = [{id:'all',label:'ALL Exchanges'},{id:'HL',label:'Hyperliquid'},{id:'BINANCE',label:'Binance'},{id:'BYBIT',label:'Bybit'},{id:'OKX',label:'OKX'},{id:'BITGET',label:'Bitget'}];
+    exTabs.innerHTML = exchanges.map(function(ex){
+      var isActive = activeExchangeFilter === ex.id;
+      return '<div class="tab'+(isActive?' active':'')+'" data-ex="'+ex.id+'" style="cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid '+(isActive?'#58a6ff':'#30363d')+';color:'+(isActive?'#58a6ff':'#8b949e')+';background:'+(isActive?'#58a6ff20':'#161b22')+'" onclick="setExchangeFilter(\\''+ex.id+'\\')">'+ex.label+'</div>';
     }).join('');
 
     // TF tabs
@@ -1157,9 +1183,9 @@ async function load() {
         if (bands.length > 0) {
           var cbEl = document.getElementById('cb-body');
           cbEl.innerHTML = bands.map(function(b) {
-            var wr = b.pfeWinRate != null ? (b.pfeWinRate * 100).toFixed(1) + '%' : '\\u2014';
+            var wr = b.pfeWinRate != null ? (b.pfeWinRate * 100).toFixed(1) + '%' : '—';
             var wrC = b.pfeWinRate != null ? (b.pfeWinRate >= 0.6 ? 'green' : b.pfeWinRate >= 0.45 ? 'gold' : 'red') : 'muted';
-            var avgP = b.avgPfePct != null ? b.avgPfePct.toFixed(2) + '%' : '\\u2014';
+            var avgP = b.avgPfePct != null ? b.avgPfePct.toFixed(2) + '%' : '—';
             return '<tr><td><strong>' + b.band + '%</strong></td><td>' + b.evaluated + '</td><td class="' + wrC + '">' + wr + '</td><td>' + avgP + '</td><td>' + b.buyCount + ' / ' + b.sellCount + '</td></tr>';
           }).join('');
           document.getElementById('cb-section').style.display = 'block';
@@ -1175,7 +1201,7 @@ async function load() {
         document.getElementById('onchain-badge').style.display = 'flex';
         var totalVerified = md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
         var latest = md.batches[0];
-        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published \\u00b7 ' + totalVerified.toLocaleString() + ' calls verified \\u00b7 <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan \\u2192</a>';
+        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published · ' + totalVerified.toLocaleString() + ' calls verified · <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan →</a>';
       }
     } catch(e) { /* merkle stats are best-effort */ }
 
