@@ -4,18 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AlgoVault — The Brain Layer for AI Trading Agents</title>
-<meta name="description" content="Composite trade calls across crypto and TradFi perpetuals on Hyperliquid. Multi-factor scoring engine with regime-aware filtering. MCP-native.">
+<meta name="description" content="Composite trade calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget). Multi-factor scoring engine with regime-aware filtering. MCP-native.">
 <meta name="keywords" content="crypto trade calls, MCP server, Hyperliquid perps, funding rate arbitrage, AI trading agent, market regime, x402, USDC payments, composite trade call, Model Context Protocol">
 <link rel="canonical" href="https://algovault.com">
 <meta property="og:title" content="AlgoVault — The Brain Layer for AI Trading Agents">
-<meta property="og:description" content="Composite quant trade calls across crypto and TradFi perps. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection via MCP.">
+<meta property="og:description" content="Composite quant trade calls across 5 exchanges — Hyperliquid, Binance, Bybit, OKX, Bitget. BUY/SELL/HOLD with confidence scores, funding arb scanning, market regime detection via MCP.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://algovault.com">
 <meta property="og:image" content="https://algovault.com/logo.png">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:site" content="@AlgoVaultLabs">
 <meta name="twitter:title" content="AlgoVault — The Brain Layer for AI Trading Agents">
-<meta name="twitter:description" content="Composite trade calls, funding arb, and market regime detection for Hyperliquid perps via MCP.">
+<meta name="twitter:description" content="Composite trade calls, funding arb, and market regime detection across 5 exchanges via MCP.">
 <meta name="twitter:image" content="https://algovault.com/logo.png">
 <link rel="icon" type="image/png" href="/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -54,7 +54,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Trade call intelligence for AI trading agents. Composite quant trade calls across crypto and TradFi perpetuals, cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
+  "description": "Trade call intelligence for AI trading agents. Composite quant trade calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "BTC + ETH, 15m and 1h timeframes, ~100 calls/day" },
@@ -114,6 +114,14 @@ tailwind.config = {
       </a>
     </div>
     <p class="mt-4 text-xs text-gray-600">No signup required. Free tier includes BTC + ETH on 15m and 1h.</p>
+    <div class="mt-6 flex items-center justify-center gap-3 flex-wrap">
+      <span class="text-gray-600 text-xs uppercase tracking-wider">Analyzing</span>
+      <span class="px-3 py-1 bg-navy-800 border border-white/5 rounded-full text-xs font-semibold" style="color:#4ade80">Hyperliquid</span>
+      <span class="px-3 py-1 bg-navy-800 border border-white/5 rounded-full text-xs font-semibold" style="color:#F0B90B">Binance</span>
+      <span class="px-3 py-1 bg-navy-800 border border-white/5 rounded-full text-xs font-semibold" style="color:#F7A600">Bybit</span>
+      <span class="px-3 py-1 bg-navy-800 border border-white/5 rounded-full text-xs font-semibold" style="color:#fff">OKX</span>
+      <span class="px-3 py-1 bg-navy-800 border border-white/5 rounded-full text-xs font-semibold" style="color:#00C8BC">Bitget</span>
+    </div>
   </div>
 </section>
 
@@ -283,8 +291,8 @@ tailwind.config = {
         <div class="text-gray-500 text-xs mt-1">Timeframes</div>
       </div>
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 text-center">
-        <div class="text-2xl sm:text-3xl font-bold text-white">3</div>
-        <div class="text-gray-500 text-xs mt-1">Venues Compared</div>
+        <div class="text-2xl sm:text-3xl font-bold text-white">5</div>
+        <div class="text-gray-500 text-xs mt-1">Exchanges Analyzed</div>
       </div>
     </div>
 
@@ -528,7 +536,7 @@ tailwind.config = {
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD trade calls, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid. It works with any MCP-compatible client including Claude, Cursor, and custom agents.
+          AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD trade calls, cross-venue funding rate arbitrage scanning, and market regime detection across 5 exchanges &mdash; Hyperliquid, Binance, Bybit, OKX, and Bitget. It works with any MCP-compatible client including Claude, Cursor, and custom agents.
         </div>
       </details>
 
@@ -548,7 +556,7 @@ tailwind.config = {
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          AlgoVault uses Hyperliquid as its primary data source for price action, candles, and open interest. For cross-venue analysis (funding arbitrage and market regime sentiment), it also compares rates from Binance and Bybit. All data comes from public APIs &mdash; no exchange account or API keys required.
+          AlgoVault generates full trade calls on 5 exchanges: Hyperliquid, Binance, Bybit, OKX, and Bitget. Each venue uses native candle, open interest, funding rate, and volume data. TradFi perpetuals (stocks, commodities, indices, FX) are available on Hyperliquid. Cross-venue funding arbitrage scanning covers HL, Binance, and Bybit. All data comes from public APIs &mdash; no exchange account or API keys required.
         </div>
       </details>
 
@@ -605,7 +613,7 @@ tailwind.config = {
       "name": "What is AlgoVault?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD trade calls, cross-venue funding rate arbitrage scanning, and market regime detection across crypto and TradFi perpetuals on Hyperliquid."
+        "text": "AlgoVault is an MCP server that provides AI trading agents with composite BUY/SELL/HOLD trade calls, cross-venue funding rate arbitrage scanning, and market regime detection across 5 exchanges — Hyperliquid, Binance, Bybit, OKX, and Bitget."
       }
     },
     {
@@ -621,7 +629,7 @@ tailwind.config = {
       "name": "What exchanges does AlgoVault support?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "AlgoVault uses Hyperliquid as its primary data source. For cross-venue analysis, it also compares funding rates from Binance and Bybit. All data comes from public APIs with no exchange account required."
+        "text": "AlgoVault generates full trade calls on 5 exchanges: Hyperliquid, Binance, Bybit, OKX, and Bitget. Each venue uses native candle, OI, funding rate, and volume data. TradFi perps are Hyperliquid-exclusive. All data from public APIs — no exchange account required."
       }
     },
     {
