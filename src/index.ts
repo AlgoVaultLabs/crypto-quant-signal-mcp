@@ -866,7 +866,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   <!-- Signal type + Tamper-Proof row -->
   <div class="call-type-verification-row">
     <div class="call-type-section section"><h2>By Call Type</h2>
-      <table><thead><tr><th>Type</th><th>Count</th><th>PFE Win Rate</th></tr></thead>
+      <table><thead><tr><th>Type</th><th>Trade Calls</th><th>Evaluated</th><th>PFE Win Rate</th></tr></thead>
       <tbody id="by-type"></tbody></table>
     </div>
     <div class="tamper-proof-card" style="background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:20px;margin-top:28px">
@@ -888,14 +888,14 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   <div class="section">
     <h2>Performance by Timeframe</h2>
     <div class="tabs" id="tf-tabs"></div>
-    <table><thead><tr><th>Timeframe</th><th>Trade Calls</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
+    <table><thead><tr><th>Timeframe</th><th>Trade Calls</th><th>Evaluated</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
   </div>
 
   <!-- Confidence Band Analysis -->
   <div class="section" id="cb-section" style="display:none">
     <h2>Performance by Confidence Band</h2>
-    <table><thead><tr><th>Band</th><th>Trade Calls</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
+    <table><thead><tr><th>Band</th><th>Trade Calls</th><th>Evaluated</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
     <tbody id="cb-body"></tbody></table>
   </div>
 
@@ -1123,10 +1123,10 @@ function renderAll() {
     var g=allSignals.filter(function(s){return s.signal===type;});
     var ePFE=g.filter(function(s){return s.pfe_return_pct!=null&&type!=='HOLD';});
     var pfeW=ePFE.filter(pfeWin);
-    typeCounts[type]={count:g.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
+    typeCounts[type]={count:g.length,evaluated:ePFE.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
   });
   var types=Object.entries(typeCounts);
-  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('') : '<tr><td colspan="3" class="empty">No trade calls yet</td></tr>';
+  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td>'+v.count+'</td><td>'+v.evaluated+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No trade calls yet</td></tr>';
 
   // TF table
   var tfEl = document.getElementById('by-timeframe');
@@ -1134,8 +1134,8 @@ function renderAll() {
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'—';return '<tr><td><strong>'+tf+'</strong></td><td>'+v.count+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>'+ap+'</td><td>'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
-  } else { tfEl.innerHTML = '<tr><td colspan="5" class="empty">No data for this timeframe</td></tr>'; }
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'—';return '<tr><td><strong>'+tf+'</strong></td><td>'+v.count+'</td><td>'+v.evaluated+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>'+ap+'</td><td>'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
+  } else { tfEl.innerHTML = '<tr><td colspan="6" class="empty">No data for this timeframe</td></tr>'; }
 
   // Asset tables
   var tfSigs = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s){return s.timeframe===activeTfFilter;});
@@ -1213,7 +1213,7 @@ async function load() {
             var wr = b.pfeWinRate != null ? (b.pfeWinRate * 100).toFixed(1) + '%' : '—';
             var wrC = b.pfeWinRate != null ? (b.pfeWinRate >= 0.6 ? 'green' : b.pfeWinRate >= 0.45 ? 'gold' : 'red') : 'muted';
             var avgP = b.avgPfePct != null ? b.avgPfePct.toFixed(2) + '%' : '—';
-            return '<tr><td><strong>' + b.band + '%</strong></td><td>' + b.evaluated + '</td><td class="' + wrC + '">' + wr + '</td><td>' + avgP + '</td><td>' + b.buyCount + ' / ' + b.sellCount + '</td></tr>';
+            return '<tr><td><strong>' + b.band + '%</strong></td><td>' + b.total + '</td><td>' + b.evaluated + '</td><td class="' + wrC + '">' + wr + '</td><td>' + avgP + '</td><td>' + b.buyCount + ' / ' + b.sellCount + '</td></tr>';
           }).join('');
           document.getElementById('cb-section').style.display = 'block';
         }
