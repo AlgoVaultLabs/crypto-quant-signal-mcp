@@ -222,6 +222,8 @@ export interface SignalRecord {
   // v1.4.1: 1-candle confirmation return
   return_1candle: number | null;
   created_at: number;
+  // v1.6: exchange source for multi-venue backfill
+  exchange?: string;
 }
 
 export interface PerformanceStats {

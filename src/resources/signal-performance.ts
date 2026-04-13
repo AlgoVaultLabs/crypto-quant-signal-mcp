@@ -1,6 +1,6 @@
 import { getPerformanceStatsAsync, getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes } from '../lib/performance-db.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
-import type { Candle, PerformanceStats, SignalRecord } from '../types.js';
+import type { Candle, ExchangeId, PerformanceStats, SignalRecord } from '../types.js';
 
 /** Timeframe → milliseconds per candle */
 const TF_MS: Record<string, number> = {
@@ -23,8 +23,6 @@ const EVAL_CANDLES: Record<string, number> = {
  * Called lazily on resource access — processes max 10 signals per call.
  */
 export async function runBackfill(): Promise<void> {
-  const adapter = getAdapter();
-
   try {
     const signals = await getSignalsNeedingUnifiedBackfillAsync();
     // Process max 50 per resource access to keep it lightweight
@@ -40,6 +38,7 @@ export async function runBackfill(): Promise<void> {
         const endTimeNeeded = signalTimeMs + (evalCount + 1) * candleMs;
         if (Date.now() < endTimeNeeded) continue; // not ready yet
 
+        const adapter = getAdapter((sig.exchange as ExchangeId) || 'HL');
         const candles = await adapter.getCandles(sig.coin, sig.timeframe, signalTimeMs);
         const relevant = candles.filter(c => c.time >= signalTimeMs);
         if (relevant.length < 1) continue;
