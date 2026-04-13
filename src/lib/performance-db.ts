@@ -604,7 +604,7 @@ export async function getSignalsNeedingUnifiedBackfillAsync(): Promise<SignalRec
 
   // Build a CASE-based query: only select signals old enough for their timeframe
   // We use a generous approach: fetch all pending, then filter in JS (simpler across SQLite/PG)
-  const sql = `SELECT * FROM signals WHERE outcome_price IS NULL ORDER BY created_at ASC LIMIT 200`;
+  const sql = `SELECT * FROM signals WHERE outcome_price IS NULL ORDER BY created_at ASC LIMIT 5000`;
 
   let rows: SignalRecord[];
   if (isPg && b instanceof PgBackend) {

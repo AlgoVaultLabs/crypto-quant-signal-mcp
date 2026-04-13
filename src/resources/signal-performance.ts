@@ -27,8 +27,8 @@ export async function runBackfill(): Promise<void> {
 
   try {
     const signals = await getSignalsNeedingUnifiedBackfillAsync();
-    // Process max 10 per resource access to keep it lightweight
-    const batch = signals.slice(0, 10);
+    // Process max 50 per resource access to keep it lightweight
+    const batch = signals.slice(0, 50);
 
     for (const sig of batch) {
       try {

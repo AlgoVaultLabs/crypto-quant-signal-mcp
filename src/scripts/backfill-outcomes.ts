@@ -136,114 +136,136 @@ function computePFEMAE(
 }
 
 async function main() {
-  console.log(`[${ts()}] Starting v1.4 PFE/MAE outcome backfill...`);
+  console.log(`[${ts()}] Starting v1.4 PFE/MAE outcome backfill (looping until queue empty)...`);
 
   const adapter = getAdapter();
-  let filled = 0;
-  let skipped = 0;
-  let errors = 0;
+  let totalFilled = 0;
+  let totalSkipped = 0;
+  let totalErrors = 0;
+  let batchNum = 0;
 
-  const signals = await getSignalsNeedingUnifiedBackfillAsync();
-  if (signals.length === 0) {
-    console.log(`[${ts()}] No signals need backfill.`);
-    closeDb();
-    return;
-  }
+  // Loop until no more signals need backfill
+  while (true) {
+    batchNum++;
+    let filled = 0;
+    let skipped = 0;
+    let errors = 0;
 
-  console.log(`[${ts()}] ${signals.length} signals need outcome backfill`);
-
-  // Group signals by coin+timeframe to batch candle fetches
-  const groups = new Map<string, SignalRecord[]>();
-  for (const sig of signals) {
-    const key = `${sig.coin}:${sig.timeframe}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(sig);
-  }
-
-  console.log(`[${ts()}] Grouped into ${groups.size} coin/timeframe batches`);
-
-  for (const [key, sigs] of groups) {
-    const [coin, timeframe] = key.split(':');
-    const evalCount = EVAL_CANDLES[timeframe] || 8;
-    const candleMs = TF_MS[timeframe];
-    if (!candleMs) {
-      console.log(`[${ts()}] Unknown timeframe ${timeframe}, skipping ${sigs.length} signals`);
-      skipped += sigs.length;
-      continue;
+    const signals = await getSignalsNeedingUnifiedBackfillAsync();
+    if (signals.length === 0) {
+      console.log(`[${ts()}] No more signals need backfill.`);
+      break;
     }
 
-    // For each signal, fetch candles starting from signal creation time
-    for (const sig of sigs) {
-      try {
-        const signalTimeMs = sig.created_at * 1000;
-        // Need evalCount candles after signal time + 1 buffer
-        const endTimeNeeded = signalTimeMs + (evalCount + 1) * candleMs;
-        const now = Date.now();
+    console.log(`[${ts()}] Batch ${batchNum}: ${signals.length} signals need outcome backfill`);
 
-        // Double-check: enough time has passed for full evaluation window
-        if (now < endTimeNeeded) {
-          skipped++;
-          continue;
-        }
+    // Group signals by coin+timeframe to batch candle fetches
+    const groups = new Map<string, SignalRecord[]>();
+    for (const sig of signals) {
+      const key = `${sig.coin}:${sig.timeframe}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(sig);
+    }
 
-        // Fetch candles from signal time forward
-        const candles = await adapter.getCandles(coin, timeframe, signalTimeMs);
+    console.log(`[${ts()}] Grouped into ${groups.size} coin/timeframe batches`);
 
-        // Filter candles: only those AFTER signal creation
-        const relevantCandles = candles.filter(c => c.time >= signalTimeMs);
+    for (const [key, sigs] of groups) {
+      const [coin, timeframe] = key.split(':');
+      const evalCount = EVAL_CANDLES[timeframe] || 8;
+      const candleMs = TF_MS[timeframe];
+      if (!candleMs) {
+        console.log(`[${ts()}] Unknown timeframe ${timeframe}, skipping ${sigs.length} signals`);
+        skipped += sigs.length;
+        continue;
+      }
 
-        if (relevantCandles.length < 1) {
-          console.log(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] — no candles after signal time, skipping`);
-          skipped++;
+      // For each signal, fetch candles starting from signal creation time
+      for (const sig of sigs) {
+        try {
+          const signalTimeMs = sig.created_at * 1000;
+          // Need evalCount candles after signal time + 1 buffer
+          const endTimeNeeded = signalTimeMs + (evalCount + 1) * candleMs;
+          const now = Date.now();
+
+          // Double-check: enough time has passed for full evaluation window
+          if (now < endTimeNeeded) {
+            skipped++;
+            continue;
+          }
+
+          // Fetch candles from signal time forward
+          const candles = await adapter.getCandles(coin, timeframe, signalTimeMs);
+
+          // Filter candles: only those AFTER signal creation
+          const relevantCandles = candles.filter(c => c.time >= signalTimeMs);
+
+          if (relevantCandles.length < 1) {
+            console.log(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] — no candles after signal time, skipping`);
+            skipped++;
+            await sleep(DELAY_BETWEEN_FETCHES_MS);
+            continue;
+          }
+
+          const result = computePFEMAE(sig, relevantCandles, evalCount);
+          if (!result) {
+            skipped++;
+            await sleep(DELAY_BETWEEN_FETCHES_MS);
+            continue;
+          }
+
+          await updateSignalOutcomes(sig.id!, {
+            outcome_price: result.outcomePrice,
+            outcome_return_pct: result.outcomeReturnPct,
+            return_1candle: result.return1candle,
+            pfe_price: result.pfePrice,
+            pfe_return_pct: result.pfeReturnPct,
+            mae_price: result.maePrice,
+            mae_return_pct: result.maeReturnPct,
+            pfe_candles: result.pfeCandles,
+          });
+
+          // Log with P&L perspective
+          const isBuy = sig.signal === 'BUY';
+          const pnlReturn = isBuy ? result.outcomeReturnPct : -result.outcomeReturnPct;
+          const pfeDirection = isBuy ? result.pfeReturnPct : -result.pfeReturnPct;
+          const maeDirection = isBuy ? result.maeReturnPct : -result.maeReturnPct;
+          const dir = pnlReturn >= 0 ? '+' : '';
+          const sigTime = new Date(sig.created_at * 1000).toISOString().slice(11, 16);
+
+          console.log(
+            `[${ts()}] ${coin} ${sig.signal} [${timeframe}] from ${sigTime} → ` +
+            `outcome: ${dir}${pnlReturn.toFixed(2)}% | ` +
+            `PFE: +${pfeDirection.toFixed(2)}% (candle ${result.pfeCandles}) | ` +
+            `MAE: ${maeDirection.toFixed(2)}%`
+          );
+          filled++;
           await sleep(DELAY_BETWEEN_FETCHES_MS);
-          continue;
-        }
-
-        const result = computePFEMAE(sig, relevantCandles, evalCount);
-        if (!result) {
-          skipped++;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] backfill error: ${msg}`);
+          errors++;
           await sleep(DELAY_BETWEEN_FETCHES_MS);
-          continue;
         }
-
-        await updateSignalOutcomes(sig.id!, {
-          outcome_price: result.outcomePrice,
-          outcome_return_pct: result.outcomeReturnPct,
-          return_1candle: result.return1candle,
-          pfe_price: result.pfePrice,
-          pfe_return_pct: result.pfeReturnPct,
-          mae_price: result.maePrice,
-          mae_return_pct: result.maeReturnPct,
-          pfe_candles: result.pfeCandles,
-        });
-
-        // Log with P&L perspective
-        const isBuy = sig.signal === 'BUY';
-        const pnlReturn = isBuy ? result.outcomeReturnPct : -result.outcomeReturnPct;
-        const pfeDirection = isBuy ? result.pfeReturnPct : -result.pfeReturnPct;
-        const maeDirection = isBuy ? result.maeReturnPct : -result.maeReturnPct;
-        const dir = pnlReturn >= 0 ? '+' : '';
-        const sigTime = new Date(sig.created_at * 1000).toISOString().slice(11, 16);
-
-        console.log(
-          `[${ts()}] ${coin} ${sig.signal} [${timeframe}] from ${sigTime} → ` +
-          `outcome: ${dir}${pnlReturn.toFixed(2)}% | ` +
-          `PFE: +${pfeDirection.toFixed(2)}% (candle ${result.pfeCandles}) | ` +
-          `MAE: ${maeDirection.toFixed(2)}%`
-        );
-        filled++;
-        await sleep(DELAY_BETWEEN_FETCHES_MS);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] backfill error: ${msg}`);
-        errors++;
-        await sleep(DELAY_BETWEEN_FETCHES_MS);
       }
     }
+
+    totalFilled += filled;
+    totalSkipped += skipped;
+    totalErrors += errors;
+    console.log(`[${ts()}] Batch ${batchNum} done: ${filled} filled, ${skipped} skipped, ${errors} errors. Checking for more...`);
+
+    // If everything in this batch was skipped (not ready yet), stop looping
+    if (filled === 0 && errors === 0) {
+      console.log(`[${ts()}] All remaining signals are not ready yet. Stopping.`);
+      break;
+    }
+
+    // Pause between batches to avoid hammering the DB
+    await sleep(2000);
   }
 
   closeDb();
-  console.log(`[${ts()}] Backfill complete: ${filled} filled, ${skipped} skipped (not ready), ${errors} errors.`);
+  console.log(`[${ts()}] Backfill complete: ${totalFilled} filled, ${totalSkipped} skipped (not ready), ${totalErrors} errors across ${batchNum} batch(es).`);
 }
 
 main().catch((err) => {

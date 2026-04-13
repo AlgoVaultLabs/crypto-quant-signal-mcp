@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
-import { getSignalPerformance } from './resources/signal-performance.js';
+import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch } from './lib/performance-db.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
@@ -507,6 +507,11 @@ async function startHttp() {
     console.log(`Health check: http://0.0.0.0:${port}/health`);
     // Warm tier caches in background (xyz symbols, OI rankings, liquid memes)
     warmTierCaches().catch(() => {});
+
+    // Auto-backfill: evaluate pending signals every 5 minutes
+    console.log('[backfill] Auto-backfill enabled: every 5 minutes');
+    setTimeout(() => runBackfill().catch(() => {}), 10_000); // first run after 10s
+    setInterval(() => runBackfill().catch(() => {}), 300_000); // then every 5 min
   });
 
   const shutdown = () => {
