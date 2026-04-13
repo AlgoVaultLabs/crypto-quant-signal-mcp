@@ -4,14 +4,14 @@
 
 # crypto-quant-signal-mcp
 
-The call intelligence layer for AI trading agents — composite quant calls across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP.
+The call intelligence layer for AI trading agents — composite quant calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue arbitrage detection, and regime-aware market classification via MCP.
 
 [![npm version](https://img.shields.io/npm/v/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![On-Chain Verified](https://img.shields.io/badge/Track_Record-On--Chain_Verified-blue?logo=ethereum)](https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81)
 
-**[Live Track Record](https://algovault.com/track-record)** — 90%+ directional accuracy across 900+ trade calls. Public, no login required.
+**[Live Track Record](https://algovault.com/track-record)** — 91%+ directional accuracy across 19,000+ trade calls on 5 exchanges. Public, no login required.
 
 ---
 
@@ -25,10 +25,10 @@ AlgoVault is different. We give your agent **one answer**: a directional verdict
 
 - **Composite scoring, not single-indicator noise.** Multiple orthogonal signals — momentum oscillators, trend structure, derivatives positioning, volume dynamics, open interest flow — fused into a single weighted verdict. The weights are calibrated from live market outcome data, not textbook defaults.
 - **Regime-aware call generation.** Calls are filtered through a market regime classifier before emission. The engine knows when to issue calls and when to stay silent — a trend-following setup in a ranging market gets suppressed, not broadcast.
-- **Cross-venue intelligence.** Funding rates from Hyperliquid, Binance, and Bybit are normalized and compared in real-time. Nobody else does cross-venue derivatives analysis via MCP.
+- **Cross-venue intelligence.** Full signal generation on 5 exchanges — Hyperliquid, Binance, Bybit, OKX, and Bitget — with native candle, OI, funding, and volume data per venue. Cross-venue funding arbitrage scanning across all venues. Nobody else does multi-exchange derivatives analysis via MCP.
 - **Published track record with every release.** Every call is recorded with outcome prices at multiple horizons. Win rate, profit factor, and expected value are computed continuously. No cherry-picking, no survivorship bias.
 - **Adaptive scoring.** Indicator weights are retuned monthly from outcome data. The engine learns what works and adjusts — the call you get today is better than the one from last month.
-- **Crypto + TradFi coverage.** 290+ assets — standard crypto perps, TradFi perpetuals (stocks, indices, commodities, FX via Hyperliquid's xyz dex), and liquidity-filtered meme coins. Assets are classified into quality tiers with institutional-grade call filtering.
+- **Crypto + TradFi coverage.** 290+ assets across 5 exchanges — standard crypto perps on all venues, TradFi perpetuals (stocks, indices, commodities, FX) on Hyperliquid, and liquidity-filtered meme coins. Assets are classified into quality tiers with per-exchange signal generation.
 
 ---
 
@@ -51,6 +51,8 @@ No code. No API key. No install.
 
 > "Get me a trade signal for ETH on the 4h timeframe"
 
+> "Get me a trade signal for BTC on Binance, 1h timeframe"
+
 ![BTC Signal Result](https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/BTC-signal.png)
 
 That's it. Your Claude now has a quant analyst built in.
@@ -61,7 +63,7 @@ That's it. Your Claude now has a quant analyst built in.
 
 ### `get_trade_signal`
 
-Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any supported asset — crypto perps, TradFi perpetuals (stocks, indices, commodities, FX), and liquidity-filtered meme coins on Hyperliquid.
+Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any supported asset on any of 5 supported exchanges — crypto perps, TradFi perpetuals (stocks, indices, commodities, FX), and liquidity-filtered meme coins on Hyperliquid.
 
 Under the hood: a multi-factor scoring engine evaluates momentum, trend structure, derivatives sentiment, open interest dynamics, and volume conviction. Scores pass through regime-aware filters and adaptive post-processing gates — including funding flow analysis, volatility regime detection, and trend persistence decay — before a final verdict is emitted.
 
@@ -70,13 +72,14 @@ Only high-conviction calls are generated. The engine is designed to stay silent 
 **Parameters:**
 - `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, `"GOLD"`, `"TSLA"`, or any of 290+ supported assets
 - `timeframe` (string, default `"15m"`): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`
+- `exchange` (string, default `"HL"`): `"HL"` (Hyperliquid), `"BINANCE"`, `"BYBIT"`, `"OKX"`, `"BITGET"`. TradFi assets (GOLD, TSLA, etc.) are HL-only.
 - `includeReasoning` (boolean, default `true`): Human-readable explanation of the call logic
 
 **Output includes:** call direction, confidence score (0–100), all computed indicator values, detected market regime, reasoning narrative, and `_algovault` metadata for downstream tool composability.
 
 ### `scan_funding_arb`
 
-Scans cross-venue funding rate differentials across Hyperliquid, Binance, and Bybit. Normalizes hourly vs 8-hour rate conventions, computes basis-point spreads, and ranks opportunities by composite score (spread magnitude, time urgency, and funding conviction from 24h history).
+Scans cross-venue funding rate differentials across Hyperliquid, Binance, and Bybit. Normalizes hourly vs 8-hour rate conventions, computes basis-point spreads, and ranks opportunities by composite score (spread magnitude, time urgency, and funding conviction from 24h history). OKX and Bitget funding data is available via their respective adapters — arb scanning expansion is planned.
 
 This is the only MCP server that provides cross-venue funding arbitrage intelligence — long one exchange, short another, capture the spread.
 
@@ -95,6 +98,7 @@ Uses a multi-dimensional classification approach combining directional strength 
 **Parameters:**
 - `coin` (string, required): Asset symbol
 - `timeframe` (string, default `"4h"`): Candle timeframe for analysis
+- `exchange` (string, default `"HL"`): Exchange to analyze — same options as get_trade_signal
 
 **Output includes:** regime label, confidence score, underlying metrics (trend strength, volatility interpretation, price structure), cross-venue funding sentiment, and a plain-English strategy suggestion.
 
@@ -120,6 +124,7 @@ Every call is tracked from emission to outcome. No exceptions.
 - Remote mode: PostgreSQL with automated outcome backfill
 - Local mode: SQLite at `~/.crypto-quant-signal/performance.db`
 - Only high-confidence BUY/SELL calls are tracked — HOLD is excluded
+- Signals are tracked per exchange — the track record shows performance on each venue independently
 
 ### On-Chain Verification
 
@@ -136,6 +141,7 @@ Every call is hashed (keccak256) at creation time and anchored on Base L2 via da
 
 | Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
+| Exchanges | HL only | All 5 | All 5 | All 5 | All 5 |
 | Assets | BTC, ETH | All 290+ | All 290+ | All 290+ | All 290+ |
 | Asset classes | Crypto only | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
 | Timeframes | 15m, 1h | All 11 | All 11 | All 11 | All 11 |
@@ -227,15 +233,19 @@ MCP Server (Express + @modelcontextprotocol/sdk)
   │    └─ Liquidity filter for meme/micro assets
   │
   ├─ Exchange Adapter Layer
-  │    └─ Hyperliquid (standard + xyz TradFi perps) · Binance, Bybit (funding data)
+  │    ├─ Hyperliquid (crypto + TradFi xyz perps)
+  │    ├─ Binance USDT-M Futures
+  │    ├─ Bybit Linear
+  │    ├─ OKX Swap
+  │    └─ Bitget USDT-M
   │
   ├─ Performance Tracker
   │    └─ PostgreSQL (remote) / SQLite (local)
   │
-  └─ Hyperliquid Public API (free, no auth)
+  └─ Exchange Public APIs (free, no auth — all 5 venues)
 ```
 
-**Exchange adapter pattern:** All exchange interactions go through the `ExchangeAdapter` interface — supporting both standard crypto perps and xyz TradFi perps on Hyperliquid, with Binance and Bybit for cross-venue funding comparison.
+**Exchange adapter pattern:** All exchange interactions go through the `ExchangeAdapter` interface — supporting full signal generation on all 5 exchanges. Each adapter implements candles, OI, funding rates, and current price via native exchange APIs. TradFi perps are Hyperliquid-exclusive.
 
 ---
 
@@ -267,6 +277,8 @@ MIT
 
 ---
 
-Built by [AlgoVault Labs](https://algovault.com) — call intelligence for the autonomous trading era.
+> **Disclaimer:** AlgoVault provides directional entry interpretation for AI agents. Exit timing is determined by your agent or strategy. This is not financial advice. Past performance does not guarantee future results.
+
+Built by [AlgoVault Labs](https://algovault.com)
 
 [Landing page](https://algovault.com) · [API endpoint](https://api.algovault.com/mcp)
