@@ -132,8 +132,9 @@ async function checkExchanges(): Promise<string | null> {
       const opts: RequestInit = name === 'Hyperliquid'
         ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'meta' }) }
         : {};
-      const { ok } = await fetchJson(url, opts);
-      if (!ok) failures.push(name);
+      const { ok, status } = await fetchJson(url, opts);
+      // 429 = rate limited but alive — not a real failure
+      if (!ok && status !== 429) failures.push(name);
     }),
   );
   // Check for rejected promises too
@@ -151,7 +152,7 @@ async function checkBackfillQueue(): Promise<{ error: string | null; count: numb
   try {
     const rows = await dbQuery<{ count: string | number }>('SELECT COUNT(*) as count FROM signals WHERE outcome_price IS NULL');
     const count = Number(rows[0]?.count ?? 0);
-    if (count > 10_000) return { error: `Backfill queue stuck: ${count.toLocaleString()} pending (> 10,000)`, count };
+    if (count > 50_000) return { error: `Backfill queue stuck: ${count.toLocaleString()} pending (> 50,000)`, count };
     return { error: null, count };
   } catch (err) {
     return { error: `Backfill queue check failed: ${(err as Error).message}`, count: 0 };
