@@ -821,6 +821,7 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
       timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI),
       pfe_return_pct: s.pfe_return_pct,
       created_at: s.created_at,
+      exchange: s.exchange || 'HL',
     })),
     methodology: METHODOLOGY,
   };
