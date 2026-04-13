@@ -14,4 +14,5 @@ RUN npm ci --production
 COPY --from=builder /app/dist/ ./dist/
 EXPOSE 3000
 ENV TRANSPORT=http
+USER node
 CMD ["node", "dist/index.js"]

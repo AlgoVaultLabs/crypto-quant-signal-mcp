@@ -65,6 +65,9 @@ export function invalidateCacheForCustomer(customerId: string): void {
 export async function validateApiKey(apiKey: string): Promise<StripeValidation> {
   if (!stripe) return { valid: false };
 
+  // Validate key format to prevent query injection
+  if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return { valid: false };
+
   // Check cache first
   const cached = cache.get(apiKey);
   if (cached && Date.now() < cached.expiresAt) {

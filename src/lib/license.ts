@@ -9,6 +9,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { verifyX402Payment, isX402Configured } from './x402.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
+import { dbExec, dbRun, dbQuery } from './performance-db.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 
 const FREE_COINS = new Set(['BTC', 'ETH']);
@@ -197,6 +198,7 @@ export function freeGateMessage(coin: string, timeframe: string): string {
 }
 
 // ── Call count tracking for quota enforcement ──
+// In-memory map is the hot path; DB is write-through for persistence across restarts.
 
 interface CallTracker {
   count: number;
@@ -205,6 +207,52 @@ interface CallTracker {
 
 const callTrackers = new Map<string, CallTracker>();
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+let quotaDbInitialized = false;
+
+/** Initialize quota_usage table and load persisted counts into memory. */
+export function initQuotaDb(): void {
+  if (quotaDbInitialized) return;
+  try {
+    dbExec(`CREATE TABLE IF NOT EXISTS quota_usage (
+      tracker_key TEXT PRIMARY KEY,
+      call_count INTEGER NOT NULL DEFAULT 0,
+      period_start TEXT NOT NULL
+    )`);
+    // Load persisted counts into memory (dbQuery is always async)
+    const now = Date.now();
+    dbQuery<{ tracker_key: string; call_count: string; period_start: string }>(
+      'SELECT tracker_key, call_count, period_start FROM quota_usage'
+    ).then(r => loadQuotaRows(r, now)).catch(() => {});
+    quotaDbInitialized = true;
+  } catch {
+    // DB not ready yet — will retry on next call
+  }
+}
+
+function loadQuotaRows(rows: { tracker_key: string; call_count: string; period_start: string }[], now: number): void {
+  for (const row of rows) {
+    const periodStart = new Date(row.period_start).getTime();
+    if (now - periodStart > MONTH_MS) continue; // expired period, skip
+    callTrackers.set(row.tracker_key, {
+      count: Number(row.call_count),
+      periodStart,
+    });
+  }
+}
+
+function persistTracker(key: string, tracker: CallTracker): void {
+  try {
+    dbRun(
+      `INSERT INTO quota_usage (tracker_key, call_count, period_start)
+       VALUES (?, ?, ?)
+       ON CONFLICT (tracker_key) DO UPDATE SET call_count = ?, period_start = ?`,
+      key, tracker.count, new Date(tracker.periodStart).toISOString(),
+      tracker.count, new Date(tracker.periodStart).toISOString()
+    );
+  } catch {
+    // Best-effort persistence — don't block the request
+  }
+}
 
 function getCallTracker(key: string): CallTracker {
   let tracker = callTrackers.get(key);
@@ -233,6 +281,34 @@ export interface TrackCallResult {
   total: number;
 }
 
+/**
+ * Check quota WITHOUT incrementing the counter.
+ * Use this when you need to gate a request but will increment later
+ * (e.g., get_trade_signal only charges for non-HOLD results).
+ */
+export function checkQuota(license: LicenseInfo): TrackCallResult {
+  if (license.tier === 'x402') {
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+  }
+
+  const key = license.tier === 'free' ? `free:${getRequestIpHash() || 'anon'}` : (license.key || 'unknown');
+  const tracker = getCallTracker(key);
+  const quota = getMonthlyQuota(license.tier);
+
+  const remaining = Math.max(0, quota - tracker.count);
+  const overage = Math.max(0, tracker.count - quota);
+
+  if (license.tier === 'free' && tracker.count >= quota) {
+    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
+  }
+
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+}
+
+/**
+ * Increment the call counter and check quota.
+ * Returns whether the call is allowed after incrementing.
+ */
 export function trackCall(license: LicenseInfo): TrackCallResult {
   if (license.tier === 'x402') {
     return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
@@ -243,6 +319,7 @@ export function trackCall(license: LicenseInfo): TrackCallResult {
   const quota = getMonthlyQuota(license.tier);
 
   tracker.count++;
+  persistTracker(key, tracker);
 
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);

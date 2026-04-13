@@ -1,6 +1,6 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
@@ -56,8 +56,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     throw new Error(msg);
   }
 
-  // Quota tracking (all tiers)
-  const quota = trackCall(input.license || { tier: 'free', key: null });
+  // Quota gate (read-only check — actual increment happens after we know the verdict,
+  // because HOLD signals are free and shouldn't count against quota)
+  const quota = checkQuota(input.license || { tier: 'free', key: null });
   if (!quota.allowed) {
     throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
   }
@@ -142,10 +143,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   const squeezeActive = detectSqueeze(highs, lows, closes);
 
   // Record funding for Z-Score history (fire-and-forget)
-  try { recordFunding(coin, fundingRate); } catch { /* ignore */ }
+  try { recordFunding(coin, fundingRate); } catch (e) { console.debug('recordFunding failed:', e instanceof Error ? e.message : e); }
   // Fetch Z-Score (async — may return null if < 20 data points)
   let fundingZScore: number | null = null;
-  try { fundingZScore = await getFundingZScore(coin, fundingRate); } catch { /* ignore */ }
+  try { fundingZScore = await getFundingZScore(coin, fundingRate); } catch (e) { console.debug('getFundingZScore failed:', e instanceof Error ? e.message : e); }
 
   // ── Detect regime FIRST (used for asymmetric thresholds) ──
   let regime: RegimeType = 'RANGING';
@@ -313,8 +314,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     reasoning = parts.join(' ');
   }
 
-  // Upgrade hint: only for free tier, never for HOLD signals
+  // Increment quota counter only for non-HOLD (HOLDs are free)
   const license = input.license || { tier: 'free' as const, key: null };
+  if (signal !== 'HOLD') {
+    trackCall(license);
+  }
+
+  // Upgrade hint: only for free tier, never for HOLD signals
   const upgradeHint = signal !== 'HOLD'
     ? getUpgradeHint(license, { used: quota.used, total: quota.total })
     : undefined;
@@ -359,14 +365,14 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
         timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
       });
       recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange);
-    } catch {
-      // Don't fail the tool if db write fails
+    } catch (e) {
+      console.debug('recordSignal failed:', e instanceof Error ? e.message : e);
     }
   } else if (signal === 'HOLD') {
     try {
       recordHoldCount(coin, timeframe);
-    } catch {
-      // Don't fail the tool if hold counter fails
+    } catch (e) {
+      console.debug('recordHoldCount failed:', e instanceof Error ? e.message : e);
     }
   }
 

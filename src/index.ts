@@ -18,7 +18,7 @@ import { getSignalPerformance, runBackfill } from './resources/signal-performanc
 import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch } from './lib/performance-db.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, trackCall } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
 import { initAnalytics, logRequest, hashIp, getUsageStats } from './lib/analytics.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
@@ -32,6 +32,15 @@ import {
 } from './lib/stripe.js';
 import { getTopAssetsByOI } from './lib/oi-ranking.js';
 
+/** Timing-safe string comparison to prevent side-channel attacks on admin key. */
+function safeCompare(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
@@ -43,7 +52,7 @@ function createServer(): McpServer {
     'get_trade_signal',
     "Returns a composite BUY/SELL/HOLD signal for a Hyperliquid perp. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.",
     {
-      coin: z.string().describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
+      coin: z.string().max(20).describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
       timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: 15m and 1h only.'),
       includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
       exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M."),
@@ -54,11 +63,9 @@ function createServer(): McpServer {
       try {
         const license = getRequestLicense();
         const result = await getTradeSignal({ coin, timeframe, includeReasoning, exchange, license });
-        // Free HOLDs: only count BUY/SELL against quota, skip settlement for HOLD
+        // Verdict stored for x402 settlement skip (HOLDs don't settle)
         setRequestVerdict(result.signal);
-        if (result.signal !== 'HOLD') {
-          trackCall(license);
-        }
+        // Quota tracking is handled inside getTradeSignal (HOLDs are free)
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'get_trade_signal',
@@ -91,7 +98,7 @@ function createServer(): McpServer {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        trackCall(license);
+        // Quota tracking is handled inside scanFundingArb
         const result = await scanFundingArb({ minSpreadBps, limit, license });
         logRequest({
           sessionId: getRequestSessionId(),
@@ -113,7 +120,7 @@ function createServer(): McpServer {
     'get_market_regime',
     'Classifies the current market regime (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE) for a Hyperliquid perp using ADX(14), volatility ratio, price structure, and cross-venue funding sentiment.',
     {
-      coin: z.string().describe("Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"),
+      coin: z.string().max(20).describe("Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"),
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe('Candle timeframe'),
       exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M."),
     },
@@ -122,7 +129,7 @@ function createServer(): McpServer {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        trackCall(license);
+        // Quota tracking is handled inside getMarketRegime
         const result = await getMarketRegime({ coin, timeframe, exchange });
         logRequest({
           sessionId: getRequestSessionId(),
@@ -162,6 +169,7 @@ function createServer(): McpServer {
 // ── Stdio Mode ──
 async function startStdio() {
   initAnalytics();
+  initQuotaDb();
   const server = createServer();
   const transport = new StdioServerTransport();
 
@@ -185,14 +193,49 @@ async function startHttp() {
   // Initialize x402 on-chain verification (no-ops if not configured)
   await initX402();
   initAnalytics();
+  initQuotaDb();
 
   const { default: express } = await import('express');
+  const { default: rateLimit } = await import('express-rate-limit');
 
   const app = express();
+  app.set('trust proxy', 1); // Trust Caddy reverse proxy for req.secure, req.ip
   const port = parseInt(process.env.PORT || '3000', 10);
 
-  // Store active transports for session management
+  // CORS — restrict to same-origin + algovault.com
+  app.use((_req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || 'https://api.algovault.com');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-payment, mcp-session-id');
+    if (_req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
+  // Rate limiting
+  app.use('/mcp', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
+  app.use('/analytics', rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false }));
+  app.use('/webhooks', rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false }));
+
+  // Store active transports for session management (with last-activity tracking)
   const transports = new Map<string, StreamableHTTPServerTransport>();
+  const sessionLastActivity = new Map<string, number>();
+  const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+  // Periodic cleanup of stale sessions (every 5 minutes)
+  const sessionCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, lastActive] of sessionLastActivity) {
+      if (now - lastActive > SESSION_TTL_MS) {
+        const transport = transports.get(sid);
+        if (transport) {
+          transport.close?.();
+          transports.delete(sid);
+        }
+        sessionLastActivity.delete(sid);
+        console.debug(`Session ${sid.slice(0, 8)}... evicted (idle ${Math.round((now - lastActive) / 60_000)}m)`);
+      }
+    }
+  }, 5 * 60 * 1000);
 
   // Glama.ai ownership verification
   app.get('/.well-known/glama.json', (_req, res) => {
@@ -267,13 +310,55 @@ async function startHttp() {
   });
 
   // Admin analytics (only if ADMIN_API_KEY is set)
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (adminKey) {
-    // JSON API
-    app.get('/analytics', async (req, res) => {
+  let adminCleanupInterval: ReturnType<typeof setInterval> | undefined;
+  const adminKeyRaw = process.env.ADMIN_API_KEY;
+  if (adminKeyRaw) {
+    const adminKey: string = adminKeyRaw;
+    // Admin session management — avoids embedding the key in dashboard HTML
+    const adminSessions = new Map<string, number>(); // token → expiresAt
+    const ADMIN_SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+    const ADMIN_COOKIE_NAME = 'av_admin_session';
+
+    // Periodic cleanup of expired admin sessions (every 30 minutes)
+    adminCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [token, expiresAt] of adminSessions) {
+        if (now > expiresAt) adminSessions.delete(token);
+      }
+    }, 30 * 60 * 1000);
+
+    function createAdminSession(): string {
+      const token = crypto.randomBytes(32).toString('hex');
+      adminSessions.set(token, Date.now() + ADMIN_SESSION_TTL);
+      return token;
+    }
+
+    function isValidAdminSession(cookieHeader?: string): boolean {
+      if (!cookieHeader) return false;
+      const match = cookieHeader.match(new RegExp(`${ADMIN_COOKIE_NAME}=([a-f0-9]+)`));
+      if (!match) return false;
+      const token = match[1];
+      const expiresAt = adminSessions.get(token);
+      if (!expiresAt || Date.now() > expiresAt) {
+        adminSessions.delete(token);
+        return false;
+      }
+      return true;
+    }
+
+    /** Check admin auth: Bearer token, query key, or session cookie. */
+    function isAdminAuthorized(req: import('express').Request): boolean {
+      // Bearer token or query key
       const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
         || (req.query.key as string);
-      if (token !== adminKey) {
+      if (token && safeCompare(token, adminKey)) return true;
+      // Session cookie
+      return isValidAdminSession(req.headers.cookie);
+    }
+
+    // JSON API
+    app.get('/analytics', async (req, res) => {
+      if (!isAdminAuthorized(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
@@ -284,20 +369,24 @@ async function startHttp() {
       }
     });
 
-    // Visual dashboard
+    // Visual dashboard — key in URL sets a session cookie, then redirects to clean URL
     app.get('/dashboard', (req, res) => {
       const key = req.query.key as string;
-      if (key !== adminKey) {
+      if (key && safeCompare(key, adminKey)) {
+        // Authenticate: set session cookie, redirect to clean URL
+        const sessionToken = createAdminSession();
+        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
+        return res.redirect(303, '/dashboard');
+      }
+      if (!isValidAdminSession(req.headers.cookie)) {
         return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
       }
-      res.send(getDashboardHtml(key));
+      res.send(getDashboardHtml());
     });
 
     // Signal performance JSON (admin-only)
     app.get('/performance', async (req, res) => {
-      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
-        || (req.query.key as string);
-      if (token !== adminKey) {
+      if (!isAdminAuthorized(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
@@ -311,17 +400,20 @@ async function startHttp() {
     // Signal performance dashboard (admin-only)
     app.get('/performance-dashboard', (req, res) => {
       const key = req.query.key as string;
-      if (key !== adminKey) {
+      if (key && safeCompare(key, adminKey)) {
+        const sessionToken = createAdminSession();
+        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
+        return res.redirect(303, '/performance-dashboard');
+      }
+      if (!isValidAdminSession(req.headers.cookie)) {
         return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
       }
-      res.send(getPerformanceDashboardHtml(key));
+      res.send(getPerformanceDashboardHtml());
     });
 
     // Top assets by OI (admin-only)
     app.get('/api/top-assets', async (req, res) => {
-      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
-        || (req.query.key as string);
-      if (token !== adminKey) {
+      if (!isAdminAuthorized(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
@@ -335,9 +427,7 @@ async function startHttp() {
 
     // Confidence band analysis (admin-only)
     app.get('/api/confidence-bands', async (req, res) => {
-      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
-        || (req.query.key as string);
-      if (token !== adminKey) {
+      if (!isAdminAuthorized(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
@@ -369,7 +459,7 @@ async function startHttp() {
   });
 
   app.get('/track-record', (_req, res) => {
-    res.send(getPerformanceDashboardHtml('', { isPublic: true }));
+    res.send(getPerformanceDashboardHtml({ isPublic: true }));
   });
 
   // ── Merkle verification endpoints (public, no auth) ──
@@ -455,6 +545,7 @@ async function startHttp() {
 
         if (req.method === 'GET') {
           if (sessionId && transports.has(sessionId)) {
+            sessionLastActivity.set(sessionId, Date.now());
             const transport = transports.get(sessionId)!;
             await transport.handleRequest(req, res, req.body);
           } else {
@@ -468,6 +559,7 @@ async function startHttp() {
             const transport = transports.get(sessionId)!;
             await transport.handleRequest(req, res, req.body);
             transports.delete(sessionId);
+            sessionLastActivity.delete(sessionId);
           } else {
             res.status(404).json({ error: 'Session not found' });
           }
@@ -476,6 +568,7 @@ async function startHttp() {
 
         // POST — main request path
         if (sessionId && transports.has(sessionId)) {
+          sessionLastActivity.set(sessionId, Date.now());
           const transport = transports.get(sessionId)!;
           await transport.handleRequest(req, res, req.body);
         } else {
@@ -484,12 +577,16 @@ async function startHttp() {
             sessionIdGenerator: () => crypto.randomUUID(),
             onsessioninitialized: (sid) => {
               transports.set(sid, transport);
+              sessionLastActivity.set(sid, Date.now());
             },
           });
 
           transport.onclose = () => {
             const sid = (transport as unknown as { sessionId?: string }).sessionId;
-            if (sid) transports.delete(sid);
+            if (sid) {
+              transports.delete(sid);
+              sessionLastActivity.delete(sid);
+            }
           };
 
           const server = createServer();
@@ -524,10 +621,13 @@ async function startHttp() {
 
   const shutdown = () => {
     console.log('Shutting down...');
+    clearInterval(sessionCleanupInterval);
+    if (adminCleanupInterval) clearInterval(adminCleanupInterval);
     for (const transport of transports.values()) {
       transport.close?.();
     }
     transports.clear();
+    sessionLastActivity.clear();
     closeDb();
     httpServer.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000);
@@ -538,7 +638,7 @@ async function startHttp() {
 
 // ── Dashboard HTML ──
 
-function getDashboardHtml(apiKey: string): string {
+function getDashboardHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -592,7 +692,6 @@ function getDashboardHtml(apiKey: string): string {
   <div class="refresh">Auto-refreshes every 30s &middot; <span id="updated"></span></div>
 </div>
 <script>
-const KEY = '${apiKey}';
 function renderRows(id, obj, max) {
   const el = document.getElementById(id);
   const entries = Object.entries(obj);
@@ -612,7 +711,7 @@ function renderAssets(data) {
 }
 async function load() {
   try {
-    const r = await fetch('/analytics?key=' + KEY);
+    const r = await fetch('/analytics', { credentials: 'same-origin' });
     const d = await r.json();
     document.getElementById('total-all').textContent = d.totalCalls.allTime;
     document.getElementById('total-24h').textContent = d.totalCalls.last24h;
@@ -639,10 +738,10 @@ setInterval(load, 30000);
 </html>`;
 }
 
-function getPerformanceDashboardHtml(apiKey: string, opts?: { isPublic?: boolean }): string {
+function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   const isPublic = opts?.isPublic ?? false;
-  const perfEndpoint = isPublic ? '/api/performance-public' : '/performance?key=' + apiKey;
-  const cbEndpoint = isPublic ? '/api/confidence-bands-public' : '/api/confidence-bands?key=' + apiKey;
+  const perfEndpoint = isPublic ? '/api/performance-public' : '/performance';
+  const cbEndpoint = isPublic ? '/api/confidence-bands-public' : '/api/confidence-bands';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1020,7 +1119,7 @@ function renderAll() {
 
 async function load() {
   try {
-    var r = await fetch(PERF_URL);
+    var r = await fetch(PERF_URL, { credentials: 'same-origin' });
     var d = await r.json();
     cachedData = d;
 
@@ -1051,7 +1150,7 @@ async function load() {
 
     // Confidence bands (separate fetch — Postgres only)
     try {
-      var cbRes = await fetch(CB_URL);
+      var cbRes = await fetch(CB_URL, { credentials: 'same-origin' });
       if (cbRes.ok) {
         var cbData = await cbRes.json();
         var bands = cbData.bands || [];
