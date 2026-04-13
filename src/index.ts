@@ -194,6 +194,14 @@ async function startHttp() {
   // Store active transports for session management
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
+  // Glama.ai ownership verification
+  app.get('/.well-known/glama.json', (_req, res) => {
+    res.json({
+      $schema: 'https://glama.ai/mcp/schemas/connector.json',
+      maintainers: [{ email: 'admin@algovault.com' }],
+    });
+  });
+
   // Health check
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.7.1', stripe: isStripeConfigured() });
