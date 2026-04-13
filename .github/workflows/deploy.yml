@@ -21,6 +21,10 @@ jobs:
             OLD_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
 
             git pull origin main
+
+            # Sync static landing pages to Caddy serve path
+            cp landing/*.html /var/www/algovault/ 2>/dev/null && echo "Landing pages synced" || echo "No landing pages to sync"
+
             docker compose up -d --build
             docker compose ps
 
