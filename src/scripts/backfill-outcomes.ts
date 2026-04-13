@@ -143,6 +143,10 @@ async function main() {
   let totalErrors = 0;
   let batchNum = 0;
 
+  // Track symbols that consistently fail — skip them after 3 errors to avoid queue clogging
+  const failCounts = new Map<string, number>();
+  const MAX_FAIL_PER_SYMBOL = 3;
+
   // Loop until no more signals need backfill
   while (true) {
     batchNum++;
@@ -156,11 +160,23 @@ async function main() {
       break;
     }
 
-    console.log(`[${ts()}] Batch ${batchNum}: ${signals.length} signals need outcome backfill`);
+    // Filter out signals for symbols that have failed too many times
+    const viable = signals.filter(s => {
+      const failKey = `${s.exchange || 'HL'}:${s.coin}`;
+      return (failCounts.get(failKey) || 0) < MAX_FAIL_PER_SYMBOL;
+    });
+
+    if (viable.length === 0) {
+      const blockedCount = signals.length;
+      console.log(`[${ts()}] ${blockedCount} signals remain but all from permanently-failing symbols. Stopping.`);
+      break;
+    }
+
+    console.log(`[${ts()}] Batch ${batchNum}: ${viable.length} viable of ${signals.length} pending signals`);
 
     // Group signals by coin+timeframe to batch candle fetches
     const groups = new Map<string, SignalRecord[]>();
-    for (const sig of signals) {
+    for (const sig of viable) {
       const key = `${sig.coin}:${sig.timeframe}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(sig);
@@ -180,6 +196,13 @@ async function main() {
 
       // For each signal, fetch candles starting from signal creation time
       for (const sig of sigs) {
+        // Re-check fail count (may have been incremented within this batch)
+        const failKey = `${sig.exchange || 'HL'}:${coin}`;
+        if ((failCounts.get(failKey) || 0) >= MAX_FAIL_PER_SYMBOL) {
+          skipped++;
+          continue;
+        }
+
         try {
           const signalTimeMs = sig.created_at * 1000;
           // Need evalCount candles after signal time + 1 buffer
@@ -242,7 +265,14 @@ async function main() {
           await sleep(DELAY_BETWEEN_FETCHES_MS);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] backfill error: ${msg}`);
+          const fc = (failCounts.get(failKey) || 0) + 1;
+          failCounts.set(failKey, fc);
+          if (fc <= MAX_FAIL_PER_SYMBOL) {
+            console.error(`[${ts()}] ${coin} ${sig.signal} [${timeframe}] backfill error (${fc}/${MAX_FAIL_PER_SYMBOL}): ${msg}`);
+          }
+          if (fc === MAX_FAIL_PER_SYMBOL) {
+            console.log(`[${ts()}] Blocking ${failKey} — failed ${MAX_FAIL_PER_SYMBOL} times, skipping remaining signals`);
+          }
           errors++;
           await sleep(DELAY_BETWEEN_FETCHES_MS);
         }
