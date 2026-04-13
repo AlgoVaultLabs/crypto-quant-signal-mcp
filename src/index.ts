@@ -44,7 +44,7 @@ function safeCompare(a: string, b: string): boolean {
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.8.0',
+    version: '1.8.1',
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -247,7 +247,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.8.0', stripe: isStripeConfigured() });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.8.1', stripe: isStripeConfigured() });
   });
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──
@@ -793,9 +793,11 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   .tier-card .tc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .tier-card .tc-name { font-size: 14px; font-weight: 700; }
   .tier-card .tc-assets { font-size: 11px; color: #8b949e; margin-bottom: 10px; }
-  .tier-card .tc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .tier-card .tc-stat .tc-label { font-size: 10px; color: #6e7681; text-transform: uppercase; letter-spacing: 0.5px; }
-  .tier-card .tc-stat .tc-val { font-size: 16px; font-weight: 700; }
+  .tier-card .tc-stats { display: flex; flex-direction: column; gap: 4px; }
+  .tier-card .tc-stat { display: flex; justify-content: space-between; align-items: baseline; }
+  .tier-card .tc-stat .tc-label { font-size: 12px; color: #8b949e; }
+  .tier-card .tc-stat .tc-val { font-size: 16px; font-weight: 700; text-align: right; }
+  .tier-card .tc-stat .tc-val.pfe-hero { font-size: 20px; font-weight: 800; }
   .refresh { color: #8b949e; font-size: 12px; margin-top: 16px; }
   #loading { color: #8b949e; font-size: 16px; padding: 40px; text-align: center; }
   .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
@@ -818,10 +820,23 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 <body>
 <div class="logo">
   <a href="https://algovault.com" style="display:flex;align-items:center;text-decoration:none"><img src="/logo.png" width="36" height="36" style="border-radius:8px;cursor:pointer" onerror="this.style.display='none'"></a>
-  <div><h1>Live Track Record</h1><div class="subtitle">v1.8.0</div></div>
+  <div><h1>Live Track Record</h1><div class="subtitle">v1.8.1 &middot; 5 exchanges &middot; 290+ assets</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
+  <!-- Exchange Logo Strip -->
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+    <span style="color:#6e7681;font-size:12px;text-transform:uppercase;letter-spacing:1px">Analyzing</span>
+    <span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:#4ade80">Hyperliquid</span>
+    <span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:#F0B90B">Binance</span>
+    <span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:#F7A600">Bybit</span>
+    <span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:#fff">OKX</span>
+    <span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:#00C8BC">Bitget</span>
+  </div>
+  <!-- Cross-Venue Intelligence Callout -->
+  <div style="background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.15);border-radius:10px;padding:12px 18px;margin-bottom:16px;font-size:13px;color:#c9d1d9">
+    <strong style="color:#58a6ff">Cross-Venue Intelligence</strong> &mdash; Signals are generated per exchange using native order books, funding rates, and OI data. The only MCP server analyzing 5 derivatives venues simultaneously.
+  </div>
   <!-- On-Chain Verification Badge -->
   <div class="onchain-badge" id="onchain-badge" style="display:none">
     <span class="badge-icon">&#x1f517;</span>
@@ -904,7 +919,8 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   <!-- Methodology -->
   <div class="section"><h2>Methodology</h2>
     <div class="methodology">
-      <p><strong>PFE Win Rate</strong> = Percentage of trade calls where price moved in the called direction at any point during the evaluation window.</p>
+      <p><strong>Total Trade Calls</strong> = BUY + SELL only. HOLDs excluded (stored separately).</p>
+      <p><strong>PFE Win Rate</strong> = Percentage of trade calls where price moved in the called direction at any point during the evaluation window. Only confidence &ge; 60% signals are recorded and evaluated.</p>
       <p><strong>Note</strong>: AlgoVault provides directional entry calls. Exit timing is determined by your agent or strategy &mdash; PFE Win Rate measures whether the direction was correct, independent of exit.</p>
       <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table><thead><tr><th>Timeframe</th><th>Candles</th><th>Total Time</th></tr></thead><tbody>
@@ -917,11 +933,10 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
       <p style="margin-top:16px"><strong>Asset Tiers</strong></p>
       <table><thead><tr><th>Tier</th><th>Name</th><th>Description</th></tr></thead><tbody>
         <tr><td style="color:#58a6ff">Tier 1</td><td>Blue Chip</td><td>BTC, ETH</td></tr>
-        <tr><td style="color:#3fb950">Tier 2</td><td>Major Alts</td><td>Top 20 by notional OI (dynamic, hourly)</td></tr>
+        <tr><td style="color:#3fb950">Tier 2</td><td>Major Alts</td><td>Top 20 by notional OI across 5 exchanges (dynamic, hourly)</td></tr>
         <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX via HL xyz perps</td></tr>
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
-      <p style="margin-top:16px"><strong>Total Trade Calls</strong> = BUY + SELL only. HOLDs excluded (stored separately). Only confidence ≥ 60% signals are recorded and evaluated.</p>
       <p><strong>Default view</strong> shows Tier 1-2 + TradFi only. Full coverage via &ldquo;All Assets&rdquo; tab.</p>
       <p style="margin-top:16px;color:#6e7681;font-size:11px"><em>AlgoVault provides directional entry interpretation for AI agents. Exit timing is determined by your agent or strategy. This is not financial advice. Past performance does not guarantee future results.</em></p>
     </div>
@@ -1047,7 +1062,7 @@ function renderAll() {
     var th = cachedData.totalHolds || 0;
     var totalGenerated = (stats.totalAll||0) + th;
     var holdRate = totalGenerated > 0 ? ((th / totalGenerated) * 100).toFixed(0) + '%' : '—';
-    evalEl.textContent = 'Trade Calls: ' + (stats.totalAll||0) + ' · Evaluated (\u226560% conf): ' + (stats.totalEvaluated||0) + ' · PFE Win Rate: ' + pct(stats.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
+    evalEl.textContent = 'Trade Calls: ' + (stats.totalAll||0) + ' · Evaluated: ' + (stats.totalEvaluated||0) + ' · PFE Win Rate: ' + pct(stats.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
   }
 
   // Tier cards
@@ -1079,10 +1094,10 @@ function renderAll() {
       '<div class="tc-header">' + tierBadge(t.tier) + ' <span class="tc-name" style="color:'+t.color+'">' + t.name + '</span>' +
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault ✦</span>' : '') + '</div>' +
       '<div class="tc-assets">' + tierAssetLabel(t.tier, t.assets) + '</div>' +
-      (t.count > 0 ? '<div class="tc-stats" style="display:flex;flex-direction:column;gap:4px">' +
-        '<div style="display:flex;justify-content:space-between"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + t.count.toLocaleString() + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + (t.evaluated || 0).toLocaleString() + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span class="tc-label">PFE Win Rate</span><span style="font-weight:700;font-size:20px" class="' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</span></div>' +
+      (t.count > 0 ? '<div class="tc-stats">' +
+        '<div class="tc-stat"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + t.count.toLocaleString() + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + (t.evaluated || 0).toLocaleString() + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">PFE Win Rate</span><span class="tc-val pfe-hero ' + pfeClass(t.pfeWinRate) + '">' + pct(t.pfeWinRate) + '</span></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
       holdLine + gateLine +
     '</div>';
@@ -1259,13 +1274,25 @@ function getSignupPageHtml(): string {
 <body>
 <div class="container">
   <h1>AlgoVault Subscriptions</h1>
-  <div class="subtitle">Unlock all assets, all timeframes, and higher call limits.</div>
+  <div class="subtitle">Unlock all assets across 5 exchanges, all timeframes, and higher call limits.</div>
+  <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px;flex-wrap:wrap">
+    <span style="color:#4ade80;font-size:12px;font-weight:600">Hyperliquid</span>
+    <span style="color:#6e7681">&middot;</span>
+    <span style="color:#F0B90B;font-size:12px;font-weight:600">Binance</span>
+    <span style="color:#6e7681">&middot;</span>
+    <span style="color:#F7A600;font-size:12px;font-weight:600">Bybit</span>
+    <span style="color:#6e7681">&middot;</span>
+    <span style="color:#fff;font-size:12px;font-weight:600">OKX</span>
+    <span style="color:#6e7681">&middot;</span>
+    <span style="color:#00C8BC;font-size:12px;font-weight:600">Bitget</span>
+  </div>
   <div class="plans">
     <div class="plan">
       <h2>Starter</h2>
       <div class="price">$9.99<span>/mo</span></div>
       <ul>
         <li>3,000 calls/month</li>
+        <li>5 exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
         <li>Email support</li>
@@ -1278,6 +1305,7 @@ function getSignupPageHtml(): string {
       <div class="price">$49<span>/mo</span></div>
       <ul>
         <li>15,000 calls/month</li>
+        <li>5 exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
         <li>Priority support</li>
@@ -1289,6 +1317,7 @@ function getSignupPageHtml(): string {
       <div class="price">$299<span>/mo</span></div>
       <ul>
         <li>100,000 calls/month</li>
+        <li>5 exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
         <li>All assets &amp; timeframes</li>
         <li>SLA guarantee</li>
         <li>Dedicated support</li>
@@ -1343,8 +1372,9 @@ function getWelcomePageHtml(apiKey: string | null, tier: string | null, email: s
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -d '{"jsonrpc":"2.0","method":"tools/call",
        "params":{"name":"get_trade_signal",
-                 "arguments":{"coin":"SOL","timeframe":"5m"}},
+                 "arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},
        "id":1}'</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Supported exchanges: HL (default), BINANCE, BYBIT, OKX, BITGET</p>
   </div>
 </div>
 </body>
