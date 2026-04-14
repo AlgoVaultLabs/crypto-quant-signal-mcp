@@ -114,7 +114,7 @@ tailwind.config = {
       <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
         <span class="text-gold-400">&#9670;</span> get_trade_signal
       </h2>
-      <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning.</p>
+      <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning across 5 exchanges.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -126,6 +126,7 @@ tailwind.config = {
         <tbody>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <code class="text-xs bg-navy-800 px-1 rounded">BTC</code>, <code class="text-xs bg-navy-800 px-1 rounded">ETH</code>, <code class="text-xs bg-navy-800 px-1 rounded">TSLA</code>, <code class="text-xs bg-navy-800 px-1 rounded">GOLD</code>. <span class="text-red-400 text-xs">Required</span></td></tr>
           <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded">1m</code> <code class="text-xs bg-navy-800 px-1 rounded">3m</code> <code class="text-xs bg-navy-800 px-1 rounded">5m</code> <code class="text-xs bg-navy-800 px-1 rounded">15m</code> <code class="text-xs bg-navy-800 px-1 rounded">30m</code> <code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">2h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">8h</code> <code class="text-xs bg-navy-800 px-1 rounded">12h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">15m</code></td></tr>
+          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. TradFi assets (GOLD, TSLA, etc.) are HL-only.</td></tr>
           <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include human-readable reasoning. Default: <code class="text-xs bg-navy-800 px-1 rounded">true</code></td></tr>
         </tbody>
       </table>
@@ -208,7 +209,7 @@ tailwind.config = {
       <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
         <span class="text-gold-400">&#9670;</span> get_market_regime
       </h2>
-      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across 5 exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -219,7 +220,8 @@ tailwind.config = {
         </tr></thead>
         <tbody>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. TradFi assets (GOLD, TSLA, etc.) are HL-only.</td></tr>
         </tbody>
       </table>
 
@@ -658,7 +660,7 @@ tailwind.config = {
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Typically 1&ndash;3 seconds. Each call fetches live data from Hyperliquid (and Binance/Bybit for funding arb and regime). The response time depends on Hyperliquid's API latency and the number of assets scanned.
+            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Hyperliquid (default), Binance, Bybit, OKX, or Bitget for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_signal</code> and <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>. Funding arb scans Hyperliquid, Binance, and Bybit. Response time depends on the exchange's API latency and the number of assets scanned.
           </div>
         </details>
 
@@ -678,7 +680,7 @@ tailwind.config = {
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            All perpetuals listed on Hyperliquid &mdash; including standard crypto perps (BTC, ETH, SOL, etc.), TradFi perpetuals via the xyz dex (TSLA, GOLD, SP500, EUR, and more), and liquidity-filtered meme coins. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
+            All perpetuals listed across 5 exchanges &mdash; Hyperliquid, Binance, Bybit, OKX, and Bitget. This includes standard crypto perps (BTC, ETH, SOL, etc.) and liquidity-filtered meme coins on every venue. TradFi perpetuals via the xyz dex (TSLA, GOLD, SP500, EUR, and more) are Hyperliquid-only. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
           </div>
         </details>
 
