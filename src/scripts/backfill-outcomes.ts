@@ -27,6 +27,7 @@
 
 import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, closeDb } from '../lib/performance-db.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
+import { getDexForCoin } from '../lib/asset-tiers.js';
 import type { Candle, ExchangeId, SignalRecord } from '../types.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 300; // polite to HL API
@@ -216,8 +217,10 @@ async function main() {
           }
 
           // Fetch candles from signal's own exchange
-          const adapter = getAdapter((sig.exchange as ExchangeId) || 'HL');
-          const candles = await adapter.getCandles(coin, timeframe, signalTimeMs);
+          const exchangeId = (sig.exchange as ExchangeId) || 'HL';
+          const adapter = getAdapter(exchangeId);
+          const dex = exchangeId === 'HL' ? getDexForCoin(coin) : undefined;
+          const candles = await adapter.getCandles(coin, timeframe, signalTimeMs, dex);
 
           // Filter candles: only those AFTER signal creation
           const relevantCandles = candles.filter(c => c.time >= signalTimeMs);
