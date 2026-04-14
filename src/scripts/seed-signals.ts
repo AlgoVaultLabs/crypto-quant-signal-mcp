@@ -32,7 +32,7 @@
  */
 
 import { getTradeSignal } from '../tools/get-trade-signal.js';
-import { hasRecentSignalAsync, closeDb, getTradFiPfeWinRate } from '../lib/performance-db.js';
+import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import type { LicenseInfo, ExchangeId } from '../types.js';
 
@@ -324,20 +324,15 @@ async function main() {
     console.log(`[${ts()}] Fetching Hyperliquid universe (standard + TradFi)...`);
     let coins = await fetchHLCoins(top);
 
-    // TradFi Conditional Gate
+    // TradFi: always limit to top 20 by OI (xyz perps have lower liquidity)
     const allTradFi = coins.filter(c => isKnownTradFi(c));
-    if (allTradFi.length > 0) {
-      const { winRate, evaluated } = await getTradFiPfeWinRate(allTradFi);
-      if (evaluated === 0) {
-        console.log(`[${ts()}] TradFi gate: no evaluated signals yet — seeding full universe (${allTradFi.length} TradFi assets)`);
-      } else if (winRate >= 85) {
-        console.log(`[${ts()}] TradFi PFE WR: ${winRate.toFixed(1)}% (${evaluated} evaluated) — seeding full universe`);
-      } else {
-        const topTradFi = new Set(allTradFi.slice(0, 20));
-        const beforeCount = coins.length;
-        coins = coins.filter(c => !isKnownTradFi(c) || topTradFi.has(c));
-        console.log(`[${ts()}] TradFi PFE WR: ${winRate.toFixed(1)}% (below 85%) — limiting to Top ${topTradFi.size} TradFi (dropped ${beforeCount - coins.length} assets)`);
-      }
+    if (allTradFi.length > 20) {
+      const topTradFi = new Set(allTradFi.slice(0, 20));
+      const beforeCount = coins.length;
+      coins = coins.filter(c => !isKnownTradFi(c) || topTradFi.has(c));
+      console.log(`[${ts()}] TradFi: limiting to Top 20 by OI (dropped ${beforeCount - coins.length} of ${allTradFi.length} TradFi assets)`);
+    } else if (allTradFi.length > 0) {
+      console.log(`[${ts()}] TradFi: ${allTradFi.length} assets (all within Top 20 limit)`);
     }
 
     console.log(`[${ts()}] Starting ${timeframe} HL signal seed for ${coins.length} assets${top ? ` (top ${top} by OI)` : ''}...`);
