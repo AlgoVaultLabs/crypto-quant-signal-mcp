@@ -3,7 +3,7 @@
   "name": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
   "title": "AlgoVault — Crypto Quant Trade Calls",
   "description": "Quant trading signals, funding rate arb scanning, and market regime detection for crypto perps.",
-  "version": "1.7.0",
+  "version": "1.8.1",
   "repository": {
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
     "source": "github"
@@ -18,7 +18,7 @@
     {
       "registryType": "npm",
       "identifier": "crypto-quant-signal-mcp",
-      "version": "1.7.0",
+      "version": "1.8.1",
       "transport": {
         "type": "stdio"
       },
