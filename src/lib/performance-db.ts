@@ -163,6 +163,9 @@ const CREATE_MERKLE_BATCHES_SQL = `
 // v1.5: exchange column for multi-exchange support
 const MIGRATE_EXCHANGE_COL = `ALTER TABLE signals ADD COLUMN exchange TEXT NOT NULL DEFAULT 'HL';`;
 
+// R5 (2026-04-14): regime column so next audit round can correlate regime label → confidence bucket
+const MIGRATE_REGIME_COL = `ALTER TABLE signals ADD COLUMN regime TEXT NULL;`;
+
 // v1.4 migrations
 const MIGRATE_PFE_COLS = [
   `ALTER TABLE signals ADD COLUMN pfe_return_pct REAL;`,
@@ -221,6 +224,8 @@ function getBackend(): DbBackend {
   try { backend.exec(CREATE_HOLD_COUNTS_SQL); } catch { /* table already exists */ }
   // v1.5: exchange column for multi-exchange support
   try { backend.exec(MIGRATE_EXCHANGE_COL); } catch { /* column already exists */ }
+  // R5 (2026-04-14): regime column for audit round H5
+  try { backend.exec(MIGRATE_REGIME_COL); } catch { /* column already exists */ }
   // Merkle proof tables + columns
   try { backend.exec(CREATE_MERKLE_BATCHES_SQL); } catch { /* table already exists */ }
   for (const sql of MIGRATE_MERKLE_COLS) {
@@ -261,13 +266,14 @@ export function recordSignal(
   timeframe: string,
   priceAtSignal: number,
   signalHash?: string,
-  exchange: string = 'HL'
+  exchange: string = 'HL',
+  regime?: string | null  // R5: regime label persisted for audit round H5
 ): void {
   const b = getBackend();
   b.run(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    coin, signal, confidence, timeframe, exchange, priceAtSignal, Math.floor(Date.now() / 1000), signalHash || null
+    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    coin, signal, confidence, timeframe, exchange, priceAtSignal, Math.floor(Date.now() / 1000), signalHash || null, regime ?? null
   );
 }
 
