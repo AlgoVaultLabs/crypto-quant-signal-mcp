@@ -155,9 +155,12 @@ export class BitgetAdapter implements ExchangeAdapter {
     const fundingRate = fundingData[0]?.fundingRate || '0';
     const oiEntry = oiData.openInterestList?.[0];
 
+    // R2: Bitget funding is per-8h period → annualized = raw × 1095 (8h periods/year)
+    const fundingRaw = parseFloat(fundingRate);
     return {
       coin,
-      funding: parseFloat(fundingRate),
+      funding: fundingRaw,
+      fundingAnnualized: fundingRaw * 1095,
       openInterest: parseFloat(oiEntry?.size || '0'),
       prevDayPx: parseFloat(ticker.open24h || '0'),
       volume24h: parseFloat(ticker.quoteVolume || '0'),

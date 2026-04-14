@@ -187,9 +187,12 @@ export class OKXAdapter implements ExchangeAdapter {
     const oi = oiResp.data[0];
     const mark = markResp.data[0];
 
+    // R2: OKX funding is per-8h period → annualized = raw × 1095 (8h periods/year)
+    const fundingRaw = parseFloat(funding?.fundingRate || '0');
     return {
       coin,
-      funding: parseFloat(funding?.fundingRate || '0'),
+      funding: fundingRaw,
+      fundingAnnualized: fundingRaw * 1095,
       openInterest: parseFloat(oi?.oi || '0'),
       prevDayPx: parseFloat(ticker?.open24h || '0'),
       volume24h: parseFloat(ticker?.volCcy24h || '0'),
