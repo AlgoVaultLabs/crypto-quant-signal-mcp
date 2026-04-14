@@ -142,9 +142,12 @@ export class BybitAdapter implements ExchangeAdapter {
     const ticker = tickerData.list[0];
     const oi = oiData.list[0];
 
+    // R2: Bybit funding is per-8h period → annualized = raw × 1095 (8h periods/year)
+    const fundingRaw = parseFloat(ticker.fundingRate || '0');
     return {
       coin,
-      funding: parseFloat(ticker.fundingRate || '0'),
+      funding: fundingRaw,
+      fundingAnnualized: fundingRaw * 1095,
       openInterest: parseFloat(oi.openInterest || '0'),
       prevDayPx: parseFloat(ticker.prevPrice24h || '0'),
       volume24h: parseFloat(ticker.turnover24h || '0'),
