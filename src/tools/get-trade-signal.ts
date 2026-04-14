@@ -39,8 +39,10 @@ const BUY_THRESHOLD_GATED = 55;   // BUY in TRENDING_DOWN
 const SELL_THRESHOLD_GATED = 55;   // SELL in TRENDING_UP or RANGING
 
 // Theoretical max |rawScore| for proper confidence scaling
-// RSI(80)*0.30 + EMA(100)*0.10 + Funding(60)*0.25 + OI(60)*0.15 + Vol(80)*0.20 = 24+10+15+9+16 = 74
-const MAX_RAW_SCORE = 74;
+// RSI(100)*0.30 + EMA(100)*0.10 + Funding(80)*0.25 + OI(60)*0.15 + Vol(100)*0.20 = 30+10+20+9+20 = 89
+// (R1 from generator audit 2026-04-14: prior value 74 was computed from the wrong per-feature maxes,
+//  which inflated every confidence output by ~1.20× and clipped the high tail to 100)
+const MAX_RAW_SCORE = 89;
 
 // Minimum confidence to record in track record (filters noise)
 const MIN_TRACKABLE_CONFIDENCE = 60;
