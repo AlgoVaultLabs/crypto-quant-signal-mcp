@@ -129,6 +129,24 @@ async function checkDatabase(): Promise<string | null> {
   }
 }
 
+// Returns true if the exchange is reachable. Retries once on transient
+// failure before declaring it down — public APIs occasionally slow-respond
+// under load and a single timeout shouldn't trigger a false alert.
+async function checkExchangeHealth(name: string, url: string): Promise<boolean> {
+  const opts: RequestInit = name === 'Hyperliquid'
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'meta' }) }
+    : {};
+  const MAX_ATTEMPTS = 2;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const { ok, status } = await fetchJson(url, opts);
+    // 429 = rate limited but alive — not a real failure
+    if (ok || status === 429) return true;
+    if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 500));
+  }
+  return false;
+}
+
 async function checkExchanges(): Promise<string | null> {
   const exchanges: [string, string][] = [
     ['Binance', 'https://fapi.binance.com/fapi/v1/ping'],
@@ -139,22 +157,12 @@ async function checkExchanges(): Promise<string | null> {
   ];
 
   const failures: string[] = [];
-  const results = await Promise.allSettled(
+  await Promise.all(
     exchanges.map(async ([name, url]) => {
-      const opts: RequestInit = name === 'Hyperliquid'
-        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'meta' }) }
-        : {};
-      const { ok, status } = await fetchJson(url, opts);
-      // 429 = rate limited but alive — not a real failure
-      if (!ok && status !== 429) failures.push(name);
+      const healthy = await checkExchangeHealth(name, url);
+      if (!healthy) failures.push(name);
     }),
   );
-  // Check for rejected promises too
-  results.forEach((r, i) => {
-    if (r.status === 'rejected' && !failures.includes(exchanges[i][0])) {
-      failures.push(exchanges[i][0]);
-    }
-  });
 
   if (failures.length > 0) return `Exchange API failures: ${failures.join(', ')}`;
   return null;
