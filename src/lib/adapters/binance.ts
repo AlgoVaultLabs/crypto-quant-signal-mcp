@@ -159,9 +159,12 @@ export class BinanceAdapter implements ExchangeAdapter {
       binGet<BinanceTicker24hr>('/fapi/v1/ticker/24hr', { symbol }),
     ]);
 
+    // R2: Binance funding is per-8h period → annualized = raw × 1095 (8h periods/year)
+    const fundingRaw = parseFloat(premiumIndex.lastFundingRate || '0');
     return {
       coin,
-      funding: parseFloat(premiumIndex.lastFundingRate || '0'),
+      funding: fundingRaw,
+      fundingAnnualized: fundingRaw * 1095,
       openInterest: parseFloat(oi.openInterest || '0'),
       prevDayPx: parseFloat(ticker.prevClosePrice || '0'),
       volume24h: parseFloat(ticker.quoteVolume || '0'),

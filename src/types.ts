@@ -59,7 +59,16 @@ export type DexType = 'standard' | 'xyz';
 
 export interface AssetContext {
   coin: string;
+  /** Raw per-period funding rate as returned by the exchange (HL = 1h, CEX = 8h). Used for display/API output. */
   funding: number;
+  /**
+   * Annualized funding rate (raw × periods_per_year). Used by the scorer's funding threshold logic so
+   * HL 1h and CEX 8h rates are directly comparable as "annualized % cost of carry".
+   * HL: funding × 8760 (1h periods per year)
+   * Binance/Bybit/OKX/Bitget: funding × 1095 (8h periods per year)
+   * (R2 from generator audit 2026-04-14)
+   */
+  fundingAnnualized: number;
   openInterest: number;
   prevDayPx: number;
   volume24h: number;

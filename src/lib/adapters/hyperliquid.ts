@@ -79,9 +79,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       throw new Error(`${coin} not found on Hyperliquid${dex === 'xyz' ? ' (xyz dex)' : ''}`);
     }
     const ctx = ctxs[idx];
+    // R2: HL funding is per-1h period → annualized = raw × 8760 (1h periods/year)
+    const fundingRaw = parseFloat(ctx.funding || '0');
     return {
       coin,
-      funding: parseFloat(ctx.funding || '0'),
+      funding: fundingRaw,
+      fundingAnnualized: fundingRaw * 8760,
       openInterest: parseFloat(ctx.openInterest || '0'),
       prevDayPx: parseFloat(ctx.prevDayPx || '0'),
       volume24h: parseFloat(ctx.dayNtlVlm || '0'),

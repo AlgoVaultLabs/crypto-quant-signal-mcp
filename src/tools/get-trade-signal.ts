@@ -129,7 +129,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   }
 
   // Funding data
+  // R2: raw rate is kept for display/API compat and for scale-invariant per-coin Z-score history.
+  //     Annualized rate is used by the scorer so HL (1h) and CEX (8h) feeds are comparable.
   const fundingRate = assetCtx.funding;
+  const fundingRateAnnualized = assetCtx.fundingAnnualized;
   const funding24hAvg = fundingRate;
 
   // Price change (24h)
@@ -177,11 +180,14 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   // Funding rate (25% weight): contrarian signal
   // Negative funding = shorts paying = contrarian bullish
   // High positive funding = crowded longs = bearish
+  // R2: thresholds are in ANNUALIZED rate (cost of carry as % per year).
+  //     Old HL-calibrated raw thresholds { -0.0005, 0, 0.0005, 0.001 } × 8760 = { -4.38, 0, 4.38, 8.76 }.
+  //     This preserves HL behavior exactly while making CEX 8h funding directly comparable.
   let fundingScore = 0;
-  if (fundingRate < -0.0005) fundingScore = 80;
-  else if (fundingRate < 0) fundingScore = 40;
-  else if (fundingRate > 0.001) fundingScore = -80;
-  else if (fundingRate > 0.0005) fundingScore = -40;
+  if (fundingRateAnnualized < -4.38) fundingScore = 80;
+  else if (fundingRateAnnualized < 0) fundingScore = 40;
+  else if (fundingRateAnnualized > 8.76) fundingScore = -80;
+  else if (fundingRateAnnualized > 4.38) fundingScore = -40;
 
   // OI + price direction (15% weight): momentum confirmation
   // Only score when price direction CONFIRMS the signal, not as standalone
@@ -287,10 +293,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     }
     if (emaCross === 'BULLISH') parts.push('EMA 9/21 bullish crossover.');
     else if (emaCross === 'BEARISH') parts.push('EMA 9/21 bearish crossover.');
-    if (fundingRate < -0.0005) parts.push('Strong negative funding — shorts paying longs (contrarian bullish).');
-    else if (fundingRate < 0) parts.push('Negative funding — shorts paying longs.');
-    else if (fundingRate > 0.001) parts.push('High positive funding — crowded longs (contrarian bearish).');
-    else if (fundingRate > 0.0005) parts.push('Positive funding — longs paying shorts.');
+    if (fundingRateAnnualized < -4.38) parts.push('Strong negative funding — shorts paying longs (contrarian bullish).');
+    else if (fundingRateAnnualized < 0) parts.push('Negative funding — shorts paying longs.');
+    else if (fundingRateAnnualized > 8.76) parts.push('High positive funding — crowded longs (contrarian bearish).');
+    else if (fundingRateAnnualized > 4.38) parts.push('Positive funding — longs paying shorts.');
     // v1.4 scoring adjustments (Z-Score gate, Hurst filter, squeeze)
     parts.push(...scoreAdjustments);
     if (hurstVal !== null) {
