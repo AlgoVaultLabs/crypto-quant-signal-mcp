@@ -87,25 +87,37 @@ async function checkFacilitator(): Promise<string | null> {
 }
 
 async function checkGasWallet(): Promise<{ error: string | null; balance: number }> {
-  try {
-    const res = await fetch(BASE_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1,
-        method: 'eth_getBalance',
-        params: [GAS_WALLET, 'latest'],
-      }),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
-    });
-    const data = await res.json() as { result?: string };
-    const wei = BigInt(data.result ?? '0');
-    const eth = Number(wei) / 1e18;
-    if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
-    return { error: null, balance: eth };
-  } catch (err) {
-    return { error: `Gas wallet check failed: ${(err as Error).message}`, balance: 0 };
+  // Base public RPC (mainnet.base.org) is flaky under load — use a longer timeout
+  // and retry once before alerting to avoid false positives on transient slowdowns.
+  const RPC_TIMEOUT = 10_000;
+  const MAX_ATTEMPTS = 2;
+
+  let lastError = '';
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(BASE_RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1,
+          method: 'eth_getBalance',
+          params: [GAS_WALLET, 'latest'],
+        }),
+        signal: AbortSignal.timeout(RPC_TIMEOUT),
+      });
+      const data = await res.json() as { result?: string };
+      const wei = BigInt(data.result ?? '0');
+      const eth = Number(wei) / 1e18;
+      if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
+      return { error: null, balance: eth };
+    } catch (err) {
+      lastError = (err as Error).message;
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
   }
+  return { error: `Gas wallet check failed after ${MAX_ATTEMPTS} attempts: ${lastError}`, balance: 0 };
 }
 
 async function checkDatabase(): Promise<string | null> {
