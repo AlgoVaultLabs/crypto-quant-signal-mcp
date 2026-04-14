@@ -224,13 +224,16 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   const scoreAdjustments: string[] = [];
   if (fundingZScore !== null) {
     // Z-Score available: use statistical extremity for crowd-positioning gate
-    if (rawScore > 0 && fundingZScore > 2.0) {
+    // R4: inverted per audit — BUY edge +10-14pp WR. BUY penalty threshold made stricter
+    // (2.0 → 2.5) so BUY is penalized less often, while SELL softening threshold is made
+    // looser (-2.5 → -2.0) so SELL is softened more often. Net: favors BUY direction.
+    if (rawScore > 0 && fundingZScore > 2.5) {  // R4: inverted per audit — BUY edge +10-14pp WR
       rawScore -= 20;
-      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (>+2.0) — extreme crowded longs. BUY penalized 20 pts.`);
+      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (>+2.5) — extreme crowded longs. BUY penalized 20 pts.`);
     }
-    if (rawScore < 0 && fundingZScore < -2.5) {
+    if (rawScore < 0 && fundingZScore < -2.0) {  // R4: inverted per audit — BUY edge +10-14pp WR
       rawScore += 20;
-      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (<-2.5) — extreme short crowding. SELL softened 20 pts.`);
+      scoreAdjustments.push(`Funding Z-Score ${fundingZScore.toFixed(2)} (<-2.0) — extreme short crowding. SELL softened 20 pts.`);
     }
     if (rawScore > 0 && fundingZScore < -1.5) {
       rawScore += 10;
@@ -238,13 +241,16 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     }
   } else {
     // Fallback: raw funding gate (pre-Z-Score history)
-    if (rawScore > 0 && fundingRate > 0) {
-      rawScore -= 15;
-      scoreAdjustments.push(`Funding rate positive (${(fundingRate * 100).toFixed(4)}%) — longs crowded. BUY penalized 15 pts (raw fallback).`);
+    // R4: inverted per audit — BUY edge +10-14pp WR. Original rule penalized BUY at
+    // crowded-long funding (no symmetric SELL rule = compounding SELL bias). Flipped:
+    // crowded longs now soften SELL (squeeze risk), and the BUY contrarian bonus stays.
+    if (rawScore < 0 && fundingRateAnnualized > 4.38) {  // R4: inverted per audit — BUY edge +10-14pp WR
+      rawScore += 15;
+      scoreAdjustments.push(`Funding annualized +${fundingRateAnnualized.toFixed(2)} — longs crowded, squeeze risk. SELL softened 15 pts (raw fallback, R4 inverted).`);
     }
-    if (rawScore > 0 && fundingRate < -0.0005) {
+    if (rawScore > 0 && fundingRateAnnualized < -4.38) {
       rawScore += 10;
-      scoreAdjustments.push(`Funding strongly negative (${(fundingRate * 100).toFixed(4)}%) — contrarian BUY bonus +10 pts (raw fallback).`);
+      scoreAdjustments.push(`Funding annualized ${fundingRateAnnualized.toFixed(2)} (<-4.38) — contrarian BUY bonus +10 pts (raw fallback).`);
     }
   }
 
@@ -265,18 +271,21 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     scoreAdjustments.push(`Volatility squeeze detected (BB inside KC). Breakout setup — directional signal boosted 12 pts.`);
   }
 
-  // ── Regime-aware signal determination (v1.5: symmetric thresholds + symmetric regime gates) ──
+  // ── R4: inverted per audit — BUY edge +10-14pp WR ──
+  // v1.5 had BUY gated in {TRENDING_DOWN} and SELL gated in {TRENDING_UP, RANGING}.
+  // Audit showed the BUY edge is real market structure (short squeezes), so we lean in:
+  //   BUY always uses BUY_BASE_THRESHOLD (never gated, any regime)
+  //   SELL always uses SELL_THRESHOLD_GATED (always gated, any regime)
+  // This gives BUY a consistent 15-point structural advantage (40 vs 55).
   let signal: SignalVerdict;
   const absScore = Math.abs(rawScore);
 
   if (rawScore > 0) {
-    // Potential BUY — gated in TRENDING_DOWN (requires stronger conviction)
-    const threshold = regime === 'TRENDING_DOWN' ? BUY_THRESHOLD_GATED : BUY_BASE_THRESHOLD;
-    signal = rawScore > threshold ? 'BUY' : 'HOLD';
+    // R4: inverted per audit — BUY edge +10-14pp WR. BUY never gated.
+    signal = rawScore > BUY_BASE_THRESHOLD ? 'BUY' : 'HOLD';
   } else {
-    // Potential SELL — gated in TRENDING_UP and RANGING (requires stronger conviction)
-    const threshold = (regime === 'TRENDING_UP' || regime === 'RANGING') ? SELL_THRESHOLD_GATED : SELL_BASE_THRESHOLD;
-    signal = absScore > threshold ? 'SELL' : 'HOLD';
+    // R4: inverted per audit — BUY edge +10-14pp WR. SELL always gated (stricter).
+    signal = absScore > SELL_THRESHOLD_GATED ? 'SELL' : 'HOLD';
   }
 
   // ── Confidence: scale rawScore to 0-100 range properly ──
@@ -308,11 +317,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     if (fundingZScore !== null) {
       parts.push(`Funding Z-Score: ${fundingZScore.toFixed(2)} (${Math.abs(fundingZScore) > 2 ? 'extreme' : Math.abs(fundingZScore) > 1 ? 'elevated' : 'normal'}).`);
     }
-    if (regime === 'TRENDING_DOWN' && signal === 'HOLD' && rawScore > BUY_BASE_THRESHOLD) {
-      parts.push(`Regime filter: potential BUY suppressed — market is trending down (requires ${BUY_THRESHOLD_GATED}+ score, got ${absScore.toFixed(0)}).`);
-    }
-    if ((regime === 'TRENDING_UP' || regime === 'RANGING') && signal === 'HOLD' && rawScore < -SELL_BASE_THRESHOLD) {
-      parts.push(`Regime filter: potential SELL suppressed — market is ${regime === 'TRENDING_UP' ? 'trending up' : 'ranging'} (requires ${SELL_THRESHOLD_GATED}+ score, got ${absScore.toFixed(0)}).`);
+    // R4: SELL always gated, so a sub-gate SELL is suppressed in any regime
+    if (signal === 'HOLD' && rawScore < -BUY_BASE_THRESHOLD && rawScore > -SELL_THRESHOLD_GATED) {
+      parts.push(`Direction gate: potential SELL suppressed — SELL requires ${SELL_THRESHOLD_GATED}+ score (got ${absScore.toFixed(0)}). BUY edge asymmetry (R4).`);
     }
     // v1.3: noise warning for ultra-low timeframes
     if (['1m', '3m'].includes(timeframe)) {
