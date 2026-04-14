@@ -379,7 +379,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
         coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe,
         timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
       });
-      recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange);
+      recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange, regime);
     } catch (e) {
       console.debug('recordSignal failed:', e instanceof Error ? e.message : e);
     }
