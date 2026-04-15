@@ -82,8 +82,9 @@ describe('getTradeSignal', () => {
     vi.mocked(getAdapter).mockReturnValue(adapter);
 
     const result = await getTradeSignal({ coin: 'ETH' });
+    const { PKG_VERSION } = await import('../src/lib/pkg-version.js');
     expect(result._algovault).toBeDefined();
-    expect(result._algovault.version).toBe('1.7.1');
+    expect(result._algovault.version).toBe(PKG_VERSION);
     expect(result._algovault.tool).toBe('get_trade_signal');
     expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
     expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');

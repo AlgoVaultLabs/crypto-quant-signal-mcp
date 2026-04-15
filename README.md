@@ -77,6 +77,8 @@ Only high-conviction calls are generated. The engine is designed to stay silent 
 
 **Output includes:** call direction, confidence score (0–100), all computed indicator values, detected market regime, reasoning narrative, and `_algovault` metadata for downstream tool composability.
 
+Responses also include optional `closest_tradeable` (on HOLD verdicts) and `try_next` (always, when the cross-asset grid has non-HOLD cells) as signal-surface expansion fields — exploration hints across the BTC/ETH/SOL/BNB/XRP/DOGE × 5m/15m/1h/4h grid, not trade recommendations.
+
 ### `scan_funding_arb`
 
 Scans cross-venue funding rate differentials across Hyperliquid, Binance, and Bybit. Normalizes hourly vs 8-hour rate conventions, computes basis-point spreads, and ranks opportunities by composite score (spread magnitude, time urgency, and funding conviction from 24h history). OKX and Bitget funding data is available via their respective adapters — arb scanning expansion is planned.

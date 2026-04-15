@@ -1,5 +1,6 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { getFundingArbLimit, isFreeTier, trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
+import { getFundingArbLimit, isFreeTier, trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId } from '../lib/license.js';
+import { PKG_VERSION } from '../lib/pkg-version.js';
 import type {
   FundingArbResult,
   FundingArbOpportunity,
@@ -53,9 +54,10 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       scannedPairs: 0,
       timestamp: Math.floor(Date.now() / 1000),
       _algovault: {
-        version: '1.7.1',
+        version: PKG_VERSION,
         tool: 'scan_funding_arb',
         compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+        session_id: getRequestSessionId() ?? null,
       },
     };
   }
@@ -192,9 +194,10 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   });
 
   const meta: FundingArbResult['_algovault'] = {
-    version: '1.7.1',
+    version: PKG_VERSION,
     tool: 'scan_funding_arb',
     compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
+    session_id: getRequestSessionId() ?? null,
   };
   if (upgradeHint) meta.upgrade_hint = upgradeHint;
 
