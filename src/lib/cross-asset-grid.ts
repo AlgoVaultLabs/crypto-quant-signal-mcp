@@ -61,7 +61,13 @@ async function refreshGrid(): Promise<void> {
             const cell = await override(coin, timeframe);
             if (cell) cells.push(cell);
           } else {
-            const result = await getTradeSignal({ coin, timeframe });
+            // `internal: true` bypasses the free-tier license gate (so the
+            // grid can score SOL/BNB/XRP/DOGE and 5m/4h regardless of the
+            // ambient request's tier), and skips trackCall/recordSignal/
+            // recordHoldCount persistence (so 24 cells/minute don't pollute
+            // the per-agent quota counters or the performance-db track
+            // record with duplicate synthetic signals).
+            const result = await getTradeSignal({ coin, timeframe, internal: true });
             cells.push({
               coin,
               timeframe,

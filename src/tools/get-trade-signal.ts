@@ -14,6 +14,16 @@ interface TradeSignalInput {
   includeReasoning?: boolean;
   exchange?: ExchangeId;
   license?: LicenseInfo;
+  /**
+   * Internal mode: bypass license gates (so the cross-asset grid can score
+   * cells outside the caller's tier), skip quota tracking, performance-db
+   * `recordSignal` / `recordHoldCount` persistence, and the upgrade-hint
+   * envelope fields. Used exclusively by `src/lib/cross-asset-grid.ts` when
+   * refreshing the 24-cell grid — those cells are server-side-computed and
+   * must not pollute the per-agent quota counters or the track-record DB.
+   * External callers never set this.
+   */
+  internal?: boolean;
 }
 
 // ── Indicator weights (v1.5) ──
@@ -59,15 +69,23 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   const timeframe = input.timeframe || '1h';
   const includeReasoning = input.includeReasoning !== false;
 
-  // License gate
-  if (!canAccessCoin(coin, input.license) || !canAccessTimeframe(timeframe, input.license)) {
-    const msg = freeGateMessage(coin, timeframe);
-    throw new Error(msg);
+  // License gate — bypassed for internal grid-refresh calls so the 24-cell
+  // grid can score cells across all assets and timeframes regardless of the
+  // ambient request's tier.
+  if (!input.internal) {
+    if (!canAccessCoin(coin, input.license) || !canAccessTimeframe(timeframe, input.license)) {
+      const msg = freeGateMessage(coin, timeframe);
+      throw new Error(msg);
+    }
   }
 
   // Quota gate (read-only check — actual increment happens after we know the verdict,
-  // because HOLD signals are free and shouldn't count against quota)
-  const quota = checkQuota(input.license || { tier: 'free', key: null });
+  // because HOLD signals are free and shouldn't count against quota).
+  // Internal grid-refresh calls skip quota entirely — they are server-side
+  // pre-computation, not per-agent usage.
+  const quota = input.internal
+    ? { allowed: true, used: 0, total: 0 }
+    : checkQuota(input.license || { tier: 'free', key: null });
   if (!quota.allowed) {
     throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
   }
@@ -336,14 +354,16 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     reasoning = parts.join(' ');
   }
 
-  // Increment quota counter only for non-HOLD (HOLDs are free)
+  // Increment quota counter only for non-HOLD (HOLDs are free).
+  // Internal grid-refresh calls skip the counter entirely.
   const license = input.license || { tier: 'free' as const, key: null };
-  if (signal !== 'HOLD') {
+  if (!input.internal && signal !== 'HOLD') {
     trackCall(license);
   }
 
-  // Upgrade hint: only for free tier, never for HOLD signals
-  const upgradeHint = signal !== 'HOLD'
+  // Upgrade hint: only for free tier, never for HOLD signals, never for
+  // internal grid-refresh calls (their meta block is discarded anyway).
+  const upgradeHint = !input.internal && signal !== 'HOLD'
     ? getUpgradeHint(license, { used: quota.used, total: quota.total })
     : undefined;
 
@@ -387,34 +407,46 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
   // primary response. Fields are OMITTED (not null/[]) when the grid has no
   // matching cell — matches the AlgoVault positioning rule: these are signal
   // surfaces, not trade recommendations.
-  try {
-    const tryNext = await getTryNext({ coin, timeframe }, 3);
-    if (tryNext.length > 0) result.try_next = tryNext;
+  //
+  // Skipped for internal grid-refresh calls — the AsyncLocalStorage re-entry
+  // guard in getGridSnapshot would short-circuit anyway, but guarding at the
+  // call site avoids the unnecessary indirection and keeps cell computation
+  // leaner.
+  if (!input.internal) {
+    try {
+      const tryNext = await getTryNext({ coin, timeframe }, 3);
+      if (tryNext.length > 0) result.try_next = tryNext;
 
-    if (signal === 'HOLD') {
-      const closest = await getClosestTradeable({ coin, timeframe });
-      if (closest) result.closest_tradeable = closest;
+      if (signal === 'HOLD') {
+        const closest = await getClosestTradeable({ coin, timeframe });
+        if (closest) result.closest_tradeable = closest;
+      }
+    } catch (e) {
+      console.debug('cross-asset-grid enrichment failed:', e instanceof Error ? e.message : e);
     }
-  } catch (e) {
-    console.debug('cross-asset-grid enrichment failed:', e instanceof Error ? e.message : e);
   }
 
-  // Record for performance tracking — only high-confidence actionable signals
-  if (signal !== 'HOLD' && confidence >= MIN_TRACKABLE_CONFIDENCE) {
-    try {
-      const sigHash = hashSignal({
-        coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe,
-        timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
-      });
-      recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange, regime);
-    } catch (e) {
-      console.debug('recordSignal failed:', e instanceof Error ? e.message : e);
-    }
-  } else if (signal === 'HOLD') {
-    try {
-      recordHoldCount(coin, timeframe);
-    } catch (e) {
-      console.debug('recordHoldCount failed:', e instanceof Error ? e.message : e);
+  // Record for performance tracking — only high-confidence actionable signals.
+  // Internal grid-refresh calls skip persistence entirely so the 24-cell-per-
+  // minute grid doesn't pollute the signals / hold_counts tables with
+  // duplicate synthetic records.
+  if (!input.internal) {
+    if (signal !== 'HOLD' && confidence >= MIN_TRACKABLE_CONFIDENCE) {
+      try {
+        const sigHash = hashSignal({
+          coin, signal: signal as 'BUY' | 'SELL', confidence, timeframe,
+          timestamp: Math.floor(Date.now() / 1000), price: currentPrice,
+        });
+        recordSignal(coin, signal, confidence, timeframe, currentPrice, sigHash, exchange, regime);
+      } catch (e) {
+        console.debug('recordSignal failed:', e instanceof Error ? e.message : e);
+      }
+    } else if (signal === 'HOLD') {
+      try {
+        recordHoldCount(coin, timeframe);
+      } catch (e) {
+        console.debug('recordHoldCount failed:', e instanceof Error ? e.message : e);
+      }
     }
   }
 
