@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-04-15T15:19:44.927Z",
+  "window": {
+    "from": "2026-04-01T15:19:44.912Z",
+    "to": "2026-04-15T15:19:44.912Z"
+  },
+  "sessions": {
+    "total": null,
+    "unique_ips": null,
+    "new_in_window": null
+  },
+  "funnel": {
+    "install": null,
+    "first_call": null,
+    "second_call": null,
+    "fifth_plus_call": null,
+    "paid_upgrade": null
+  },
+  "conversion": {
+    "install_to_first_call": null,
+    "first_to_second": null,
+    "second_to_fifth": null,
+    "fifth_to_paid": null
+  },
+  "stick_rate": null,
+  "time_to_first_call_ms": {
+    "p50": null,
+    "p90": null
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 0,
+    "get_market_regime": 0,
+    "scan_funding_arb": 0,
+    "other": 0
+  },
+  "hold_rate_get_trade_signal": null,
+  "tier_cohort_sizes": {
+    "free": 0,
+    "starter": 0,
+    "pro": 0,
+    "enterprise": 0,
+    "x402": 0
+  },
+  "warnings": [
+    "agent_sessions totals query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "agent_sessions funnel query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "request_log first_call fallback failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "agent_sessions paid_upgrade query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "agent_sessions time-to-second-call query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "request_log tool_call_distribution query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "request_log hold_rate query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts",
+    "request_log tier_cohort_sizes query failed: Cannot find module 'pg'\nRequire stack:\n- /opt/crypto-quant-signal-mcp/src/lib/performance-db.ts\n- /opt/crypto-quant-signal-mcp/scripts/funnel-snapshot.ts\n- /opt/crypto-quant-signal-mcp/scripts/write-funnel-snapshot.ts"
+  ]
+}
