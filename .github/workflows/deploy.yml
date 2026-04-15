@@ -31,11 +31,41 @@ jobs:
             # Capture new version after pull
             NEW_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
 
-            # Auto-publish release post if version changed
+            # === Release post (audit-trail unified: runs in-container, logs to /var/log/agent-forum.log, same path as cron) ===
+            # Auto-publish release post if version changed.
             if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ "$NEW_VERSION" != "0.0.0" ]; then
               echo "Version changed: $OLD_VERSION → $NEW_VERSION — publishing release post..."
-              sleep 10  # wait for container to fully start
-              docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/agent-forum-post.js --type=release --version="$NEW_VERSION" >> /var/log/agent-forum.log 2>&1 || echo "Release post failed (non-fatal)"
+
+              # Wait-for-healthy loop: poll until the container responds to a
+              # no-op `node -e` invocation. Up to 15 attempts × 2s = 30s total.
+              # This is tighter than the old `sleep 10` because it actually
+              # probes readiness instead of guessing, and it still caps at
+              # roughly the same wall-clock worst case.
+              CONTAINER=crypto-quant-signal-mcp-mcp-server-1
+              HEALTHY=0
+              for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+                if docker exec "$CONTAINER" node -e "console.log('ok')" >/dev/null 2>&1; then
+                  echo "Container $CONTAINER responded after attempt $i — proceeding with release post"
+                  HEALTHY=1
+                  break
+                fi
+                sleep 2
+              done
+
+              if [ "$HEALTHY" = "1" ]; then
+                docker exec "$CONTAINER" node dist/scripts/agent-forum-post.js --type=release --version="$NEW_VERSION" >> /var/log/agent-forum.log 2>&1 || echo "Release post failed (non-fatal)"
+
+                # Post-release self-audit: give platform moderation pipelines
+                # a head start, then re-query each post to confirm it is still
+                # visible. Drift gets recorded in forum_post_failures so the
+                # next cron fire can react. Non-fatal — a self-audit failure
+                # must never block the deploy.
+                # NOTE: --self-audit implemented by Teammate A in this sprint; depends on merge
+                sleep 15
+                docker exec "$CONTAINER" node dist/scripts/agent-forum-post.js --self-audit >> /var/log/agent-forum.log 2>&1 || echo "Self-audit after release failed (non-fatal)"
+              else
+                echo "ERROR: container $CONTAINER never became healthy in 30s — skipping release post and self-audit (non-fatal, deploy continues)"
+              fi
             else
               echo "No version change ($OLD_VERSION) — skipping release post"
             fi
