@@ -1,9 +1,11 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
+import { PKG_VERSION } from '../lib/pkg-version.js';
+import { getClosestTradeable, getTryNext } from '../lib/cross-asset-grid.js';
 import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
 
 interface TradeSignalInput {
@@ -346,9 +348,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     : undefined;
 
   const meta: TradeSignalResult['_algovault'] = {
-    version: '1.7.1',
+    version: PKG_VERSION,
     tool: 'get_trade_signal',
     compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+    session_id: getRequestSessionId() ?? null,
   };
   if (upgradeHint) meta.upgrade_hint = upgradeHint;
 
@@ -376,6 +379,25 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     timeframe,
     _algovault: meta,
   };
+
+  // v1.9.0 L2 + L4: HOLD rescue + next-calls hints.
+  // Both features read from the same lazy, TTL-cached cross-asset grid. The
+  // grid self-refreshes via a promise-coalesced single-flight and silently
+  // absorbs per-cell scorer failures, so failures here never degrade the
+  // primary response. Fields are OMITTED (not null/[]) when the grid has no
+  // matching cell — matches the AlgoVault positioning rule: these are signal
+  // surfaces, not trade recommendations.
+  try {
+    const tryNext = await getTryNext({ coin, timeframe }, 3);
+    if (tryNext.length > 0) result.try_next = tryNext;
+
+    if (signal === 'HOLD') {
+      const closest = await getClosestTradeable({ coin, timeframe });
+      if (closest) result.closest_tradeable = closest;
+    }
+  } catch (e) {
+    console.debug('cross-asset-grid enrichment failed:', e instanceof Error ? e.message : e);
+  }
 
   // Record for performance tracking — only high-confidence actionable signals
   if (signal !== 'HOLD' && confidence >= MIN_TRACKABLE_CONFIDENCE) {

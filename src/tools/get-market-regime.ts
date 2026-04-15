@@ -1,7 +1,8 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
-import { trackCall, getUpgradeHint, getQuotaExhaustedMessage } from '../lib/license.js';
+import { trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId } from '../lib/license.js';
+import { PKG_VERSION } from '../lib/pkg-version.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId } from '../types.js';
 
 interface MarketRegimeInput {
@@ -185,9 +186,10 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const upgradeHint = getUpgradeHint(license, { used: quota.used, total: quota.total });
 
   const meta: MarketRegimeResult['_algovault'] = {
-    version: '1.7.1',
+    version: PKG_VERSION,
     tool: 'get_market_regime',
     compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
+    session_id: getRequestSessionId() ?? null,
   };
   if (upgradeHint) meta.upgrade_hint = upgradeHint;
 

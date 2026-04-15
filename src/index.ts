@@ -15,7 +15,8 @@ import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
-import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, upsertAgentSession } from './lib/performance-db.js';
+import { PKG_VERSION } from './lib/pkg-version.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb } from './lib/license.js';
@@ -44,7 +45,7 @@ function safeCompare(a: string, b: string): boolean {
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
-    version: '1.8.1',
+    version: PKG_VERSION,
   });
 
   // ── Tool 1: get_trade_signal ──
@@ -77,6 +78,15 @@ function createServer(): McpServer {
           confidence: result.confidence,
           ipHash: getRequestIpHash(),
         });
+        const sessionIdForCohort = getRequestSessionId() ?? null;
+        if (sessionIdForCohort !== null) {
+          upsertAgentSession({
+            sessionId: sessionIdForCohort,
+            tool: 'get_trade_signal',
+            tier: license.tier,
+            ipHash: getRequestIpHash() ?? null,
+          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
+        }
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -107,6 +117,15 @@ function createServer(): McpServer {
           responseTimeMs: Date.now() - startMs,
           ipHash: getRequestIpHash(),
         });
+        const sessionIdForCohort = getRequestSessionId() ?? null;
+        if (sessionIdForCohort !== null) {
+          upsertAgentSession({
+            sessionId: sessionIdForCohort,
+            tool: 'scan_funding_arb',
+            tier: license.tier,
+            ipHash: getRequestIpHash() ?? null,
+          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
+        }
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -140,6 +159,15 @@ function createServer(): McpServer {
           responseTimeMs: Date.now() - startMs,
           ipHash: getRequestIpHash(),
         });
+        const sessionIdForCohort = getRequestSessionId() ?? null;
+        if (sessionIdForCohort !== null) {
+          upsertAgentSession({
+            sessionId: sessionIdForCohort,
+            tool: 'get_market_regime',
+            tier: license.tier,
+            ipHash: getRequestIpHash() ?? null,
+          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
+        }
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -247,7 +275,7 @@ async function startHttp() {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: '1.8.1', stripe: isStripeConfigured() });
+    res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: PKG_VERSION, stripe: isStripeConfigured() });
   });
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──

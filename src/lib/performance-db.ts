@@ -201,6 +201,27 @@ const CREATE_HOLD_COUNTS_SQL = process.env.DATABASE_URL
       PRIMARY KEY (date, timeframe, coin)
     );`;
 
+// v1.9.0 L3 (2026-04-15): agent_sessions cohort table.
+// Persisted on every tool call (when sessionId is present, i.e. HTTP transport).
+// TODO(rebase-946ff8a): convert to SIGNAL_MIGRATIONS descriptor once cleanup branch merges
+const CREATE_AGENT_SESSIONS_SQL = `
+  CREATE TABLE IF NOT EXISTS agent_sessions (
+    session_id     TEXT PRIMARY KEY,
+    first_seen     ${process.env.DATABASE_URL ? 'BIGINT' : 'INTEGER'} NOT NULL,
+    last_seen      ${process.env.DATABASE_URL ? 'BIGINT' : 'INTEGER'} NOT NULL,
+    call_count     INTEGER NOT NULL DEFAULT 0,
+    tools_used     TEXT NOT NULL DEFAULT '',
+    tiers_seen     TEXT NOT NULL DEFAULT '',
+    first_tool     TEXT,
+    first_tier     TEXT,
+    ip_hash_first  TEXT
+  );
+`;
+
+const CREATE_AGENT_SESSIONS_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_agent_sessions_last_seen ON agent_sessions(last_seen);
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -231,6 +252,10 @@ function getBackend(): DbBackend {
   for (const sql of MIGRATE_MERKLE_COLS) {
     try { backend.exec(sql); } catch { /* column already exists */ }
   }
+  // v1.9.0 L3 (2026-04-15): agent_sessions cohort table + index
+  // TODO(rebase-946ff8a): convert to SIGNAL_MIGRATIONS descriptor once cleanup branch merges
+  try { backend.exec(CREATE_AGENT_SESSIONS_SQL); } catch { /* table already exists */ }
+  try { backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL); } catch { /* index already exists */ }
   return backend;
 }
 
@@ -387,6 +412,75 @@ export function recordHoldCount(coin: string, timeframe: string): void {
        DO UPDATE SET hold_count = hold_count + 1`,
       today, timeframe, coin
     );
+  }
+}
+
+/**
+ * v1.9.0 L3 (2026-04-15): Upsert an agent_sessions row on every tool call.
+ *
+ * - First call for a sessionId: INSERT with first_seen=last_seen=now, call_count=1.
+ * - Subsequent calls: UPDATE last_seen, increment call_count, append tool/tier
+ *   if not already present (comma-separated, dedup in JS for portability).
+ *
+ * Failure-tolerant: callers should fire-and-forget with `.catch(...)`; this
+ * helper is on the hot request path and must not throw on DB error.
+ */
+export async function upsertAgentSession(params: {
+  sessionId: string;
+  tool: string;
+  tier: string;
+  ipHash: string | null;
+}): Promise<void> {
+  const { sessionId, tool, tier, ipHash } = params;
+  const now = Date.now();
+  const b = getBackend();
+
+  try {
+    // Read current row (works for both PG and SQLite via dbQuery)
+    let existing: { tools_used: string; tiers_seen: string }[];
+    if (isPg && b instanceof PgBackend) {
+      existing = await b.query(
+        `SELECT tools_used, tiers_seen FROM agent_sessions WHERE session_id = ?`,
+        [sessionId]
+      ) as unknown as { tools_used: string; tiers_seen: string }[];
+    } else {
+      existing = b.all(
+        `SELECT tools_used, tiers_seen FROM agent_sessions WHERE session_id = ?`,
+        sessionId
+      ) as unknown as { tools_used: string; tiers_seen: string }[];
+    }
+
+    if (existing.length === 0) {
+      // First call — INSERT
+      const insertSql = `INSERT INTO agent_sessions
+        (session_id, first_seen, last_seen, call_count, tools_used, tiers_seen, first_tool, first_tier, ip_hash_first)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      if (isPg && b instanceof PgBackend) {
+        await b.runAsync(insertSql, sessionId, now, now, 1, tool, tier, tool, tier, ipHash);
+      } else {
+        b.run(insertSql, sessionId, now, now, 1, tool, tier, tool, tier, ipHash);
+      }
+      return;
+    }
+
+    // Subsequent call — dedup tools_used / tiers_seen in JS, then UPDATE
+    const currentTools = existing[0].tools_used.split(',').filter(Boolean);
+    const currentTiers = existing[0].tiers_seen.split(',').filter(Boolean);
+    if (!currentTools.includes(tool)) currentTools.push(tool);
+    if (!currentTiers.includes(tier)) currentTiers.push(tier);
+    const newToolsUsed = currentTools.join(',');
+    const newTiersSeen = currentTiers.join(',');
+
+    const updateSql = `UPDATE agent_sessions
+      SET last_seen = ?, call_count = call_count + 1, tools_used = ?, tiers_seen = ?
+      WHERE session_id = ?`;
+    if (isPg && b instanceof PgBackend) {
+      await b.runAsync(updateSql, now, newToolsUsed, newTiersSeen, sessionId);
+    } else {
+      b.run(updateSql, now, newToolsUsed, newTiersSeen, sessionId);
+    }
+  } catch (e) {
+    console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e);
   }
 }
 

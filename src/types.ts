@@ -110,6 +110,30 @@ export interface AlgoVaultMeta {
   tool: string;
   compatible_with: string[];
   upgrade_hint?: string;
+  /**
+   * The MCP `mcp-session-id` header extracted at request time, or `null` under
+   * stdio transport (stdio has no per-request session). Surfaced in every tool
+   * response envelope (v1.9.0, L3 activation patch) so clients can correlate
+   * calls to the `agent_sessions` cohort table.
+   */
+  session_id?: string | null;
+}
+
+// ── Cross-asset grid (v1.9.0 L2/L4 activation patch) ──
+
+/**
+ * A single cell in the pre-computed cross-asset / cross-timeframe signal grid,
+ * exposed via `src/lib/cross-asset-grid.ts`. Used by `get_trade_signal` to
+ * surface `closest_tradeable` (HOLD rescue, L2) and `try_next` (next-calls
+ * hints, L4) as strictly-optional exploration surfaces — NOT recommendations.
+ */
+export interface GridCell {
+  coin: string;
+  timeframe: string;
+  signal: SignalVerdict;
+  confidence: number;
+  exchange: ExchangeId;
+  regime: RegimeType;
 }
 
 export interface TradeSignalResult {
@@ -134,6 +158,19 @@ export interface TradeSignalResult {
   timestamp: number;
   coin: string;
   timeframe: string;
+  /**
+   * HOLD rescue (v1.9.0 L2). On a HOLD verdict, the single highest-confidence
+   * non-HOLD cell from the cross-asset grid, excluding the requested
+   * (coin, timeframe). Omitted entirely when the grid has no non-HOLD cell or
+   * when the current verdict is BUY/SELL.
+   */
+  closest_tradeable?: GridCell;
+  /**
+   * Next-calls hints (v1.9.0 L4). Top-3 highest-confidence non-HOLD cells from
+   * the cross-asset grid, excluding the requested (coin, timeframe). Populated
+   * on every response (HOLD and non-HOLD) when the grid is non-empty.
+   */
+  try_next?: GridCell[];
   _algovault: AlgoVaultMeta;
 }
 
