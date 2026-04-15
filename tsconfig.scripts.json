@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false
+  },
+  "include": ["scripts/funnel-snapshot.ts", "scripts/write-funnel-snapshot.ts", "src/lib/performance-db.ts"],
+  "exclude": ["node_modules", "dist", "tests", "src/scripts/deploy-merkle-contract.ts"]
+}

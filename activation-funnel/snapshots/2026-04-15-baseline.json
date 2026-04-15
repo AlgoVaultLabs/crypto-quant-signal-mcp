@@ -1,0 +1,5555 @@
+{
+  "generated_at": "2026-04-15T09:20:00Z",
+  "generated_by": "analytics-funnel-snapshot.md task execution",
+  "sources": {
+    "analytics_endpoint": {
+      "totalCalls": {
+        "allTime": 32,
+        "last24h": 0,
+        "last7d": 19
+      },
+      "byTool": {
+        "get_trade_signal": 17,
+        "get_market_regime": 8,
+        "scan_funding_arb": 6,
+        "get_signal_performance": 1
+      },
+      "byTier": {
+        "free": 32
+      },
+      "uniqueSessions": {
+        "allTime": 18,
+        "last24h": 0,
+        "last7d": 9
+      },
+      "topAssets": [
+        {
+          "asset": "BTC",
+          "calls": 20
+        },
+        {
+          "asset": "ETH",
+          "calls": 5
+        }
+      ],
+      "avgResponseTimeMs": {
+        "get_trade_signal": 637,
+        "scan_funding_arb": 991,
+        "get_signal_performance": 144,
+        "get_market_regime": 817
+      },
+      "generatedAt": "2026-04-15T09:21:04.170Z"
+    },
+    "postgres_queries": {
+      "request_log_overall": {
+        "query": "SELECT COUNT(*), COUNT(DISTINCT session_id), COUNT(DISTINCT ip_hash), MIN(timestamp), MAX(timestamp) FROM request_log",
+        "result": {
+          "total_calls": 32,
+          "distinct_sessions": 18,
+          "distinct_ip_hashes": 10,
+          "first_seen": "2026-04-07T13:04:09.344Z",
+          "last_seen": "2026-04-12T10:36:19.831Z"
+        }
+      },
+      "calls_per_session_distribution": {
+        "query": "SELECT bucket, COUNT(*) FROM (SELECT session_id, CASE WHEN COUNT(*)=1 THEN '1' WHEN COUNT(*)<=5 THEN '2-5' WHEN COUNT(*)<=20 THEN '6-20' WHEN COUNT(*)<=100 THEN '21-100' ELSE '100+' END AS bucket FROM request_log GROUP BY session_id) b GROUP BY bucket",
+        "result": {
+          "1": 11,
+          "2-5": 6,
+          "6-20": 1,
+          "21-100": 0,
+          "100+": 0
+        }
+      },
+      "tool_mix": {
+        "query": "SELECT tool_name, COUNT(*), SUM(CASE WHEN verdict='HOLD' THEN 1 ELSE 0 END) FROM request_log GROUP BY tool_name",
+        "result": {
+          "get_trade_signal": {
+            "calls": 17,
+            "hold": 15,
+            "buy_sell": 2,
+            "hold_pct": 88.24
+          },
+          "get_market_regime": {
+            "calls": 8,
+            "hold": 0,
+            "buy_sell": 0,
+            "null_verdict": 8
+          },
+          "scan_funding_arb": {
+            "calls": 6,
+            "hold": 0,
+            "buy_sell": 0,
+            "null_verdict": 6
+          },
+          "get_signal_performance": {
+            "calls": 1,
+            "hold": 0,
+            "buy_sell": 0,
+            "null_verdict": 1
+          }
+        }
+      },
+      "top_tool_asset_timeframe": {
+        "query": "SELECT tool_name, asset, timeframe, COUNT(*) FROM request_log GROUP BY 1,2,3 ORDER BY 4 DESC",
+        "result": [
+          {
+            "tool": "get_trade_signal",
+            "asset": "BTC",
+            "timeframe": "1h",
+            "calls": 13
+          },
+          {
+            "tool": "scan_funding_arb",
+            "asset": null,
+            "timeframe": null,
+            "calls": 6
+          },
+          {
+            "tool": "get_market_regime",
+            "asset": "BTC",
+            "timeframe": "4h",
+            "calls": 5
+          },
+          {
+            "tool": "get_trade_signal",
+            "asset": "ETH",
+            "timeframe": "1h",
+            "calls": 4
+          },
+          {
+            "tool": "get_market_regime",
+            "asset": "BTC",
+            "timeframe": "1h",
+            "calls": 2
+          },
+          {
+            "tool": "get_signal_performance",
+            "asset": null,
+            "timeframe": null,
+            "calls": 1
+          },
+          {
+            "tool": "get_market_regime",
+            "asset": "ETH",
+            "timeframe": "4h",
+            "calls": 1
+          }
+        ]
+      },
+      "daily_pattern": {
+        "query": "SELECT DATE(timestamp::timestamptz), COUNT(*), COUNT(DISTINCT session_id), COUNT(DISTINCT ip_hash) FROM request_log GROUP BY 1",
+        "result": [
+          {
+            "day": "2026-04-07",
+            "calls": 12,
+            "sessions": 8,
+            "ips": 6
+          },
+          {
+            "day": "2026-04-08",
+            "calls": 1,
+            "sessions": 1,
+            "ips": 1
+          },
+          {
+            "day": "2026-04-10",
+            "calls": 2,
+            "sessions": 1,
+            "ips": 1
+          },
+          {
+            "day": "2026-04-12",
+            "calls": 17,
+            "sessions": 8,
+            "ips": 3
+          },
+          {
+            "_note": "zero rows on 2026-04-09, 04-11, 04-13, 04-14, 04-15 \u2014 3-day drought since Apr 12"
+          }
+        ]
+      },
+      "retention_cohort": {
+        "query": "WITH first_seen AS (SELECT session_id, MIN(ts), MAX(ts) FROM request_log GROUP BY session_id) SELECT COUNT(*) total, SUM(delta>=24h) ret24h, SUM(delta>=7d) ret7d, SUM(delta<1h) one_and_done_1h",
+        "result": {
+          "total_agents": 18,
+          "returned_after_24h": 0,
+          "returned_after_7d": 0,
+          "one_and_done_1h": 18
+        },
+        "interpretation": "100% of agents are one-and-done within the same hour they started. Zero multi-day agents."
+      },
+      "quota_usage": {
+        "query": "SELECT tracker_key, call_count FROM quota_usage ORDER BY call_count DESC",
+        "result": [
+          {
+            "tracker_key": "internal-seed",
+            "call_count": 8,
+            "period_start": "2026-04-15T09:13:02.919Z"
+          }
+        ],
+        "interpretation": "Only one row, and it is the internal seed. ZERO real agents have ever been tracked against the 100-call/mo free cap."
+      },
+      "http_402_count": {
+        "method": "grep -cE '402|quota.*exceed|Payment Required' in mcp-server container logs since last restart",
+        "result": 0,
+        "_note": "1 log-line match was the x402 init line 'x402 initialized: network=base-mainnet', not an HTTP response"
+      },
+      "license_tier_breakdown": {
+        "query": "SELECT license_tier, COUNT(*), COUNT(DISTINCT session_id) FROM request_log GROUP BY license_tier",
+        "result": {
+          "free": {
+            "calls": 32,
+            "sessions": 18
+          }
+        }
+      }
+    },
+    "stripe_subscriptions": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "url": "/v1/subscriptions"
+    },
+    "stripe_customers": {
+      "object": "list",
+      "data": [],
+      "has_more": false,
+      "url": "/v1/customers"
+    },
+    "stripe_checkout_sessions_raw": {
+      "object": "list",
+      "data": [
+        {
+          "id": "cs_live_a17AnTsVK1yFk9p4Q4mEr1HQZ4x43124cSYbkRC4IfTpRth9rvXblL4N8m",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776219677,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776306076,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a17AnTsVK1yFk9p4Q4mEr1HQZ4x43124cSYbkRC4IfTpRth9rvXblL4N8m#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1ZRR66KnWkuHsiZCNQmBvUuShADHyxsjyWMmiZGO7ZIr7jUYva2ICCwAJ",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776219673,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776306073,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a1ZRR66KnWkuHsiZCNQmBvUuShADHyxsjyWMmiZGO7ZIr7jUYva2ICCwAJ#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1S3dAttmmPMbB5IHM9Aj5V91Ma8JZ1ewXWomIig1AhNRLGQaHZWey2lb5",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776219660,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776306060,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a1S3dAttmmPMbB5IHM9Aj5V91Ma8JZ1ewXWomIig1AhNRLGQaHZWey2lb5#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a13sSO4jcauogNzKGIy3BdhYDy3Rm4cNzsPoCyYo3UvvbUbHQwd7E7AOYc",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776218873,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776305273,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a13sSO4jcauogNzKGIy3BdhYDy3Rm4cNzsPoCyYo3UvvbUbHQwd7E7AOYc#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1rvjtNnxOBTcZyJ6AYXWI9et8pa3fmBL7rkIHm9eqJTnwWvnnzUDCN9z5",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776218867,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776305267,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a1rvjtNnxOBTcZyJ6AYXWI9et8pa3fmBL7rkIHm9eqJTnwWvnnzUDCN9z5#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1gQ7p6QmTqr6VVoifnSxtFwiBiLuOUvaEEK4NPuqDd4HCJMEsPbavf7gv",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776218861,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776305261,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a1gQ7p6QmTqr6VVoifnSxtFwiBiLuOUvaEEK4NPuqDd4HCJMEsPbavf7gv#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a19chRr6cSRzfEuxI3Kax5Le3eZEbraJg9pmJjESsj4p1SobVTq83M1as2",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776192617,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776279017,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a19chRr6cSRzfEuxI3Kax5Le3eZEbraJg9pmJjESsj4p1SobVTq83M1as2#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1Z3SDwmCH6sxwI263pQgFMLUzMJ9hIsWvhWk25yeGmap9L6v8bPr5x1RE",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776192614,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776279014,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a1Z3SDwmCH6sxwI263pQgFMLUzMJ9hIsWvhWk25yeGmap9L6v8bPr5x1RE#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1nwuoj6dlHobZO3SssVRf6pgzwDmgV3zm3XBSlxvHdU966uQxxiXEJSqI",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "https://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776192611,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776279010,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "open",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "https://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": "https://checkout.stripe.com/c/pay/cs_live_a1nwuoj6dlHobZO3SssVRf6pgzwDmgV3zm3XBSlxvHdU966uQxxiXEJSqI#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdkdWxOYHwnPyd1blppbHNgWjA0UU5MfEtOQmlgakBiUDdNdlVQSlNGTTBPN0cyZ2FnS2thdDQxQ39IX1xONH1GNHxXNHNtaE1Bb39gPTBscGhCc11hX2tyXE98MlBwTjdNR2pSXElWYDc8NTVhYUxhY0ZAMCcpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8ndmxrYmlgWmxxYGgnKSdga2RnaWBVaWRmYG1qaWFgd3YnP3F3cGB4JSUl",
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1TW9JVx0kCBepYiPPtugpGVDU4T9taCHWjI0crV4INtX5I0badIN2fyQE",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776020366,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776106766,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1UNWXXSUAOeMvCbJ1vSOjatWA3FQjk1TLuPefV4zBpEjEG9j23XS1g6Ht",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776019329,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776105729,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1UMhL19QGYIQYV9jssGEvRyKxGh98GiBo4oeLrnWw6jlPGJroVNfZfK1E",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1776017894,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776104294,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1cLNPY7UyzY494BrsQlns9YBjDZ0JZJlNQL6VlEwAwQbFQA3qciK7JQoT",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775989818,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776076218,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1V7pQ7DT7sjDMzRLQ1S6Vj7kQL16F0ZjinQHVkgiUvSBiEzlprCOe56Pd",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775989818,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776076218,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1IjznDmjIlPQnuC57JUdQixqHksRvBMCvpAp3EhvTYjkpnQP0FUAzTfYh",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775982727,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776069127,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1JKaIXYIidJlcTsdQMXH66t4oFrYH3h6xoRYvnqtc0OzaKPVPuUUSp70S",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775982727,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1776069127,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a10UiJXoLr99XyejXSfPzfwO4OL5raQog4VbyHLVB3sHmbu6L9FQbmh8bk",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775897134,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775983534,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a14n4231LsuaULdOQeBOJeWh0eGp0nOEy9lP2BGHanZBBIFh3FxJloH8pI",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775897131,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775983531,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1SGfeb1xLOpRisRtCxXRhiWsvms32TKiGtM1qYZoLGVHgw3eNyeUtQVLB",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775897114,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775983514,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1hXe6lnLpcKOGNCZk54M0TWWIGEHXZdJewUmexfz7ApoelsNFnNfp9Ivx",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775893132,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775979532,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1fmWiYpfhNPwnsI8RwIQtwHW4FAfZSsDztFrXJTnu3AzaVXeJrR6sBuKu",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 999,
+          "amount_total": 999,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775887833,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775974233,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1cfgz87Wcv1vdnJe6XrtTvcdhU3bH6lMH7Z73q847S609C8b5NxLfjDiZ",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775843694,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775930094,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a126CkIQ2N02VrGQCAZ5riuL3PTKf5sJo55TTiDBTUnt1WdbazlaMPbmi5",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775843690,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775930089,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a10hxdFumKGGBbZNzaJdl6tuBxyZsq8p9swUgIlv3mD8J2jfFbBTY6hwRo",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775810850,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775897250,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1EmMz2uQijVSs6MglWGpaLMh1YAf705ByGhbWFPz5IH0PIKlz3ApBv2iL",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775810847,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775897246,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1peCGP93RkiWWbzGSPDLd6uXlvBARxDvPx5qBrNMOP9UdefgdLV0iBkYa",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791517,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877917,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1fs6DQAWZwsCSQDms4tlQCGZgMQoicqJaT6tRMvhkNT8hWZ7WgBARnvDV",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791517,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877917,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a159bQajKBkOUGHa1vutj5btj1sJHd8fGF5Ul5L5S9g6q56fHZAoFzK8KD",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791512,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877912,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1IPzMmTAc7HRRZDG6xEKmu3oSKK8ZKVxy8ZhZkHCJ0MsR6alp31wMeysK",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791512,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877912,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1sKdU8CZatRIrBGRf52nc3aWLFIwAjRXTVvUJOx1EIK1W0PF3B33gd8do",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791508,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877907,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1dmp9AFozDEnIolmpOcn5d1VfV8tyFSGqPUTreqAgpq1immymPwLeL7Wv",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791507,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877907,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1Z5CiijfyTSu8H1XKfyV6lGoRX5SGMTvfGK3dA3aEyFvYUHGrOd5mZe4Q",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791507,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877906,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1iXrZyHZwLXPHHZLtopnYo7mdmcH6gATXLWgO09dV76uqo7pP1YkqL85N",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791507,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877907,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1JP2bugsin4IfLEsmvd8dQ3hC2bq5CUwCPxuEGQIASzkEi5fy9gw0tHAQ",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791499,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877899,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1OtyLrHfSeZWmmYZg87GRjLpq1nmFRJesJhA3uJl2lw8qI0UsNzS0At1a",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791499,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877899,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1YP0MioTvNzU1kZCW6iS7b6YjGDs8zpSjxZP11XxPGQgARn6QC2kMgEbk",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791499,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877899,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1fJmY5dQazZBgQaQWzVLMXtSUQizAKgMF2SIdQcnygDS80y14lc7XYyLR",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775791499,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775877899,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1vmTyKwmV8Ye0GaL0IVHLS2l3XnqAioYcrRmaIEmMitLcA8pUKrC6U8So",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775762942,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775849342,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1A5O09inIwRig6LfsIhSNhXv6kywjWc62bKaukVM60FQJ4b5VpRN0fBMW",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775762942,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775849341,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1GhxkhcFg8NptM41xWdGl3Q3FfN0whkgiC0qfjIgRoNnQSB7sGIShIiPg",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775762926,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775849326,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1XokBwdB3Qb8e6mYiit06lkCiMaS4VifTIKbT1tWHrSBCZfDvEa8ebhhW",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775754602,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775841002,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1CsDzVeLZrlGJE2DeVjFATUiaaEXmTYZJoFyuS4zvzuYrJjdP8ahvY9WG",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775753041,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775839441,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1mtIa2OBbDcfAXEzjAKIIJAXXInp8FkadXHOGQtavVj9YqzbBrLPNLUA6",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775749383,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775835783,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1OzeWYBLrvOzSGoC8Epxuym7baSvFCGpeIXsiuDzoN9QzA7wgAzeCfm6N",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775749378,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775835778,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1zjocw7RVJTwy90zbQnAaNpYYs5rPz7XbrPwDrNJdFJVaUuglRufejc73",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775746867,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775833267,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1XebIy1bCkGZpaxwsQJSB4GAzp0m6ekKYalkMAumSpReo43U1iF1iTyNo",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 29900,
+          "amount_total": 29900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775746704,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775833104,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        },
+        {
+          "id": "cs_live_a1UtABx9U8gMH7KY1slNcVHBBvOG9BXtiswoTcELf6MTiY6UL5MHrHULMl",
+          "object": "checkout.session",
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "allow_promotion_codes": null,
+          "amount_subtotal": 4900,
+          "amount_total": 4900,
+          "automatic_tax": {
+            "enabled": false,
+            "liability": null,
+            "provider": null,
+            "status": null
+          },
+          "billing_address_collection": null,
+          "branding_settings": {
+            "background_color": "#ffffff",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "AlgoVaultLabs",
+            "font_family": "default",
+            "icon": null,
+            "logo": null
+          },
+          "cancel_url": "http://api.algovault.com/signup?cancelled=true",
+          "client_reference_id": null,
+          "client_secret": null,
+          "collected_information": null,
+          "consent": null,
+          "consent_collection": null,
+          "created": 1775746699,
+          "currency": "usd",
+          "currency_conversion": null,
+          "custom_fields": [],
+          "custom_text": {
+            "after_submit": null,
+            "shipping_address": null,
+            "submit": null,
+            "terms_of_service_acceptance": null
+          },
+          "customer": null,
+          "customer_account": null,
+          "customer_creation": "always",
+          "customer_details": null,
+          "customer_email": null,
+          "discounts": [],
+          "expires_at": 1775833099,
+          "integration_identifier": null,
+          "invoice": null,
+          "invoice_creation": null,
+          "livemode": true,
+          "locale": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "metadata": {},
+          "mode": "subscription",
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_link": null,
+          "payment_method_collection": "always",
+          "payment_method_configuration_details": {
+            "id": "pmc_1TKIywKGleoEgU2HL7OGuMeS",
+            "parent": null
+          },
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "payment_method_types": [
+            "card",
+            "link"
+          ],
+          "payment_status": "unpaid",
+          "permissions": null,
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "recovered_from": null,
+          "saved_payment_method_options": {
+            "allow_redisplay_filters": [
+              "always"
+            ],
+            "payment_method_remove": "disabled",
+            "payment_method_save": null
+          },
+          "setup_intent": null,
+          "shipping_address_collection": null,
+          "shipping_cost": null,
+          "shipping_options": [],
+          "status": "expired",
+          "submit_type": null,
+          "subscription": null,
+          "success_url": "http://api.algovault.com/welcome?session_id={CHECKOUT_SESSION_ID}",
+          "total_details": {
+            "amount_discount": 0,
+            "amount_shipping": 0,
+            "amount_tax": 0
+          },
+          "ui_mode": "hosted_page",
+          "url": null,
+          "wallet_options": null
+        }
+      ],
+      "has_more": false,
+      "url": "/v1/checkout/sessions"
+    },
+    "stripe_checkout_summary": {
+      "total_sessions_created": 47,
+      "date_range": {
+        "first": "2026-04-09T14:58:19Z",
+        "last": "2026-04-15T02:21:17Z"
+      },
+      "by_status": {
+        "open/unpaid": 9,
+        "expired/unpaid": 38
+      },
+      "paid_sessions": 0,
+      "sessions_with_email": 0,
+      "by_plan_amount": {
+        "$9.99 Starter": 7,
+        "$49 Pro": 21,
+        "$299 Enterprise": 19
+      },
+      "by_day_created": {
+        "2026-04-09": 10,
+        "2026-04-10": 16,
+        "2026-04-11": 5,
+        "2026-04-12": 7,
+        "2026-04-14": 3,
+        "2026-04-15": 6
+      },
+      "interpretation": "47 checkout sessions created via /signup?plan=X redirect, zero ever reached billing-info entry. Every /signup hit creates a new Stripe session (expires in ~24h), so 47 = roughly 47 /signup clicks over 6 days. Distribution is weighted toward Pro+Enterprise (~85% of sessions), not Starter."
+    },
+    "x402_on_chain": {
+      "wallet": "0x778A05280Fd8dB980E920fE9f31d0A8eAbD17d59",
+      "network": "Base mainnet",
+      "wallet_state": {
+        "block_number_balance_updated_at": 44727680,
+        "coin_balance": "0",
+        "creation_status": null,
+        "creation_transaction_hash": null,
+        "creator_address_hash": null,
+        "ens_domain_name": null,
+        "exchange_rate": "2324.58",
+        "has_beacon_chain_withdrawals": false,
+        "has_logs": false,
+        "has_token_transfers": false,
+        "has_tokens": false,
+        "has_validated_blocks": false,
+        "hash": "0x778A05280Fd8dB980E920fE9f31d0A8eAbD17d59",
+        "implementations": [],
+        "is_contract": false,
+        "is_scam": false,
+        "is_verified": false,
+        "metadata": null,
+        "name": null,
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "token": null,
+        "watchlist_address_id": null,
+        "watchlist_names": []
+      },
+      "usdc_transfers_in": {
+        "items": [],
+        "next_page_params": null
+      },
+      "interpretation": "Blockscout confirms: 0 transactions, 0 USDC transfers, 0 unique senders. x402 receiving wallet has never been touched on Base."
+    },
+    "npm": {
+      "package_name": "crypto-quant-signal-mcp",
+      "last_month_total": 1269,
+      "last_week_total": 936,
+      "last_day_total": 236,
+      "daily_range_raw": {
+        "start": "2026-03-16",
+        "end": "2026-04-14",
+        "package": "crypto-quant-signal-mcp",
+        "downloads": [
+          {
+            "downloads": 0,
+            "day": "2026-03-16"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-17"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-18"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-19"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-20"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-21"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-22"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-23"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-24"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-25"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-26"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-27"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-28"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-29"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-30"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-03-31"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-04-01"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-04-02"
+          },
+          {
+            "downloads": 0,
+            "day": "2026-04-03"
+          },
+          {
+            "downloads": 104,
+            "day": "2026-04-04"
+          },
+          {
+            "downloads": 7,
+            "day": "2026-04-05"
+          },
+          {
+            "downloads": 96,
+            "day": "2026-04-06"
+          },
+          {
+            "downloads": 126,
+            "day": "2026-04-07"
+          },
+          {
+            "downloads": 124,
+            "day": "2026-04-08"
+          },
+          {
+            "downloads": 115,
+            "day": "2026-04-09"
+          },
+          {
+            "downloads": 232,
+            "day": "2026-04-10"
+          },
+          {
+            "downloads": 143,
+            "day": "2026-04-11"
+          },
+          {
+            "downloads": 51,
+            "day": "2026-04-12"
+          },
+          {
+            "downloads": 35,
+            "day": "2026-04-13"
+          },
+          {
+            "downloads": 236,
+            "day": "2026-04-14"
+          }
+        ]
+      },
+      "user_provided_number": 1269,
+      "delta_vs_user": "0.0%",
+      "interpretation": "NPM last-month matches user-provided 1,269 exactly. Last-week of 936 implies ~134/day velocity \u2014 accelerating vs the 15/day average for the first half of the window."
+    },
+    "github": {
+      "id": 1201406570,
+      "node_id": "R_kgDOR5wCag",
+      "name": "crypto-quant-signal-mcp",
+      "full_name": "AlgoVaultLabs/crypto-quant-signal-mcp",
+      "private": false,
+      "owner": {
+        "login": "AlgoVaultLabs",
+        "id": 264141358,
+        "node_id": "O_kgDOD756Lg",
+        "avatar_url": "https://avatars.githubusercontent.com/u/264141358?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/AlgoVaultLabs",
+        "html_url": "https://github.com/AlgoVaultLabs",
+        "followers_url": "https://api.github.com/users/AlgoVaultLabs/followers",
+        "following_url": "https://api.github.com/users/AlgoVaultLabs/following{/other_user}",
+        "gists_url": "https://api.github.com/users/AlgoVaultLabs/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/AlgoVaultLabs/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/AlgoVaultLabs/subscriptions",
+        "organizations_url": "https://api.github.com/users/AlgoVaultLabs/orgs",
+        "repos_url": "https://api.github.com/users/AlgoVaultLabs/repos",
+        "events_url": "https://api.github.com/users/AlgoVaultLabs/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/AlgoVaultLabs/received_events",
+        "type": "Organization",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
+      "description": "AI trading brain for crypto perps \u2014 composite signals, funding rate arb scanning, and market regime detection via MCP",
+      "fork": false,
+      "url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp",
+      "forks_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/forks",
+      "keys_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/keys{/key_id}",
+      "collaborators_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/collaborators{/collaborator}",
+      "teams_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/teams",
+      "hooks_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/hooks",
+      "issue_events_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/issues/events{/number}",
+      "events_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/events",
+      "assignees_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/assignees{/user}",
+      "branches_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/branches{/branch}",
+      "tags_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/tags",
+      "blobs_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/git/blobs{/sha}",
+      "git_tags_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/git/tags{/sha}",
+      "git_refs_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/git/refs{/sha}",
+      "trees_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/git/trees{/sha}",
+      "statuses_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/statuses/{sha}",
+      "languages_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/languages",
+      "stargazers_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/stargazers",
+      "contributors_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/contributors",
+      "subscribers_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/subscribers",
+      "subscription_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/subscription",
+      "commits_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/commits{/sha}",
+      "git_commits_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/git/commits{/sha}",
+      "comments_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/comments{/number}",
+      "issue_comment_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/issues/comments{/number}",
+      "contents_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/contents/{+path}",
+      "compare_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/compare/{base}...{head}",
+      "merges_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/merges",
+      "archive_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/{archive_format}{/ref}",
+      "downloads_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/downloads",
+      "issues_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/issues{/number}",
+      "pulls_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/pulls{/number}",
+      "milestones_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/milestones{/number}",
+      "notifications_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/notifications{?since,all,participating}",
+      "labels_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/labels{/name}",
+      "releases_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/releases{/id}",
+      "deployments_url": "https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/deployments",
+      "created_at": "2026-04-04T16:28:44Z",
+      "updated_at": "2026-04-15T06:25:30Z",
+      "pushed_at": "2026-04-15T06:25:26Z",
+      "git_url": "git://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git",
+      "ssh_url": "git@github.com:AlgoVaultLabs/crypto-quant-signal-mcp.git",
+      "clone_url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git",
+      "svn_url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
+      "homepage": null,
+      "size": 22365,
+      "stargazers_count": 1,
+      "watchers_count": 1,
+      "language": "TypeScript",
+      "has_issues": true,
+      "has_projects": true,
+      "has_downloads": true,
+      "has_wiki": true,
+      "has_pages": false,
+      "has_discussions": false,
+      "forks_count": 0,
+      "mirror_url": null,
+      "archived": false,
+      "disabled": false,
+      "open_issues_count": 0,
+      "license": null,
+      "allow_forking": true,
+      "is_template": false,
+      "web_commit_signoff_required": false,
+      "has_pull_requests": true,
+      "pull_request_creation_policy": "all",
+      "topics": [],
+      "visibility": "public",
+      "forks": 0,
+      "open_issues": 0,
+      "watchers": 1,
+      "default_branch": "main",
+      "temp_clone_token": null,
+      "custom_properties": {},
+      "organization": {
+        "login": "AlgoVaultLabs",
+        "id": 264141358,
+        "node_id": "O_kgDOD756Lg",
+        "avatar_url": "https://avatars.githubusercontent.com/u/264141358?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/AlgoVaultLabs",
+        "html_url": "https://github.com/AlgoVaultLabs",
+        "followers_url": "https://api.github.com/users/AlgoVaultLabs/followers",
+        "following_url": "https://api.github.com/users/AlgoVaultLabs/following{/other_user}",
+        "gists_url": "https://api.github.com/users/AlgoVaultLabs/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/AlgoVaultLabs/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/AlgoVaultLabs/subscriptions",
+        "organizations_url": "https://api.github.com/users/AlgoVaultLabs/orgs",
+        "repos_url": "https://api.github.com/users/AlgoVaultLabs/repos",
+        "events_url": "https://api.github.com/users/AlgoVaultLabs/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/AlgoVaultLabs/received_events",
+        "type": "Organization",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "network_count": 0,
+      "subscribers_count": 0
+    },
+    "mcp_registry_official": {
+      "query_url": "https://registry.modelcontextprotocol.io/v0/servers?search=crypto-quant-signal",
+      "entries_published": 8,
+      "latest_version": "1.8.1",
+      "latest_published_at": "2026-04-14T07:13:11.127232Z",
+      "server_name": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
+      "registered_remote": "https://api.algovault.com/mcp",
+      "_note": "Registry exposes no download/view counts \u2014 publication count only."
+    },
+    "smithery": {
+      "search_slug": "algovault/crypto-quant-signal-mcp",
+      "listed": true,
+      "self_reported_connections": 0,
+      "gateway_url": "https://crypto-quant-signal-mcp--algovault.run.tools",
+      "api_endpoint_exists": false,
+      "_note": "Smithery exposes a '<N> connections' number on its search results page but no public API for it. Second-source verification not possible."
+    }
+  }
+}

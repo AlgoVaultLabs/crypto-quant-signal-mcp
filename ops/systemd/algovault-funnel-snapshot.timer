@@ -1,0 +1,33 @@
+# algovault-funnel-snapshot.timer
+#
+# Weekly timer for algovault-funnel-snapshot.service. Fires every Monday at
+# 10:00 UTC, with a 15-minute random jitter so successive runs do not hit
+# the Hyperliquid API on the exact same second.
+#
+#   Persistent=true        — if the host was offline at the scheduled time,
+#                            fire immediately on next boot so we never skip
+#                            a week (important: the task prompt requires a
+#                            weekly cadence for the activation funnel).
+#   RandomizedDelaySec=900 — spread the actual run across a 15-minute window.
+#   OnCalendar=Mon *-*-* 10:00:00 UTC — every Monday, 10:00 UTC (R4 step 2).
+#
+# Installation:
+#   sudo cp /opt/crypto-quant-signal-mcp/ops/systemd/algovault-funnel-snapshot.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now algovault-funnel-snapshot.timer
+#   systemctl list-timers algovault-funnel-snapshot.timer
+#
+# See ops/systemd/README.md for the full install guide.
+
+[Unit]
+Description=AlgoVault activation funnel weekly snapshot timer
+Documentation=https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/tree/main/activation-funnel
+
+[Timer]
+OnCalendar=Mon *-*-* 10:00:00 UTC
+Persistent=true
+Unit=algovault-funnel-snapshot.service
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
