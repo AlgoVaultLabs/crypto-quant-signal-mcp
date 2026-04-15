@@ -1,0 +1,42 @@
+# algovault-funnel-snapshot.service
+#
+# One-shot systemd service that runs the weekly activation-funnel snapshot
+# wrapper. Invoked by algovault-funnel-snapshot.timer on a schedule; can also
+# be triggered manually with `systemctl start algovault-funnel-snapshot.service`
+# for on-demand testing.
+#
+# Installation:
+#   sudo cp /opt/crypto-quant-signal-mcp/ops/systemd/algovault-funnel-snapshot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now algovault-funnel-snapshot.timer
+#
+# See ops/systemd/README.md for the full install guide, prerequisites, and
+# known blockers (Postgres port exposure, tsx cache warm-up, deploy-key push
+# access). The `-` prefix on EnvironmentFile= means the service will start
+# even if the env file is missing; the wrapper script performs its own
+# DATABASE_URL health-check and exits non-zero with a clear message when it
+# is not set.
+
+[Unit]
+Description=AlgoVault activation funnel weekly snapshot
+Documentation=https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/tree/main/activation-funnel
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/crypto-quant-signal-mcp
+EnvironmentFile=-/etc/algovault/funnel-snapshot.env
+ExecStart=/opt/crypto-quant-signal-mcp/scripts/commit-funnel-snapshot.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300
+# Avoid hammering the server during the weekly run
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=5
+
+[Install]
+WantedBy=multi-user.target
