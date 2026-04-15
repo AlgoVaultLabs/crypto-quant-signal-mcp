@@ -60,6 +60,8 @@ interface CliArgs {
   version?: string;
   dryRun: boolean;
   selfAudit: boolean;
+  /** Smoke-test probe tag. Prefixes post title with `[testTag] TEST — ` and appends a "safe to delete" footer. Used to verify the hardened publish+verify+audit chain end-to-end. */
+  testTag?: string;
 }
 
 function parseArgs(): CliArgs {
@@ -68,12 +70,14 @@ function parseArgs(): CliArgs {
   let version: string | undefined;
   let dryRun = false;
   let selfAudit = false;
+  let testTag: string | undefined;
 
   for (const arg of args) {
     if (arg.startsWith('--type=')) type = arg.split('=')[1];
     if (arg.startsWith('--version=')) version = arg.split('=')[1];
     if (arg === '--dry-run') dryRun = true;
     if (arg === '--self-audit') selfAudit = true;
+    if (arg.startsWith('--test-tag=')) testTag = arg.split('=')[1];
   }
 
   // --self-audit mode is read-only and ignores --type / --version.
@@ -83,11 +87,12 @@ function parseArgs(): CliArgs {
       version,
       dryRun,
       selfAudit: true,
+      testTag,
     };
   }
 
   if (!type || !['track-record', 'usage-example', 'market-insight', 'release'].includes(type)) {
-    console.error('Usage: --type=track-record|usage-example|market-insight|release [--version=X.Y.Z] [--dry-run] | --self-audit');
+    console.error('Usage: --type=track-record|usage-example|market-insight|release [--version=X.Y.Z] [--dry-run] [--test-tag=NAME] | --self-audit');
     process.exit(1);
   }
 
@@ -96,7 +101,7 @@ function parseArgs(): CliArgs {
     process.exit(1);
   }
 
-  return { type: type as CliArgs['type'], version, dryRun, selfAudit: false };
+  return { type: type as CliArgs['type'], version, dryRun, selfAudit: false, testTag };
 }
 
 // ── API data fetching ──
@@ -971,6 +976,15 @@ async function main() {
   } catch (err) {
     console.error(`[${ts}] API error — skipping this run:`, err instanceof Error ? err.message : err);
     process.exit(1);
+  }
+
+  // Smoke-test probe tagging: prefix title + append safe-to-delete footer so
+  // the probe is trivially findable on each platform for cleanup. This does
+  // not change any publish/verify logic — it exercises the full chain with a
+  // distinguishable payload.
+  if (args.testTag) {
+    post.title = `[${args.testTag}] TEST — ${post.title}`;
+    post.content = `${post.content}\n\n> Test probe: ${args.testTag}. Safe to delete.`;
   }
 
   // Word count check
