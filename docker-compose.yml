@@ -31,6 +31,12 @@ services:
     restart: unless-stopped
   postgres:
     image: postgres:16-alpine
+    # Loopback-only binding so the host-side activation-funnel cron
+    # (algovault-funnel-snapshot.timer) can reach Postgres from
+    # /etc/algovault/funnel-snapshot.env without exposing 5432 publicly.
+    # Container-to-container traffic on the docker network is unaffected.
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: signal_performance
       POSTGRES_USER: algovault
