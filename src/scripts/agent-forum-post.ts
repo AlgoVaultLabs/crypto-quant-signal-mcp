@@ -10,10 +10,27 @@
  *   npx tsx src/scripts/agent-forum-post.ts --type=usage-example [--dry-run]
  *   npx tsx src/scripts/agent-forum-post.ts --type=market-insight [--dry-run]
  *   npx tsx src/scripts/agent-forum-post.ts --type=release --version=1.8.0 [--dry-run]
+ *   npx tsx src/scripts/agent-forum-post.ts --self-audit
  *
  * Env vars (all optional — missing = skip that platform):
  *   MOLTBOOK_API_KEY, DEVTO_API_KEY, HASHNODE_PAT, HASHNODE_PUBLICATION_ID
+ *   FORUM_POST_KILL_SWITCH=1 — abort without publishing (for emergency halt)
  */
+
+import { stripExternalUrlsForModeration } from '../lib/forum-post-content.js';
+import {
+  verifyHashnodePost,
+  verifyMoltbookPost,
+  verifyDevtoPost,
+  type VerifyResult,
+} from '../lib/forum-post-verify.js';
+import {
+  recordFailure,
+  countRecentFailures,
+  recordPublished,
+  getRecentPublished,
+} from '../lib/forum-post-failures.js';
+import { sendAlert } from '../lib/telegram.js';
 
 const API_BASE = 'https://api.algovault.com';
 const MCP_ENDPOINT = `${API_BASE}/mcp`;
@@ -21,12 +38,28 @@ const COUNTER_FILE = '/opt/crypto-quant-signal-mcp/usage-example-counter.txt';
 // Fallback for local dev / dry-run
 const COUNTER_FILE_LOCAL = './usage-example-counter.txt';
 
+// Canonical back-link per post type — set on Hashnode via
+// `originalArticleURL` (the real name of the canonical field on the
+// current Hashnode schema — see
+// experiments/crypto-quant-signal/platform-api-schemas-2026-04-15.md)
+// and on Dev.to via `canonical_url`. Moltbook has no canonical-URL
+// field; its body is stripped and accepts the information loss.
+const CANONICAL_BY_TYPE: Record<string, string> = {
+  'track-record': 'https://algovault.com/track-record',
+  'usage-example': 'https://algovault.com/docs.html',
+  'market-insight': 'https://algovault.com/track-record',
+  release: 'https://algovault.com/docs.html',
+};
+
+const CANONICAL_DOMAIN = 'algovault.com';
+
 // ── CLI argument parsing ──
 
 interface CliArgs {
   type: 'track-record' | 'usage-example' | 'market-insight' | 'release';
   version?: string;
   dryRun: boolean;
+  selfAudit: boolean;
 }
 
 function parseArgs(): CliArgs {
@@ -34,15 +67,27 @@ function parseArgs(): CliArgs {
   let type: string | undefined;
   let version: string | undefined;
   let dryRun = false;
+  let selfAudit = false;
 
   for (const arg of args) {
     if (arg.startsWith('--type=')) type = arg.split('=')[1];
     if (arg.startsWith('--version=')) version = arg.split('=')[1];
     if (arg === '--dry-run') dryRun = true;
+    if (arg === '--self-audit') selfAudit = true;
+  }
+
+  // --self-audit mode is read-only and ignores --type / --version.
+  if (selfAudit) {
+    return {
+      type: (type as CliArgs['type']) ?? 'track-record',
+      version,
+      dryRun,
+      selfAudit: true,
+    };
   }
 
   if (!type || !['track-record', 'usage-example', 'market-insight', 'release'].includes(type)) {
-    console.error('Usage: --type=track-record|usage-example|market-insight|release [--version=X.Y.Z] [--dry-run]');
+    console.error('Usage: --type=track-record|usage-example|market-insight|release [--version=X.Y.Z] [--dry-run] | --self-audit');
     process.exit(1);
   }
 
@@ -51,7 +96,7 @@ function parseArgs(): CliArgs {
     process.exit(1);
   }
 
-  return { type: type as CliArgs['type'], version, dryRun };
+  return { type: type as CliArgs['type'], version, dryRun, selfAudit: false };
 }
 
 // ── API data fetching ──
@@ -481,150 +526,332 @@ Built by AlgoVault Labs — signal interpretation for AI trading agents.`;
 
 // ── Platform publishers ──
 
-async function publishMoltbook(post: Post): Promise<string | null> {
-  const key = process.env.MOLTBOOK_API_KEY;
-  if (!key) { console.log('[moltbook] MOLTBOOK_API_KEY not set — skipping'); return null; }
+/**
+ * Result of a single publishX() call. `verified` is tri-state:
+ *  - true  → re-query confirmed the post is live
+ *  - false → publish succeeded but re-query failed (silent drop)
+ *  - null  → not yet attempted (auth missing, HTTP error pre-publish, etc.)
+ */
+interface PublishResult {
+  url: string | null;
+  postId: string | null;
+  verified: boolean | null;
+  reason?: string;
+}
 
-  const res = await fetch('https://www.moltbook.com/api/v1/posts', {
+async function publishMoltbook(post: Post, postType: string): Promise<PublishResult> {
+  const key = process.env.MOLTBOOK_API_KEY;
+  if (!key) { console.log('[moltbook] MOLTBOOK_API_KEY not set — skipping'); return { url: null, postId: null, verified: null }; }
+
+  // Strip external URLs from the body — Moltbook has no canonical-URL
+  // field, and embedded links trigger the `is_spam: true` auto-flag per
+  // audit 2026-04-15.
+  const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+
+  const body = JSON.stringify({ submolt: post.moltbookSubmolt, title: post.title, content: strippedContent });
+  const opts: RequestInit = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ submolt: post.moltbookSubmolt, title: post.title, content: post.content }),
-  });
+    body,
+  };
+
+  let res = await fetch('https://www.moltbook.com/api/v1/posts', opts);
 
   if (res.status === 429) {
     console.log('[moltbook] Rate limited — retrying in 30s');
     await new Promise(r => setTimeout(r, 30_000));
-    const retry = await fetch('https://www.moltbook.com/api/v1/posts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ submolt: post.moltbookSubmolt, title: post.title, content: post.content }),
-    });
-    if (!retry.ok) {
-      const body = await retry.text();
-      console.error(`[moltbook] Retry failed: ${retry.status} — ${body}`);
-      return null;
-    }
-    const data = await retry.json() as Record<string, unknown>;
-    const postUrl = (data.url as string) || (data.slug ? `https://www.moltbook.com/post/${data.slug}` : null) || (data.id ? `https://www.moltbook.com/post/${data.id}` : null);
-    console.log(`[moltbook] Published (retry): ${postUrl || 'ok (no URL in response)'}`);
-    return postUrl || 'published';
+    res = await fetch('https://www.moltbook.com/api/v1/posts', opts);
   }
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error(`[moltbook] Failed: ${res.status} — ${body}`);
-    return null;
+    const errBody = await res.text();
+    console.error(`[moltbook] Failed: ${res.status} — ${errBody}`);
+    await recordFailure('moltbook', postType, `moltbook-http-${res.status}`);
+    return { url: null, postId: null, verified: null, reason: `http-${res.status}` };
   }
 
   const data = await res.json() as Record<string, unknown>;
   const postData = data.post as Record<string, unknown> | undefined;
+  const postId = (postData?.id as string) || (data.id as string) || null;
   const postUrl = (data.url as string)
     || (postData?.slug ? `https://www.moltbook.com/post/${postData.slug}` : null)
     || (postData?.id ? `https://www.moltbook.com/post/${postData.id}` : null)
     || (data.slug ? `https://www.moltbook.com/post/${data.slug}` : null);
   console.log(`[moltbook] Published: ${postUrl || 'ok'}`);
-  return postUrl || 'published';
+
+  if (!postId) {
+    console.error('[moltbook] No post ID in response — cannot verify');
+    await recordFailure('moltbook', postType, 'moltbook-no-post-id-in-response', null, postUrl ?? undefined);
+    return { url: postUrl, postId: null, verified: false, reason: 'no-post-id' };
+  }
+
+  // Verify: re-query 5s later to confirm the post is not auto-spammed.
+  const verify = await verifyMoltbookPost(postId, key);
+  await logPublishResult('moltbook', postType, postId, postUrl, verify);
+  return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
 }
 
-async function publishDevTo(post: Post): Promise<string | null> {
+async function publishDevTo(post: Post, postType: string): Promise<PublishResult> {
   const key = process.env.DEVTO_API_KEY;
-  if (!key) { console.log('[devto] DEVTO_API_KEY not set — skipping'); return null; }
+  if (!key) { console.log('[devto] DEVTO_API_KEY not set — skipping'); return { url: null, postId: null, verified: null }; }
 
-  const res = await fetch('https://dev.to/api/articles', {
+  // Strip external URLs. Dev.to has been 100% healthy in audit, but the
+  // spec calls for uniform stripping across platforms to reduce
+  // moderation risk. The canonical back-link is preserved on Dev.to via
+  // the `canonical_url` field rather than in-body.
+  const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+  const canonical = CANONICAL_BY_TYPE[postType] ?? 'https://algovault.com/';
+
+  const body = JSON.stringify({
+    article: {
+      title: post.title,
+      body_markdown: strippedContent,
+      published: true,
+      tags: post.tags,
+      canonical_url: canonical,
+    },
+  });
+  const opts: RequestInit = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'api-key': key },
-    body: JSON.stringify({ article: { title: post.title, body_markdown: post.content, published: true, tags: post.tags } }),
-  });
+    body,
+  };
+
+  let res = await fetch('https://dev.to/api/articles', opts);
 
   if (res.status === 429) {
     console.log('[devto] Rate limited — retrying in 30s');
     await new Promise(r => setTimeout(r, 30_000));
-    const retry = await fetch('https://dev.to/api/articles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': key },
-      body: JSON.stringify({ article: { title: post.title, body_markdown: post.content, published: true, tags: post.tags } }),
-    });
-    if (!retry.ok) {
-      const body = await retry.text();
-      console.error(`[devto] Retry failed: ${retry.status} — ${body}`);
-      return null;
-    }
-    const data = await retry.json() as { url?: string };
-    console.log(`[devto] Published (retry): ${data.url}`);
-    return data.url || 'published';
+    res = await fetch('https://dev.to/api/articles', opts);
   }
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error(`[devto] Failed: ${res.status} — ${body}`);
-    return null;
+    const errBody = await res.text();
+    console.error(`[devto] Failed: ${res.status} — ${errBody}`);
+    await recordFailure('devto', postType, `devto-http-${res.status}`);
+    return { url: null, postId: null, verified: null, reason: `http-${res.status}` };
   }
 
-  const data = await res.json() as { url?: string };
-  console.log(`[devto] Published: ${data.url}`);
-  return data.url || 'published';
+  const data = await res.json() as { url?: string; id?: number };
+  const postUrl = data.url ?? null;
+  const postId = data.id != null ? String(data.id) : null;
+  console.log(`[devto] Published: ${postUrl}`);
+
+  if (data.id == null) {
+    console.error('[devto] No article id in response — cannot verify');
+    await recordFailure('devto', postType, 'devto-no-id-in-response', null, postUrl ?? undefined);
+    return { url: postUrl, postId: null, verified: false, reason: 'no-article-id' };
+  }
+
+  const verify = await verifyDevtoPost(data.id, key);
+  await logPublishResult('devto', postType, postId!, postUrl, verify);
+  return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
 }
 
-async function publishHashnode(post: Post): Promise<string | null> {
+async function publishHashnode(post: Post, postType: string): Promise<PublishResult> {
   const pat = process.env.HASHNODE_PAT;
   const pubId = process.env.HASHNODE_PUBLICATION_ID;
-  if (!pat || !pubId) { console.log('[hashnode] HASHNODE_PAT or HASHNODE_PUBLICATION_ID not set — skipping'); return null; }
+  if (!pat || !pubId) { console.log('[hashnode] HASHNODE_PAT or HASHNODE_PUBLICATION_ID not set — skipping'); return { url: null, postId: null, verified: null }; }
+
+  // Strip external URLs from the body — Hashnode's anti-spam filter on
+  // low-follower publications silently removes posts with multiple
+  // external URLs. The canonical back-link survives via the
+  // `originalArticleURL` input field (Hashnode's real name for the
+  // canonical-URL field — see the schemas report).
+  const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+  const canonical = CANONICAL_BY_TYPE[postType] ?? 'https://algovault.com/';
 
   const mutation = `mutation PublishPost($input: PublishPostInput!) {
-    publishPost(input: $input) { post { url } }
+    publishPost(input: $input) { post { id slug url } }
   }`;
 
   const variables = {
     input: {
       title: post.title,
-      contentMarkdown: post.content,
+      contentMarkdown: strippedContent,
       publicationId: pubId,
       tags: post.tags.map(t => ({ slug: t, name: t })),
+      originalArticleURL: canonical,
     },
   };
 
-  const res = await fetch('https://gql.hashnode.com', {
+  const opts: RequestInit = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': pat },
     body: JSON.stringify({ query: mutation, variables }),
-  });
+  };
+  let res = await fetch('https://gql.hashnode.com', opts);
 
   if (res.status === 429) {
     console.log('[hashnode] Rate limited — retrying in 30s');
     await new Promise(r => setTimeout(r, 30_000));
-    const retry = await fetch('https://gql.hashnode.com', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': pat },
-      body: JSON.stringify({ query: mutation, variables }),
-    });
-    if (!retry.ok) {
-      const body = await retry.text();
-      console.error(`[hashnode] Retry failed: ${retry.status} — ${body}`);
-      return null;
-    }
-    const data = await retry.json() as { data?: { publishPost?: { post?: { url?: string } } } };
-    const url = data?.data?.publishPost?.post?.url;
-    console.log(`[hashnode] Published (retry): ${url}`);
-    return url || 'published';
+    res = await fetch('https://gql.hashnode.com', opts);
   }
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error(`[hashnode] Failed: ${res.status} — ${body}`);
-    return null;
+    const errBody = await res.text();
+    console.error(`[hashnode] Failed: ${res.status} — ${errBody}`);
+    await recordFailure('hashnode', postType, `hashnode-http-${res.status}`);
+    return { url: null, postId: null, verified: null, reason: `http-${res.status}` };
   }
 
-  const data = await res.json() as { data?: { publishPost?: { post?: { url?: string } } } };
-  const url = data?.data?.publishPost?.post?.url;
-  console.log(`[hashnode] Published: ${url}`);
-  return url || 'published';
+  const data = await res.json() as {
+    data?: { publishPost?: { post?: { id?: string; slug?: string; url?: string } } };
+    errors?: Array<{ message?: string }>;
+  };
+  if (data.errors && data.errors.length > 0) {
+    const msg = data.errors.map(e => e.message ?? 'unknown').join('; ');
+    console.error(`[hashnode] GraphQL errors: ${msg}`);
+    await recordFailure('hashnode', postType, `hashnode-graphql-errors: ${msg}`);
+    return { url: null, postId: null, verified: null, reason: `graphql-errors: ${msg}` };
+  }
+  const postObj = data?.data?.publishPost?.post;
+  const postUrl = postObj?.url ?? null;
+  const postId = postObj?.id ?? null;
+  console.log(`[hashnode] Published: ${postUrl}`);
+
+  if (!postId) {
+    console.error('[hashnode] No post id in response — cannot verify');
+    await recordFailure('hashnode', postType, 'hashnode-no-post-id-in-response', null, postUrl ?? undefined);
+    return { url: postUrl, postId: null, verified: false, reason: 'no-post-id' };
+  }
+
+  const verify = await verifyHashnodePost(postId, pat, pubId);
+  await logPublishResult('hashnode', postType, postId, postUrl, verify);
+  return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
+}
+
+/**
+ * Shared post-verify bookkeeping: write to the audit log (always), write
+ * to the failures table when verify failed, and emit the structured log
+ * line the self-audit cron consumes.
+ */
+async function logPublishResult(
+  platform: string,
+  postType: string,
+  postId: string,
+  postUrl: string | null,
+  verify: VerifyResult,
+): Promise<void> {
+  const reason = verify.verified ? undefined : verify.reason;
+  await recordPublished(platform, postType, postId, postUrl ?? '', verify.verified, reason);
+
+  if (verify.verified) {
+    console.log(`FORUM_POST_PUBLISHED platform=${platform} post_id=${postId} post_url=${postUrl ?? ''} verified=true`);
+    return;
+  }
+
+  console.error(`[${platform}] DROPPED_POST_VERIFY_FAILED id=${postId} reason=${reason}`);
+  console.log(`FORUM_POST_PUBLISHED platform=${platform} post_id=${postId} post_url=${postUrl ?? ''} verified=false reason=${reason}`);
+  await recordFailure(platform, postType, reason ?? 'unknown', postId, postUrl ?? undefined);
 }
 
 // ── Main ──
 
+/** Test whether an env value (string) means "enabled". */
+function isTruthyEnv(v: string | undefined): boolean {
+  if (!v) return false;
+  const lower = v.toLowerCase();
+  return lower === '1' || lower === 'true' || lower === 'yes' || lower === 'on';
+}
+
+async function runSelfAudit(ts: string): Promise<number> {
+  console.log(`[${ts}] agent-forum-post: self-audit`);
+  const platforms: Array<{
+    name: 'hashnode' | 'moltbook' | 'devto';
+    verify: (postId: string) => Promise<VerifyResult>;
+    credsOk: boolean;
+  }> = [];
+
+  const hnPat = process.env.HASHNODE_PAT;
+  const hnPubId = process.env.HASHNODE_PUBLICATION_ID;
+  platforms.push({
+    name: 'hashnode',
+    credsOk: Boolean(hnPat && hnPubId),
+    verify: (postId) => verifyHashnodePost(postId, hnPat ?? '', hnPubId ?? '', { delayMs: 0 }),
+  });
+  const mbKey = process.env.MOLTBOOK_API_KEY;
+  platforms.push({
+    name: 'moltbook',
+    credsOk: Boolean(mbKey),
+    verify: (postId) => verifyMoltbookPost(postId, mbKey ?? '', { delayMs: 0 }),
+  });
+  const devKey = process.env.DEVTO_API_KEY;
+  platforms.push({
+    name: 'devto',
+    credsOk: Boolean(devKey),
+    verify: (postId) => verifyDevtoPost(Number(postId), devKey ?? '', { delayMs: 0 }),
+  });
+
+  const SELF_AUDIT_DAYS = 7;
+  const SELF_AUDIT_LIMIT = 5;
+  let totalDrift = 0;
+
+  for (const p of platforms) {
+    const recent = await getRecentPublished(p.name, SELF_AUDIT_DAYS, SELF_AUDIT_LIMIT);
+    const failures7d = await countRecentFailures(p.name, SELF_AUDIT_DAYS * 24);
+
+    if (!p.credsOk) {
+      console.log(`SELF-AUDIT: platform=${p.name} verified=0/0 failures_7d=${failures7d} status=creds-missing`);
+      continue;
+    }
+
+    if (recent.length === 0) {
+      console.log(`SELF-AUDIT: platform=${p.name} verified=0/0 failures_7d=${failures7d} status=no-recent-posts`);
+      continue;
+    }
+
+    let verifiedCount = 0;
+    const driftReasons: string[] = [];
+    for (const row of recent) {
+      try {
+        const v = await p.verify(row.post_id);
+        if (v.verified) {
+          verifiedCount += 1;
+        } else {
+          totalDrift += 1;
+          driftReasons.push(`${row.post_id}:${v.reason}`);
+          await recordFailure(p.name, row.post_type, `drift-detected-on-self-audit: ${v.reason}`, row.post_id, row.post_url ?? undefined);
+        }
+      } catch (err) {
+        console.error(`SELF-AUDIT: platform=${p.name} post=${row.post_id} verify error:`, (err as Error).message);
+        // Network/code errors are NOT drift — don't record failure, don't count.
+      }
+    }
+
+    console.log(`SELF-AUDIT: platform=${p.name} verified=${verifiedCount}/${recent.length} failures_7d=${failures7d}${driftReasons.length ? ' drift=' + driftReasons.join(',') : ''}`);
+  }
+
+  if (totalDrift > 0) {
+    try {
+      await sendAlert(`Forum post self-audit drift: ${totalDrift} post(s) silently dropped across platforms.`, 'warning');
+    } catch { /* Telegram optional */ }
+  }
+
+  return totalDrift;
+}
+
 async function main() {
   const args = parseArgs();
   const ts = new Date().toISOString();
+
+  // Kill switch — an emergency halt controlled by an env var. Cron jobs
+  // can be flipped off without touching the crontab by setting this in
+  // /etc/algovault/forum.env (sourced by the wrapper).
+  if (isTruthyEnv(process.env.FORUM_POST_KILL_SWITCH)) {
+    console.warn(`[${ts}] FORUM_POST_KILL_SWITCH is set — aborting without publishing.`);
+    try {
+      await sendAlert('Forum post kill switch is active — scheduled run aborted.', 'warning');
+    } catch { /* Telegram optional — log and exit anyway */ }
+    process.exit(0);
+  }
+
+  // Self-audit mode: re-verify recent posts, record drift, return.
+  if (args.selfAudit) {
+    const drift = await runSelfAudit(ts);
+    process.exit(drift > 0 ? 1 : 0);
+  }
+
   console.log(`[${ts}] agent-forum-post: type=${args.type} dryRun=${args.dryRun}`);
 
   let post: Post;
@@ -645,30 +872,47 @@ async function main() {
   console.log(`[${ts}] Post generated: "${post.title}" (${wordCount} words)`);
 
   if (args.dryRun) {
+    const strippedPreview = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+    const canonical = CANONICAL_BY_TYPE[args.type] ?? 'https://algovault.com/';
     console.log('\n=== DRY RUN — Moltbook (m/' + post.moltbookSubmolt + ') ===');
     console.log(`Title: ${post.title}`);
-    console.log(post.content);
+    console.log(strippedPreview);
     console.log('\n=== DRY RUN — Dev.to ===');
     console.log(`Title: ${post.title}`);
     console.log(`Tags: ${post.tags.join(', ')}`);
-    console.log(post.content);
+    console.log(`canonical_url: ${canonical}`);
+    console.log(strippedPreview);
     console.log('\n=== DRY RUN — Hashnode ===');
     console.log(`Title: ${post.title}`);
-    console.log(post.content);
+    console.log(`originalArticleURL: ${canonical}`);
+    console.log(strippedPreview);
     console.log(`\n[${ts}] Dry run complete — no posts published.`);
     return;
   }
 
   // Publish to all platforms
-  const results: Record<string, string | null> = {};
-  results.moltbook = await publishMoltbook(post);
-  results.devto = await publishDevTo(post);
-  results.hashnode = await publishHashnode(post);
+  const results: Record<string, PublishResult> = {};
+  results.moltbook = await publishMoltbook(post, args.type);
+  results.devto = await publishDevTo(post, args.type);
+  results.hashnode = await publishHashnode(post, args.type);
 
-  const published = Object.entries(results).filter(([, v]) => v).map(([k]) => k);
-  const skipped = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
+  const published = Object.entries(results).filter(([, v]) => v.url).map(([k]) => k);
+  const skipped = Object.entries(results).filter(([, v]) => !v.url).map(([k]) => k);
+  const verified = Object.entries(results).filter(([, v]) => v.verified === true).map(([k]) => k);
+  const dropped = Object.entries(results).filter(([, v]) => v.verified === false).map(([k]) => k);
 
-  console.log(`[${ts}] Done. Published: ${published.join(', ') || 'none'}. Skipped: ${skipped.join(', ') || 'none'}.`);
+  console.log(
+    `[${ts}] Done. Published: ${published.join(', ') || 'none'}. Verified: ${verified.join(', ') || 'none'}. Dropped: ${dropped.join(', ') || 'none'}. Skipped: ${skipped.join(', ') || 'none'}.`
+  );
+
+  if (dropped.length > 0) {
+    try {
+      await sendAlert(
+        `Forum post verify failed on ${dropped.length} platform(s): ${dropped.map(p => `${p} (${results[p].reason ?? 'unknown'})`).join('; ')}`,
+        'warning'
+      );
+    } catch { /* Telegram optional */ }
+  }
 }
 
 main().catch(err => {
