@@ -100,8 +100,12 @@ function createServer(): McpServer {
     'scan_funding_arb',
     'Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.',
     {
-      minSpreadBps: z.number().default(5).describe('Minimum spread in basis points to include'),
-      limit: z.number().default(10).describe('Max results (free: max 5)'),
+      // DoS-prevention bounds (delta audit 2026-04-15): minSpreadBps clamped to
+      // [0, 10000] bps (0-100%), limit clamped to [1, 200] integers. Paid tier
+      // downstream clamp via getFundingArbLimit() is preserved; these are the
+      // hard boundary validation at the handler edge.
+      minSpreadBps: z.number().min(0).max(10_000).default(5).describe('Minimum spread in basis points to include (0-10000)'),
+      limit: z.number().int().min(1).max(200).default(10).describe('Max results 1-200 (free: max 5)'),
     },
     { readOnlyHint: true, openWorldHint: true },
     async ({ minSpreadBps, limit }) => {

@@ -11,7 +11,15 @@ import { getPerformanceStatsAsync, dbQuery } from '../lib/performance-db.js';
 
 // ── Config ──
 
-const ADMIN_KEY = 'd5bea8823d3c96432e786a58bf7f96022e5fa61fc6aecee4a674d8a3e2031d98';
+// Admin key: read from env (container inherits from /opt/crypto-quant-signal-mcp/.env).
+// NEVER hardcode — this key grants access to /analytics and /dashboard. A hardcoded
+// key was committed in 7c7eecb (2026-04-13) and lived in main until this delta audit
+// caught it. The leaked value has been rotated; this script now authenticates via
+// Authorization: Bearer header (not query string) so the key never lands in access logs.
+const ADMIN_KEY = process.env.ADMIN_API_KEY;
+if (!ADMIN_KEY) {
+  console.error('[monitor] ADMIN_API_KEY env var not set — admin analytics call will be skipped');
+}
 const API_BASE = 'https://api.algovault.com';
 const GAS_WALLET = '0x804B82544E0B779c69192Ff5FC64a4c5d1017B80';
 const BASE_RPC = 'https://mainnet.base.org';
@@ -260,7 +268,9 @@ async function runDigest(): Promise<void> {
     getPerformanceStatsAsync().catch(() => null),
     checkGasWallet(),
     checkBackfillQueue(),
-    fetchJson(`${API_BASE}/analytics?key=${ADMIN_KEY}`),
+    ADMIN_KEY
+      ? fetchJson(`${API_BASE}/analytics`, { headers: { Authorization: `Bearer ${ADMIN_KEY}` } })
+      : Promise.resolve({ ok: false, status: 0, data: 'ADMIN_API_KEY not set' }),
     fetchJson('https://api.npmjs.org/downloads/point/last-day/crypto-quant-signal-mcp'),
     Promise.resolve(getSystemInfo()),
   ]);

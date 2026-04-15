@@ -5,3 +5,7 @@ dist/
 .DS_Store
 .smithery/
 *.mcpb
+
+# MCP registry publishing tokens (local-only, never commit)
+.mcpregistry_github_token
+.mcpregistry_registry_token
