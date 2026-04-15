@@ -89,6 +89,10 @@ async function checkFacilitator(): Promise<string | null> {
 async function checkGasWallet(): Promise<{ error: string | null; balance: number }> {
   // Base public RPC (mainnet.base.org) is flaky under load — use a longer timeout
   // and retry once before alerting to avoid false positives on transient slowdowns.
+  //
+  // Critical: only ever report "wallet low" from a VALID balance read. A malformed
+  // response (missing `result` field, RPC error body, HTTP 5xx) must never be
+  // silently coerced to 0 — that fires a bogus "Gas wallet low: 0.000000 ETH" alert.
   const RPC_TIMEOUT = 10_000;
   const MAX_ATTEMPTS = 2;
 
@@ -105,16 +109,31 @@ async function checkGasWallet(): Promise<{ error: string | null; balance: number
         }),
         signal: AbortSignal.timeout(RPC_TIMEOUT),
       });
-      const data = await res.json() as { result?: string };
-      const wei = BigInt(data.result ?? '0');
-      const eth = Number(wei) / 1e18;
-      if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
-      return { error: null, balance: eth };
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}`;
+      } else {
+        const data = await res.json().catch(() => null) as
+          | { result?: string; error?: { message?: string } }
+          | null;
+        if (!data) {
+          lastError = 'RPC returned non-JSON response';
+        } else if (data.error) {
+          lastError = `RPC error: ${data.error.message ?? JSON.stringify(data.error)}`;
+        } else if (typeof data.result !== 'string' || !data.result.startsWith('0x')) {
+          lastError = `Invalid RPC response (no result field): ${JSON.stringify(data).slice(0, 200)}`;
+        } else {
+          // Valid read — only now is it safe to evaluate the balance threshold.
+          const wei = BigInt(data.result);
+          const eth = Number(wei) / 1e18;
+          if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
+          return { error: null, balance: eth };
+        }
+      }
     } catch (err) {
       lastError = (err as Error).message;
-      if (attempt < MAX_ATTEMPTS) {
-        await new Promise(r => setTimeout(r, 500));
-      }
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 500));
     }
   }
   return { error: `Gas wallet check failed after ${MAX_ATTEMPTS} attempts: ${lastError}`, balance: 0 };
