@@ -172,6 +172,8 @@ async function callMcpTool(tool: string, args: Record<string, unknown>): Promise
 // ── Usage example counter ──
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+// Used by generateRelease() to parse CHANGELOG.md without shelling out to git.
+import { parseChangelog } from '../lib/changelog-parser.js';
 
 function getCounterPath(): string {
   if (existsSync(COUNTER_FILE)) return COUNTER_FILE;
@@ -425,37 +427,141 @@ Full track record: https://algovault.com/track-record`;
   };
 }
 
-async function generateRelease(version: string): Promise<Post> {
-  const health = await fetchHealth();
-  const perf = await fetchPerformance();
+// ── Release post helpers (git-free; read version + changelog from files) ──
 
-  // Parse changelog from git log
-  let changelogItems: string[] = [];
-  try {
-    const { execSync } = await import('node:child_process');
-    // Find previous tag
-    const tags = execSync('git tag --sort=-v:refname', { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
-    const prevTag = tags.find(t => t !== `v${version}`) || tags[0];
-    if (prevTag) {
-      const log = execSync(`git log ${prevTag}..HEAD --oneline --no-merges`, { encoding: 'utf-8' });
-      const SKIP_PATTERNS = /refactor|chore|internal|scoring|weight|threshold|calibrat/i;
-      changelogItems = log.trim().split('\n')
-        .map(line => line.replace(/^[a-f0-9]+ /, '')) // strip hash
-        .filter(line => line && !SKIP_PATTERNS.test(line))
-        .slice(0, 7);
+/**
+ * Resolve a filename that ships alongside the compiled script by trying a
+ * short list of plausible locations. Matches the pattern used by
+ * `getCounterPath()` above — we check the production Docker path first, then
+ * fall back to cwd for local dev. No `node:path` import needed; string
+ * concatenation is sufficient because every candidate is absolute or relative
+ * to process cwd.
+ */
+function resolveRepoFile(filename: string): string | null {
+  const candidates = [
+    `/app/${filename}`, // Docker production (WORKDIR /app, see Dockerfile)
+    `/opt/crypto-quant-signal-mcp/${filename}`, // VPS host path (matches COUNTER_FILE convention)
+    `./${filename}`, // local dev / tests (cwd = repo root)
+  ];
+  for (const c of candidates) {
+    try {
+      if (existsSync(c)) return c;
+    } catch {
+      // existsSync swallows most errors but guard anyway
     }
-  } catch { /* no git available or no tags */ }
+  }
+  return null;
+}
 
-  if (changelogItems.length === 0) {
-    changelogItems = [`Version ${version} with performance and stability improvements`];
+/**
+ * Read the `version` field from package.json without executing any git or
+ * shell commands. Returns `null` if the file is missing or malformed — the
+ * caller decides what to do with that.
+ */
+function readPackageVersion(): string | null {
+  const path = resolveRepoFile('package.json');
+  if (!path) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { version?: unknown };
+    return typeof parsed.version === 'string' ? parsed.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read CHANGELOG.md from disk and return its raw text. Returns `null` if the
+ * file does not exist. Errors (permission, IO, encoding) are swallowed and
+ * reported as `null` so the caller can fall back to the hardcoded template.
+ */
+function readChangelogMarkdown(): string | null {
+  const path = resolveRepoFile('CHANGELOG.md');
+  if (!path) return null;
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+async function generateRelease(version?: string): Promise<Post> {
+  // ── 1. Resolve the authoritative version from package.json ──
+  //
+  // Per the hardening spec, package.json is the source of truth. If the
+  // caller passed a `--version=X.Y.Z` CLI arg and it disagrees, we log a
+  // WARNING (cron log will capture it) and prefer the package.json value
+  // because that is what actually ships in the Docker image.
+  const pkgVersion = readPackageVersion();
+  let resolvedVersion: string;
+  if (pkgVersion && version && pkgVersion !== version) {
+    console.error(
+      `[release] WARNING: --version=${version} disagrees with package.json (${pkgVersion}); using package.json as source of truth.`,
+    );
+    resolvedVersion = pkgVersion;
+  } else {
+    resolvedVersion = pkgVersion ?? version ?? '0.0.0';
+  }
+  if (!pkgVersion && !version) {
+    console.error(
+      '[release] WARNING: could not resolve version from package.json and no --version CLI arg supplied; falling back to 0.0.0.',
+    );
   }
 
+  // ── 2. Fetch live public-API data for the post body (unchanged) ──
+  const perf = await fetchPerformance();
+
+  // ── 3. Build the changelog bullets from CHANGELOG.md ──
+  //
+  // On missing file / missing version heading, fall back to a single-line
+  // hardcoded release note and log WARNING so the cron stream captures it.
+  const changelogMd = readChangelogMarkdown();
+
+  let changelogItems: string[];
+  if (!changelogMd) {
+    console.error(
+      `[release] WARNING: CHANGELOG.md not found; falling back to generic release note for v${resolvedVersion}.`,
+    );
+    changelogItems = [
+      `Released version ${resolvedVersion} — see https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases for details.`,
+    ];
+  } else {
+    const entry = parseChangelog(changelogMd, resolvedVersion);
+    if (!entry || entry.sections.length === 0) {
+      console.error(
+        `[release] WARNING: CHANGELOG.md has no entry for version ${resolvedVersion}; falling back to generic release note.`,
+      );
+      changelogItems = [
+        `Released version ${resolvedVersion} — see https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases for details.`,
+      ];
+    } else {
+      // Flatten all sections into a single bullet list. Keep subsection
+      // context via a "Heading: item" prefix when there are multiple sections
+      // so Added/Fixed/Changed stay distinguishable in the post body.
+      const flattened: string[] = [];
+      const multiSection = entry.sections.length > 1;
+      for (const section of entry.sections) {
+        for (const item of section.items) {
+          flattened.push(multiSection ? `${section.heading}: ${item}` : item);
+        }
+      }
+      // Keep the post body focused — cap at 8 bullets to avoid Hashnode's
+      // long-body heuristics flagging it as low-quality.
+      changelogItems = flattened.slice(0, 8);
+      if (changelogItems.length === 0) {
+        changelogItems = [
+          `Released version ${resolvedVersion} — see https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases for details.`,
+        ];
+      }
+    }
+  }
+
+  // ── 4. Render the post (body template preserved from the old version) ──
   const bullets = changelogItems.map(item => `- ${item}`).join('\n');
   const assetCount = Object.keys(perf.byAsset).length;
   const rawWR = perf.overall.pfeWinRate ?? 0;
   const pfeWR = rawWR <= 1 ? rawWR * 100 : rawWR;
 
-  const content = `AlgoVault MCP v${version} is live
+  const content = `AlgoVault MCP v${resolvedVersion} is live
 
 What's new:
 
@@ -465,14 +571,14 @@ Now tracking ${assetCount}+ assets with ${pfeWR.toFixed(1)}% PFE Win Rate across
 
 Upgrade now — remote agents get the new version automatically:
 🔗 Remote: https://api.algovault.com/mcp
-📦 npm: npx -y crypto-quant-signal-mcp@${version}
+📦 npm: npx -y crypto-quant-signal-mcp@${resolvedVersion}
 📖 Docs: https://algovault.com/docs.html
 📊 Track record: https://algovault.com/track-record
 
 Built by AlgoVault Labs — signal interpretation for AI trading agents.`;
 
   return {
-    title: `AlgoVault MCP v${version} — What's New`,
+    title: `AlgoVault MCP v${resolvedVersion} — What's New`,
     content,
     moltbookSubmolt: 'agents',
     tags: ['mcp', 'crypto', 'ai', 'release'],
