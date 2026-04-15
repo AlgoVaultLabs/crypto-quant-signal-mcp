@@ -45,7 +45,12 @@ const SELL_THRESHOLD_GATED = 55;   // SELL in TRENDING_UP or RANGING
 const MAX_RAW_SCORE = 89;
 
 // Minimum confidence to record in track record (filters noise)
-const MIN_TRACKABLE_CONFIDENCE = 60;
+// R6 (2026-04-15): lowered 60 → 52 after R1 MAX_RAW_SCORE fix to preserve pre-R1
+// effective rawScore floor (~44.4). Pre-R1 raw floor = 60/1.351 = 44.4; post-R1 under
+// new denominator 89, same rawScore 44.4 → confidence 50, so setting gate to 52 keeps
+// a thin noise margin while recovering ~95% of pre-fix persistence volume. See
+// experiments/quant-trading-server/phase-c-results.md.
+const MIN_TRACKABLE_CONFIDENCE = 52;
 
 export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSignalResult> {
   const coin = input.coin.toUpperCase();
