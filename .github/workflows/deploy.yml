@@ -20,7 +20,14 @@ jobs:
             # Capture current version before pull (grep — no node on host)
             OLD_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
 
-            git pull origin main
+            # Hardened pull: idempotent to history shape (force-push-safe).
+            # `git pull` silently no-ops on divergent history (froze Hetzner
+            # during the 2026-04-15 rewrite-commit-authorship task). Fetch +
+            # reset + clean always converges on origin/main regardless of
+            # local divergence or stray untracked files.
+            git fetch origin
+            git reset --hard origin/main
+            git clean -fd
 
             # Sync static landing pages to Caddy serve path
             cp landing/*.html /var/www/algovault/ 2>/dev/null && echo "Landing pages synced" || echo "No landing pages to sync"
