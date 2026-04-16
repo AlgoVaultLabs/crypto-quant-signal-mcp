@@ -3,6 +3,10 @@ name: Deploy to Hetzner
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'activation-funnel/snapshots/**'
+      - 'activation-funnel/README.md'
+      - 'ops/systemd/**'
 
 jobs:
   deploy:

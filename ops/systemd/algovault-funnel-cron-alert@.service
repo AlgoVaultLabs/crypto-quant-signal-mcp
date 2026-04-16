@@ -1,0 +1,23 @@
+# algovault-funnel-cron-alert@.service
+#
+# Companion unit for OnFailure= on algovault-funnel-snapshot.service.
+# Sends a Telegram CRITICAL alert with the failed unit's journal excerpt.
+#
+# Usage: referenced via OnFailure=algovault-funnel-cron-alert@%n.service
+# in the main snapshot unit. The %i instance parameter receives the failed
+# unit name (e.g. "algovault-funnel-snapshot.service").
+#
+# Installation:
+#   cp /opt/crypto-quant-signal-mcp/ops/systemd/algovault-funnel-cron-alert@.service /etc/systemd/system/
+#   systemctl daemon-reload
+
+[Unit]
+Description=Telegram alert for failed %i
+
+[Service]
+Type=oneshot
+ExecStart=/opt/crypto-quant-signal-mcp/scripts/funnel-cron-alert.sh %i
+StandardOutput=journal
+StandardError=journal
+# No restart — fires once on failure, that's it
+TimeoutStartSec=30

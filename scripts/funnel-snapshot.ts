@@ -138,6 +138,15 @@ export async function generateFunnelSnapshot(
   const windowFromMs = from.getTime();
   const windowToMs = until.getTime();
 
+  // ── Connectivity probe — fail fast if the database is unreachable ──
+  // This is intentionally NOT wrapped in try/catch. If Postgres is down
+  // (ECONNREFUSED, timeout, auth failure), the throw propagates up to the
+  // CLI entry point which exits non-zero. Without this probe, the per-query
+  // defensive try/catch blocks below would silently degrade every field to
+  // null, and the wrapper would commit an all-null snapshot to origin/main.
+  // See status.md R5.2 failure-mode test (2026-04-15 15:23 UTC).
+  await dbQuery('SELECT 1');
+
   // ── Sessions totals (agent_sessions) ──
 
   let sessionsTotal: number | null = null;
@@ -361,6 +370,20 @@ export async function generateFunnelSnapshot(
     second_to_fifth: ratio(fifthPlusCall, secondCall),
     fifth_to_paid: ratio(paidUpgrade, fifthPlusCall),
   };
+
+  // ── Data-quality gate ──
+  // Belt-and-suspenders: even if the connectivity probe passed, individual
+  // queries might silently return null for structural reasons (wrong table
+  // name, schema drift, transient lock timeout). If ALL three critical
+  // fields are null, the snapshot is garbage and should not be committed.
+  // See status.md R5.2 failure-mode test (2026-04-15 15:23 UTC).
+  const criticalNulls = [sessionsTotal, firstCall, holdRateGetTradeSignal]
+    .filter((v) => v === null || v === undefined).length;
+  if (criticalNulls === 3) {
+    throw new Error(
+      `Data quality gate failed: all 3 critical fields (sessions.total, funnel.first_call, hold_rate) are null — probable database issue. Warnings: ${warnings.join('; ')}`,
+    );
+  }
 
   return {
     generated_at: new Date().toISOString(),

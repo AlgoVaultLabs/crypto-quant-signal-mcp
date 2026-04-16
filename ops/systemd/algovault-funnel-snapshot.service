@@ -23,6 +23,10 @@ Documentation=https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/tree/main
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target
+# Fire a Telegram CRITICAL alert when this service exits non-zero.
+# The companion unit reads the journal for the last 10 minutes and sends
+# it as a Markdown-formatted message to the ops channel.
+OnFailure=algovault-funnel-cron-alert@%n.service
 
 [Service]
 Type=oneshot

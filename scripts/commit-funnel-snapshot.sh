@@ -55,31 +55,47 @@ echo "[commit-funnel-snapshot] DATABASE_URL=${DATABASE_URL%%@*}@<redacted>"
 echo "[commit-funnel-snapshot] running snapshot writer"
 npx -y tsx scripts/write-funnel-snapshot.ts --tag auto 2>&1
 
-# ── 5. Detect new files under activation-funnel/snapshots/. We limit the
-# porcelain scope to that subdir so we never accidentally stage unrelated
-# working-tree noise (e.g. a half-edited README the author forgot about).
-NEW_FILES="$(git -C "${REPO_ROOT}" status --porcelain activation-funnel/snapshots/ | awk '/^\?\?/ {print $2}')"
-MODIFIED_README="$(git -C "${REPO_ROOT}" status --porcelain activation-funnel/README.md | awk '/^( M| M|M | A)/ {print $2}')"
+# ── 5. Clear stale staged state from prior failed runs (e.g. a run that
+# git-added files but then failed at commit time due to missing git
+# identity). This is safe because the wrapper only touches
+# activation-funnel/ — it won't unstage unrelated work.
+git -C "${REPO_ROOT}" reset HEAD -- activation-funnel/snapshots/ activation-funnel/README.md 2>/dev/null || true
 
-if [ -z "${NEW_FILES}" ] && [ -z "${MODIFIED_README}" ]; then
+# ── 6. Detect new, modified, OR stale-staged files under
+# activation-funnel/snapshots/. The previous pattern only matched `??`
+# (untracked) and missed `A ` / `AM` (staged from a prior failed run).
+# Now we catch all non-empty statuses: untracked (`??`), added (`A `),
+# modified (`M `, ` M`, `AM`), etc.
+SNAPSHOT_STATUS="$(git -C "${REPO_ROOT}" status --porcelain activation-funnel/snapshots/ | grep -E '^\?\?|^A |^AM|^ M|^M ' || true)"
+MODIFIED_README="$(git -C "${REPO_ROOT}" status --porcelain activation-funnel/README.md | grep -E '^\?\?|^A |^AM|^ M|^M ' || true)"
+
+if [ -z "${SNAPSHOT_STATUS}" ] && [ -z "${MODIFIED_README}" ]; then
   echo "[commit-funnel-snapshot] no new snapshot — perhaps already run today"
   EXIT_STATUS=0
   exit 0
 fi
 
 echo "[commit-funnel-snapshot] new snapshot files:"
-printf '  %s\n' ${NEW_FILES}
+echo "${SNAPSHOT_STATUS}" | awk '{print "  " $2}'
 if [ -n "${MODIFIED_README}" ]; then
   echo "[commit-funnel-snapshot] activation-funnel/README.md also modified (ledger row)"
 fi
 
-# ── 6. Stage explicitly — never `git add -A` or `git add .` (CLAUDE.md rule:
+# ── 7. Stage explicitly — never `git add -A` or `git add .` (CLAUDE.md rule:
 # risks committing secrets / build artifacts). We add the snapshots subdir
 # and the funnel README (which may have a new Snapshot Ledger row appended
 # by the writer) and nothing else.
 git -C "${REPO_ROOT}" add activation-funnel/snapshots/
 if [ -n "${MODIFIED_README}" ]; then
   git -C "${REPO_ROOT}" add activation-funnel/README.md
+fi
+
+# Guard: if nothing is actually staged after git add (e.g. files were
+# identical to HEAD), exit cleanly rather than failing at `git commit`.
+if git -C "${REPO_ROOT}" diff --cached --quiet; then
+  echo "[commit-funnel-snapshot] nothing staged after git add — skipping commit"
+  EXIT_STATUS=0
+  exit 0
 fi
 
 COMMIT_MSG="chore(funnel): auto-snapshot $(date -u +%Y-%m-%d)"
