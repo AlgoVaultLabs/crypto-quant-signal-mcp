@@ -301,8 +301,16 @@ async function runDigest(): Promise<void> {
   // Agent Activity (from analytics endpoint)
   if (analyticsResult.ok && analyticsResult.data) {
     const a = analyticsResult.data as Record<string, unknown>;
-    const calls = a.totalCalls ?? a.total_calls ?? '—';
-    const sessions = a.uniqueSessions ?? a.unique_sessions ?? '—';
+    // totalCalls / uniqueSessions may be nested objects like {allTime, last24h, last7d}
+    // or plain numbers — handle both shapes.
+    const callsRaw = a.totalCalls ?? a.total_calls;
+    const calls = typeof callsRaw === 'object' && callsRaw !== null
+      ? (callsRaw as Record<string, unknown>).last24h ?? (callsRaw as Record<string, unknown>).allTime ?? '—'
+      : callsRaw ?? '—';
+    const sessionsRaw = a.uniqueSessions ?? a.unique_sessions;
+    const sessions = typeof sessionsRaw === 'object' && sessionsRaw !== null
+      ? (sessionsRaw as Record<string, unknown>).last24h ?? (sessionsRaw as Record<string, unknown>).allTime ?? '—'
+      : sessionsRaw ?? '—';
     const topAssets = a.topAssets ?? a.top_assets;
     const assetList = Array.isArray(topAssets)
       ? topAssets.slice(0, 5).map((t: Record<string, unknown>) => t.asset ?? t.coin ?? t.symbol).join(', ')
