@@ -195,6 +195,26 @@ function createServer(): McpServer {
     }
   );
 
+  // L1 activation (Phase E validated): signal-performance resource.
+  // Non-negotiable for every signal-producing tool per AlgoVault build rules.
+  // Re-registered after earlier refactor removed the server.resource() call.
+  // Import at line 17 (getSignalPerformance, runBackfill) is already present.
+  server.resource(
+    'signal-performance',
+    'performance://signal-performance',
+    { description: 'Signal track record — win rates by confidence band, per-exchange breakdown, sample sizes, and measurement window. Non-negotiable for every signal-producing tool (AlgoVault build rules).' },
+    async () => {
+      const stats = await getSignalPerformance();
+      return {
+        contents: [{
+          uri: 'performance://signal-performance',
+          text: JSON.stringify(stats, null, 2),
+          mimeType: 'application/json',
+        }],
+      };
+    }
+  );
+
   return server;
 }
 

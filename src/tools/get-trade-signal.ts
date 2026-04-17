@@ -6,7 +6,7 @@ import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { getClosestTradeable, getTryNext } from '../lib/cross-asset-grid.js';
-import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
+import type { TradeSignalResult, TrackRecord, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -63,6 +63,40 @@ const MAX_RAW_SCORE = 89;
 // a thin noise margin while recovering ~95% of pre-fix persistence volume. See
 // experiments/quant-trading-server/phase-c-results.md.
 const MIN_TRACKABLE_CONFIDENCE = 52;
+
+// ── Phase E validated track record (L1 activation, 2026-04-17) ──
+// Static snapshot from the Phase E gate re-run. All numbers from
+// experiments/quant-trading-server/phase-e-results.md §e.
+// Embedded at module scope (allocated once, not per-call) so every
+// get_trade_signal response includes the scorer's proven accuracy.
+const TRACK_RECORD: TrackRecord = {
+  measurement_window: {
+    start: '2026-04-15T02:21:53Z',
+    end: '2026-04-17T11:01:17Z',
+    elapsed_hours: 56.65,
+    total_signals: 3380,
+    resolved_signals: 3013,
+  },
+  overall: {
+    win_rate_pct: 55.8,
+    wins: 1681,
+    losses: 1332,
+    avg_return_pct: null,  // per-exchange only; no aggregate avg return in Phase E
+  },
+  by_confidence_band: [
+    { band: '[52,55]', resolved: 1317, wins: 735, losses: 582, win_rate_pct: 55.8 },
+    { band: '[56,59]', resolved: 454,  wins: 259, losses: 195, win_rate_pct: 57.0 },
+    { band: '[60+]',   resolved: 1242, wins: 687, losses: 555, win_rate_pct: 55.3 },
+  ],
+  by_exchange: [
+    { exchange: 'BINANCE', resolved: 342,  wins: 192, win_rate_pct: 56.1, avg_return_pct: 1.074 },
+    { exchange: 'BITGET',  resolved: 282,  wins: 156, win_rate_pct: 55.3, avg_return_pct: 0.340 },
+    { exchange: 'BYBIT',   resolved: 1035, wins: 569, win_rate_pct: 55.0, avg_return_pct: 0.225 },
+    { exchange: 'HL',      resolved: 175,  wins: 95,  win_rate_pct: 54.3, avg_return_pct: 0.228 },
+    { exchange: 'OKX',     resolved: 1179, wins: 669, win_rate_pct: 56.7, avg_return_pct: 0.624 },
+  ],
+  note: 'Full stats available via signal-performance resource. Phase E validated 2026-04-17.',
+};
 
 export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSignalResult> {
   const coin = input.coin.toUpperCase();
@@ -399,6 +433,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     timeframe,
     _algovault: meta,
   };
+
+  // L1 activation: attach Phase E validated track record to every response.
+  result.track_record = TRACK_RECORD;
 
   // v1.9.0 L2 + L4: HOLD rescue + next-calls hints.
   // Both features read from the same lazy, TTL-cached cross-asset grid. The

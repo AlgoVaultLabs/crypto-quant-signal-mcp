@@ -171,7 +171,56 @@ export interface TradeSignalResult {
    * on every response (HOLD and non-HOLD) when the grid is non-empty.
    */
   try_next?: GridCell[];
+  /**
+   * Phase E validated track record (L1 activation). Static snapshot of the
+   * scorer's win rates by confidence band and exchange, embedded at build time
+   * from the Phase E gate re-run (2026-04-17, 56h window, 3,013 resolved signals).
+   * Gives agents immediate visibility into scorer accuracy without a separate
+   * resource call. Full live stats available via the signal-performance resource.
+   */
+  track_record?: TrackRecord;
   _algovault: AlgoVaultMeta;
+}
+
+// ── Track Record (Phase E validated, L1 activation) ──
+
+export interface TrackRecordWindow {
+  start: string;
+  end: string;
+  elapsed_hours: number;
+  total_signals: number;
+  resolved_signals: number;
+}
+
+export interface TrackRecordOverall {
+  win_rate_pct: number;
+  wins: number;
+  losses: number;
+  avg_return_pct: number | null;
+}
+
+export interface TrackRecordBand {
+  band: string;
+  resolved: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number;
+}
+
+export interface TrackRecordExchange {
+  exchange: string;
+  resolved: number;
+  wins: number;
+  win_rate_pct: number;
+  avg_return_pct: number;
+}
+
+export interface TrackRecord {
+  measurement_window: TrackRecordWindow;
+  overall: TrackRecordOverall;
+  by_confidence_band: TrackRecordBand[];
+  by_exchange: TrackRecordExchange[];
+  note: string;
 }
 
 export interface FundingConviction {
