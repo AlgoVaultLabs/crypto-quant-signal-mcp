@@ -1025,14 +1025,48 @@ function tierMatch(tier) {
   return tier === parseInt(activeTierFilter);
 }
 
-// Get the correct data source based on active exchange filter.
-// When 'all': uses top-level aggregates. When filtered: uses byExchange[ex].
+// Get the correct data source based on active exchange + tier filters.
+// 2-dimensional: exchange × tier → overall KPIs + sub-aggregates.
+var HIDE_TFS = {'1d':1,'1D':1}; // Timeframes hidden from dashboard UI (data preserved in API)
 function src() {
   var d = cachedData; if (!d) return null;
-  if (activeExchangeFilter === 'all') return { overall: d.overall, byTF: d.byTimeframe, byType: d.bySignalType, byAsset: d.byAsset, byTier: d.byTier };
-  var ex = (d.byExchange || {})[activeExchangeFilter];
-  if (!ex) return { overall: { totalSignals: 0, totalEvaluated: 0, pfeWinRate: null }, byTF: {}, byType: {}, byAsset: {}, byTier: {} };
-  return { overall: { totalSignals: ex.count, totalEvaluated: ex.evaluated, pfeWinRate: ex.pfeWinRate }, byTF: ex.byTimeframe, byType: ex.bySignalType, byAsset: ex.byAsset, byTier: ex.byTier };
+  var empty = { totalSignals: 0, totalEvaluated: 0, pfeWinRate: null };
+
+  // Step 1: select exchange-level data
+  var exAll, exByTF, exByType, exByAsset, exByTier;
+  if (activeExchangeFilter === 'all') {
+    exAll = d.overall;
+    exByTF = d.byTimeframe || {};
+    exByType = d.bySignalType || {};
+    exByAsset = d.byAsset || {};
+    exByTier = d.byTier || {};
+  } else {
+    var ex = (d.byExchange || {})[activeExchangeFilter];
+    if (!ex) return { overall: empty, byTF: {}, byType: {}, byAsset: {}, byTier: {} };
+    exAll = { totalSignals: ex.count, totalEvaluated: ex.evaluated, pfeWinRate: ex.pfeWinRate };
+    exByTF = ex.byTimeframe || {};
+    exByType = ex.bySignalType || {};
+    exByAsset = ex.byAsset || {};
+    exByTier = ex.byTier || {};
+  }
+
+  // Step 2: apply tier filter to KPIs
+  var overall = exAll;
+  if (activeTierFilter !== 'all') {
+    var tk = 'tier' + activeTierFilter;
+    var tier = exByTier[tk];
+    if (tier) {
+      overall = { totalSignals: tier.count || 0, totalEvaluated: tier.evaluated || 0, pfeWinRate: tier.pfeWinRate };
+    } else {
+      overall = empty;
+    }
+  }
+
+  // Filter hidden timeframes from byTF
+  var filteredTF = {};
+  Object.keys(exByTF).forEach(function(k){ if (!HIDE_TFS[k]) filteredTF[k] = exByTF[k]; });
+
+  return { overall: overall, byTF: filteredTF, byType: exByType, byAsset: exByAsset, byTier: exByTier };
 }
 
 function getFilteredRecent() {
