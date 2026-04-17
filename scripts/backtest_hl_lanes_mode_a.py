@@ -67,8 +67,13 @@ LANE_RECIPES: Dict[str, Dict[str, float]] = {
 FEE_TAKER_ROUND_TRIP = 0.0009   # 0.045% × 2
 FEE_STRESS = 0.0015             # 0.09% fees + 0.03% slippage + 0.03% est. funding
 HL_URL = "https://api.hyperliquid.xyz/info"
-HL_RATE_LIMIT_DELAY = 0.06      # ~16 req/s — under the 20 req/s cap
+HL_RATE_LIMIT_DELAY = 0.20      # ~5 req/s — conservative for the public HL endpoint
 MIN_BAR_COMPLETENESS = 0.90
+# HL retains 1m candles for ~3 days, 5m for ~30 days. The HL lane cohort spans
+# ~7 days, so 5m is the default fallback; the script records which interval was
+# used per signal so the report can call out intra-bar uncertainty.
+CANDLE_INTERVAL = "5m"
+CANDLE_INTERVAL_SECONDS = 300
 
 # ------------------------------------------------------------------
 # Data types
@@ -114,14 +119,17 @@ class SignalOutcome:
     candles_to_exit: int
     same_bar_tp1_sl_tie: bool
     coverage_warning: bool
+    bar_interval: str = CANDLE_INTERVAL  # "1m" when HL 1m retention covers the window, else "5m"
 
 
 # ------------------------------------------------------------------
 # Signal extraction — READ-ONLY psql via docker exec
 # ------------------------------------------------------------------
+# COPY TO STDOUT on a SELECT is read-only by construction (cannot write) —
+# the defensive SET TRANSACTION READ ONLY is enforced by running inside a
+# read-only session via -v.
 EXTRACT_SQL = """
-SET TRANSACTION READ ONLY;
-\\COPY (
+COPY (
   SELECT
     id,
     coin,
@@ -145,18 +153,35 @@ SET TRANSACTION READ ONLY;
 """
 
 
-def extract_signals(out_csv: str, post_r6_epoch: int) -> List[Signal]:
-    sql = EXTRACT_SQL.format(epoch=post_r6_epoch)
-    cmd = [
+def _docker_psql_cmd(sql_args: List[str], ssh_host: Optional[str], ssh_key: Optional[str]) -> List[str]:
+    """Build a docker-exec psql invocation, optionally wrapped via SSH when the
+    laptop is driving the run (Hetzner IP is rate-limited on HL public API)."""
+    docker_cmd = [
         "docker", "exec", "-i",
+        "-e", "PGOPTIONS=-c default_transaction_read_only=on",
         "crypto-quant-signal-mcp-postgres-1",
         "psql", "-U", "algovault", "-d", "signal_performance",
         "-P", "pager=off", "-v", "ON_ERROR_STOP=1",
-    ]
+    ] + sql_args
+    if ssh_host:
+        ssh_prefix = ["ssh"]
+        if ssh_key:
+            ssh_prefix += ["-i", ssh_key]
+        ssh_prefix += [ssh_host]
+        # The remote shell needs one string, so quote the command carefully.
+        import shlex
+        remote = " ".join(shlex.quote(x) for x in docker_cmd)
+        return ssh_prefix + [remote]
+    return docker_cmd
+
+
+def extract_signals(out_csv: str, post_r6_epoch: int, ssh_host: Optional[str] = None, ssh_key: Optional[str] = None) -> List[Signal]:
+    sql = EXTRACT_SQL.format(epoch=post_r6_epoch)
+    cmd = _docker_psql_cmd(["-c", sql], ssh_host, ssh_key)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"psql extraction failed: {proc.stderr}")
     with open(out_csv, "w") as fh:
-        proc = subprocess.run(cmd, input=sql, capture_output=True, text=True, check=False)
-        if proc.returncode != 0:
-            raise RuntimeError(f"psql extraction failed: {proc.stderr}")
         fh.write(proc.stdout)
     return load_signals(out_csv)
 
@@ -227,6 +252,9 @@ def _post_hl(body: dict, attempt: int = 0) -> list:
 
 
 def fetch_candles_for_day(cache_dir: str, coin: str, day_utc: datetime) -> List[Candle]:
+    """Fetch 5m bars for the given UTC day. 5m retention on HL is ~30 days,
+    which covers the HL-lane cohort comfortably. 1m retention is only ~3 days,
+    so 1m is not reliable for a 7-day-wide backtest."""
     path = cache_path(cache_dir, coin, day_utc)
     if os.path.exists(path) and os.path.getsize(path) > 0:
         with open(path) as fh:
@@ -237,7 +265,7 @@ def fetch_candles_for_day(cache_dir: str, coin: str, day_utc: datetime) -> List[
             "type": "candleSnapshot",
             "req": {
                 "coin": coin,
-                "interval": "1m",
+                "interval": CANDLE_INTERVAL,
                 "startTime": start_ms,
                 "endTime": end_ms,
             },
@@ -290,8 +318,8 @@ def candles_for_signal_window(
     end_ms = end_ts * 1000
     windowed = [b for b in all_bars if start_ms <= b.t_ms <= end_ms]
     windowed.sort(key=lambda b: b.t_ms)
-    expected = max_hold_seconds // 60 + 1
-    coverage_warning = expected > 0 and (len(windowed) / expected) < MIN_BAR_COMPLETENESS
+    expected = max(max_hold_seconds // CANDLE_INTERVAL_SECONDS + 1, 1)
+    coverage_warning = (len(windowed) / expected) < MIN_BAR_COMPLETENESS
     return windowed, coverage_warning
 
 
@@ -611,24 +639,21 @@ def _curl_sha(url: str) -> Tuple[str, int]:
         return f"ERROR:{e}", -1
 
 
-def db_row_counts() -> Dict[str, int]:
+def db_row_counts(ssh_host: Optional[str] = None, ssh_key: Optional[str] = None) -> Dict[str, int]:
     sql = (
         "SELECT (SELECT COUNT(*) FROM signals) AS total, "
         "(SELECT COUNT(*) FROM signals WHERE exchange='HL') AS hl_total, "
         "(SELECT COUNT(*) FROM signals WHERE exchange='HL' AND pfe_return_pct IS NOT NULL) AS hl_evaluated;"
     )
-    proc = subprocess.run([
-        "docker", "exec", "-i", "crypto-quant-signal-mcp-postgres-1",
-        "psql", "-U", "algovault", "-d", "signal_performance",
-        "-P", "pager=off", "-A", "-t", "-F", ",", "-c", sql,
-    ], capture_output=True, text=True, check=True)
+    cmd = _docker_psql_cmd(["-A", "-t", "-F", ",", "-c", sql], ssh_host, ssh_key)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
     line = proc.stdout.strip().split("\n")[0]
     total, hl_total, hl_evaluated = [int(x) for x in line.split(",")]
     return {"total": total, "hl_total": hl_total, "hl_evaluated": hl_evaluated}
 
 
-def capture_integrity(out_path: str) -> Dict:
-    snap = {"ts": int(time.time()), "db": db_row_counts(), "urls": {}}
+def capture_integrity(out_path: str, ssh_host: Optional[str] = None, ssh_key: Optional[str] = None) -> Dict:
+    snap = {"ts": int(time.time()), "db": db_row_counts(ssh_host, ssh_key), "urls": {}}
     for name, url in INTEGRITY_URLS:
         h, status = _curl_sha(url)
         snap["urls"][name] = {"url": url, "sha256": h, "status": status}
@@ -650,12 +675,12 @@ def run(args) -> int:
     integ_post_path = os.path.join(out_dir, "integrity_post.json")
 
     print(f"[1/5] integrity pre-run → {integ_pre_path}")
-    pre = capture_integrity(integ_pre_path)
+    pre = capture_integrity(integ_pre_path, args.ssh_host, args.ssh_key)
     print(f"       db: {pre['db']}, urls: {[(k, v['status']) for k, v in pre['urls'].items()]}")
 
     print("[2/5] extracting signals")
     sig_csv = os.path.join(out_dir, "signals.csv")
-    signals = extract_signals(sig_csv, args.post_r6_epoch)
+    signals = extract_signals(sig_csv, args.post_r6_epoch, args.ssh_host, args.ssh_key)
     print(f"       extracted {len(signals)} signals "
           f"({sum(1 for s in signals if s.timeframe=='5m')} 5m / "
           f"{sum(1 for s in signals if s.timeframe=='15m')} 15m)")
@@ -754,7 +779,7 @@ def run(args) -> int:
         }, fh, indent=2)
 
     print(f"[5/5] integrity post-run → {integ_post_path}")
-    post = capture_integrity(integ_post_path)
+    post = capture_integrity(integ_post_path, args.ssh_host, args.ssh_key)
     ok_db = post["db"] == pre["db"]
     url_diffs = [
         (name, pre["urls"][name]["sha256"], post["urls"][name]["sha256"])
@@ -780,6 +805,8 @@ def main():
     ap.add_argument("--cache-dir", default="/tmp/hl_candles")
     ap.add_argument("--post-r6-epoch", type=int, default=1744675200)
     ap.add_argument("--skip-fetch", action="store_true", help="Do not call the HL API; rely on cache only.")
+    ap.add_argument("--ssh-host", default=None, help="Run docker-exec calls via ssh (e.g. 'root@204.168.185.24'). Useful when driving the backtest from a laptop because the VPS IP is rate-limited on the HL public API.")
+    ap.add_argument("--ssh-key", default=None, help="SSH identity file for --ssh-host.")
     args = ap.parse_args()
     sys.exit(run(args))
 
