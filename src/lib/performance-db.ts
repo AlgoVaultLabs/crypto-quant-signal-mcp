@@ -132,22 +132,53 @@ const CREATE_TABLE_SQL = `
   );
 `;
 
-// Migration: add unified outcome columns if missing (runs on existing DBs)
-// Note: no IF NOT EXISTS — SQLite doesn't support it for ALTER TABLE.
-// try/catch handles "column already exists" for both SQLite and PostgreSQL.
-const MIGRATE_OUTCOME_COLS = `
-  ALTER TABLE signals ADD COLUMN outcome_price REAL;
-`;
-const MIGRATE_OUTCOME_COLS_2 = `
-  ALTER TABLE signals ADD COLUMN outcome_return_pct REAL;
-`;
+// Schema-aware migration descriptors for the `signals` table.
+// Order is preserved exactly as historical migrations ran. PostgreSQL uses
+// native ADD COLUMN IF NOT EXISTS (PG 9.6+); SQLite uses a single
+// PRAGMA table_info() pre-check to skip already-present columns.
+type MigrationDescriptor = { table: string; column: string; type: string };
 
-// Merkle proof columns
-const MIGRATE_MERKLE_COLS = [
-  `ALTER TABLE signals ADD COLUMN signal_hash VARCHAR(66);`,
-  `ALTER TABLE signals ADD COLUMN merkle_batch_id INTEGER;`,
-  `ALTER TABLE signals ADD COLUMN merkle_proof JSONB;`,
+const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
+  // v1.3: unified outcome columns
+  { table: 'signals', column: 'outcome_price', type: 'REAL' },
+  { table: 'signals', column: 'outcome_return_pct', type: 'REAL' },
+  // v1.4: PFE/MAE + 1-candle return
+  { table: 'signals', column: 'pfe_return_pct', type: 'REAL' },
+  { table: 'signals', column: 'mae_return_pct', type: 'REAL' },
+  { table: 'signals', column: 'pfe_price', type: 'REAL' },
+  { table: 'signals', column: 'mae_price', type: 'REAL' },
+  { table: 'signals', column: 'pfe_candles', type: 'INTEGER' },
+  { table: 'signals', column: 'return_1candle', type: 'REAL' },
+  // v1.5: exchange column for multi-exchange support
+  { table: 'signals', column: 'exchange', type: "TEXT NOT NULL DEFAULT 'HL'" },
+  // R5 (2026-04-14): regime label for audit round H5
+  { table: 'signals', column: 'regime', type: 'TEXT NULL' },
+  // Merkle proof columns
+  { table: 'signals', column: 'signal_hash', type: 'VARCHAR(66)' },
+  { table: 'signals', column: 'merkle_batch_id', type: 'INTEGER' },
+  { table: 'signals', column: 'merkle_proof', type: 'JSONB' },
 ];
+
+function runMigrations(b: DbBackend, pg: boolean): void {
+  if (pg) {
+    for (const m of SIGNAL_MIGRATIONS) {
+      b.exec(`ALTER TABLE ${m.table} ADD COLUMN IF NOT EXISTS ${m.column} ${m.type};`);
+    }
+    return;
+  }
+  // SQLite: introspect existing columns once per distinct table, then skip present ones.
+  const tables = new Set(SIGNAL_MIGRATIONS.map(m => m.table));
+  const existingByTable = new Map<string, Set<string>>();
+  for (const t of tables) {
+    const rows = b.all(`PRAGMA table_info(${t})`) as unknown as { name: string }[];
+    existingByTable.set(t, new Set(rows.map(r => r.name)));
+  }
+  for (const m of SIGNAL_MIGRATIONS) {
+    const present = existingByTable.get(m.table);
+    if (present && present.has(m.column)) continue;
+    b.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.type};`);
+  }
+}
 
 const CREATE_MERKLE_BATCHES_SQL = `
   CREATE TABLE IF NOT EXISTS merkle_batches (
@@ -159,22 +190,6 @@ const CREATE_MERKLE_BATCHES_SQL = `
     published_at ${process.env.DATABASE_URL ? 'TIMESTAMP NOT NULL DEFAULT NOW()' : 'TEXT NOT NULL DEFAULT (datetime(\'now\'))'}
   );
 `;
-
-// v1.5: exchange column for multi-exchange support
-const MIGRATE_EXCHANGE_COL = `ALTER TABLE signals ADD COLUMN exchange TEXT NOT NULL DEFAULT 'HL';`;
-
-// R5 (2026-04-14): regime column so next audit round can correlate regime label → confidence bucket
-const MIGRATE_REGIME_COL = `ALTER TABLE signals ADD COLUMN regime TEXT NULL;`;
-
-// v1.4 migrations
-const MIGRATE_PFE_COLS = [
-  `ALTER TABLE signals ADD COLUMN pfe_return_pct REAL;`,
-  `ALTER TABLE signals ADD COLUMN mae_return_pct REAL;`,
-  `ALTER TABLE signals ADD COLUMN pfe_price REAL;`,
-  `ALTER TABLE signals ADD COLUMN mae_price REAL;`,
-  `ALTER TABLE signals ADD COLUMN pfe_candles INTEGER;`,
-  `ALTER TABLE signals ADD COLUMN return_1candle REAL;`,
-];
 
 const CREATE_FUNDING_HISTORY_SQL = `
   CREATE TABLE IF NOT EXISTS funding_history (
@@ -203,7 +218,6 @@ const CREATE_HOLD_COUNTS_SQL = process.env.DATABASE_URL
 
 // v1.9.0 L3 (2026-04-15): agent_sessions cohort table.
 // Persisted on every tool call (when sessionId is present, i.e. HTTP transport).
-// TODO(rebase-946ff8a): convert to SIGNAL_MIGRATIONS descriptor once cleanup branch merges
 const CREATE_AGENT_SESSIONS_SQL = `
   CREATE TABLE IF NOT EXISTS agent_sessions (
     session_id     TEXT PRIMARY KEY,
@@ -234,28 +248,12 @@ function getBackend(): DbBackend {
   }
 
   backend.exec(CREATE_TABLE_SQL);
-  // Migrate: add outcome columns to existing tables (safe if already exists)
-  try { backend.exec(MIGRATE_OUTCOME_COLS); } catch { /* column already exists */ }
-  try { backend.exec(MIGRATE_OUTCOME_COLS_2); } catch { /* column already exists */ }
-  // v1.4: PFE/MAE columns + funding history table
-  for (const sql of MIGRATE_PFE_COLS) {
-    try { backend.exec(sql); } catch { /* column already exists */ }
-  }
-  try { backend.exec(CREATE_FUNDING_HISTORY_SQL); } catch { /* table already exists */ }
-  try { backend.exec(CREATE_HOLD_COUNTS_SQL); } catch { /* table already exists */ }
-  // v1.5: exchange column for multi-exchange support
-  try { backend.exec(MIGRATE_EXCHANGE_COL); } catch { /* column already exists */ }
-  // R5 (2026-04-14): regime column for audit round H5
-  try { backend.exec(MIGRATE_REGIME_COL); } catch { /* column already exists */ }
-  // Merkle proof tables + columns
-  try { backend.exec(CREATE_MERKLE_BATCHES_SQL); } catch { /* table already exists */ }
-  for (const sql of MIGRATE_MERKLE_COLS) {
-    try { backend.exec(sql); } catch { /* column already exists */ }
-  }
-  // v1.9.0 L3 (2026-04-15): agent_sessions cohort table + index
-  // TODO(rebase-946ff8a): convert to SIGNAL_MIGRATIONS descriptor once cleanup branch merges
-  try { backend.exec(CREATE_AGENT_SESSIONS_SQL); } catch { /* table already exists */ }
-  try { backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL); } catch { /* index already exists */ }
+  backend.exec(CREATE_FUNDING_HISTORY_SQL);
+  backend.exec(CREATE_HOLD_COUNTS_SQL);
+  backend.exec(CREATE_MERKLE_BATCHES_SQL);
+  backend.exec(CREATE_AGENT_SESSIONS_SQL);
+  backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
+  runMigrations(backend, isPg);
   return backend;
 }
 
