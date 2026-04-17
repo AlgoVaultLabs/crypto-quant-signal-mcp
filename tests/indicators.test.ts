@@ -150,11 +150,13 @@ describe('detectPriceStructure', () => {
       return 95 + i * 2 + Math.sin(i * 0.8) * 3;
     });
     const result = detectPriceStructure(highs, lows);
-    expect(['HIGHER_HIGHS', 'MIXED']).toContain(result);
+    // detectPriceStructure now returns { structure, avgPivotScore, pivotCount }
+    expect(['HIGHER_HIGHS', 'MIXED']).toContain(result.structure);
   });
 
   it('returns MIXED for insufficient data', () => {
-    expect(detectPriceStructure([1, 2], [1, 2])).toBe('MIXED');
+    const result = detectPriceStructure([1, 2], [1, 2]);
+    expect(result.structure).toBe('MIXED');
   });
 
   it('detects LOWER_LOWS in downtrend', () => {
@@ -166,6 +168,6 @@ describe('detectPriceStructure', () => {
       return 195 - i * 2 + Math.sin(i * 0.8) * 3;
     });
     const result = detectPriceStructure(highs, lows);
-    expect(['LOWER_LOWS', 'MIXED']).toContain(result);
+    expect(['LOWER_LOWS', 'MIXED']).toContain(result.structure);
   });
 });
