@@ -1210,11 +1210,10 @@ async function load() {
       return '<div class="tab'+(isActive?' active':'')+'" data-ex="'+ex.id+'" style="cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;border:1px solid '+(isActive?'#58a6ff':'#30363d')+';color:'+(isActive?'#58a6ff':'#8b949e')+';background:'+(isActive?'#58a6ff20':'#161b22')+'" onclick="setExchangeFilter(\\''+ex.id+'\\')">'+ex.label+'</div>';
     }).join('');
 
-    // TF tabs
+    // TF tabs — from server-side byTimeframe (respects exchange filter via src())
     var tabsEl = document.getElementById('tf-tabs');
-    var filteredSigs = getFilteredSignals();
-    var tfStatsForTabs = recomputeTF(filteredSigs);
-    var availTfs = tfStatsForTabs ? Object.keys(tfStatsForTabs).sort(function(a,b){return TF_ORDER.indexOf(a)-TF_ORDER.indexOf(b);}) : [];
+    var tfSrc = (src() || {}).byTF || {};
+    var availTfs = Object.keys(tfSrc).sort(function(a,b){return TF_ORDER.indexOf(a)-TF_ORDER.indexOf(b);});
     tabsEl.innerHTML = '<div class="tab'+(activeTfFilter==='all'?' active':'')+'" data-tf="all" onclick="setTfFilter(\\'all\\')">All</div>' +
       availTfs.map(function(tf){return '<div class="tab'+(activeTfFilter===tf?' active':'')+'" data-tf="'+tf+'" onclick="setTfFilter(\\''+tf+'\\')">'+tf+'</div>';}).join('');
 
