@@ -120,6 +120,125 @@ export async function verifyHashnodePost(
   return { verified: true, platform: 'hashnode', url: post.url };
 }
 
+/**
+ * Multi-stage Hashnode verifier — checks at 5s, 60s, and 5min post-publish.
+ * Hashnode's anti-spam moderation pipeline runs AFTER the initial publish,
+ * sometime between ~30s and ~10min. The single 5s verify is insufficient.
+ *
+ * Returns the FIRST stage that succeeds with the URL, or the LAST failed
+ * stage with the reason and `stage` annotation.
+ *
+ * Stages:
+ *   1. 5s   — initial verify (existing behavior). If post is missing here,
+ *             it's a publish failure, not anti-spam.
+ *   2. 60s  — anti-spam often fires within the first minute on low-follower
+ *             publications.
+ *   3. 5min — final confirmation window before declaring the post survived.
+ *
+ * Implementation: stages are awaited sequentially. Total wall-clock cost
+ * is up to ~5 minutes. Callers that cannot block should fire-and-forget
+ * via `verifyHashnodePostMultiStageDeferred()` (below).
+ */
+export async function verifyHashnodePostMultiStage(
+  postId: string,
+  pat: string,
+  pubId: string,
+  opts: VerifyOptions = {}
+): Promise<VerifyResult & { stage?: '5s' | '60s' | '5min' }> {
+  const stages: Array<{ label: '5s' | '60s' | '5min'; delayMs: number }> = [
+    { label: '5s', delayMs: opts.delayMs ?? 5000 },
+    { label: '60s', delayMs: 55_000 },
+    { label: '5min', delayMs: 240_000 },
+  ];
+
+  let lastResult: VerifyResult & { stage?: '5s' | '60s' | '5min' } = {
+    verified: false,
+    platform: 'hashnode',
+    reason: 'no-stage-ran',
+    stage: '5s',
+  };
+
+  for (const stage of stages) {
+    const result = await verifyHashnodePost(postId, pat, pubId, {
+      ...opts,
+      delayMs: stage.delayMs,
+    });
+    lastResult = { ...result, stage: stage.label };
+    if (!result.verified) {
+      return {
+        verified: false,
+        platform: 'hashnode',
+        reason: `hashnode-anti-spam-deleted-post-after-${stage.label}: ${result.reason}`,
+        stage: stage.label,
+      };
+    }
+  }
+
+  return lastResult;
+}
+
+/**
+ * Fire-and-forget multi-stage Hashnode verify. Returns immediately after
+ * the 5s stage; the 60s + 5min stages run in the background and invoke
+ * `onLateResult` with the eventual outcome (used to fire a CRITICAL
+ * Telegram alert on silent deletion).
+ *
+ * The returned promise resolves with the 5s stage's `VerifyResult` so the
+ * caller can record the initial publish-time verification synchronously.
+ *
+ * The background timers keep the Node process alive until they fire so the
+ * late checks reliably run in cron context (the cron is invoked 3x/week, an
+ * extra ~5min of wall-clock per run is acceptable). Callers in test
+ * environments can pass `opts.skipDeferred=true` to suppress the timers.
+ */
+export function verifyHashnodePostMultiStageDeferred(
+  postId: string,
+  pat: string,
+  pubId: string,
+  onLateResult: (
+    result: VerifyResult & { stage: '60s' | '5min' }
+  ) => void | Promise<void>,
+  opts: VerifyOptions & { skipDeferred?: boolean } = {}
+): Promise<VerifyResult> {
+  const initialDelay = opts.delayMs ?? 5000;
+  const initial = verifyHashnodePost(postId, pat, pubId, { ...opts, delayMs: initialDelay });
+
+  if (opts.skipDeferred) return initial;
+
+  // Schedule 60s + 5min checks. Timers are NOT unref()'d so they keep the
+  // Node process alive until they fire. The cron is invoked 3x/week and the
+  // extra ~5min wall-clock is acceptable.
+  const stages: Array<{ label: '60s' | '5min'; delayMs: number }> = [
+    { label: '60s', delayMs: 60_000 },
+    { label: '5min', delayMs: 300_000 },
+  ];
+
+  for (const stage of stages) {
+    setTimeout(() => {
+      verifyHashnodePost(postId, pat, pubId, { ...opts, delayMs: 0 })
+        .then((res) => {
+          const annotated: VerifyResult & { stage: '60s' | '5min' } = res.verified
+            ? { ...res, stage: stage.label }
+            : {
+                verified: false,
+                platform: 'hashnode',
+                reason: `hashnode-anti-spam-deleted-post-after-${stage.label}: ${res.reason}`,
+                stage: stage.label,
+              };
+          return onLateResult(annotated);
+        })
+        .catch((err) => {
+          console.error(
+            `[verify-hashnode-deferred] stage=${stage.label} error:`,
+            (err as Error).message
+          );
+        });
+    }, stage.delayMs);
+  }
+
+  return initial;
+}
+
 // ── Moltbook ────────────────────────────────────────────────────────────
 
 interface MoltbookPostResponse {
@@ -223,12 +342,14 @@ export async function verifyMoltbookPost(
     };
   }
 
+  // `verification_status: "pending"` is the normal state for a new/unverified
+  // Moltbook account. Per 2026-04-17 ground-truth check (post c55fb14e was
+  // is_spam:false, verification_status:"pending", AND visible in the aitools
+  // feed), pending posts are NOT dropped. Warn but pass.
   if (post.verification_status === 'pending') {
-    return {
-      verified: false,
-      platform: 'moltbook',
-      reason: 'moltbook-verification-pending — agent not verified',
-    };
+    console.warn(
+      `[verify-moltbook] post ${post.id ?? postId} verification_status=pending (normal for new accounts) — passing`
+    );
   }
 
   const resolvedUrl = post.url ?? `https://www.moltbook.com/post/${post.id ?? postId}`;
