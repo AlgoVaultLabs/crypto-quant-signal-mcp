@@ -20,6 +20,7 @@
 import { stripExternalUrlsForModeration } from '../lib/forum-post-content.js';
 import {
   verifyHashnodePost,
+  verifyHashnodePostMultiStageDeferred,
   verifyMoltbookPost,
   verifyDevtoPost,
   type VerifyResult,
@@ -62,6 +63,10 @@ interface CliArgs {
   selfAudit: boolean;
   /** Smoke-test probe tag. Prefixes post title with `[testTag] TEST — ` and appends a "safe to delete" footer. Used to verify the hardened publish+verify+audit chain end-to-end. */
   testTag?: string;
+  /** A/B test: strip ALL external URLs (incl. canonical-domain) from the Hashnode body before publishing. Used to test the hypothesis that URL density triggers Hashnode anti-spam. */
+  hashnodeStripUrls: boolean;
+  /** Re-verify recent posts from forum_post_audit_log without publishing. Read-only; ignores --type. */
+  verifyOnly: boolean;
 }
 
 function parseArgs(): CliArgs {
@@ -71,6 +76,8 @@ function parseArgs(): CliArgs {
   let dryRun = false;
   let selfAudit = false;
   let testTag: string | undefined;
+  let hashnodeStripUrls = false;
+  let verifyOnly = false;
 
   for (const arg of args) {
     if (arg.startsWith('--type=')) type = arg.split('=')[1];
@@ -78,21 +85,25 @@ function parseArgs(): CliArgs {
     if (arg === '--dry-run') dryRun = true;
     if (arg === '--self-audit') selfAudit = true;
     if (arg.startsWith('--test-tag=')) testTag = arg.split('=')[1];
+    if (arg === '--hashnode-strip-urls') hashnodeStripUrls = true;
+    if (arg === '--verify-only') verifyOnly = true;
   }
 
-  // --self-audit mode is read-only and ignores --type / --version.
-  if (selfAudit) {
+  // --verify-only and --self-audit are read-only and ignore --type / --version.
+  if (verifyOnly || selfAudit) {
     return {
       type: (type as CliArgs['type']) ?? 'track-record',
       version,
       dryRun,
-      selfAudit: true,
+      selfAudit,
       testTag,
+      hashnodeStripUrls,
+      verifyOnly,
     };
   }
 
   if (!type || !['track-record', 'usage-example', 'market-insight', 'release'].includes(type)) {
-    console.error('Usage: --type=track-record|usage-example|market-insight|release [--version=X.Y.Z] [--dry-run] [--test-tag=NAME] | --self-audit');
+    console.error('Usage: --type=track-record|usage-example|market-insight|release [--version=X.Y.Z] [--dry-run] [--test-tag=NAME] [--hashnode-strip-urls] | --self-audit | --verify-only');
     process.exit(1);
   }
 
@@ -101,7 +112,15 @@ function parseArgs(): CliArgs {
     process.exit(1);
   }
 
-  return { type: type as CliArgs['type'], version, dryRun, selfAudit: false, testTag };
+  return {
+    type: type as CliArgs['type'],
+    version,
+    dryRun,
+    selfAudit: false,
+    testTag,
+    hashnodeStripUrls,
+    verifyOnly: false,
+  };
 }
 
 // ── API data fetching ──
@@ -759,7 +778,13 @@ async function publishDevTo(post: Post, postType: string): Promise<PublishResult
   return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
 }
 
-async function publishHashnode(post: Post, postType: string): Promise<PublishResult> {
+async function publishHashnode(post: Post, postType: string, publishOpts: { stripAllUrls?: boolean } = {}): Promise<PublishResult> {
+  // R3 kill switch: HASHNODE_ENABLED=false skips Hashnode entirely.
+  if (process.env.HASHNODE_ENABLED === 'false') {
+    console.log('[hashnode] Publishing disabled via HASHNODE_ENABLED=false — skipping');
+    return { url: null, postId: null, verified: null };
+  }
+
   const pat = process.env.HASHNODE_PAT;
   const pubId = process.env.HASHNODE_PUBLICATION_ID;
   if (!pat || !pubId) { console.log('[hashnode] HASHNODE_PAT or HASHNODE_PUBLICATION_ID not set — skipping'); return { url: null, postId: null, verified: null }; }
@@ -769,7 +794,13 @@ async function publishHashnode(post: Post, postType: string): Promise<PublishRes
   // external URLs. The canonical back-link survives via the
   // `originalArticleURL` input field (Hashnode's real name for the
   // canonical-URL field — see the schemas report).
-  const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+  //
+  // R4 A/B test: when --hashnode-strip-urls is set, also strip the
+  // canonical-domain back-links from the body. This isolates whether URL
+  // density (regardless of domain) is what triggers anti-spam.
+  const strippedContent = publishOpts.stripAllUrls
+    ? stripExternalUrlsForModeration(post.content, {})
+    : stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
   const canonical = CANONICAL_BY_TYPE[postType] ?? 'https://algovault.com/';
 
   const mutation = `mutation PublishPost($input: PublishPostInput!) {
@@ -827,7 +858,43 @@ async function publishHashnode(post: Post, postType: string): Promise<PublishRes
     return { url: postUrl, postId: null, verified: false, reason: 'no-post-id' };
   }
 
-  const verify = await verifyHashnodePost(postId, pat, pubId);
+  // R2 multi-stage verify: 5s sync (records initial publish-time result),
+  // then 60s + 5min run in the background. On late deletion, fire a
+  // CRITICAL Telegram alert + record a drift failure.
+  const verify = await verifyHashnodePostMultiStageDeferred(
+    postId,
+    pat,
+    pubId,
+    async (lateResult) => {
+      const tag = publishOpts.stripAllUrls ? '[hashnode A/B URL-stripped]' : '[hashnode]';
+      if (lateResult.verified) {
+        console.log(
+          `${tag} Late verify OK at stage=${lateResult.stage} postId=${postId}`
+        );
+        return;
+      }
+      console.error(
+        `${tag} Late verify FAILED at stage=${lateResult.stage} postId=${postId} reason=${lateResult.reason}`
+      );
+      try {
+        await recordFailure(
+          'hashnode',
+          postType,
+          `late-verify-${lateResult.stage}: ${lateResult.reason}`,
+          postId,
+          postUrl ?? undefined
+        );
+      } catch (err) {
+        console.error('[hashnode] recordFailure error:', (err as Error).message);
+      }
+      try {
+        await sendAlert(
+          `Hashnode anti-spam deleted post ${postId} after ${lateResult.stage}.\n${tag}\nURL: ${postUrl ?? 'n/a'}\nReason: ${lateResult.reason}`,
+          'critical'
+        );
+      } catch { /* Telegram optional */ }
+    }
+  );
   await logPublishResult('hashnode', postType, postId, postUrl, verify);
   return { url: postUrl, postId, verified: verify.verified, reason: verify.verified ? undefined : verify.reason };
 }
@@ -942,6 +1009,75 @@ async function runSelfAudit(ts: string): Promise<number> {
   return totalDrift;
 }
 
+/**
+ * R5 verify-only mode: re-verify the most recent posts from each platform's
+ * audit-log without publishing anything new. Outputs a verification matrix
+ * so the operator can spot-check post survival.
+ *
+ * Differs from --self-audit: verify-only is an interactive read-only probe
+ * (writes nothing to the failures table, exits 0 regardless of result).
+ * --self-audit is the cron-driven drift detector that records failures and
+ * exits non-zero on drift.
+ */
+async function runVerifyOnly(ts: string): Promise<void> {
+  console.log(`[${ts}] agent-forum-post: --verify-only`);
+
+  const platforms: Array<{
+    name: 'hashnode' | 'moltbook' | 'devto';
+    verify: (postId: string) => Promise<VerifyResult>;
+    credsOk: boolean;
+  }> = [];
+
+  const hnPat = process.env.HASHNODE_PAT;
+  const hnPubId = process.env.HASHNODE_PUBLICATION_ID;
+  platforms.push({
+    name: 'hashnode',
+    credsOk: Boolean(hnPat && hnPubId),
+    verify: (postId) => verifyHashnodePost(postId, hnPat ?? '', hnPubId ?? '', { delayMs: 0 }),
+  });
+  const mbKey = process.env.MOLTBOOK_API_KEY;
+  platforms.push({
+    name: 'moltbook',
+    credsOk: Boolean(mbKey),
+    verify: (postId) => verifyMoltbookPost(postId, mbKey ?? '', { delayMs: 0 }),
+  });
+  const devKey = process.env.DEVTO_API_KEY;
+  platforms.push({
+    name: 'devto',
+    credsOk: Boolean(devKey),
+    verify: (postId) => verifyDevtoPost(Number(postId), devKey ?? '', { delayMs: 0 }),
+  });
+
+  const VERIFY_DAYS = 14;
+  const VERIFY_LIMIT = 10;
+
+  console.log('\nplatform | post_id | verified | reason');
+  console.log('---------|---------|----------|-------');
+
+  for (const p of platforms) {
+    if (!p.credsOk) {
+      console.log(`${p.name} | (none) | skip | creds-missing`);
+      continue;
+    }
+    const recent = await getRecentPublished(p.name, VERIFY_DAYS, VERIFY_LIMIT);
+    if (recent.length === 0) {
+      console.log(`${p.name} | (none) | skip | no-recent-posts`);
+      continue;
+    }
+    for (const row of recent) {
+      try {
+        const v = await p.verify(row.post_id);
+        const reason = v.verified ? '-' : v.reason;
+        console.log(`${p.name} | ${row.post_id} | ${v.verified} | ${reason}`);
+      } catch (err) {
+        console.log(`${p.name} | ${row.post_id} | error | ${(err as Error).message}`);
+      }
+    }
+  }
+
+  console.log(`\n[${ts}] --verify-only complete (read-only, no records written).`);
+}
+
 async function main() {
   const args = parseArgs();
   const ts = new Date().toISOString();
@@ -957,13 +1093,20 @@ async function main() {
     process.exit(0);
   }
 
+  // R5 verify-only mode: re-verify recent posts, output matrix, return.
+  // Read-only — does NOT record failures or exit non-zero on missing posts.
+  if (args.verifyOnly) {
+    await runVerifyOnly(ts);
+    process.exit(0);
+  }
+
   // Self-audit mode: re-verify recent posts, record drift, return.
   if (args.selfAudit) {
     const drift = await runSelfAudit(ts);
     process.exit(drift > 0 ? 1 : 0);
   }
 
-  console.log(`[${ts}] agent-forum-post: type=${args.type} dryRun=${args.dryRun}`);
+  console.log(`[${ts}] agent-forum-post: type=${args.type} dryRun=${args.dryRun}${args.hashnodeStripUrls ? ' hashnodeStripUrls=true' : ''}`);
 
   let post: Post;
   try {
@@ -1002,19 +1145,27 @@ async function main() {
     console.log(`Tags: ${post.tags.join(', ')}`);
     console.log(`canonical_url: ${canonical}`);
     console.log(strippedPreview);
-    console.log('\n=== DRY RUN — Hashnode ===');
+    const hashnodePreview = args.hashnodeStripUrls
+      ? stripExternalUrlsForModeration(post.content, {})
+      : strippedPreview;
+    console.log(`\n=== DRY RUN — Hashnode${args.hashnodeStripUrls ? ' (A/B URL-stripped)' : ''} ===`);
     console.log(`Title: ${post.title}`);
     console.log(`originalArticleURL: ${canonical}`);
-    console.log(strippedPreview);
+    console.log(hashnodePreview);
     console.log(`\n[${ts}] Dry run complete — no posts published.`);
     return;
   }
 
-  // Publish to all platforms
+  // Publish to all platforms.
+  // R4: --hashnode-strip-urls only affects the Hashnode body (Dev.to and
+  // Moltbook receive the standard canonical-domain-preserved version).
   const results: Record<string, PublishResult> = {};
   results.moltbook = await publishMoltbook(post, args.type);
   results.devto = await publishDevTo(post, args.type);
-  results.hashnode = await publishHashnode(post, args.type);
+  results.hashnode = await publishHashnode(post, args.type, { stripAllUrls: args.hashnodeStripUrls });
+  if (args.hashnodeStripUrls) {
+    console.log('[hashnode A/B] URL-stripped variant published. Late verify (60s + 5min) will log survival.');
+  }
 
   const published = Object.entries(results).filter(([, v]) => v.url).map(([k]) => k);
   const skipped = Object.entries(results).filter(([, v]) => !v.url).map(([k]) => k);
