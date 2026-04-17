@@ -798,6 +798,7 @@ function emptyStats(): PerformanceStats {
     bySignalType: {},
     byTimeframe: {},
     byAsset: {},
+    byExchange: {},
     byTier: {},
     recentSignals: [],
     methodology: METHODOLOGY,
@@ -821,7 +822,7 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
   const pfeWinRate = evaluatedPFE.length > 0 ? pfeWins.length / evaluatedPFE.length : null;
 
   // By signal type
-  const bySignalType: Record<string, { count: number; pfeWinRate: number | null }> = {};
+  const bySignalType: PerformanceStats['bySignalType'] = {};
   for (const type of ['BUY', 'SELL', 'HOLD'] as const) {
     const group = all.filter(s => s.signal === type);
     const pfeGroup = group.filter(s => s.pfe_return_pct != null && type !== 'HOLD');
@@ -832,6 +833,7 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
 
     bySignalType[type] = {
       count: type === 'HOLD' ? group.length : pfeGroup.length,
+      evaluated: pfeGroup.length,
       pfeWinRate: type === 'HOLD' ? null : (pfeGroup.length > 0 ? pfeWinsGroup.length / pfeGroup.length : null),
     };
   }
@@ -852,6 +854,7 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
 
     byTimeframe[tf] = {
       count: tfPFE.length,
+      evaluated: tfPFE.length,
       pfeWinRate: tfPFE.length > 0 ? tfPFEWins.length / tfPFE.length : null,
     };
   }
@@ -898,6 +901,67 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     };
   }
 
+  // By exchange — full sub-aggregates per exchange for dashboard filtering
+  const exchanges = [...new Set(all.map(s => s.exchange || 'HL'))];
+  const byExchange: PerformanceStats['byExchange'] = {};
+  for (const ex of exchanges) {
+    const exAll = all.filter(s => (s.exchange || 'HL') === ex);
+    const exNonHold = exAll.filter(s => s.signal !== 'HOLD');
+    const exEvalPFE = exNonHold.filter(s => s.pfe_return_pct != null);
+    const exPfeWins = exEvalPFE.filter(s => {
+      const pfe = s.pfe_return_pct ?? 0;
+      return s.signal === 'BUY' ? pfe > 0 : pfe < 0;
+    });
+
+    // Per-exchange byTimeframe
+    const exByTimeframe: PerformanceStats['byExchange'][string]['byTimeframe'] = {};
+    for (const tf of [...new Set(exNonHold.map(s => s.timeframe))]) {
+      const g = exNonHold.filter(s => s.timeframe === tf);
+      const e = g.filter(s => s.pfe_return_pct != null);
+      const w = e.filter(s => { const p = s.pfe_return_pct ?? 0; return s.signal === 'BUY' ? p > 0 : p < 0; });
+      exByTimeframe[tf] = { count: e.length, evaluated: e.length, pfeWinRate: e.length > 0 ? w.length / e.length : null };
+    }
+
+    // Per-exchange byTier
+    const exByTier: PerformanceStats['byExchange'][string]['byTier'] = {};
+    for (const tierDef of TIER_DEFINITIONS) {
+      const tg = exNonHold.filter(s => classifyAsset(s.coin, top20ByOI) === tierDef.tier);
+      const te = tg.filter(s => s.pfe_return_pct != null);
+      const tw = te.filter(s => { const p = s.pfe_return_pct ?? 0; return s.signal === 'BUY' ? p > 0 : p < 0; });
+      exByTier[`tier${tierDef.tier}`] = { count: tg.length, evaluated: te.length, pfeWinRate: te.length > 0 ? tw.length / te.length : null };
+    }
+
+    // Per-exchange bySignalType
+    const exBySignalType: PerformanceStats['byExchange'][string]['bySignalType'] = {};
+    for (const type of ['BUY', 'SELL', 'HOLD'] as const) {
+      const g = exAll.filter(s => s.signal === type);
+      const e = g.filter(s => s.pfe_return_pct != null && type !== 'HOLD');
+      const w = e.filter(s => { const p = s.pfe_return_pct ?? 0; return s.signal === 'BUY' ? p > 0 : p < 0; });
+      exBySignalType[type] = { count: type === 'HOLD' ? g.length : e.length, evaluated: e.length, pfeWinRate: type === 'HOLD' ? null : (e.length > 0 ? w.length / e.length : null) };
+    }
+
+    // Per-exchange byAsset
+    const exByAsset: PerformanceStats['byExchange'][string]['byAsset'] = {};
+    for (const coin of [...new Set(exAll.map(s => s.coin))]) {
+      const g = exAll.filter(s => s.coin === coin);
+      const nh = g.filter(s => s.signal !== 'HOLD');
+      const e = nh.filter(s => s.pfe_return_pct != null);
+      const w = e.filter(s => { const p = s.pfe_return_pct ?? 0; return s.signal === 'BUY' ? p > 0 : p < 0; });
+      exByAsset[coin] = { count: g.length, tier: classifyAsset(coin, top20ByOI), pfeWinRate: e.length > 0 ? w.length / e.length : null };
+    }
+
+    byExchange[ex] = {
+      exchange: ex,
+      count: exNonHold.length,
+      evaluated: exEvalPFE.length,
+      pfeWinRate: exEvalPFE.length > 0 ? exPfeWins.length / exEvalPFE.length : null,
+      byTimeframe: exByTimeframe,
+      byTier: exByTier,
+      bySignalType: exBySignalType,
+      byAsset: exByAsset,
+    };
+  }
+
   return {
     totalSignals: all.length,
     period: {
@@ -912,6 +976,7 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     bySignalType,
     byTimeframe,
     byAsset,
+    byExchange,
     byTier,
     recentSignals: all.slice(0, 20).map(s => ({
       coin: s.coin, signal: s.signal, confidence: s.confidence,

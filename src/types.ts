@@ -280,12 +280,23 @@ export interface PerformanceStats {
     totalEvaluated: number;
     pfeWinRate: number | null;
   };
-  bySignalType: Record<string, { count: number; pfeWinRate: number | null }>;
-  byTimeframe: Record<string, { count: number; pfeWinRate: number | null }>;
+  bySignalType: Record<string, { count: number; evaluated: number; pfeWinRate: number | null }>;
+  byTimeframe: Record<string, { count: number; evaluated: number; pfeWinRate: number | null }>;
   byAsset: Record<string, {
     count: number;
     tier: number;
     pfeWinRate: number | null;
+  }>;
+  /** Per-exchange aggregates for dashboard filtering without client-side recomputation. */
+  byExchange: Record<string, {
+    exchange: string;
+    count: number;
+    evaluated: number;
+    pfeWinRate: number | null;
+    byTimeframe: Record<string, { count: number; evaluated: number; pfeWinRate: number | null }>;
+    byTier: Record<string, { count: number; evaluated: number; pfeWinRate: number | null }>;
+    bySignalType: Record<string, { count: number; evaluated: number; pfeWinRate: number | null }>;
+    byAsset: Record<string, { count: number; tier: number; pfeWinRate: number | null }>;
   }>;
   byTier: Record<string, {
     tier: number;

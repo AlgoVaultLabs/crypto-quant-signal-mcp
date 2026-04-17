@@ -874,7 +874,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 <body>
 <div class="logo">
   <a href="https://algovault.com" style="display:flex;align-items:center;text-decoration:none"><img src="/logo.png" width="36" height="36" style="border-radius:8px;cursor:pointer" onerror="this.style.display='none'"></a>
-  <div><h1>Live Track Record</h1><div class="subtitle">v1.8.1 &middot; 5 exchanges &middot; 290+ assets</div></div>
+  <div><h1>Live Track Record</h1><div class="subtitle">v${PKG_VERSION} &middot; 5 exchanges &middot; 290+ assets</div></div>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -1025,7 +1025,17 @@ function tierMatch(tier) {
   return tier === parseInt(activeTierFilter);
 }
 
-function getFilteredSignals() {
+// Get the correct data source based on active exchange filter.
+// When 'all': uses top-level aggregates. When filtered: uses byExchange[ex].
+function src() {
+  var d = cachedData; if (!d) return null;
+  if (activeExchangeFilter === 'all') return { overall: d.overall, byTF: d.byTimeframe, byType: d.bySignalType, byAsset: d.byAsset, byTier: d.byTier };
+  var ex = (d.byExchange || {})[activeExchangeFilter];
+  if (!ex) return { overall: { totalSignals: 0, totalEvaluated: 0, pfeWinRate: null }, byTF: {}, byType: {}, byAsset: {}, byTier: {} };
+  return { overall: { totalSignals: ex.count, totalEvaluated: ex.evaluated, pfeWinRate: ex.pfeWinRate }, byTF: ex.byTimeframe, byType: ex.bySignalType, byAsset: ex.byAsset, byTier: ex.byTier };
+}
+
+function getFilteredRecent() {
   var all = cachedData ? (cachedData.recentSignals || []) : [];
   return all.filter(function(s) {
     if (!tierMatch(s.tier)) return false;
@@ -1044,35 +1054,6 @@ function setExchangeFilter(ex) {
     t.style.background = isActive ? '#58a6ff20' : '#161b22';
   });
   renderAll();
-}
-
-function pfeWin(s) { var p = s.pfe_return_pct; if (p == null) return false; return s.signal === 'BUY' ? p > 0 : p < 0; }
-
-function recomputeOverall(signals) {
-  var nh = signals.filter(function(s){return s.signal!=='HOLD';});
-  var ePFE = nh.filter(function(s){return s.pfe_return_pct!=null;});
-  var pfeW = ePFE.filter(pfeWin);
-  var pfeWR = ePFE.length>0 ? pfeW.length/ePFE.length : null;
-  return { totalAll: nh.length, totalEvaluated: ePFE.length, total: signals.length, pfeWinRate: pfeWR };
-}
-
-function recomputeTF(signals) {
-  var nh = signals.filter(function(s){return s.signal!=='HOLD';});
-  var tfs = {};
-  nh.forEach(function(s){if(!tfs[s.timeframe]) tfs[s.timeframe]=[];tfs[s.timeframe].push(s);});
-  var result = {};
-  Object.keys(tfs).forEach(function(tf){
-    var g=tfs[tf];
-    var ePFE=g.filter(function(s){return s.pfe_return_pct!=null;});
-    var pfeW=ePFE.filter(pfeWin);
-    var pfeWR=ePFE.length>0?pfeW.length/ePFE.length:null;
-    var buyC=g.filter(function(s){return s.signal==='BUY';}).length;
-    var sellC=g.filter(function(s){return s.signal==='SELL';}).length;
-    var wins=pfeW.map(function(s){var p=Math.abs(s.pfe_return_pct);return p;});
-    var avgPfe=wins.length>0?wins.reduce(function(a,b){return a+b;},0)/wins.length:null;
-    result[tf]={count:g.length,evaluated:ePFE.length,pfeWinRate:pfeWR,avgPfePct:avgPfe,buyCount:buyC,sellCount:sellC};
-  });
-  return result;
 }
 
 function setTfFilter(tf) {
@@ -1094,21 +1075,20 @@ function setTierFilter(mode) {
 
 function renderAll() {
   var d = cachedData; if (!d) return;
-  var allSignals = getFilteredSignals();
-  var stats = recomputeOverall(allSignals);
-  var tfStats = recomputeTF(allSignals);
+  var s = src(); if (!s) return;
 
-  // KPIs
+  // KPIs — from server-side aggregates (not recomputed from recentSignals)
   if (activeTfFilter === 'all') {
     var pfeEl = document.getElementById('pfe-wr');
-    pfeEl.textContent = pct(stats.pfeWinRate); pfeEl.className = 'value hero ' + pfeClass(stats.pfeWinRate);
-    document.getElementById('total').textContent = (stats.totalAll || 0).toLocaleString();
+    pfeEl.textContent = pct(s.overall.pfeWinRate); pfeEl.className = 'value hero ' + pfeClass(s.overall.pfeWinRate);
+    document.getElementById('total').textContent = (s.overall.totalSignals || 0).toLocaleString();
     document.getElementById('period').textContent = d.period ? d.period.from + ' → ' + d.period.to : 'Tracked & Evaluated';
   } else {
-    var v = (tfStats || {})[activeTfFilter];
-    if (v) {
-      document.getElementById('pfe-wr').textContent = '—'; document.getElementById('pfe-wr').className = 'value hero muted';
-      document.getElementById('total').textContent = (v.count || 0).toLocaleString();
+    var tfv = (s.byTF || {})[activeTfFilter];
+    if (tfv) {
+      var pfe2 = document.getElementById('pfe-wr');
+      pfe2.textContent = pct(tfv.pfeWinRate); pfe2.className = 'value hero ' + pfeClass(tfv.pfeWinRate);
+      document.getElementById('total').textContent = (tfv.count || 0).toLocaleString();
       document.getElementById('period').textContent = activeTfFilter + ' timeframe';
     }
   }
@@ -1116,24 +1096,16 @@ function renderAll() {
   // Evaluated indicator (with HOLD rate)
   var evalEl = document.getElementById('eval-indicator');
   if (evalEl) {
-    var th = cachedData.totalHolds || 0;
-    var totalGenerated = (stats.totalAll||0) + th;
+    var th = d.totalHolds || 0;
+    var totalGenerated = (s.overall.totalSignals||0) + th;
     var holdRate = totalGenerated > 0 ? ((th / totalGenerated) * 100).toFixed(0) + '%' : '—';
-    evalEl.textContent = 'Trade Calls: ' + (stats.totalAll||0) + ' · Evaluated: ' + (stats.totalEvaluated||0) + ' · PFE Win Rate: ' + pct(stats.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
+    evalEl.textContent = 'Trade Calls: ' + (s.overall.totalSignals||0).toLocaleString() + ' · Evaluated: ' + (s.overall.totalEvaluated||0).toLocaleString() + ' · PFE Win Rate: ' + pct(s.overall.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
   }
 
-  // Tier cards — recompute from filtered signals so exchange filter works
+  // Tier cards — from server-side byTier (or byExchange[ex].byTier)
   var tcEl = document.getElementById('tier-cards');
   var bt = d.byTier || {};
-  // Compute per-tier stats from filtered signals
-  var tierComputed = {};
-  allSignals.forEach(function(s) {
-    if (s.signal === 'HOLD') return;
-    var k = 'tier' + s.tier;
-    if (!tierComputed[k]) tierComputed[k] = { count: 0, evaluated: 0, pfeWins: 0 };
-    tierComputed[k].count++;
-    if (s.pfe_return_pct != null) { tierComputed[k].evaluated++; if (pfeWin(s)) tierComputed[k].pfeWins++; }
-  });
+  var exTier = s.byTier || {};
   function tierAssetLabel(tier, assets) {
     if (tier === 1) return (assets||[]).join(', ') || 'BTC, ETH';
     if (tier === 2) {
@@ -1152,8 +1124,7 @@ function renderAll() {
   var hbt = d.holdsByTier || {};
   tcEl.innerHTML = ['tier1','tier2','tier3','tier4'].map(function(k){
     var t = bt[k]; if (!t) return '';
-    var tc = tierComputed[k] || { count: 0, evaluated: 0, pfeWins: 0 };
-    var tcPfeWR = tc.evaluated > 0 ? tc.pfeWins / tc.evaluated : null;
+    var tc = exTier[k] || { count: 0, evaluated: 0, pfeWinRate: null };
     var isTF = t.tier === 3;
     var tierHolds = hbt[String(t.tier)] || 0;
     var holdLine = tierHolds > 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:6px">' + tierHolds.toLocaleString() + ' HOLD calls — engine is selective</div>' : '';
@@ -1162,44 +1133,38 @@ function renderAll() {
       (isTF ? ' <span class="tradfi-badge">Only on AlgoVault ✦</span>' : '') + '</div>' +
       '<div class="tc-assets">' + tierAssetLabel(t.tier, t.assets) + '</div>' +
       (tc.count > 0 ? '<div class="tc-stats">' +
-        '<div class="tc-stat"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + tc.count.toLocaleString() + '</span></div>' +
-        '<div class="tc-stat"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + tc.evaluated.toLocaleString() + '</span></div>' +
-        '<div class="tc-stat"><span class="tc-label">PFE Win Rate</span><span class="tc-val pfe-hero ' + pfeClass(tcPfeWR) + '">' + pct(tcPfeWR) + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">Trade Calls</span><span class="tc-val muted">' + (tc.count||0).toLocaleString() + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">Evaluated</span><span class="tc-val muted">' + (tc.evaluated||0).toLocaleString() + '</span></div>' +
+        '<div class="tc-stat"><span class="tc-label">PFE Win Rate</span><span class="tc-val pfe-hero ' + pfeClass(tc.pfeWinRate) + '">' + pct(tc.pfeWinRate) + '</span></div>' +
       '</div>' : '<div style="color:#6e7681;font-size:12px">No trade calls yet</div>') +
       holdLine +
     '</div>';
   }).join('');
 
-  // Signal types
+  // Signal types — from server-side bySignalType
   var typeEl = document.getElementById('by-type');
-  var typeCounts = {};
-  ['BUY','SELL','HOLD'].forEach(function(type){
-    var g=allSignals.filter(function(s){return s.signal===type;});
-    var ePFE=g.filter(function(s){return s.pfe_return_pct!=null&&type!=='HOLD';});
-    var pfeW=ePFE.filter(pfeWin);
-    typeCounts[type]={count:g.length,evaluated:ePFE.length,pfeWinRate:type==='HOLD'?null:(ePFE.length>0?pfeW.length/ePFE.length:null)};
+  var typeSrc = s.byType || {};
+  var th2 = d.totalHolds || 0;
+  var types = ['BUY','SELL','HOLD'].map(function(type){
+    var v = typeSrc[type] || { count: 0, evaluated: 0, pfeWinRate: null };
+    if (type === 'HOLD') v = { count: th2, evaluated: 0, pfeWinRate: null };
+    return [type, v];
   });
-  var types=Object.entries(typeCounts);
-  typeEl.innerHTML = types.length ? types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td>'+v.count+'</td><td>'+v.evaluated+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('') : '<tr><td colspan="4" class="empty">No trade calls yet</td></tr>';
+  typeEl.innerHTML = types.map(function(e){var tp=e[0],v=e[1];return '<tr><td>'+badge(tp)+'</td><td>'+(v.count||0)+'</td><td>'+(v.evaluated||0)+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td></tr>';}).join('');
 
-  // TF table
+  // TF table — from server-side byTimeframe
   var tfEl = document.getElementById('by-timeframe');
-  var tfe = tfStats ? Object.entries(tfStats) : [];
+  var tfSrc = s.byTF || {};
+  var tfe = Object.entries(tfSrc);
   var filtered = activeTfFilter === 'all' ? tfe : tfe.filter(function(e){return e[0]===activeTfFilter;});
   if (filtered.length) {
     filtered.sort(function(a,b){return TF_ORDER.indexOf(a[0])-TF_ORDER.indexOf(b[0]);});
-    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];var ap=v.avgPfePct!=null?v.avgPfePct.toFixed(2)+'%':'—';return '<tr><td><strong>'+tf+'</strong></td><td>'+v.count+'</td><td>'+v.evaluated+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>'+ap+'</td><td>'+v.buyCount+' / '+v.sellCount+'</td></tr>';}).join('');
+    tfEl.innerHTML = filtered.map(function(e){var tf=e[0],v=e[1];return '<tr><td><strong>'+tf+'</strong></td><td>'+(v.count||0)+'</td><td>'+(v.evaluated||0)+'</td><td class="'+pfeClass(v.pfeWinRate)+'">'+pct(v.pfeWinRate)+'</td><td>—</td><td>—</td></tr>';}).join('');
   } else { tfEl.innerHTML = '<tr><td colspan="6" class="empty">No data for this timeframe</td></tr>'; }
 
-  // Asset tables
-  var tfSigs = activeTfFilter === 'all' ? allSignals : allSignals.filter(function(s){return s.timeframe===activeTfFilter;});
-  var nhSigs = tfSigs.filter(function(s){return s.signal!=='HOLD';});
-  function computeAst(sigs){
-    var m={};sigs.forEach(function(s){if(!m[s.coin])m[s.coin]={coin:s.coin,tier:s.tier,count:0,pfeEval:0,pfeWins:0};var a=m[s.coin];a.count++;
-    if(s.pfe_return_pct!=null){a.pfeEval++;if(pfeWin(s))a.pfeWins++;}});
-    return Object.values(m).filter(function(a){return a.count>=5;}).map(function(a){return{coin:a.coin,tier:a.tier,count:a.count,pfeWinRate:a.pfeEval>0?a.pfeWins/a.pfeEval:null};});
-  }
-  var assets = computeAst(nhSigs);
+  // Asset tables — from server-side byAsset
+  var assetSrc = s.byAsset || {};
+  var assets = Object.entries(assetSrc).filter(function(e){ return e[1].count >= 5 && (activeTierFilter === 'all' || e[1].tier === parseInt(activeTierFilter)); }).map(function(e){ return { coin: e[0], tier: e[1].tier, count: e[1].count, pfeWinRate: e[1].pfeWinRate }; });
   var topA = assets.slice().sort(function(a,b){return (b.pfeWinRate||0)-(a.pfeWinRate||0);}).slice(0,15);
   var worstA = assets.slice().sort(function(a,b){return (a.pfeWinRate||0)-(b.pfeWinRate||0);}).slice(0,15);
   function renderAT(id,list){
@@ -1209,11 +1174,11 @@ function renderAll() {
   }
   renderAT('top-assets',topA); renderAT('worst-assets',worstA);
 
-  // Recent signals
+  // Recent signals — still from recentSignals (the 20-item capped array, correctly stripped)
   var recentEl = document.getElementById('recent');
-  var recent = tfSigs.slice(0,20);
+  var recent = getFilteredRecent().slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+(s.id||'')+'" style="color:#60a5fa;text-decoration:none">#'+(s.id||'')+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td></tr>';}).join('');
+    recentEl.innerHTML = recent.map(function(s){return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
   } else { recentEl.innerHTML='<tr><td colspan="7" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
