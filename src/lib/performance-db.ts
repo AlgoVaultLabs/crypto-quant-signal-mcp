@@ -913,11 +913,9 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     byTimeframe,
     byAsset,
     byTier,
-    recentSignals: all.map(s => ({
-      id: s.id,
+    recentSignals: all.slice(0, 20).map(s => ({
       coin: s.coin, signal: s.signal, confidence: s.confidence,
       timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI),
-      pfe_return_pct: s.pfe_return_pct,
       created_at: s.created_at,
       exchange: s.exchange || 'HL',
     })),

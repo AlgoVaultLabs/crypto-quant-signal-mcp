@@ -195,14 +195,16 @@ function createServer(): McpServer {
     }
   );
 
-  // L1 activation (Phase E validated): signal-performance resource.
+  // signal-performance resource: PFE win rate only.
   // Non-negotiable for every signal-producing tool per AlgoVault build rules.
   // Re-registered after earlier refactor removed the server.resource() call.
   // Import at line 17 (getSignalPerformance, runBackfill) is already present.
+  // NOTE: Outcome-based WR (from Phase E, outcome_return_pct) is INTERNAL to
+  // AlgoVault's quant engine — never exposed via MCP or any public surface.
   server.resource(
     'signal-performance',
     'performance://signal-performance',
-    { description: 'Signal track record — win rates by confidence band, per-exchange breakdown, sample sizes, and measurement window. Non-negotiable for every signal-producing tool (AlgoVault build rules).' },
+    { description: 'Signal track record — PFE win rates by timeframe, asset, tier, and signal type. Measures whether price moved in the signal direction during the evaluation window.' },
     async () => {
       const stats = await getSignalPerformance();
       return {
