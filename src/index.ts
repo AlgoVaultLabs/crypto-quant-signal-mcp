@@ -15,7 +15,7 @@ import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
-import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, upsertAgentSession } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getLatestBatchId, getMerkleBatches, getSampleSignalsFromLatestBatch, getSignalWithBatch, upsertAgentSession } from './lib/performance-db.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
@@ -572,6 +572,49 @@ async function startHttp() {
       });
     } catch {
       res.status(500).json({ error: 'Failed to load batches' });
+    }
+  });
+
+  // /api/verify-sample-ids — 5 signal IDs from the latest Merkle batch, used
+  // by the /verify page "Try it" pills. In-process memoization keyed by
+  // batch_id: cache-hit path does a single MAX(batch_id) lookup and returns
+  // the memoized slice (no re-query). Batches rotate once per day at 00:05
+  // UTC, so the memo is effectively daily.
+  let sampleCache: {
+    batchId: number;
+    publishedAt: number | null;
+    signals: Array<{ id: number; coin: string; signal: string; timeframe: string; confidence: number }>;
+  } | null = null;
+
+  app.get('/api/verify-sample-ids', async (_req, res) => {
+    try {
+      const latestBatchId = await getLatestBatchId();
+
+      // Empty DB — return 200 with empty shape (frontend handles gracefully)
+      if (latestBatchId === null) {
+        sampleCache = null;
+        return res.json({ batchId: null, publishedAt: null, signals: [] });
+      }
+
+      // Cache hit: same batch_id as memo → return cached slice (no re-query)
+      if (sampleCache && sampleCache.batchId === latestBatchId) {
+        return res.json(sampleCache);
+      }
+
+      // Cache miss / new batch: materialize + memoize
+      const fresh = await getSampleSignalsFromLatestBatch(5);
+      if (fresh.batchId === null) {
+        sampleCache = null;
+        return res.json({ batchId: null, publishedAt: null, signals: [] });
+      }
+      sampleCache = {
+        batchId: fresh.batchId,
+        publishedAt: fresh.publishedAt,
+        signals: fresh.signals,
+      };
+      res.json(sampleCache);
+    } catch {
+      res.status(500).json({ error: 'Failed to load sample signal IDs' });
     }
   });
 

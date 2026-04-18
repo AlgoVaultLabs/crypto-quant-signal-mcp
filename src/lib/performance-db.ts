@@ -613,6 +613,118 @@ export async function getMerkleBatches(limit = 100): Promise<any[]> {
   ) as any;
 }
 
+/**
+ * Cheap lookup for the latest published Merkle batch id. Single indexed row
+ * read — used as a cache-invalidation key by /api/verify-sample-ids.
+ *
+ * Returns `null` if no batches have been published yet.
+ */
+export async function getLatestBatchId(): Promise<number | null> {
+  const b = getBackend();
+  const sql = `SELECT MAX(batch_id) AS batch_id FROM merkle_batches`;
+  let rows: Array<{ batch_id: number | null }>;
+  if (isPg && b instanceof PgBackend) {
+    rows = (await b.query(sql)) as unknown as Array<{ batch_id: number | null }>;
+  } else {
+    rows = b.all(sql) as unknown as Array<{ batch_id: number | null }>;
+  }
+  const raw = rows[0]?.batch_id;
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Sample helper for the /verify Try-It pills.
+ *
+ * Returns up to `limit` signals from the most recently published Merkle batch
+ * (i.e. `merkle_batch_id = MAX(batch_id) FROM merkle_batches`) with coin-level
+ * deduplication for variety. Fetches `limit * 4` rows via ORDER BY RANDOM(),
+ * dedupes by coin in JS (simpler than SQL-level DISTINCT ON which diverges
+ * between SQLite and Postgres), takes the first `limit`.
+ *
+ * SECURITY: only exposes fields already public via the verify endpoint — no
+ * pfe_return_pct, mae_return_pct, outcome_return_pct, price_at_signal, or
+ * signal_hash. The numeric PK is already a valid verify input.
+ *
+ * If no batches exist yet, returns `{batchId: null, publishedAt: null, signals: []}`.
+ */
+export async function getSampleSignalsFromLatestBatch(limit = 5): Promise<{
+  batchId: number | null;
+  publishedAt: number | null;
+  signals: Array<{ id: number; coin: string; signal: string; timeframe: string; confidence: number }>;
+}> {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), 50));
+  const fetchLimit = safeLimit * 4;
+  const b = getBackend();
+
+  type Row = {
+    id: number;
+    coin: string;
+    signal: string;
+    timeframe: string;
+    confidence: number;
+    batch_id: number;
+    published_at: number | string | Date;
+  };
+
+  const sql = `
+    SELECT s.id, s.coin, s.signal, s.timeframe, s.confidence,
+           mb.batch_id, mb.published_at
+    FROM signals s
+    JOIN merkle_batches mb ON s.merkle_batch_id = mb.batch_id
+    WHERE s.merkle_batch_id = (SELECT MAX(batch_id) FROM merkle_batches)
+    ORDER BY RANDOM()
+    LIMIT ?
+  `;
+
+  let rows: Row[];
+  if (isPg && b instanceof PgBackend) {
+    rows = (await b.query(sql, [fetchLimit])) as unknown as Row[];
+  } else {
+    rows = b.all(sql, fetchLimit) as unknown as Row[];
+  }
+
+  if (rows.length === 0) {
+    return { batchId: null, publishedAt: null, signals: [] };
+  }
+
+  // Normalize published_at to epoch seconds (SQLite stores ISO/datetime string,
+  // Postgres stores TIMESTAMP as Date object — both become epoch for API parity).
+  const rawPublishedAt = rows[0].published_at;
+  let publishedAt: number | null = null;
+  if (typeof rawPublishedAt === 'number') {
+    publishedAt = rawPublishedAt;
+  } else if (rawPublishedAt instanceof Date) {
+    publishedAt = Math.floor(rawPublishedAt.getTime() / 1000);
+  } else if (typeof rawPublishedAt === 'string') {
+    const ms = Date.parse(rawPublishedAt.replace(' ', 'T') + 'Z');
+    publishedAt = Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+  }
+
+  // Dedupe by coin, preserving the random order
+  const seen = new Set<string>();
+  const picks: Array<{ id: number; coin: string; signal: string; timeframe: string; confidence: number }> = [];
+  for (const r of rows) {
+    if (seen.has(r.coin)) continue;
+    seen.add(r.coin);
+    picks.push({
+      id: r.id,
+      coin: r.coin,
+      signal: r.signal,
+      timeframe: r.timeframe,
+      confidence: r.confidence,
+    });
+    if (picks.length >= safeLimit) break;
+  }
+
+  return {
+    batchId: rows[0].batch_id,
+    publishedAt,
+    signals: picks,
+  };
+}
+
 /** Get a signal with its batch info for verification. */
 export async function getSignalWithBatch(signalId: number): Promise<any | null> {
   const b = getBackend();
