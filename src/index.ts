@@ -15,7 +15,7 @@ import { getTradeSignal } from './tools/get-trade-signal.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
-import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, upsertAgentSession } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, upsertAgentSession, getSampleSignalsFromLatestBatch } from './lib/performance-db.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
@@ -575,6 +575,21 @@ async function startHttp() {
     }
   });
 
+  // Verify sample IDs — 5 signals from the latest Merkle batch for the /verify Try-It pills
+  let verifySampleCache: { batchId: number | null; data: unknown } = { batchId: -1, data: null };
+  app.get('/api/verify-sample-ids', async (_req, res) => {
+    try {
+      const result = await getSampleSignalsFromLatestBatch(5);
+      // Cache by batchId — only recompute when a new batch lands
+      if (result.batchId !== verifySampleCache.batchId) {
+        verifySampleCache = { batchId: result.batchId, data: result };
+      }
+      res.json(verifySampleCache.data);
+    } catch {
+      res.status(500).json({ error: 'Failed to load verify samples' });
+    }
+  });
+
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
     // Resolve license per-request using 3-tier gate: x402 → API key → free
@@ -862,13 +877,16 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   .methodology table th { border: none; padding: 4px 24px 4px 0; color: #8b949e; font-weight: 600; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; }
   .methodology table td { border: none; padding: 3px 24px 3px 0; color: #c9d1d9; }
   .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .id-link { color: #d4b255; text-decoration: none; font-family: monospace; font-size: 12px; } .id-link:hover { text-decoration: underline; color: #e8c96a; }
   .recent-table { table-layout: fixed; }
-  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 90px; }
-  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 50px; }
-  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 100px; }
-  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 70px; }
-  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 100px; }
-  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 90px; }
+  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 70px; }
+  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 80px; }
+  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 50px; }
+  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 80px; }
+  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 60px; }
+  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 80px; }
+  .recent-table th:nth-child(7), .recent-table td:nth-child(7) { width: 60px; }
+  .recent-table th:nth-child(8), .recent-table td:nth-child(8) { width: 80px; }
 </style>
 </head>
 <body>
@@ -966,7 +984,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 
   <!-- Recent signals -->
   <div class="section"><h2>Recent Trade Calls</h2>
-    <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th></tr></thead>
+    <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th><th>Exchange</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
@@ -1212,8 +1230,8 @@ function renderAll() {
   var recentEl = document.getElementById('recent');
   var recent = getFilteredRecent().slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){return '<tr><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
-  } else { recentEl.innerHTML='<tr><td colspan="7" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
+    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+s.id+'" class="id-link">#'+s.id+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
+  } else { recentEl.innerHTML='<tr><td colspan="8" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
 async function load() {
