@@ -869,6 +869,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 70px; }
   .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 100px; }
   .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 90px; }
+  .id-link { color: #d4b255; text-decoration: none; } .id-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -966,7 +967,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 
   <!-- Recent signals -->
   <div class="section"><h2>Recent Trade Calls</h2>
-    <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th></tr></thead>
+    <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th><th>Exchange</th></tr></thead>
     <tbody id="recent"></tbody></table>
   </div>
 
@@ -1213,8 +1214,8 @@ function renderAll() {
   var recentEl = document.getElementById('recent');
   var recent = tfSigs.slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+(s.id||'')+'" style="color:#60a5fa;text-decoration:none">#'+(s.id||'')+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td></tr>';}).join('');
-  } else { recentEl.innerHTML='<tr><td colspan="7" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
+    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+s.id+'" class="id-link">#'+s.id+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td>'+(s.exchange||'HL')+'</td></tr>';}).join('');
+  } else { recentEl.innerHTML='<tr><td colspan="8" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 
 async function load() {

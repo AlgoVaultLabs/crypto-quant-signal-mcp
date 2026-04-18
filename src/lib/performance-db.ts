@@ -913,12 +913,15 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     byTimeframe,
     byAsset,
     byTier,
-    recentSignals: all.slice(0, 20).map(s => ({
-      coin: s.coin, signal: s.signal, confidence: s.confidence,
-      timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI),
-      created_at: s.created_at,
-      exchange: s.exchange || 'HL',
-    })),
+    recentSignals: all.slice(0, 20)
+      .filter((s): s is SignalRecord & { id: number } => typeof s.id === 'number')
+      .map(s => ({
+        id: s.id,
+        coin: s.coin, signal: s.signal, confidence: s.confidence,
+        timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI),
+        created_at: s.created_at,
+        exchange: s.exchange || 'HL',
+      })),
     methodology: METHODOLOGY,
   };
 }
