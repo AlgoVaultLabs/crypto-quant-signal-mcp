@@ -358,32 +358,19 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
   }
 })();
 
-// Load sample signal IDs for "Try it" pills
+// Load sample signal IDs for "Try it" pills — from the latest published Merkle batch
 (async function() {
   try {
-    var res = await fetch('/api/performance-public');
+    var res = await fetch('/api/verify-sample-ids');
     var data = await res.json();
-    if (!data.recentSignals || data.recentSignals.length === 0) return;
-
-    // Pick oldest signals (more likely to be in a published batch) with variety
-    var signals = data.recentSignals.slice().reverse();
-    var seen = {};
-    var picks = [];
-    for (var i = 0; i < signals.length && picks.length < 8; i++) {
-      var s = signals[i];
-      if (!s.id || seen[s.coin]) continue;
-      seen[s.coin] = true;
-      picks.push(s);
-    }
-
-    if (picks.length === 0) return;
+    if (!data.signals || data.signals.length === 0) return;
 
     var container = document.getElementById('sample-ids');
-    picks.forEach(function(s) {
+    data.signals.forEach(function(s) {
       var btn = document.createElement('button');
       btn.dataset.id = s.id;
       btn.textContent = '#' + s.id;
-      btn.title = s.coin + ' ' + s.signal;
+      btn.title = s.coin + ' ' + s.signal + ' \u2022 ' + s.timeframe + ' \u2022 ' + s.confidence + '%';
       btn.style.cssText = 'background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:4px 14px;color:#60a5fa;cursor:pointer;font-size:0.85rem;transition:background 0.2s';
       btn.onmouseenter = function() { this.style.background = 'rgba(255,255,255,0.15)'; };
       btn.onmouseleave = function() { this.style.background = 'rgba(255,255,255,0.08)'; };

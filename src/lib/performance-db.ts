@@ -979,6 +979,7 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     byExchange,
     byTier,
     recentSignals: all.slice(0, 20).map(s => ({
+      id: s.id!,
       coin: s.coin, signal: s.signal, confidence: s.confidence,
       timeframe: s.timeframe, tier: classifyAsset(s.coin, top20ByOI),
       created_at: s.created_at,
@@ -986,6 +987,68 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
     })),
     methodology: METHODOLOGY,
   };
+}
+
+// ── Verify sample signals (for /api/verify-sample-ids + Try-It pills) ──
+
+export interface VerifySample {
+  id: number;
+  coin: string;
+  signal: string;
+  timeframe: string;
+  confidence: number;
+}
+
+export interface VerifySampleResult {
+  batchId: number | null;
+  publishedAt: number | null;
+  signals: VerifySample[];
+}
+
+/**
+ * Returns up to `limit` signal IDs from the most recent published Merkle batch,
+ * deduplicated by coin for variety. Used by the /verify page's "Try it" pills.
+ */
+export async function getSampleSignalsFromLatestBatch(limit = 5): Promise<VerifySampleResult> {
+  const b = getBackend();
+  const empty: VerifySampleResult = { batchId: null, publishedAt: null, signals: [] };
+
+  try {
+    // Get the latest batch ID + published_at
+    const batchRows = await dbQuery<{ batch_id: number; published_at: string | number }>(
+      `SELECT batch_id, published_at FROM merkle_batches ORDER BY batch_id DESC LIMIT 1`
+    );
+    if (batchRows.length === 0) return empty;
+    const batchId = Number(batchRows[0].batch_id);
+    const publishedAt = typeof batchRows[0].published_at === 'number'
+      ? batchRows[0].published_at
+      : new Date(batchRows[0].published_at as string).getTime();
+
+    // Fetch limit*4 random signals from this batch for coin-dedup headroom
+    const rows = await dbQuery<{ id: number; coin: string; signal: string; timeframe: string; confidence: number }>(
+      `SELECT id, coin, signal, timeframe, confidence
+       FROM signals
+       WHERE merkle_batch_id = ?
+       ORDER BY RANDOM()
+       LIMIT ?`,
+      [batchId, limit * 4]
+    );
+
+    // Dedupe by coin in JS (SQLite and PG both support ORDER BY RANDOM())
+    const seen = new Set<string>();
+    const signals: VerifySample[] = [];
+    for (const r of rows) {
+      if (seen.has(r.coin)) continue;
+      seen.add(r.coin);
+      signals.push({ id: Number(r.id), coin: r.coin, signal: r.signal, timeframe: r.timeframe, confidence: Number(r.confidence) });
+      if (signals.length >= limit) break;
+    }
+
+    return { batchId, publishedAt, signals };
+  } catch (err) {
+    console.debug('getSampleSignalsFromLatestBatch failed:', err instanceof Error ? err.message : err);
+    return empty;
+  }
 }
 
 // ── Confidence band analysis ──
