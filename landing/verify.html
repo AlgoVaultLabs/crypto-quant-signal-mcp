@@ -84,7 +84,7 @@ tailwind.config = {
       <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading batches...</div>
     </div>
     <div id="contract-info" class="mt-3 text-center text-xs text-gray-500"></div>
-    <div id="try-it-section" style="text-align:center;margin-top:1rem;display:none">
+    <div id="try-it-section" style="text-align:center;margin-top:1rem">
       <span style="color:#888;font-size:0.9rem;">Try it &mdash; click any ID to verify:</span>
       <div id="sample-ids" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:center;margin-top:0.5rem"></div>
     </div>
@@ -358,32 +358,28 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
   }
 })();
 
-// Load sample signal IDs for "Try it" pills
+// Load sample signal IDs for "Try it" pills — pulls from the latest Merkle
+// batch via /api/verify-sample-ids (rotates automatically when a new batch
+// is published at 00:05 UTC daily).
 (async function() {
+  var section = document.getElementById('try-it-section');
   try {
-    var res = await fetch('/api/performance-public');
+    var res = await fetch('/api/verify-sample-ids');
+    if (!res.ok) { section.style.display = 'none'; return; }
     var data = await res.json();
-    if (!data.recentSignals || data.recentSignals.length === 0) return;
+    var picks = (data && data.signals) || [];
 
-    // Pick oldest signals (more likely to be in a published batch) with variety
-    var signals = data.recentSignals.slice().reverse();
-    var seen = {};
-    var picks = [];
-    for (var i = 0; i < signals.length && picks.length < 8; i++) {
-      var s = signals[i];
-      if (!s.id || seen[s.coin]) continue;
-      seen[s.coin] = true;
-      picks.push(s);
+    if (picks.length === 0) {
+      section.style.display = 'none';
+      return;
     }
-
-    if (picks.length === 0) return;
 
     var container = document.getElementById('sample-ids');
     picks.forEach(function(s) {
       var btn = document.createElement('button');
       btn.dataset.id = s.id;
       btn.textContent = '#' + s.id;
-      btn.title = s.coin + ' ' + s.signal;
+      btn.title = s.coin + ' ' + s.signal + ' \u2022 ' + s.timeframe + ' \u2022 ' + s.confidence + '%';
       btn.style.cssText = 'background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:4px 14px;color:#60a5fa;cursor:pointer;font-size:0.85rem;transition:background 0.2s';
       btn.onmouseenter = function() { this.style.background = 'rgba(255,255,255,0.15)'; };
       btn.onmouseleave = function() { this.style.background = 'rgba(255,255,255,0.08)'; };
@@ -394,8 +390,10 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
       };
       container.appendChild(btn);
     });
-    document.getElementById('try-it-section').style.display = 'block';
-  } catch (e) {}
+    section.style.display = 'block';
+  } catch (e) {
+    section.style.display = 'none';
+  }
 })();
 </script>
 
