@@ -298,6 +298,7 @@ export interface PerformanceStats {
     assets: string[];
   }>;
   recentSignals: Array<{
+    id: number;
     coin: string; signal: string; confidence: number;
     timeframe: string; tier: number;
     created_at: number;
