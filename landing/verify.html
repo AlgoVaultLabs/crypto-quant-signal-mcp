@@ -70,6 +70,15 @@ tailwind.config = {
       </div>
     </div>
 
+    <!-- Try-It pills: above fold, directly below input -->
+    <div id="try-it-section" data-testid="try-it-pills" style="text-align:center;margin-top:0.75rem;display:none">
+      <div style="color:#9ca3af;font-size:0.85rem;margin-bottom:0.4rem">
+        <span id="try-it-label">Try yesterday's latest 5 calls</span>
+        <span id="try-it-batch-info" style="display:block;color:#6b7280;font-size:0.75rem;margin-top:2px"></span>
+      </div>
+      <div id="sample-ids" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:center"></div>
+    </div>
+
     <!-- Result card -->
     <div id="result" class="mt-5 hidden"></div>
   </section>
@@ -84,10 +93,6 @@ tailwind.config = {
       <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading batches...</div>
     </div>
     <div id="contract-info" class="mt-3 text-center text-xs text-gray-500"></div>
-    <div id="try-it-section" style="text-align:center;margin-top:1rem;display:none">
-      <span style="color:#888;font-size:0.9rem;">Try it &mdash; click any ID to verify:</span>
-      <div id="sample-ids" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:center;margin-top:0.5rem"></div>
-    </div>
   </section>
 
   <!-- How to Verify -->
@@ -113,7 +118,7 @@ tailwind.config = {
             </div>
             <div>
               <p class="text-gray-300 text-xs font-semibold">From above</p>
-              <p class="text-gray-500 text-xs mt-0.5">Click any ID in &ldquo;Try it&rdquo; under Published Batches to instantly verify a hashed call.</p>
+              <p class="text-gray-500 text-xs mt-0.5">Click any ID pill above the input to instantly verify a hashed call from the latest batch.</p>
             </div>
           </div>
         </div>
@@ -365,19 +370,26 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
     var data = await res.json();
     if (!data.signals || data.signals.length === 0) return;
 
+    // Populate batch info subline
+    var batchInfo = document.getElementById('try-it-batch-info');
+    if (batchInfo && data.batchId) {
+      var pubDate = data.publishedAt ? new Date(data.publishedAt).toISOString().replace('T',' ').slice(0,19) + ' UTC' : '';
+      batchInfo.textContent = 'Batch #' + data.batchId + (pubDate ? ' \u00b7 published ' + pubDate : '');
+    }
+
     var container = document.getElementById('sample-ids');
     data.signals.forEach(function(s) {
       var btn = document.createElement('button');
+      btn.className = 'pill';
       btn.dataset.id = s.id;
       btn.textContent = '#' + s.id;
       btn.title = s.coin + ' ' + s.signal + ' \u2022 ' + s.timeframe + ' \u2022 ' + s.confidence + '%';
-      btn.style.cssText = 'background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:4px 14px;color:#60a5fa;cursor:pointer;font-size:0.85rem;transition:background 0.2s';
-      btn.onmouseenter = function() { this.style.background = 'rgba(255,255,255,0.15)'; };
-      btn.onmouseleave = function() { this.style.background = 'rgba(255,255,255,0.08)'; };
+      btn.style.cssText = 'background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:5px 16px;color:#60a5fa;cursor:pointer;font-size:0.85rem;font-weight:600;transition:background 0.2s';
+      btn.onmouseenter = function() { this.style.background = 'rgba(96,165,250,0.15)'; this.style.borderColor = 'rgba(96,165,250,0.4)'; };
+      btn.onmouseleave = function() { this.style.background = 'rgba(255,255,255,0.08)'; this.style.borderColor = 'rgba(255,255,255,0.15)'; };
       btn.onclick = function() {
         document.getElementById('signal-id').value = this.dataset.id;
         verifySignal();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       };
       container.appendChild(btn);
     });
