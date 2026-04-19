@@ -164,6 +164,30 @@ export async function recordFailure(
   }
 }
 
+/**
+ * Check if a specific post already has an unrecovered failure recorded.
+ * Used by the self-audit to avoid re-recording the same drift failure
+ * every day for known-broken posts (e.g. Moltbook is_spam=true legacy
+ * posts, Hashnode anti-spam deletions). Without this, the drift count
+ * inflates by N every day for N known-broken posts, drowning real signals.
+ */
+export async function hasUnrecoveredFailure(
+  platform: string,
+  postId: string,
+): Promise<boolean> {
+  ensureSchema();
+  try {
+    const rows = await dbQuery<{ n: number | string }>(
+      `SELECT COUNT(*) AS n FROM forum_post_failures
+       WHERE platform = ? AND post_id = ? AND recovered = false`,
+      [platform, postId]
+    );
+    return Number(rows[0]?.n ?? 0) > 0;
+  } catch {
+    return false; // Err on the side of re-recording if query fails
+  }
+}
+
 export async function countRecentFailures(
   platform: string,
   hours: number

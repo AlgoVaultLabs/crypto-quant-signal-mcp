@@ -28,6 +28,7 @@ import {
 import {
   recordFailure,
   countRecentFailures,
+  hasUnrecoveredFailure,
   recordPublished,
   getRecentPublished,
 } from '../lib/forum-post-failures.js';
@@ -45,12 +46,21 @@ const COUNTER_FILE_LOCAL = './usage-example-counter.txt';
 // experiments/crypto-quant-signal/platform-api-schemas-2026-04-15.md)
 // and on Dev.to via `canonical_url`. Moltbook has no canonical-URL
 // field; its body is stripped and accepts the information loss.
-const CANONICAL_BY_TYPE: Record<string, string> = {
-  'track-record': 'https://algovault.com/track-record',
-  'usage-example': 'https://algovault.com/docs.html',
-  'market-insight': 'https://algovault.com/track-record',
-  release: 'https://algovault.com/docs.html',
-};
+// Canonical back-link per post type. Appends a date suffix so Dev.to
+// doesn't reject weekly repeats with "Canonical url has already been taken"
+// (422 observed 2026-04-19 on the track-record post — same canonical URL
+// from the prior week was already registered). The date suffix makes each
+// week's post a unique canonical while still pointing at the real page.
+function getCanonical(postType: string): string {
+  const dateTag = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const base: Record<string, string> = {
+    'track-record': 'https://algovault.com/track-record',
+    'usage-example': 'https://algovault.com/docs.html',
+    'market-insight': 'https://algovault.com/track-record',
+    release: 'https://algovault.com/docs.html',
+  };
+  return `${base[postType] ?? 'https://algovault.com/'}?d=${dateTag}`;
+}
 
 const CANONICAL_DOMAIN = 'algovault.com';
 
@@ -730,7 +740,7 @@ async function publishDevTo(post: Post, postType: string): Promise<PublishResult
   // moderation risk. The canonical back-link is preserved on Dev.to via
   // the `canonical_url` field rather than in-body.
   const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
-  const canonical = CANONICAL_BY_TYPE[postType] ?? 'https://algovault.com/';
+  const canonical = getCanonical(postType);
 
   const body = JSON.stringify({
     article: {
@@ -801,7 +811,7 @@ async function publishHashnode(post: Post, postType: string, publishOpts: { stri
   const strippedContent = publishOpts.stripAllUrls
     ? stripExternalUrlsForModeration(post.content, {})
     : stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
-  const canonical = CANONICAL_BY_TYPE[postType] ?? 'https://algovault.com/';
+  const canonical = getCanonical(postType);
 
   const mutation = `mutation PublishPost($input: PublishPostInput!) {
     publishPost(input: $input) { post { id slug url } }
@@ -980,9 +990,19 @@ async function runSelfAudit(ts: string): Promise<number> {
     }
 
     let verifiedCount = 0;
+    let skippedKnownBroken = 0;
     const driftReasons: string[] = [];
     for (const row of recent) {
       try {
+        // Skip posts that already have an unrecovered failure recorded —
+        // re-checking them just re-records the same drift every day,
+        // inflating the alert count and drowning real new-drift signals.
+        const alreadyFailed = await hasUnrecoveredFailure(p.name, row.post_id);
+        if (alreadyFailed) {
+          skippedKnownBroken += 1;
+          continue;
+        }
+
         const v = await p.verify(row.post_id);
         if (v.verified) {
           verifiedCount += 1;
@@ -997,7 +1017,7 @@ async function runSelfAudit(ts: string): Promise<number> {
       }
     }
 
-    console.log(`SELF-AUDIT: platform=${p.name} verified=${verifiedCount}/${recent.length} failures_7d=${failures7d}${driftReasons.length ? ' drift=' + driftReasons.join(',') : ''}`);
+    console.log(`SELF-AUDIT: platform=${p.name} verified=${verifiedCount}/${recent.length} skipped_known_broken=${skippedKnownBroken} failures_7d=${failures7d}${driftReasons.length ? ' drift=' + driftReasons.join(',') : ''}`);
   }
 
   if (totalDrift > 0) {
@@ -1136,7 +1156,7 @@ async function main() {
 
   if (args.dryRun) {
     const strippedPreview = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
-    const canonical = CANONICAL_BY_TYPE[args.type] ?? 'https://algovault.com/';
+    const canonical = getCanonical(args.type);
     console.log('\n=== DRY RUN — Moltbook (m/' + post.moltbookSubmolt + ') ===');
     console.log(`Title: ${post.title}`);
     console.log(strippedPreview);
