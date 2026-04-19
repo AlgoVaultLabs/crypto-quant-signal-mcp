@@ -1024,11 +1024,15 @@ export async function getSampleSignalsFromLatestBatch(limit = 5): Promise<Verify
       ? batchRows[0].published_at
       : new Date(batchRows[0].published_at as string).getTime();
 
-    // Fetch limit*4 random signals from this batch for coin-dedup headroom
+    // Fetch limit*4 random signals from this batch for coin-dedup headroom.
+    // Filter to confidence >= 60 to match the track-record dashboard's
+    // evaluation threshold (only calls with >= 60% confidence are shown
+    // in the public PFE Win Rate stats).
     const rows = await dbQuery<{ id: number; coin: string; signal: string; timeframe: string; confidence: number }>(
       `SELECT id, coin, signal, timeframe, confidence
        FROM signals
        WHERE merkle_batch_id = ?
+         AND confidence >= 60
        ORDER BY RANDOM()
        LIMIT ?`,
       [batchId, limit * 4]
