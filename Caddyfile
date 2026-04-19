@@ -1,7 +1,59 @@
+# AlgoVault Caddyfile — canonical server config
+# Live at /etc/caddy/Caddyfile on Hetzner (204.168.185.24)
+# Applied via: systemctl reload caddy
+
 api.algovault.com {
-    reverse_proxy localhost:3000 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+    handle /privacy {
+        root * /var/www/algovault
+        rewrite * /privacy.html
+        file_server
+    }
+    handle /landing {
+        root * /var/www/algovault
+        rewrite * /index.html
+        file_server
+    }
+    handle /logo.png {
+        root * /var/www/algovault
+        file_server
+    }
+    handle {
+        reverse_proxy localhost:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+algovault.com {
+    handle /track-record {
+        reverse_proxy localhost:3000
+    }
+    handle /api/performance-public {
+        reverse_proxy localhost:3000
+    }
+    handle /api/merkle-batches {
+        reverse_proxy localhost:3000
+    }
+    handle /api/verify-signal {
+        reverse_proxy localhost:3000
+    }
+    handle /api/confidence-bands-public {
+        reverse_proxy localhost:3000
+    }
+    handle /api/verify-sample-ids {
+        reverse_proxy localhost:3000
+    }
+    handle {
+        root * /var/www/algovault
+        try_files {path} {path}.html {path}/index.html
+
+        # Short-cache + must-revalidate for all static landing pages so
+        # browser stale-cache bugs cannot recur (2026-04-19 verify incident).
+        # 60s max-age = browsers revalidate within 1 minute of a deploy.
+        header Cache-Control "public, max-age=60, must-revalidate"
+
+        file_server
     }
 }
