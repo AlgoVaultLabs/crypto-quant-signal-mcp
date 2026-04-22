@@ -22,7 +22,15 @@ if (!ADMIN_KEY) {
 }
 const API_BASE = 'https://api.algovault.com';
 const GAS_WALLET = '0x804B82544E0B779c69192Ff5FC64a4c5d1017B80';
-const BASE_RPC = 'https://mainnet.base.org';
+// Base RPC endpoints — primary first, then free fallbacks. Both used as
+// a chain of best-effort attempts before alerting. mainnet.base.org is
+// the official endpoint but throttles aggressively (HTTP 503) under
+// load; publicnode.com is a free Allnodes mirror with better uptime
+// during peak hours.
+const BASE_RPCS = [
+  'https://mainnet.base.org',
+  'https://base.publicnode.com',
+];
 const STATE_FILE = '/tmp/algovault-monitor-state.json';
 const DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 const FETCH_TIMEOUT = 5_000;
@@ -121,56 +129,72 @@ async function checkFacilitator(): Promise<string | null> {
 }
 
 async function checkGasWallet(): Promise<{ error: string | null; balance: number }> {
-  // Base public RPC (mainnet.base.org) is flaky under load — use a longer timeout
-  // and retry once before alerting to avoid false positives on transient slowdowns.
+  // Public Base RPCs (mainnet.base.org especially) throttle aggressively
+  // under load — HTTP 503 is the most common false-positive trigger.
+  // Strategy: 3 attempts per endpoint with exponential backoff (1s, 3s),
+  // then walk to the next endpoint in BASE_RPCS. Only alert if EVERY
+  // endpoint fails all attempts — by that point the issue is almost
+  // certainly real and not a transient rate limit on one provider.
   //
-  // Critical: only ever report "wallet low" from a VALID balance read. A malformed
-  // response (missing `result` field, RPC error body, HTTP 5xx) must never be
-  // silently coerced to 0 — that fires a bogus "Gas wallet low: 0.000000 ETH" alert.
+  // Critical: only ever report "wallet low" from a VALID balance read.
+  // A malformed response (missing `result` field, RPC error body, HTTP
+  // 5xx) must never be silently coerced to 0.
   const RPC_TIMEOUT = 10_000;
-  const MAX_ATTEMPTS = 2;
+  const MAX_ATTEMPTS_PER_RPC = 3;
+  const BACKOFF_MS = [1_000, 3_000]; // delay before attempt 2, 3
 
   let lastError = '';
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(BASE_RPC, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0', id: 1,
-          method: 'eth_getBalance',
-          params: [GAS_WALLET, 'latest'],
-        }),
-        signal: AbortSignal.timeout(RPC_TIMEOUT),
-      });
-      if (!res.ok) {
-        lastError = `HTTP ${res.status}`;
-      } else {
-        const data = await res.json().catch(() => null) as
-          | { result?: string; error?: { message?: string } }
-          | null;
-        if (!data) {
-          lastError = 'RPC returned non-JSON response';
-        } else if (data.error) {
-          lastError = `RPC error: ${data.error.message ?? JSON.stringify(data.error)}`;
-        } else if (typeof data.result !== 'string' || !data.result.startsWith('0x')) {
-          lastError = `Invalid RPC response (no result field): ${JSON.stringify(data).slice(0, 200)}`;
+  let lastEndpoint = '';
+  for (const rpc of BASE_RPCS) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_RPC; attempt++) {
+      lastEndpoint = rpc;
+      try {
+        const res = await fetch(rpc, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: 1,
+            method: 'eth_getBalance',
+            params: [GAS_WALLET, 'latest'],
+          }),
+          signal: AbortSignal.timeout(RPC_TIMEOUT),
+        });
+        if (!res.ok) {
+          lastError = `HTTP ${res.status}`;
         } else {
-          // Valid read — only now is it safe to evaluate the balance threshold.
-          const wei = BigInt(data.result);
-          const eth = Number(wei) / 1e18;
-          if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
-          return { error: null, balance: eth };
+          const data = await res.json().catch(() => null) as
+            | { result?: string; error?: { message?: string } }
+            | null;
+          if (!data) {
+            lastError = 'RPC returned non-JSON response';
+          } else if (data.error) {
+            lastError = `RPC error: ${data.error.message ?? JSON.stringify(data.error)}`;
+          } else if (typeof data.result !== 'string' || !data.result.startsWith('0x')) {
+            lastError = `Invalid RPC response (no result field): ${JSON.stringify(data).slice(0, 200)}`;
+          } else {
+            // Valid read — only now is it safe to evaluate the balance threshold.
+            const wei = BigInt(data.result);
+            const eth = Number(wei) / 1e18;
+            if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
+            return { error: null, balance: eth };
+          }
         }
+      } catch (err) {
+        lastError = (err as Error).message;
       }
-    } catch (err) {
-      lastError = (err as Error).message;
+      if (attempt < MAX_ATTEMPTS_PER_RPC) {
+        const delay = BACKOFF_MS[attempt - 1] ?? 3_000;
+        console.log(`[monitor] gas wallet RPC ${rpc} failed (${lastError}), retry ${attempt}/${MAX_ATTEMPTS_PER_RPC - 1} in ${delay / 1000}s...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
-    if (attempt < MAX_ATTEMPTS) {
-      await new Promise(r => setTimeout(r, 500));
-    }
+    // Endpoint exhausted — try next fallback
+    console.log(`[monitor] gas wallet RPC ${rpc} exhausted after ${MAX_ATTEMPTS_PER_RPC} attempts (${lastError}), trying next endpoint...`);
   }
-  return { error: `Gas wallet check failed after ${MAX_ATTEMPTS} attempts: ${lastError}`, balance: 0 };
+  return {
+    error: `Gas wallet check failed: all ${BASE_RPCS.length} RPC endpoints exhausted (${MAX_ATTEMPTS_PER_RPC} attempts each). Last endpoint: ${lastEndpoint}, last error: ${lastError}`,
+    balance: 0,
+  };
 }
 
 async function checkDatabase(): Promise<string | null> {
