@@ -816,7 +816,13 @@ function getDashboardHtml(): string {
   </div>
   <div class="grid">
     <div class="section"><h2>Top Assets</h2><table><thead><tr><th>Asset</th><th>Calls</th><th></th></tr></thead><tbody id="top-assets"></tbody></table></div>
-    <div class="section"><h2>Avg Response Time</h2><table><thead><tr><th>Tool</th><th>ms</th></tr></thead><tbody id="avg-time"></tbody></table></div>
+    <div class="section">
+      <h2>Response Time (last 7d) &middot; <span style="color:#6e7681;font-size:11px;text-transform:none;letter-spacing:0">p50 = typical · p95 = slow tail · n = sample count</span></h2>
+      <table>
+        <thead><tr><th>Tool</th><th style="text-align:right">n</th><th style="text-align:right">p50 ms</th><th style="text-align:right">p95 ms</th><th style="text-align:right">min</th><th style="text-align:right">max</th></tr></thead>
+        <tbody id="latency-rows"></tbody>
+      </table>
+    </div>
   </div>
   <div class="section">
     <h2>Skills Analytics (algovault-skills plugin) &middot; <span id="skills-summary" style="color:#8b949e;font-size:12px;text-transform:none;letter-spacing:0">loading...</span></h2>
@@ -890,11 +896,29 @@ async function load() {
     renderRows('by-tool', d.byTool);
     renderRows('by-tier', d.byTier);
     renderAssets(d.topAssets);
-    const timeEl = document.getElementById('avg-time');
-    const timeEntries = Object.entries(d.avgResponseTimeMs);
-    timeEl.innerHTML = timeEntries.length
-      ? timeEntries.map(([k,v]) => '<tr><td>'+k+'</td><td>'+v+'ms</td></tr>').join('')
-      : '<tr><td colspan="2" style="color:#8b949e">No data yet</td></tr>';
+    // C1 (LATENCY-W1): truthful per-tool latency table — n / p50 / p95 / min / max.
+    // Replaces the misleading single-number avg (a bimodal distribution averaged 7.8s
+    // even though typical p50 was ~1s). Sorted by p95 ascending so tail outliers float to bottom.
+    const latencyEl = document.getElementById('latency-rows');
+    const stats = Array.isArray(d.toolStats) ? d.toolStats : [];
+    if (!stats.length) {
+      latencyEl.innerHTML = '<tr><td colspan="6" style="color:#8b949e">No data yet</td></tr>';
+    } else {
+      latencyEl.innerHTML = stats.map(function (s) {
+        var dim = s.insufficient_data ? ' style="color:#6e7681"' : '';
+        var p50 = s.insufficient_data ? '<span style="color:#6e7681">— <small>(n&lt;5)</small></span>' : (s.p50_ms + 'ms');
+        var p95 = s.insufficient_data ? '<span style="color:#6e7681">—</span>' : (s.p95_ms + 'ms');
+        var minMs = s.min_ms == null ? '—' : (s.min_ms + 'ms');
+        var maxMs = s.max_ms == null ? '—' : (s.max_ms + 'ms');
+        return '<tr' + dim + '><td>' + s.tool_name + '</td>'
+             + '<td style="text-align:right;font-variant-numeric:tabular-nums">' + s.n + '</td>'
+             + '<td style="text-align:right;font-variant-numeric:tabular-nums;color:#3fb950">' + p50 + '</td>'
+             + '<td style="text-align:right;font-variant-numeric:tabular-nums;color:#facc15">' + p95 + '</td>'
+             + '<td style="text-align:right;font-variant-numeric:tabular-nums;color:#8b949e">' + minMs + '</td>'
+             + '<td style="text-align:right;font-variant-numeric:tabular-nums;color:#8b949e">' + maxMs + '</td>'
+             + '</tr>';
+      }).join('');
+    }
     document.getElementById('updated').textContent = 'Updated: ' + new Date(d.generatedAt).toLocaleString();
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';

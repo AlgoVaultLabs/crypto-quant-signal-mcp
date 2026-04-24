@@ -174,6 +174,91 @@ export async function getSkillInvocationStats(): Promise<Array<{
 
 // ── Usage stats (for resource + admin endpoint) ──
 
+/**
+ * Compute a percentile from a SORTED-ASCENDING numeric array using linear interpolation
+ * (NumPy / pandas default — matches `numpy.percentile(arr, q*100)` for q in [0,1]).
+ *
+ * Why linear interpolation (not nearest-rank): for arr=[100,200,...,1000] (n=10),
+ * p50=550 (between 500 and 600), p95=955 (between 900 and 1000). These are the
+ * values the spec's AC1.3 asserts (≈550, ≈950). Nearest-rank would give 500/1000.
+ *
+ * Returns null for empty input.
+ */
+export function percentile(sortedAsc: readonly number[], q: number): number | null {
+  if (sortedAsc.length === 0) return null;
+  if (sortedAsc.length === 1) return sortedAsc[0];
+  if (q <= 0) return sortedAsc[0];
+  if (q >= 1) return sortedAsc[sortedAsc.length - 1];
+  const pos = q * (sortedAsc.length - 1);  // 0-indexed continuous position
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sortedAsc[lo];
+  const frac = pos - lo;
+  return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * frac;
+}
+
+/**
+ * Per-tool latency stats over a configurable window (default last 7d).
+ * Application-layer percentile computation — Postgres + SQLite portable
+ * (PERCENTILE_CONT WITHIN GROUP is Postgres-only).
+ *
+ * Hard cap of 100K rows per tool query — plenty for any sensible window;
+ * if a future tool blows past it, paginate then.
+ *
+ * `insufficient_data: true` flag when n < 5 → percentile cells render '—'.
+ */
+export interface ToolLatencyStats {
+  tool_name: string;
+  n: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  min_ms: number | null;
+  max_ms: number | null;
+  avg_ms: number | null;       // kept for context; no longer headline
+  insufficient_data: boolean;  // true iff n < 5
+}
+
+export async function getToolLatencyStats(windowMs: number = 7 * 86_400_000): Promise<ToolLatencyStats[]> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  // Pull (tool_name, response_time_ms) rows ordered ascending so per-tool slices
+  // are already sorted — saves a per-tool sort pass.
+  const rows = await dbQuery<{ tool_name: string; response_time_ms: number }>(
+    'SELECT tool_name, response_time_ms FROM request_log WHERE timestamp >= ? ORDER BY tool_name ASC, response_time_ms ASC LIMIT 100000',
+    [since],
+  );
+  // Bucket per tool (rows are already sorted by tool_name then ms — single pass).
+  const byTool = new Map<string, number[]>();
+  for (const r of rows) {
+    const ms = Number(r.response_time_ms);
+    if (!Number.isFinite(ms) || ms < 0) continue;
+    let arr = byTool.get(r.tool_name);
+    if (!arr) { arr = []; byTool.set(r.tool_name, arr); }
+    arr.push(ms);
+  }
+  const out: ToolLatencyStats[] = [];
+  for (const [tool_name, sorted] of byTool) {
+    const n = sorted.length;
+    const insufficient = n < 5;
+    const sum = n > 0 ? sorted.reduce((s, v) => s + v, 0) : 0;
+    out.push({
+      tool_name,
+      n,
+      p50_ms: insufficient ? null : Math.round(percentile(sorted, 0.50) ?? 0),
+      p95_ms: insufficient ? null : Math.round(percentile(sorted, 0.95) ?? 0),
+      min_ms: n > 0 ? sorted[0] : null,
+      max_ms: n > 0 ? sorted[n - 1] : null,
+      avg_ms: n > 0 ? Math.round(sum / n) : null,
+      insufficient_data: insufficient,
+    });
+  }
+  // Sort: lowest p95 first (best-performing on top), insufficient_data last.
+  out.sort((a, b) => {
+    if (a.insufficient_data !== b.insufficient_data) return a.insufficient_data ? 1 : -1;
+    return (a.p95_ms ?? Infinity) - (b.p95_ms ?? Infinity);
+  });
+  return out;
+}
+
 export async function getUsageStats(): Promise<Record<string, unknown>> {
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
@@ -188,7 +273,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     uniqueSessions7d,
     uniqueSessionsAll,
     topAssets,
-    avgResponseTime,
+    toolStats,
   ] = await Promise.all([
     dbQuery<{ count: string }>('SELECT COUNT(*) as count FROM request_log'),
     dbQuery<{ count: string }>('SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ?', [dayAgo]),
@@ -199,7 +284,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL', [weekAgo]),
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE session_id IS NOT NULL'),
     dbQuery<{ asset: string; count: string }>('SELECT asset, COUNT(*) as count FROM request_log WHERE asset IS NOT NULL GROUP BY asset ORDER BY count DESC LIMIT 10'),
-    dbQuery<{ tool_name: string; avg_ms: string }>('SELECT tool_name, AVG(response_time_ms) as avg_ms FROM request_log GROUP BY tool_name'),
+    getToolLatencyStats(),  // last 7d window, app-layer percentiles
   ]);
 
   return {
@@ -216,7 +301,10 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       last7d: Number(uniqueSessions7d[0]?.count ?? 0),
     },
     topAssets: topAssets.map(r => ({ asset: r.asset, calls: Number(r.count) })),
-    avgResponseTimeMs: Object.fromEntries(avgResponseTime.map(r => [r.tool_name, Math.round(Number(r.avg_ms))])),
+    // C1 (LATENCY-W1): truthful per-tool latency stats. Replaces the misleading
+    // single-number `avgResponseTimeMs` (kept as a field per row for context but
+    // no longer the headline — the dashboard column is gone).
+    toolStats,
     generatedAt: new Date().toISOString(),
   };
 }
