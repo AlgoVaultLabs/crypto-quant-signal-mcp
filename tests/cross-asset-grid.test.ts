@@ -6,6 +6,7 @@ import {
   getGridSnapshot,
   getClosestTradeable,
   getTryNext,
+  refreshGridIfStale,
   _setSnapshotForTest,
   _clearCache,
   _setScorerOverride,
@@ -211,5 +212,136 @@ describe('cross-asset-grid', () => {
     expect(next[0]).toMatchObject({ coin: 'ETH', timeframe: '1h', signal: 'BUY', confidence: 80 });
     expect(next[1]).toMatchObject({ coin: 'SOL', timeframe: '15m', signal: 'SELL', confidence: 75 });
     expect(next[2]).toMatchObject({ coin: 'DOGE', timeframe: '5m', signal: 'BUY', confidence: 65 });
+  });
+});
+
+// ── LATENCY-W1 C2: parallel refresh w/ p-limit(6), AsyncLocalStorage preserved ──
+
+describe('refreshGrid parallelism (LATENCY-W1 C2)', () => {
+  beforeEach(() => {
+    _clearCache();
+    _setScorerOverride(null);
+  });
+
+  it('AC2.1: 24 cells × 200ms scorer completes in <1s with concurrency 6 (vs ~5s sequential)', async () => {
+    let active = 0;
+    let peak = 0;
+    const scorer = async (coin: string, timeframe: string): Promise<GridCell | null> => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 200));
+      active -= 1;
+      return { coin, timeframe, signal: 'HOLD', confidence: 50, exchange: 'HL', regime: 'RANGING' };
+    };
+    _setScorerOverride(scorer);
+
+    const start = Date.now();
+    await refreshGridIfStale();
+    const elapsed = Date.now() - start;
+
+    // 24 cells × 200ms / concurrency 6 ≈ 800ms perfect; allow 1500ms ceiling
+    // for vitest jitter + p-limit scheduling overhead. Sequential would be ~4800ms.
+    expect(elapsed).toBeLessThan(1500);
+    // AC2.2: concurrency cap enforced — peak active count ≤ 6
+    expect(peak).toBeLessThanOrEqual(6);
+    expect(peak).toBeGreaterThan(1); // sanity: actually parallel, not serial
+  });
+
+  it('AC2.3: re-entrancy preserved — scorer that calls getGridSnapshot() returns cache without recursion', async () => {
+    // Simulate a cell whose scorer itself calls getGridSnapshot (mirrors the
+    // real getTradeSignal → enrichment → getGridSnapshot causal chain).
+    // The AsyncLocalStorage flag should propagate through p-limit so the
+    // recursive call returns cachedSnapshot ?? [] WITHOUT re-triggering refresh.
+    let cellsExecuted = 0;
+    let recursiveCallCount = 0;
+    let recursiveCallReturnedQuickly = true;
+
+    const scorer = async (coin: string, timeframe: string): Promise<GridCell | null> => {
+      cellsExecuted += 1;
+      // Inside the scorer, call getGridSnapshot — this is the re-entry case.
+      const t0 = Date.now();
+      const snap = await getGridSnapshot();
+      const recursionElapsed = Date.now() - t0;
+      recursiveCallCount += 1;
+      // If re-entry guard works, this returns near-instantly with empty/cached
+      // snapshot (no recursive refresh). If broken, this would deadlock or
+      // recurse — we'd see >>1ms.
+      if (recursionElapsed > 50) recursiveCallReturnedQuickly = false;
+      // Returned snapshot can be empty (mid-refresh) — that's expected re-entry behavior.
+      void snap;
+      return { coin, timeframe, signal: 'BUY', confidence: 60, exchange: 'HL', regime: 'TRENDING_UP' };
+    };
+    _setScorerOverride(scorer);
+
+    await refreshGridIfStale();
+
+    // All 24 cells must complete (no hang from recursive deadlock)
+    expect(cellsExecuted).toBe(GRID_ASSETS.length * GRID_TIMEFRAMES.length);
+    // Each cell did one re-entrant snapshot call
+    expect(recursiveCallCount).toBe(GRID_ASSETS.length * GRID_TIMEFRAMES.length);
+    // Re-entrancy guard returned synchronously (no deep recursion)
+    expect(recursiveCallReturnedQuickly).toBe(true);
+    // Final snapshot has all 24 cells
+    const finalSnap = await getGridSnapshot();
+    expect(finalSnap).toHaveLength(GRID_ASSETS.length * GRID_TIMEFRAMES.length);
+  });
+
+  it('refreshGridIfStale: returns immediately when cache fresh (no scorer call)', async () => {
+    let scorerCalls = 0;
+    _setScorerOverride(async () => {
+      scorerCalls += 1;
+      return { coin: 'X', timeframe: '1h', signal: 'HOLD', confidence: 0, exchange: 'HL', regime: 'RANGING' };
+    });
+    // Seed a fresh snapshot
+    _setSnapshotForTest([{ coin: 'BTC', timeframe: '1h', signal: 'BUY', confidence: 80, exchange: 'HL', regime: 'TRENDING_UP' }]);
+
+    const start = Date.now();
+    await refreshGridIfStale();
+    const elapsed = Date.now() - start;
+
+    expect(scorerCalls).toBe(0); // no refresh triggered
+    expect(elapsed).toBeLessThan(20); // returned synchronously
+  });
+
+  it('refreshGridIfStale: concurrent calls share one inflight refresh (no thundering herd)', async () => {
+    let scorerCalls = 0;
+    _setScorerOverride(async (coin, timeframe) => {
+      scorerCalls += 1;
+      await new Promise((r) => setTimeout(r, 50));
+      return { coin, timeframe, signal: 'HOLD', confidence: 50, exchange: 'HL', regime: 'RANGING' };
+    });
+    _clearCache();
+
+    // Fire 5 concurrent refresh requests; only ONE should actually refresh
+    await Promise.all([
+      refreshGridIfStale(),
+      refreshGridIfStale(),
+      refreshGridIfStale(),
+      refreshGridIfStale(),
+      refreshGridIfStale(),
+    ]);
+
+    // Exactly 24 scorer calls (one full refresh), not 5 × 24 = 120
+    expect(scorerCalls).toBe(GRID_ASSETS.length * GRID_TIMEFRAMES.length);
+  });
+
+  it('cell failure isolation preserved under parallel refresh', async () => {
+    let cellNum = 0;
+    const scorer = async (coin: string, timeframe: string): Promise<GridCell | null> => {
+      cellNum += 1;
+      // Throw on every 3rd cell
+      if (cellNum % 3 === 0) throw new Error(`synthetic failure ${coin}/${timeframe}`);
+      return { coin, timeframe, signal: 'BUY', confidence: 70, exchange: 'HL', regime: 'TRENDING_UP' };
+    };
+    _setScorerOverride(scorer);
+
+    await refreshGridIfStale();
+    const snap = await getGridSnapshot();
+
+    // 24 cells total, 8 failed (every 3rd) → 16 should succeed
+    expect(snap.length).toBeGreaterThan(0);
+    expect(snap.length).toBeLessThan(GRID_ASSETS.length * GRID_TIMEFRAMES.length);
+    // No cell with the failure marker leaks through
+    expect(snap.every((c) => c.signal === 'BUY')).toBe(true);
   });
 });

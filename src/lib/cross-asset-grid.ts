@@ -15,12 +15,21 @@
 //     failed cells are logged at debug level and skipped.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import pLimit from 'p-limit';
 import type { GridCell } from '../types.js';
 import { getTradeSignal } from '../tools/get-trade-signal.js';
 
 export const GRID_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE'] as const;
 export const GRID_TIMEFRAMES = ['5m', '15m', '1h', '4h'] as const;
 const GRID_TTL_MS = 60_000;
+
+// LATENCY-W1 C2: parallelize the 24-cell refresh fan-out.
+// Concurrency = 6 → peak ~12 simultaneous HL roundtrips (each cell = candles +
+// assetCtx parallel). HL rate limit is 50 req/s, so 12 leaves ~76% headroom.
+// Higher would shorten refresh further but risks tripping HL throttle, which
+// the previous SKILLS-W1 smoke runs proved is real (HTTP 200 + isError=true
+// 'HL API 429: Too Many Requests' shape).
+const GRID_CONCURRENCY = 6;
 
 // ── Module-private state ──
 let cachedSnapshot: GridCell[] | null = null;
@@ -52,15 +61,22 @@ let _scorerOverride: ScorerFn | null = null;
 
 async function refreshGrid(): Promise<void> {
   return refreshContext.run(true, async () => {
-    const cells: GridCell[] = [];
-    for (const coin of GRID_ASSETS) {
-      for (const timeframe of GRID_TIMEFRAMES) {
-        try {
-          const override = _scorerOverride;
-          if (override) {
-            const cell = await override(coin, timeframe);
-            if (cell) cells.push(cell);
-          } else {
+    // LATENCY-W1 C2: parallelize 24 cells inside the SAME refreshContext.run
+    // scope. The AsyncLocalStorage flag at line 46 propagates through every
+    // p-limit task because pLimit just calls the wrapped fn (Node carries the
+    // ALS context across `.then()` continuations). This means each cell's
+    // `getTradeSignal({ internal: true })` call to its enrichment path will
+    // see refreshContext.getStore() === true and return cached snapshot
+    // (possibly empty) instead of recursing into refreshGrid.
+    const limit = pLimit(GRID_CONCURRENCY);
+    const tasks = GRID_ASSETS.flatMap((coin) =>
+      GRID_TIMEFRAMES.map((timeframe) =>
+        limit(async (): Promise<GridCell | null> => {
+          try {
+            const override = _scorerOverride;
+            if (override) {
+              return await override(coin, timeframe);
+            }
             // `internal: true` bypasses the free-tier license gate (so the
             // grid can score SOL/BNB/XRP/DOGE and 5m/4h regardless of the
             // ambient request's tier), and skips trackCall/recordSignal/
@@ -68,28 +84,47 @@ async function refreshGrid(): Promise<void> {
             // the per-agent quota counters or the performance-db track
             // record with duplicate synthetic signals).
             const result = await getTradeSignal({ coin, timeframe, internal: true });
-            cells.push({
+            return {
               coin,
               timeframe,
               signal: result.signal,
               confidence: result.confidence,
-              exchange: 'HL',
+              exchange: 'HL' as const,
               regime: result.regime,
-            });
+            };
+          } catch (err) {
+            // Cell failure isolation — log at debug level, skip the cell, do NOT
+            // propagate so one scorer throw can't crash the entire grid.
+            console.debug(
+              `[cross-asset-grid] cell skipped: ${coin}/${timeframe}:`,
+              err instanceof Error ? err.message : err
+            );
+            return null;
           }
-        } catch (err) {
-          // Cell failure isolation — log at debug level, skip the cell, do NOT
-          // propagate so one scorer throw can't crash the entire grid.
-          console.debug(
-            `[cross-asset-grid] cell skipped: ${coin}/${timeframe}:`,
-            err instanceof Error ? err.message : err
-          );
-        }
-      }
-    }
-    cachedSnapshot = cells;
+        })
+      )
+    );
+    const results = await Promise.all(tasks);
+    cachedSnapshot = results.filter((c): c is GridCell => c !== null);
     cachedAt = Date.now();
   });
+}
+
+/**
+ * LATENCY-W1 C3: thin wrapper used by the background warmer in src/index.ts.
+ * Returns immediately if cache is fresh; otherwise triggers refresh (with the
+ * same in-flight coalescing as `getGridSnapshot`). Idempotent under concurrent
+ * calls — N concurrent invocations share one refresh, not N.
+ */
+export async function refreshGridIfStale(): Promise<void> {
+  const now = Date.now();
+  if (cachedSnapshot !== null && now - cachedAt <= GRID_TTL_MS) return;
+  if (inflight === null) {
+    inflight = refreshGrid().finally(() => {
+      inflight = null;
+    });
+  }
+  await inflight;
 }
 
 /**
