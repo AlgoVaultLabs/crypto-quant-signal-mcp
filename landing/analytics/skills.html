@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  Static template for the algovault.com/analytics/skills page.
+
+  AT RUNTIME the live page is rendered server-side by the Express handler at
+  src/index.ts → app.get('/analytics/skills') — this file is the canonical
+  HTML/CSS reference and a static-preview fallback. The server route inlines
+  the same HTML structure to keep the route hermetic.
+
+  Public-safe: slug-level counts only (no user/session data).
+  Created for SKILLS-W1 C6 (algovault-skills plugin telemetry).
+-->
+<html lang="en"><head><meta charset="utf-8"><title>AlgoVault Skills · Live Counter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;background:#0b1220;color:#e6edf3;margin:0;padding:32px;}
+  h1{font-size:22px;margin:0 0 6px;color:#fff;}
+  p.lead{color:#94a3b8;margin:0 0 24px;max-width:680px;}
+  table{width:100%;max-width:960px;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:8px;overflow:hidden;}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #1e293b;}
+  th{background:#111c2f;color:#cbd5e1;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;color:#facc15;}
+  td.ts{color:#94a3b8;font-size:13px;}
+  a{color:#60a5fa;text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .meta{color:#64748b;font-size:12px;margin-top:18px;}
+  .pill{display:inline-block;padding:2px 8px;background:#1e293b;border-radius:999px;color:#cbd5e1;font-size:12px;margin-right:6px;}
+</style></head>
+<body>
+  <h1>AlgoVault Skills — Live Counter</h1>
+  <p class="lead">Per-Skill invocation counts from the <a href="https://github.com/AlgoVaultLabs/algovault-skills">algovault-skills</a> plugin. Public aggregates only — slug + counts.</p>
+  <table>
+    <thead><tr><th>Skill</th><th class="num">24h</th><th class="num">7d</th><th class="num">All-time</th><th class="ts">Last invoked</th></tr></thead>
+    <tbody>
+<!-- SKILL_DATA -->
+<!-- /SKILL_DATA -->
+    </tbody>
+  </table>
+  <p class="meta">attribution via <code>X-AlgoVault-Skill-Slug</code> header · install with <code>claude plugin install AlgoVaultLabs/algovault-skills</code></p>
+</body></html>

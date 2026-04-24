@@ -21,8 +21,9 @@ import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
-import { initAnalytics, logRequest, hashIp, getUsageStats } from './lib/analytics.js';
+import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } from './lib/analytics.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
+import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import {
   isStripeConfigured,
   constructWebhookEvent,
@@ -217,6 +218,26 @@ function createServer(): McpServer {
     }
   );
 
+  // ── Resource: skills-analytics (PUBLIC — slug-level aggregates, no user data) ──
+  // C6 (algovault-skills SKILLS-W1) — surfaces per-Skill call counts so any
+  // agent can see which Skills drive volume. Public-safe: slugs are public
+  // artifacts (visible in github.com/AlgoVaultLabs/algovault-skills/skills/).
+  server.resource(
+    'skills-analytics',
+    'analytics://skills',
+    { description: 'Per-Skill invocation counters (calls_24h, calls_7d, calls_all_time, first/last seen) for the algovault-skills plugin. Public — slug-level aggregates only.' },
+    async () => {
+      const stats = await getSkillsAnalytics();
+      return {
+        contents: [{
+          uri: 'analytics://skills',
+          text: JSON.stringify(stats, null, 2),
+          mimeType: 'application/json',
+        }],
+      };
+    }
+  );
+
   return server;
 }
 
@@ -260,7 +281,7 @@ async function startHttp() {
   app.use((_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || 'https://api.algovault.com');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-payment, mcp-session-id');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-payment, mcp-session-id, x-algovault-skill-slug');
     if (_req.method === 'OPTIONS') return res.sendStatus(204);
     next();
   });
@@ -302,6 +323,69 @@ async function startHttp() {
   // Health check
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: PKG_VERSION, stripe: isStripeConfigured() });
+  });
+
+  // ── PUBLIC: per-Skill aggregate analytics (C6 — algovault-skills SKILLS-W1) ──
+  // Slug-level totals only; no user data. Powers https://algovault.com/analytics/skills.
+  // Reads landing/analytics/skills.html template, replaces <!-- SKILL_DATA -->
+  // marker with live aggregates from the skill_invocations table.
+  app.get('/analytics/skills', async (_req, res) => {
+    try {
+      const stats = await getSkillsAnalytics();
+      // Manifest of 20 published Skills (kept in source so the page renders all
+      // 20 even if some have zero invocations — important for a "public catalog
+      // + live counter" UX).
+      const allSlugs = [
+        'quick-btc-check','portfolio-scanner','regime-aware-trading','funding-arb-monitor',
+        'full-3-tool-pipeline','multi-timeframe-confirmation','tradfi-rotation','risk-gated-entry',
+        'funding-sentiment-dashboard','contrarian-meme-scanner','divergence-detector','hourly-digest-bot',
+        'hedging-advisor','volatility-breakout-watch','cross-asset-correlation','funding-cash-and-carry',
+        'weekend-vs-weekday-patterns','agent-portfolio-rebalance','smart-dca-bot','multi-agent-war-room',
+      ];
+      const byslug = new Map(stats.perSlug.map(r => [r.slug, r]));
+      const rowsHtml = allSlugs.map((slug) => {
+        const r = byslug.get(slug) || { calls_24h: 0, calls_7d: 0, calls_all_time: 0, first_seen: null, last_seen: null };
+        const escSlug = slug.replace(/[<>&]/g, '');
+        const last = r.last_seen ? new Date(r.last_seen).toISOString().slice(0, 16).replace('T', ' ') + 'Z' : '—';
+        return `<tr><td><a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/skills/${escSlug}/SKILL.md"><code>${escSlug}</code></a></td><td class="num">${r.calls_24h}</td><td class="num">${r.calls_7d}</td><td class="num">${r.calls_all_time}</td><td class="ts">${last}</td></tr>`;
+      }).join('\n');
+      // Inline the full HTML to avoid a filesystem read on every request and
+      // to keep the route hermetic. Template lives at landing/analytics/skills.html
+      // for documentation/static-preview purposes only.
+      const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>AlgoVault Skills · Live Counter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;background:#0b1220;color:#e6edf3;margin:0;padding:32px;}
+  h1{font-size:22px;margin:0 0 6px;color:#fff;}
+  p.lead{color:#94a3b8;margin:0 0 24px;max-width:680px;}
+  table{width:100%;max-width:960px;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:8px;overflow:hidden;}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #1e293b;}
+  th{background:#111c2f;color:#cbd5e1;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;color:#facc15;}
+  td.ts{color:#94a3b8;font-size:13px;}
+  a{color:#60a5fa;text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .meta{color:#64748b;font-size:12px;margin-top:18px;}
+  .pill{display:inline-block;padding:2px 8px;background:#1e293b;border-radius:999px;color:#cbd5e1;font-size:12px;margin-right:6px;}
+</style></head>
+<body>
+  <h1>AlgoVault Skills — Live Counter</h1>
+  <p class="lead">Per-Skill invocation counts from the <a href="https://github.com/AlgoVaultLabs/algovault-skills">algovault-skills</a> plugin. Public aggregates only — slug + counts. <span class="pill">Total invocations: ${stats.totalInvocations}</span><span class="pill">Slugs active: ${stats.totalSlugs}/20</span></p>
+  <table>
+    <thead><tr><th>Skill</th><th class="num">24h</th><th class="num">7d</th><th class="num">All-time</th><th class="ts">Last invoked</th></tr></thead>
+    <tbody>
+${rowsHtml}
+    </tbody>
+  </table>
+  <p class="meta">Generated ${stats.generatedAt} · attribution via <code>X-AlgoVault-Skill-Slug</code> header · install with <code>claude plugin install AlgoVaultLabs/algovault-skills</code></p>
+</body></html>`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+      res.send(html);
+    } catch (err) {
+      res.status(500).json({ error: 'failed to load skills analytics' });
+    }
   });
 
   // ── Stripe Webhook (raw body required — must be before express.json()) ──
@@ -605,6 +689,22 @@ async function startHttp() {
       || 'unknown';
     const ipHash = hashIp(clientIp);
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+    // C6 (algovault-skills SKILLS-W1): per-Skill attribution.
+    // If the request carries X-AlgoVault-Skill-Slug AND is a tools/call,
+    // log the invocation fire-and-forget BEFORE dispatching to the transport.
+    // Slug values are public (Skill names are open-source); user_agent is
+    // truncated to 200 chars in logSkillInvocation.
+    const skillSlugHeader = (req.headers['x-algovault-skill-slug'] as string | undefined)?.trim();
+    if (skillSlugHeader && req.method === 'POST' && req.body && typeof req.body === 'object') {
+      const body = req.body as { method?: string; params?: { name?: string } };
+      if (body.method === 'tools/call' && typeof body.params?.name === 'string') {
+        // Fire-and-forget; never blocks the request.
+        try {
+          logSkillInvocation(skillSlugHeader, body.params.name, sessionId, req.headers['user-agent'] as string | undefined);
+        } catch { /* best-effort */ }
+      }
+    }
 
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
