@@ -131,19 +131,39 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   }
 
   // Phase 2: Fetch conviction data (HL funding history) for qualifying coins in parallel
-  // Only fetch for coins that passed the spread filter to minimize API calls
+  // Only fetch for coins that passed the spread filter to minimize API calls.
+  //
+  // LATENCY-W1 C4: sort-then-slice — historically we fetched history for ALL
+  // rawOpps (often 40-80 coins) only to slice to `limit` (default 10) at the
+  // end. Now: sort by spreadBps DESC, slice to `limit * 2` BEFORE fetch. The
+  // 2× cushion covers the case where a top-spread coin has NaN/stale history
+  // and drops out of final ranking, so we still fill `limit`. Saves ~50-80%
+  // of per-coin getFundingHistory roundtrips when totalFound > limit.
+  const SLICE_CUSHION = 2;
+  rawOpps.sort((a, b) => b.spreadBps - a.spreadBps);
+  // PRESERVE the true qualifying count BEFORE slicing — used downstream by
+  // `totalFound`/`cappedResults` hint so users see accurate "N qualifying,
+  // showing top M" framing. The slice only reduces fetch cost; it MUST NOT
+  // cause the response to underreport totalResults.
+  const totalQualifying = rawOpps.length;
+  const candidates = rawOpps.slice(0, Math.min(rawOpps.length, limit * SLICE_CUSHION));
+
   const nowMs = Date.now();
   const historyStartTime = nowMs - 24 * 3600 * 1000; // 24 hours ago
 
-  const historyPromises = rawOpps.map(opp =>
+  const historyPromises = candidates.map(opp =>
     adapter.getFundingHistory(opp.coin, historyStartTime).catch(() => [])
   );
   const histories = await Promise.all(historyPromises);
 
   // Phase 3: Score each opportunity with conviction + urgency, compute composite rank
-  const maxSpreadBps = Math.max(...rawOpps.map(o => o.spreadBps), 1); // for normalization
+  // (Now ranking only `candidates`, not all rawOpps — final composite-rank order
+  // may differ slightly from the previous behavior of ranking all-then-slicing,
+  // but for high-spread coins the spread weight (0.50) dominates so the top-N
+  // outputs converge. Trade-off is documented; smoke verifies response shape.)
+  const maxSpreadBps = Math.max(...candidates.map(o => o.spreadBps), 1); // for normalization
 
-  const opportunities: FundingArbOpportunity[] = rawOpps.map((opp, idx) => {
+  const opportunities: FundingArbOpportunity[] = candidates.map((opp, idx) => {
     const history = histories[idx];
 
     // ── Conviction score ──
@@ -182,7 +202,12 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   // Sort by composite rank score descending (not just annualized spread)
   opportunities.sort((a, b) => b.bestArb.rankScore - a.bestArb.rankScore);
 
-  const totalFound = opportunities.length;
+  // C4 (LATENCY-W1): use the pre-slice qualifying count, NOT opportunities.length.
+  // `opportunities` was built from `candidates` (sliced to limit*2 before history
+  // fetch), so its length now reflects the candidate window, not the true total.
+  // `totalFound` MUST stay truthful so the cappedResults hint + response shape
+  // match user-visible reality. Spec: response shape is frozen.
+  const totalFound = totalQualifying;
   const capped = opportunities.slice(0, limit);
 
   // Upgrade hint: capped results take priority, then quota usage

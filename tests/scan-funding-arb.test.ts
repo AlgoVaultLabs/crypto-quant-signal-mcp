@@ -126,4 +126,72 @@ describe('scanFundingArb', () => {
     const result = await scanFundingArb({ minSpreadBps: 0 });
     expect(result.opportunities.length).toBe(0);
   });
+
+  // ── LATENCY-W1 C4: sort-then-slice (saves ~50% per-coin history fetches) ──
+
+  it('AC4.1: limit=10 with 80 qualifying opps fetches history ≤20 times (limit*2 cushion), not 80', async () => {
+    const manyFundings: FundingData[] = Array.from({ length: 80 }, (_, i) => ({
+      coin: `COIN${i}`,
+      venues: [
+        { venue: 'HlPerp',  fundingRate: 0.0001 + i * 0.00001, nextFundingTime: 1712345600000 },
+        { venue: 'BinPerp', fundingRate: 0.0010 + i * 0.00002, nextFundingTime: 1712348400000 },
+      ],
+    }));
+    const historySpy = vi.fn().mockResolvedValue([]);
+    const adapter = createMockAdapter(manyFundings);
+    adapter.getFundingHistory = historySpy;
+    vi.mocked(getAdapter).mockReturnValue(adapter);
+
+    const result = await scanFundingArb({ minSpreadBps: 0, limit: 10 });
+
+    // BEFORE C4: 80 calls. AFTER C4: ≤ limit*2 = 20.
+    expect(historySpy.mock.calls.length).toBeLessThanOrEqual(20);
+    expect(historySpy.mock.calls.length).toBeGreaterThan(0);
+
+    // Response shape unchanged: opportunities ≤ limit
+    expect(result.opportunities.length).toBeLessThanOrEqual(10);
+
+    // scannedPairs reflects total venues scanned (true count), not the slice
+    expect(result.scannedPairs).toBe(80);
+  });
+
+  it('AC4: top opportunity (sorted by spread DESC) survives the slice', async () => {
+    const sortedFundings: FundingData[] = [
+      { coin: 'TINY', venues: [
+        { venue: 'HlPerp',  fundingRate: 0.00001, nextFundingTime: 1712345600000 },
+        { venue: 'BinPerp', fundingRate: 0.00002, nextFundingTime: 1712348400000 },
+      ]},
+      { coin: 'HUGE', venues: [
+        { venue: 'HlPerp',  fundingRate: 0.0001, nextFundingTime: 1712345600000 },
+        { venue: 'BinPerp', fundingRate: 0.01, nextFundingTime: 1712348400000 },
+      ]},
+      { coin: 'MED', venues: [
+        { venue: 'HlPerp',  fundingRate: 0.0001, nextFundingTime: 1712345600000 },
+        { venue: 'BinPerp', fundingRate: 0.001, nextFundingTime: 1712348400000 },
+      ]},
+    ];
+    vi.mocked(getAdapter).mockReturnValue(createMockAdapter(sortedFundings));
+
+    const result = await scanFundingArb({ minSpreadBps: 0, limit: 1 });
+    expect(result.opportunities.length).toBe(1);
+    expect(result.opportunities[0].coin).toBe('HUGE');
+  });
+
+  it('AC4: slice cushion of 2× limit fills `limit` exactly when N=30, limit=5', async () => {
+    const fundings: FundingData[] = Array.from({ length: 30 }, (_, i) => ({
+      coin: `C${i}`,
+      venues: [
+        { venue: 'HlPerp',  fundingRate: 0.0001, nextFundingTime: 1712345600000 },
+        { venue: 'BinPerp', fundingRate: 0.001 + i * 0.0001, nextFundingTime: 1712348400000 },
+      ],
+    }));
+    const historySpy = vi.fn().mockResolvedValue([]);
+    const adapter = createMockAdapter(fundings);
+    adapter.getFundingHistory = historySpy;
+    vi.mocked(getAdapter).mockReturnValue(adapter);
+
+    const result = await scanFundingArb({ minSpreadBps: 0, limit: 5 });
+    expect(historySpy.mock.calls.length).toBeLessThanOrEqual(10); // limit*2
+    expect(result.opportunities.length).toBe(5);                  // exactly limit
+  });
 });
