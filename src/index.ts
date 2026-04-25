@@ -7,6 +7,8 @@
  * Optional: stdio transport via TRANSPORT=stdio env var (local npx use)
  */
 import crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -332,26 +334,32 @@ async function startHttp() {
   // 4-exchange set 404s (no path traversal risk; no fs lookups for unknown
   // slugs). Caddy routes /docs/integrations/* here ahead of the static
   // catch-all (see Caddyfile algovault.com block).
-  const INTEGRATION_EXCHANGES = new Set(['binance', 'okx', 'bybit', 'bitget']);
-  app.get('/docs/integrations/:exchange', async (req, res) => {
+  //
+  // CJS-friendly path resolution (matches src/lib/pkg-version.ts pattern):
+  // tsconfig targets CommonJS via Node16, so __dirname is available natively
+  // and `import.meta.url` is forbidden. Read each mirror once at startup
+  // into INTEGRATION_HTML so per-request overhead is a Map.get(), no fs hit.
+  const INTEGRATION_EXCHANGES = ['binance', 'okx', 'bybit', 'bitget'] as const;
+  const INTEGRATION_HTML = new Map<string, string>();
+  {
+    // dist/index.js → ../landing/integrations
+    const integrationsDir = path.resolve(__dirname, '..', 'landing', 'integrations');
+    for (const ex of INTEGRATION_EXCHANGES) {
+      try {
+        INTEGRATION_HTML.set(ex, fs.readFileSync(path.join(integrationsDir, `${ex}.html`), 'utf8'));
+      } catch (err) {
+        console.warn(`integration mirror ${ex}.html not loaded at startup:`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
+  app.get('/docs/integrations/:exchange', (req, res) => {
     const exchange = (req.params.exchange || '').toLowerCase().replace(/\.html$/, '');
-    if (!INTEGRATION_EXCHANGES.has(exchange)) {
+    const html = INTEGRATION_HTML.get(exchange);
+    if (!html) {
       return res.status(404).type('text/plain').send('Integration not found');
     }
-    try {
-      const fs = await import('node:fs/promises');
-      const path = await import('node:path');
-      const url = await import('node:url');
-      const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-      // dist/index.js → ../landing/integrations; src/index.ts (dev) → ../landing/integrations
-      const filePath = path.resolve(__dirname, '..', 'landing', 'integrations', `${exchange}.html`);
-      const html = await fs.readFile(filePath, 'utf8');
-      res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
-      res.type('text/html').send(html);
-    } catch (err) {
-      console.error(`integration mirror ${exchange} error:`, err instanceof Error ? err.message : err);
-      res.status(500).type('text/plain').send('Internal error rendering integration mirror');
-    }
+    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    res.type('text/html').send(html);
   });
 
   // (REMOVED 2026-04-24) Public per-Skill analytics page. Per-Skill funnel data
