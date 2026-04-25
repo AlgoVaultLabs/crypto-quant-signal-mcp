@@ -44,9 +44,17 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Acronym-aware exchange display names (avoid auto-cap "OKX" → "Okx").
+const DISPLAY_NAMES = {
+  binance: 'Binance',
+  okx: 'OKX',
+  bybit: 'Bybit',
+  bitget: 'Bitget',
+};
+
 function pageTitle(exchange) {
-  const upper = exchange.charAt(0).toUpperCase() + exchange.slice(1);
-  return `AlgoVault × ${upper} — Build Verifiable AI Trading Agents`;
+  const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
+  return `AlgoVault × ${display} — Build Verifiable AI Trading Agents`;
 }
 
 function htmlShell(exchange, bodyHtml) {
