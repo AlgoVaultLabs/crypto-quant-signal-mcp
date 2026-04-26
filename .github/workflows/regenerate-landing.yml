@@ -66,7 +66,13 @@ jobs:
             git config user.email "ci@algovault.com"
             git config user.name "AlgoVault CI"
             git add landing/skills.html landing/index.html landing/llms.txt landing/llms-full.txt README.md
-            git commit -m "build(landing): regenerate from manifests [skip ci]" -m "Triggered by repository_dispatch from ${DISPATCH_REPO:-self} (sha ${DISPATCH_SHA:-n/a}, actor ${DISPATCH_ACTOR:-n/a})."
+            # NOTE: no `[skip ci]` tag — we WANT deploy.yml to fire on this
+            # commit so the regenerated landing/* files reach /var/www/algovault.
+            # Recursion is impossible because regenerate-landing.yml's `push`
+            # filter is restricted to `skills/manifest.json` and
+            # `integrations/manifest.json` paths (which live in the sibling repo,
+            # not here) — so its own commits to landing/* never re-fire it.
+            git commit -m "build(landing): regenerate from manifests" -m "Triggered by repository_dispatch from ${DISPATCH_REPO:-self} (sha ${DISPATCH_SHA:-n/a}, actor ${DISPATCH_ACTOR:-n/a})."
             git push
           else
             echo "No surface changes; skipping commit."
