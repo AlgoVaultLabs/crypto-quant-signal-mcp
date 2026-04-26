@@ -67,11 +67,32 @@ const SNAPSHOT_PFE_WR = '89.4%';
 const SNAPSHOT_SIGNAL_COUNT = '56,375';
 const SNAPSHOT_BATCH_COUNT = '16';
 
+function howToSchema(exchange, display) {
+  const canonical = `https://algovault.com/docs/integrations/${exchange}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": `Build a Verifiable AI Trading Agent — AlgoVault MCP × ${display}`,
+    "description": `Pair AlgoVault MCP's composite verdict (${SNAPSHOT_PFE_WR}+ PFE Win Rate, Merkle-anchored) with ${display}'s execution kit to ship a complete trading agent. Demo runs testnet/demo only.`,
+    "url": canonical,
+    "datePublished": "2026-04-25",
+    "dateModified": SNAPSHOT_DATE,
+    "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+    "step": [
+      { "@type": "HowToStep", "name": "Install the AlgoVault skills plugin", "text": "Run `claude plugin install AlgoVaultLabs/algovault-skills` in Claude Code." },
+      { "@type": "HowToStep", "name": `Create a ${display} demo/testnet account`, "text": `Sign up for the ${display} demo or testnet console (no real-money risk).` },
+      { "@type": "HowToStep", "name": "Run the demo", "text": `Clone github.com/AlgoVaultLabs/algovault-skills and run \`node examples/${exchange}/demo.mjs\` with the appropriate demo-mode env var.` },
+      { "@type": "HowToStep", "name": "Read the verdict + apply the agent's policy", "text": "AlgoVault returns signal/confidence/regime/factors. The agent's pre-configured policy decides whether to execute via the exchange kit." }
+    ]
+  };
+}
+
 function htmlShell(exchange, bodyHtml) {
   const title = pageTitle(exchange);
   const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
   const description = `Pair AlgoVault MCP's composite verdict with ${display}'s agent execution kit. Free testnet demo · ${SNAPSHOT_PFE_WR} PFE Win Rate · ${SNAPSHOT_SIGNAL_COUNT}+ calls · ${SNAPSHOT_BATCH_COUNT}+ Merkle-verified on-chain batches.`;
   const canonical = `https://algovault.com/docs/integrations/${exchange}`;
+  const howTo = JSON.stringify(howToSchema(exchange, display), null, 2);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -89,6 +110,10 @@ function htmlShell(exchange, bodyHtml) {
 <meta name="last-updated" content="${SNAPSHOT_DATE}">
 <script src="https://cdn.tailwindcss.com"></script>
 <script defer src="/js/track-record-proxy.js"></script>
+<!-- WEBSITE-REFRESH-W1 C7 — Schema.org HowTo for LLM citation extraction -->
+<script type="application/ld+json">
+${howTo}
+</script>
 <!-- Privacy-friendly analytics by Plausible (WEBSITE-REFRESH-W1 C6) -->
 <script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
 <script>
@@ -149,6 +174,10 @@ tailwind.config = {
   </div>
 </header>
 <main class="max-w-4xl mx-auto px-6 py-10">
+<!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation -->
+<p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
+  <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT_PFE_WR}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">${SNAPSHOT_SIGNAL_COUNT}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+</p>
 <article>
 ${bodyHtml}
 </article>

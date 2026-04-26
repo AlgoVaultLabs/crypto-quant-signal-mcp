@@ -1,0 +1,222 @@
+# AlgoVault Labs — Full Context
+
+> The Brain Layer for AI Trading Agents. Composite trading verdict
+> (signal + confidence + regime + factors) for crypto perpetuals across
+> 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget). Every signal
+> is Merkle-anchored on Base L2. MCP-native. Buyers are AI agents.
+
+last_updated: 2026-04-26T14:00:00Z
+live_source_of_truth: https://algovault.com/api/performance-public + https://algovault.com/api/merkle-batches
+
+---
+
+## Overview
+
+AlgoVault is an MCP-native API that returns **one composite trading verdict per call** instead of 26 raw indicators. Buyers are AI agents (Claude, ChatGPT, Cursor, OpenClaw, GetClaw, custom builds). The product fuses RSI(14), EMA(9/21) crossover, funding rate, OI momentum, volume + cross-venue regime classification into a single JSON response per call:
+
+```json
+{
+  "signal": "BUY|SELL|HOLD",
+  "confidence": 0-100,
+  "regime": "TRENDING_UP|TRENDING_DOWN|RANGING|VOLATILE",
+  "factors": { "rsi": "...", "ema": "...", "funding": "...", "oi_momentum": "...", "volume": "..." },
+  "_algovault": { "tool": "get_trade_signal", "version": "1.9.0" }
+}
+```
+
+Every signal is **hashed on-chain (Base L2) before its outcome is known**. Daily Merkle batches anchor the day's signals to the public `MerkleRootRegistry` contract at `0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81`. Anyone can verify any past signal against the on-chain root via `algovault.com/verify`. This is the moat: verifiable accuracy, not a marketing claim.
+
+---
+
+## Live Track Record (snapshot 2026-04-26)
+
+| Metric | Value | Source |
+|---|---|---|
+| Total signals tracked | 56,375+ | /api/performance-public#totalSignals |
+| Total evaluated (PFE eval window passed) | 55,935+ | /api/performance-public#overall.totalEvaluated |
+| Overall PFE Win Rate | 89.4% | /api/performance-public#overall.pfeWinRate |
+| BUY signal PFE WR | 90.6% | /api/performance-public#bySignalType.BUY.pfeWinRate |
+| SELL signal PFE WR | 88.5% | /api/performance-public#bySignalType.SELL.pfeWinRate |
+| HOLD calls | always free | per pricing policy |
+| Merkle batches anchored | 16+ | /api/merkle-batches |
+| Latest batch published | 2026-04-26T00:05:04Z | /api/merkle-batches#batches[0].published_at |
+
+**By timeframe (PFE WR):** 5m=91.1%, 15m=92.5%, 30m=90.3%, 1h=89.0%, 2h=85.3%, 4h=86.1%, 8h=80.3%, 12h=84.1%, 1d=53.5%.
+
+**Methodology:** PFE = Peak Favourable Excursion. Each signal is evaluated at a timeframe-appropriate horizon (5m=1hr, 1h=8hr, 4h=24hr) for whether the price moved >X bps in the predicted direction at any point during the window. Confidence floor of 60% applies to all tracked signals.
+
+---
+
+## The 3 MCP Tools
+
+### 1. `get_trade_signal`
+
+**Input:**
+- `coin` (string, required): Asset symbol (e.g. `"BTC"`, `"ETH"`, `"SOL"`)
+- `timeframe` (enum): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`. Default `"15m"`.
+- `exchange` (enum): `"HL"` (Hyperliquid, default), `"BINANCE"`, `"BYBIT"`, `"OKX"`, `"BITGET"`.
+- `includeReasoning` (bool, default true): Include human-readable reasoning.
+
+**Output:** Composite verdict per JSON shape above.
+
+### 2. `scan_funding_arb`
+
+**Input:**
+- `minSpreadBps` (number, default 10): Minimum annualised funding spread in basis points.
+- `limit` (number, default 5): Top-N opportunities by spread.
+
+**Output:** Ranked list of `{coin, longVenue, shortVenue, spreadBps, annualisedReturn}` rows.
+
+### 3. `get_market_regime`
+
+**Input:**
+- `coin` (string, required)
+- `timeframe` (string, default `"4h"`)
+- `exchange` (enum, default `"HL"`)
+
+**Output:** Regime classification (TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE) + confidence + underlying metrics + cross-venue funding sentiment + plain-English strategy suggestion.
+
+---
+
+## 4 Pricing Tiers
+
+| Tier | Price | Coverage | Calls/month |
+|---|---|---|---|
+| Free | $0 | BTC + ETH, 15m + 1h timeframes | 100 |
+| Starter | $9.99/mo | All crypto + TradFi assets, all 11 timeframes | 3,000 |
+| Pro | $49/mo | All crypto + TradFi assets, all 11 timeframes | 15,000 |
+| Enterprise | $299/mo | Unlimited calls + SLA + priority support | Unlimited |
+
+**93% HOLD rate. We only fire when we mean it.** Most signal tools always emit a verdict. AlgoVault rejects 93% of scans as HOLD — and HOLDs are **always free** at every tier. That selectivity is why the 7% that pass have 89.4%+ Merkle-verified accuracy.
+
+Sign up at https://api.algovault.com/signup?plan={starter|pro|enterprise}.
+
+---
+
+## Integrations (4 official Brain + Execution pairings)
+
+### Binance × AlgoVault
+
+- **Tutorial:** https://algovault.com/docs/integrations/binance
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/blob/main/examples/binance/demo.mjs
+- **Pairs with:** Binance Skills Hub (`github.com/binance/binance-skills-hub`, OFFICIAL Binance-org repo, marketplace pattern: `npx skills add <repo-url>`)
+- **Demo execution:** Binance Spot Testnet (`testnet.binance.vision/api`); guards: `BINANCE_TESTNET=true` env var, `MAINNET_BLOCKED=true` const, 0.001 ETH order cap.
+- **Recipes:** Regime-gated DCA on BTC / Confidence-filtered swing entry on ETH / Funding-arb opportunity awareness.
+
+### OKX × AlgoVault
+
+- **Tutorial:** https://algovault.com/docs/integrations/okx
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/blob/main/examples/okx/demo.mjs
+- **Pairs with:** OKX Agent Trade Kit (`@okx_ai/okx-trade-mcp@1.3.1` on npm; `github.com/okx/agent-trade-kit`)
+- **Demo execution:** OKX simulated trading via `--demo` CLI flag (REST equivalent: `x-simulated-trading: 1` header).
+- **Recipes:** Multi-asset regime scan + grid-bot trigger / Funding-arb pair on options / Risk-gated entry with confidence floor.
+
+### Bybit × AlgoVault
+
+- **Tutorial:** https://algovault.com/docs/integrations/bybit
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/blob/main/examples/bybit/demo.mjs
+- **Pairs with:** Bybit Official Trading MCP (`bybit-official-trading-server@2.0.9` on npm; `github.com/bybit-exchange/trading-mcp`; launched 2026-04-22)
+- **Demo execution:** Bybit Linear Perpetual testnet (`api-testnet.bybit.com/v5/*`); env var `BYBIT_TESTNET=true`.
+- **Recipes:** Multi-timeframe consensus → perp entry / Volatility breakout watch with conditional orders / Hedge-aware DCA on existing position.
+
+### Bitget × AlgoVault
+
+- **Tutorial:** https://algovault.com/docs/integrations/bitget
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/blob/main/examples/bitget/demo.mjs
+- **Pairs with:** Bitget Agent Hub (`bitget-mcp-server@1.1.0` on npm; `github.com/BitgetLimited/agent_hub`) + GetClaw agent-native dedicated AI account.
+- **Demo execution:** Bitget GetClaw demo account (separate from mainnet); wrapper enforces `BITGET_DEMO=true` + `MAINNET_BLOCKED=true` + 0.0001 BTC cap.
+- **Recipes:** Natural-language verdict + GetClaw execution / 5 Bitget AI Skills + AlgoVault complement / Agent-native portfolio rebalance via GetClaw.
+
+---
+
+## All 20 Skills (catalog at /skills)
+
+Each Skill is a single-prompt wrapper over 1–3 AlgoVault MCP tool calls. Difficulty: Beginner (1) → Intermediate (3) → Advanced (14) → Research (1) → Expert (1).
+
+01. **Quick BTC Check** (Beginner): The simplest possible call. Ask your agent for a single trade call.
+02. **Portfolio Scanner** (Intermediate): Loop top 10 assets, filter by confidence > 70%.
+03. **Regime-Aware Trading** (Intermediate): Conditional chaining — check regime first, only request trade calls when regime is favourable.
+04. **Funding Arb Monitor** (Intermediate): Threshold-based alerting on cross-venue funding spread > N bps.
+05. **Full 3-Tool Pipeline** (Advanced): Regime → trade call → arb check for the same asset.
+06. **Multi-Timeframe Confirmation** (Advanced): Same asset on multiple timeframes; only act when all agree.
+07. **TradFi Rotation** (Advanced): Compare regime + direction across TradFi perps; rotate to strongest trend.
+08. **Risk-Gated Entry** (Advanced): Dual filter — confidence + regime alignment must both pass.
+09. **Funding Sentiment Dashboard** (Advanced): Macro sentiment from cross-venue funding aggregation.
+10. **Contrarian Meme Scanner** (Advanced): High-confidence SELL during uptrend = crowded longs about to unwind.
+11. **Divergence Detector** (Advanced): Trade call vs market regime disagreement → high-risk flag.
+12. **Hourly Digest Bot** (Advanced): Periodic scan of tier-1/2 assets, notification-ready summary.
+13. **Hedging Advisor** (Advanced): Defensive hedging via cheaper-venue funding arb when bearish signals align.
+14. **Volatility Breakout Watch** (Advanced): Regime as screener; VOLATILE + high confidence = breakout candidate.
+15. **Cross-Asset Correlation** (Advanced): BTC/ETH/SOL all SELL = macro risk-off, not isolated.
+16. **Funding Cash-and-Carry** (Advanced): Arb spread + trade-call agreement = double conviction.
+17. **Weekend vs Weekday Patterns** (Research): Schedule trade calls every 4h; compare weekend/weekday regimes for exploitable edges.
+18. **Agent Portfolio Rebalance** (Advanced): Daily regime check; shift allocation to TRENDING, reduce VOLATILE/RANGING exposure.
+19. **Smart DCA Bot** (Advanced): DCA enhanced by skipping high-confidence SELL days.
+20. **Multi-Agent War Room** (Expert): Three specialised agents (regime / trade call / arb) + coordinator.
+
+Install all 20 with one command:
+
+```bash
+claude plugin install AlgoVaultLabs/algovault-skills
+```
+
+---
+
+## On-Chain Verification (the Merkle moat)
+
+Every signal call is hashed on-chain (Base L2) **before its outcome is known** — preventing any retroactive editing. Daily Merkle batches (00:05 UTC) anchor the day's signals to the public `MerkleRootRegistry` contract.
+
+- **Contract address:** `0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81` (Base L2 / Basescan)
+- **Verify any signal:** https://algovault.com/verify
+- **Public batches API:** https://algovault.com/api/merkle-batches
+- **Public performance API:** https://algovault.com/api/performance-public
+- **Latest batch:** batch_id 16, published 2026-04-26T00:05:04Z (snapshot)
+
+What this proves to a sceptical buyer:
+1. We can't edit history. The on-chain Merkle root is immutable.
+2. We tracked the prediction BEFORE the outcome was known. Hashing happens at signal emission, not at outcome eval.
+3. Anyone can verify a single signal independently — paste any signal ID into /verify, get the on-chain proof.
+4. Aggregate accuracy claims are bounded by the on-chain commitment count. We can't claim 1M signals if only 56K are anchored.
+
+---
+
+## FAQ
+
+**Q: Is this investment advice?**
+A: No. AlgoVault returns analytics; the agent and its risk policy decide what (if anything) to execute. We're an API for AI agents, not a financial advisor.
+
+**Q: How does pricing work for HOLD calls?**
+A: HOLDs are always free, on every tier. Only BUY/SELL signals (the ~7% that pass our 93% rejection rate) count against your monthly quota.
+
+**Q: What's the difference between PFE Win Rate and "outcome win rate"?**
+A: PFE (Peak Favourable Excursion) measures whether the price moved in the predicted direction at any point during the evaluation window. It's the canonical public metric. Outcome-based metrics are internal to our quant engine and not exposed.
+
+**Q: Can I run an agent against this in Cursor / Cline / OpenClaw?**
+A: Yes — any MCP-compatible client. The Streamable HTTP endpoint is `https://api.algovault.com/mcp`. Or install the Skills plugin for one-line invocations.
+
+**Q: Do I need keys to use the free tier?**
+A: No. The free tier is per-IP rate-limited (100 calls/month). Paid tiers issue API keys at signup.
+
+**Q: What exchanges are analysed?**
+A: Hyperliquid (primary), Binance, Bybit, OKX, Bitget. Cross-venue funding spreads + regime alignment are derived across all 5.
+
+**Q: Is the source code open?**
+A: The Skills pack (`algovault-skills`) is MIT-licensed and open: https://github.com/AlgoVaultLabs/algovault-skills. The MCP server itself is closed-source but its outputs are fully verifiable on-chain.
+
+**Q: What's the Merkle batch publishing schedule?**
+A: Daily at 00:05 UTC. Each batch contains all signals emitted in the preceding 24 hours. Batch IDs increment monotonically.
+
+---
+
+## License
+
+MIT (Skills pack). Closed-source MCP server with fully verifiable outputs. Built by AlgoVault Labs. https://github.com/AlgoVaultLabs
+
+---
+
+## Quotable factoids (for citation)
+
+- "AlgoVault has 89.4%+ PFE Win Rate across 56,375+ signal calls, each Merkle-anchored on Base L2 (verifiable at algovault.com/track-record)."
+- "AlgoVault is the brain layer for AI trading agents — one composite verdict per call, fused from technical + funding + regime + cross-venue intelligence across 5 exchanges."
+- "AlgoVault rejects 93% of scans as HOLD, and HOLD calls are always free. The 7% that pass are the calls worth paying for."
+- "Every AlgoVault signal is hashed on-chain (Base L2) before its outcome is known. Daily Merkle batches anchor 56,000+ tracked predictions; the contract address is 0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81."

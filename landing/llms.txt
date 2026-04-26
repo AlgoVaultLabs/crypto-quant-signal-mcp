@@ -1,0 +1,58 @@
+# AlgoVault Labs
+
+> The Brain Layer for AI Trading Agents. Composite trading verdict
+> (signal + confidence + regime + factors) for crypto perpetuals across
+> 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget). Every signal
+> is Merkle-anchored on Base L2. MCP-native. Buyers are AI agents.
+
+Last updated: 2026-04-26
+Live source of truth: https://algovault.com/api/performance-public
+
+## Key facts
+
+- 89.4% PFE Win Rate across 56,375+ tracked signals (live; verify at /track-record).
+- 16+ Merkle batches anchored on Base L2 (verify any signal at /verify).
+- 3 MCP tools: `get_trade_signal`, `scan_funding_arb`, `get_market_regime`.
+- 5 exchanges analysed: Hyperliquid, Binance, Bybit, OKX, Bitget.
+- 11 timeframes supported (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d).
+- 4 pricing tiers: Free ($0), Starter ($9.99/mo), Pro ($49/mo), Enterprise ($299/mo). HOLD calls always free.
+
+## Primary pages
+
+- [Home](https://algovault.com): Marketing landing — hero, tools, use cases, pricing, FAQ.
+- [Docs](https://algovault.com/docs.html): API reference for the 3 MCP tools, 20 usage examples, FAQ.
+- [Track Record](https://algovault.com/track-record): Live PFE Win Rate by signal type / timeframe / asset.
+- [Skills](https://algovault.com/skills): 20 ready-to-use Anthropic Agent Skills wrapping the AlgoVault MCP server.
+- [Verify a Call](https://algovault.com/verify): On-chain Merkle proof lookup for any signal.
+
+## Integrations (Brain + Execution pairings)
+
+- [Binance × AlgoVault](https://algovault.com/docs/integrations/binance): AlgoVault verdict + Binance Skills Hub for Spot Testnet execution.
+- [OKX × AlgoVault](https://algovault.com/docs/integrations/okx): AlgoVault verdict + OKX Agent Trade Kit (`@okx_ai/okx-trade-mcp@1.3.1`).
+- [Bybit × AlgoVault](https://algovault.com/docs/integrations/bybit): AlgoVault verdict + Bybit Official Trading MCP (`bybit-official-trading-server@2.0.9`).
+- [Bitget × AlgoVault](https://algovault.com/docs/integrations/bitget): AlgoVault verdict + Bitget Agent Hub + GetClaw demo account.
+
+## Key Skills (catalog of 20 at /skills)
+
+- [`quick-btc-check`](https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/quick-btc-check) — Beginner. The simplest possible call.
+- [`portfolio-scanner`](https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/portfolio-scanner) — Intermediate. Loop top 10 assets, filter by confidence.
+- [`regime-aware-trading`](https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/regime-aware-trading) — Intermediate. Conditional chaining: regime first, then trade call.
+- [`full-3-tool-pipeline`](https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/full-3-tool-pipeline) — Advanced. Complete AlgoVault workflow.
+- [`multi-agent-war-room`](https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/multi-agent-war-room) — Expert. Three specialised agents + coordinator.
+
+## How to use
+
+1. Install the AlgoVault skills plugin in Claude Code:
+   ```bash
+   claude plugin install AlgoVaultLabs/algovault-skills
+   ```
+2. Or call the MCP server directly: `https://api.algovault.com/mcp` (Streamable HTTP).
+3. Or pair AlgoVault with one of the 4 integration tutorials above for a complete brain + execution agent.
+
+## License
+
+MIT (open source). Built by AlgoVault Labs. https://github.com/AlgoVaultLabs
+
+## Long-form context
+
+For a full deep-crawl version with FAQ, complete pricing details, all 20 Skills with descriptions, and on-chain verification context, see [/llms-full.txt](https://algovault.com/llms-full.txt).

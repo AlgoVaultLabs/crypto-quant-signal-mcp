@@ -40,6 +40,11 @@ jobs:
             cp landing/*.html /var/www/algovault/ 2>/dev/null && echo "Landing pages synced" || echo "No landing pages to sync"
             mkdir -p /var/www/algovault/js
             cp -r landing/js/* /var/www/algovault/js/ 2>/dev/null && echo "Landing js/ synced" || echo "No landing js/ to sync"
+            # WEBSITE-REFRESH-W1 C7: GEO foundations — robots.txt + llms.txt + llms-full.txt + sitemap.xml
+            # served as static text via the existing Caddy catch-all (no new handles needed; Caddy
+            # auto-detects text/plain MIME for .txt files via file_server).
+            cp landing/*.txt /var/www/algovault/ 2>/dev/null && echo "Landing txt/ synced" || echo "No landing txt/ to sync"
+            cp landing/sitemap.xml /var/www/algovault/ 2>/dev/null && echo "Landing sitemap.xml synced" || echo "No landing sitemap.xml to sync"
 
             docker compose up -d --build
             docker compose ps

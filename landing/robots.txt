@@ -1,0 +1,156 @@
+# AlgoVault Labs — robots.txt
+# Last updated: 2026-04-26
+#
+# We welcome AI training and citation crawlers. Every signal call is
+# Merkle-anchored on Base L2 (algovault.com/track-record) — all data is
+# public-safe by design. We're an MCP-native product whose buyers research
+# tools via LLMs; getting cited IS the distribution channel.
+#
+# Notes on undisclosed bots:
+#   - DeepSeek (as of 2026-04-26): does not publish a documented user-agent
+#     string. Our default `User-agent: *` rule applies.
+#   - Kimi/Moonshot: no verified public UA at probe time. Re-check on next
+#     refresh.
+#
+# Anthropic UA list reflects the canonical 2026 set (verified live
+# 2026-04-26 against support.claude.com): ClaudeBot (training),
+# Claude-User (real-time fetches), Claude-SearchBot (search-style answers).
+# The previously-listed `Claude-Web` and `anthropic-ai` are DEPRECATED per
+# Anthropic's official docs; removed from this allowlist.
+
+# === Default policy: allow everything except admin-gated routes ===
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /dashboard/
+Disallow: /.well-known/
+
+# === US / Western AI Crawlers — explicitly welcomed ===
+
+# OpenAI
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+# Anthropic (canonical 2026 UA set per support.claude.com)
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+# Google (search + AI training opt-in token + new 2026 agents)
+User-agent: Googlebot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Google-Agent
+Allow: /
+
+User-agent: Google-NotebookLM
+Allow: /
+
+User-agent: Google-Read-Aloud
+Allow: /
+
+User-agent: Google-CloudVertexBot
+Allow: /
+
+# Microsoft / Bing / Copilot
+User-agent: Bingbot
+Allow: /
+
+# Apple (search + AI training opt-in token)
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Amazon
+User-agent: Amazonbot
+Allow: /
+
+# Meta
+User-agent: FacebookBot
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: Meta-ExternalFetcher
+Allow: /
+
+# Cohere (API + dedicated training-data crawler)
+User-agent: cohere-ai
+Allow: /
+
+User-agent: cohere-training-data-crawler
+Allow: /
+
+# Mistral (Le Chat real-time fetcher)
+User-agent: MistralAI-User
+Allow: /
+
+# Common Crawl (feeds many LLM training datasets)
+User-agent: CCBot
+Allow: /
+
+# Diffbot (data extraction; powers many AI tools)
+User-agent: Diffbot
+Allow: /
+
+# You.com
+User-agent: YouBot
+Allow: /
+
+# DuckDuckGo (search + DuckAssist AI)
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: DuckAssistBot
+Allow: /
+
+# === Chinese AI Crawlers — explicitly welcomed ===
+
+# Baidu (search + LLM training)
+User-agent: Baiduspider
+Allow: /
+
+# ByteDance (Doubao + TikTok content training)
+User-agent: Bytespider
+Allow: /
+
+# Zhipu AI (ChatGLM)
+User-agent: ChatGLM-Spider
+Allow: /
+
+# Alibaba (Qwen / Tongyi Qianwen)
+User-agent: QwenBot
+Allow: /
+
+User-agent: TongyiBot
+Allow: /
+
+User-agent: AliyunBot
+Allow: /
+
+# === Sitemap ===
+Sitemap: https://algovault.com/sitemap.xml

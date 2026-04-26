@@ -84,6 +84,9 @@
     fetchJson(PERF_URL).then(function (perf) {
       var rate = perf && perf.overall && perf.overall.pfeWinRate;
       var n = perf && perf.totalSignals;
+      // /api/performance-public#period.to is the most recent date covered by
+      // the rolling-window evaluation (effectively "live data refreshed up to
+      // YYYY-MM-DD"). Used by C7 GEO last_updated recency signal.
       var to = perf && perf.period && perf.period.to;
       setField('pfe_wr', formatPfe(rate));
       setField('signal_count', formatCount(n));
