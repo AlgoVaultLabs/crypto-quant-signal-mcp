@@ -156,7 +156,6 @@ Browse the full catalog at <https://algovault.com/skills> or <https://github.com
 | 18 | [`agent-portfolio-rebalance`](skills/agent-portfolio-rebalance/SKILL.md) | Agent Portfolio Rebalance | Advanced | `get_market_regime` |
 | 19 | [`smart-dca-bot`](skills/smart-dca-bot/SKILL.md) | Smart DCA Bot | Advanced | `get_trade_signal` |
 | 20 | [`multi-agent-war-room`](skills/multi-agent-war-room/SKILL.md) | Multi-Agent War Room | Expert | `get_market_regime`, `get_trade_signal`, `scan_funding_arb` |
-| 21 | [`victory-canary`](skills/victory-canary/SKILL.md) | Victory Canary | Beginner | `get_trade_signal` |
 <!-- /BUILD:README_SKILLS_TABLE -->
 
 ---

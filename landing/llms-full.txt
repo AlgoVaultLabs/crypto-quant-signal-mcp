@@ -160,7 +160,6 @@ Each Skill is a single-prompt wrapper over 1–3 AlgoVault MCP tool calls. Diffi
 18. **Agent Portfolio Rebalance** (Advanced): Daily regime check for each asset in your portfolio. Shift allocation toward TRENDING assets, reduce exposure to VOLATILE/RANGING positions.
 19. **Smart DCA Bot** (Advanced): Dollar-cost averaging, enhanced: skip buys when the trade call says SELL with high confidence. Only DCA when direction is neutral or favorable.
 20. **Multi-Agent War Room** (Expert): Three specialized agents, one coordinator. Agent A: regime, Agent B: trade calls, Agent C: funding arbs. Coordinator synthesizes all three.
-21. **Victory Canary** (Beginner): Final cross-repo CI E2E verification - should appear on /skills via auto-regenerate.
 <!-- /BUILD:LLMS_FULL_SKILLS -->
 
 Install all 20 with one command:
