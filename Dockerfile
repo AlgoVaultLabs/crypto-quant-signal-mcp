@@ -18,9 +18,13 @@ COPY --from=builder /app/dist/ ./dist/
 COPY CHANGELOG.md ./
 # INTEGRATIONS-W1 C6 — landing/integrations/*.html pre-rendered mirrors
 # read at startup by the /docs/integrations/:exchange route in dist/index.js.
-# Limited to landing/integrations/ only (rest of landing/ is served by Caddy
-# as static, not by Express).
+# WEBSITE-REFRESH-W1 C4 — landing/skills.html read at startup by the
+# /skills route in dist/index.js. Both live under landing/ but Caddy serves
+# the static landing pages (index/docs/verify/privacy) directly from
+# /var/www/algovault. Express serves the dynamic /docs/integrations/* +
+# /skills routes from the in-image copy below.
 COPY landing/integrations/ ./landing/integrations/
+COPY landing/skills.html ./landing/skills.html
 EXPOSE 3000
 ENV TRANSPORT=http
 USER node

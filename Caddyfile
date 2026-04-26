@@ -51,6 +51,12 @@ algovault.com {
     handle /docs/integrations/* {
         reverse_proxy localhost:3000
     }
+    # WEBSITE-REFRESH-W1 C4 — dedicated /skills page (pre-rendered HTML
+    # served from in-image landing/skills.html via Express). Placed BEFORE
+    # the static catch-all so /skills routes hit Express, not file_server.
+    handle /skills {
+        reverse_proxy localhost:3000
+    }
     handle {
         root * /var/www/algovault
         try_files {path} {path}.html {path}/index.html

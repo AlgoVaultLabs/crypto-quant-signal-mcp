@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlgoVault Skills &mdash; 20 Ready-to-Use Agent Skills for Claude Code</title>
+<meta name="description" content="20 Anthropic Agent Skills wrapping AlgoVault MCP. Composite trading verdicts (89.4%+ Merkle-verified PFE Win Rate), regime-aware filtering, funding-arb monitoring. One install: claude plugin install AlgoVaultLabs/algovault-skills">
+<meta name="keywords" content="claude code skills, agent skills, MCP, AlgoVault, crypto trading skills, composite verdict, market regime, funding arb">
+<link rel="canonical" href="https://algovault.com/skills">
+<meta property="og:title" content="AlgoVault Skills &mdash; 20 Ready-to-Use Agent Skills for Claude Code">
+<meta property="og:description" content="20 Skills wrapping AlgoVault MCP. 89.4%+ PFE Win Rate Merkle-verified on Base L2. claude plugin install AlgoVaultLabs/algovault-skills">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/skills">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="last-updated" content="2026-04-26">
+<link rel="icon" type="image/png" href="/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+  .card-hover:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(196, 163, 74, 0.1); }
+  .glow-text { text-shadow: 0 0 30px rgba(196, 163, 74, 0.3); }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "AlgoVault Skills",
+  "description": "20 ready-to-use Anthropic Agent Skills wrapping the AlgoVault MCP server (composite trading verdict, funding arb, market regime). Install once via `claude plugin install AlgoVaultLabs/algovault-skills`.",
+  "codeRepository": "https://github.com/AlgoVaultLabs/algovault-skills",
+  "programmingLanguage": "Markdown",
+  "runtimePlatform": "Claude Code",
+  "license": "https://opensource.org/licenses/MIT",
+  "author": {
+    "@type": "Organization",
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  },
+  "keywords": "MCP, Anthropic, Claude Code, agent skills, trading, crypto, hyperliquid, funding arbitrage, market regime, composite verdict"
+}
+</script>
+<!-- WEBSITE-REFRESH-W1 C1: live track-record proxy populates [data-tr-field] elements from /api/performance-public -->
+<script defer src="/js/track-record-proxy.js"></script>
+</head>
+<body class="min-h-screen">
+
+<!-- Nav (parity-style; 3 new items added in C6) -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2.5">
+      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+    </a>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="/#tools" class="hover:text-white transition">Tools</a>
+      <a href="/track-record" class="hover:text-white transition">Track Record</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/skills" class="text-gold-400 font-medium">Skills</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="pt-24 pb-12 px-6 text-center">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
+      20 Agent Skills. One install. <span data-tr-field="pfe_wr">89.4%</span>+ Merkle-verified accuracy.
+    </h1>
+    <p class="text-gray-400 text-base sm:text-lg mt-4 max-w-2xl mx-auto">
+      Each Skill wraps a 1&ndash;3-call composite verdict from the AlgoVault MCP server.
+      Pre-built prompts, batch loops, regime gating, multi-timeframe consensus &mdash; ready to invoke from any Claude Code session.
+    </p>
+
+    <!-- Install one-liner (copy-on-click could be added; for now plain code block) -->
+    <div class="mt-8 inline-block bg-navy-800 border border-gold-500/30 rounded-lg px-6 py-4">
+      <code class="text-gold-400 text-sm select-all">claude plugin install AlgoVaultLabs/algovault-skills</code>
+    </div>
+
+    <p class="text-gray-500 text-xs mt-3">
+      &#x1f517; Every Skill invocation is <strong>Merkle-anchored on Base L2</strong>. Track record:
+      <a href="/track-record?utm_source=skills_page&utm_medium=hero&utm_campaign=track-record-cta" class="text-gold-400 hover:underline">live verification &rarr;</a>
+    </p>
+  </div>
+</section>
+
+<!-- 20-Card Grid -->
+<section class="py-12 px-6 border-t border-white/5">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-2xl font-bold text-white text-center mb-2">All 20 Skills</h2>
+    <p class="text-gray-500 text-sm text-center mb-10">Browse by difficulty &mdash; Beginner to Expert. Each card links to the canonical SKILL.md on GitHub.</p>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/quick-btc-check?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-quick-btc-check"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">01</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Quick BTC Check</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">Beginner</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">The simplest possible call. Ask your agent for a single trade call.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/portfolio-scanner?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-portfolio-scanner"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">02</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Portfolio Scanner</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/30">Intermediate</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Loop through the top 10 assets, get trade calls for each, and filter by high confidence.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/regime-aware-trading?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-regime-aware-trading"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">03</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Regime-Aware Trading</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/30">Intermediate</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Check the market regime first. Only request trade calls when the regime is favorable for directional trading.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/funding-arb-monitor?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-funding-arb-monitor"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">04</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Funding Arb Monitor</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/30">Intermediate</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Scan for cross-venue funding rate arbitrage opportunities. Alert when the annualized spread exceeds your threshold.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">scan_funding_arb</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/full-3-tool-pipeline?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-full-3-tool-pipeline"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">05</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Full 3-Tool Pipeline</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">The complete AlgoVault workflow: regime detection, trade call, then arb check for the same asset. Maximum context for one decision.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code> &middot; <code class="text-xs">scan_funding_arb</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/multi-timeframe-confirmation?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-multi-timeframe-confirmation"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">06</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Multi-Timeframe Confirmation</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Get trade calls on multiple timeframes for the same asset. Only act when all timeframes agree on direction.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/tradfi-rotation?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-tradfi-rotation"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">07</span>
+          <h3 class="text-white font-semibold text-sm flex-1">TradFi Rotation</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Compare regime and direction across TradFi perpetuals. Rotate into the asset with the strongest trend.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/risk-gated-entry?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-risk-gated-entry"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">08</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Risk-Gated Entry</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Only enter trades when both confidence and regime alignment pass your risk filters. Skip everything else.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/funding-sentiment-dashboard?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-funding-sentiment-dashboard"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">09</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Funding Sentiment Dashboard</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Get market regime for major assets and use the cross-venue funding sentiment to gauge overall market bias.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/contrarian-meme-scanner?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-contrarian-meme-scanner"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">10</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Contrarian Meme Scanner</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Scan lower-tier assets for contrarian setups: high-confidence SELL calls during an uptrend may signal crowded longs about to unwind.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/divergence-detector?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-divergence-detector"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">11</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Divergence Detector</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Compare trade call direction vs market regime. When they disagree, flag it as a high-risk divergence.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/hourly-digest-bot?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-hourly-digest-bot"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">12</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Hourly Digest Bot</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Build an automated digest: scan all tier-1 and tier-2 assets every hour, summarize trade calls and market regime into a brief report.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code> &middot; <code class="text-xs">get_market_regime</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/hedging-advisor?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-hedging-advisor"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">13</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Hedging Advisor</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">You hold a long ETH position. Check regime and trade call — if both turn bearish, look for a funding arb to hedge via the cheaper venue.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code> &middot; <code class="text-xs">scan_funding_arb</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/volatility-breakout-watch?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-volatility-breakout-watch"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">14</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Volatility Breakout Watch</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Use regime detection as a screener: find assets in VOLATILE regime with high confidence — these are breakout candidates. Then get trade call for direction.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/cross-asset-correlation?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-cross-asset-correlation"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">15</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Cross-Asset Correlation</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Get trade calls for BTC, ETH, SOL simultaneously. If all say SELL, it's a macro risk-off signal, not just one asset.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/funding-cash-and-carry?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-funding-cash-and-carry"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">16</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Funding Cash-and-Carry</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Find a funding arb spread, then get a trade call on the long side. If the trade call agrees with the long direction, you have double conviction.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">scan_funding_arb</code> &middot; <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/weekend-vs-weekday-patterns?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-weekend-vs-weekday-patterns"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">17</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Weekend vs Weekday Patterns</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-purple-500/10 text-purple-400 border-purple-500/30">Research</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Schedule trade calls every 4 hours, log results over time. Compare weekend vs weekday regime patterns to find exploitable edges.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code> &middot; <code class="text-xs">get_market_regime</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/agent-portfolio-rebalance?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-agent-portfolio-rebalance"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">18</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Agent Portfolio Rebalance</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Daily regime check for each asset in your portfolio. Shift allocation toward TRENDING assets, reduce exposure to VOLATILE/RANGING positions.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/smart-dca-bot?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-smart-dca-bot"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">19</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Smart DCA Bot</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-gold-500/10 text-gold-400 border-gold-500/30">Advanced</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Dollar-cost averaging, enhanced: skip buys when the trade call says SELL with high confidence. Only DCA when direction is neutral or favorable.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_trade_signal</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/multi-agent-war-room?utm_source=skills_page&utm_medium=card&utm_campaign=skill-install-multi-agent-war-room"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">20</span>
+          <h3 class="text-white font-semibold text-sm flex-1">Multi-Agent War Room</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded border bg-rose-500/10 text-rose-400 border-rose-500/30">Expert</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Three specialized agents, one coordinator. Agent A: regime, Agent B: trade calls, Agent C: funding arbs. Coordinator synthesizes all three.</p>
+        <div class="text-gray-600 text-[11px]">Tools: <code class="text-xs">get_market_regime</code> &middot; <code class="text-xs">get_trade_signal</code> &middot; <code class="text-xs">scan_funding_arb</code></div>
+        <div class="mt-3 text-gold-400 text-xs">View Skill on GitHub &rarr;</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Why Skills? closing -->
+<section class="py-16 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-2xl font-bold text-white text-center mb-8">Why Skills?</h2>
+    <ul class="space-y-3 text-gray-300 text-sm">
+      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Composite verdict, not raw indicators.</strong> Every Skill returns a single direction + confidence + regime, fused from RSI / EMA / funding / OI / volume + cross-venue context.</span></li>
+      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Cross-venue intelligence.</strong> Funding spreads, regime alignment, sentiment fused across 5 exchanges (Hyperliquid, Binance, OKX, Bybit, Bitget) &mdash; not derivable from any single-venue API.</span></li>
+      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Merkle-verified.</strong> Every signal anchored to Base L2 via on-chain Merkle proof. <span data-tr-field="signal_count">56,375</span>+ calls, <span data-tr-field="batch_count">16</span>+ batches at last snapshot. Verifiable accuracy, not a marketing claim.</span></li>
+      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Install once, use everywhere.</strong> One <code>claude plugin install</code> &mdash; the whole pack ships, slug-named, manifest-driven, MIT licensed.</span></li>
+    </ul>
+
+    <div class="mt-10 grid sm:grid-cols-2 gap-4 text-center">
+      <a href="/track-record?utm_source=skills_page&utm_medium=footer&utm_campaign=track-record-cta"
+         class="bg-gold-500/10 border border-gold-500/30 hover:bg-gold-500/20 rounded-xl p-5 block transition">
+        <div class="text-gold-400 text-sm font-semibold">View Live Track Record &rarr;</div>
+        <div class="text-gray-500 text-xs mt-1">Public on-chain verification</div>
+      </a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills?utm_source=skills_page&utm_medium=footer&utm_campaign=github-repo"
+         class="bg-navy-700 border border-white/5 hover:border-gold-500/30 rounded-xl p-5 block transition">
+        <div class="text-gray-300 text-sm font-semibold">Source on GitHub &rarr;</div>
+        <div class="text-gray-500 text-xs mt-1">MIT licensed &middot; Manifest-driven</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-8 px-6 border-t border-white/5 text-center text-gray-600 text-xs">
+  <p>&copy; AlgoVault Labs &middot; MIT licensed</p>
+  <p class="mt-2">Snapshot taken 2026-04-26 &middot; Live numbers refreshed in-page from <a href="/api/performance-public" class="text-gold-400 hover:underline">/api/performance-public</a></p>
+</footer>
+
+</body>
+</html>

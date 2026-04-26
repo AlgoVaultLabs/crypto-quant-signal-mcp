@@ -362,6 +362,25 @@ async function startHttp() {
     res.type('text/html').send(html);
   });
 
+  // ── /skills page (WEBSITE-REFRESH-W1 C4) ──
+  // Pre-loaded at startup into a string for zero-fs-hit per-request serving.
+  // Same CJS __dirname pattern as the integration mirrors above (see
+  // src/lib/pkg-version.ts:10 for the canonical "no import.meta.url under
+  // CJS tsconfig" gotcha + fix).
+  let SKILLS_HTML: string | null = null;
+  try {
+    SKILLS_HTML = fs.readFileSync(path.resolve(__dirname, '..', 'landing', 'skills.html'), 'utf8');
+  } catch (err) {
+    console.warn('skills.html not loaded at startup:', err instanceof Error ? err.message : err);
+  }
+  app.get('/skills', (_req, res) => {
+    if (!SKILLS_HTML) {
+      return res.status(500).type('text/plain').send('skills page not available');
+    }
+    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    res.type('text/html').send(SKILLS_HTML);
+  });
+
   // (REMOVED 2026-04-24) Public per-Skill analytics page. Per-Skill funnel data
   // is competitive intel, not public moat-proof. Migrated to admin-gated tab on
   // /dashboard. New endpoint: /dashboard/api/skills-analytics (JSON, admin-only).
