@@ -37,7 +37,9 @@ const SOURCE_REPO = sourceArg && sourceArg !== '--source'
 const SOURCE_DIR = join(SOURCE_REPO, 'docs', 'integrations');
 const TARGET_DIR = join(ROOT, 'landing', 'integrations');
 
-const md = new MarkdownIt({ html: false, linkify: true, typographer: true });
+// html: true required so source MDs can include <span data-tr-field="..."> for
+// the live track-record proxy (see WEBSITE-REFRESH-W1 C1).
+const md = new MarkdownIt({ html: true, linkify: true, typographer: true });
 
 function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -57,9 +59,18 @@ function pageTitle(exchange) {
   return `AlgoVault × ${display} — Build Verifiable AI Trading Agents`;
 }
 
+// WEBSITE-REFRESH-W1 C1 — number snapshot for description meta + initial render.
+// Live source of truth: /api/performance-public + /api/merkle-batches (proxied
+// at runtime by /js/track-record-proxy.js to update [data-tr-field] elements).
+const SNAPSHOT_DATE = '2026-04-26';
+const SNAPSHOT_PFE_WR = '89.4%';
+const SNAPSHOT_SIGNAL_COUNT = '56,375';
+const SNAPSHOT_BATCH_COUNT = '16';
+
 function htmlShell(exchange, bodyHtml) {
   const title = pageTitle(exchange);
-  const description = `Pair AlgoVault MCP's composite verdict with ${exchange.charAt(0).toUpperCase() + exchange.slice(1)}'s agent execution kit. Free testnet demo · 89.5% PFE Win Rate · 54,629+ calls · 15+ Merkle-verified on-chain batches.`;
+  const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
+  const description = `Pair AlgoVault MCP's composite verdict with ${display}'s agent execution kit. Free testnet demo · ${SNAPSHOT_PFE_WR} PFE Win Rate · ${SNAPSHOT_SIGNAL_COUNT}+ calls · ${SNAPSHOT_BATCH_COUNT}+ Merkle-verified on-chain batches.`;
   const canonical = `https://algovault.com/docs/integrations/${exchange}`;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -74,7 +85,10 @@ function htmlShell(exchange, bodyHtml) {
 <meta property="og:description" content="${escapeHtml(description)}">
 <meta property="og:type" content="article">
 <meta property="og:url" content="${canonical}">
+<!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
+<meta name="last-updated" content="${SNAPSHOT_DATE}">
 <script src="https://cdn.tailwindcss.com"></script>
+<script defer src="/js/track-record-proxy.js"></script>
 <script>
 tailwind.config = {
   theme: {

@@ -19,6 +19,8 @@
 <meta name="twitter:image" content="https://algovault.com/logo.png">
 <link rel="icon" type="image/png" href="/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
+<!-- WEBSITE-REFRESH-W1 C1: live track-record proxy. Populates [data-tr-field] elements from /api/performance-public + /api/merkle-batches on DOMContentLoaded. Static fallback values carry HTML snapshot comments. -->
+<script defer src="/js/track-record-proxy.js"></script>
 <script>
 tailwind.config = {
   theme: {
@@ -313,6 +315,26 @@ tailwind.config = {
       <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
         <div class="text-sm font-semibold text-gold-400">Per-TF Eval</div>
         <div class="text-gray-500 text-xs mt-1">5m=1hr, 1h=8hr, 4h=24hr</div>
+      </div>
+    </div>
+
+    <!-- WEBSITE-REFRESH-W1 C1: live numbers row (proxy populates [data-tr-field] on page load).
+         Fallback values are last live snapshot 2026-04-26 — see /api/performance-public + /api/merkle-batches. -->
+    <div class="grid grid-cols-3 gap-4 mt-4">
+      <div class="bg-navy-700/60 border border-emerald-500/20 rounded-lg p-4 text-center">
+        <!-- snapshot: 2026-04-26 — live source: /api/performance-public#overall.pfeWinRate -->
+        <div class="text-sm font-semibold text-emerald-400"><span data-tr-field="pfe_wr">89.4%</span></div>
+        <div class="text-gray-500 text-xs mt-1">PFE Win Rate (live)</div>
+      </div>
+      <div class="bg-navy-700/60 border border-emerald-500/20 rounded-lg p-4 text-center">
+        <!-- snapshot: 2026-04-26 — live source: /api/performance-public#totalSignals -->
+        <div class="text-sm font-semibold text-emerald-400"><span data-tr-field="signal_count">56,375</span>+</div>
+        <div class="text-gray-500 text-xs mt-1">Signal calls (live)</div>
+      </div>
+      <div class="bg-navy-700/60 border border-emerald-500/20 rounded-lg p-4 text-center">
+        <!-- snapshot: 2026-04-26 — live source: /api/merkle-batches#batches.length -->
+        <div class="text-sm font-semibold text-emerald-400"><span data-tr-field="batch_count">16</span></div>
+        <div class="text-gray-500 text-xs mt-1">Merkle batches on-chain (live)</div>
       </div>
     </div>
 

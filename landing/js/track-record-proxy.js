@@ -1,0 +1,114 @@
+/**
+ * AlgoVault track-record proxy
+ * ============================
+ *
+ * Fetches https://algovault.com/api/performance-public on DOMContentLoaded and
+ * populates every element marked with `data-tr-field="<field>"` with the live
+ * value. On fetch failure the existing static text remains as fallback (each
+ * existing static value MUST carry an HTML comment `<!-- snapshot: YYYY-MM-DD
+ * — live source of truth: /api/performance-public -->` next to it).
+ *
+ * Supported fields:
+ *   - pfe_wr        → "89.4%" (rounded to 1 decimal, % suffix)
+ *   - signal_count  → "56,375" (locale-formatted with thousands separators)
+ *   - batch_count   → "16" (integer, no commas — small numbers)
+ *   - last_updated  → "2026-04-26" (ISO date) or "26 Apr 2026" (localised)
+ *
+ * Live snapshot at deploy time (initial-render fallback if fetch fails BEFORE
+ * any cache hit):
+ *   - pfeWinRate: 0.8945  (89.4%)
+ *   - totalSignals: 56,375
+ *   - batches: 16 (latest batch_id; published 2026-04-26T00:05:04Z)
+ *
+ * Endpoint contract (verified 2026-04-26):
+ *   GET /api/performance-public →
+ *   {
+ *     "totalSignals": 56375,
+ *     "period": { "from": "2026-04-10", "to": "2026-04-26" },
+ *     "overall": {
+ *       "totalSignals": 56375,
+ *       "totalEvaluated": 55935,
+ *       "pfeWinRate": 0.8944846697059087
+ *     },
+ *     "bySignalType": { ... },
+ *     "byTimeframe": { ... },
+ *     ...
+ *   }
+ *
+ *   GET /api/merkle-batches → { batches: [...] } — batch_count = batches.length
+ *
+ * ZERO dependencies. Pure browser JS. Cacheable for 5 minutes via the
+ * Cache-Control header set by Caddy on the static-served file.
+ */
+(function () {
+  'use strict';
+
+  var PERF_URL = '/api/performance-public';
+  var MERKLE_URL = '/api/merkle-batches';
+
+  function formatPfe(rate) {
+    if (typeof rate !== 'number' || isNaN(rate)) return null;
+    return (Math.round(rate * 1000) / 10).toFixed(1) + '%';
+  }
+
+  function formatCount(n) {
+    if (typeof n !== 'number' || !isFinite(n)) return null;
+    return n.toLocaleString('en-US');
+  }
+
+  function formatDate(iso) {
+    if (typeof iso !== 'string') return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
+  function setField(name, value) {
+    if (value === null || value === undefined) return;
+    var nodes = document.querySelectorAll('[data-tr-field="' + name + '"]');
+    for (var i = 0; i < nodes.length; i++) {
+      // textContent (NOT innerHTML) — defends against any unexpected upstream shape
+      nodes[i].textContent = String(value);
+    }
+  }
+
+  function fetchJson(url) {
+    return fetch(url, { credentials: 'omit', headers: { Accept: 'application/json' } })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' from ' + url);
+        return r.json();
+      });
+  }
+
+  function refresh() {
+    fetchJson(PERF_URL).then(function (perf) {
+      var rate = perf && perf.overall && perf.overall.pfeWinRate;
+      var n = perf && perf.totalSignals;
+      var to = perf && perf.period && perf.period.to;
+      setField('pfe_wr', formatPfe(rate));
+      setField('signal_count', formatCount(n));
+      if (to) setField('last_updated', formatDate(to));
+    }).catch(function (err) {
+      // Silent — fallback static text remains visible. Console.debug-only so
+      // ad-blockers / network failures don't spam the user's console.
+      if (typeof console !== 'undefined' && console.debug) {
+        console.debug('[track-record-proxy] perf fetch failed:', err.message || err);
+      }
+    });
+
+    fetchJson(MERKLE_URL).then(function (data) {
+      var n = data && Array.isArray(data.batches) ? data.batches.length : null;
+      setField('batch_count', formatCount(n));
+    }).catch(function (err) {
+      if (typeof console !== 'undefined' && console.debug) {
+        console.debug('[track-record-proxy] merkle fetch failed:', err.message || err);
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', refresh);
+  } else {
+    refresh();
+  }
+})();
