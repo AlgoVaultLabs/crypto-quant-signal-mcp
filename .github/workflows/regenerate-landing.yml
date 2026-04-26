@@ -36,6 +36,15 @@ jobs:
       - name: Checkout crypto-quant-signal-mcp
         uses: actions/checkout@v4
         with:
+          # Use a PAT for the checkout so subsequent `git push` is authenticated
+          # as a user (not GITHUB_TOKEN). Pushes by GITHUB_TOKEN do NOT trigger
+          # downstream workflow runs (anti-loop default); pushes by a PAT DO
+          # trigger them — we need deploy.yml to fire on the regenerated
+          # landing/* commit so the new files reach /var/www/algovault.
+          # Reuses the same MCP_REPO_DISPATCH_TOKEN PAT that algovault-skills
+          # uses to fire the dispatch (one PAT, two purposes — naming is
+          # awkward but cuts secret-management surface).
+          token: ${{ secrets.MCP_REPO_DISPATCH_TOKEN }}
           fetch-depth: 0
 
       - name: Checkout algovault-skills (in-workspace subdir)
