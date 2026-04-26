@@ -41,16 +41,16 @@ jobs:
           node ../algovault-skills/scripts/build_landing.mjs --target .
 
       - name: Commit regenerated surfaces (if any)
+        env:
+          DISPATCH_REPO: ${{ github.event.client_payload.source_repo }}
+          DISPATCH_SHA: ${{ github.event.client_payload.source_sha }}
+          DISPATCH_ACTOR: ${{ github.event.client_payload.source_actor }}
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git config user.email "ci@algovault.com"
             git config user.name "AlgoVault CI"
-            # Stage explicitly-named landing/ + README.md targets (no -A to avoid
-            # accidental commit of build-output artifacts).
             git add landing/skills.html landing/index.html landing/llms.txt landing/llms-full.txt README.md
-            git commit -m "build(landing): regenerate from manifests [skip ci]
-
-Triggered by repository_dispatch from ${{ github.event.client_payload.source_repo || 'self' }} (sha ${{ github.event.client_payload.source_sha || 'n/a' }}, actor ${{ github.event.client_payload.source_actor || 'n/a' }})."
+            git commit -m "build(landing): regenerate from manifests [skip ci]" -m "Triggered by repository_dispatch from ${DISPATCH_REPO:-self} (sha ${DISPATCH_SHA:-n/a}, actor ${DISPATCH_ACTOR:-n/a})."
             git push
           else
             echo "No surface changes; skipping commit."
