@@ -8,8 +8,8 @@ Used on `algovault.com` for nominative reference to integration tutorials in `la
 |---|---|---|---|---|---|
 | `binance.svg` | 3.9 KB | SVG, viewBox `0 0 632.014 126.611` (wordmark) | https://commons.wikimedia.org/wiki/Special:FilePath/Binance_logo.svg | 2026-04-27 | Wikimedia Commons (per Commons file page: Binance corporate logo, used under nominative-fair-use; trademark of Binance Holdings Ltd.) |
 | `okx.svg` | 3.5 KB | SVG, viewBox `0 0 1080 1080` (icon) | https://commons.wikimedia.org/wiki/Special:FilePath/OKX_Logo.svg | 2026-04-27 | Wikimedia Commons (OKX corporate logo, nominative-fair-use; trademark of OKX/Aux Cayes FinTech Co. Ltd.) |
-| `bybit.svg` | 1.9 KB | SVG, viewBox `0 0 13547 4513` (wordmark with orange "I" bar) | https://commons.wikimedia.org/wiki/Special:FilePath/Bybit_Logo.svg | 2026-04-27 | Wikimedia Commons (Bybit corporate logo, nominative-fair-use; trademark of Bybit Fintech Ltd.) |
-| `bitget.png` | 5.0 KB | PNG, 420×420 px (icon) | https://avatars.githubusercontent.com/u/95041826?s=200 | 2026-04-27 | BitgetLimited's OFFICIAL GitHub organization avatar (org URL: https://github.com/BitgetLimited; same org that publishes `bitget-mcp-server` npm). Direct from Bitget. Wikimedia Commons SVG variants returned 404 at probe time; bitget.com/media-kit page timed out on direct fetch. PNG is official + correctly-sized fallback. |
+| `bybit.png` | ~122 KB | PNG, 2500×2500 px (white wordmark with orange "I" on solid black background) | Operator-supplied official brand asset | 2026-04-27 (refreshed) | Bybit official brand asset, supplied by AlgoVault operator (Mr.1) on 2026-04-27 to replace the prior Wikimedia SVG (which had a transparent background and required a CSS `invert` filter that produced inconsistent rendering on the dark navy theme). Trademark of Bybit Fintech Ltd. |
+| `bitget.png` | ~20 KB | PNG, 400×300 px (cyan background, black arrow + "Bitget" wordmark) | Operator-supplied official brand asset | 2026-04-27 (refreshed) | Bitget official brand asset, supplied by AlgoVault operator (Mr.1) on 2026-04-27 to replace the prior `avatars.githubusercontent.com/u/95041826?s=200` URL — that URL pointed at BitgetLimited's GitHub org avatar slot, but the org never customized it, so GitHub served the default Octocat icon (verified visually post-deploy). Trademark of Bitget Ltd. |
 
 ## Usage policy
 
@@ -24,8 +24,8 @@ Used on `algovault.com` for nominative reference to integration tutorials in `la
 |---|---|---|
 | `binance.svg` | `w-10 h-10 object-contain` | Yellow-on-black wordmark; visible on dark theme without inversion. |
 | `okx.svg` | `w-10 h-10 object-contain invert` | Black icon on white background — `invert` recolors to white-on-(transparent over navy). |
-| `bybit.svg` | `w-10 h-10 object-contain invert` | Mostly-black wordmark — `invert` makes it visible on dark theme. |
-| `bitget.png` | `w-10 h-10 object-contain` | Color icon; visible without modification. |
+| `bybit.png` | `w-10 h-10 object-contain` | Operator-supplied PNG with solid black background + white wordmark; visible without modification. NO `invert` (would flip the brand-correct white-on-black to wrong-looking black-on-white). |
+| `bitget.png` | `w-10 h-10 object-contain` | Operator-supplied PNG with cyan brand background + black wordmark; visible without modification. |
 
 ## Refresh procedure
 
