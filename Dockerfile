@@ -25,6 +25,11 @@ COPY CHANGELOG.md ./
 # /skills routes from the in-image copy below.
 COPY landing/integrations/ ./landing/integrations/
 COPY landing/skills.html ./landing/skills.html
+# WEBSITE-REFRESH-CLEANUP-W1 R4 — landing/integrations.html (manifest-driven
+# index of all exchange integrations) read at startup by the /integrations
+# route in dist/index.js. Caddy routes /integrations to Express ahead of
+# the static catch-all (see Caddyfile algovault.com block).
+COPY landing/integrations.html ./landing/integrations.html
 EXPOSE 3000
 ENV TRANSPORT=http
 USER node

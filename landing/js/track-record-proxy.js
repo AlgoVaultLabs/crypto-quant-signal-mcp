@@ -13,6 +13,10 @@
  *   - signal_count  → "56,375" (locale-formatted with thousands separators)
  *   - batch_count   → "16" (integer, no commas — small numbers)
  *   - last_updated  → "2026-04-26" (ISO date) or "26 Apr 2026" (localised)
+ *   - hold_rate     → "98.2%" (rounded to 1 decimal, % suffix; computed
+ *                     server-side as totalHolds / (totalHolds + totalSignals)
+ *                     × 100 — see src/index.ts:/api/performance-public for the
+ *                     server-side formula. WEBSITE-REFRESH-CLEANUP-W1 R2.)
  *
  * Live snapshot at deploy time (initial-render fallback if fetch fails BEFORE
  * any cache hit):
@@ -49,6 +53,13 @@
   function formatPfe(rate) {
     if (typeof rate !== 'number' || isNaN(rate)) return null;
     return (Math.round(rate * 1000) / 10).toFixed(1) + '%';
+  }
+
+  function formatPercent(n) {
+    // hold_rate arrives as a server-side-rounded number like 98.2 (one decimal
+    // place, NOT a 0..1 ratio). Format defensively so 98 → "98.0%" not "98%".
+    if (typeof n !== 'number' || isNaN(n)) return null;
+    return n.toFixed(1) + '%';
   }
 
   function formatCount(n) {
@@ -88,8 +99,10 @@
       // the rolling-window evaluation (effectively "live data refreshed up to
       // YYYY-MM-DD"). Used by C7 GEO last_updated recency signal.
       var to = perf && perf.period && perf.period.to;
+      var holdRate = perf && perf.hold_rate;
       setField('pfe_wr', formatPfe(rate));
       setField('signal_count', formatCount(n));
+      setField('hold_rate', formatPercent(holdRate));
       if (to) setField('last_updated', formatDate(to));
     }).catch(function (err) {
       // Silent — fallback static text remains visible. Console.debug-only so

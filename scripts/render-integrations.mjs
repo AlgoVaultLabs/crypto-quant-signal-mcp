@@ -167,13 +167,22 @@ tailwind.config = {
       <img src="/logo.png" alt="AlgoVault" class="h-8 w-8" />
       <span>AlgoVault</span>
     </a>
+    <!-- WEBSITE-REFRESH-CLEANUP-W1 R3: 8-item ordered nav (Track Record / Pricing /
+         Integrations / Skills / Docs / Verify / GitHub / Signup). Removed Tools +
+         Use Cases (#tools/#use-cases anchors live only on /; the cross-page jumps
+         were noisy). Integrations now points to /integrations (the new manifest-
+         driven index page) — clicking it on a tutorial mirror goes "back up" to
+         the index, mirroring how /skills works. The current page is highlighted
+         via text-gold-400 font-medium (consistent with other landing pages). -->
     <nav class="text-sm text-steel-400 flex gap-4 flex-wrap">
-      <a href="/#use-cases" class="hover:text-gold-400">Use Cases</a>
       <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-gold-400">Track Record</a>
-      <a href="/docs/integrations/binance" class="hover:text-gold-400">Integrations</a>
-      <a href="/docs.html" class="hover:text-gold-400">Docs</a>
+      <a href="/#pricing" class="hover:text-gold-400">Pricing</a>
+      <a href="/integrations" class="text-gold-400 font-medium">Integrations</a>
       <a href="/skills" class="hover:text-gold-400">Skills</a>
+      <a href="/docs.html" class="hover:text-gold-400">Docs</a>
+      <a href="/verify" class="hover:text-gold-400">Verify</a>
       <a href="https://github.com/AlgoVaultLabs/algovault-skills" class="hover:text-gold-400">GitHub</a>
+      <a href="https://api.algovault.com/signup" class="text-gold-400 hover:text-gold-500">Signup</a>
     </nav>
   </div>
 </header>

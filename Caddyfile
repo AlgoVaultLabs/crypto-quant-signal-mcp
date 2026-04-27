@@ -57,6 +57,13 @@ algovault.com {
     handle /skills {
         reverse_proxy localhost:3000
     }
+    # WEBSITE-REFRESH-CLEANUP-W1 R4 — manifest-driven /integrations index page
+    # (pre-rendered HTML served from in-image landing/integrations.html via
+    # Express). Placed BEFORE the static catch-all so /integrations routes hit
+    # Express, not file_server.
+    handle /integrations {
+        reverse_proxy localhost:3000
+    }
     handle {
         root * /var/www/algovault
         try_files {path} {path}.html {path}/index.html

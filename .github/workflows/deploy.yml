@@ -40,6 +40,11 @@ jobs:
             cp landing/*.html /var/www/algovault/ 2>/dev/null && echo "Landing pages synced" || echo "No landing pages to sync"
             mkdir -p /var/www/algovault/js
             cp -r landing/js/* /var/www/algovault/js/ 2>/dev/null && echo "Landing js/ synced" || echo "No landing js/ to sync"
+            # WEBSITE-REFRESH-CLEANUP-W1 R5: exchange logos under landing/assets/
+            # served at /assets/* via the Caddy static catch-all (no new handle).
+            # Used by the new /integrations index page + Use Cases section in /index.html.
+            mkdir -p /var/www/algovault/assets
+            cp -r landing/assets/* /var/www/algovault/assets/ 2>/dev/null && echo "Landing assets/ synced" || echo "No landing assets/ to sync"
             # WEBSITE-REFRESH-W1 C7: GEO foundations — robots.txt + llms.txt + llms-full.txt + sitemap.xml
             # served as static text via the existing Caddy catch-all (no new handles needed; Caddy
             # auto-detects text/plain MIME for .txt files via file_server).

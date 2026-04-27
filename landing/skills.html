@@ -91,14 +91,16 @@ tailwind.config = {
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
       <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
     </a>
+    <!-- WEBSITE-REFRESH-CLEANUP-W1 R3: 8-item ordered nav (was missing Verify/GitHub/Signup). -->
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
-      <a href="/#tools" class="hover:text-white transition">Tools</a>
-      <a href="/#use-cases" class="hover:text-white transition">Use Cases</a>
       <a href="/track-record" class="hover:text-white transition">Track Record</a>
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>
-      <a href="/docs/integrations/binance" class="hover:text-white transition">Integrations</a>
-      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/integrations" class="hover:text-white transition">Integrations</a>
       <a href="/skills" class="text-gold-400 font-medium">Skills</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/verify" class="hover:text-white transition">Verify</a>
+      <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="hover:text-white transition">GitHub</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -119,9 +121,7 @@ tailwind.config = {
       <code class="text-gold-400 text-sm select-all">claude plugin install AlgoVaultLabs/algovault-skills</code>
     </div>
 
-    <p class="quotable-fact text-emerald-400/90 text-sm mt-4 max-w-2xl mx-auto" itemscope itemtype="https://schema.org/Claim">
-      <span itemprop="claimReviewed">AlgoVault Skills wrap a composite-verdict API with <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="signal_count" class="text-emerald-300 font-semibold">56,375</span>+ Merkle-anchored signal calls (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
-    </p>
+    <!-- WEBSITE-REFRESH-CLEANUP-W1 R1 dedup: prior version had this paragraph repeated (lines 125-126 byte-identical to 122-123) — same root cause as the index.html dup. One <p class="quotable-fact"> per page is sufficient. -->
     <p class="quotable-fact text-emerald-400/90 text-sm mt-4 max-w-2xl mx-auto" itemscope itemtype="https://schema.org/Claim">
       <span itemprop="claimReviewed">AlgoVault Skills wrap a composite-verdict API with <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="signal_count" class="text-emerald-300 font-semibold">56,375</span>+ Merkle-anchored signal calls (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>

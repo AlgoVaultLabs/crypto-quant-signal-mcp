@@ -88,15 +88,17 @@ tailwind.config = {
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
       <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
     </div>
+    <!-- WEBSITE-REFRESH-CLEANUP-W1 R3: 8-item ordered nav. Removed Tools, Use Cases,
+         Developers (#tools/#use-cases/#developers anchors still resolve in-page; we
+         just no longer surface them in the persistent nav). Integrations now points
+         to /integrations (the manifest-driven index) instead of jumping straight
+         into the Binance tutorial. -->
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
-      <a href="#tools" class="hover:text-white transition">Tools</a>
-      <a href="#use-cases" class="hover:text-white transition">Use Cases</a>
       <a href="/track-record" class="hover:text-white transition">Track Record</a>
-      <a href="#pricing" class="hover:text-white transition">Pricing</a>
-      <a href="/docs/integrations/binance" class="hover:text-white transition">Integrations</a>
-      <a href="#developers" class="hover:text-white transition">Developers</a>
-      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/integrations" class="hover:text-white transition">Integrations</a>
       <a href="/skills" class="hover:text-white transition">Skills</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp" class="hover:text-white transition">GitHub</a>
       <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
@@ -115,9 +117,7 @@ tailwind.config = {
     <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
       The Brain Layer for<br>AI Trading Agents
     </h1>
-    <p class="quotable-fact mt-3 text-sm text-emerald-400/90 max-w-xl mx-auto" itemscope itemtype="https://schema.org/Claim">
-      <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="signal_count" class="text-emerald-300 font-semibold">56,375</span>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
-    </p>
+    <!-- WEBSITE-REFRESH-CLEANUP-W1 R1 dedup: prior version had this paragraph repeated (lines 121-122 byte-identical to 118-119, presumably a typo from a copy-paste during R6 editing). One <p class="quotable-fact"> per page is sufficient — schema.org/Claim itemtype + the LLM-targeted phrasing only need one DOM occurrence to be picked up by Plausible "Claim Quote Selected" + Google rich results / AI extraction. -->
     <p class="quotable-fact mt-3 text-sm text-emerald-400/90 max-w-xl mx-auto" itemscope itemtype="https://schema.org/Claim">
       <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="signal_count" class="text-emerald-300 font-semibold">56,375</span>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>
@@ -304,7 +304,7 @@ tailwind.config = {
       <a href="/docs/integrations/binance?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-binance"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'binance',source:'use-cases-card'}})"
          class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
-        <div class="text-3xl mb-3" aria-hidden="true">🏆</div>
+        <img src="/assets/logos/binance.svg" alt="Binance logo" class="w-10 h-10 object-contain mb-3">
         <h3 class="text-white font-semibold text-base mb-1">Binance &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + official Binance Skills Hub for Spot Testnet execution.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">binance/binance-skills-hub</code> (verified 2026-04-25)</p>
@@ -313,7 +313,7 @@ tailwind.config = {
       <a href="/docs/integrations/okx?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-okx"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'okx',source:'use-cases-card'}})"
          class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
-        <div class="text-3xl mb-3" aria-hidden="true">🎯</div>
+        <img src="/assets/logos/okx.svg" alt="OKX logo" class="w-10 h-10 object-contain mb-3 invert">
         <h3 class="text-white font-semibold text-base mb-1">OKX &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + 83 OKX execution tools across spot, swap, futures, options, grid bots.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">@okx_ai/okx-trade-mcp@1.3.1</code> </p>
@@ -322,7 +322,7 @@ tailwind.config = {
       <a href="/docs/integrations/bybit?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-bybit"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'bybit',source:'use-cases-card'}})"
          class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
-        <div class="text-3xl mb-3" aria-hidden="true">⚡</div>
+        <img src="/assets/logos/bybit.svg" alt="Bybit logo" class="w-10 h-10 object-contain mb-3 invert">
         <h3 class="text-white font-semibold text-base mb-1">Bybit &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + Bybit's official MCP for Linear Perpetual + conditional orders.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">bybit-official-trading-server@2.0.9</code> </p>
@@ -331,7 +331,7 @@ tailwind.config = {
       <a href="/docs/integrations/bitget?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-bitget"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'bitget',source:'use-cases-card'}})"
          class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
-        <div class="text-3xl mb-3" aria-hidden="true">🤖</div>
+        <img src="/assets/logos/bitget.png" alt="Bitget logo" class="w-10 h-10 object-contain mb-3">
         <h3 class="text-white font-semibold text-base mb-1">Bitget &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + GetClaw agent-native execution inside a dedicated AI account.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">bitget-mcp-server@1.1.0</code> </p>
@@ -342,6 +342,12 @@ tailwind.config = {
 
     <p class="text-gray-600 text-xs text-center mt-6">
       All demos run testnet/demo only &mdash; zero real-money risk in any code path. AlgoVault returns analytics; your agent and risk policy decide what to execute.
+    </p>
+    <!-- WEBSITE-REFRESH-CLEANUP-W1 R5: trademark disclaimer for the self-hosted
+         exchange logos (Binance/OKX/Bybit/Bitget). See landing/assets/logos/README.md
+         for provenance + the nominative-fair-use policy. -->
+    <p class="text-gray-600 text-xs text-center mt-3 max-w-3xl mx-auto">
+      Exchange logos and names are trademarks of their respective owners. Used for nominative reference to integration tutorials. No partnership or endorsement implied.
     </p>
   </div>
 </section>
@@ -450,13 +456,17 @@ tailwind.config = {
       <p class="text-gray-500 text-sm mt-2">Start free. Pay when you need more.</p>
 
       <!-- WEBSITE-REFRESH-W1 C5: M3 hero badge — "we only fire when we mean it" -->
+      <!-- WEBSITE-REFRESH-CLEANUP-W1 R2: hardcoded "93%" replaced with live-proxied
+           hold_rate field (snapshot ~98.2% as of 2026-04-27 — verify live at
+           /api/performance-public). Static "93%" remains as graceful-degradation
+           fallback if /api/performance-public is unreachable on first paint. -->
       <div class="text-center mt-8 mb-2">
         <div class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full">
-          <span class="text-emerald-400 text-sm font-semibold">93% HOLD rate &mdash; we only fire when we mean it.</span>
+          <span class="text-emerald-400 text-sm font-semibold"><span data-tr-field="hold_rate">93%</span> HOLD rate &mdash; we only fire when we mean it.</span>
         </div>
         <p class="text-gray-400 text-sm mt-3 max-w-2xl mx-auto">
-          Most signal tools always emit a verdict. We reject 93% of scans as HOLD &mdash; and HOLDs are <span class="text-white font-semibold">always free</span>.
-          That selectivity is why the 7% that pass have <span data-tr-field="pfe_wr" class="text-gold-400">89.4%</span>+ Merkle-verified accuracy on <span data-tr-field="signal_count" class="text-gold-400">56,375</span>+ signals.
+          Most signal tools always emit a verdict. We reject <span data-tr-field="hold_rate">93%</span> of scans as HOLD &mdash; and HOLDs are <span class="text-white font-semibold">always free</span>.
+          That selectivity is why the rest have <span data-tr-field="pfe_wr" class="text-gold-400">89.4%</span>+ Merkle-verified accuracy on <span data-tr-field="signal_count" class="text-gold-400">56,375</span>+ signals.
         </p>
       </div>
     </div>

@@ -87,13 +87,15 @@ Every signal is **hashed on-chain (Base L2) before its outcome is known**. Daily
 | Pro | $49/mo | All crypto + TradFi assets, all 11 timeframes | 15,000 |
 | Enterprise | $299/mo | Unlimited calls + SLA + priority support | Unlimited |
 
-**93% HOLD rate. We only fire when we mean it.** Most signal tools always emit a verdict. AlgoVault rejects 93% of scans as HOLD — and HOLDs are **always free** at every tier. That selectivity is why the 7% that pass have 89.4%+ Merkle-verified accuracy.
+**~98% HOLD rate. We only fire when we mean it.** Most signal tools always emit a verdict. AlgoVault rejects ~98% of scans as HOLD — and HOLDs are **always free** at every tier. That selectivity is why the rest have 89.4%+ Merkle-verified accuracy. (Live `hold_rate` at https://algovault.com/api/performance-public; snapshot 2026-04-27.)
 
 Sign up at https://api.algovault.com/signup?plan={starter|pro|enterprise}.
 
 ---
 
 ## Integrations (4 official Brain + Execution pairings)
+
+**Index page:** https://algovault.com/integrations — manifest-driven listing of every supported exchange tutorial; one card per integration. Adding the Nth exchange requires only an update to `algovault-skills/integrations/manifest.json` (the build pipeline regenerates the index card grid in `landing/integrations.html`).
 
 <!-- BUILD:LLMS_FULL_INTEGRATIONS -->
 ### Binance × AlgoVault

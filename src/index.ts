@@ -381,6 +381,25 @@ async function startHttp() {
     res.type('text/html').send(SKILLS_HTML);
   });
 
+  // ── /integrations index page (WEBSITE-REFRESH-CLEANUP-W1 R4) ──
+  // Manifest-driven listing of all integrations (mirrors the /skills pattern).
+  // Pre-loaded at startup into a string for zero-fs-hit per-request serving.
+  // Caddy routes /integrations here ahead of the static catch-all so future
+  // edits to landing/integrations.html don't require a Caddy reload.
+  let INTEGRATIONS_INDEX_HTML: string | null = null;
+  try {
+    INTEGRATIONS_INDEX_HTML = fs.readFileSync(path.resolve(__dirname, '..', 'landing', 'integrations.html'), 'utf8');
+  } catch (err) {
+    console.warn('integrations.html not loaded at startup:', err instanceof Error ? err.message : err);
+  }
+  app.get('/integrations', (_req, res) => {
+    if (!INTEGRATIONS_INDEX_HTML) {
+      return res.status(500).type('text/plain').send('integrations page not available');
+    }
+    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    res.type('text/html').send(INTEGRATIONS_INDEX_HTML);
+  });
+
   // (REMOVED 2026-04-24) Public per-Skill analytics page. Per-Skill funnel data
   // is competitive intel, not public moat-proof. Migrated to admin-gated tab on
   // /dashboard. New endpoint: /dashboard/api/skills-analytics (JSON, admin-only).
@@ -594,10 +613,19 @@ async function startHttp() {
   }
 
   // ── Public track record (no auth) ──
+  // WEBSITE-REFRESH-CLEANUP-W1 R2: also returns `hold_rate` (computed from
+  // existing totalHolds + totalSignals — additive only, no consumer breakage).
+  // hold_rate = totalHolds / (totalHolds + totalSignals) * 100, rounded to 1
+  // decimal place. Powers the live Pricing M3 badge ("XX.X% HOLD rate") via
+  // landing/js/track-record-proxy.js, replacing the prior hardcoded "93%".
   app.get('/api/performance-public', async (_req, res) => {
     try {
       const [stats, holdStats] = await Promise.all([getSignalPerformance(), getHoldStats()]);
-      res.json({ ...stats, ...holdStats });
+      const totalHolds = holdStats.totalHolds || 0;
+      const totalSignals = stats.totalSignals || 0;
+      const denom = totalHolds + totalSignals;
+      const hold_rate = denom > 0 ? Math.round((totalHolds / denom) * 1000) / 10 : 0;
+      res.json({ ...stats, ...holdStats, hold_rate });
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch performance stats' });
     }

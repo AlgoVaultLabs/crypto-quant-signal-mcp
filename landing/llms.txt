@@ -23,6 +23,7 @@ Live source of truth: https://algovault.com/api/performance-public
 - [Docs](https://algovault.com/docs.html): API reference for the 3 MCP tools, 20 usage examples, FAQ.
 - [Track Record](https://algovault.com/track-record): Live PFE Win Rate by signal type / timeframe / asset.
 - [Skills](https://algovault.com/skills): 20 ready-to-use Anthropic Agent Skills wrapping the AlgoVault MCP server.
+- [Integrations](https://algovault.com/integrations): Index of all Brain + Execution integration tutorials (one card per supported exchange).
 - [Verify a Call](https://algovault.com/verify): On-chain Merkle proof lookup for any signal.
 
 ## Integrations (Brain + Execution pairings)
