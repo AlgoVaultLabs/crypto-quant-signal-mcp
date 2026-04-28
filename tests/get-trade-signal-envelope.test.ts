@@ -143,9 +143,13 @@ describe('get_trade_signal response envelope (v1.9.0)', () => {
     // Sanity: the scorer did produce HOLD (otherwise the test doesn't exercise the branch)
     expect(result.signal).toBe('HOLD');
     expect(result.closest_tradeable).toBeDefined();
-    expect(result.closest_tradeable).toEqual(
-      expect.objectContaining({ coin: 'ETH', timeframe: '1h', signal: 'BUY', confidence: 80 })
-    );
+    // v1.10.0 (C4): closest_tradeable is now LeaderboardCell-shaped — `signal`,
+    // `exchange`, `regime` are stripped (leak-prevention). Direction requires
+    // another get_trade_call invocation per AlgoVault positioning rule.
+    expect(result.closest_tradeable).toEqual({ coin: 'ETH', timeframe: '1h', confidence: 80 });
+    expect((result.closest_tradeable as unknown as { signal?: unknown }).signal).toBeUndefined();
+    expect((result.closest_tradeable as unknown as { exchange?: unknown }).exchange).toBeUndefined();
+    expect((result.closest_tradeable as unknown as { regime?: unknown }).regime).toBeUndefined();
   });
 
   it('omits closest_tradeable on BUY/SELL verdicts — HOLD rescue is HOLD-only', async () => {
@@ -175,11 +179,12 @@ describe('get_trade_signal response envelope (v1.9.0)', () => {
     // The HOLD-gated closest_tradeable block must exist
     const holdGuardIdx = src.indexOf("if (signal === 'HOLD')");
     expect(holdGuardIdx).toBeGreaterThan(-1);
-    // Within ~300 chars of the guard, there must be a closest_tradeable
-    // assignment. This is a brace-agnostic structural check that survives
-    // refactors that wrap the assignment in a nested `if (closest)` block.
-    const nearby = src.slice(holdGuardIdx, holdGuardIdx + 300);
-    expect(nearby).toMatch(/result\.closest_tradeable\s*=\s*closest/);
+    // Within ~400 chars of the guard, there must be a closest_tradeable
+    // assignment. v1.10.0: assignment now wraps the value in trimToLeaderboardCell()
+    // so the regex accepts both the legacy `= closest` form and the new
+    // `= trimToLeaderboardCell(closest)` form.
+    const nearby = src.slice(holdGuardIdx, holdGuardIdx + 400);
+    expect(nearby).toMatch(/result\.closest_tradeable\s*=\s*(closest|trimToLeaderboardCell\(closest\))/);
     // And `result.closest_tradeable` should NOT appear outside the HOLD
     // branch in the main request envelope — quick sanity check via count.
     const occurrences = (src.match(/result\.closest_tradeable/g) ?? []).length;

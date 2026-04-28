@@ -6,6 +6,7 @@ import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { getClosestTradeable, getTryNext } from '../lib/cross-asset-grid.js';
+import { trimToLeaderboardCell } from '../lib/leaderboard-cell.js';
 import type { TradeCallResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
 import {
   bucketTrendPersistence, bucketFundingState, bucketBreakoutPending,
@@ -422,11 +423,18 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   if (!input.internal) {
     try {
       const tryNext = await getTryNext({ coin, timeframe }, 3);
-      if (tryNext.length > 0) result.try_next = tryNext;
+      if (tryNext.length > 0) {
+        // Dual-emit (C4): legacy `try_next` keeps full GridCell shape for the
+        // deprecation window (consumers like agent-forum-post still read
+        // `tn.signal`); new `also_see` is the trimmed v1.10.0 surface.
+        result.try_next = tryNext;
+        result.also_see = tryNext.map(trimToLeaderboardCell);
+      }
 
       if (signal === 'HOLD') {
         const closest = await getClosestTradeable({ coin, timeframe });
-        if (closest) result.closest_tradeable = closest;
+        // Shape change (v1.10.0): closest_tradeable is now LeaderboardCell.
+        if (closest) result.closest_tradeable = trimToLeaderboardCell(closest);
       }
     } catch (e) {
       console.debug('cross-asset-grid enrichment failed:', e instanceof Error ? e.message : e);

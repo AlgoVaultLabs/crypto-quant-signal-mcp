@@ -142,6 +142,20 @@ export interface GridCell {
   regime: RegimeType;
 }
 
+/**
+ * Trimmed cross-asset leaderboard cell (v1.10.0). Used by `also_see` and
+ * `closest_tradeable` fields on `TradeCallResult`. Strips the leaky
+ * `signal` / `exchange` / `regime` fields that `GridCell` carries — agents
+ * reading the leaderboard see only "go look here" pointers; the direction
+ * (BUY/SELL) requires another `get_trade_call` invocation. This is the
+ * call-volume-driver per moat #3 (data flywheel) + #5 (suite lock-in).
+ */
+export interface LeaderboardCell {
+  coin: string;
+  timeframe: string;
+  confidence: number;
+}
+
 export interface TradeCallResult {
   /**
    * v1.10.0 trade-call verdict — same value as legacy `signal` field. Read this.
@@ -194,18 +208,32 @@ export interface TradeCallResult {
   coin: string;
   timeframe: string;
   /**
-   * HOLD rescue (v1.9.0 L2). On a HOLD verdict, the single highest-confidence
-   * non-HOLD cell from the cross-asset grid, excluding the requested
-   * (coin, timeframe). Omitted entirely when the grid has no non-HOLD cell or
-   * when the current verdict is BUY/SELL.
+   * HOLD rescue (v1.9.0 L2; trimmed shape v1.10.0). On a HOLD verdict, the
+   * single highest-confidence non-HOLD cell from the cross-asset grid,
+   * excluding the requested (coin, timeframe). v1.10.0 SHAPE CHANGE: trimmed
+   * from GridCell → LeaderboardCell (`{coin, timeframe, confidence}` only;
+   * direction requires another get_trade_call invocation). Omitted entirely
+   * when the grid has no non-HOLD cell or when the current verdict is BUY/SELL.
    */
-  closest_tradeable?: GridCell;
+  closest_tradeable?: LeaderboardCell;
   /**
+   * @deprecated since v1.10.0 — read `also_see` instead. Will be removed in v1.11.0.
    * Next-calls hints (v1.9.0 L4). Top-3 highest-confidence non-HOLD cells from
    * the cross-asset grid, excluding the requested (coin, timeframe). Populated
-   * on every response (HOLD and non-HOLD) when the grid is non-empty.
+   * on every response (HOLD and non-HOLD) when the grid is non-empty. Carries
+   * the full `GridCell` shape (with `signal`/`exchange`/`regime`) for
+   * back-compat during the dual-emit window.
    */
   try_next?: GridCell[];
+  /**
+   * Cross-asset high-confidence leads (v1.10.0). Top-3 highest-confidence
+   * non-HOLD cells from the cross-asset grid, trimmed to
+   * `{coin, timeframe, confidence}` only. The trimmed shape is intentional:
+   * agents reading `also_see` see "go look here" pointers; the direction
+   * (BUY/SELL) requires another `get_trade_call` invocation. This drives
+   * call volume per moat #3 (data flywheel).
+   */
+  also_see?: LeaderboardCell[];
   _algovault: AlgoVaultMeta;
 }
 
