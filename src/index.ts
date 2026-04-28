@@ -1706,15 +1706,17 @@ function getWelcomePageHtml(apiKey: string | null, tier: string | null, email: s
   <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : 'Setting up your account...'}</div>
   ${keyDisplay}
   <div class="usage">
-    <h2>Quick Start</h2>
-    <pre>curl -X POST https://api.algovault.com/mcp \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -d '{"jsonrpc":"2.0","method":"tools/call",
-       "params":{"name":"get_trade_signal",
-                 "arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},
-       "id":1}'</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Supported exchanges: HL (default), BINANCE, BYBIT, OKX, BITGET</p>
+    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
+    <pre>{
+  "mcpServers": {
+    "algovault": {
+      "url": "https://api.algovault.com/mcp",
+      "headers": { "Authorization": "Bearer ${apiKey || 'YOUR_API_KEY'}" }
+    }
+  }
+}</pre>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+    <p style="color:#8b949e;font-size:12px;margin-top:8px">Want to test with raw HTTP/curl? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">3-step handshake guide</a> in our docs. Supported exchanges: HL (default), BINANCE, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
 </body>

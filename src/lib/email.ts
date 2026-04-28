@@ -132,14 +132,18 @@ function renderEmailHtml({ heading, intro, apiKey, tier }: RenderArgs): string {
           <div style="font-size:11px;color:#656d76;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Your API Key</div>
           <div style="font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;font-size:14px;color:#0969da;word-break:break-all">${apiKey}</div>
         </div>
-        <h2 style="font-size:14px;font-weight:600;margin:0 0 8px;color:#1f2328;text-transform:uppercase;letter-spacing:0.5px">Quick start</h2>
-        <pre style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:14px;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;font-size:12px;color:#1f2328;overflow-x:auto;margin:0 0 20px">curl -X POST https://api.algovault.com/mcp \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","method":"tools/call",
-       "params":{"name":"get_trade_signal",
-                 "arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},
-       "id":1}'</pre>
+        <h2 style="font-size:14px;font-weight:600;margin:0 0 8px;color:#1f2328;text-transform:uppercase;letter-spacing:0.5px">Use it in Claude Desktop, Cursor, or Claude Code</h2>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 8px">Add this to your MCP-client config (e.g. <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px;font-size:12px">claude_desktop_config.json</code>):</p>
+        <pre style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:14px;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;font-size:12px;color:#1f2328;overflow-x:auto;margin:0 0 12px">{
+  "mcpServers": {
+    "algovault": {
+      "url": "https://api.algovault.com/mcp",
+      "headers": { "Authorization": "Bearer ${apiKey}" }
+    }
+  }
+}</pre>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Then ask Claude: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Want to test with raw HTTP/curl instead? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#0969da;text-decoration:none">3-step handshake guide</a> in our docs.</p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Need to find your key later, switch plans, update your card, or cancel? Visit <a href="https://api.algovault.com/account" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
         <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
       </td></tr>
@@ -164,11 +168,21 @@ Plan: ${tier}
 Your API Key:
 ${apiKey}
 
-Quick start:
-curl -X POST https://api.algovault.com/mcp \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_signal","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":1}'
+Use it in Claude Desktop, Cursor, or Claude Code by adding this to your MCP-client config (e.g. claude_desktop_config.json):
+
+{
+  "mcpServers": {
+    "algovault": {
+      "url": "https://api.algovault.com/mcp",
+      "headers": { "Authorization": "Bearer ${apiKey}" }
+    }
+  }
+}
+
+Then ask Claude: "Get me a trade call for SOL on the 5-minute timeframe."
+
+Want to test with raw HTTP/curl? See the 3-step handshake guide:
+https://algovault.com/docs.html#testing-with-curl
 
 Need to find your key later, switch plans, update your card, or cancel?
 Visit https://api.algovault.com/account
