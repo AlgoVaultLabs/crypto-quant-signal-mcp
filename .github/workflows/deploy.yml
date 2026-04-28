@@ -12,6 +12,31 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # ── Pre-deploy gate: catches landing-page drift BEFORE SSH-deploy ──
+      # WELCOME-EMAIL-W1 fix-forward (2026-04-28): the original plan called for
+      # the build_landing.mjs --check guard to run via `docker exec` post-deploy,
+      # but the prod Dockerfile doesn't ship `scripts/` or `landing/docs.html`
+      # (Caddy serves the latter from /var/www/algovault/, not the container).
+      # Running --check on the GHA runner here blocks bad pushes BEFORE they
+      # reach Hetzner — strictly better than post-deploy detection.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Compile TS (produces dist/lib/signup-flow.js for the guard)
+        run: npm run build
+
+      - name: Landing-page sync guard (build_landing --check)
+        run: node scripts/build_landing.mjs --check
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
