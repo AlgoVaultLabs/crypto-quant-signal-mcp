@@ -4,7 +4,7 @@
 
 # crypto-quant-signal-mcp
 
-The call intelligence layer for AI trading agents — composite quant calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue arbitrage detection, and regime-aware market classification via MCP.
+The Brain Layer for AI Trading Agents — composite quant calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue arbitrage detection, and regime-aware market classification via MCP.
 
 [![npm version](https://img.shields.io/npm/v/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
 [![npm downloads](https://img.shields.io/npm/dw/crypto-quant-signal-mcp)](https://www.npmjs.com/package/crypto-quant-signal-mcp)
@@ -19,13 +19,17 @@ The call intelligence layer for AI trading agents — composite quant calls acro
 
 ## What's new in v1.10.0
 
-Five deliverables from the OUTPUT-SANITIZE-W1 wave, all live since 2026-04-28:
+Live since 2026-04-28:
 
 - **`signal` → `call`** rename across the response shape, the tool name (`get_trade_call`), and the public dashboard. `get_trade_signal` is registered as an alias and continues to work for existing agents — no migration needed.
-- **Sanitized `reasoning` prose**: bucket-name + direction language only — no thresholds, no point-values, no raw indicator echoes.
 - **`also_see` cross-asset leads** replace `try_next` with cells trimmed to `{coin, timeframe, confidence}`. Direction requires another call.
-- **Bucketed indicators**: `trend_persistence: LOW/MEDIUM/HIGH`, `funding_state: NORMAL/ELEVATED/EXTREME`, `breakout_pending: INACTIVE/IMMINENT`. Replaces seven raw fields (`rsi`/`ema_*`/`hurst`/`funding_z_score`/`squeeze_active`).
 - **5-exchange + 20-skill catalog refresh** below.
+
+> **Upgrading from v1.9.x?** MCP clients (Claude Desktop, Claude.ai custom connectors, Cursor, Cline) cache the tool list at session start. After AlgoVault publishes a new version, **refresh your tool list** so the client picks up the new tool name and response shape:
+> - **Claude.ai / Claude Desktop**: Settings → Connectors → AlgoVault → toggle off + on (or click "Refresh tools")
+> - **Cursor / Cline**: restart the MCP server connection from the integration panel
+>
+> Without this refresh, your Claude session may keep calling the old `get_trade_signal` schema and surface generic "execution error" responses on the new fields. Refreshing fixes it instantly.
 
 ---
 
@@ -67,7 +71,7 @@ No code. No API key. No install.
 
 > "Get me a trade call for BTC on Binance, 1h timeframe"
 
-![BTC Signal Result](https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/BTC-signal.png)
+![BTC trade call response — Binance, 1h](https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/BTC-trade-call.png)
 
 That's it. Your Claude now has a quant analyst built in.
 
