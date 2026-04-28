@@ -13,7 +13,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { getTradeSignal } from './tools/get-trade-signal.js';
+import { getTradeSignal } from './tools/get-trade-call.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
@@ -58,18 +58,20 @@ function createServer(): McpServer {
     version: PKG_VERSION,
   });
 
-  // ── Tool 1: get_trade_signal ──
-  server.tool(
-    'get_trade_signal',
-    "Returns a composite BUY/SELL/HOLD signal for a Hyperliquid perp. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.",
-    {
-      coin: z.string().max(20).describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
-      timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: 15m and 1h only.'),
-      includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M."),
-    },
-    { readOnlyHint: true, openWorldHint: true },
-    async ({ coin, timeframe, includeReasoning, exchange }) => {
+  // ── Tool 1: get_trade_call (canonical, v1.10.0) + get_trade_signal (alias for back-compat) ──
+  // The handler is identical; we register the same factory under two names so
+  // existing agents calling `get_trade_signal` continue to work without changes.
+  // The `_algovault.tool` field in the response always reports `get_trade_call`
+  // (the canonical name).
+  const TRADE_CALL_DESCRIPTION = "Returns a composite BUY/SELL/HOLD trade call for a perpetual on Hyperliquid / Binance / Bybit / OKX / Bitget. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.";
+  const TRADE_CALL_SCHEMA = {
+    coin: z.string().max(20).describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
+    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: 15m and 1h only.'),
+    includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
+    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M."),
+  };
+  function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
+    return async ({ coin, timeframe, includeReasoning, exchange }: { coin: string; timeframe: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange: 'HL' | 'BINANCE' | 'BYBIT' | 'OKX' | 'BITGET' }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
@@ -79,7 +81,7 @@ function createServer(): McpServer {
         // Quota tracking is handled inside getTradeSignal (HOLDs are free)
         logRequest({
           sessionId: getRequestSessionId(),
-          toolName: 'get_trade_signal',
+          toolName: toolNameForAnalytics,
           asset: coin,
           timeframe,
           licenseTier: license.tier,
@@ -92,7 +94,7 @@ function createServer(): McpServer {
         if (sessionIdForCohort !== null) {
           upsertAgentSession({
             sessionId: sessionIdForCohort,
-            tool: 'get_trade_signal',
+            tool: toolNameForAnalytics,
             tier: license.tier,
             ipHash: getRequestIpHash() ?? null,
           }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
@@ -102,7 +104,21 @@ function createServer(): McpServer {
         const message = err instanceof Error ? err.message : String(err);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }], isError: true };
       }
-    }
+    };
+  }
+  server.tool(
+    'get_trade_call',
+    TRADE_CALL_DESCRIPTION,
+    TRADE_CALL_SCHEMA,
+    { readOnlyHint: true, openWorldHint: true },
+    makeTradeCallHandler('get_trade_call')
+  );
+  server.tool(
+    'get_trade_signal',
+    TRADE_CALL_DESCRIPTION + ' (Alias for `get_trade_call` since v1.10.0; identical behavior. New agents should call `get_trade_call`.)',
+    TRADE_CALL_SCHEMA,
+    { readOnlyHint: true, openWorldHint: true },
+    makeTradeCallHandler('get_trade_signal')
   );
 
   // ── Tool 2: scan_funding_arb ──
@@ -1487,7 +1503,7 @@ function renderAll() {
   var recentEl = document.getElementById('recent');
   var recent = getFilteredRecent().slice(0,20);
   if (recent.length) {
-    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+s.id+'" class="id-link">#'+s.id+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
+    recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+s.id+'" class="id-link">#'+s.id+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.call ?? s.signal)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
   } else { recentEl.innerHTML='<tr><td colspan="8" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
 }
 

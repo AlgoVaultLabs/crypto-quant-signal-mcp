@@ -31,7 +31,7 @@
  *   node dist/scripts/seed-signals.js --timeframe 1d
  */
 
-import { getTradeSignal } from '../tools/get-trade-signal.js';
+import { getTradeSignal } from '../tools/get-trade-call.js';
 import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import type { LicenseInfo, ExchangeId } from '../types.js';

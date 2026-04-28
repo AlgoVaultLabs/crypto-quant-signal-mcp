@@ -17,7 +17,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pLimit from 'p-limit';
 import type { GridCell } from '../types.js';
-import { getTradeSignal } from '../tools/get-trade-signal.js';
+import { getTradeSignal } from '../tools/get-trade-call.js';
 
 export const GRID_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE'] as const;
 export const GRID_TIMEFRAMES = ['5m', '15m', '1h', '4h'] as const;

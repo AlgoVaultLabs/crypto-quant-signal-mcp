@@ -408,8 +408,8 @@ tailwind.config = {
         <div class="text-gray-500 text-xs mt-1">PFE Win Rate (live)</div>
       </div>
       <div class="bg-navy-700/60 border border-emerald-500/20 rounded-lg p-4 text-center">
-        <!-- snapshot: 2026-04-26 — live source: /api/performance-public#totalSignals -->
-        <div class="text-sm font-semibold text-emerald-400"><span data-tr-field="signal_count">56,375</span>+</div>
+        <!-- snapshot: 2026-04-26 — live source: /api/performance-public#totalSignals (dual-emit totalCalls/totalSignals during v1.10.0 rename window) -->
+        <div class="text-sm font-semibold text-emerald-400"><span data-tr-field="signal_count">56,375</span><span data-tr-field="call_count" hidden></span>+</div>
         <div class="text-gray-500 text-xs mt-1">Signal calls (live)</div>
       </div>
       <div class="bg-navy-700/60 border border-emerald-500/20 rounded-lg p-4 text-center">

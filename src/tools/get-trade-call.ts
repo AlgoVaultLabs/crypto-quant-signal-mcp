@@ -6,7 +6,8 @@ import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid } from '../lib/asset-tiers.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { getClosestTradeable, getTryNext } from '../lib/cross-asset-grid.js';
-import type { TradeSignalResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
+import type { TradeCallResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
+import { bucketTrendPersistence, bucketFundingState, bucketBreakoutPending } from '../lib/indicator-buckets.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -65,7 +66,7 @@ const MAX_RAW_SCORE = 89;
 const MIN_TRACKABLE_CONFIDENCE = 52;
 
 
-export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSignalResult> {
+export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCallResult> {
   const coin = input.coin.toUpperCase();
   const timeframe = input.timeframe || '1h';
   const includeReasoning = input.includeReasoning !== false;
@@ -368,15 +369,20 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
     ? getUpgradeHint(license, { used: quota.used, total: quota.total })
     : undefined;
 
-  const meta: TradeSignalResult['_algovault'] = {
+  const meta: TradeCallResult['_algovault'] = {
     version: PKG_VERSION,
-    tool: 'get_trade_signal',
+    tool: 'get_trade_call',
     compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-backtest-mcp'],
     session_id: getRequestSessionId() ?? null,
   };
   if (upgradeHint) meta.upgrade_hint = upgradeHint;
 
-  const result: TradeSignalResult = {
+  // v1.10.0 dual-emit: `call` is the new canonical field; `signal` continues
+  // to emit alongside it during the v1.10.0 → v1.11.0 deprecation window so
+  // every consumer (inline dashboard, agent-forum-post, integration tests)
+  // keeps working without coordinated client changes.
+  const result: TradeCallResult = {
+    call: signal,
     signal,
     confidence,
     price: currentPrice,
@@ -392,6 +398,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeSign
       hurst: hurstVal !== null ? parseFloat(hurstVal.toFixed(4)) : null,
       funding_z_score: fundingZScore !== null ? parseFloat(fundingZScore.toFixed(2)) : null,
       squeeze_active: squeezeActive,
+      // v1.10.0 bucket fields (dual-emit alongside legacy raw fields):
+      trend_persistence: bucketTrendPersistence(hurstVal),
+      funding_state: bucketFundingState(fundingZScore),
+      breakout_pending: bucketBreakoutPending(squeezeActive),
     },
     regime,
     reasoning,

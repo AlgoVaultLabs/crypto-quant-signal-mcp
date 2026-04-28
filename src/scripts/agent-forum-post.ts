@@ -387,10 +387,16 @@ async function generateUsageExample(): Promise<Post> {
   let tierLabel = 'Blue Chip';
   try {
     if (example.tool === 'get_trade_signal') {
-      const sig = await callMcpTool('get_trade_signal', { coin: example.coin, timeframe: example.tf }) as {
-        signal: string; confidence: number; reasoning: string;
+      // v1.10.0 dual-emit: response now contains BOTH `call` (canonical) and
+      // `signal` (legacy). Read `call ?? signal` for graceful fall-through
+      // during the deprecation window. C5 will strip the `signal` field and
+      // this fallback becomes a hard `tc.call`.
+      const tc = await callMcpTool('get_trade_signal', { coin: example.coin, timeframe: example.tf }) as {
+        call?: string; signal?: string; confidence: number; reasoning: string;
       };
-      verdict = sig.signal; confidence = sig.confidence; reasoning = sig.reasoning;
+      verdict = (tc.call ?? tc.signal) as string;
+      confidence = tc.confidence;
+      reasoning = tc.reasoning;
     } else if (example.tool === 'get_market_regime') {
       const reg = await callMcpTool('get_market_regime', { coin: example.coin, timeframe: example.tf }) as {
         regime: string; confidence: number; suggestion: string;
@@ -474,14 +480,16 @@ async function generateMarketInsight(): Promise<Post> {
     // Fallback: trade signal for a random asset
     const coin = INSIGHT_COINS[Math.floor(Math.random() * INSIGHT_COINS.length)];
     try {
-      const sig = await callMcpTool('get_trade_signal', { coin, timeframe: '1h' }) as {
-        signal: string; confidence: number; price: number; regime: string;
+      // v1.10.0 dual-emit graceful read: prefer `call`, fall back to `signal`.
+      const tc = await callMcpTool('get_trade_signal', { coin, timeframe: '1h' }) as {
+        call?: string; signal?: string; confidence: number; price: number; regime: string;
         indicators: { rsi: number | null; funding_rate: number; squeeze_active: boolean };
         reasoning: string;
       };
-      title = `High-conviction call: ${coin} ${sig.signal} at ${sig.confidence}% confidence`;
-      const reasonShort = sig.reasoning.split('. ').slice(0, 2).join('. ') + '.';
-      body = `${coin} 1h analysis:\n\n  Verdict: ${sig.signal} (${sig.confidence}% confidence)\n  Price: $${sig.price.toLocaleString()}\n  Regime: ${sig.regime}\n  RSI: ${sig.indicators.rsi?.toFixed(1) ?? 'N/A'}\n  Funding: ${(sig.indicators.funding_rate * 100).toFixed(4)}%\n  Squeeze: ${sig.indicators.squeeze_active ? 'ACTIVE' : 'No'}\n\n${reasonShort}`;
+      const verdictStr = (tc.call ?? tc.signal) as string;
+      title = `High-conviction call: ${coin} ${verdictStr} at ${tc.confidence}% confidence`;
+      const reasonShort = tc.reasoning.split('. ').slice(0, 2).join('. ') + '.';
+      body = `${coin} 1h analysis:\n\n  Verdict: ${verdictStr} (${tc.confidence}% confidence)\n  Price: $${tc.price.toLocaleString()}\n  Regime: ${tc.regime}\n  RSI: ${tc.indicators.rsi?.toFixed(1) ?? 'N/A'}\n  Funding: ${(tc.indicators.funding_rate * 100).toFixed(4)}%\n  Squeeze: ${tc.indicators.squeeze_active ? 'ACTIVE' : 'No'}\n\n${reasonShort}`;
     } catch {
       throw new Error('Both arb and signal APIs failed — skipping this run');
     }

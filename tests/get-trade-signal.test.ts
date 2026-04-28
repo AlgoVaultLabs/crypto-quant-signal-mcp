@@ -11,7 +11,7 @@ vi.mock('../src/lib/performance-db.js', () => ({
   getDb: vi.fn(),
 }));
 
-import { getTradeSignal } from '../src/tools/get-trade-signal.js';
+import { getTradeSignal } from '../src/tools/get-trade-call.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
 import type { ExchangeAdapter, Candle, AssetContext, FundingData } from '../src/types.js';
@@ -85,9 +85,14 @@ describe('getTradeSignal', () => {
     const { PKG_VERSION } = await import('../src/lib/pkg-version.js');
     expect(result._algovault).toBeDefined();
     expect(result._algovault.version).toBe(PKG_VERSION);
-    expect(result._algovault.tool).toBe('get_trade_signal');
+    // v1.10.0: canonical tool name in _algovault.tool is `get_trade_call`
+    // regardless of whether MCP-callers invoke `get_trade_call` (canonical)
+    // or `get_trade_signal` (alias). See src/index.ts dual-registration.
+    expect(result._algovault.tool).toBe('get_trade_call');
     expect(result._algovault.compatible_with).toContain('crypto-quant-risk-mcp');
     expect(result._algovault.compatible_with).toContain('crypto-quant-backtest-mcp');
+    // v1.10.0 dual-emit: top-level `call` and `signal` both populated, equal.
+    expect(result.call).toBe(result.signal);
   });
 
   it('includes reasoning when requested', async () => {

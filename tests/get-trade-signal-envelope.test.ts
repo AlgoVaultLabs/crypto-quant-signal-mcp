@@ -24,7 +24,7 @@ vi.mock('../src/lib/performance-db.js', () => ({
   getFundingZScore: vi.fn().mockReturnValue(null),
 }));
 
-import { getTradeSignal } from '../src/tools/get-trade-signal.js';
+import { getTradeSignal } from '../src/tools/get-trade-call.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache, requestContext } from '../src/lib/license.js';
 import {
@@ -169,7 +169,7 @@ describe('get_trade_signal response envelope (v1.9.0)', () => {
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
     const src = readFileSync(
-      join(__dirname, '..', 'src', 'tools', 'get-trade-signal.ts'),
+      join(__dirname, '..', 'src', 'tools', 'get-trade-call.ts'),
       'utf8'
     );
     // The HOLD-gated closest_tradeable block must exist

@@ -792,9 +792,11 @@ const METHODOLOGY: Record<string, unknown> = {
 
 function emptyStats(): PerformanceStats {
   return {
+    totalCalls: 0,
     totalSignals: 0,
     period: { from: '', to: '' },
-    overall: { totalSignals: 0, totalEvaluated: 0, pfeWinRate: null },
+    overall: { totalCalls: 0, totalSignals: 0, totalEvaluated: 0, pfeWinRate: null },
+    byCallType: {},
     bySignalType: {},
     byTimeframe: {},
     byAsset: {},
@@ -963,16 +965,23 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
   }
 
   return {
+    // v1.10.0 dual-emit: `totalCalls`/`byCallType` are the canonical keys;
+    // `totalSignals`/`bySignalType` continue to emit during the deprecation
+    // window so the live dashboard's track-record-proxy.js + agent consumers
+    // keep working without coordinated client changes. Same data, two keys.
+    totalCalls: all.length,
     totalSignals: all.length,
     period: {
       from: new Date(oldest.created_at * 1000).toISOString().split('T')[0],
       to: new Date(newest.created_at * 1000).toISOString().split('T')[0],
     },
     overall: {
+      totalCalls: nonHold.length,
       totalSignals: nonHold.length,
       totalEvaluated: evaluatedPFE.length,
       pfeWinRate,
     },
+    byCallType: bySignalType,
     bySignalType,
     byTimeframe,
     byAsset,

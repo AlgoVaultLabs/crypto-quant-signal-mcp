@@ -94,14 +94,21 @@
   function refresh() {
     fetchJson(PERF_URL).then(function (perf) {
       var rate = perf && perf.overall && perf.overall.pfeWinRate;
-      var n = perf && perf.totalSignals;
+      // v1.10.0 dual-read: prefer canonical `totalCalls`, fall back to legacy
+      // `totalSignals` while old API responses are still in flight (cache window).
+      var n = perf && (perf.totalCalls != null ? perf.totalCalls : perf.totalSignals);
       // /api/performance-public#period.to is the most recent date covered by
       // the rolling-window evaluation (effectively "live data refreshed up to
       // YYYY-MM-DD"). Used by C7 GEO last_updated recency signal.
       var to = perf && perf.period && perf.period.to;
       var holdRate = perf && perf.hold_rate;
       setField('pfe_wr', formatPfe(rate));
+      // v1.10.0 dual-write DOM hooks: emit BOTH `signal_count` (legacy) and
+      // `call_count` (canonical). Landing-HTML consumers can rebind to either
+      // hook; C5 will drop the legacy `signal_count` write after all HTML is
+      // updated to use `call_count`.
       setField('signal_count', formatCount(n));
+      setField('call_count', formatCount(n));
       setField('hold_rate', formatPercent(holdRate));
       if (to) setField('last_updated', formatDate(to));
     }).catch(function (err) {
