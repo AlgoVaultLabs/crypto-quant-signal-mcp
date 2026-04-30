@@ -23,7 +23,6 @@ Live since 2026-04-30:
 
 - **Free tier unlocked** — every supported coin + every supported timeframe is now accessible at the free tier (was BTC/ETH only on 15m/1h). The 100-calls/month cap is the only ceiling. HOLD calls remain free at every tier. All 11 timeframes (`1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d`) are callable on demand — your first call for `SOL/4h` or `PEPE/15m` Just Works.
 - **`Connect Your MCP Client` docs section** — new walkthroughs for Claude Desktop, Cursor, Cline, Claude Code, Smithery, and plain HTTP/curl at [`algovault.com/docs.html#connect-mcp`](https://algovault.com/docs.html#connect-mcp). Every config snippet was web-verified against the upstream docs on 2026-04-30.
-- **Track-record disambiguation** — the public dashboard shows 9 of 11 timeframes (5m–1d). The `1m` and `3m` timeframes are available via API on-demand but not cron-seeded for public history (sub-5m indicators are noise-dominated by design). One sentence on the dashboard explains it; copy now consistent across landing pages and brand-facts.
 
 > **Upgrading from v1.9.x or earlier?** MCP clients (Claude Desktop, Claude.ai custom connectors, Cursor, Cline) cache the tool list at session start. The free-tier behavior changed in v1.10.3 — even though no tool was renamed, **refresh your tool list** so the client picks up the new permissive responses:
 > - **Claude.ai / Claude Desktop**: Settings → Connectors → AlgoVault → toggle off + on (or click "Refresh tools")
