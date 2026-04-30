@@ -26,7 +26,10 @@ import {
 import { UpstreamRateLimitError } from '../../src/lib/errors.js';
 import type { GridCell } from '../../src/types.js';
 
-const TOTAL_CELLS = GRID_ASSETS.length * GRID_TIMEFRAMES.length; // 6 × 4 = 24
+// SHADOW-SEED-W1: grid is now 6×7 = 42 cells (was 6×4 = 24).
+const TOTAL_CELLS = GRID_ASSETS.length * GRID_TIMEFRAMES.length;
+const HALF_TOTAL = Math.ceil(TOTAL_CELLS / 2); // ≥50% threshold for the 429-trip test
+const QUARTER_TOTAL = Math.floor(TOTAL_CELLS / 4); // 25% — below threshold
 
 function makeScorer(failurePattern: (i: number) => boolean) {
   let i = 0;
@@ -53,19 +56,19 @@ describe('cross-asset-grid HL-429 backoff', () => {
     _setSnapshotForTest(null);
   });
 
-  it('does NOT trip backoff when 429-failure ratio < 50% (e.g. 25%)', async () => {
-    // 6 of 24 cells fail = 25% < 50% threshold.
-    _setScorerOverride(makeScorer((i) => i < 6));
+  it('does NOT trip backoff when 429-failure ratio < 50% (e.g. ~25%)', async () => {
+    // ~25% of cells fail < 50% threshold.
+    _setScorerOverride(makeScorer((i) => i < QUARTER_TOTAL));
     await refreshGridIfStale();
     const meta = _getCacheSnapshotMeta();
     expect(meta.rateLimitConsecutiveTrips).toBe(0);
     expect(meta.rateLimitPausedUntil).toBe(0);
-    expect(meta.cellCount).toBe(TOTAL_CELLS - 6); // 18 successful cells
+    expect(meta.cellCount).toBe(TOTAL_CELLS - QUARTER_TOTAL);
   });
 
   it('trips backoff when 429-failure ratio === 50%', async () => {
-    // 12 of 24 = 50% (>= threshold)
-    _setScorerOverride(makeScorer((i) => i < 12));
+    // ≥50% of cells fail (>= threshold)
+    _setScorerOverride(makeScorer((i) => i < HALF_TOTAL));
     const before = Date.now();
     await refreshGridIfStale();
     const meta = _getCacheSnapshotMeta();
@@ -75,7 +78,7 @@ describe('cross-asset-grid HL-429 backoff', () => {
     const pauseMs = meta.rateLimitPausedUntil - before;
     expect(pauseMs).toBeGreaterThanOrEqual(5 * 60 * 1000 - 1000);
     expect(pauseMs).toBeLessThanOrEqual(5 * 60 * 1000 + 1000);
-    expect(meta.cellCount).toBe(TOTAL_CELLS - 12); // 12 successful cells still cached
+    expect(meta.cellCount).toBe(TOTAL_CELLS - HALF_TOTAL);
   });
 
   it('exponential backoff: trip 1=5min, trip 2=10min, trip 3=20min', async () => {
@@ -122,7 +125,7 @@ describe('cross-asset-grid HL-429 backoff', () => {
     // We need a prior trip count > 0 for the reset-message to fire. Re-trip first.
     // Simpler: directly assert that on a 0-failure cycle WHEN counter > 0 the
     // counter goes back to 0 in the next cycle. Fake the prior trip:
-    _setScorerOverride(makeScorer((i) => i < 12)); // 50% fail
+    _setScorerOverride(makeScorer((i) => i < HALF_TOTAL)); // ≥50% fail
     await refreshGridIfStale();
     const tripped = _getCacheSnapshotMeta();
     expect(tripped.rateLimitConsecutiveTrips).toBe(1);

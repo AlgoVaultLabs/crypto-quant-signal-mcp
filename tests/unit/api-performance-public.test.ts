@@ -36,7 +36,7 @@ async function fetchLive(): Promise<any | null> {
 }
 
 describe('AUTO-TRACE-W1: /api/performance-public capability counters', () => {
-  it('exposes asset_count, exchange_count, timeframe_count fields', async () => {
+  it('exposes asset_count, exchange_count, timeframe_count fields', { timeout: 15_000 }, async () => {
     const data = await fetchLive();
     if (data === null) {
       // Network isolation — skip without failing CI.

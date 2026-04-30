@@ -782,6 +782,7 @@ const METHODOLOGY: Record<string, unknown> = {
   pfeWinRate: 'Peak Favorable Excursion win rate. Did price move in the signal direction at any point during the evaluation window?',
   note: 'AlgoVault provides directional entry signals. Exit timing is determined by your agent or strategy — PFE Win Rate measures whether the direction was correct, independent of exit.',
   evaluationWindows: {
+    '1m': '12 candles (12 minutes)', '3m': '12 candles (36 minutes)',
     '5m': '12 candles (1 hour)', '15m': '12 candles (3 hours)', '30m': '8 candles (4 hours)',
     '1h': '8 candles (8 hours)', '2h': '6 candles (12 hours)', '4h': '6 candles (24 hours)',
     '8h': '4 candles (32 hours)', '12h': '4 candles (48 hours)', '1d': '3 candles (3 days)',

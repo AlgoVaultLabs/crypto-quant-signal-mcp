@@ -49,14 +49,15 @@ describe('cross-asset-grid', () => {
   });
 
   // ── Test 1: Grid shape ─────────────────────────────────────────────────
-  it('refreshes a full 6×4 grid and returns one cell per (asset, timeframe)', async () => {
+  // SHADOW-SEED-W1: grid is now 6×7 = 42 cells (was 6×4 = 24).
+  it('refreshes a full 6×7 grid and returns one cell per (asset, timeframe)', async () => {
     const handle = makeBuyScorer();
     _setScorerOverride(handle.scorer);
 
     const snapshot = await getGridSnapshot();
 
     expect(snapshot).toHaveLength(GRID_ASSETS.length * GRID_TIMEFRAMES.length);
-    expect(snapshot).toHaveLength(24);
+    expect(snapshot).toHaveLength(42);
 
     for (const coin of GRID_ASSETS) {
       for (const timeframe of GRID_TIMEFRAMES) {
@@ -77,7 +78,7 @@ describe('cross-asset-grid', () => {
     const first = await getGridSnapshot();
     const second = await getGridSnapshot();
 
-    expect(handle.callCount()).toBe(24);
+    expect(handle.callCount()).toBe(42);
     // Same array reference: the cached snapshot is returned, not re-built.
     expect(second).toBe(first);
   });
@@ -88,13 +89,13 @@ describe('cross-asset-grid', () => {
     _setScorerOverride(handle.scorer);
 
     const first = await getGridSnapshot();
-    expect(handle.callCount()).toBe(24);
+    expect(handle.callCount()).toBe(42);
 
     // Backdate the cached snapshot so it appears stale (>60s old).
     _setSnapshotForTest(first, Date.now() - 61_000);
 
     await getGridSnapshot();
-    expect(handle.callCount()).toBe(48);
+    expect(handle.callCount()).toBe(84);
   });
 
   // ── Test 4: Promise coalescing ─────────────────────────────────────────
@@ -136,11 +137,11 @@ describe('cross-asset-grid', () => {
 
     const results = await Promise.all(calls);
 
-    // Exactly one full refresh — 24 scorer invocations, not 5 × 24 = 120.
-    expect(count).toBe(24);
+    // Exactly one full refresh — 42 scorer invocations, not 5 × 42 = 210.
+    expect(count).toBe(42);
     // All five callers received the same coalesced snapshot.
     for (const result of results) {
-      expect(result).toHaveLength(24);
+      expect(result).toHaveLength(42);
       expect(result).toBe(results[0]);
     }
   });
@@ -164,7 +165,7 @@ describe('cross-asset-grid', () => {
 
     const snapshot = await getGridSnapshot();
 
-    expect(snapshot).toHaveLength(23);
+    expect(snapshot).toHaveLength(GRID_ASSETS.length * GRID_TIMEFRAMES.length - 1);
     expect(
       snapshot.find((c) => c.coin === 'ETH' && c.timeframe === '1h')
     ).toBeUndefined();
@@ -223,7 +224,7 @@ describe('refreshGrid parallelism (LATENCY-W1 C2)', () => {
     _setScorerOverride(null);
   });
 
-  it('AC2.1: 24 cells × 200ms scorer completes in <1s with concurrency 6 (vs ~5s sequential)', async () => {
+  it('AC2.1: 42 cells × 200ms scorer completes in <2s with concurrency 6 (vs ~8s sequential)', async () => {
     let active = 0;
     let peak = 0;
     const scorer = async (coin: string, timeframe: string): Promise<GridCell | null> => {
@@ -239,9 +240,9 @@ describe('refreshGrid parallelism (LATENCY-W1 C2)', () => {
     await refreshGridIfStale();
     const elapsed = Date.now() - start;
 
-    // 24 cells × 200ms / concurrency 6 ≈ 800ms perfect; allow 1500ms ceiling
-    // for vitest jitter + p-limit scheduling overhead. Sequential would be ~4800ms.
-    expect(elapsed).toBeLessThan(1500);
+    // 42 cells × 200ms / concurrency 6 ≈ 1400ms perfect; allow 2500ms ceiling
+    // for vitest jitter + p-limit scheduling overhead. Sequential would be ~8400ms.
+    expect(elapsed).toBeLessThan(2500);
     // AC2.2: concurrency cap enforced — peak active count ≤ 6
     expect(peak).toBeLessThanOrEqual(6);
     expect(peak).toBeGreaterThan(1); // sanity: actually parallel, not serial

@@ -688,10 +688,6 @@ async function startHttp() {
       // timeframe_count) — read by landing/js/track-record-proxy.js to populate
       // every `data-tr-field="<name>"` span on track-record / signup / docs /
       // landing pages, so onboarding the 6th exchange auto-updates public copy.
-      // exchange_count + timeframe_count come from the canonical SoT module
-      // src/lib/capabilities.ts (constant); asset_count is derived from the
-      // distinct-coin count in the existing byAsset aggregation (5-min cached
-      // inside getAssetCount() to match the rest of this endpoint's TTL).
       const [stats, holdStats, asset_count] = await Promise.all([
         getSignalPerformance(),
         getHoldStats(),
@@ -701,8 +697,31 @@ async function startHttp() {
       const totalCalls = stats.totalCalls || 0;
       const denom = totalHolds + totalCalls;
       const hold_rate = denom > 0 ? Math.round((totalHolds / denom) * 1000) / 10 : 0;
+
+      // SHADOW-SEED-W1: shadow-mode timeframes (1m, 3m) are stripped from
+      // `byTimeframe` aggregation by default. The env flag
+      // `SHADOW_REVEAL_TIMEFRAMES` (comma-list) toggles individual timeframes
+      // back on once Mr.1 has reviewed the 2-week digest data. Default = both
+      // hidden. To unlock 3m only: `SHADOW_REVEAL_TIMEFRAMES=3m` + container
+      // restart. To unlock both: `SHADOW_REVEAL_TIMEFRAMES=1m,3m`.
+      const shadowReveal = new Set(
+        (process.env.SHADOW_REVEAL_TIMEFRAMES ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+      const SHADOW_TIMEFRAMES = ['1m', '3m'] as const;
+      const filteredByTimeframe = stats.byTimeframe
+        ? Object.fromEntries(
+            Object.entries(stats.byTimeframe).filter(
+              ([tf]) => !SHADOW_TIMEFRAMES.includes(tf as '1m' | '3m') || shadowReveal.has(tf),
+            ),
+          )
+        : stats.byTimeframe;
+      const filteredStats = { ...stats, byTimeframe: filteredByTimeframe };
+
       res.json({
-        ...stats,
+        ...filteredStats,
         ...holdStats,
         hold_rate,
         asset_count,
@@ -1277,7 +1296,6 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   <!-- Timeframe tabs + table -->
   <div class="section">
     <h2>Performance by Timeframe</h2>
-    <p style="color:#8b949e;font-size:12px;margin-top:-4px;margin-bottom:10px">Track record covers 9 of the 11 supported timeframes (5m&ndash;1d). The 1m and 3m timeframes are available via API on-demand but not cron-seeded for public history &mdash; sub-5m indicators are noise-dominated by design, so signal quality wouldn't be honest in a published track record.</p>
     <div class="tabs" id="tf-tabs"></div>
     <table><thead><tr><th>Timeframe</th><th>Trade Calls</th><th>Evaluated</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
@@ -1312,7 +1330,6 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
     <div class="methodology">
       <p><strong>Total Trade Calls</strong> = BUY + SELL only. HOLDs excluded (stored separately).</p>
       <p><strong>PFE Win Rate</strong> = Percentage of trade calls where price moved in the called direction at any point during the evaluation window. Only confidence &ge; 60% signals are recorded and evaluated.</p>
-      <p><strong>Note</strong>: AlgoVault provides directional entry calls. Exit timing is determined by your agent or strategy &mdash; PFE Win Rate measures whether the direction was correct, independent of exit.</p>
       <p style="margin-top:16px"><strong>Evaluation Windows</strong></p>
       <table><thead><tr><th>Timeframe</th><th>Candles</th><th>Total Time</th></tr></thead><tbody>
         <tr><td>5m</td><td>12</td><td>1 hour</td></tr><tr><td>15m</td><td>12</td><td>3 hours</td></tr>
@@ -1329,7 +1346,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
       <p><strong>Default view</strong> shows all assets across all tiers. Use tier tabs to filter by quality tier.</p>
-      <p style="margin-top:16px;color:#6e7681;font-size:11px"><em>AlgoVault provides directional entry interpretation for AI agents. Exit timing is determined by your agent or strategy. This is not financial advice. Past performance does not guarantee future results.</em></p>
+      <p style="margin-top:16px;color:#6e7681;font-size:11px"><em>This is not financial advice. Past performance does not guarantee future results.</em></p>
     </div>
   </div>
 

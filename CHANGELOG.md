@@ -5,6 +5,80 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.5] - 2026-04-30 — Shadow-seed 1m + 3m + grid re-sizing
+
+### Added — Shadow-mode 1m + 3m signal seeding
+
+- New cron entries for 1m (every minute, top-5 by call-count universe) and
+  3m (every 3 minutes, top-20 universe) signals. Signals land in the
+  `signals` table and accrue PFE/MAE outcomes via the existing backfill
+  pipeline. The eval window for both is "12 candles" (12 minutes for 1m,
+  36 minutes for 3m), matching the established `≤15m → 12 candles` rule.
+- Shadow-mode filter on `/api/performance-public.byTimeframe`: 1m and 3m
+  keys are stripped from the response unless the env flag
+  `SHADOW_REVEAL_TIMEFRAMES` (comma-list) explicitly reveals them. After
+  2 weeks of accumulation, Mr.1 reviews the data via the Sunday Telegram
+  digest and flips the env if the timeframe clears the public-track-record
+  bar (PFE WR ≥ 85% AND samples ≥ 3,000).
+- New `--restricted-universe N` flag on `seed-signals.ts` + a
+  `getRestrictedUniverse(N)` resolver that pulls the top-N coins by
+  historical call-count from `byAsset` aggregation. Used by 1m + 3m crons
+  to bound CPX22 load.
+- New `src/scripts/shadow-digest-weekly.ts` runs Sunday 00:00 UTC, queries
+  the prior 7 days of 1m/3m signals, posts a Telegram digest with PFE WR,
+  sample size, top/bottom performers per coin, and PASS/FAIL/INSUFFICIENT_DATA
+  verdict per timeframe.
+- New `docs/SHADOW_SEED_DECISION_RUNBOOK.md` documents the public-flip + rollback
+  recipes for after 2026-05-14 decision day.
+
+### Changed — Cross-asset grid re-sized
+
+- `GRID_TIMEFRAMES` re-sized from the v1.9.0 logarithmic ladder
+  `['5m', '15m', '1h', '4h']` (24-cell grid) to
+  `['1m', '3m', '5m', '15m', '30m', '1h', '2h']` (42-cell grid). Drops 4h
+  (rank #6 with 2,124 calls) and adds 1m/3m/30m/2h based on empirical call
+  distribution from `byAsset.count` rankings.
+- New slow-grid circuit breaker: if 3 consecutive grid refreshes each
+  exceed 30s, the breaker opens for 1 hour and the grid temporarily
+  collapses to the v1.9.0 fallback set. Telegram WARNING on every trip.
+- `GRID_CONCURRENCY` unchanged at 6 (peak ~12 simultaneous HL roundtrips,
+  76% rate-limit headroom preserved).
+
+### Changed — Track-record dashboard copy hygiene
+
+- Removed three blocks of stale/redundant copy from the public
+  `/track-record` page: (1) the "9 of 11 timeframes / sub-5m noise-dominated"
+  disambiguation paragraph (it's premature given the empirical test now
+  underway and would be wrong copy if 1m/3m pass), (2) the Methodology
+  "Note" paragraph about directional entry calls (redundant with the
+  PFE Win Rate definition above it), (3) the first two sentences of the
+  bottom italic disclaimer (redundant with the removed Methodology Note);
+  the financial-advice + past-performance sentences are preserved verbatim
+  for legal cover.
+
+### Tests
+
+- `tests/unit/shadow-seed-restricted-universe.test.ts` (NEW, 7 tests) —
+  resolver + cache + fallback behavior.
+- `tests/unit/grid-circuit-breaker.test.ts` (NEW, 9 tests) — re-sized grid
+  shape + circuit breaker open/close.
+- `tests/unit/shadow-mode-filter.test.ts` (NEW, 7 tests) — env-driven
+  filter behavior across 1m/3m + non-shadow timeframes.
+- `tests/unit/shadow-digest-format.test.ts` (NEW, 6 tests) — digest
+  formatter + PASS/FAIL/INSUFFICIENT_DATA verdict thresholds.
+- `tests/cross-asset-grid.test.ts` updated — 24-cell expectations re-pegged
+  to 42-cell new shape.
+- `tests/unit/cross-asset-grid-backoff.test.ts` updated — failure-ratio
+  thresholds re-scaled to 42-cell baseline.
+
+### Upgrading
+
+No code changes required. The `byTimeframe` aggregation stays at 9 keys
+(5m–1d) until Mr.1 flips the public reveal env. Existing MCP clients
+calling `get_trade_call` for 1m or 3m have always worked (the API enum
+already accepted them); the only change is that those calls will now
+warm faster on top-5 / top-20 assets via the new grid.
+
 ## [1.10.4] - 2026-04-30 — README polish
 
 ### Changed

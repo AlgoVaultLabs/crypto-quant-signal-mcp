@@ -50,6 +50,8 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
 
 // Idempotency windows per timeframe (slightly less than the interval)
 const IDEMPOTENCY_WINDOWS: Record<string, number> = {
+  '1m':  50,                // 50 seconds (SHADOW-SEED-W1: shadow-mode TF)
+  '3m':  2 * 60,            // 2 minutes (SHADOW-SEED-W1: shadow-mode TF)
   '5m':  4 * 60,            // 4 minutes
   '15m': 14 * 60,           // 14 minutes
   '30m': 28 * 60,           // 28 minutes
@@ -61,6 +63,15 @@ const IDEMPOTENCY_WINDOWS: Record<string, number> = {
   '1d':  23 * 3600,         // 23 hours
 };
 
+/**
+ * SHADOW-SEED-W1 (2026-04-30): shadow-mode timeframes whose signals are
+ * collected into the DB but stripped from `byTimeframe` aggregation in the
+ * public `/api/performance-public` response unless the env flag
+ * `SHADOW_REVEAL_TIMEFRAMES` includes them. The 2-week digest decides
+ * whether to flip the public filter.
+ */
+export const SHADOW_TIMEFRAMES = ['1m', '3m'] as const;
+
 const VALID_TIMEFRAMES = Object.keys(IDEMPOTENCY_WINDOWS);
 
 function ts(): string {
@@ -71,7 +82,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-function parseArgs(): { timeframe: string; top: number; exchanges: ExchangeId[] } {
+function parseArgs(): { timeframe: string; top: number; exchanges: ExchangeId[]; restrictedUniverse: number } {
   const args = process.argv.slice(2);
 
   let timeframe = '15m';
@@ -97,6 +108,21 @@ function parseArgs(): { timeframe: string; top: number; exchanges: ExchangeId[] 
     top = n;
   }
 
+  // SHADOW-SEED-W1: --restricted-universe N replaces the per-exchange
+  // OI-ranked universe with the top-N coins by historical call-count from
+  // /api/performance-public.byAsset (proxy for adoption / liquidity rank).
+  // Used by 1m + 3m shadow-mode crons to keep CPX22 load bounded.
+  let restrictedUniverse = 0; // 0 = use per-exchange OI (default)
+  const ruIdx = args.indexOf('--restricted-universe');
+  if (ruIdx !== -1 && args[ruIdx + 1]) {
+    const n = parseInt(args[ruIdx + 1]);
+    if (!Number.isFinite(n) || n <= 0) {
+      console.error(`Invalid --restricted-universe value: ${args[ruIdx + 1]}. Must be a positive integer.`);
+      process.exit(1);
+    }
+    restrictedUniverse = n;
+  }
+
   let exchanges: ExchangeId[] = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'];
   const exIdx = args.indexOf('--exchange');
   if (exIdx !== -1 && args[exIdx + 1]) {
@@ -114,7 +140,54 @@ function parseArgs(): { timeframe: string; top: number; exchanges: ExchangeId[] 
     }
   }
 
-  return { timeframe, top, exchanges };
+  return { timeframe, top, exchanges, restrictedUniverse };
+}
+
+/**
+ * SHADOW-SEED-W1: Returns the top-N coins by historical call-count from
+ * `byAsset` aggregation in performance-db. Used by 1m + 3m shadow-mode
+ * crons to bound CPX22 load — instead of seeding the full per-exchange
+ * universe (300+ symbols), we seed only the assets users actually call.
+ *
+ * 5-min in-process cache. Falls back to a hardcoded majors set if the
+ * performance store is empty (fresh deploy).
+ */
+let _restrictedUniverseCache: { value: string[]; topN: number; fetchedAt: number } | null = null;
+const RESTRICTED_UNIVERSE_TTL_MS = 5 * 60 * 1000;
+const RESTRICTED_UNIVERSE_FALLBACK = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'AVAX', 'LINK', 'TON', 'ADA', 'TRX', 'DOT', 'NEAR', 'ARB', 'OP', 'SUI', 'APT', 'ATOM', 'AAVE', 'INJ'];
+
+export async function getRestrictedUniverse(topN: number): Promise<string[]> {
+  if (
+    _restrictedUniverseCache &&
+    _restrictedUniverseCache.topN === topN &&
+    Date.now() - _restrictedUniverseCache.fetchedAt < RESTRICTED_UNIVERSE_TTL_MS
+  ) {
+    return _restrictedUniverseCache.value;
+  }
+  try {
+    const { getSignalPerformance } = await import('../resources/signal-performance.js');
+    const stats = await getSignalPerformance();
+    const ranked = Object.entries(stats?.byAsset || {})
+      .map(([coin, data]) => ({ coin, count: (data as { count: number }).count || 0 }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, topN)
+      .map((e) => e.coin);
+    if (ranked.length === 0) {
+      console.warn(`[${ts()}] getRestrictedUniverse: byAsset empty, falling back to hardcoded majors set`);
+      return RESTRICTED_UNIVERSE_FALLBACK.slice(0, topN);
+    }
+    _restrictedUniverseCache = { value: ranked, topN, fetchedAt: Date.now() };
+    return ranked;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[${ts()}] getRestrictedUniverse: failed (${msg}), falling back to majors`);
+    return RESTRICTED_UNIVERSE_FALLBACK.slice(0, topN);
+  }
+}
+
+/** Test-only cache reset. */
+export function _resetRestrictedUniverseCache(): void {
+  _restrictedUniverseCache = null;
 }
 
 interface HLAssetInfo {
@@ -311,31 +384,51 @@ async function seedExchange(
 }
 
 async function main() {
-  const { timeframe, top, exchanges } = parseArgs();
+  const { timeframe, top, exchanges, restrictedUniverse } = parseArgs();
   const idempotencyWindow = IDEMPOTENCY_WINDOWS[timeframe] || 50 * 60;
 
   const totals = { seeded: 0, skipped: 0, errors: 0 };
 
+  // SHADOW-SEED-W1: when --restricted-universe N is set (used by 1m + 3m
+  // shadow-mode crons), we bypass per-exchange OI-ranked universe fetches
+  // and seed only the top-N coins by historical call-count. The same coin
+  // list is passed to every exchange in the run; coins not supported on a
+  // given venue self-skip via the existing "Insufficient candle data /
+  // not found" error path inside seedExchange.
+  let restrictedCoins: string[] | null = null;
+  if (restrictedUniverse > 0) {
+    restrictedCoins = await getRestrictedUniverse(restrictedUniverse);
+    console.log(
+      `[${ts()}] SHADOW-SEED restricted universe (${timeframe}, top ${restrictedUniverse} by call-count): ` +
+      `[${restrictedCoins.join(', ')}]`,
+    );
+  }
+
   // ── Seed Hyperliquid ──
   if (exchanges.includes('HL')) {
-    console.log(`[${ts()}] Warming tier caches (xyz symbols, OI rankings)...`);
-    await warmTierCaches();
+    let coins: string[];
+    if (restrictedCoins) {
+      coins = restrictedCoins;
+    } else {
+      console.log(`[${ts()}] Warming tier caches (xyz symbols, OI rankings)...`);
+      await warmTierCaches();
 
-    console.log(`[${ts()}] Fetching Hyperliquid universe (standard + TradFi)...`);
-    let coins = await fetchHLCoins(top);
+      console.log(`[${ts()}] Fetching Hyperliquid universe (standard + TradFi)...`);
+      coins = await fetchHLCoins(top);
 
-    // TradFi: always limit to top 20 by OI (xyz perps have lower liquidity)
-    const allTradFi = coins.filter(c => isKnownTradFi(c));
-    if (allTradFi.length > 20) {
-      const topTradFi = new Set(allTradFi.slice(0, 20));
-      const beforeCount = coins.length;
-      coins = coins.filter(c => !isKnownTradFi(c) || topTradFi.has(c));
-      console.log(`[${ts()}] TradFi: limiting to Top 20 by OI (dropped ${beforeCount - coins.length} of ${allTradFi.length} TradFi assets)`);
-    } else if (allTradFi.length > 0) {
-      console.log(`[${ts()}] TradFi: ${allTradFi.length} assets (all within Top 20 limit)`);
+      // TradFi: always limit to top 20 by OI (xyz perps have lower liquidity)
+      const allTradFi = coins.filter(c => isKnownTradFi(c));
+      if (allTradFi.length > 20) {
+        const topTradFi = new Set(allTradFi.slice(0, 20));
+        const beforeCount = coins.length;
+        coins = coins.filter(c => !isKnownTradFi(c) || topTradFi.has(c));
+        console.log(`[${ts()}] TradFi: limiting to Top 20 by OI (dropped ${beforeCount - coins.length} of ${allTradFi.length} TradFi assets)`);
+      } else if (allTradFi.length > 0) {
+        console.log(`[${ts()}] TradFi: ${allTradFi.length} assets (all within Top 20 limit)`);
+      }
     }
 
-    console.log(`[${ts()}] Starting ${timeframe} HL signal seed for ${coins.length} assets${top ? ` (top ${top} by OI)` : ''}...`);
+    console.log(`[${ts()}] Starting ${timeframe} HL signal seed for ${coins.length} assets${restrictedCoins ? ` (restricted)` : top ? ` (top ${top} by OI)` : ''}...`);
     const result = await seedExchange('HL', coins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] HL seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -345,9 +438,8 @@ async function main() {
 
   // ── Seed Binance ──
   if (exchanges.includes('BINANCE')) {
-    console.log(`[${ts()}] Fetching Binance USDT-M pairs by volume${top ? ` (top ${top})` : ''}...`);
-    const binCoins = await fetchBinanceCoins(top);
-    console.log(`[${ts()}] Starting ${timeframe} BINANCE signal seed for ${binCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.BINANCE}ms)...`);
+    const binCoins = restrictedCoins ?? await fetchBinanceCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} BINANCE signal seed for ${binCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.BINANCE}ms)...`);
     const result = await seedExchange('BINANCE', binCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BINANCE seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -357,9 +449,8 @@ async function main() {
 
   // ── Seed Bybit ──
   if (exchanges.includes('BYBIT')) {
-    console.log(`[${ts()}] Fetching Bybit USDT linear pairs by OI${top ? ` (top ${top})` : ''}...`);
-    const bybitCoins = await fetchBybitCoins(top);
-    console.log(`[${ts()}] Starting ${timeframe} BYBIT signal seed for ${bybitCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.BYBIT}ms)...`);
+    const bybitCoins = restrictedCoins ?? await fetchBybitCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} BYBIT signal seed for ${bybitCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.BYBIT}ms)...`);
     const result = await seedExchange('BYBIT', bybitCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BYBIT seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -369,9 +460,8 @@ async function main() {
 
   // ── Seed OKX ──
   if (exchanges.includes('OKX')) {
-    console.log(`[${ts()}] Fetching OKX USDT-SWAP pairs by OI${top ? ` (top ${top})` : ''}...`);
-    const okxCoins = await fetchOKXCoins(top);
-    console.log(`[${ts()}] Starting ${timeframe} OKX signal seed for ${okxCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.OKX}ms)...`);
+    const okxCoins = restrictedCoins ?? await fetchOKXCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} OKX signal seed for ${okxCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.OKX}ms)...`);
     const result = await seedExchange('OKX', okxCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] OKX seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -381,9 +471,8 @@ async function main() {
 
   // ── Seed Bitget ──
   if (exchanges.includes('BITGET')) {
-    console.log(`[${ts()}] Fetching Bitget USDT-FUTURES pairs by OI${top ? ` (top ${top})` : ''}...`);
-    const bitgetCoins = await fetchBitgetCoins(top);
-    console.log(`[${ts()}] Starting ${timeframe} BITGET signal seed for ${bitgetCoins.length} assets (delay: ${DELAY_PER_EXCHANGE.BITGET}ms)...`);
+    const bitgetCoins = restrictedCoins ?? await fetchBitgetCoins(top);
+    console.log(`[${ts()}] Starting ${timeframe} BITGET signal seed for ${bitgetCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.BITGET}ms)...`);
     const result = await seedExchange('BITGET', bitgetCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BITGET seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;

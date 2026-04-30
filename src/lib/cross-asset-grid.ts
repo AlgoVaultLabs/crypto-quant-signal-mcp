@@ -1,11 +1,18 @@
 // ── Cross-asset / cross-timeframe signal grid (v1.9.0 L2/L4 activation patch) ──
 //
-// Pre-computes a 6×4 grid of trade signals (GRID_ASSETS × GRID_TIMEFRAMES) and
+// Pre-computes a 6×7 grid of trade signals (GRID_ASSETS × GRID_TIMEFRAMES) and
 // exposes lazy, TTL-cached read APIs. Used by `get_trade_signal` to surface:
 //   • L2 (HOLD Rescue):   `closest_tradeable` — the highest-confidence non-HOLD
 //                         cell, excluding the requested (coin, timeframe).
 //   • L4 (Next-Calls Hints): `try_next` — top-N highest-confidence non-HOLD
 //                         cells, excluding the requested (coin, timeframe).
+//
+// SHADOW-SEED-W1 (2026-04-30): GRID_TIMEFRAMES re-sized from the v1.9.0
+// logarithmic ladder ['5m','15m','1h','4h'] to ['1m','3m','5m','15m','30m','1h','2h']
+// based on EMPIRICAL CALL DISTRIBUTION (byAsset.count rankings show users
+// concentrate on intraday/scalping horizons; 4h is rank #6 with 2,124 calls
+// while 30m is rank #4 with 6,429 and 2h is rank #5 with 5,748). Net delta:
+// +1m, +3m, +30m, +2h, -4h.
 //
 // Refresh strategy:
 //   • Lazy: refresh on read when the snapshot is stale (>60s) or empty.
@@ -13,24 +20,66 @@
 //     in-flight promise instead of triggering parallel scorer fan-outs.
 //   • Cell-isolated: a single scorer throw cannot crash the entire refresh —
 //     failed cells are logged at debug level and skipped.
+//   • Slow-grid circuit breaker (SHADOW-SEED-W1): if 3 consecutive refreshes
+//     each exceed 30s, fall back to FALLBACK_TIMEFRAMES (the v1.9.0 set) for
+//     1 hour, then retry full grid. Telegram WARNING on every fallback.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pLimit from 'p-limit';
 import type { GridCell } from '../types.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
 import { UpstreamRateLimitError } from './errors.js';
+import { sendAlert } from './telegram.js';
 
 export const GRID_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE'] as const;
-export const GRID_TIMEFRAMES = ['5m', '15m', '1h', '4h'] as const;
+
+/**
+ * SHADOW-SEED-W1: full grid (42 cells = 6 assets × 7 timeframes). Used when
+ * the slow-grid circuit breaker is closed (default). When tripped, the grid
+ * temporarily collapses to FALLBACK_TIMEFRAMES (24 cells, the v1.9.0 set).
+ */
+export const GRID_TIMEFRAMES_FULL = ['1m', '3m', '5m', '15m', '30m', '1h', '2h'] as const;
+
+/** v1.9.0 set — used as the slow-grid fallback when 3 consecutive refreshes >30s. */
+export const FALLBACK_TIMEFRAMES = ['5m', '15m', '1h', '4h'] as const;
+
+/**
+ * Live grid timeframes. Resolved at refresh time from the circuit breaker
+ * state — `GRID_TIMEFRAMES_FULL` when closed (default), `FALLBACK_TIMEFRAMES`
+ * when open. Exported as a function for runtime resolution; tests can read
+ * the current set via `getActiveGridTimeframes()`.
+ */
+export function getActiveGridTimeframes(): readonly string[] {
+  return circuitOpenUntil > Date.now() ? FALLBACK_TIMEFRAMES : GRID_TIMEFRAMES_FULL;
+}
+
+/**
+ * Back-compat re-export: existing consumers (tests, observability) read
+ * GRID_TIMEFRAMES as the canonical full set. The runtime active set is
+ * resolved via `getActiveGridTimeframes()` at refresh time.
+ */
+export const GRID_TIMEFRAMES = GRID_TIMEFRAMES_FULL;
 const GRID_TTL_MS = 60_000;
 
-// LATENCY-W1 C2: parallelize the 24-cell refresh fan-out.
+// LATENCY-W1 C2 (updated SHADOW-SEED-W1 for 42-cell fan-out):
 // Concurrency = 6 → peak ~12 simultaneous HL roundtrips (each cell = candles +
 // assetCtx parallel). HL rate limit is 50 req/s, so 12 leaves ~76% headroom.
-// Higher would shorten refresh further but risks tripping HL throttle, which
-// the previous SKILLS-W1 smoke runs proved is real (HTTP 200 + isError=true
-// 'HL API 429: Too Many Requests' shape).
+// 42 cells / 6 concurrency × ~1s/cell = ~7s projected refresh time (vs ~4s
+// for the prior 24-cell grid). The slow-grid circuit breaker catches the
+// case where this projection is too optimistic (e.g. 1m candle endpoints
+// turn out slower than 5m+).
 const GRID_CONCURRENCY = 6;
+
+// SHADOW-SEED-W1 slow-grid circuit breaker.
+// If the last 3 refresh durations all exceeded SLOW_REFRESH_THRESHOLD_MS,
+// the breaker opens for CIRCUIT_OPEN_DURATION_MS — during which the grid
+// uses FALLBACK_TIMEFRAMES (24 cells) instead of the full 42. Resets after
+// the open duration; one full-grid retry attempt; tripping again re-opens.
+const SLOW_REFRESH_THRESHOLD_MS = 30_000;       // 30s per refresh
+const CIRCUIT_OPEN_DURATION_MS = 60 * 60_000;   // 1 hour
+const REFRESH_HISTORY_SIZE = 3;
+let refreshDurations: number[] = [];            // FIFO, max length REFRESH_HISTORY_SIZE
+let circuitOpenUntil: number = 0;
 
 // ── Module-private state ──
 let cachedSnapshot: GridCell[] | null = null;
@@ -56,14 +105,46 @@ export function _resetRateLimitBackoff(): void {
   rateLimitConsecutiveTrips = 0;
 }
 
+/**
+ * SHADOW-SEED-W1 test seam — reset the slow-grid circuit breaker state. Used
+ * by unit tests + diagnostics to deterministically open/close the circuit.
+ */
+export function _resetCircuitBreaker(): void {
+  refreshDurations = [];
+  circuitOpenUntil = 0;
+}
+
+/** SHADOW-SEED-W1 test seam — push synthetic refresh durations to drive the breaker. */
+export function _pushRefreshDurationForTest(ms: number): void {
+  refreshDurations.push(ms);
+  if (refreshDurations.length > REFRESH_HISTORY_SIZE) refreshDurations.shift();
+}
+
+/** SHADOW-SEED-W1 test seam — directly trip the breaker without 3 slow refreshes. */
+export function _tripCircuitBreakerForTest(): void {
+  circuitOpenUntil = Date.now() + CIRCUIT_OPEN_DURATION_MS;
+}
+
 /** Read-only inspector for the module-level cache + backoff state — used by tests + diagnostics. */
-export function _getCacheSnapshotMeta(): { hasSnapshot: boolean; cellCount: number; cachedAt: number; rateLimitPausedUntil: number; rateLimitConsecutiveTrips: number } {
+export function _getCacheSnapshotMeta(): {
+  hasSnapshot: boolean;
+  cellCount: number;
+  cachedAt: number;
+  rateLimitPausedUntil: number;
+  rateLimitConsecutiveTrips: number;
+  refreshDurations: number[];
+  circuitOpenUntil: number;
+  activeTimeframes: readonly string[];
+} {
   return {
     hasSnapshot: cachedSnapshot !== null,
     cellCount: cachedSnapshot?.length ?? 0,
     cachedAt,
     rateLimitPausedUntil,
     rateLimitConsecutiveTrips,
+    refreshDurations: [...refreshDurations],
+    circuitOpenUntil,
+    activeTimeframes: getActiveGridTimeframes(),
   };
 }
 
@@ -92,17 +173,20 @@ let _scorerOverride: ScorerFn | null = null;
 
 async function refreshGrid(): Promise<void> {
   return refreshContext.run(true, async () => {
-    // LATENCY-W1 C2: parallelize 24 cells inside the SAME refreshContext.run
-    // scope. The AsyncLocalStorage flag at line 46 propagates through every
-    // p-limit task because pLimit just calls the wrapped fn (Node carries the
-    // ALS context across `.then()` continuations). This means each cell's
+    // LATENCY-W1 C2 (updated SHADOW-SEED-W1): parallelize 42 cells (or 24 in
+    // fallback mode) inside the SAME refreshContext.run scope. The
+    // AsyncLocalStorage flag propagates through every p-limit task because
+    // pLimit just calls the wrapped fn (Node carries the ALS context across
+    // `.then()` continuations). This means each cell's
     // `getTradeSignal({ internal: true })` call to its enrichment path will
     // see refreshContext.getStore() === true and return cached snapshot
     // (possibly empty) instead of recursing into refreshGrid.
+    const refreshStartAt = Date.now();
+    const activeTimeframes = getActiveGridTimeframes();
     const limit = pLimit(GRID_CONCURRENCY);
     let rateLimitFailures = 0;  // v1.10.2: per-refresh 429 tally
     const tasks = GRID_ASSETS.flatMap((coin) =>
-      GRID_TIMEFRAMES.map((timeframe) =>
+      activeTimeframes.map((timeframe) =>
         limit(async (): Promise<GridCell | null> => {
           try {
             const override = _scorerOverride;
@@ -148,10 +232,35 @@ async function refreshGrid(): Promise<void> {
     cachedSnapshot = results.filter((c): c is GridCell => c !== null);
     cachedAt = Date.now();
 
+    // SHADOW-SEED-W1: record this refresh's duration; trip the slow-grid
+    // circuit breaker if 3 consecutive refreshes all exceed the threshold.
+    const refreshDurationMs = cachedAt - refreshStartAt;
+    refreshDurations.push(refreshDurationMs);
+    if (refreshDurations.length > REFRESH_HISTORY_SIZE) refreshDurations.shift();
+    const allSlow = refreshDurations.length === REFRESH_HISTORY_SIZE &&
+      refreshDurations.every((d) => d > SLOW_REFRESH_THRESHOLD_MS);
+    if (allSlow && circuitOpenUntil <= Date.now()) {
+      circuitOpenUntil = Date.now() + CIRCUIT_OPEN_DURATION_MS;
+      const measured = refreshDurations.map((d) => `${(d / 1000).toFixed(1)}s`).join(', ');
+      console.warn(
+        `[cross-asset-grid] slow-grid circuit breaker TRIPPED — ` +
+        `last ${REFRESH_HISTORY_SIZE} refreshes [${measured}] all > ${SLOW_REFRESH_THRESHOLD_MS / 1000}s. ` +
+        `Falling back to ${FALLBACK_TIMEFRAMES.length}-timeframe grid (${FALLBACK_TIMEFRAMES.join(',')}) for ${CIRCUIT_OPEN_DURATION_MS / 60_000}min.`
+      );
+      sendAlert(
+        `Cross-asset grid slow-grid circuit breaker TRIPPED.\n` +
+        `Last ${REFRESH_HISTORY_SIZE} refreshes: ${measured}\n` +
+        `Falling back to ${FALLBACK_TIMEFRAMES.join(',')} for ${CIRCUIT_OPEN_DURATION_MS / 60_000}min.`,
+        'warning',
+      ).catch(() => { /* swallow */ });
+      // Reset history so post-fallback re-evaluation starts fresh.
+      refreshDurations = [];
+    }
+
     // v1.10.2: trip / reset the warmer-pause backoff based on this cycle's
     // 429 ratio. Runs AFTER cell results land so a partial grid is still
     // usable for the rest of the deprecation window even when we trip.
-    const totalCells = GRID_ASSETS.length * GRID_TIMEFRAMES.length;
+    const totalCells = GRID_ASSETS.length * activeTimeframes.length;
     const failureRatio = rateLimitFailures / totalCells;
     if (failureRatio >= RATE_LIMIT_FAILURE_THRESHOLD) {
       rateLimitConsecutiveTrips++;
