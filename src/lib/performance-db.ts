@@ -737,6 +737,123 @@ export async function getFundingZScore(coin: string, currentFunding: number): Pr
   return (currentFunding - stats.mean) / stats.stdDev;
 }
 
+/**
+ * OPTIMIZE-FUNDING-CACHE-CRON-W1 (2026-05-01): bulk-warm the in-process
+ * cache for N coins via a single batched query. Used at the start of each
+ * `seed-signals.js` cron fire so the per-coin `getFundingZScore` calls
+ * inside `seedExchange()` hit a warm cache (zero DB roundtrips per signal).
+ *
+ * The W1 cache architecture (in-process Map) only benefited the long-lived
+ * MCP server because every `docker exec node ...` cron fire spawns a fresh
+ * process with an empty cache. Audit measurements: ~1,973 cache-miss DB
+ * queries per 20 min from cron alone vs 3 from the MCP server. This bulk
+ * warmer turns each fire's 50-200 individual queries into 1 batch query,
+ * dropping cron cache-miss volume by 90%+.
+ *
+ * Idempotent: coins whose cache is fresh are skipped; the function is
+ * cheap to call multiple times in a single fire. Negative-entry caching
+ * (zero-row coins → `sampleCount: 0` cached) prevents per-coin fallback
+ * from re-querying for new-listing / unknown coins. Math is identical to
+ * `loadFundingStats()` byte-for-byte (Postgres `STDDEV_SAMP` is the
+ * sample-stddev with N-1 denominator that JS path uses).
+ */
+export async function bulkWarmFundingCache(coins: string[]): Promise<void> {
+  if (coins.length === 0) return;
+
+  const now = Date.now();
+  const cold: string[] = coins.filter((c) => {
+    const cached = fundingStatsCache.get(c);
+    return !cached || (now - cached.computedAt) >= FUNDING_STATS_TTL_MS;
+  });
+  const cachedCount = coins.length - cold.length;
+
+  if (cold.length === 0) {
+    console.debug(`[funding-cache] bulk-warm n_in=${coins.length} n_warmed=0 n_cached=${cachedCount} db=0ms (all fresh)`);
+    return;
+  }
+
+  const b = getBackend();
+  const cutoff14d = Math.floor(now / 1000) - 14 * 86400;
+  const t0 = Date.now();
+
+  try {
+    const seen = new Set<string>();
+
+    if (isPg && b instanceof PgBackend) {
+      const rows = await b.query(
+        `SELECT coin,
+                AVG(funding_rate)::float8 AS mean,
+                STDDEV_SAMP(funding_rate)::float8 AS stddev,
+                COUNT(*)::int AS sample_count
+           FROM funding_history
+          WHERE recorded_at >= $1 AND coin = ANY($2::text[])
+          GROUP BY coin`,
+        [cutoff14d, cold]
+      ) as unknown as { coin: string; mean: number; stddev: number | null; sample_count: number }[];
+
+      const ts = Date.now();
+      for (const r of rows) {
+        seen.add(r.coin);
+        const sd = r.stddev ?? 0;
+        fundingStatsCache.set(r.coin, {
+          mean: Number(r.mean),
+          stdDev: Number(sd),
+          sampleCount: Number(r.sample_count),
+          computedAt: ts,
+        });
+      }
+    } else {
+      // SQLite fallback — fetch raw rows then aggregate in JS using the
+      // same formulas as `loadFundingStats()` so math is byte-for-byte
+      // identical to the per-coin path.
+      const placeholders = cold.map(() => '?').join(',');
+      const rows = b.all(
+        `SELECT coin, funding_rate FROM funding_history
+          WHERE recorded_at >= ? AND coin IN (${placeholders})
+          ORDER BY coin, recorded_at`,
+        cutoff14d, ...cold
+      ) as unknown as { coin: string; funding_rate: number }[];
+
+      const grouped = new Map<string, number[]>();
+      for (const r of rows) {
+        const arr = grouped.get(r.coin) ?? [];
+        arr.push(r.funding_rate);
+        grouped.set(r.coin, arr);
+      }
+
+      const ts = Date.now();
+      for (const [coin, rates] of grouped) {
+        seen.add(coin);
+        const n = rates.length;
+        if (n === 0) {
+          fundingStatsCache.set(coin, { mean: 0, stdDev: 0, sampleCount: 0, computedAt: ts });
+          continue;
+        }
+        const mean = rates.reduce((a, v) => a + v, 0) / n;
+        const variance = n > 1 ? rates.reduce((a, v) => a + (v - mean) ** 2, 0) / (n - 1) : 0;
+        const stdDev = Math.sqrt(variance);
+        fundingStatsCache.set(coin, { mean, stdDev, sampleCount: n, computedAt: ts });
+      }
+    }
+
+    // Negative-entry cache for coins with zero rows in window — prevents
+    // per-coin fallback from re-querying for new-listing / unknown coins.
+    const ts = Date.now();
+    for (const c of cold) {
+      if (!seen.has(c)) {
+        fundingStatsCache.set(c, { mean: 0, stdDev: 0, sampleCount: 0, computedAt: ts });
+      }
+    }
+
+    const elapsedMs = Date.now() - t0;
+    console.debug(`[funding-cache] bulk-warm n_in=${coins.length} n_warmed=${cold.length} n_cached=${cachedCount} db=${elapsedMs}ms`);
+  } catch (e) {
+    const elapsedMs = Date.now() - t0;
+    console.debug(`[funding-cache] bulk-warm FAILED n_in=${coins.length} db=${elapsedMs}ms err=${e instanceof Error ? e.message : e}`);
+    throw e;
+  }
+}
+
 // ── OPTIMIZE-FUNDING-CACHE-W1 test seams (underscore-prefixed; non-public). ──
 
 export function _clearFundingStatsCache(): void {

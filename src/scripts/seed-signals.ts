@@ -32,7 +32,7 @@
  */
 
 import { getTradeSignal } from '../tools/get-trade-call.js';
-import { hasRecentSignalAsync, closeDb } from '../lib/performance-db.js';
+import { hasRecentSignalAsync, closeDb, bulkWarmFundingCache } from '../lib/performance-db.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import type { LicenseInfo, ExchangeId } from '../types.js';
 
@@ -429,6 +429,11 @@ async function main() {
     }
 
     console.log(`[${ts()}] Starting ${timeframe} HL signal seed for ${coins.length} assets${restrictedCoins ? ` (restricted)` : top ? ` (top ${top} by OI)` : ''}...`);
+    // OPTIMIZE-FUNDING-CACHE-CRON-W1: bulk-warm cache before per-coin loop.
+    // Fail-soft: a batch-query failure falls back to per-coin path inside
+    // seedExchange, so the cron fire still succeeds (just slower).
+    try { await bulkWarmFundingCache(coins); }
+    catch (e) { console.debug('[funding-cache] bulk-warm failed, falling back to per-coin:', e instanceof Error ? e.message : e); }
     const result = await seedExchange('HL', coins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] HL seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -440,6 +445,8 @@ async function main() {
   if (exchanges.includes('BINANCE')) {
     const binCoins = restrictedCoins ?? await fetchBinanceCoins(top);
     console.log(`[${ts()}] Starting ${timeframe} BINANCE signal seed for ${binCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.BINANCE}ms)...`);
+    try { await bulkWarmFundingCache(binCoins); }
+    catch (e) { console.debug('[funding-cache] bulk-warm failed, falling back to per-coin:', e instanceof Error ? e.message : e); }
     const result = await seedExchange('BINANCE', binCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BINANCE seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -451,6 +458,8 @@ async function main() {
   if (exchanges.includes('BYBIT')) {
     const bybitCoins = restrictedCoins ?? await fetchBybitCoins(top);
     console.log(`[${ts()}] Starting ${timeframe} BYBIT signal seed for ${bybitCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.BYBIT}ms)...`);
+    try { await bulkWarmFundingCache(bybitCoins); }
+    catch (e) { console.debug('[funding-cache] bulk-warm failed, falling back to per-coin:', e instanceof Error ? e.message : e); }
     const result = await seedExchange('BYBIT', bybitCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BYBIT seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -462,6 +471,8 @@ async function main() {
   if (exchanges.includes('OKX')) {
     const okxCoins = restrictedCoins ?? await fetchOKXCoins(top);
     console.log(`[${ts()}] Starting ${timeframe} OKX signal seed for ${okxCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.OKX}ms)...`);
+    try { await bulkWarmFundingCache(okxCoins); }
+    catch (e) { console.debug('[funding-cache] bulk-warm failed, falling back to per-coin:', e instanceof Error ? e.message : e); }
     const result = await seedExchange('OKX', okxCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] OKX seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
@@ -473,6 +484,8 @@ async function main() {
   if (exchanges.includes('BITGET')) {
     const bitgetCoins = restrictedCoins ?? await fetchBitgetCoins(top);
     console.log(`[${ts()}] Starting ${timeframe} BITGET signal seed for ${bitgetCoins.length} assets${restrictedCoins ? ` (restricted)` : ''} (delay: ${DELAY_PER_EXCHANGE.BITGET}ms)...`);
+    try { await bulkWarmFundingCache(bitgetCoins); }
+    catch (e) { console.debug('[funding-cache] bulk-warm failed, falling back to per-coin:', e instanceof Error ? e.message : e); }
     const result = await seedExchange('BITGET', bitgetCoins, timeframe, idempotencyWindow);
     console.log(`[${ts()}] BITGET seed complete: ${result.seeded} seeded, ${result.skipped} skipped, ${result.errors} errors.`);
     totals.seeded += result.seeded;
