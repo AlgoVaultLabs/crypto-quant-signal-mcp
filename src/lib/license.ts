@@ -12,8 +12,17 @@ import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 
-const FREE_COINS = new Set(['BTC', 'ETH']);
-const FREE_TIMEFRAMES = new Set(['15m', '1h']);
+// v1.10.3 FREE-UNLOCK-W1: free tier now grants ALL coins + ALL timeframes —
+// the 100-calls/month cap is the primary upsell trigger; funding-arb top-5
+// (FREE_FUNDING_LIMIT) remains the secondary upsell hook.
+//
+// FREE_COINS / FREE_TIMEFRAMES are kept commented-out as reserved
+// emergency-rate-limit-defense switches. To re-gate free tier (e.g. if
+// upstream Hyperliquid throttles us as a result of this opening), uncomment
+// these constants and the corresponding `.has()` checks in canAccessCoin /
+// canAccessTimeframe / freeGateMessage.
+// const FREE_COINS = new Set(['BTC', 'ETH']);            // reserved (v1.10.3 unlock)
+// const FREE_TIMEFRAMES = new Set(['15m', '1h']);        // reserved (v1.10.3 unlock)
 const FREE_FUNDING_LIMIT = 5;
 
 // ── Per-request context ──
@@ -167,16 +176,23 @@ export function isFreeTier(license?: LicenseInfo): boolean {
   return l.tier === 'free';
 }
 
-export function canAccessCoin(coin: string, license?: LicenseInfo): boolean {
-  const l = license || getRequestLicense();
-  if (l.tier !== 'free') return true;
-  return FREE_COINS.has(coin.toUpperCase());
+/**
+ * v1.10.3 FREE-UNLOCK-W1: free tier accesses every supported coin.
+ * Coin gating is no longer enforced — the monthly 100-call cap (per
+ * `checkQuota`) is the primary upsell trigger. Function kept (not removed)
+ * because callers still invoke it as a guard; it now always returns true.
+ */
+export function canAccessCoin(_coin: string, _license?: LicenseInfo): boolean {
+  return true;
 }
 
-export function canAccessTimeframe(timeframe: string, license?: LicenseInfo): boolean {
-  const l = license || getRequestLicense();
-  if (l.tier !== 'free') return true;
-  return FREE_TIMEFRAMES.has(timeframe);
+/**
+ * v1.10.3 FREE-UNLOCK-W1: free tier accesses every supported timeframe
+ * (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d — 11 total per the Zod
+ * enum at src/index.ts). Same rationale as `canAccessCoin`.
+ */
+export function canAccessTimeframe(_timeframe: string, _license?: LicenseInfo): boolean {
+  return true;
 }
 
 export function getFundingArbLimit(requestedLimit: number, license?: LicenseInfo): number {
@@ -185,16 +201,15 @@ export function getFundingArbLimit(requestedLimit: number, license?: LicenseInfo
   return Math.min(requestedLimit, FREE_FUNDING_LIMIT);
 }
 
-export function freeGateMessage(coin: string, timeframe: string): string {
-  const parts: string[] = [];
-  if (!FREE_COINS.has(coin.toUpperCase())) {
-    parts.push(`${coin} requires Starter ($9.99/mo) or higher (free tier: BTC and ETH only)`);
-  }
-  if (!FREE_TIMEFRAMES.has(timeframe)) {
-    parts.push(`${timeframe} requires Starter ($9.99/mo) or higher (free tier: 15m and 1h only)`);
-  }
-  if (parts.length === 0) return '';
-  return `${parts.join('. ')}. Upgrade → https://api.algovault.com/signup?plan=starter`;
+/**
+ * v1.10.3: returns empty string — coin/timeframe gating removed for free
+ * tier. The function is preserved as a callable seam in case the reserved
+ * `FREE_COINS` / `FREE_TIMEFRAMES` constants are ever re-enabled. The
+ * separate quota-exhaustion path (`getQuotaExhaustedMessage`) handles the
+ * "upgrade to Starter" surface that USED to live here.
+ */
+export function freeGateMessage(_coin: string, _timeframe: string): string {
+  return '';
 }
 
 // ── Call count tracking for quota enforcement ──

@@ -60,7 +60,7 @@ tailwind.config = {
   "description": "Trade call intelligence for AI trading agents. Composite quant trade calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
   "url": "https://algovault.com",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "BTC + ETH, 15m and 1h timeframes, 100 calls/month" },
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m–1d), 100 calls/month, HOLD calls always free" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
@@ -132,7 +132,7 @@ tailwind.config = {
         View Track Record
       </a>
     </div>
-    <p class="mt-4 text-xs text-gray-600">No signup required. Free tier includes BTC + ETH on 15m and 1h.</p>
+    <p class="mt-4 text-xs text-gray-600">No signup required. Free tier: all assets, all 11 timeframes, 100 calls/month.</p>
     <div class="flex items-center justify-center gap-3 mt-5 flex-wrap">
       <span class="text-[10px] uppercase tracking-widest text-gray-600">Supported Exchanges</span>
       <span class="px-2.5 py-1 rounded-md text-xs font-semibold border border-white/5" style="background:#0d1117;color:#4ade80">Hyperliquid</span>
@@ -183,7 +183,7 @@ tailwind.config = {
           <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">
             "Get me a trade call for BTC on the 15m timeframe"
           </div>
-          <p class="text-gray-600 text-xs mt-1">Free tier includes 15m and 1h timeframes for BTC and ETH.</p>
+          <p class="text-gray-600 text-xs mt-1">Free tier: all assets, all 11 timeframes, capped at 100 calls/month.</p>
         </div>
       </div>
     </div>
@@ -480,8 +480,8 @@ tailwind.config = {
         <div class="text-3xl font-bold text-white mb-1">$0</div>
         <div class="text-gray-600 text-xs mb-5">No signup needed</div>
         <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> BTC + ETH trade calls</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 15m + 1h timeframes</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> All crypto + TradFi assets</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> All 11 timeframes (1m&ndash;1d)</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Top 5 funding arbs</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> 100 calls/month</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> HOLD calls always free</li>
@@ -686,7 +686,7 @@ tailwind.config = {
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          Yes. The free tier includes BTC and ETH trade calls on 15m and 1h timeframes, top 5 funding arbitrage opportunities, and market regime detection for all assets &mdash; with no signup required. For all crypto and TradFi assets across all 11 timeframes, upgrade to Pro ($49/month) or pay per call via x402 micropayments (USDC on Base, starting at $0.01/call).
+          Yes. The free tier includes trade calls on all 716 assets across all 11 timeframes (1m&ndash;1d), top 5 funding arbitrage opportunities, and market regime detection — capped at 100 calls/month with no signup required. HOLD verdicts are always free. For higher monthly limits and unlimited funding-arb results, upgrade to Starter ($9.99/month, 3,000 calls) or Pro ($49/month, 15K calls), or pay per call via x402 micropayments (USDC on Base, starting at $0.01/call).
         </div>
       </details>
 
@@ -757,7 +757,7 @@ tailwind.config = {
       "name": "Is AlgoVault free to use?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. The free tier includes BTC and ETH trade calls on 15m and 1h timeframes, top 5 funding arbs, and market regime detection. Pro is $49/month for all crypto and TradFi assets across all 11 timeframes. x402 pay-per-call starts at $0.01."
+        "text": "Yes. The free tier includes trade calls on all 716 assets across all 11 timeframes (1m–1d), top 5 funding arbs, market regime detection, and HOLD calls always free — capped at 100 calls/month with no signup. Starter is $9.99/mo for 3,000 calls; Pro is $49/mo for 15K calls; x402 pay-per-call starts at $0.01."
       }
     },
     {

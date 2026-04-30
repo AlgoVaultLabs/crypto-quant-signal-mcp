@@ -94,7 +94,7 @@ function createServer(): McpServer {
   const TRADE_CALL_DESCRIPTION = "Returns a composite BUY/SELL/HOLD trade call for a perpetual on Hyperliquid / Binance / Bybit / OKX / Bitget. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.";
   const TRADE_CALL_SCHEMA = {
     coin: z.string().max(20).describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
-    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: 15m and 1h only.'),
+    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. All Hyperliquid intervals supported. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: all 11 timeframes available, 100 calls/month.'),
     includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
     exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M."),
   };
@@ -1257,6 +1257,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   <!-- Timeframe tabs + table -->
   <div class="section">
     <h2>Performance by Timeframe</h2>
+    <p style="color:#8b949e;font-size:12px;margin-top:-4px;margin-bottom:10px">Track record covers 9 of the 11 supported timeframes (5m&ndash;1d). The 1m and 3m timeframes are available via API on-demand but not cron-seeded for public history &mdash; sub-5m indicators are noise-dominated by design, so signal quality wouldn't be honest in a published track record.</p>
     <div class="tabs" id="tf-tabs"></div>
     <table><thead><tr><th>Timeframe</th><th>Trade Calls</th><th>Evaluated</th><th>PFE Win Rate</th><th>Avg PFE %</th><th>BUY / SELL</th></tr></thead>
     <tbody id="by-timeframe"></tbody></table>
@@ -1654,7 +1655,7 @@ function getSignupPageHtml(): string {
 <body>
 <div class="container">
   <h1>AlgoVault Subscriptions</h1>
-  <div class="subtitle">Unlock all assets across 5 exchanges, all timeframes, and higher call limits.</div>
+  <div class="subtitle">Free tier includes all assets and all 11 timeframes &mdash; capped at 100 calls/month. Upgrade for higher monthly limits and unlimited funding-arb results.</div>
   <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px;flex-wrap:wrap">
     <span style="color:#4ade80;font-size:12px;font-weight:600">Hyperliquid</span>
     <span style="color:#6e7681">&middot;</span>

@@ -117,20 +117,24 @@ describe('getTradeSignal', () => {
     expect(result.reasoning).toBe('');
   });
 
-  it('throws on free tier for non-BTC/ETH', async () => {
+  it('v1.10.3 FREE-UNLOCK-W1: free tier accepts non-BTC/ETH (e.g. SOL)', async () => {
     delete process.env.CQS_API_KEY;
     resetLicenseCache();
-
-    await expect(getTradeSignal({ coin: 'SOL', timeframe: '1h' }))
-      .rejects.toThrow(/Starter/);
+    const adapter = createMockAdapter();
+    vi.mocked(getAdapter).mockReturnValue(adapter);
+    // Pre-1.10.3 this would have rejected with /Starter/. Now it succeeds.
+    const result = await getTradeSignal({ coin: 'SOL', timeframe: '1h' });
+    expect(['BUY', 'SELL', 'HOLD']).toContain(result.call);
   });
 
-  it('throws on free tier for non-1h timeframe', async () => {
+  it('v1.10.3 FREE-UNLOCK-W1: free tier accepts non-1h timeframe (e.g. 4h)', async () => {
     delete process.env.CQS_API_KEY;
     resetLicenseCache();
-
-    await expect(getTradeSignal({ coin: 'BTC', timeframe: '4h' }))
-      .rejects.toThrow(/Starter/);
+    const adapter = createMockAdapter();
+    vi.mocked(getAdapter).mockReturnValue(adapter);
+    // Pre-1.10.3 this would have rejected with /Starter/. Now it succeeds.
+    const result = await getTradeSignal({ coin: 'BTC', timeframe: '4h' });
+    expect(['BUY', 'SELL', 'HOLD']).toContain(result.call);
   });
 
   it('throws on insufficient candle data', async () => {
