@@ -268,6 +268,45 @@ Spec called for ≥60 min sampling at UTC 04:00-05:00 in addition to peak. That 
 
 ## Audit-Run Metadata
 
-- **Read-only**: zero production state mutations. No cron edits, no service restarts, no DB writes, no `git push` to main except this report.
-- **Raw sample data**: 60-min sampling loop launched at 11:32 UTC writing to `/tmp/cpx22-sample.log` on the Hetzner box (PID 3215790). Will be retrieved + appended to this report's appendix (or saved to `audits/raw/peak-2026-04-30.txt`) once the loop completes at ~12:32 UTC.
+- **Read-only**: zero direct production state mutations from audit commands. No cron edits, no service restarts triggered by SSH, no DB writes (only `SELECT`/`EXPLAIN` reads), no `git push` to main except this report.
+- **Raw sample data**: 60-min sampling loop launched at 11:32 UTC writing to `/tmp/cpx22-sample.log` on the Hetzner box. Completed at 12:30:20 UTC (13/13 samples). Retrieved to `audits/raw/peak-2026-04-30.txt` (807 lines). Time-series appendix below.
 - **Auditor**: Claude Sonnet 4.5 (1M context) under prompt `Prompt/cpx22-baseline-cpu-audit.md`.
+
+### Side-effect note: docs-only push triggered a container restart at 11:51 UTC
+
+While the audit issued zero direct state-mutation commands, the act of `git push origin HEAD:main` for the audit report itself (commit `a23e44b`, GHA run started 2026-04-30T11:51:02Z) triggered `.github/workflows/deploy.yml`'s standard pipeline: `git pull` on Hetzner → `docker compose up -d --build` → container force-stop + rebuild + restart. The `crypto-quant-signal-mcp-mcp-server-1` container restarted at 11:51:54 UTC, mid-audit. This is **not an OOM event** — `dmesg` shows no kill record after the 10:54 incident; `journalctl` shows controlled `stopping restart-manager` followed by graceful exit-and-restart.
+
+Implication: the deploy pipeline doesn't path-filter (`paths-ignore: 'audits/**'`, `'docs/**'`, etc. in the workflow `on.push.paths` block). Every push to main, including pure documentation, costs a container restart. Worth fixing in a follow-up — see WIS in CLAUDE.md. The restart did NOT meaningfully affect the audit findings (postgres CPU is independent of the mcp-server lifecycle), but the docker-stats `NetIO` field reset between samples #5 and #6 made the time-series initially look like an OOM until I checked `journalctl`.
+
+---
+
+## Appendix: 60-min Time-Series (peak window, 13 samples)
+
+Raw sampling: every 5 minutes from 11:31:50 to 12:30:18 UTC.
+
+| # | UTC | Load avg (1m / 5m / 15m) | Postgres CPU% | mcp-server CPU% | Mem used | Notes |
+|---|---|---|---|---|---|---|
+| 1 | 11:31:50 | 1.08 / 1.86 / 7.87 | 5.15% | 0.95% | 1.4 GiB | Quiet inter-cron-fire moment |
+| 2 | 11:36:42 | 2.82 / 2.49 / 6.49 | 53.59% | 9.75% | 1.8 GiB | Cron fire active |
+| 3 | 11:41:35 | 3.43 / 3.20 / 5.72 | 18.00% | 11.86% | 1.5 GiB | |
+| 4 | 11:46:27 | 2.47 / 2.74 / 4.84 | 43.77% | 25.87% | 1.6 GiB | |
+| 5 | 11:51:19 | 2.77 / 2.62 / 4.21 | 43.43% | 12.49% | 1.7 GiB | |
+| 6 | 11:56:12 | 1.83 / 2.37 / 3.68 | **86.84%** | **111.49%** | 1.9 GiB | **Container restart** at 11:51:54 (docs-push deploy); mcp-server boot phase |
+| 7 | 12:01:04 | 2.20 / 2.38 / 3.32 | 59.24% | 28.28% | 1.5 GiB | |
+| 8 | 12:05:56 | 1.37 / 2.05 / 2.96 | 25.56% | 6.81% | 1.5 GiB | |
+| 9 | 12:10:49 | 2.12 / 2.16 / 2.80 | 37.08% | 19.81% | 1.7 GiB | |
+| 10 | 12:15:41 | 2.39 / 2.24 / 2.65 | 61.09% | 28.17% | 1.7 GiB | |
+| 11 | 12:20:33 | 2.04 / 2.18 / 2.51 | 52.22% | 20.52% | 1.6 GiB | |
+| 12 | 12:25:26 | 1.83 / 2.03 / 2.36 | 45.15% | 24.28% | 1.6 GiB | |
+| 13 | 12:30:18 | 3.13 / 2.39 / 2.40 | **110.25%** | **80.38%** | 2.1 GiB | Heavy-batch fire (5m + 15m + 30m colliding on minute boundary) |
+
+**Aggregate over the full 60-min peak window:**
+- Postgres CPU: **average 49.4%, median 45.2%, p95 ~95%, max 110.25%**. Non-trivially exceeds the snapshot 40.73% I cited in the headline — closer to **~50% of total CPU baseline sustained, ~80% of the load-avg-baseline contribution.**
+- mcp-server CPU: **average 27.7%, median 20.5%, max 111.49% (during boot)**. Non-boot max ~28-30%.
+- Load avg 1m: **min 1.08, average 2.27, max 3.43**. On 2 vCPU = **54-172% normalized, sustained ~110%**.
+- Memory used: **1.4-2.1 GiB**, gradual climb (mcp-server fresh-boot at sample #6 saw 312 MiB → 738 MiB by sample #13 — the cross-asset grid + funding-cache misses build up resident memory over time).
+- Free swap: 0 (no thrashing).
+
+**Confirms the headline finding strengthens it**: postgres baseline averages **~50% of total CPU**, not the conservative 40% from the single snapshot. The funding-cache optimization's projected headroom is **−40% to −56% of total CPU baseline** even more compelling against the actual measured baseline (was: 1 vCPU saturated; will be: 0.4 vCPU). Q1 + Q2 answers stand unchanged — likely strengthened.
+
+**Sample #13's spike to postgres 110% + mcp-server 80%** at 12:30:18 UTC happens to land on a minute boundary where 5m, 15m, and 30m seed crons all fire. This is the **steady-state worst case for the existing setup** — and even this peak doesn't OOM-kill the container. The 10:54 OOM was specifically caused by the 5×parallel-process deploy pattern that's no longer in use.

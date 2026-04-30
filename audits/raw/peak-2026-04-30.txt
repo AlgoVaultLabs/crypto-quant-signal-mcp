@@ -1,0 +1,807 @@
+===== SAMPLE #1 @ 2026-04-30T11:31:50Z =====
+--- uptime ---
+ 11:31:50 up 24 days, 20:40,  3 users,  load average: 1.08, 1.86, 7.87
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.4Gi       1.7Gi       144Mi       1.1Gi       2.3Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 11:31:50 up 24 days, 20:40,  3 users,  load average: 1.08, 1.86, 7.87
+Tasks: 144 total,   1 running, 143 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  0.0 us,  4.5 sy,  0.0 ni, 95.5 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1723.4 free,   1412.4 used,   1114.6 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2402.0 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+    873 message+  20   0    9852   3328   2432 S   9.1   0.1   0:32.57 dbus-daemon
+    895 root      20   0   18180   6016   4864 S   9.1   0.2   0:22.83 systemd-logind
+4113889 root      19  -1   75560  27424  25768 S   9.1   0.7   2:39.29 systemd-journal
+      1 root      20   0   22792  11320   7168 S   0.0   0.3   3:08.67 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3215796 3215790  100  0.1       00:00 ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu
+3215427 3198816 19.4  3.1       00:49 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3215451 4085070  6.5  3.7       00:47 postgres: algovault signal_performance 172.18.0.4(38700) idle
+3198840 3198816  1.0  2.3       37:37 node dist/index.js
+3189814       1  0.6  0.2       52:50 /usr/bin/containerd-shim-runc-v2 -namespace moby -id 5bca13c936df497dc9a36fca551b077813a058791e3fcb621e3e971dfdd81090 -address /run/containerd/containerd.sock
+   2295       1  0.4 14.9 24-20:36:25 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+3194437       2  0.3  0.0       46:25 [kworker/1:0-events]
+  23394       1  0.1  1.6 24-05:14:31 /usr/bin/containerd
+3189840 3189814  0.1  1.0       52:50 node dist/facilitator.js
+3197964 4085070  0.1  3.5       39:08 postgres: background writer 
+     17       2  0.1  0.0 24-20:40:22 [rcu_preempt]
+     35       2  0.1  0.0 24-20:40:22 [kcompactd0]
+3198816       1  0.0  0.3       37:37 /usr/bin/containerd-shim-runc-v2 -namespace moby -id 3fde994de8dc65ff4bf41a3d6186f6b8ea380ad438847177b0ab8b63f9bba1c5 -address /run/containerd/containerd.sock
+4113907       1  0.0  0.0  6-04:48:21 /usr/sbin/qemu-ga
+3209972       2  0.0  0.0       14:49 [kworker/0:1-events]
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    0.95%     170.8MiB / 3.725GiB   4.48%     20.9GB / 60.3MB   66.4MB / 73.7kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     25.8MiB / 3.725GiB    0.68%     16.1kB / 15.4kB   5.13GB / 0B
+crypto-quant-signal-mcp-postgres-1      5.15%     169.8MiB / 3.725GiB   4.45%     12.8GB / 4.7TB    51.9GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.27    0.00    5.53    0.10    0.00   81.09
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.99     0.63   9.94    0.35    40.57   16.92    148.78     7.80  31.55    0.80     8.79    0.05     40.97     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #2 @ 2026-04-30T11:36:42Z =====
+--- uptime ---
+ 11:36:42 up 24 days, 20:45,  3 users,  load average: 2.82, 2.49, 6.49
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.8Gi       1.1Gi       144Mi       1.3Gi       2.0Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 11:36:43 up 24 days, 20:45,  3 users,  load average: 2.82, 2.49, 6.49
+Tasks: 160 total,   1 running, 159 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  4.5 us,  4.5 sy,  0.0 ni, 90.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1085.8 free,   1796.1 used,   1368.9 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2018.3 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3219010 70        20   0  176904 146360 143104 S  27.3   3.7   0:02.99 postgres
+3219181 70        20   0  176908 145876 142848 S  27.3   3.7   0:00.77 postgres
+3218851 algovau+  20   0   10.8g 157664  52736 S   9.1   4.0   0:07.00 node
+3219203 root      20   0   13232   6400   4224 R   9.1   0.2   0:00.01 top
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.72 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3218851 3198816 16.7  4.0       00:41 node dist/scripts/seed-signals.js --timeframe 15m --top 100 --exchange BYBIT
+3218890 3198816 14.9  4.8       00:41 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3219181 4085070 13.3  3.7       00:05 postgres: algovault signal_performance 172.18.0.4(34564) idle
+3218897 3198816 12.8  4.9       00:41 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3219119 4085070  9.3  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(59116) idle
+3219010 4085070  7.5  3.7       00:39 postgres: algovault signal_performance 172.18.0.4(40092) idle
+3219099 4085070  5.5  3.7       00:24 postgres: algovault signal_performance 172.18.0.4(59102) idle
+3219046 4085070  3.8  3.7       00:37 postgres: algovault signal_performance 172.18.0.4(40174) idle
+3218840 3198816  1.2  1.5       00:41 node dist/scripts/backfill-outcomes.js
+3198840 3198816  0.9  2.3       42:29 node dist/index.js
+3189814       1  0.6  0.3       57:43 /usr/bin/containerd-shim-runc-v2 -namespace moby -id 5bca13c936df497dc9a36fca551b077813a058791e3fcb621e3e971dfdd81090 -address /run/containerd/containerd.sock
+   2295       1  0.4 14.9 24-20:41:17 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+3219178 4085070  0.4  0.4       00:06 postgres: algovault signal_performance 172.18.0.4(34556) idle
+3194437       2  0.2  0.0       51:18 [kworker/1:0-cgroup_destroy]
+  23394       1  0.1  1.6 24-05:19:23 /usr/bin/containerd
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    9.75%     486.5MiB / 3.725GiB   12.75%    23.7GB / 67.3MB   66.4MB / 86kB
+crypto-quant-signal-mcp-facilitator-1   1.99%     26.81MiB / 3.725GiB   0.70%     18kB / 17.2kB     5.13GB / 0B
+crypto-quant-signal-mcp-postgres-1      53.59%    251.3MiB / 3.725GiB   6.59%     12.8GB / 4.7TB    52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.27    0.00    5.53    0.10    0.00   81.09
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    232.07     0.63   9.94    0.35    40.57   16.92    148.77     7.80  31.55    0.80     8.79    0.05     40.96     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #3 @ 2026-04-30T11:41:35Z =====
+--- uptime ---
+ 11:41:35 up 24 days, 20:50,  3 users,  load average: 3.43, 3.20, 5.72
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.5Gi       1.3Gi       144Mi       1.3Gi       2.3Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 11:41:35 up 24 days, 20:50,  3 users,  load average: 3.43, 3.20, 5.72
+Tasks: 149 total,   1 running, 148 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  9.5 us,  4.8 sy,  0.0 ni, 85.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1374.4 free,   1504.6 used,   1371.8 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2309.8 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.74 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_kthread
+     15 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_trace_kthread
+     16 root      20   0       0      0      0 S   0.0   0.0   6:17.32 ksoftirqd/0
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3221147 3198816 31.2  3.2       00:33 node dist/scripts/seed-signals.js --timeframe 30m --top 100 --exchange OKX
+3221160 3198816 20.1  3.8       00:33 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3221188 4085070  9.6  3.7       00:33 postgres: algovault signal_performance 172.18.0.4(60520) idle
+3221190 4085070  7.7  3.7       00:33 postgres: algovault signal_performance 172.18.0.4(60540) idle
+3221214 4085070  5.3  3.7       00:31 postgres: algovault signal_performance 172.18.0.4(60600) idle
+3198840 3198816  0.8  2.3       47:22 node dist/index.js
+3189814       1  0.5  0.3    01:02:35 /usr/bin/containerd-shim-runc-v2 -namespace moby -id 5bca13c936df497dc9a36fca551b077813a058791e3fcb621e3e971dfdd81090 -address /run/containerd/containerd.sock
+   2295       1  0.4 14.9 24-20:46:09 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+3194437       2  0.2  0.0       56:10 [kworker/1:0-cgroup_destroy]
+  23394       1  0.1  1.6 24-05:24:15 /usr/bin/containerd
+3189840 3189814  0.1  1.0    01:02:35 node dist/facilitator.js
+3197964 4085070  0.1  3.5       48:52 postgres: background writer 
+     17       2  0.1  0.0 24-20:50:07 [rcu_preempt]
+     35       2  0.1  0.0 24-20:50:07 [kcompactd0]
+3221117 3221114  0.0  0.7       00:33 docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/seed-signals.js --timeframe 30m --top 100 --exchange OKX
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    11.86%    276.1MiB / 3.725GiB   7.24%     26.6GB / 75.8MB   66.4MB / 94.2kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     26.44MiB / 3.725GiB   0.69%     19.1kB / 18.4kB   5.13GB / 0B
+crypto-quant-signal-mcp-postgres-1      18.00%    245.5MiB / 3.725GiB   6.44%     12.8GB / 4.71TB   52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.28    0.00    5.53    0.10    0.00   81.08
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    232.04     0.63   9.94    0.35    40.57   16.92    148.77     7.80  31.55    0.80     8.79    0.05     40.96     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #4 @ 2026-04-30T11:46:27Z =====
+--- uptime ---
+ 11:46:27 up 24 days, 20:54,  3 users,  load average: 2.47, 2.74, 4.84
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.6Gi       1.2Gi       144Mi       1.3Gi       2.1Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 11:46:27 up 24 days, 20:55,  3 users,  load average: 2.47, 2.74, 4.84
+Tasks: 161 total,   1 running, 160 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 57.1 us, 28.6 sy,  0.0 ni, 14.3 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1250.9 free,   1625.7 used,   1374.3 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2188.7 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.77 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_kthread
+     15 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_trace_kthread
+     16 root      20   0       0      0      0 S   0.0   0.0   6:17.48 ksoftirqd/0
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3223339 3198816 37.9  3.2       00:26 node dist/scripts/seed-signals.js --timeframe 1m --restricted-universe 5
+3223310 3198816 27.2  3.7       00:26 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3222935 3198816 18.1  3.4       01:26 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3223116 4085070  8.9  3.7       00:53 postgres: algovault signal_performance 172.18.0.4(51570) idle
+3222978 4085070  8.0  3.7       01:25 postgres: algovault signal_performance 172.18.0.4(48552) idle
+3223400 4085070  7.2  3.7       00:25 postgres: algovault signal_performance 172.18.0.4(36430) idle
+3223425 4085070  5.3  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(36618) SELECT
+3223427 4085070  3.9  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(36638) idle
+3223406 4085070  3.6  3.7       00:25 postgres: algovault signal_performance 172.18.0.4(36484) idle
+3223430 4085070  3.5  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(36662) idle
+3223424 4085070  2.8  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(36604) idle
+3223429 4085070  2.4  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(36658) idle
+3223428 4085070  1.7  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(36652) idle
+3223407 4085070  1.5  3.7       00:25 postgres: algovault signal_performance 172.18.0.4(36488) idle
+3198840 3198816  0.7  2.3       52:14 node dist/index.js
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    25.87%    353.3MiB / 3.725GiB   9.26%     29.5GB / 83.1MB   66.4MB / 106kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     27.66MiB / 3.725GiB   0.73%     20.9kB / 20.2kB   5.13GB / 0B
+crypto-quant-signal-mcp-postgres-1      43.77%    262.1MiB / 3.725GiB   6.87%     12.8GB / 4.71TB   52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.28    0.00    5.53    0.10    0.00   81.08
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    232.01     0.63   9.94    0.35    40.57   16.92    148.79     7.80  31.55    0.80     8.79    0.05     40.95     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #5 @ 2026-04-30T11:51:19Z =====
+--- uptime ---
+ 11:51:19 up 24 days, 20:59,  3 users,  load average: 2.77, 2.62, 4.21
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.7Gi       1.1Gi       145Mi       1.3Gi       2.0Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 11:51:20 up 24 days, 20:59,  3 users,  load average: 2.77, 2.62, 4.21
+Tasks: 181 total,   1 running, 180 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 29.2 us, 29.2 sy,  0.0 ni, 41.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1092.8 free,   1777.7 used,   1380.7 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2036.7 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3225535 algovau+  20   0   10.8g 165916  52608 S 100.0   4.2   0:05.87 node
+3225602 70        20   0  176908 145868 142720 S  36.4   3.7   0:01.23 postgres
+3225796 root      20   0   13232   6400   4224 R   9.1   0.2   0:00.01 top
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.82 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3225510 3198816 40.9  5.0       00:18 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3225535 3198816 31.7  4.2       00:18 node dist/scripts/seed-signals.js --timeframe 15m --top 100 --exchange BYBIT
+3225481 3198816 31.3  3.6       00:18 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3225789 4085070 12.9  3.7       00:03 postgres: algovault signal_performance 172.18.0.4(40476) idle
+3225615 4085070  7.8  3.7       00:15 postgres: algovault signal_performance 172.18.0.4(52444) idle
+3225602 4085070  7.3  3.7       00:16 postgres: algovault signal_performance 172.18.0.4(52342) idle
+3225613 4085070  4.6  3.7       00:15 postgres: algovault signal_performance 172.18.0.4(52428) idle
+3225589 4085070  4.4  3.7       00:17 postgres: algovault signal_performance 172.18.0.4(52286) idle
+3225610 4085070  4.2  3.7       00:15 postgres: algovault signal_performance 172.18.0.4(52408) idle
+3225587 4085070  3.6  3.7       00:17 postgres: algovault signal_performance 172.18.0.4(52260) idle
+3225594 4085070  3.5  3.7       00:17 postgres: algovault signal_performance 172.18.0.4(52318) idle
+3225604 4085070  3.4  3.7       00:16 postgres: algovault signal_performance 172.18.0.4(52358) idle
+3225601 4085070  3.2  3.7       00:16 postgres: algovault signal_performance 172.18.0.4(52338) idle
+3225618 4085070  2.7  3.7       00:15 postgres: algovault signal_performance 172.18.0.4(52466) idle
+3225612 4085070  2.7  3.7       00:15 postgres: algovault signal_performance 172.18.0.4(52420) idle
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    12.49%    471.3MiB / 3.725GiB   12.36%    32.2GB / 89.4MB   66.4MB / 115kB
+crypto-quant-signal-mcp-facilitator-1   2.72%     28.29MiB / 3.725GiB   0.74%     22kB / 21.4kB     5.13GB / 0B
+crypto-quant-signal-mcp-postgres-1      43.43%    292.7MiB / 3.725GiB   7.67%     12.8GB / 4.71TB   52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.28    0.00    5.54    0.10    0.00   81.07
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.98     0.63   9.94    0.35    40.57   16.92    148.80     7.80  31.55    0.80     8.79    0.05     40.94     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #6 @ 2026-04-30T11:56:12Z =====
+--- uptime ---
+ 11:56:12 up 24 days, 21:04,  3 users,  load average: 1.83, 2.37, 3.68
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.9Gi       833Mi       145Mi       1.4Gi       1.8Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 11:56:12 up 24 days, 21:04,  3 users,  load average: 1.83, 2.37, 3.68
+Tasks: 178 total,  10 running, 168 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 76.2 us, 23.8 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,    816.7 free,   1965.6 used,   1471.8 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   1848.8 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3228316 algovau+  20   0   10.7g 120136  47360 S  80.0   3.1   0:04.30 node
+3227994 70        20   0  176972 146444 143232 R  20.0   3.7   0:04.89 postgres
+3228392 70        20   0  180588 149456 142720 R  20.0   3.8   0:00.18 postgres
+3228422 70        20   0  180576 147756 142848 R  20.0   3.8   0:00.59 postgres
+3228391 70        20   0  179160  42552  37376 R  10.0   1.1   0:00.02 postgres
+3228393 70        20   0  179608 147548 142336 R  10.0   3.8   0:00.14 postgres
+3228395 70        20   0  180792 148576 142464 R  10.0   3.8   0:00.25 postgres
+3228398 70        20   0  178752 144620 139904 R  10.0   3.7   0:00.10 postgres
+3228425 70        20   0  178568 147544 142848 R  10.0   3.8   0:00.64 postgres
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.93 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3228345 3226290 42.7  6.6       00:11 node dist/scripts/seed-signals.js --timeframe 1m --restricted-universe 5
+3228316 3226290 38.0  3.0       00:11 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3228333 3226290 26.1  5.7       00:11 node dist/scripts/monitor.js --mode critical
+3227955 3226290 16.5  3.1       01:11 node dist/scripts/seed-signals.js --timeframe 15m --top 100 --exchange BITGET
+3228423 4085070 11.9  3.7       00:07 postgres: algovault signal_performance 172.18.0.4(60534) idle
+3228425 4085070  8.4  3.7       00:07 postgres: algovault signal_performance 172.18.0.4(60564) SELECT
+3228422 4085070  7.7  3.8       00:07 postgres: algovault signal_performance 172.18.0.4(60522) SELECT
+3227994 4085070  6.9  3.7       01:10 postgres: algovault signal_performance 172.18.0.4(49396) idle
+3228430 4085070  6.9  3.7       00:07 postgres: algovault signal_performance 172.18.0.4(60596) idle
+3227992 4085070  6.6  3.7       01:10 postgres: algovault signal_performance 172.18.0.4(49390) idle
+3228429 4085070  4.8  3.7       00:07 postgres: algovault signal_performance 172.18.0.4(60594) idle
+3228399 4085070  4.7  3.7       00:10 postgres: algovault signal_performance 172.18.0.4(60504) idle
+3228421 4085070  4.3  3.7       00:07 postgres: algovault signal_performance 172.18.0.4(60510) SELECT
+3226315 3226290  3.2  2.2       04:18 node dist/index.js
+3228389 4085070  3.1  0.7       00:10 postgres: algovault signal_performance 172.18.0.4(60380) idle
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    111.49%   312.9MiB / 3.725GiB   8.20%     2.57GB / 6.3MB    4.1kB / 12.3kB
+crypto-quant-signal-mcp-facilitator-1   0.01%     23.6MiB / 3.725GiB    0.62%     3.56kB / 2.63kB   4.98MB / 0B
+crypto-quant-signal-mcp-postgres-1      86.84%    300.5MiB / 3.725GiB   7.88%     12.8GB / 4.71TB   52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.29    0.00    5.54    0.10    0.00   81.07
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.98     0.63   9.98    0.35    40.56   16.92    148.82     7.80  31.54    0.80     8.79    0.05     40.94     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #7 @ 2026-04-30T12:01:04Z =====
+--- uptime ---
+ 12:01:04 up 24 days, 21:09,  3 users,  load average: 2.20, 2.38, 3.32
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.5Gi       1.2Gi       144Mi       1.4Gi       2.2Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:01:04 up 24 days, 21:09,  3 users,  load average: 2.20, 2.38, 3.32
+Tasks: 164 total,   1 running, 163 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 13.0 us, 13.0 sy,  0.0 ni, 73.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1245.6 free,   1539.8 used,   1468.4 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2274.6 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3230064 algovau+  20   0   10.8g 161628  52864 S  16.7   4.1   0:08.64 node
+3230273 70        20   0  176908 146120 142976 S   8.3   3.7   0:03.59 postgres
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.96 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_kthread
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3230564 3215790  100  0.1       00:00 ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu
+3230532 3226290 21.9  2.1       00:03 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+3230064 3226290 13.6  4.1       01:03 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3230078 3226290 10.6  2.2       01:03 node dist/scripts/seed-signals.js --timeframe 1h --exchange HL
+3230415 4085070 10.1  3.7       00:25 postgres: algovault signal_performance 172.18.0.4(55764) idle
+3230273 4085070  7.4  3.7       00:48 postgres: algovault signal_performance 172.18.0.4(53720) idle
+3230544 4085070  5.3  3.7       00:03 postgres: algovault signal_performance 172.18.0.4(37672) idle
+3230236 4085070  4.7  3.7       00:59 postgres: algovault signal_performance 172.18.0.4(45060) idle
+3230551 4085070  4.0  0.4       00:00 postgres: algovault signal_performance 172.18.0.4(37710) idle
+3226315 3226290  2.8  2.1       09:10 node dist/index.js
+   2295       1  0.4 15.3 24-21:05:39 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+3230514 3230513  0.2  0.7       00:03 docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange HL
+  23394       1  0.1  1.7 24-05:43:45 /usr/bin/containerd
+3226226 3226201  0.1  1.6       09:16 node dist/facilitator.js
+     17       2  0.1  0.0 24-21:09:36 [rcu_preempt]
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    28.28%    287.9MiB / 3.725GiB   7.55%     5.08GB / 12MB     4.1kB / 20.5kB
+crypto-quant-signal-mcp-facilitator-1   2.03%     23.97MiB / 3.725GiB   0.63%     4.86kB / 3.83kB   4.98MB / 0B
+crypto-quant-signal-mcp-postgres-1      59.24%    264.6MiB / 3.725GiB   6.94%     12.8GB / 4.72TB   52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.29    0.00    5.54    0.10    0.00   81.07
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.95     0.63   9.98    0.35    40.56   16.92    148.84     7.80  31.54    0.80     8.79    0.05     40.93     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #8 @ 2026-04-30T12:05:56Z =====
+--- uptime ---
+ 12:05:56 up 24 days, 21:14,  3 users,  load average: 3.27, 3.17, 3.40
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.5Gi       1.2Gi       144Mi       1.4Gi       2.2Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:05:57 up 24 days, 21:14,  3 users,  load average: 3.27, 3.17, 3.40
+Tasks: 157 total,   1 running, 156 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  8.7 us,  4.3 sy,  0.0 ni, 82.6 id,  4.3 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1204.5 free,   1576.8 used,   1472.5 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2237.6 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3230916 algovau+  20   0   10.7g 118276  52992 S  18.2   3.0   0:13.32 node
+3231082 70        20   0  176904 149136 145920 S   9.1   3.8   0:10.82 postgres
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:08.99 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_kthread
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3232689 3215790  100  0.1       00:00 ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu
+3232375 3226290 12.7  2.0       00:55 node dist/scripts/seed-signals.js --timeframe 30m --top 100 --exchange HL
+3231915 3226290  7.4  3.7       01:55 node dist/scripts/seed-signals.js --timeframe 1h --exchange BYBIT
+3232030 4085070  5.6  3.7       01:53 postgres: algovault signal_performance 172.18.0.4(42888) idle
+3230916 3226290  5.6  3.0       03:56 node dist/scripts/seed-signals.js --timeframe 1h --exchange BINANCE
+3232037 4085070  5.5  3.7       01:53 postgres: algovault signal_performance 172.18.0.4(42942) idle
+3232410 4085070  4.8  3.7       00:53 postgres: algovault signal_performance 172.18.0.4(47072) idle
+3231077 4085070  4.6  3.8       03:55 postgres: algovault signal_performance 172.18.0.4(34964) idle
+3231082 4085070  4.6  3.8       03:55 postgres: algovault signal_performance 172.18.0.4(35000) idle
+3226315 3226290  2.6  2.3       14:02 node dist/index.js
+   2295       1  0.4 15.4 24-21:10:31 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+  23394       1  0.1  1.7 24-05:48:37 /usr/bin/containerd
+3226226 3226201  0.1  1.6       14:08 node dist/facilitator.js
+     17       2  0.1  0.0 24-21:14:29 [rcu_preempt]
+3197964 4085070  0.1  3.5    01:13:14 postgres: background writer 
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    6.81%     236.5MiB / 3.725GiB   6.20%     7.74GB / 20.8MB   4.1kB / 28.7kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     24.3MiB / 3.725GiB    0.64%     6.03kB / 5.03kB   4.98MB / 0B
+crypto-quant-signal-mcp-postgres-1      25.56%    250.3MiB / 3.725GiB   6.56%     12.8GB / 4.72TB   52.1GB / 129GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.29    0.00    5.54    0.10    0.00   81.06
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.92     0.63   9.98    0.35    40.56   16.93    148.84     7.80  31.54    0.80     8.79    0.05     40.93     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #9 @ 2026-04-30T12:10:49Z =====
+--- uptime ---
+ 12:10:49 up 24 days, 21:19,  3 users,  load average: 4.29, 3.91, 3.67
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.7Gi       1.3Gi       144Mi       1.2Gi       2.1Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:10:49 up 24 days, 21:19,  3 users,  load average: 4.29, 3.91, 3.67
+Tasks: 160 total,   2 running, 158 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  4.5 us,  4.5 sy,  0.0 ni, 90.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1338.1 free,   1705.7 used,   1210.0 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2108.7 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3234968 70        20   0  176904 145632 142592 S  36.4   3.7   0:01.60 postgres
+3234948 70        20   0  176972 146540 143232 S  27.3   3.8   0:02.18 postgres
+3233944 70        20   0  176904 148744 145536 S  18.2   3.8   0:06.95 postgres
+3234849 algovau+  20   0   10.7g 121592  51968 S  18.2   3.1   0:07.16 node
+3233850 algovau+  20   0   10.7g 123468  52096 S   9.1   3.2   0:11.23 node
+3234956 70        20   0  178272 147692 143360 R   9.1   3.8   0:02.56 postgres
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:09.02 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3234849 3226290 14.9  3.1       00:47 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange BITGET
+3234813 3226290 14.3  3.2       00:47 node dist/scripts/seed-signals.js --timeframe 15m --top 100 --exchange BITGET
+3234804 3226290  9.5  3.7       00:47 node dist/scripts/seed-signals.js --timeframe 4h --exchange HL
+3233850 3226290  6.7  3.1       02:47 node dist/scripts/seed-signals.js --timeframe 1h --exchange BITGET
+3234956 4085070  5.6  3.7       00:45 postgres: algovault signal_performance 172.18.0.4(47786) SELECT
+3234952 4085070  5.2  3.7       00:45 postgres: algovault signal_performance 172.18.0.4(47752) idle
+3234958 4085070  5.1  3.7       00:45 postgres: algovault signal_performance 172.18.0.4(47798) idle
+3234948 4085070  4.7  3.7       00:45 postgres: algovault signal_performance 172.18.0.4(47718) idle
+3233946 4085070  4.2  3.8       02:45 postgres: algovault signal_performance 172.18.0.4(50470) idle
+3233944 4085070  4.1  3.8       02:45 postgres: algovault signal_performance 172.18.0.4(50450) idle
+3234968 4085070  3.6  3.7       00:44 postgres: algovault signal_performance 172.18.0.4(47864) idle
+3226315 3226290  1.9  1.5       18:55 node dist/index.js
+   2295       1  0.4 15.6 24-21:15:23 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+  23394       1  0.1  1.2 24-05:53:29 /usr/bin/containerd
+     17       2  0.1  0.0 24-21:19:21 [rcu_preempt]
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    19.81%    414.2MiB / 3.725GiB   10.86%    11GB / 35MB       53.8MB / 41kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     26.75MiB / 3.725GiB   0.70%     7.84kB / 6.83kB   6.05MB / 0B
+crypto-quant-signal-mcp-postgres-1      37.08%    253.7MiB / 3.725GiB   6.65%     12.8GB / 4.72TB   52.1GB / 130GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.30    0.00    5.54    0.10    0.00   81.06
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.93     0.63   9.97    0.35    40.55   16.93    148.89     7.80  31.53    0.80     8.79    0.05     40.92     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #10 @ 2026-04-30T12:15:41Z =====
+--- uptime ---
+ 12:15:41 up 24 days, 21:24,  3 users,  load average: 3.27, 3.73, 3.66
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.7Gi       1.3Gi       144Mi       1.2Gi       2.1Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:15:41 up 24 days, 21:24,  3 users,  load average: 3.27, 3.73, 3.66
+Tasks: 165 total,   2 running, 163 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  9.1 us, 13.6 sy,  0.0 ni, 77.3 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1327.5 free,   1710.1 used,   1216.2 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2104.3 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3237354 70        20   0  176908 145688 142592 S  50.0   3.7   0:00.79 postgres
+3237077 algovau+  20   0   10.8g 158676  51840 R  25.0   4.1   0:09.86 node
+3236753 70        20   0  176972 147624 144384 S  16.7   3.8   0:06.37 postgres
+3236667 algovau+  20   0   10.7g 133876  51840 S   8.3   3.4   0:09.23 node
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:09.04 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3237378 3215790  100  0.1       00:00 ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu
+3237114 3226290 26.1  3.2       00:39 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange BITGET
+3237077 3226290 24.7  4.0       00:39 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3237354 4085070 11.4  3.7       00:07 postgres: algovault signal_performance 172.18.0.4(56230) idle
+3236667 3226290  9.1  3.4       01:40 node dist/scripts/seed-signals.js --timeframe 4h --exchange BYBIT
+3237180 4085070  8.9  3.7       00:38 postgres: algovault signal_performance 172.18.0.4(40762) idle
+3237182 4085070  8.1  3.7       00:38 postgres: algovault signal_performance 172.18.0.4(40770) idle
+3236749 4085070  6.6  3.7       01:38 postgres: algovault signal_performance 172.18.0.4(48760) idle
+3236753 4085070  6.4  3.7       01:38 postgres: algovault signal_performance 172.18.0.4(48786) idle
+3237164 4085070  6.1  3.7       00:39 postgres: algovault signal_performance 172.18.0.4(40684) idle
+3235699 3226290  5.8  2.1       03:39 node dist/scripts/seed-signals.js --timeframe 4h --exchange BINANCE
+3235917 4085070  4.5  3.8       03:37 postgres: algovault signal_performance 172.18.0.4(55524) idle
+3235914 4085070  4.3  3.8       03:37 postgres: algovault signal_performance 172.18.0.4(55504) idle
+3226315 3226290  1.6  1.6       23:47 node dist/index.js
+3237112 3226290  1.4  1.5       00:39 node dist/scripts/backfill-outcomes.js
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    28.17%    411.2MiB / 3.725GiB   10.78%    13.9GB / 45.8MB   53.8MB / 49.2kB
+crypto-quant-signal-mcp-facilitator-1   2.77%     26.24MiB / 3.725GiB   0.69%     9kB / 8.03kB      6.05MB / 0B
+crypto-quant-signal-mcp-postgres-1      61.09%    258MiB / 3.725GiB     6.76%     12.8GB / 4.73TB   52.1GB / 130GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.30    0.00    5.54    0.10    0.00   81.05
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.90     0.63   9.97    0.35    40.55   16.93    148.94     7.80  31.53    0.80     8.80    0.05     40.92     0.00   0.01    0.14   848.78    5.36    0.30    0.02   0.40
+
+
+
+===== SAMPLE #11 @ 2026-04-30T12:20:33Z =====
+--- uptime ---
+ 12:20:33 up 24 days, 21:29,  3 users,  load average: 3.92, 4.07, 3.84
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.6Gi       1.4Gi       144Mi       1.2Gi       2.1Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:20:34 up 24 days, 21:29,  3 users,  load average: 3.92, 4.07, 3.84
+Tasks: 157 total,   5 running, 152 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 47.6 us, 28.6 sy,  0.0 ni, 23.8 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1376.5 free,   1655.2 used,   1222.1 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2159.2 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3239412 70        20   0  182772 151160 143104 R  90.9   3.9   0:02.25 postgres
+3238630 70        20   0  176908 148792 145536 S   9.1   3.8   0:07.45 postgres
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:09.06 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_kthread
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3239625 3215790  100  0.1       00:00 ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu
+3239346 3226290 30.0  3.9       00:32 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange BITGET
+3239355 3226290 28.8  3.3       00:32 node dist/scripts/seed-signals.js --timeframe 1m --restricted-universe 5
+3239434 4085070  8.8  3.7       00:31 postgres: algovault signal_performance 172.18.0.4(44692) idle
+3238482 3226290  8.1  3.2       02:32 node dist/scripts/seed-signals.js --timeframe 4h --exchange BITGET
+3239435 4085070  7.6  3.7       00:31 postgres: algovault signal_performance 172.18.0.4(44698) idle
+3239412 4085070  7.1  3.7       00:31 postgres: algovault signal_performance 172.18.0.4(44510) idle
+3239418 4085070  5.0  3.7       00:31 postgres: algovault signal_performance 172.18.0.4(44578) idle
+3238630 4085070  4.9  3.8       02:29 postgres: algovault signal_performance 172.18.0.4(52588) idle
+3238637 4085070  4.6  3.8       02:29 postgres: algovault signal_performance 172.18.0.4(52632) idle
+3226315 3226290  1.3  1.6       28:39 node dist/index.js
+   2295       1  0.4 15.6 24-21:25:08 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+  23394       1  0.1  1.2 24-06:03:14 /usr/bin/containerd
+     17       2  0.1  0.0 24-21:29:06 [rcu_preempt]
+3197964 4085070  0.1  3.5    01:27:51 postgres: background writer 
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    20.52%    378.8MiB / 3.725GiB   9.93%     16.8GB / 57.4MB   53.8MB / 61.4kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     27.15MiB / 3.725GiB   0.71%     10.7kB / 9.83kB   6.05MB / 0B
+crypto-quant-signal-mcp-postgres-1      52.22%    252.5MiB / 3.725GiB   6.62%     12.8GB / 4.73TB   52.1GB / 130GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.30    0.00    5.54    0.10    0.00   81.04
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.87     0.63   9.97    0.35    40.55   16.94    148.98     7.80  31.52    0.80     8.80    0.05     40.91     0.00   0.01    0.14   848.78    5.37    0.30    0.02   0.41
+
+
+
+===== SAMPLE #12 @ 2026-04-30T12:25:26Z =====
+--- uptime ---
+ 12:25:26 up 24 days, 21:33,  3 users,  load average: 3.83, 3.58, 3.65
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       1.6Gi       1.3Gi       144Mi       1.2Gi       2.1Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:25:26 up 24 days, 21:33,  3 users,  load average: 3.83, 3.58, 3.65
+Tasks: 159 total,   2 running, 157 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  5.0 us,  5.0 sy,  0.0 ni, 90.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,   1381.5 free,   1646.6 used,   1225.7 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   2167.8 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3241646 70        20   0  176968 146028 142848 R  40.0   3.7   0:01.93 postgres
+3241746 root      20   0   13232   6400   4224 R  10.0   0.2   0:00.01 top
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:09.08 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.49 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_g
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_p
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     12 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_pe
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthread
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_kthread
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3241748 3215790  100  0.1       00:00 ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu
+3241595 3226290 34.8  3.2       00:24 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange BITGET
+3241613 3226290 33.2  3.2       00:24 node dist/scripts/seed-signals.js --timeframe 15m --top 100 --exchange BITGET
+3241110 3226290 13.7  4.4       01:24 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3241483 4085070  9.0  3.7       00:46 postgres: algovault signal_performance 172.18.0.4(46060) idle
+3241653 4085070  8.5  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40922) idle
+3241646 4085070  8.0  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40844) idle
+3241322 4085070  7.5  3.7       01:12 postgres: algovault signal_performance 172.18.0.4(59644) idle
+3241647 4085070  6.1  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40860) idle
+3241649 4085070  5.7  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40878) idle
+3241655 4085070  4.3  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40940) idle
+3241652 4085070  2.9  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40914) idle
+3241640 4085070  2.8  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40800) idle
+3241643 4085070  1.6  3.7       00:23 postgres: algovault signal_performance 172.18.0.4(40812) idle
+3226315 3226290  1.1  1.6       33:32 node dist/index.js
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    24.28%    370.2MiB / 3.725GiB   9.71%     19.7GB / 66MB     53.8MB / 69.6kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     28.18MiB / 3.725GiB   0.74%     11.9kB / 11kB     6.05MB / 0B
+crypto-quant-signal-mcp-postgres-1      45.15%    252.4MiB / 3.725GiB   6.62%     12.8GB / 4.73TB   52.1GB / 130GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.31    0.00    5.55    0.10    0.00   81.04
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.84     0.63   9.97    0.35    40.55   16.94    148.99     7.80  31.52    0.80     8.80    0.05     40.91     0.00   0.01    0.14   848.78    5.37    0.30    0.02   0.41
+
+
+
+===== SAMPLE #13 @ 2026-04-30T12:30:18Z =====
+--- uptime ---
+ 12:30:18 up 24 days, 21:38,  3 users,  load average: 2.92, 2.65, 3.20
+--- free -h ---
+               total        used        free      shared  buff/cache   available
+Mem:           3.7Gi       2.1Gi       909Mi       145Mi       1.2Gi       1.7Gi
+Swap:             0B          0B          0B
+--- top -bn1 head ---
+top - 12:30:18 up 24 days, 21:38,  3 users,  load average: 2.92, 2.65, 3.20
+Tasks: 191 total,  13 running, 178 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 71.4 us, 28.6 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   3814.4 total,    911.8 free,   2098.7 used,   1243.8 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.   1715.7 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+3243717 algovau+  20   0   10.8g 148652  46720 R  63.6   3.8   0:04.22 node
+3243696 algovau+  20   0   10.8g 239004  46720 R  18.2   6.1   0:05.36 node
+3243658 algovau+  20   0   10.7g 144340  46976 R   9.1   3.7   0:03.91 node
+3243851 70        20   0  180980 149640 142848 R   9.1   3.8   0:00.39 postgres
+3243852 70        20   0  182772 150972 143104 R   9.1   3.9   0:00.39 postgres
+3243859 70        20   0  180720 149424 142720 R   9.1   3.8   0:00.36 postgres
+3243902 70        20   0  180588 120648 114048 R   9.1   3.1   0:00.06 postgres
+3243923 70        20   0  184512 120840 112384 R   9.1   3.1   0:00.04 postgres
+3243924 70        20   0  182240 103036  96000 R   9.1   2.6   0:00.03 postgres
+3243926 70        20   0  180444  89856  83584 R   9.1   2.3   0:00.02 postgres
+3243927 70        20   0  182240  99716  92800 R   9.1   2.6   0:00.03 postgres
+3243931 root      20   0   13232   6400   4224 R   9.1   0.2   0:00.01 top
+      1 root      20   0   22792  11448   7168 S   0.0   0.3   3:09.11 systemd
+--- ps top-15 by %CPU ---
+    PID    PPID %CPU %MEM     ELAPSED CMD
+3243696 3226290 32.2  6.0       00:16 node dist/scripts/seed-signals.js --timeframe 3m --restricted-universe 20
+3243623 3226290 30.6  5.5       00:16 node dist/scripts/seed-signals.js --timeframe 1m --restricted-universe 5
+3243717 3226290 25.4  3.8       00:16 node dist/scripts/seed-signals.js --timeframe 2h --exchange HL
+3243658 3226290 23.4  3.6       00:16 node dist/scripts/seed-signals.js --timeframe 5m --top 50 --exchange BITGET
+3243901 4085070 13.3  3.3       00:00 postgres: algovault signal_performance 172.18.0.4(57450) idle
+3243924 4085070  9.7  2.8       00:00 postgres: algovault signal_performance 172.18.0.4(57476) SELECT
+3243902 4085070  9.2  3.0       00:00 postgres: algovault signal_performance 172.18.0.4(57458) SELECT
+3243923 4085070  8.8  3.2       00:00 postgres: algovault signal_performance 172.18.0.4(57464) SELECT
+3243899 4085070  8.6  3.3       00:01 postgres: algovault signal_performance 172.18.0.4(57444) idle
+3243927 4085070  7.6  2.7       00:00 postgres: algovault signal_performance 172.18.0.4(57512) SELECT
+3243854 4085070  5.4  3.7       00:13 postgres: algovault signal_performance 172.18.0.4(37436) idle
+3243926 4085070  5.0  2.5       00:00 postgres: algovault signal_performance 172.18.0.4(57496) SELECT
+3243850 4085070  4.4  3.7       00:13 postgres: algovault signal_performance 172.18.0.4(37390) idle
+3243848 4085070  3.2  3.7       00:14 postgres: algovault signal_performance 172.18.0.4(37376) idle
+3243856 4085070  3.2  3.7       00:13 postgres: algovault signal_performance 172.18.0.4(37452) idle
+--- docker stats no-stream ---
+NAME                                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+crypto-quant-signal-mcp-mcp-server-1    80.38%    737.9MiB / 3.725GiB   19.34%    22.1GB / 71.4MB   53.8MB / 81.9kB
+crypto-quant-signal-mcp-facilitator-1   0.00%     28.01MiB / 3.725GiB   0.73%     13.7kB / 12.8kB   6.05MB / 0B
+crypto-quant-signal-mcp-postgres-1      110.25%   375.9MiB / 3.725GiB   9.85%     12.8GB / 4.73TB   52.1GB / 130GB
+--- iostat 1 1 ---
+Linux 6.8.0-90-generic (AlgoVault-MCP) 	04/30/2026 	_x86_64_	(2 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          13.31    0.00    5.55    0.10    0.00   81.04
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+loop0            0.00      0.00     0.00   0.00    0.00     1.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sda              5.72    231.81     0.63   9.97    0.35    40.54   16.94    148.98     7.80  31.52    0.80     8.80    0.05     40.90     0.00   0.01    0.14   848.78    5.37    0.30    0.02   0.41
+
+
+
+===== SAMPLING COMPLETE @ 2026-04-30T12:30:20Z =====
