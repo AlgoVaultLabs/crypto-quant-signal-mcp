@@ -632,33 +632,124 @@ export async function getSignalWithBatch(signalId: number): Promise<any | null> 
   return rows.length > 0 ? rows[0] : null;
 }
 
-/** v1.4: Compute Funding Z-Score from rolling 14-day history. */
-export async function getFundingZScore(coin: string, currentFunding: number): Promise<number | null> {
-  const b = getBackend();
-  const cutoff14d = Math.floor(Date.now() / 1000) - 14 * 86400;
+/**
+ * OPTIMIZE-FUNDING-CACHE-W1 (2026-04-30): cached `funding_history` aggregate
+ * stats per coin. The DB query at the heart of `getFundingZScore` was the #1
+ * CPU sink on the CPX22 box (audit at `audits/CPX22-baseline-2026-04-30.md`):
+ * 150-200 queries/sec sustained against a 5.2M-row table = 49.4% postgres
+ * CPU sustained. Each query is fast (0.13ms) but volume × frequency = the
+ * box.
+ *
+ * The underlying 14-day rolling window changes on the order of HOURS — a
+ * 5-min TTL is invisible to signal quality. We cache (mean, stdDev,
+ * sampleCount) per coin; the per-call z-score is computed in-process from
+ * `(currentFunding - mean) / stdDev`. Negative results (sampleCount < 20)
+ * are also cached, preventing hammer on unknown / new-listing coins.
+ *
+ * Stampede protection mirrors `src/lib/cross-asset-grid.ts`: an in-flight
+ * promise map coalesces N concurrent miss-callers for the same coin into a
+ * single DB query.
+ */
+interface FundingStats {
+  mean: number;
+  stdDev: number;
+  sampleCount: number;
+  computedAt: number; // Date.now() ms
+}
 
-  let rows: { funding_rate: number }[];
-  if (isPg && b instanceof PgBackend) {
-    rows = await b.query(
-      'SELECT funding_rate FROM funding_history WHERE coin = ? AND recorded_at >= ? ORDER BY recorded_at',
-      [coin, cutoff14d]
-    ) as unknown as { funding_rate: number }[];
-  } else {
-    rows = b.all(
-      'SELECT funding_rate FROM funding_history WHERE coin = ? AND recorded_at >= ? ORDER BY recorded_at',
-      coin, cutoff14d
-    ) as unknown as { funding_rate: number }[];
+const FUNDING_STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const fundingStatsCache = new Map<string, FundingStats>();
+const fundingStatsInflight = new Map<string, Promise<FundingStats | null>>();
+
+/**
+ * Loads + aggregates 14-day funding history for one coin, with stampede
+ * protection. Returns null only on backend failure (DB error / unavailable);
+ * insufficient-sample shape returns FundingStats with sampleCount < 20.
+ */
+async function loadFundingStats(coin: string): Promise<FundingStats | null> {
+  const existing = fundingStatsInflight.get(coin);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<FundingStats | null> => {
+    try {
+      const b = getBackend();
+      const cutoff14d = Math.floor(Date.now() / 1000) - 14 * 86400;
+      const t0 = Date.now();
+      let rows: { funding_rate: number }[];
+      if (isPg && b instanceof PgBackend) {
+        rows = await b.query(
+          'SELECT funding_rate FROM funding_history WHERE coin = ? AND recorded_at >= ? ORDER BY recorded_at',
+          [coin, cutoff14d]
+        ) as unknown as { funding_rate: number }[];
+      } else {
+        rows = b.all(
+          'SELECT funding_rate FROM funding_history WHERE coin = ? AND recorded_at >= ? ORDER BY recorded_at',
+          coin, cutoff14d
+        ) as unknown as { funding_rate: number }[];
+      }
+      const elapsedMs = Date.now() - t0;
+
+      let stats: FundingStats;
+      if (rows.length < 20) {
+        stats = { mean: 0, stdDev: 0, sampleCount: rows.length, computedAt: Date.now() };
+      } else {
+        const rates = rows.map(r => r.funding_rate);
+        const mean = rates.reduce((a, v) => a + v, 0) / rates.length;
+        const variance = rates.reduce((a, v) => a + (v - mean) ** 2, 0) / (rates.length - 1);
+        const stdDev = Math.sqrt(variance);
+        stats = { mean, stdDev, sampleCount: rows.length, computedAt: Date.now() };
+      }
+
+      fundingStatsCache.set(coin, stats);
+      // console.debug — NOT console.log — at 200/sec call rate this would
+      // flood stdout. Cache-hits are SILENT (not load-bearing per the
+      // success-path-logging rule).
+      console.debug(`[funding-cache] miss coin=${coin} samples=${stats.sampleCount} db=${elapsedMs}ms`);
+      return stats;
+    } finally {
+      fundingStatsInflight.delete(coin);
+    }
+  })();
+
+  fundingStatsInflight.set(coin, promise);
+  return promise;
+}
+
+/**
+ * v1.4: Compute Funding Z-Score from rolling 14-day history.
+ * v1.10.x (OPTIMIZE-FUNDING-CACHE-W1): cache-first — 5-min TTL on per-coin
+ * (mean, stdDev) stats; per-call z-score computed from `currentFunding`
+ * argument and cached stats. No API or behavior change visible to callers.
+ */
+export async function getFundingZScore(coin: string, currentFunding: number): Promise<number | null> {
+  const now = Date.now();
+  const cached = fundingStatsCache.get(coin);
+  if (cached && (now - cached.computedAt) < FUNDING_STATS_TTL_MS) {
+    if (cached.sampleCount < 20) return null;
+    if (cached.stdDev === 0) return 0;
+    return (currentFunding - cached.mean) / cached.stdDev;
   }
 
-  if (rows.length < 20) return null; // Need minimum ~20 data points
+  const stats = await loadFundingStats(coin);
+  if (!stats) return null;
+  if (stats.sampleCount < 20) return null;
+  if (stats.stdDev === 0) return 0;
+  return (currentFunding - stats.mean) / stats.stdDev;
+}
 
-  const rates = rows.map(r => r.funding_rate);
-  const mean = rates.reduce((a, v) => a + v, 0) / rates.length;
-  const variance = rates.reduce((a, v) => a + (v - mean) ** 2, 0) / (rates.length - 1);
-  const stdDev = Math.sqrt(variance);
+// ── OPTIMIZE-FUNDING-CACHE-W1 test seams (underscore-prefixed; non-public). ──
 
-  if (stdDev === 0) return 0;
-  return (currentFunding - mean) / stdDev;
+export function _clearFundingStatsCache(): void {
+  fundingStatsCache.clear();
+  fundingStatsInflight.clear();
+}
+
+export function _setFundingStatsForTest(coin: string, stats: FundingStats): void {
+  fundingStatsCache.set(coin, stats);
+}
+
+export function _getFundingStatsCacheSize(): number {
+  return fundingStatsCache.size;
 }
 
 /** v1.4.1: Update all outcome columns (unified + PFE/MAE + 1-candle). */
