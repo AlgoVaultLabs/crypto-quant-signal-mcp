@@ -966,24 +966,128 @@ export async function hasRecentSignalAsync(coin: string, timeframe: string, with
   return hasRecentSignal(coin, timeframe, withinSeconds, exchange);
 }
 
+/**
+ * OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1 (2026-05-01): three compounding fixes
+ * for the dashboard `getPerformanceStats*` hot path that pg_stat_statements
+ * surfaced as the dominant cost after POSTGRES-MAINT-W1:
+ *
+ *   1. Time-window the SQL query — `WHERE created_at >= cutoff` matching the
+ *      20-day period the dashboard already advertises. Aligns SQL with
+ *      already-published behavior; bounds future growth (today's signals
+ *      table grows ~3K/day; without this filter, 100 days = 4× slowdown).
+ *   2. Project only the columns `computeStats()` actually reads — `id, coin,
+ *      signal, timeframe, confidence, created_at, pfe_return_pct, exchange`
+ *      (8 of ~20 cols). Cuts wire bytes + Node heap allocation by ~60-70%.
+ *   3. 60s TTL in-memory cache on the computed `PerformanceStats` object —
+ *      mirrors the OPTIMIZE-FUNDING-CACHE-W1 cache pattern. Stampede
+ *      protection via in-flight-promise map. Cache key buckets by 5-min
+ *      cutoff windows so the cache invalidates naturally as the rolling
+ *      window slides forward.
+ *
+ * Public API + response shape unchanged. No version bump.
+ */
+const STATS_WINDOW_DAYS = 20;
+const STATS_WINDOW_SEC = STATS_WINDOW_DAYS * 86400;
+const PERF_STATS_TTL_MS = 60 * 1000;
+const STATS_COL_PROJECTION = 'id, coin, signal, timeframe, confidence, created_at, pfe_return_pct, exchange';
+
+const perfStatsCache = new Map<string, { stats: PerformanceStats; computedAt: number }>();
+const perfStatsInflight = new Map<string, Promise<PerformanceStats>>();
+
+function getPerfStatsBucket(cutoff: number): string {
+  // 5-min buckets — cache invalidates naturally as the 20-day window slides
+  // forward; multiple concurrent callers landing in the same bucket coalesce
+  // to one DB query via the inflight map.
+  return `${Math.floor(cutoff / 300)}`;
+}
+
+/**
+ * Bounded query: rows in the last 20 days, column-projected to what
+ * `computeStats()` actually reads. The `SignalRecord` cast is safe because
+ * `computeStats` only references the columns we project.
+ */
+async function loadSignalsForStats(cutoff: number): Promise<SignalRecord[]> {
+  const b = getBackend();
+  if (isPg && b instanceof PgBackend) {
+    return await b.query(
+      `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE created_at >= $1 ORDER BY created_at DESC`,
+      [cutoff]
+    ) as unknown as SignalRecord[];
+  }
+  return b.all(
+    `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE created_at >= ? ORDER BY created_at DESC`,
+    cutoff
+  ) as unknown as SignalRecord[];
+}
+
 export function getPerformanceStats(): PerformanceStats {
   if (isPg) {
     return emptyStats();
   }
+  // SQLite path — sync, used in tests / dev. Honor cache-first + bounded
+  // query + column projection identically to the async path.
+  const now = Date.now();
+  const cutoff = Math.floor(now / 1000) - STATS_WINDOW_SEC;
+  const bucket = getPerfStatsBucket(cutoff);
+  const cached = perfStatsCache.get(bucket);
+  if (cached && (now - cached.computedAt) < PERF_STATS_TTL_MS) {
+    return cached.stats;
+  }
+  const t0 = Date.now();
   const b = getBackend();
-  const all = b.all(`SELECT * FROM signals ORDER BY created_at DESC`);
-  return computeStats(all, null);
+  const all = b.all(
+    `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE created_at >= ? ORDER BY created_at DESC`,
+    cutoff
+  ) as unknown as SignalRecord[];
+  const stats = computeStats(all, null);
+  perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
+  console.debug(`[perf-stats] cache miss bucket=${bucket} rows=${all.length} elapsedMs=${Date.now() - t0}`);
+  return stats;
 }
 
 export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
-  const top20 = await getTop20ByOI().catch(() => null);
-  const b = getBackend();
-  if (isPg && b instanceof PgBackend) {
-    const all = await b.query(`SELECT * FROM signals ORDER BY created_at DESC`);
-    return computeStats(all, top20);
+  const now = Date.now();
+  const cutoff = Math.floor(now / 1000) - STATS_WINDOW_SEC;
+  const bucket = getPerfStatsBucket(cutoff);
+
+  // Cache check
+  const cached = perfStatsCache.get(bucket);
+  if (cached && (now - cached.computedAt) < PERF_STATS_TTL_MS) {
+    return cached.stats;
   }
-  const all = b.all(`SELECT * FROM signals ORDER BY created_at DESC`);
-  return computeStats(all, top20);
+
+  // Stampede protection — concurrent callers in the same bucket attach to
+  // the in-flight promise instead of firing N DB queries.
+  const existing = perfStatsInflight.get(bucket);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<PerformanceStats> => {
+    try {
+      const t0 = Date.now();
+      const top20 = await getTop20ByOI().catch(() => null);
+      const all = await loadSignalsForStats(cutoff);
+      const stats = computeStats(all, top20);
+      perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
+      console.debug(`[perf-stats] cache miss bucket=${bucket} rows=${all.length} elapsedMs=${Date.now() - t0}`);
+      return stats;
+    } finally {
+      perfStatsInflight.delete(bucket);
+    }
+  })();
+
+  perfStatsInflight.set(bucket, promise);
+  return promise;
+}
+
+// ── OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1 test seams (underscore-prefixed). ──
+
+export function _clearPerformanceStatsCache(): void {
+  perfStatsCache.clear();
+  perfStatsInflight.clear();
+}
+
+export function _getPerformanceStatsCacheSize(): number {
+  return perfStatsCache.size;
 }
 
 const METHODOLOGY: Record<string, unknown> = {
