@@ -5,6 +5,20 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.6] - 2026-05-02 — README link fix (npm view 404s)
+
+### Fixed
+
+- All 28 relative-path links in README.md (Integrations + Skills tables) now
+  point to absolute URLs at `https://github.com/AlgoVaultLabs/algovault-skills/blob/main/...`.
+  Previous relative paths (`docs/integrations/<exchange>.md`,
+  `examples/<exchange>/demo.mjs`, `skills/<slug>/SKILL.md`) resolved to 404s
+  on both GitHub (the files live in the `algovault-skills` repo, not this
+  one) and on npmjs.com (npm renders relative links against
+  `https://www.npmjs.com/package/<pkg>/<rel>`). Display text unchanged —
+  the rendered tables look identical; only the click-target URLs are fixed.
+- No code or API changes; metadata-only patch release.
+
 ## [1.10.5] - 2026-04-30 — Shadow-seed 1m + 3m + grid re-sizing
 
 ### Added — Shadow-mode 1m + 3m signal seeding
