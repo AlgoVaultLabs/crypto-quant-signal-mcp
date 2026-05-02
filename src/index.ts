@@ -1064,6 +1064,12 @@ function renderAssets(data) {
 // Canonical 20 Skill slugs — table renders all 20 even with zero invocations.
 // Kept in sync with skills/manifest.json in github.com/AlgoVaultLabs/algovault-skills.
 const SKILL_SLUGS = ['quick-btc-check','portfolio-scanner','regime-aware-trading','funding-arb-monitor','full-3-tool-pipeline','multi-timeframe-confirmation','tradfi-rotation','risk-gated-entry','funding-sentiment-dashboard','contrarian-meme-scanner','divergence-detector','hourly-digest-bot','hedging-advisor','volatility-breakout-watch','cross-asset-correlation','funding-cash-and-carry','weekend-vs-weekday-patterns','agent-portfolio-rebalance','smart-dca-bot','multi-agent-war-room'];
+// Canonical license tiers — Calls by Tier table renders all 5 even at zero
+// count, so operators can monitor enterprise + x402 traffic the moment it
+// starts (instead of "tier just appeared today" silent change). Order is
+// price-asc with x402 last (pay-per-call sits outside the subscription ladder).
+// Kept in sync with LicenseTier enum in src/types.ts.
+const LICENSE_TIERS = ['free','starter','pro','enterprise','x402'];
 function escSlug(s) { return String(s).replace(/[<>&]/g,''); }
 function fmtTs(s) {
   if (!s) return '<span style="color:#6e7681">never</span>';
@@ -1104,7 +1110,12 @@ async function load() {
     document.getElementById('sessions-all').textContent = d.uniqueSessions.allTime;
     document.getElementById('sessions-24h').textContent = d.uniqueSessions.last24h;
     renderRows('by-tool', d.byTool);
-    renderRows('by-tier', d.byTier);
+    // Pre-fill all 5 canonical license tiers (zero-fill missing) so empty
+    // buckets like enterprise + x402 always show as "0" rows. Mirrors the
+    // SKILL_SLUGS pattern at line ~1066: explicit canonical-list expansion
+    // beats "render whatever the API returns" for monitoring surfaces.
+    const tierFilled = Object.fromEntries(LICENSE_TIERS.map(t => [t, (d.byTier && d.byTier[t]) || 0]));
+    renderRows('by-tier', tierFilled);
     renderAssets(d.topAssets);
     // C1 (LATENCY-W1): truthful per-tool latency table — n / p50 / p95 / min / max.
     // Replaces the misleading single-number avg (a bimodal distribution averaged 7.8s
