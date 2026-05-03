@@ -122,35 +122,42 @@ describe('OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1: getPerformanceStats cache', () =>
     expect(_getPerformanceStatsCacheSize()).toBe(1);
   });
 
-  // ── Test 5: Time-window filter excludes signals older than cutoff ──
-  it('time-window filter excludes signals older than 20-day cutoff', () => {
-    const inWindowCoin = uniq('IN_WINDOW');
-    const outWindowCoin = uniq('OUT_WINDOW');
+  // ── Test 5: DATA INTEGRITY — signals older than 20 days are STILL INCLUDED ──
+  // DASH-W1-FIX (2026-05-03) reverted the original wave's `WHERE created_at >=
+  // cutoff` 20-day filter because it silently reduced public-facing trade-call
+  // counts (68K → 49K = 19,802 signals hidden). CLAUDE.md Data Integrity rule
+  // (THE LAW) forbids reducing public-facing data as an optimization side-
+  // effect. This test guards against re-introduction.
+  it('DATA INTEGRITY: signals older than 20 days are included (no time-window filter)', () => {
+    const recentCoin = uniq('RECENT_DATA_INTEGRITY');
+    const oldCoin = uniq('OLD_DATA_INTEGRITY');
 
-    // In-window signal: now (well within 20 days)
     const nowSec = Math.floor(Date.now() / 1000);
+    // Recent signal: just now
     dbRun(
       `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, pfe_return_pct)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      inWindowCoin, 'BUY', 75, '5m', 'HL', 100, nowSec, 1.5,
+      recentCoin, 'BUY', 75, '5m', 'HL', 100, nowSec, 1.5,
     );
-
-    // Out-of-window signal: 25 days ago (> 20-day cutoff)
+    // Old signal: 25 days ago (would have been excluded by the original filter)
     const oldSec = nowSec - 25 * 86400;
     dbRun(
       `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, pfe_return_pct)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      outWindowCoin, 'BUY', 75, '5m', 'HL', 100, oldSec, 1.5,
+      oldCoin, 'BUY', 75, '5m', 'HL', 100, oldSec, 1.5,
     );
 
     const stats = getPerformanceStats();
 
-    // In-window coin must appear in byAsset; out-of-window must NOT
-    expect(stats.byAsset[inWindowCoin]).toBeDefined();
-    expect(stats.byAsset[outWindowCoin]).toBeUndefined();
+    // BOTH coins must appear in byAsset — the dashboard surfaces ALL signals,
+    // not just a 20-day window. This matches the on-chain Merkle proof count
+    // (every signal anchored on Base L2 must be visible on the public
+    // dashboard).
+    expect(stats.byAsset[recentCoin]).toBeDefined();
+    expect(stats.byAsset[oldCoin]).toBeDefined();
 
     // Cleanup
-    dbRun('DELETE FROM signals WHERE coin IN (?, ?)', inWindowCoin, outWindowCoin);
+    dbRun('DELETE FROM signals WHERE coin IN (?, ?)', recentCoin, oldCoin);
   });
 
   // ── Test 6: Column-projection equivalence ──
@@ -215,8 +222,11 @@ describe('OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1: getPerformanceStats cache', () =>
     dbRun('DELETE FROM signals WHERE coin IN (?, ?)', fixtureCoinA, fixtureCoinB);
   });
 
-  // ── Test 7: Bucket key changes when window slides forward ──
-  it('cache buckets by 5-min cutoff window (new bucket = cache miss)', () => {
+  // ── Test 7: Bucket key changes as time slides forward (TTL invalidation) ──
+  // DASH-W1-FIX (2026-05-03): bucket key is now `floor(Date.now() / 1000 / 300)`
+  // (5-min wall-clock buckets) — was `floor(cutoff / 300)` pre-fix. Same
+  // invalidation cadence; new naming reflects that cutoff is no longer used.
+  it('cache buckets by 5-min wall-clock window (new bucket = cache miss)', () => {
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     // First call — establishes cache for current bucket

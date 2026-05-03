@@ -1012,56 +1012,61 @@ export async function hasRecentSignalAsync(coin: string, timeframe: string, with
 }
 
 /**
- * OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1 (2026-05-01): three compounding fixes
- * for the dashboard `getPerformanceStats*` hot path that pg_stat_statements
- * surfaced as the dominant cost after POSTGRES-MAINT-W1:
+ * OPTIMIZE-DASHBOARD-SIGNALS-LIMIT-W1 (2026-05-01) + DASH-W1-FIX (2026-05-03):
+ * Two compounding fixes for the dashboard `getPerformanceStats*` hot path
+ * that pg_stat_statements surfaced as the dominant cost after
+ * POSTGRES-MAINT-W1:
  *
- *   1. Time-window the SQL query — `WHERE created_at >= cutoff` matching the
- *      20-day period the dashboard already advertises. Aligns SQL with
- *      already-published behavior; bounds future growth (today's signals
- *      table grows ~3K/day; without this filter, 100 days = 4× slowdown).
- *   2. Project only the columns `computeStats()` actually reads — `id, coin,
+ *   1. Project only the columns `computeStats()` actually reads — `id, coin,
  *      signal, timeframe, confidence, created_at, pfe_return_pct, exchange`
  *      (8 of ~20 cols). Cuts wire bytes + Node heap allocation by ~60-70%.
- *   3. 60s TTL in-memory cache on the computed `PerformanceStats` object —
+ *   2. 60s TTL in-memory cache on the computed `PerformanceStats` object —
  *      mirrors the OPTIMIZE-FUNDING-CACHE-W1 cache pattern. Stampede
  *      protection via in-flight-promise map. Cache key buckets by 5-min
- *      cutoff windows so the cache invalidates naturally as the rolling
- *      window slides forward.
+ *      windows of "now" so the cache invalidates naturally as time slides
+ *      forward (~5-min worst-case staleness).
+ *
+ * **The original wave also added a `WHERE created_at >= cutoff` 20-day
+ * time-window filter, but DASH-W1-FIX reverted it on 2026-05-03 because it
+ * silently reduced the public-facing total trade-call count from ~68K (full
+ * table) to ~49K (in-window). The CLAUDE.md Data Integrity rule (THE LAW)
+ * forbids reducing public-facing data as a side-effect of optimizations:
+ * the on-chain Merkle proof advertises 68,047 verified calls; the dashboard
+ * MUST surface that same count.** The full-table scan is still bounded by
+ * the column projection + 60s cache, which together keep postgres CPU
+ * under 5%.
  *
  * Public API + response shape unchanged. No version bump.
  */
-const STATS_WINDOW_DAYS = 20;
-const STATS_WINDOW_SEC = STATS_WINDOW_DAYS * 86400;
 const PERF_STATS_TTL_MS = 60 * 1000;
 const STATS_COL_PROJECTION = 'id, coin, signal, timeframe, confidence, created_at, pfe_return_pct, exchange';
 
 const perfStatsCache = new Map<string, { stats: PerformanceStats; computedAt: number }>();
 const perfStatsInflight = new Map<string, Promise<PerformanceStats>>();
 
-function getPerfStatsBucket(cutoff: number): string {
-  // 5-min buckets — cache invalidates naturally as the 20-day window slides
-  // forward; multiple concurrent callers landing in the same bucket coalesce
-  // to one DB query via the inflight map.
-  return `${Math.floor(cutoff / 300)}`;
+function getPerfStatsBucket(): string {
+  // 5-min buckets — cache invalidates naturally as time slides forward;
+  // multiple concurrent callers landing in the same bucket coalesce to one
+  // DB query via the inflight map.
+  return `${Math.floor(Date.now() / 1000 / 300)}`;
 }
 
 /**
- * Bounded query: rows in the last 20 days, column-projected to what
- * `computeStats()` actually reads. The `SignalRecord` cast is safe because
- * `computeStats` only references the columns we project.
+ * Full-table scan column-projected to the columns `computeStats()` actually
+ * reads. The `SignalRecord` cast is safe because `computeStats` only
+ * references the columns we project. NO time-window filter — public-facing
+ * trade-call counts must reflect the full table (matches the on-chain
+ * Merkle proof count).
  */
-async function loadSignalsForStats(cutoff: number): Promise<SignalRecord[]> {
+async function loadSignalsForStats(): Promise<SignalRecord[]> {
   const b = getBackend();
   if (isPg && b instanceof PgBackend) {
     return await b.query(
-      `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE created_at >= $1 ORDER BY created_at DESC`,
-      [cutoff]
+      `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
     ) as unknown as SignalRecord[];
   }
   return b.all(
-    `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE created_at >= ? ORDER BY created_at DESC`,
-    cutoff
+    `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
   ) as unknown as SignalRecord[];
 }
 
@@ -1069,20 +1074,17 @@ export function getPerformanceStats(): PerformanceStats {
   if (isPg) {
     return emptyStats();
   }
-  // SQLite path — sync, used in tests / dev. Honor cache-first + bounded
-  // query + column projection identically to the async path.
-  const now = Date.now();
-  const cutoff = Math.floor(now / 1000) - STATS_WINDOW_SEC;
-  const bucket = getPerfStatsBucket(cutoff);
+  // SQLite path — sync, used in tests / dev. Honor cache-first + column
+  // projection identically to the async path. NO time-window filter.
+  const bucket = getPerfStatsBucket();
   const cached = perfStatsCache.get(bucket);
-  if (cached && (now - cached.computedAt) < PERF_STATS_TTL_MS) {
+  if (cached && (Date.now() - cached.computedAt) < PERF_STATS_TTL_MS) {
     return cached.stats;
   }
   const t0 = Date.now();
   const b = getBackend();
   const all = b.all(
-    `SELECT ${STATS_COL_PROJECTION} FROM signals WHERE created_at >= ? ORDER BY created_at DESC`,
-    cutoff
+    `SELECT ${STATS_COL_PROJECTION} FROM signals ORDER BY created_at DESC`
   ) as unknown as SignalRecord[];
   const stats = computeStats(all, null);
   perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
@@ -1091,13 +1093,11 @@ export function getPerformanceStats(): PerformanceStats {
 }
 
 export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
-  const now = Date.now();
-  const cutoff = Math.floor(now / 1000) - STATS_WINDOW_SEC;
-  const bucket = getPerfStatsBucket(cutoff);
+  const bucket = getPerfStatsBucket();
 
   // Cache check
   const cached = perfStatsCache.get(bucket);
-  if (cached && (now - cached.computedAt) < PERF_STATS_TTL_MS) {
+  if (cached && (Date.now() - cached.computedAt) < PERF_STATS_TTL_MS) {
     return cached.stats;
   }
 
@@ -1110,7 +1110,7 @@ export async function getPerformanceStatsAsync(): Promise<PerformanceStats> {
     try {
       const t0 = Date.now();
       const top20 = await getTop20ByOI().catch(() => null);
-      const all = await loadSignalsForStats(cutoff);
+      const all = await loadSignalsForStats();
       const stats = computeStats(all, top20);
       perfStatsCache.set(bucket, { stats, computedAt: Date.now() });
       console.debug(`[perf-stats] cache miss bucket=${bucket} rows=${all.length} elapsedMs=${Date.now() - t0}`);
