@@ -111,6 +111,35 @@ export function getDexForCoin(coin: string): DexType {
 let cachedTop20: { coins: Set<string>; fetchedAt: number } | null = null;
 const CACHE_TTL_MS = 3_600_000;
 
+/**
+ * DASH-W1-FIX-2 (2026-05-03): static fallback for the cold-start-during-HL-429
+ * case. Hyperliquid per-IP-rate-limits the Hetzner box during heavy windows;
+ * a container restart that lands inside such a window starts with an empty
+ * in-memory OI cache + a 429-blocked HL fetch, leaving `getTop20ByOI` with
+ * no data to return. Pre-fix the catch block returned `new Set()` (empty),
+ * which silently misclassified ALL non-BTC/ETH non-TradFi non-meme alts as
+ * Tier 4 — hiding the Major Alts panel from the dashboard.
+ *
+ * This static set is the canonical top-20 by HL OI minus TIER_1 minus
+ * MEME_KNOWN minus TradFi as of 2026-05-03 (verified via direct HL `/info`
+ * probe). It's "good enough" for the cold-start window — the in-memory
+ * cache repopulates on the next successful HL fetch, replacing this
+ * fallback with live data.
+ *
+ * Maintenance: re-verify quarterly via `curl -X POST
+ * https://api.hyperliquid.xyz/info -d '{"type":"metaAndAssetCtxs"}'` and
+ * sort by notionalOI = openInterest * markPx. Coins listed below are
+ * conservatively the union of past 6 months of top-20 — drift in either
+ * direction has only a small dashboard-tier effect (a coin that moves out
+ * stays Tier 2 in the fallback; a coin that moves in is Tier 4 until next
+ * successful fetch). Acceptable degradation.
+ */
+const FALLBACK_TOP20: Set<string> = new Set([
+  'SOL', 'BNB', 'XRP', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM', 'LTC', 'NEAR',
+  'INJ', 'SUI', 'APT', 'AAVE', 'UNI', 'TRX', 'BCH', 'XLM', 'HBAR',
+  'TAO', 'HYPE', 'ZEC', 'XMR', 'ENA', 'PAXG', 'ARB', 'OP', 'FIL', 'ICP',
+]);
+
 export async function getTop20ByOI(): Promise<Set<string>> {
   if (cachedTop20 && Date.now() - cachedTop20.fetchedAt < CACHE_TTL_MS) {
     return cachedTop20.coins;
@@ -126,8 +155,30 @@ export async function getTop20ByOI(): Promise<Set<string>> {
     cachedTop20 = { coins: coinSet, fetchedAt: Date.now() };
     return coinSet;
   } catch {
-    return new Set();
+    // DASH-W1-FIX-2 (2026-05-03): preserve stale cache on error rather than
+    // returning empty Set. If even stale cache is unavailable (cold-start
+    // during HL 429), fall back to the hardcoded canonical top-20 list so
+    // the Major Alts dashboard panel stays populated.
+    if (cachedTop20) return cachedTop20.coins;
+    console.warn('[asset-tiers] getTop20ByOI: HL fetch failed AND no cached data — using FALLBACK_TOP20');
+    return FALLBACK_TOP20;
   }
+}
+
+/**
+ * Test seam — clears the in-memory `cachedTop20` between tests so each
+ * runs in isolation. Underscore-prefixed; non-public.
+ */
+export function _clearTop20Cache(): void {
+  cachedTop20 = null;
+}
+
+/**
+ * Test seam — exposes the static fallback Set so tests can assert which
+ * coins are returned in the cold-start-during-error path.
+ */
+export function _getFallbackTop20(): Set<string> {
+  return FALLBACK_TOP20;
 }
 
 // ── Meme coin liquidity filter ──
