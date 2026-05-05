@@ -57,21 +57,85 @@ async function fetchJson(url: string, options?: RequestInit): Promise<{ ok: bool
   }
 }
 
-// ── Dedup state ──
+// ── Dedup + auto-recovery state ──
+//
+// CLAUDE.md "Automation-first recovery" (precedence rule 6) requires
+// Detect → Recover → Alert → Escalate. Monitor must NOT alert on
+// transient failures that auto-recover. Two layers of suppression:
+//
+//   Layer 1 — in-process retry inside each `check*` function (e.g.
+//             `checkExchangeHealth` does 4 attempts with exp backoff).
+//             Catches sub-second to ~10s network blips at Hetzner.
+//
+//   Layer 2 — cross-cron-cycle consecutive-fail counter (this state
+//             struct). A check must fail for ≥ FAIL_THRESHOLDS[key]
+//             consecutive cron runs (every 2 min) before any alert
+//             fires. On recovery, the counter resets to 0 SILENTLY —
+//             no "exchange recovered" follow-up alert (per operator
+//             explicit request: don't spam recovery notices).
 
 interface AlertState {
   lastAlerted: Record<string, number>;
+  // Number of consecutive cron cycles each check has failed. Resets to
+  // 0 the moment the check passes again. Persists across cron runs in
+  // STATE_FILE; resets to {} on container restart (deploy) — that's
+  // intentional, prevents stale pre-deploy counters from firing
+  // spurious post-deploy alerts.
+  consecutiveFails: Record<string, number>;
 }
+
+// Per-check threshold: how many consecutive cron-cycle failures before
+// an alert is allowed to fire. Cron runs every 2 min, so threshold N
+// means "N × 2 minutes of sustained failure required". Tuned per check:
+//
+//   2 (= ~4 min) — CRITICAL paths where every minute of confirmed
+//                  downtime matters. server_health and facilitator
+//                  already have 3-attempt × 5s in-process retries on
+//                  top, so threshold-2 means ~4 min from genuine
+//                  outage start to alert.
+//
+//   3 (= ~6 min) — exchange / RPC paths most prone to transient
+//                  outbound network blips and per-IP rate-limits.
+//                  exchanges had 0 cross-cycle protection before and
+//                  caused yesterday's spurious 3-exchange flap; this
+//                  is the headline fix.
+//
+//   1 (= immediate) — slow-moving signals (backfill queue depth, PFE
+//                     win-rate drop) that don't flap. The 30-min
+//                     dedup window stops repeats; we want first-cycle
+//                     visibility on these.
+const FAIL_THRESHOLDS: Record<string, number> = {
+  server_health: 2,
+  facilitator: 2,
+  database: 2,
+  gas_wallet: 3,
+  exchanges: 3,
+  backfill: 1,
+  pfe_winrate: 1,
+};
 
 function loadState(): AlertState {
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')) as AlertState;
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')) as Partial<AlertState>;
+    // Backward-compat: existing state files (pre-this-change) only
+    // have `lastAlerted`. Default `consecutiveFails` to {} so a fresh
+    // deploy doesn't crash on missing field.
+    return {
+      lastAlerted: raw.lastAlerted ?? {},
+      consecutiveFails: raw.consecutiveFails ?? {},
+    };
   } catch {
-    return { lastAlerted: {} };
+    return { lastAlerted: {}, consecutiveFails: {} };
   }
 }
 
 function saveState(state: AlertState): void {
+  // Prune zero-valued consecutiveFails entries — keeps the state file
+  // tidy when checks toggle in-and-out of failure. lastAlerted is
+  // pruned by age (2h) elsewhere in runCritical.
+  for (const [k, v] of Object.entries(state.consecutiveFails)) {
+    if (v === 0) delete state.consecutiveFails[k];
+  }
   fs.writeFileSync(STATE_FILE, JSON.stringify(state));
 }
 
@@ -206,20 +270,33 @@ async function checkDatabase(): Promise<string | null> {
   }
 }
 
-// Returns true if the exchange is reachable. Retries once on transient
-// failure before declaring it down — public APIs occasionally slow-respond
-// under load and a single timeout shouldn't trigger a false alert.
+// Returns true if the exchange is reachable. Retries with exponential
+// backoff before declaring it down — public APIs occasionally slow-
+// respond under load and Hetzner's outbound has sub-second blips. A
+// single timeout, or even three within a few seconds, shouldn't trip
+// a false alert. Total in-process retry budget = ~7s before declaring
+// the exchange unreachable for THIS cron cycle; the cross-cycle layer
+// in runCritical then requires N consecutive cycles to confirm.
+//
+// Pre-fix history: 2 attempts × 500ms = ~1s window. A single 8:10pm
+// 2026-05-05 outbound network blip simultaneously tripped Binance +
+// Bybit + Hyperliquid (parallel-checked) → false-positive alert. Fix
+// expands per-call budget to 4 attempts so blips that long get caught.
 async function checkExchangeHealth(name: string, url: string): Promise<boolean> {
   const opts: RequestInit = name === 'Hyperliquid'
     ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'meta' }) }
     : {};
-  const MAX_ATTEMPTS = 2;
+  const MAX_ATTEMPTS = 4;
+  const BACKOFF_MS = [500, 1500, 4000]; // delays before attempt 2, 3, 4
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { ok, status } = await fetchJson(url, opts);
-    // 429 = rate limited but alive — not a real failure
+    // 429 = rate-limited but alive — never a real outage signal
     if (ok || status === 429) return true;
-    if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 500));
+    if (attempt < MAX_ATTEMPTS) {
+      const delay = BACKOFF_MS[attempt - 1] ?? 4000;
+      await new Promise(r => setTimeout(r, delay));
+    }
   }
   return false;
 }
@@ -284,27 +361,77 @@ async function runCritical(): Promise<void> {
   ];
 
   let alertCount = 0;
+  let recoveredCount = 0;
+  let suppressedCount = 0;
+
   for (const [key, check] of checks) {
     const error = await check();
-    if (error && shouldAlert(state, key)) {
-      const level = ['server_health', 'facilitator', 'database'].includes(key) ? 'critical' : 'warning';
-      await sendAlert(error, level);
-      markAlerted(state, key);
-      alertCount++;
-      console.log(`[monitor] ALERT (${level}): ${error}`);
-    } else if (error) {
-      console.log(`[monitor] suppressed (dedup): ${error}`);
+    const threshold = FAIL_THRESHOLDS[key] ?? 1;
+
+    if (error) {
+      // Increment consecutive-fail counter and decide whether to alert.
+      const consecutive = (state.consecutiveFails[key] ?? 0) + 1;
+      state.consecutiveFails[key] = consecutive;
+
+      if (consecutive < threshold) {
+        // Auto-recovery window — silently log and wait for next cycle.
+        // Per CLAUDE.md "Detect → Recover → Alert → Escalate": we have
+        // not yet exhausted autonomous recovery, so no Telegram fire.
+        suppressedCount++;
+        console.log(
+          `[monitor] auto-recovery window (${consecutive}/${threshold}): ${key}: ${error}`,
+        );
+      } else if (shouldAlert(state, key)) {
+        // Threshold met AND outside dedup window — fire.
+        const level = ['server_health', 'facilitator', 'database'].includes(key)
+          ? 'critical'
+          : 'warning';
+        // Annotate sustained-failure messages so the operator can tell
+        // first-fire from a re-fire after dedup window expiry.
+        const sustainedMin = consecutive * 2; // cron runs every 2 min
+        const msg = consecutive === threshold
+          ? error
+          : `${error} (sustained ≥${sustainedMin}min, ${consecutive} consecutive cycles)`;
+        await sendAlert(msg, level);
+        markAlerted(state, key);
+        alertCount++;
+        console.log(
+          `[monitor] ALERT (${level}, consecutive=${consecutive}): ${error}`,
+        );
+      } else {
+        // Threshold met but inside the 30-min dedup window — log only.
+        suppressedCount++;
+        console.log(
+          `[monitor] suppressed (dedup, consecutive=${consecutive}): ${key}: ${error}`,
+        );
+      }
+    } else {
+      // Check passed. If it had been failing, log the auto-recovery
+      // (no Telegram fire — operator explicitly opted out of recovery
+      // notices: "no need to send the alert for those that can be
+      // auto recovery"). The console line still goes to the cron log
+      // so we have a forensic trail.
+      const wasFailing = state.consecutiveFails[key] ?? 0;
+      if (wasFailing > 0) {
+        recoveredCount++;
+        console.log(
+          `[monitor] auto-recovered: ${key} (was ${wasFailing} consecutive cycle(s) failing)`,
+        );
+      }
+      state.consecutiveFails[key] = 0;
     }
   }
 
-  // Clean up old dedup entries (> 2 hours)
+  // Clean up old dedup entries (> 2 hours).
   const now = Date.now();
   for (const [key, ts] of Object.entries(state.lastAlerted)) {
     if (now - ts > 2 * 60 * 60 * 1000) delete state.lastAlerted[key];
   }
 
   saveState(state);
-  console.log(`[monitor] critical done — ${alertCount} alert(s) sent`);
+  console.log(
+    `[monitor] critical done — ${alertCount} alert(s), ${suppressedCount} suppressed, ${recoveredCount} auto-recovered`,
+  );
 }
 
 // ── Digest ──
