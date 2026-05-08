@@ -35,8 +35,11 @@ import {
   handleSubscriptionDeleted,
   createCheckoutSession,
   getCustomerApiKey,
+  validateApiKey,
 } from './lib/stripe.js';
 import { UpstreamRateLimitError, EXCHANGE_FALLBACKS } from './lib/errors.js';
+import { checkBotInternalAuth } from './lib/bot-auth.js';
+import { getWelcomePageHtml } from './lib/welcome-page.js';
 
 /**
  * Format a thrown error into the MCP tool-content payload. v1.10.2: when the
@@ -821,6 +824,30 @@ async function startHttp() {
     } catch {
       res.status(500).json({ error: 'Failed to load verify samples' });
     }
+  });
+
+  // BOT-W2 / D1-C: bot validates api_keys it receives via /start auth_<key>
+  // deep-link from /welcome. Two-flag firewall reuses the W1 internal-bypass
+  // env (BOT_INTERNAL_BYPASS_ENABLED + ALGOVAULT_INTERNAL_BYPASS_KEY).
+  // NOT exposed via the MCP transport — this is a server-internal HTTP route.
+  app.get('/api/bot/validate-key', async (req, res) => {
+    const auth = checkBotInternalAuth(req.headers as Record<string, string | undefined>);
+    if (!auth.ok) {
+      return res.status(auth.status).json({ error: auth.error });
+    }
+    const apiKey = ((req.query.api_key as string | undefined) || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'api_key_required' });
+    }
+    const result = await validateApiKey(apiKey);
+    if (!result.valid || !result.tier) {
+      return res.status(404).json({ valid: false });
+    }
+    return res.json({
+      valid: true,
+      customer_id: result.customerId || null,
+      tier: result.tier,
+    });
   });
 
   // MCP endpoint
@@ -1763,58 +1790,6 @@ function getSignupPageHtml(): string {
 </html>`;
 }
 
-// ── Welcome Page HTML ──
-
-function getWelcomePageHtml(apiKey: string | null, tier: string | null, email: string | null): string {
-  const keyDisplay = apiKey
-    ? `<div class="key-box"><div class="label">Your API Key</div><code id="api-key">${apiKey}</code><button onclick="navigator.clipboard.writeText(document.getElementById('api-key').textContent);this.textContent='Copied!'">Copy</button></div>`
-    : `<div class="pending"><p>Your API key is being provisioned. This usually takes a few seconds.</p><p>Refresh this page in a moment, or check your email at <strong>${email || 'your registered address'}</strong>.</p></div>`;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Welcome to AlgoVault ${tier ? `(${tier})` : ''}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
-  .container { max-width: 560px; width: 100%; text-align: center; }
-  h1 { font-size: 28px; margin-bottom: 8px; }
-  .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
-  .key-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: left; }
-  .key-box .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-  .key-box code { display: block; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px 16px; font-size: 16px; color: #3fb950; word-break: break-all; margin-bottom: 12px; }
-  .key-box button { background: #238636; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-  .key-box button:hover { background: #2ea043; }
-  .pending { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; color: #d29922; }
-  .usage { margin-top: 24px; text-align: left; }
-  .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-  .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>Welcome to AlgoVault! &#x1f389;</h1>
-  <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : 'Setting up your account...'}</div>
-  ${keyDisplay}
-  <div class="usage">
-    <h2>Use it in Claude Desktop / Cursor / Claude Code</h2>
-    <pre>{
-  "mcpServers": {
-    "algovault": {
-      "url": "https://api.algovault.com/mcp",
-      "headers": { "Authorization": "Bearer ${apiKey || 'YOUR_API_KEY'}" }
-    }
-  }
-}</pre>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Paste into <code style="background:#0d1117;padding:1px 4px;border-radius:3px">claude_desktop_config.json</code> (or Cursor / Claude Code MCP config). Then ask: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
-    <p style="color:#8b949e;font-size:12px;margin-top:8px">Want to test with raw HTTP/curl? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">3-step handshake guide</a> in our docs. Supported exchanges: HL (default), BINANCE, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
-  </div>
-</div>
-</body>
-</html>`;
-}
 
 // ── Entry Point ──
 const transport = (process.env.TRANSPORT || 'http').toLowerCase();
