@@ -5,6 +5,61 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.8] - 2026-05-08 — Telegram bot launch + per-user attribution loop
+
+### Added
+
+- **`/api/bot/validate-key` (server-internal HTTP).** New `GET` endpoint
+  at `src/index.ts` returns `{valid, customer_id, tier}` for a Stripe-
+  backed API key. Two-flag firewall via the existing internal-bypass env
+  (`BOT_INTERNAL_BYPASS_ENABLED` outer + `X-AlgoVault-Internal-Key`
+  header matching `ALGOVAULT_INTERNAL_BYPASS_KEY` inner). Consumed
+  exclusively by the public Telegram bot
+  (`github.com/AlgoVaultLabs/algovault-bot`) over loopback. **NOT
+  exposed via the MCP transport** — `tools/list` still returns 3 tools
+  (`get_trade_call`, `scan_funding_arb`, `get_market_regime`).
+- **`/welcome` page deep-link button.** Post-Stripe-checkout, the
+  welcome page now shows a "📱 Connect @algovaultofficialbot" button
+  that opens `https://t.me/algovaultofficialbot?start=auth_<api_key>`.
+  One click binds the user's Telegram chat to their subscription;
+  bot-side tier-aware quota gate honors paid tiers (no 100/mo cap on
+  the bot for Starter/Pro/Enterprise).
+- **`tier: 'internal'` 4th license tier.** Recognized via the
+  `X-AlgoVault-Internal-Key` header (`src/lib/license.ts`). Quota
+  counter is bypassed (no tick); `request_log.license_tier` records
+  `'internal'` and the new `is_bot_internal` boolean column for
+  attribution. 10 vitest cases in `tests/license-internal-bypass.test.ts`.
+- **`request_log.is_bot_internal BOOLEAN`** column. Idempotent
+  `ALTER TABLE ADD COLUMN IF NOT EXISTS` migration in
+  `src/lib/analytics.ts` for both Postgres and SQLite backends; existing
+  rows default to false.
+- **`src/lib/bot-auth.ts`** (NEW). `checkBotInternalAuth(headers)`
+  helper for server-internal `/api/bot/*` endpoints. 8 vitest cases.
+- **`src/lib/welcome-page.ts`** (NEW). Extracted `getWelcomePageHtml`
+  from `src/index.ts` — pure module, importable in tests without
+  triggering `app.listen(port)`. 5 vitest cases for button rendering +
+  URL encoding + DOM ordering.
+
+### Changed
+
+- **`monitor.js` consecutive-fail tracking** + 4× exp-backoff on
+  exchange health checks. Suppresses transient-blip alert spam
+  (1-cycle outages) while keeping persistent-failure escalation
+  intact. (Shipped 2026-05-05, included in this release tag.)
+
+### Notes
+
+- Public response shape, MCP tool list, and free-tier behavior
+  unchanged from v1.10.6 / v1.10.7.
+- Companion bot repo: `github.com/AlgoVaultLabs/algovault-bot` (BOT-W1
+  + BOT-W2). Not bundled with this npm package — discovered via the
+  `/welcome` button or directly at
+  [@algovaultofficialbot](https://t.me/algovaultofficialbot).
+- `BOT_INTERNAL_BYPASS_ENABLED` + `ALGOVAULT_INTERNAL_BYPASS_KEY` env
+  vars are deployment-side; not required for `npx`-installed stdio
+  usage of this package. Server-side defaults to `false` so the new
+  endpoints are inert unless explicitly enabled.
+
 ## [1.10.7] - 2026-05-06 — README hero refresh + track-record image embed
 
 ### Changed

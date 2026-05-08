@@ -50,26 +50,23 @@
 
 ---
 
-## What's new in v1.10.7
+## What's new in v1.10.8
 
-Live since 2026-05-06:
+Live since 2026-05-08:
 
-- **README hero refresh + track-record image embed.** No API, schema, or tool changes — public response shape and free-tier behavior unchanged from v1.10.6.
+- **🤖 Public Telegram bot — [@algovaultofficialbot](https://t.me/algovaultofficialbot).** AlgoVault verdicts now push to your phone. Set a watchlist with `/watch BTC 4h` and the bot delivers regime shifts and BUY/SELL trade calls in real time. Built on the same composite-verdict signal stream that powers the MCP — same 90.0% PFE win rate, same on-chain track record, now in your pocket. <!-- SNAPSHOT-LINE -->
 
----
+- **📱 One-click link from `/welcome`.** After Stripe checkout, the welcome page shows a "Connect @algovaultofficialbot" button. One click binds your Telegram chat to your subscription — your paid tier unlocks unlimited bot pushes instantly, no API-key copy-paste, no auth dance. Free-tier users get 100 trade-call alerts/month before the upgrade prompt fires.
 
-## What's new in v1.10.6
+- **🧠 Smart routing built in.** HOLD verdicts stay silent (no spam, no quota tick). Regime alerts are flap-suppressed — fires only after 2 consecutive same-regime confirmations, so you get the shift, not the noise. Per-timeframe dispatch means a 1-minute pair fires every minute and a daily pair fires once a day — you control the cadence by what you watch.
 
-Live since 2026-05-06:
+- **🌐 Full coverage parity.** Every asset (720+), every timeframe (1m → 1d), every exchange (HL · Binance · Bybit · OKX · Bitget) — all callable from the bot, same as the API. Pick what you want to track; the bot handles the polling.
 
-- **Free tier unlocked** — every supported coin + every supported timeframe is accessible at the free tier (was BTC/ETH on 15m/1h only). 100 calls/mo cap is the only ceiling. HOLD calls remain free at every tier. All 11 timeframes (`1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d`) callable on demand.
-- **Free-tier exhaustion path** — when an agent hits the 100-calls/month cap, the response includes a direct upgrade link: `Free tier limit reached (X/100 calls this month). Upgrade to Starter ($9.99/mo) for 3,000 calls/mo, or pay per call via x402. → https://api.algovault.com/signup?plan=starter`
-- **Output-sanitization v1** — composite-verdict-reverse-engineering surface closed (`rsi`, `ema_*`, `hurst`, `funding_z_score`, `squeeze_active` stripped from public response). `_algovault` metadata block + `also_see` cross-asset leads remain.
-- **Connect-Your-MCP-Client docs** — Claude Desktop, Cursor, Cline, Claude Code, Smithery, plain HTTP/curl walkthroughs at [`algovault.com/docs.html#connect-mcp`](https://algovault.com/docs.html#connect-mcp).
+- **📈 Trade calls that count cleanly.** Bot-pushed BUY/SELL alerts tick your free-tier monthly cap (matching the API's 100/mo) and stop ticking the moment your subscription is linked. No double-counting, no surprise overage — your real Stripe-backed quota (3K/15K/100K) governs everything.
 
-> **Upgrading from v1.9.x or earlier?** MCP clients (Claude Desktop, Claude.ai custom connectors, Cursor, Cline) cache the tool list at session start. **Refresh your tool list:**
-> - **Claude.ai / Claude Desktop**: Settings → Connectors → AlgoVault → toggle off + on
-> - **Cursor / Cline**: restart the MCP server connection from the integration panel
+> **Upgrading from v1.10.6 or earlier?** MCP clients (Claude Desktop, Claude.ai custom connectors, Cursor, Cline) cache the tool list at session start. The MCP tool surface is unchanged in v1.10.8, but if you signed up before today and want bot access:
+> - **Already a subscriber?** Visit your `/welcome` link from the original signup email — the new button lives there. Or hit `api.algovault.com/account` to recover your key, then sign up at [@algovaultofficialbot](https://t.me/algovaultofficialbot).
+> - **Free tier?** [Start the bot](https://t.me/algovaultofficialbot), `/watch` your first asset, get free regime alerts forever and 100 trade-call alerts/month.
 
 ---
 
