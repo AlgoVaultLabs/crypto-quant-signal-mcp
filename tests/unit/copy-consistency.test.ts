@@ -53,6 +53,16 @@ describe('Copy consistency — free-tier unlock + 11-timeframe canonical claim',
     }
   });
 
+  describe('"performance://signal-performance" canonical MCP resource URI is present', () => {
+    for (const f of ['landing/index.html', 'landing/docs.html']) {
+      it(`${f} contains "performance://signal-performance"`, () => {
+        const txt = read(f);
+        expect(txt).not.toBeNull();
+        expect(txt).toContain('performance://signal-performance');
+      });
+    }
+  });
+
   describe('Legacy free-tier-gating phrases are absent', () => {
     const FORBIDDEN_PHRASES: { phrase: RegExp; description: string }[] = [
       // The free tier no longer gates by coin or timeframe. Any of these legacy
@@ -69,6 +79,7 @@ describe('Copy consistency — free-tier unlock + 11-timeframe canonical claim',
       { phrase: /requires Starter[^.]*BTC and ETH only/i,         description: 'Old freeGateMessage coin-gating phrase' },
       { phrase: /requires Starter[^.]*15m and 1h only/i,          description: 'Old freeGateMessage timeframe-gating phrase' },
       { phrase: /BTC\s+and\s+ETH\s+(?:trade\s+calls|only)\s+on\s+15m/i, description: '"BTC and ETH trade calls/only on 15m" prose (pre-1.10.3 FAQ)' },
+      { phrase: /performance:\/\/signal-stats/i,                 description: 'Renamed MCP resource — was signal-stats, now signal-performance (FACTUALITY-RENAME-W1)' },
     ];
 
     for (const f of LANDING_FILES) {
