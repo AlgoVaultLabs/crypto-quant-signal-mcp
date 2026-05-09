@@ -49,34 +49,119 @@ tailwind.config = {
   .step-line::after { content: ''; position: absolute; left: 19px; top: 44px; bottom: -12px; width: 1px; background: linear-gradient(to bottom, #c4a34a44, transparent); }
   .step-line:last-child::after { display: none; }
 </style>
-<!-- Structured Data: SoftwareApplication -->
-<script type="application/ld+json">
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Product">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "AlgoVault",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "url": "https://algovault.com",
+  "image": "https://algovault.com/logo.png",
+  "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
+  "category": "Software / API / FinanceApplication",
+  "offers": [
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes, HOLDs always free" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
+    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "100,000 calls/month, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+  ],
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "90.2",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "79611"
+  },
+  "additionalProperty": [
+    { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79611" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
+    { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+  ]
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Service">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "name": "AlgoVault Trade Call Intelligence",
+  "serviceType": "Composite trade-call API for AI trading agents",
+  "provider": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "url": "https://algovault.com",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 5 crypto perp venues. Every signal Merkle-anchored on Base L2 and verifiable at /verify.",
+  "areaServed": "Worldwide",
+  "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
+  "hasOfferCatalog": {
+    "@type": "OfferCatalog",
+    "name": "AlgoVault subscription tiers",
+    "itemListElement": [
+      { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Starter", "price": "9.99", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Enterprise", "price": "299", "priceCurrency": "USD" }
+    ]
+  }
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="SoftwareApplication">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Trade call intelligence for AI trading agents. Composite quant trade calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue funding arbitrage detection, and regime-aware market classification via Model Context Protocol.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m–1d), 100 calls/month, HOLD calls always free" },
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
   ],
-  "author": {
-    "@type": "Organization",
-    "name": "AlgoVault Labs",
-    "url": "https://algovault.com"
+  "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "90.2",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "79611"
   }
 }
 </script>
-<!-- Privacy-friendly analytics by Plausible -->
-<script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
-<script>
-  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init()
+<script type="application/ld+json" data-algovault-jsonld="Organization">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "AlgoVault Labs",
+  "url": "https://algovault.com",
+  "logo": "https://algovault.com/logo.png",
+  "description": "Composite signal-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
+  "sameAs": [
+    "https://github.com/AlgoVaultLabs",
+    "https://twitter.com/AlgoVaultLabs"
+  ],
+  "foundingDate": "2026"
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="WebSite">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "AlgoVault",
+  "url": "https://algovault.com",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79611 verified calls, Merkle-anchored on Base L2.",
+  "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "inLanguage": "en"
+}
 </script>
 </head>
 <body class="min-h-screen">
@@ -117,17 +202,15 @@ tailwind.config = {
     <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
       The Brain Layer for<br>AI Trading Agents
     </h1>
-    <!-- GEO-W1 C1: answer-page-shape lead — first sentence LLMs cite when answering "what is AlgoVault". 174 chars. Numerical claim wrapped in data-tr-field per AUTO-TRACE-W1 live-fetch pattern. -->
+    <!-- GEO-W1 C4 / Spec 2 hero refinement: declarative answer-shape lead per Build Rule 9 (Public-facing copy = Professional + Concise). Two clean sentences; em-dash used for parenthetical, not reformulation. Numerical claim wrapped in data-tr-field per AUTO-TRACE-W1. -->
     <p class="mt-4 text-base sm:text-lg text-white max-w-2xl mx-auto leading-relaxed">
-      AlgoVault is the call/trade-call intelligence layer for AI agents trading crypto perps across <span data-tr-field="exchange_count">5</span> venues &mdash; solves the &ldquo;agents need composite verdicts not raw signals&rdquo; pain.
+      One MCP call returns a composite trade verdict &mdash; direction, confidence, regime &mdash; across <span data-tr-field="exchange_count">5</span> crypto perp venues. Built for autonomous AI trading agents.
     </p>
     <!-- WEBSITE-REFRESH-CLEANUP-W1 R1 dedup: prior version had this paragraph repeated (lines 121-122 byte-identical to 118-119, presumably a typo from a copy-paste during R6 editing). One <p class="quotable-fact"> per page is sufficient — schema.org/Claim itemtype + the LLM-targeted phrasing only need one DOM occurrence to be picked up by Plausible "Claim Quote Selected" + Google rich results / AI extraction. -->
     <p class="quotable-fact mt-3 text-sm text-emerald-400/90 max-w-xl mx-auto" itemscope itemtype="https://schema.org/Claim">
       <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">56,375</span>+ trade calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>
-    <p class="mt-5 text-base sm:text-lg text-gray-400 max-w-xl mx-auto leading-relaxed">
-      Arm Your Agent with a Wall Street Quant Brain. One API Call Returns Direction, Confidence &amp; Regime &mdash; Gets Smarter with Every Verdict.
-    </p>
+    <!-- GEO-W1 C4 / Build Rule 9 F2: prior marketing-paste subheadline removed entirely (Mr.1 directive 2026-05-09). H1 + Spec 2 lead + live-track-record claim already carry the value statement; no replacement copy needed. -->
     <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
       <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
         Try Free in Claude
@@ -148,35 +231,36 @@ tailwind.config = {
   </div>
 </section>
 
-<!-- GEO-W1 C1: answer-page H2s — Core capabilities / When to use / vs raw exchange APIs.
-     Each block ≤4 lines per CMU GEO playbook (KDD 2024) for LLM citation lift. Internal
-     links target /track-record + /skills + /docs.html. All numerical claims live-fetched
-     via data-tr-field per AUTO-TRACE-W1 pattern. -->
+<!-- GEO-W1 C4 / Spec 2 refinement of C1: answer-page H2s rewritten per Build Rule 9
+     (Public-facing copy = Professional & Concise). Bold-prefix bullets, parallel cadence,
+     ≤25 word bullets. H2s now carry id= anchors for FAQ/glossary internal links and
+     Spec 2 verification (grep id="(core-capabilities|when-to-use|vs-raw-exchange-apis)" >= 3).
+     Internal links target /track-record + /skills + /docs.html. Numerical claims via
+     data-tr-field per AUTO-TRACE-W1. -->
 <section id="answer" class="py-12 sm:py-16 px-6 border-t border-white/5">
   <div class="max-w-3xl mx-auto">
 
-    <h2 class="text-xl sm:text-2xl font-bold text-white mb-3">Core capabilities</h2>
+    <h2 id="core-capabilities" class="text-xl sm:text-2xl font-bold text-white mb-3">Core capabilities</h2>
     <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
-      <li>Composite trade calls &mdash; BUY / SELL / HOLD with confidence scores via <code class="text-gold-400">get_trade_call</code>.</li>
-      <li>Market regime classification &mdash; trending / ranging / volatile via <code class="text-gold-400">get_market_regime</code>.</li>
-      <li>Cross-venue funding-rate arbitrage &mdash; top spreads across Hyperliquid, Binance, Bybit via <code class="text-gold-400">scan_funding_arb</code>.</li>
-      <li>On-chain Merkle-anchored <a href="/track-record" class="text-gold-400 hover:underline">track record</a> &mdash; every call verifiable on Base L2.</li>
+      <li><strong>Composite trade calls.</strong> BUY / SELL / HOLD with confidence &mdash; <code class="text-gold-400">get_trade_call</code>.</li>
+      <li><strong>Market regime classification.</strong> Trending / ranging / volatile &mdash; <code class="text-gold-400">get_market_regime</code>.</li>
+      <li><strong>Cross-venue funding arbitrage.</strong> Top spreads across Hyperliquid, Binance, Bybit &mdash; <code class="text-gold-400">scan_funding_arb</code>.</li>
+      <li><strong>On-chain track record.</strong> Every call Merkle-anchored on Base L2 &mdash; verifiable at <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.</li>
     </ul>
 
-    <h2 class="text-xl sm:text-2xl font-bold text-white mb-3">When to use AlgoVault</h2>
+    <h2 id="when-to-use" class="text-xl sm:text-2xl font-bold text-white mb-3">When to use AlgoVault</h2>
     <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
       <li>Building an AI agent that trades crypto perps across multiple venues.</li>
-      <li>Needing composite verdicts &mdash; not raw OHLC / funding / OI &mdash; for autonomous decision-making.</li>
-      <li>Wanting verifiable proof of signal performance before relying on a source.</li>
-      <li>Operating at &ge;5-minute decision cadences (sub-5min execution is a downstream concern).</li>
+      <li>Needing one composite verdict per call instead of raw OHLC, funding, and OI.</li>
+      <li>Wanting verifiable signal performance before relying on a source.</li>
     </ul>
 
-    <h2 class="text-xl sm:text-2xl font-bold text-white mb-3">vs raw exchange APIs</h2>
+    <h2 id="vs-raw-exchange-apis" class="text-xl sm:text-2xl font-bold text-white mb-3">vs raw exchange APIs</h2>
     <ul class="text-gray-300 text-sm sm:text-base leading-relaxed space-y-2">
-      <li>Exchange APIs return raw market data &mdash; your agent has to interpret eight indicators per call.</li>
-      <li>AlgoVault returns one verdict per call: <code class="text-gold-400">{call, confidence, regime, factors}</code>.</li>
-      <li>TradingView is for human chart-readers, Coinglass for human funding watchers; AlgoVault is for AI agents.</li>
-      <li>With <span data-tr-field="exchange_count">5</span> venues unified behind one API, your agent stops needing N adapter integrations &mdash; see <a href="/skills" class="text-gold-400 hover:underline">/skills</a> + <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a>.</li>
+      <li><strong>Exchange APIs:</strong> 8 raw indicators per call. Your agent interprets each one.</li>
+      <li><strong>AlgoVault:</strong> one verdict per call. <code class="text-gold-400">{call, confidence, regime, factors}</code>.</li>
+      <li><strong>TradingView and Coinglass:</strong> built for humans reading charts. AlgoVault: built for AI agents reading verdicts.</li>
+      <li><strong><span data-tr-field="exchange_count">5</span> venues unified behind one MCP</strong> &mdash; skip N adapter integrations. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a> + <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a>.</li>
     </ul>
 
   </div>

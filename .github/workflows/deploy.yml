@@ -37,6 +37,14 @@ jobs:
       - name: Landing-page sync guard (build_landing --check)
         run: node scripts/build_landing.mjs --check
 
+      # GEO-W1 C4: JSON-LD live-data sync guard. Generator runs locally on dev
+      # machine + commits the rendered output; this --check canary fail-closes
+      # the deploy if landing/*.html JSON-LD blocks have drifted from the
+      # 5 templates (product/service/application/organization/website). Per
+      # Plan Mode D3 + the live-data-template-with-generator-and-canary skill.
+      - name: JSON-LD live-data sync guard (generate_jsonld --check)
+        run: node scripts/generate_jsonld.mjs --check
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:

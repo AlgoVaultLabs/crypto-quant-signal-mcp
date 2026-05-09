@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AlgoVault Glossary — Composite Verdict, PFE Win Rate, Merkle Anchor</title>
-<meta name="description" content="Glossary of AlgoVault-specific terms — composite verdict, PFE win rate, Merkle anchor, regime classifier, MCP, x402, the 6 moat layers."> <!-- SNAPSHOT-LINE -->
+<meta name="description" content="Glossary of AlgoVault-specific terms — composite verdict, PFE win rate, Merkle anchor, regime classifier, MCP, x402 micropayments, signal MCP, trade call."> <!-- SNAPSHOT-LINE -->
 <meta name="keywords" content="AlgoVault glossary, composite verdict, PFE win rate, Merkle anchor, MCP, regime classifier, signal MCP, x402, cross-venue intelligence, data flywheel">
 <link rel="canonical" href="https://algovault.com/glossary">
 <meta property="og:title" content="AlgoVault Glossary">
-<meta property="og:description" content="Definitions for composite verdict, PFE win rate, Merkle anchor, regime classifier, MCP, x402 micropayments, and AlgoVault's 6 moat layers.">
+<meta property="og:description" content="Definitions for composite verdict, PFE win rate, Merkle anchor, regime classifier, MCP, x402 micropayments, signal MCP, and trade call.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://algovault.com/glossary">
 <meta property="og:image" content="https://algovault.com/logo.png">
@@ -38,6 +38,7 @@ tailwind.config = {
 <style>
   html { scroll-behavior: smooth; }
   body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .glow { box-shadow: 0 0 40px rgba(196, 163, 74, 0.08); }
   .glow-text { text-shadow: 0 0 30px rgba(196, 163, 74, 0.3); }
   code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
 </style>
@@ -50,22 +51,22 @@ tailwind.config = {
   "@type": "DefinedTermSet",
   "name": "AlgoVault Glossary",
   "url": "https://algovault.com/glossary",
-  "description": "Definitions for AlgoVault-specific terms used by AI trading agents — composite verdict, PFE win rate, Merkle anchor, regime classifier, MCP, x402 micropayments, and the 6 moat layers.",
+  "description": "Definitions for AlgoVault-specific terms used by AI trading agents — composite verdict, PFE win rate, Merkle anchor, regime classifier, MCP, x402 micropayments, signal MCP, trade call.",
   "hasDefinedTerm": [
     {
       "@type": "DefinedTerm",
       "name": "Composite verdict",
-      "description": "AlgoVault's primary output unit: a single composite BUY/SELL/HOLD with confidence score, regime label, and contributing factors, derived from multi-factor quant weighting across price, funding rate, open interest, and volume. Exposed via the get_trade_call MCP tool. The first of AlgoVault's 6 moat layers."
+      "description": "AlgoVault's primary output unit. A single BUY/SELL/HOLD with confidence, regime label, and contributing factors. Multi-factor quant weighting across price, funding rate, open interest, and volume. Exposed via get_trade_call."
     },
     {
       "@type": "DefinedTerm",
       "name": "Cross-venue intelligence",
-      "description": "Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification. The fourth of AlgoVault's 6 moat layers."
+      "description": "Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification."
     },
     {
       "@type": "DefinedTerm",
       "name": "Data flywheel",
-      "description": "The compounding effect where every trade call AlgoVault publishes generates verifiable outcome data, which feeds the composite weighting tuner, which improves signal quality, which attracts more usage, which generates more data. Visible at algovault.com/track-record. The third of AlgoVault's 6 moat layers."
+      "description": "Every published trade call generates verifiable outcome data. That data feeds the composite weighting tuner, which improves signal quality, attracts more usage, and generates more data. Visible at algovault.com/track-record."
     },
     {
       "@type": "DefinedTerm",
@@ -95,12 +96,12 @@ tailwind.config = {
     {
       "@type": "DefinedTerm",
       "name": "Platform ecosystem",
-      "description": "The network of MCP-compatible clients (Claude Desktop, Cursor, Cline, Smithery, custom agents) and downstream skills and recipes that consume AlgoVault output. Each new client connector strengthens the integration surface. The sixth of AlgoVault's 6 moat layers."
+      "description": "The network of MCP-compatible clients (Claude Desktop, Cursor, Cline, Smithery, custom agents) and downstream skills and recipes that consume AlgoVault output. Each new client connector strengthens the integration surface."
     },
     {
       "@type": "DefinedTerm",
       "name": "Published track record",
-      "description": "Live, refetchable performance numbers exposed via /api/performance-public, with every signal Merkle-anchored on Base L2 and verifiable at /verify. Distinct from claimed-but-unverifiable backtests. The second of AlgoVault's 6 moat layers."
+      "description": "Live, refetchable performance numbers exposed via /api/performance-public, with every signal Merkle-anchored on Base L2 and verifiable at /verify. Distinct from claimed-but-unverifiable backtests."
     },
     {
       "@type": "DefinedTerm",
@@ -115,7 +116,7 @@ tailwind.config = {
     {
       "@type": "DefinedTerm",
       "name": "Suite lock-in",
-      "description": "The ergonomic advantage when an AI agent depends on multiple AlgoVault MCP tools (get_trade_call plus scan_funding_arb plus get_market_regime). Switching costs grow with each integration; consistency of the _algovault metadata block makes cross-tool reasoning easier. The fifth of AlgoVault's 6 moat layers."
+      "description": "The ergonomic advantage when an AI agent depends on multiple AlgoVault MCP tools (get_trade_call plus scan_funding_arb plus get_market_regime). Switching costs grow with each integration; consistency of the _algovault metadata block makes cross-tool reasoning easier."
     },
     {
       "@type": "DefinedTerm",
@@ -128,6 +129,114 @@ tailwind.config = {
       "description": "An HTTP 402 protocol for pay-per-API-call settlement using USDC on Base L2. AlgoVault accepts x402 payments as an alternative to subscription tiers, settling per-call without account creation. Note: x402 is revenue, not verification — distinct from Merkle-anchor track record."
     }
   ]
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Product">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "AlgoVault",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "url": "https://algovault.com",
+  "image": "https://algovault.com/logo.png",
+  "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
+  "category": "Software / API / FinanceApplication",
+  "offers": [
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes, HOLDs always free" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
+    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "100,000 calls/month, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+  ],
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "90.2",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "79611"
+  },
+  "additionalProperty": [
+    { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79611" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
+    { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+  ]
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Service">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "name": "AlgoVault Trade Call Intelligence",
+  "serviceType": "Composite trade-call API for AI trading agents",
+  "provider": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "url": "https://algovault.com",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 5 crypto perp venues. Every signal Merkle-anchored on Base L2 and verifiable at /verify.",
+  "areaServed": "Worldwide",
+  "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
+  "hasOfferCatalog": {
+    "@type": "OfferCatalog",
+    "name": "AlgoVault subscription tiers",
+    "itemListElement": [
+      { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Starter", "price": "9.99", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Enterprise", "price": "299", "priceCurrency": "USD" }
+    ]
+  }
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="SoftwareApplication">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "AlgoVault",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Any (MCP-compatible)",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "url": "https://algovault.com",
+  "offers": [
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
+    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+  ],
+  "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "90.2",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "79611"
+  }
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Organization">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "AlgoVault Labs",
+  "url": "https://algovault.com",
+  "logo": "https://algovault.com/logo.png",
+  "description": "Composite signal-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
+  "sameAs": [
+    "https://github.com/AlgoVaultLabs",
+    "https://twitter.com/AlgoVaultLabs"
+  ],
+  "foundingDate": "2026"
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="WebSite">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "AlgoVault",
+  "url": "https://algovault.com",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79611 verified calls, Merkle-anchored on Base L2.",
+  "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "inLanguage": "en"
 }
 </script>
 </head>
@@ -164,7 +273,7 @@ tailwind.config = {
       Glossary
     </h1>
     <p class="mt-4 text-base sm:text-lg text-white max-w-2xl mx-auto leading-relaxed">
-      Definitions for AlgoVault-specific terms used by AI trading agents &mdash; including the 6 moat layers.
+      Definitions for AlgoVault-specific terms used by AI trading agents.
     </p>
     <p class="mt-3 text-sm text-gray-400 max-w-xl mx-auto">
       Live numbers refetched from <a href="https://api.algovault.com/api/performance-public" class="text-gold-400 hover:underline">/api/performance-public</a> on page load. See <a href="/faq" class="text-gold-400 hover:underline">/faq</a> for builder-facing answers.
@@ -183,21 +292,21 @@ tailwind.config = {
     <article id="composite-verdict" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Composite verdict</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        AlgoVault&rsquo;s primary output unit: a single composite BUY/SELL/HOLD with confidence score, regime label, and contributing factors, derived from multi-factor quant weighting across price, funding rate, open interest, and volume. Exposed via the <code class="text-gold-400">get_trade_call</code> MCP tool. The first of AlgoVault&rsquo;s 6 moat layers. See <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.
+        AlgoVault&rsquo;s primary output unit. A single BUY/SELL/HOLD with confidence, regime label, and contributing factors. Multi-factor quant weighting across price, funding rate, open interest, and volume. Exposed via <code class="text-gold-400">get_trade_call</code>. See <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.
       </p>
     </article>
 
     <article id="cross-venue-intelligence" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Cross-venue intelligence</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification. The fourth of AlgoVault&rsquo;s 6 moat layers.
+        Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification.
       </p>
     </article>
 
     <article id="data-flywheel" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Data flywheel</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        The compounding effect where every trade call AlgoVault publishes generates verifiable outcome data, which feeds the composite weighting tuner, which improves signal quality, which attracts more usage, which generates more data. Visible at <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>. The third of AlgoVault&rsquo;s 6 moat layers.
+        Every published trade call generates verifiable outcome data. That data feeds the composite weighting tuner, which improves signal quality, attracts more usage, and generates more data. Visible at <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.
       </p>
     </article>
 
@@ -239,14 +348,14 @@ tailwind.config = {
     <article id="platform-ecosystem" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Platform ecosystem</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        The network of MCP-compatible clients (Claude Desktop, Cursor, Cline, Smithery, custom agents) and downstream skills and recipes that consume AlgoVault output. Each new client connector strengthens the integration surface. The sixth of AlgoVault&rsquo;s 6 moat layers. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a>.
+        The network of MCP-compatible clients (Claude Desktop, Cursor, Cline, Smithery, custom agents) and downstream skills and recipes that consume AlgoVault output. Each new client connector strengthens the integration surface. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a>.
       </p>
     </article>
 
     <article id="published-track-record" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Published track record</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Live, refetchable performance numbers exposed via <code class="text-gold-400">/api/performance-public</code>, with every signal Merkle-anchored on Base L2 and verifiable at <a href="/verify" class="text-gold-400 hover:underline">/verify</a>. Distinct from claimed-but-unverifiable backtests. The second of AlgoVault&rsquo;s 6 moat layers.
+        Live, refetchable performance numbers exposed via <code class="text-gold-400">/api/performance-public</code>, with every signal Merkle-anchored on Base L2 and verifiable at <a href="/verify" class="text-gold-400 hover:underline">/verify</a>. Distinct from claimed-but-unverifiable backtests.
       </p>
     </article>
 
@@ -267,7 +376,7 @@ tailwind.config = {
     <article id="suite-lock-in" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Suite lock-in</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        The ergonomic advantage when an AI agent depends on multiple AlgoVault MCP tools (<code class="text-gold-400">get_trade_call</code> plus <code class="text-gold-400">scan_funding_arb</code> plus <code class="text-gold-400">get_market_regime</code>). Switching costs grow with each integration; consistency of the <code class="text-gold-400">_algovault</code> metadata block makes cross-tool reasoning easier. The fifth of AlgoVault&rsquo;s 6 moat layers.
+        The ergonomic advantage when an AI agent depends on multiple AlgoVault MCP tools (<code class="text-gold-400">get_trade_call</code> plus <code class="text-gold-400">scan_funding_arb</code> plus <code class="text-gold-400">get_market_regime</code>). Switching costs grow with each integration; consistency of the <code class="text-gold-400">_algovault</code> metadata block makes cross-tool reasoning easier.
       </p>
     </article>
 
