@@ -117,6 +117,10 @@ tailwind.config = {
     <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
       The Brain Layer for<br>AI Trading Agents
     </h1>
+    <!-- GEO-W1 C1: answer-page-shape lead — first sentence LLMs cite when answering "what is AlgoVault". 174 chars. Numerical claim wrapped in data-tr-field per AUTO-TRACE-W1 live-fetch pattern. -->
+    <p class="mt-4 text-base sm:text-lg text-white max-w-2xl mx-auto leading-relaxed">
+      AlgoVault is the call/trade-call intelligence layer for AI agents trading crypto perps across <span data-tr-field="exchange_count">5</span> venues &mdash; solves the &ldquo;agents need composite verdicts not raw signals&rdquo; pain.
+    </p>
     <!-- WEBSITE-REFRESH-CLEANUP-W1 R1 dedup: prior version had this paragraph repeated (lines 121-122 byte-identical to 118-119, presumably a typo from a copy-paste during R6 editing). One <p class="quotable-fact"> per page is sufficient — schema.org/Claim itemtype + the LLM-targeted phrasing only need one DOM occurrence to be picked up by Plausible "Claim Quote Selected" + Google rich results / AI extraction. -->
     <p class="quotable-fact mt-3 text-sm text-emerald-400/90 max-w-xl mx-auto" itemscope itemtype="https://schema.org/Claim">
       <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">56,375</span>+ trade calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
@@ -141,6 +145,40 @@ tailwind.config = {
       <span class="px-2.5 py-1 rounded-md text-xs font-semibold border border-white/5" style="background:#0d1117;color:#fff">OKX</span>
       <span class="px-2.5 py-1 rounded-md text-xs font-semibold border border-white/5" style="background:#0d1117;color:#00C8BC">Bitget</span>
     </div>
+  </div>
+</section>
+
+<!-- GEO-W1 C1: answer-page H2s — Core capabilities / When to use / vs raw exchange APIs.
+     Each block ≤4 lines per CMU GEO playbook (KDD 2024) for LLM citation lift. Internal
+     links target /track-record + /skills + /docs.html. All numerical claims live-fetched
+     via data-tr-field per AUTO-TRACE-W1 pattern. -->
+<section id="answer" class="py-12 sm:py-16 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+
+    <h2 class="text-xl sm:text-2xl font-bold text-white mb-3">Core capabilities</h2>
+    <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
+      <li>Composite trade calls &mdash; BUY / SELL / HOLD with confidence scores via <code class="text-gold-400">get_trade_call</code>.</li>
+      <li>Market regime classification &mdash; trending / ranging / volatile via <code class="text-gold-400">get_market_regime</code>.</li>
+      <li>Cross-venue funding-rate arbitrage &mdash; top spreads across Hyperliquid, Binance, Bybit via <code class="text-gold-400">scan_funding_arb</code>.</li>
+      <li>On-chain Merkle-anchored <a href="/track-record" class="text-gold-400 hover:underline">track record</a> &mdash; every call verifiable on Base L2.</li>
+    </ul>
+
+    <h2 class="text-xl sm:text-2xl font-bold text-white mb-3">When to use AlgoVault</h2>
+    <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
+      <li>Building an AI agent that trades crypto perps across multiple venues.</li>
+      <li>Needing composite verdicts &mdash; not raw OHLC / funding / OI &mdash; for autonomous decision-making.</li>
+      <li>Wanting verifiable proof of signal performance before relying on a source.</li>
+      <li>Operating at &ge;5-minute decision cadences (sub-5min execution is a downstream concern).</li>
+    </ul>
+
+    <h2 class="text-xl sm:text-2xl font-bold text-white mb-3">vs raw exchange APIs</h2>
+    <ul class="text-gray-300 text-sm sm:text-base leading-relaxed space-y-2">
+      <li>Exchange APIs return raw market data &mdash; your agent has to interpret eight indicators per call.</li>
+      <li>AlgoVault returns one verdict per call: <code class="text-gold-400">{call, confidence, regime, factors}</code>.</li>
+      <li>TradingView is for human chart-readers, Coinglass for human funding watchers; AlgoVault is for AI agents.</li>
+      <li>With <span data-tr-field="exchange_count">5</span> venues unified behind one API, your agent stops needing N adapter integrations &mdash; see <a href="/skills" class="text-gold-400 hover:underline">/skills</a> + <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a>.</li>
+    </ul>
+
   </div>
 </section>
 
