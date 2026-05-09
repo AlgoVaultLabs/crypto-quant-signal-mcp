@@ -18,7 +18,7 @@ import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
-import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, upsertAgentSession, getSampleSignalsFromLatestBatch } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
@@ -823,6 +823,35 @@ async function startHttp() {
       res.json(verifySampleCache.data);
     } catch {
       res.status(500).json({ error: 'Failed to load verify samples' });
+    }
+  });
+
+  // LANDING-LIVE-CALL-TICKER-W1: public endpoint feeding the live agent-calls
+  // ticker on landing/index.html. Returns up to 10 most-recent rows from the
+  // signals table, sanitized for public consumption (NO outcome_*, NO Phase E
+  // fields, NO tier, NO id, NO merkle_* — see getRecentCallsAsync). 2s
+  // server-side memoize keyed by limit; cap=10 enforced via 400 Bad Request.
+  // Architect-ratified shape: {slug, exchange, timeframe, call, confidence,
+  //                            created_at_iso, seconds_ago}.
+  const RECENT_CALLS_TTL_MS = 2_000;
+  const recentCallsCache = new Map<number, { value: RecentCall[]; expiresAt: number }>();
+  app.get('/api/recent-calls', async (req, res) => {
+    const raw = req.query.limit;
+    const parsed = raw === undefined ? 1 : Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) {
+      return res.status(400).json({ error: 'limit must be between 1 and 10' });
+    }
+    try {
+      const now = Date.now();
+      const cached = recentCallsCache.get(parsed);
+      if (cached && cached.expiresAt > now) {
+        return res.json(cached.value);
+      }
+      const value = await getRecentCallsAsync(parsed);
+      recentCallsCache.set(parsed, { value, expiresAt: now + RECENT_CALLS_TTL_MS });
+      res.json(value);
+    } catch {
+      res.status(500).json({ error: 'Failed to fetch recent calls' });
     }
   });
 

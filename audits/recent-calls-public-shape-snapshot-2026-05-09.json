@@ -1,0 +1,113 @@
+{
+  "wave": "LANDING-LIVE-CALL-TICKER-W1",
+  "endpoint": "GET https://api.algovault.com/api/recent-calls?limit=N",
+  "snapshot_taken": "2026-05-09",
+  "purpose": "Public-response-shape no-data-loss gate (CLAUDE.md ## Verification gate patterns). Future commits touching /api/recent-calls MUST diff against this snapshot before deploy. ANY new key requires a new snapshot file + matching test update; ANY removal of a key here requires consumer-audit (currently: landing/index.html#live-call-ticker — see system-map.md edge).",
+  "response_top_level": {
+    "type": "array",
+    "max_length": 10,
+    "min_length": 0,
+    "sort": "ORDER BY created_at DESC"
+  },
+  "item_keys": [
+    "call",
+    "confidence",
+    "created_at_iso",
+    "exchange",
+    "seconds_ago",
+    "slug",
+    "timeframe"
+  ],
+  "item_keys_count": 7,
+  "item_shape": {
+    "slug": {
+      "type": "string",
+      "description": "Coin/asset symbol (e.g. 'BTC'). Maps to DB column `coin`.",
+      "example": "BTC"
+    },
+    "exchange": {
+      "type": "string",
+      "description": "Source venue. Maps to DB column `exchange`; defaults to 'HL' if null.",
+      "example": "BINANCE",
+      "enum_known": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET"]
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Candle timeframe.",
+      "example": "15m",
+      "enum_known": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"]
+    },
+    "call": {
+      "type": "string",
+      "description": "Composite verdict. Maps to DB column `signal`.",
+      "enum": ["BUY", "SELL", "HOLD"]
+    },
+    "confidence": {
+      "type": "integer",
+      "description": "Confidence score 0..100.",
+      "min": 0,
+      "max": 100
+    },
+    "created_at_iso": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp of the trade-call emission. Maps to DB column `created_at` (unix sec int) reformatted.",
+      "format": "YYYY-MM-DDTHH:MM:SS.sssZ"
+    },
+    "seconds_ago": {
+      "type": "integer",
+      "description": "floor(server_now_unix - row.created_at). Computed at response time. Floored at 0 to defend against DB-clock-drift returning negative.",
+      "min": 0
+    }
+  },
+  "forbidden_keys_explicit_drop": [
+    "id",
+    "tier",
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_evaluated_at",
+    "pfe_return_pct",
+    "pfe_price",
+    "pfe_candles",
+    "mae_return_pct",
+    "mae_price",
+    "return_pct_15m",
+    "return_pct_1h",
+    "return_pct_4h",
+    "return_pct_24h",
+    "price_at_signal",
+    "price_after_15m",
+    "price_after_1h",
+    "price_after_4h",
+    "price_after_24h",
+    "signal_hash",
+    "merkle_batch_id",
+    "merkle_proof"
+  ],
+  "forbidden_reason": "CLAUDE.md Data Integrity LAW — outcome_*/Phase-E/internal-DB/Merkle-proof fields MUST NOT leak via public endpoints. Tier is Phase-E-adjacent classification. id is internal DB PK. Verification fields belong on /api/verify-signal which is gated.",
+  "error_contract": {
+    "400_bad_request_when": [
+      "limit < 1",
+      "limit > 10",
+      "limit is not an integer",
+      "limit is missing AND present-but-invalid (default = 1)"
+    ],
+    "400_body": { "error": "limit must be between 1 and 10" },
+    "500_when": "DB error",
+    "500_body": { "error": "Failed to fetch recent calls" }
+  },
+  "cache_contract": {
+    "ttl_ms": 2000,
+    "key": "limit (integer)",
+    "max_entries": 10,
+    "stale_handling": "first request after TTL recomputes; concurrent miss-on-same-key may double-query (acceptable; bounded by 2s window)"
+  },
+  "consumers": [
+    {
+      "name": "landing/index.html#live-call-ticker",
+      "polling_interval_ms": 3000,
+      "limit_used": 1,
+      "fields_consumed": ["slug", "exchange", "timeframe", "call", "seconds_ago"]
+    }
+  ],
+  "drift_check_command": "curl -fsS 'https://api.algovault.com/api/recent-calls?limit=1' | jq '.[0] | keys' | jq -e '. == [\"call\",\"confidence\",\"created_at_iso\",\"exchange\",\"seconds_ago\",\"slug\",\"timeframe\"]'"
+}

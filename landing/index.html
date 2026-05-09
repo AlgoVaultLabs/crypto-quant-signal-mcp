@@ -48,6 +48,9 @@ tailwind.config = {
   .step-line { position: relative; }
   .step-line::after { content: ''; position: absolute; left: 19px; top: 44px; bottom: -12px; width: 1px; background: linear-gradient(to bottom, #c4a34a44, transparent); }
   .step-line:last-child::after { display: none; }
+  /* LANDING-LIVE-CALL-TICKER-W1: pulsing LIVE indicator. Reuses emerald-400 color token to match the existing PFE WR claim line. */
+  .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; box-shadow: 0 0 8px rgba(74, 222, 128, 0.6); }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.85); } }
 </style>
 <!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
@@ -76,11 +79,11 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79611"
+    "ratingCount": "79812"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79611" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
     { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
@@ -133,7 +136,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79611"
+    "ratingCount": "79812"
   }
 }
 </script>
@@ -158,7 +161,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79611 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -211,6 +214,20 @@ tailwind.config = {
       <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">56,375</span>+ trade calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>
     <!-- GEO-W1 C4 / Build Rule 9 F2: prior marketing-paste subheadline removed entirely (Mr.1 directive 2026-05-09). H1 + Spec 2 lead + live-track-record claim already carry the value statement; no replacement copy needed. -->
+
+    <!-- LANDING-LIVE-CALL-TICKER-W1: live agent-calls ticker. Polls /api/performance-public + /api/recent-calls?limit=1 every 3s; renders a pulsing LIVE badge + cumulative call count + last-call meta. Sanitized public shape (no Phase-E / outcome / Merkle / tier / id leakage) per audits/recent-calls-public-shape-snapshot-2026-05-09.json. -->
+    <div id="live-call-ticker" class="mt-7 mx-auto max-w-md flex flex-col items-center gap-1.5">
+      <div class="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-emerald-400">
+        <span class="pulse-dot inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true"></span>
+        <span>Live</span>
+      </div>
+      <div class="counter flex items-baseline gap-2" aria-live="polite">
+        <span id="ticker-count" class="text-4xl sm:text-5xl font-bold text-white tabular-nums tracking-tight">&mdash;</span>
+        <span class="counter-label text-xs text-gray-500">calls executed</span>
+      </div>
+      <div id="ticker-last" class="last-call text-xs text-gray-400 font-mono" aria-live="polite">Last call &middot; &mdash;</div>
+    </div>
+
     <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
       <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
         Try Free in Claude
@@ -896,6 +913,97 @@ tailwind.config = {
     }
   ]
 }
+</script>
+
+<!-- LANDING-LIVE-CALL-TICKER-W1: ticker polling + count-up animation. Polls
+     /api/performance-public (totalCalls + totalHolds) and /api/recent-calls?limit=1
+     in parallel every 3s. Independent 1s tick updates seconds_ago. Graceful
+     fetch-failure handling — keeps last-known values; never blanks the UI. -->
+<script>
+(function(){
+  'use strict';
+  var PERF_URL = '/api/performance-public';
+  var RECENT_URL = '/api/recent-calls?limit=1';
+  var POLL_MS = 3000;
+  var TICK_MS = 1000;
+  var COUNT_ANIM_MS = 200;
+
+  var $count = document.getElementById('ticker-count');
+  var $last = document.getElementById('ticker-last');
+  if (!$count || !$last) return;
+
+  var displayed = null;          // currently rendered count (number)
+  var lastCall = null;           // {slug, exchange, timeframe, call, seconds_ago, created_at_iso}
+  var lastFetchMs = 0;           // wall-clock of most recent successful /api/recent-calls
+
+  function fmt(n) { return n.toLocaleString('en-US'); }
+
+  function animateCountTo(target) {
+    if (displayed === null || target === displayed) {
+      displayed = target;
+      $count.textContent = fmt(target);
+      return;
+    }
+    var start = displayed;
+    var delta = target - start;
+    var t0 = performance.now();
+    function step(now) {
+      var p = Math.min(1, (now - t0) / COUNT_ANIM_MS);
+      // ease-out cubic
+      var eased = 1 - Math.pow(1 - p, 3);
+      var v = Math.round(start + delta * eased);
+      $count.textContent = fmt(v);
+      if (p < 1) requestAnimationFrame(step);
+      else { displayed = target; $count.textContent = fmt(target); }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function paintLastCall() {
+    if (!lastCall) { $last.textContent = 'Last call · —'; return; }
+    var elapsedSec = lastCall.seconds_ago;
+    if (lastFetchMs) {
+      // Tick locally: wall-clock delta since the last successful fetch.
+      elapsedSec = lastCall.seconds_ago + Math.floor((Date.now() - lastFetchMs) / 1000);
+    }
+    var ago = elapsedSec < 60
+      ? elapsedSec + 's ago'
+      : Math.floor(elapsedSec / 60) + 'm ' + (elapsedSec % 60) + 's ago';
+    $last.textContent = lastCall.slug + ' · ' + lastCall.timeframe + ' · ' +
+      lastCall.exchange + ' · ' + lastCall.call + ' · ' + ago;
+  }
+
+  function refresh() {
+    Promise.all([
+      fetch(PERF_URL, { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch(RECENT_URL, { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; })
+    ]).then(function(results){
+      var perf = results[0];
+      var recent = results[1];
+      if (perf && typeof perf.totalCalls === 'number' && typeof perf.totalHolds === 'number') {
+        animateCountTo(perf.totalCalls + perf.totalHolds);
+      }
+      if (Array.isArray(recent) && recent.length > 0 && recent[0] && typeof recent[0].slug === 'string') {
+        lastCall = recent[0];
+        lastFetchMs = Date.now();
+        paintLastCall();
+      }
+    }).catch(function(err){
+      // Keep last-known UI; log for diagnostics.
+      // eslint-disable-next-line no-console
+      console.warn('[live-call-ticker] refresh failed', err);
+    });
+  }
+
+  // First paint: immediate fetch on DOMContentLoaded (or now, if already past).
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', refresh);
+  } else {
+    refresh();
+  }
+  setInterval(refresh, POLL_MS);
+  setInterval(paintLastCall, TICK_MS);
+})();
 </script>
 
 </body>

@@ -7,6 +7,13 @@
       "runtimeArgs": ["dist/index.js"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "landing-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/preview-landing.mjs"],
+      "port": 5500,
+      "autoPort": true
     }
   ]
 }

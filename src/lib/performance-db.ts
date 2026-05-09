@@ -1353,6 +1353,69 @@ function computeStats(all: SignalRecord[], top20ByOI: Set<string> | null = null)
   };
 }
 
+// ── Recent calls (for live ticker on landing/index.html) ──
+//
+// LANDING-LIVE-CALL-TICKER-W1: thin query for the public /api/recent-calls
+// endpoint. Returns N most recent rows sanitized for public consumption —
+// NO outcome_*, NO pfe_*, NO mae_*, NO return_pct_*, NO price_*, NO
+// signal_hash, NO merkle_*, NO id, NO tier (Phase-E-adjacent per CLAUDE.md
+// Data Integrity LAW). Output keys match brand-facts-friendly naming:
+// `coin → slug`, `signal → call`, `created_at (unix sec) → created_at_iso
+// (ISO 8601 UTC)`, plus computed `seconds_ago` (int).
+//
+// Cap enforcement happens in the HTTP handler, not here. This helper trusts
+// its caller to pass a sane limit; defends with an inner Math.min(limit, 10).
+
+export interface RecentCall {
+  slug: string;
+  exchange: string;
+  timeframe: string;
+  call: string;
+  confidence: number;
+  created_at_iso: string;
+  seconds_ago: number;
+}
+
+export interface RecentCallDbRow {
+  coin: string;
+  exchange: string | null;
+  timeframe: string;
+  signal: string;
+  confidence: number;
+  created_at: number;
+}
+
+// Pure formatter — extracted so unit tests assert the public shape contract
+// (no Phase-E / outcome / Merkle leakage) without ESM-mock gymnastics.
+export function formatRecentCallRow(row: RecentCallDbRow, nowSec: number): RecentCall {
+  return {
+    slug: row.coin,
+    exchange: row.exchange || 'HL',
+    timeframe: row.timeframe,
+    call: row.signal,
+    confidence: row.confidence,
+    created_at_iso: new Date(row.created_at * 1000).toISOString(),
+    seconds_ago: Math.max(0, nowSec - row.created_at),
+  };
+}
+
+export function clampRecentCallsLimit(limit: number): number {
+  return Math.max(1, Math.min(Math.trunc(limit) || 1, 10));
+}
+
+export async function getRecentCallsAsync(limit: number): Promise<RecentCall[]> {
+  const safeLimit = clampRecentCallsLimit(limit);
+  const rows = await dbQuery<RecentCallDbRow>(
+    `SELECT coin, exchange, timeframe, signal, confidence, created_at
+     FROM signals
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [safeLimit],
+  );
+  const nowSec = Math.floor(Date.now() / 1000);
+  return rows.map((r) => formatRecentCallRow(r, nowSec));
+}
+
 // ── Verify sample signals (for /api/verify-sample-ids + Try-It pills) ──
 
 export interface VerifySample {
