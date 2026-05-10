@@ -173,15 +173,16 @@ test('Q-W18: pricing tier names Title Case (override JSX UPPERCASE)', async () =
   }
 });
 
-test('C2+C3 dual-render wrapped in lp-belowfold-{desktop,mobile} + lp-rest-{desktop,mobile}', async () => {
+test('C2+C3 dual-render wrapped in lp-belowfold-{desktop,mobile} + lp-rest-{desktop,mobile} (W7 also adds lp-hero-{desktop,mobile})', async () => {
   const html = await read('landing/index.html');
   for (const cls of ['lp-belowfold-desktop', 'lp-belowfold-mobile', 'lp-rest-desktop', 'lp-rest-mobile']) {
     assert.match(html, new RegExp(`class="${cls}"`), `${cls} wrapper present`);
   }
   // CSS @media swap declared in algovault-design.css
+  // W7 extension 2026-05-10: same @media rule covers lp-hero-{desktop,mobile} alongside lp-belowfold + lp-rest.
   const css = await read('landing/_design/algovault-design.css');
-  assert.match(css, /\.lp-belowfold-desktop,\s*\.lp-rest-desktop\s*\{\s*display:\s*block/,
-    '@media-swap CSS for lp-*-desktop');
+  assert.match(css, /\.lp-belowfold-desktop,\s*\.lp-rest-desktop[^{]*\{\s*display:\s*block/,
+    '@media-swap CSS for lp-*-desktop (W7 extends with lp-hero-desktop)');
   assert.match(css, /@media\s*\(\s*max-width:\s*767px\s*\)/, '@media (max-width: 767px) breakpoint');
 });
 
@@ -226,13 +227,15 @@ test('Preservation-LAW (W3+W4+D1-C+D2-C+W5 regression-free)', async () => {
   assert.doesNotMatch(html, /\b(bg|text|border)-gold-[0-9]+/, '0 gold-class residual (D1-C)');
   // mint OKLCH config preserved (D2-C)
   assert.match(html, /mint: \{ 50: 'oklch\(0\.97 0\.03 165\)'/, 'OKLCH mint config preserved (D2-C)');
-  // W3 deliverables
-  assert.match(html, /class="hero-flow-container"/, 'W3 hero-flow-container preserved');
-  assert.match(html, /id="recent-calls-feed"/, 'W3 LAST_CALLS feed preserved');
-  assert.match(html, /id="live-call-ticker"/, 'W3 ticker DOM preserved');
-  // W5 hero 3-stat row + Q-D2 verify subhead are out of W6 scope but should remain
-  assert.match(html, /data-tr-field="exchange_count"/, 'W5 hero 3-stat row exchange_count preserved');
-  assert.match(html, /data-tr-field="timeframe_count"/, 'W5 hero 3-stat row timeframe_count preserved');
+  // W7 architectural shift 2026-05-10: W3 hero deliverables (hero-flow-container / recent-calls-feed
+  // / live-call-ticker) REPLACED with V1Hero canonical render. Data-source equivalence preserved
+  // via different DOM. W6 below-fold + landing-rest preserved BYTE-IDENTICAL through W7.
+  assert.match(html, /lp-hero-desktop/, 'W7 hero wrapper present');
+  assert.match(html, /data-w7-recent-call/, 'W7 H-PR2 recent-call mount-point present');
+  assert.match(html, /data-tr-field="total_calls_executed"/, 'W7 H-PR1 counter live-bind present');
+  // W5 hero 3-stat row + Q-D2 verify subhead are out of W6 scope. W7 supersedes 3-stat with 4-stat row.
+  assert.match(html, /data-tr-field="exchange_count"/, 'exchange_count live-bind preserved (W7 4-stat)');
+  assert.match(html, /data-tr-field="timeframe_count"/, 'timeframe_count live-bind preserved (W7 4-stat)');
   // 6 JSON-LD blocks preserved
   const jsonLd = (html.match(/<script type="application\/ld\+json"/g) || []).length;
   assert.ok(jsonLd >= 6, `≥6 JSON-LD blocks preserved (got ${jsonLd})`);

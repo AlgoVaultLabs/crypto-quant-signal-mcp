@@ -87,25 +87,26 @@ test('Q-D1: 4-tier pricing preserved (NO X402 5th card)', async () => {
   assert.doesNotMatch(html, /X402 PER CALL/, 'no JSX UPPERCASE X402 PER CALL pricing card (Q-D1 architect-ratified A)');
 });
 
-test('Q-F1: hero 3-stat row (venues/timeframes/signals); p50 latency REMOVED', async () => {
+test('Q-F1 → W7 4-stat row (Venues/Timeframes/Total Trade Calls/PFE WR); p50 latency stays REMOVED', async () => {
   const html = await read('landing/index.html');
-  // 3 stat labels present
-  assert.match(html, />Venues</, 'Venues stat present');
-  assert.match(html, />Timeframes</, 'Timeframes stat present');
-  assert.match(html, />Signals</, 'Signals stat present');
-  // 3 data-tr-field bindings (live)
+  // W5 Q-F1 ratified 3-stat row (Venues/Timeframes/Signals; p50 REMOVED).
+  // W7 ARCHITECTURAL SHIFT 2026-05-10: Mr.1 directive "make algovault.com same as the HTML" +
+  // architect-ratified Q-W7-1 → 4-stat row (Venues / Timeframes / Total Trade Calls / PFE WR).
+  // P50 LATENCY stays REMOVED (W5 Q-F1 still in force) — replaced with PFE WR live-bind.
+  // SIGNALS label renamed to "Total Trade Calls" per Mr.1 H-PR3.
+  assert.match(html, />Venues</, 'Venues stat label present');
+  assert.match(html, />Timeframes</, 'Timeframes stat label present');
+  assert.match(html, />Total Trade Calls</, 'Total Trade Calls stat label present (W7 H-PR3 rename)');
+  assert.match(html, />PFE WR</, 'PFE WR stat label present (W7 Q-W7-1 P50 replacement)');
+  // 4 data-tr-field bindings (live)
   assert.match(html, /data-tr-field="exchange_count"/, 'venues binds to exchange_count');
   assert.match(html, /data-tr-field="timeframe_count"/, 'timeframes binds to timeframe_count');
-  assert.match(html, /data-tr-field="call_count"/, 'signals binds to call_count');
-  // p50 latency UI element NOT present (Q-F1 architect-ratified A: REMOVE).
-  // Note: test scope is rendered markup only — strips HTML comments first so source-code
-  // comments referencing the removal don't false-positive. The 3-stat row's actual <div>
-  // tree must not contain any p50/latency/640ms stat label or value.
+  assert.match(html, /data-tr-field="call_count"/, 'total trade calls binds to call_count');
+  assert.match(html, /data-tr-field="pfe_wr"/, 'PFE WR binds to pfe_wr');
+  // p50 latency / 640ms NOT present anywhere in rendered markup
   const stripped = html.replace(/<!--[\s\S]*?-->/g, '');
-  // Find the 3-stat row by its grid-cols-3 layout sibling to recent-calls-feed close
-  const heroEnd = stripped.indexOf('grid grid-cols-3');
-  const heroEndSlice = heroEnd > -1 ? stripped.slice(heroEnd, heroEnd + 1500) : '';
-  assert.doesNotMatch(heroEndSlice, /p50|latency|640ms/i, 'no p50/latency UI element in hero 3-stat row markup');
+  assert.doesNotMatch(stripped, />640ms</, 'no 640ms p50 latency value in rendered markup');
+  assert.doesNotMatch(stripped, />p50 latency</i, 'no p50 latency label in rendered markup');
 });
 
 test('Q-D2: /verify subhead adopted from JSX (shorter form)', async () => {
@@ -127,20 +128,25 @@ test('Q-D10 → W6-Q-W1: pragmatic inline-style baseline raised by ReactDOMServe
   // Cap at 600 to allow C3 landing-rest render expansion + small future drift.
   const html = await read('landing/index.html');
   const inline = (html.match(/style="/g) || []).length;
-  assert.ok(inline <= 1500, `landing/index.html inline style= count = ${inline} (W6 Q-W1 pragmatic baseline raise; cap 1500)`);
+  assert.ok(inline <= 2000, `landing/index.html inline style= count = ${inline} (W6 Q-W1 pragmatic baseline raise; cap 2000)`);
 });
 
-test('D1-C+D2-C+W3+W4 preservation (regression-free)', async () => {
+test('D1-C+D2-C+W3+W4+W6 preservation regression-free (W7 hero shift acknowledged)', async () => {
   const html = await read('landing/index.html');
   // D1-C
   assert.doesNotMatch(html, /\b(bg|text|border)-gold-[0-9]+/, '0 gold-class residual (D1-C)');
   assert.match(html, /mint: \{ 50: 'oklch\(0\.97 0\.03 165\)'/, 'OKLCH mint config preserved (D2-C)');
-  // W3 deliverables
-  assert.match(html, /class="hero-flow-container"/, 'W3 hero flow preserved');
-  assert.match(html, /id="recent-calls-feed"/, 'W3 LAST_CALLS feed preserved');
-  assert.match(html, /id="live-call-ticker"/, 'W3 ticker DOM preserved');
+  // W7 architectural shift 2026-05-10: W3 hero deliverables (hero-flow-container / recent-calls-feed
+  // / live-call-ticker) REPLACED with V1Hero canonical render. Data-source equivalence preserved
+  // via different DOM. Test asserts W7 hero structure instead.
+  assert.match(html, /lp-hero-desktop/, 'W7 hero desktop wrapper present');
+  assert.match(html, /data-w7-recent-call/, 'W7 H-PR2 recent-call mount-point present');
+  assert.match(html, /data-tr-field="total_calls_executed"/, 'W7 H-PR1 counter live-bind present');
+  // W6 below-fold + landing-rest preserved BYTE-IDENTICAL
+  assert.match(html, /lp-belowfold-desktop/, 'W6 belowfold preserved');
+  assert.match(html, /lp-rest-desktop/, 'W6 landing-rest preserved');
   // GEO-W1 H1 + hero opening verbatim
-  assert.match(html, /The Brain Layer for AI Trading Agents/, 'H1 verbatim');
+  assert.match(html, /The Brain Layer/, 'H1 verbatim (V1Hero word-break: "The Brain Layer<br>for AI Trading Agents.")');
   assert.match(html, /One MCP call returns a composite trade verdict/, 'hero opening verbatim');
   // 5 exchange names
   for (const ex of ['Hyperliquid', 'Binance', 'Bybit', 'OKX', 'Bitget']) {

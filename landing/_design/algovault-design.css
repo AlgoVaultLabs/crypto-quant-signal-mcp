@@ -995,9 +995,9 @@
    Below-fold + landing-rest sections render desktop+mobile variants
    into the page; CSS toggles which is visible at viewport ≤767px.
    ──────────────────────────────────────────────────────────────────── */
-.lp-belowfold-desktop, .lp-rest-desktop { display: block; }
-.lp-belowfold-mobile,  .lp-rest-mobile  { display: none; }
+.lp-belowfold-desktop, .lp-rest-desktop, .lp-hero-desktop { display: block; }
+.lp-belowfold-mobile,  .lp-rest-mobile,  .lp-hero-mobile  { display: none; }
 @media (max-width: 767px) {
-  .lp-belowfold-desktop, .lp-rest-desktop { display: none; }
-  .lp-belowfold-mobile,  .lp-rest-mobile  { display: block; }
+  .lp-belowfold-desktop, .lp-rest-desktop, .lp-hero-desktop { display: none; }
+  .lp-belowfold-mobile,  .lp-rest-mobile,  .lp-hero-mobile  { display: block; }
 }

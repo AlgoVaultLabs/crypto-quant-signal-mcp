@@ -145,6 +145,13 @@
       setField('asset_count',     formatAssetCount(perf && perf.asset_count));
       setField('exchange_count',  formatRawInt(perf && perf.exchange_count));
       setField('timeframe_count', formatRawInt(perf && perf.timeframe_count));
+      // DESIGN-W7 H-PR1: total_calls_executed = totalCalls + totalHolds (= "Agent Calls" hero counter).
+      // Computed CLIENT-SIDE (no server-side schema change). Refresh cadence: shared with hero
+      // counter — see refreshHeroCounter setInterval at end of this module (3s) which calls refresh().
+      var tc = (perf && typeof perf.totalCalls === 'number') ? perf.totalCalls : 0;
+      var th = (perf && typeof perf.totalHolds === 'number') ? perf.totalHolds : 0;
+      var totalExecuted = tc + th;
+      setField('total_calls_executed', formatCount(totalExecuted));
     }).catch(function (err) {
       // Silent — fallback static text remains visible. Console.debug-only so
       // ad-blockers / network failures don't spam the user's console.
@@ -233,4 +240,11 @@
   } else {
     wireOnLoad();
   }
+
+  // DESIGN-W7 H-PR1 + Q-W7-4: hero-counter + 4-stat row 3s refresh cadence.
+  // Mr.1 ratification: "Refresh every 3s based on total calls (both hold & trade calls)".
+  // refresh() polls /api/performance-public + /api/merkle-batches and updates ALL data-tr-field
+  // spans (existing W3+W5+W6 fields + new total_calls_executed). 3s cadence is hero-friendly
+  // and matches Mr.1's Live counter UX expectation.
+  setInterval(refresh, 3000);
 })();
