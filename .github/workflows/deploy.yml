@@ -75,6 +75,11 @@ jobs:
             # proxy; the mkdir + cp -r line ensures any future landing/<subdir>/
             # ships without another deploy.yml edit.
             cp landing/*.html /var/www/algovault/ 2>/dev/null && echo "Landing pages synced" || echo "No landing pages to sync"
+            # DESIGN-W2 / D2-C (2026-05-10): canonical design system CSS tokens + components.
+            # Caddy serves /_design/algovault-design.css from /var/www/algovault/_design/.
+            # Cross-origin <link> from api.algovault.com pages references this single source.
+            mkdir -p /var/www/algovault/_design
+            cp -r landing/_design/* /var/www/algovault/_design/ 2>/dev/null && echo "Landing _design/ synced" || echo "No landing _design/ to sync"
             mkdir -p /var/www/algovault/js
             cp -r landing/js/* /var/www/algovault/js/ 2>/dev/null && echo "Landing js/ synced" || echo "No landing js/ to sync"
             # WEBSITE-REFRESH-CLEANUP-W1 R5: exchange logos under landing/assets/
