@@ -60,11 +60,11 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "80908"
+    "ratingCount": "80963"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80908" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80963" },
     { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
@@ -117,7 +117,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "80908"
+    "ratingCount": "80963"
   }
 }
 </script>
@@ -142,7 +142,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80908 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80963 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -175,22 +175,30 @@ tailwind.config = {
 
 <main class="max-w-3xl mx-auto px-6 pt-24 pb-20">
 
-  <!-- Header -->
+  <!-- Header — DESIGN-W4 / C4 H1 + subhead (verify.jsx Header section translation) -->
   <div class="text-center mb-12">
-    <h1 class="text-3xl font-bold text-white mb-3">Verify Call Integrity</h1>
-    <p class="text-gray-400 text-sm max-w-lg mx-auto">Every AlgoVault call is hashed and anchored on Base L2. Look up any call to verify it was recorded before the outcome was known.</p>
+    <h1 class="text-3xl font-bold text-white mb-3">Verify Any AlgoVault Trade Call</h1>
+    <p class="text-gray-400 text-sm max-w-lg mx-auto">Every call is hashed on-chain (Base L2). Daily Merkle batches anchor every signal before its outcome is known. Look up any call ID to verify the proof on the contract.</p>
   </div>
 
-  <!-- Signal Lookup -->
+  <!-- DESIGN-W4 / C4: verify-input-panel using W4 .verify-input-panel class.
+       Wraps existing form (preserved untouched per spec rule 4 — verifySignal()
+       function + #signal-id input + #verify-btn button keep existing behavior).
+       Latest-batch live-status row binds to /api/merkle-batches via existing
+       track-record-proxy.js DOMContentLoaded hydration (data-tr-field= spans). -->
   <section class="mb-16">
-    <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
+    <div class="verify-input-panel">
       <div class="flex gap-3">
         <input type="number" id="signal-id" placeholder="Enter Call ID" min="1"
-          class="flex-1 bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-mint-500/50">
+          class="verify-input-field flex-1">
         <button onclick="verifySignal()" id="verify-btn"
-          class="px-6 py-2.5 bg-mint-500 hover:bg-mint-400 text-navy-900 font-semibold text-sm rounded-lg transition whitespace-nowrap">
-          Verify
+          class="verify-input-button whitespace-nowrap">
+          Verify on-chain &rarr;
         </button>
+      </div>
+      <div class="verify-input-meta">
+        <span class="live-pulse"></span>
+        <span>Latest batch <span data-tr-field="batch_count" class="text-mint-400">&mdash;</span> &middot; <span data-tr-field="call_count">live</span> calls anchored</span>
       </div>
     </div>
 
@@ -203,9 +211,69 @@ tailwind.config = {
       <div id="sample-ids" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:center"></div>
     </div>
 
-    <!-- Result card -->
-    <div id="result" class="mt-5 hidden"></div>
+    <!-- DESIGN-W4 / C4: verify-result-panel wrapper. Existing #result div kept
+         as the verifySignal() innerHTML target; W4 class wraps it for canonical
+         visual treatment. aria-live=polite announces verification result. -->
+    <div class="verify-result-panel mt-5 hidden" id="result" aria-live="polite"></div>
   </section>
+
+  <!-- DESIGN-W4 / C4: How verification works — 4-step howit-grid translated
+       from verify.jsx HowVerificationWorks section. CSS-only (no JS). -->
+  <section class="mb-16">
+    <div class="text-center mb-8">
+      <h2 class="text-2xl font-bold text-white mb-2">How verification works</h2>
+      <p class="text-gray-500 text-sm">From signal generation to on-chain anchor in 4 steps.</p>
+    </div>
+    <div class="howit-grid">
+      <div class="howit-step">
+        <span class="howit-step-number">1</span>
+        <div class="howit-step-title">Signal generated</div>
+        <div class="howit-step-desc">Composite trade-call computed from price, funding, OI, regime + tier classification.</div>
+      </div>
+      <div class="howit-step">
+        <span class="howit-step-number">2</span>
+        <div class="howit-step-title">Hashed to leaf</div>
+        <div class="howit-step-desc">SHA-256 over canonical signal payload becomes the call's Merkle leaf.</div>
+      </div>
+      <div class="howit-step">
+        <span class="howit-step-number">3</span>
+        <div class="howit-step-title">Daily Merkle batch</div>
+        <div class="howit-step-desc">Every 24h all leaves of the day are aggregated into one Merkle root.</div>
+      </div>
+      <div class="howit-step">
+        <span class="howit-step-number">4</span>
+        <div class="howit-step-title">Anchored on Base L2</div>
+        <div class="howit-step-desc">Merkle root anchored on the AlgoVault contract &mdash; the call cannot be edited after publish.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DESIGN-W4 / C4: verify-specific FAQ snippets (3 Q's, Build Rule 9 voice). -->
+  <section class="mb-16">
+    <div class="text-center mb-6">
+      <h2 class="text-2xl font-bold text-white mb-2">Verify FAQ</h2>
+    </div>
+    <div class="verify-faq-list">
+      <div class="verify-faq-item">
+        <div class="verify-faq-q">When does a call become verifiable?</div>
+        <div class="verify-faq-a">After the next daily Merkle batch publishes (00:05 UTC). PENDING calls show inline; once anchored you'll see the contract address + tx hash.</div>
+      </div>
+      <div class="verify-faq-item">
+        <div class="verify-faq-q">What's a Merkle proof?</div>
+        <div class="verify-faq-a">A cryptographic chain showing your specific call leaf belongs to the published Merkle root &mdash; without trusting AlgoVault.</div>
+      </div>
+      <div class="verify-faq-item">
+        <div class="verify-faq-q">Can AlgoVault edit history?</div>
+        <div class="verify-faq-a">No. Once anchored on Base L2, the Merkle root is immutable. Inspect the contract on Basescan to confirm.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DESIGN-W4 / C4: recent-verifications graceful empty placeholder.
+       Full feed deferred to VERIFY-RECENT-FEED-W1 (needs new endpoint). -->
+  <div class="recent-verifications-empty">
+    Recent verifications feed coming soon &mdash; tracked as <code>VERIFY-RECENT-FEED-W1</code>.
+  </div>
 
   <!-- Recent Batches -->
   <section class="mb-16">

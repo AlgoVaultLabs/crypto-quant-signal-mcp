@@ -491,3 +491,501 @@
   color: var(--fg-4);
   text-transform: uppercase;
 }
+
+/* ============================================================================
+   DESIGN-W4 / Tier B extensions (2026-05-10) — append-only.
+   D2-C + W3 foundation (above this line) preserved BYTE-IDENTICAL.
+   Architect-ratified Tier B mapping (extends W3):
+     - Sample byExchange data → /api/performance-public.byExchange (page-load)
+     - Sample byTimeframe data → /api/performance-public.byTimeframe (page-load)
+     - Recent-calls panel → /api/recent-calls?limit=10 (2.5s polling)
+     - Recent-verifications samples → DEFER (VERIFY-RECENT-FEED-W1)
+   ============================================================================ */
+
+/* ---------- C1.A — Below-fold polish (v1-landing-rest.jsx) ---------- */
+
+/* Try in 30 seconds — 3-step quickstart cards */
+.try-3step-card {
+  position: relative;
+  padding: 22px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: oklch(0.18 0.014 265 / 0.6);
+}
+
+.try-3step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: var(--mint-soft);
+  color: var(--mint);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* Tools — 3-card grid (get_trade_call / scan_funding_arb / get_market_regime) */
+.tool-card {
+  position: relative;
+  padding: 24px 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: oklch(0.18 0.014 265 / 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-card-snippet {
+  margin-top: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: oklch(0.13 0.01 265);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-2);
+  overflow-x: auto;
+}
+
+/* Use Cases — 4 partner cards */
+.use-case-card {
+  position: relative;
+  overflow: hidden;
+  padding: 22px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: oklch(0.18 0.014 265 / 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.use-case-card-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-2);
+  letter-spacing: 0.06em;
+}
+
+.use-case-card-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--use-case-color, var(--mint));
+  opacity: 0.85;
+}
+
+/* Tamper-Proof callout */
+.tamper-proof-callout {
+  margin: 16px 0;
+  padding: 18px 22px;
+  border: 1px solid var(--mint);
+  border-radius: 12px;
+  background: oklch(0.32 0.08 170 / 0.18);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* For Developers — 3 code-snippet blocks */
+.dev-code-block {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: oklch(0.13 0.01 265);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--fg-2);
+  overflow-x: auto;
+}
+
+.dev-transport-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.06em;
+}
+
+/* FAQ accordion (W4 refinement of existing) */
+.faq-item-w4 {
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
+}
+
+/* Footer */
+.footer-w4 {
+  margin-top: 64px;
+  padding: 32px 0 24px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-4);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- C1.B — Track Record exchange + TF + recent-calls (track-record-2.jsx) ---------- */
+
+.exchange-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0 28px;
+}
+
+.exchange-stat-card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: oklch(0.18 0.014 265 / 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.exchange-stat-card-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--exchange-color, var(--mint));
+  opacity: 0.85;
+}
+
+.exchange-stat-card-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.08em;
+}
+
+.exchange-stat-card-mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--exchange-color, var(--mint));
+  color: oklch(0.16 0.012 265);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 10.5px;
+}
+
+/* Timeframe bar chart */
+.tf-bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 28px;
+}
+
+.tf-bar-row {
+  display: grid;
+  grid-template-columns: 50px 1fr 60px;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.tf-bar-label {
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+
+.tf-bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: oklch(0.22 0.012 265);
+  overflow: hidden;
+}
+
+.tf-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  border-radius: 4px;
+  background: var(--mint);
+  transition: width 0.6s ease-out;
+}
+
+.tf-bar-value {
+  text-align: right;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Recent-calls panel for /track-record */
+.tr-recent-calls-panel {
+  margin: 16px 0 28px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: oklch(0.13 0.012 265 / 0.7);
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+
+.tr-recent-calls-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.12em;
+}
+
+.tr-recent-calls-row {
+  display: grid;
+  grid-template-columns: 70px 56px 60px 1fr 76px 76px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 14px;
+  height: 28px;
+  font-size: 12px;
+  border-bottom: 1px solid oklch(0.2 0.012 265 / 0.7);
+  color: var(--fg-2);
+  animation: recent-calls-row-fade-in 0.4s ease-out;
+}
+
+.tr-recent-calls-row:last-child {
+  border-bottom: none;
+}
+
+/* ---------- C1.C — Verify page (verify.jsx) ---------- */
+
+.verify-input-panel {
+  position: relative;
+  margin: 24px auto;
+  max-width: 720px;
+  padding: 22px 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: oklch(0.18 0.014 265 / 0.5);
+}
+
+.verify-input-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin-top: 10px;
+}
+
+.verify-input-field {
+  flex: 1 1 280px;
+  min-width: 200px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: oklch(0.13 0.01 265);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.verify-input-field:focus {
+  outline: none;
+  border-color: var(--mint);
+  box-shadow: 0 0 0 3px oklch(0.86 0.16 165 / 0.18);
+}
+
+.verify-input-button {
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--mint);
+  color: oklch(0.16 0.05 165);
+  font-family: var(--font-text);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.verify-input-button:hover { filter: brightness(1.06); }
+.verify-input-button:active { transform: translateY(1px); }
+.verify-input-button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.verify-input-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-4);
+}
+
+.verify-result-panel {
+  margin: 16px auto 24px;
+  max-width: 720px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: oklch(0.18 0.014 265 / 0.5);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.verify-result-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: oklch(0.13 0.012 265 / 0.6);
+  color: var(--fg-2);
+}
+
+.verify-result-status-verified {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+
+.verify-result-status-failed {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.verify-result-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid oklch(0.2 0.012 265 / 0.7);
+  align-items: baseline;
+  word-break: break-all;
+}
+
+.verify-result-row:last-child { border-bottom: none; }
+
+.verify-result-row-key {
+  color: var(--fg-4);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10.5px;
+}
+
+.verify-result-row-val {
+  color: var(--fg);
+}
+
+/* How verification works — 4-step diagram */
+.howit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin: 16px 0 28px;
+}
+
+.howit-step {
+  position: relative;
+  padding: 20px 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: oklch(0.18 0.014 265 / 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.howit-step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--mint-soft);
+  color: var(--mint);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.howit-step-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--mint);
+}
+
+.howit-step-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.howit-step-desc {
+  font-size: 12.5px;
+  color: var(--fg-3);
+  line-height: 1.5;
+}
+
+/* Verify FAQ snippets */
+.verify-faq-list {
+  margin: 16px 0 24px;
+}
+
+.verify-faq-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.verify-faq-q {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--fg);
+  margin-bottom: 4px;
+}
+
+.verify-faq-a {
+  font-size: 12.5px;
+  color: var(--fg-3);
+  line-height: 1.55;
+}
+
+/* Recent-verifications graceful empty placeholder
+   (full feed deferred to VERIFY-RECENT-FEED-W1 — needs new endpoint) */
+.recent-verifications-empty {
+  margin: 16px auto;
+  max-width: 720px;
+  padding: 22px;
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.04em;
+}

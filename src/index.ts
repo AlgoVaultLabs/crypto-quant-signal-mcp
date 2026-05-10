@@ -1431,6 +1431,129 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
     </div>
   </div>
 
+  <!-- DESIGN-W4 / C3: Performance by Exchange — translated from track-record-2.jsx
+       ExchangeSection. 5 cards (Hyperliquid/Binance/Bybit/OKX/Bitget verbatim)
+       hydrated from /api/performance-public.byExchange on page load (extends
+       applyView(); no polling — exchange breakdown is slow-moving). Brand colors
+       match Supported Exchanges row on landing. -->
+  <div class="section"><h2>Performance by Exchange</h2>
+    <div class="exchange-stat-grid" id="exchange-stat-grid">
+      <div class="exchange-stat-card" id="exchange-stat-card-HL" data-exchange-color="#4ade80">
+        <div class="exchange-stat-card-stripe"></div>
+        <div class="exchange-stat-card-logo">
+          <span class="exchange-stat-card-mark">H</span>
+          <span>Hyperliquid</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="ex_HL_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="ex_HL_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="exchange-stat-card" id="exchange-stat-card-BINANCE" data-exchange-color="#F0B90B">
+        <div class="exchange-stat-card-stripe"></div>
+        <div class="exchange-stat-card-logo">
+          <span class="exchange-stat-card-mark">B</span>
+          <span>Binance</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="ex_BINANCE_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="ex_BINANCE_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="exchange-stat-card" id="exchange-stat-card-BYBIT" data-exchange-color="#F7A600">
+        <div class="exchange-stat-card-stripe"></div>
+        <div class="exchange-stat-card-logo">
+          <span class="exchange-stat-card-mark">BY</span>
+          <span>Bybit</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="ex_BYBIT_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="ex_BYBIT_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="exchange-stat-card" id="exchange-stat-card-OKX" data-exchange-color="#ffffff">
+        <div class="exchange-stat-card-stripe"></div>
+        <div class="exchange-stat-card-logo">
+          <span class="exchange-stat-card-mark">O</span>
+          <span>OKX</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="ex_OKX_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="ex_OKX_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="exchange-stat-card" id="exchange-stat-card-BITGET" data-exchange-color="#00C8BC">
+        <div class="exchange-stat-card-stripe"></div>
+        <div class="exchange-stat-card-logo">
+          <span class="exchange-stat-card-mark">BG</span>
+          <span>Bitget</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="ex_BITGET_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="ex_BITGET_n">&mdash;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DESIGN-W4 / C3: Performance by Timeframe canonical bar chart — translated
+       from track-record-2.jsx TimeframeSection. 11 timeframes (1m / 3m / 5m /
+       15m / 30m / 1h / 2h / 4h / 8h / 12h / 1d) horizontal bars. Hydrated from
+       /api/performance-public.byTimeframe on page load. Bars graceful-empty
+       on missing TFs (live API currently has 9; 1m/3m may show "—"). -->
+  <div class="section"><h2>Performance by Timeframe (canonical bar chart)</h2>
+    <div class="tf-bar-chart" id="tf-bar-chart">
+      <div class="tf-bar-row" data-tf="1m"><span class="tf-bar-label">1m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-1m"></div></div><span class="tf-bar-value" data-tr-field="tf_1m_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="3m"><span class="tf-bar-label">3m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-3m"></div></div><span class="tf-bar-value" data-tr-field="tf_3m_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="5m"><span class="tf-bar-label">5m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-5m"></div></div><span class="tf-bar-value" data-tr-field="tf_5m_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="15m"><span class="tf-bar-label">15m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-15m"></div></div><span class="tf-bar-value" data-tr-field="tf_15m_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="30m"><span class="tf-bar-label">30m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-30m"></div></div><span class="tf-bar-value" data-tr-field="tf_30m_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="1h"><span class="tf-bar-label">1h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-1h"></div></div><span class="tf-bar-value" data-tr-field="tf_1h_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="2h"><span class="tf-bar-label">2h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-2h"></div></div><span class="tf-bar-value" data-tr-field="tf_2h_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="4h"><span class="tf-bar-label">4h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-4h"></div></div><span class="tf-bar-value" data-tr-field="tf_4h_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="8h"><span class="tf-bar-label">8h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-8h"></div></div><span class="tf-bar-value" data-tr-field="tf_8h_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="12h"><span class="tf-bar-label">12h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-12h"></div></div><span class="tf-bar-value" data-tr-field="tf_12h_wr">&mdash;</span></div>
+      <div class="tf-bar-row" data-tf="1d"><span class="tf-bar-label">1d</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-1d"></div></div><span class="tf-bar-value" data-tr-field="tf_1d_wr">&mdash;</span></div>
+    </div>
+  </div>
+
+  <!-- DESIGN-W4 / C3: Live Recent Calls panel (10-row, 2.5s polling) —
+       translated from track-record-2.jsx RecentCallsSection. Reuses
+       /api/recent-calls?limit=10 endpoint shipped in LANDING-LIVE-CALL-TICKER-W1
+       (sanitized public shape). Same polling cadence as landing's LAST_CALLS
+       feed. aria-live="polite" for screen-reader updates. -->
+  <div class="section"><h2>Live Recent Calls</h2>
+    <div class="tr-recent-calls-panel" id="tr-recent-calls-panel" aria-live="polite">
+      <div class="tr-recent-calls-panel-header">
+        <span>CALL STREAM &middot; LIVE</span>
+        <span class="recent-calls-feed-tick"><span class="live-pulse"></span>tick</span>
+      </div>
+      <div id="tr-recent-calls-rows">
+        <div class="recent-calls-empty">Loading recent calls&hellip;</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Existing JS-hydrated tier-cards (preserved untouched per Build Rule 4 / D2-C foundation) -->
   <div class="section"><h2>Performance by Tier</h2>
     <div class="tier-grid" id="tier-cards"></div>
@@ -1719,6 +1842,43 @@ function renderAll() {
     if (fill && tc.pfeWinRate != null) fill.style.width = (tc.pfeWinRate * 100).toFixed(1) + '%';
   });
 
+  // DESIGN-W4 / C3: hydrate canonical .exchange-stat-card spans from
+  // /api/performance-public.byExchange. Page-load only — exchange breakdown
+  // is slow-moving. Brand colors set via data-exchange-color → --exchange-color
+  // CSS custom property (no inline style=).
+  var byEx = d.byExchange || {};
+  ['HL','BINANCE','BYBIT','OKX','BITGET'].forEach(function(ex){
+    var card = document.getElementById('exchange-stat-card-' + ex);
+    if (!card) return;
+    var color = card.getAttribute('data-exchange-color');
+    if (color) card.style.setProperty('--exchange-color', color);
+    var exData = byEx[ex] || { count: 0, pfeWinRate: null };
+    var wrEl = card.querySelector('[data-tr-field="ex_' + ex + '_wr"]');
+    var nEl  = card.querySelector('[data-tr-field="ex_' + ex + '_n"]');
+    if (wrEl) wrEl.textContent = (exData.pfeWinRate != null) ? (exData.pfeWinRate * 100).toFixed(1) : '—';
+    if (nEl)  nEl.textContent  = (exData.count != null) ? exData.count.toLocaleString() : '—';
+  });
+
+  // DESIGN-W4 / C3: hydrate canonical .tf-bar-chart from
+  // /api/performance-public.byTimeframe. Page-load only. Renders 11 spec TFs
+  // (1m/3m/5m/.../1d); missing TFs show "—" gracefully (live API currently
+  // has 9 keys: 5m → 1d).
+  var byTF = d.byTimeframe || {};
+  ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'].forEach(function(tf){
+    var row = document.querySelector('[data-tf="' + tf + '"]');
+    if (!row) return;
+    var tfData = byTF[tf] || { pfeWinRate: null };
+    var valEl = row.querySelector('[data-tr-field="tf_' + tf + '_wr"]');
+    var fill = document.getElementById('tf-bar-fill-' + tf);
+    if (tfData.pfeWinRate != null) {
+      var pct = (tfData.pfeWinRate * 100).toFixed(1);
+      if (valEl) valEl.textContent = pct + '%';
+      if (fill) fill.style.width = pct + '%';
+    } else {
+      if (valEl) valEl.textContent = '—';
+    }
+  });
+
   // Trade call types — from server-side byCallType
   var typeEl = document.getElementById('by-type');
   var typeSrc = s.byType || {};
@@ -1835,6 +1995,59 @@ async function load() {
 }
 load();
 setInterval(load, 30000);
+
+// DESIGN-W4 / C3: tr-recent-calls panel poller. Vanilla JS, no React.
+// Hydrates #tr-recent-calls-rows from /api/recent-calls?limit=10 every 2500ms
+// (matches landing's LAST_CALLS feed cadence). Coin · TF · exchange · call
+// (BUY/SELL/HOLD modifier) · confidence · time. Separate poller — different
+// rendering target from landing's LAST_CALLS (5-row vs 10-row, /track-record
+// vs /).
+(function() {
+  var FEED_LIMIT = 10;
+  var rowsEl = document.getElementById('tr-recent-calls-rows');
+  if (!rowsEl) return;
+  function fmtTimeAgo(s) {
+    if (s == null || !isFinite(s) || s < 0) return '—';
+    if (s < 60) return s.toFixed(1) + 's ago';
+    if (s < 3600) return Math.round(s / 60) + 'm ago';
+    return Math.round(s / 3600) + 'h ago';
+  }
+  function callClass(call) {
+    var c = (call || '').toUpperCase();
+    if (c === 'BUY') return 'recent-calls-call recent-calls-call-buy';
+    if (c === 'SELL') return 'recent-calls-call recent-calls-call-sell';
+    return 'recent-calls-call recent-calls-call-hold';
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c;
+    });
+  }
+  function render(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      rowsEl.innerHTML = '<div class="recent-calls-empty">No recent calls.</div>';
+      return;
+    }
+    rowsEl.innerHTML = rows.slice(0, FEED_LIMIT).map(function(r){
+      return '<div class="tr-recent-calls-row">' +
+        '<span class="recent-calls-coin">' + esc(r.slug) + '</span>' +
+        '<span class="recent-calls-tf">' + esc(r.timeframe) + '</span>' +
+        '<span class="recent-calls-tf">' + esc(r.exchange) + '</span>' +
+        '<span class="' + callClass(r.call) + '">' + esc((r.call||'').toUpperCase()) + '</span>' +
+        '<span class="recent-calls-time">conf ' + esc(r.confidence) + '</span>' +
+        '<span class="recent-calls-time">' + esc(fmtTimeAgo(r.seconds_ago)) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+  function fetchTrRecent() {
+    fetch('/api/recent-calls?limit=' + FEED_LIMIT)
+      .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(render)
+      .catch(function(err){ console.warn('[tr-recent-calls] refresh failed', err); });
+  }
+  fetchTrRecent();
+  setInterval(fetchTrRecent, 2500); // POLL_MS — keep literal so verification gate matches
+})();
 </script>
 </body>
 </html>`;
