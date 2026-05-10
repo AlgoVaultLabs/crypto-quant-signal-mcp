@@ -1,0 +1,157 @@
+/* ==========================================================================
+   AlgoVault canonical design system — DESIGN-W2 / D2-C extraction
+   --------------------------------------------------------------------------
+   Source-of-truth: vault `Design/AlgoVault Landing Hero v1/styles.css`
+                  + `Design/AlgoVault Track Record v1/styles.css`
+                    (md5 eeb87961acc7bed518f7bcf475999696 — byte-equal)
+   Authored by Mr.1 in claude.ai/design (DESIGN-W1 handoff session).
+
+   This file is the canonical token + selective-component layer that sits
+   alongside the existing inline `<script>tailwind.config = {...mint:{...}}</script>`
+   per-page Tailwind v3.4 Play CDN (D1-C foundation 2026-05-10).
+   It does NOT replace Tailwind classes — it ADDS new component classes
+   (.artboard, .bg-grid, .bg-radial-*, .bg-noise, .live-pulse) that
+   landing/index.html consumes for selective visual polish (C2).
+
+   D2-C scope (architect-ratified mid-Plan-Mode, audits/DESIGN-W2-endpoint-truth.md):
+   - Tokens: full OKLCH custom-property set (drops in everywhere via :root)
+   - Components: 5 canonical classes (.artboard + 4 backgrounds)
+   - Animations: 1 canonical @keyframes (pulse — for .live-pulse class)
+   - Typography: 3 font-family stacks (Inter Tight + Inter + JetBrains Mono).
+     Google Fonts loader is injected per-page in HTML <head> — see
+     /_design/loader-preconnect.html for the canonical block.
+
+   Heavy JSX-derived components (hero flow diagram, .nav-*, .btn-*,
+   .xchg-*, .code-window, .tk-*, .trust-*, .counter, .flow-line, etc.)
+   are deferred to DESIGN-W3 alongside the v1-minimal.jsx /
+   v1-landing-rest.jsx / track-record.jsx / track-record-2.jsx /
+   verify.jsx static-HTML translations.
+
+   D1-C foundation preserved BYTE-IDENTICAL: 535 mint Tailwind classes
+   (bg|text|border)-mint-{N}{/O?} across 12 landing files + 6 brand-accent
+   inline-CSS hex literals in src/index.ts.
+   ========================================================================== */
+
+/* ---------- Tokens ---------- */
+/* Verbatim from canonical styles.css; mint-anchor is byte-identical to D1-C */
+:root {
+  /* Base + foreground (dark theme) */
+  --bg: oklch(0.16 0.012 265);
+  --bg-2: oklch(0.19 0.014 265);
+  --bg-3: oklch(0.22 0.014 265);
+  --line: oklch(0.28 0.012 265);
+  --line-2: oklch(0.34 0.012 265);
+  --fg: oklch(0.97 0.005 265);
+  --fg-2: oklch(0.78 0.008 265);
+  --fg-3: oklch(0.58 0.01 265);
+  --fg-4: oklch(0.44 0.012 265);
+
+  /* Accents — primary (violet) + alt families */
+  --violet: oklch(0.72 0.15 290);
+  --violet-2: oklch(0.62 0.18 290);
+  --violet-soft: oklch(0.32 0.08 290);
+
+  --cyan: oklch(0.86 0.13 200);
+  --cyan-2: oklch(0.74 0.14 205);
+  --cyan-soft: oklch(0.32 0.08 210);
+
+  /* Plasma Mint — D1-C anchor at oklch(0.86 0.16 165) ↔ #5BEEB3 */
+  --mint: oklch(0.86 0.16 165);
+  --mint-2: oklch(0.72 0.16 165);
+  --mint-soft: oklch(0.32 0.08 170);
+
+  --azure: oklch(0.7 0.18 250);
+  --azure-2: oklch(0.6 0.2 250);
+  --azure-soft: oklch(0.3 0.1 250);
+
+  --brass: oklch(0.78 0.09 85);
+  --brass-2: oklch(0.68 0.12 85);
+  --brass-soft: oklch(0.32 0.05 85);
+
+  /* Status / semantic */
+  --green: oklch(0.78 0.16 155);
+  --red: oklch(0.7 0.18 25);
+
+  /* Typography stacks — Google Fonts loader injected per-page in HTML <head> */
+  --font-display: 'Inter Tight', 'Inter', system-ui, sans-serif;
+  --font-text: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* ---------- .artboard wrapper ---------- */
+/* Each visually-prominent surface lives inside one of these; provides the
+   dark background + foreground default + relative positioning context for
+   .bg-* layers to anchor against. Per canonical styles.css. */
+.artboard {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-text);
+  line-height: 1.6;
+}
+
+/* ---------- Background treatments (C2 selective application) ---------- */
+
+/* Grid pattern with radial mask — 56px square grid faded outside the
+   ellipse-70%-60%-at-50%-30% region. Pointer-events-none so it never
+   blocks clicks. */
+.bg-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, oklch(0.24 0.012 265 / 0.45) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.24 0.012 265 / 0.45) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: -1px -1px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
+          mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
+  pointer-events: none;
+}
+
+/* Violet radial wash — top-center primary glow + bottom-right secondary */
+.bg-radial-violet {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 50% 35% at 50% 0%, oklch(0.32 0.1 290 / 0.55), transparent 70%),
+    radial-gradient(ellipse 30% 25% at 80% 70%, oklch(0.28 0.06 290 / 0.4), transparent 70%);
+  pointer-events: none;
+}
+
+/* Accent radial wash — uses --accent-glow-{1,2,3} CSS custom properties
+   when set on parent (defaults: cyan + cyan-deeper + violet-deep).
+   Per-variant theming overrides via inline custom-property values. */
+.bg-radial-accent {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 55% 40% at 50% -5%, var(--accent-glow-1, oklch(0.34 0.1 200 / 0.55)), transparent 70%),
+    radial-gradient(ellipse 30% 25% at 85% 75%, var(--accent-glow-2, oklch(0.28 0.08 215 / 0.4)), transparent 70%),
+    radial-gradient(ellipse 28% 22% at 12% 88%, var(--accent-glow-3, oklch(0.28 0.06 280 / 0.35)), transparent 70%);
+  pointer-events: none;
+}
+
+/* Noise overlay — SVG turbulence at ~6% white opacity, mix-blend overlay.
+   Adds film-grain texture to dark backgrounds without dominating. */
+.bg-noise {
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* ---------- .live-pulse + @keyframes pulse ---------- */
+/* Used on existing live-call-ticker pulse-dot (C2 application). Replaces the
+   D1-C inline @keyframes pulse-dot with the canonical pulse rhythm.
+   Verbatim from canonical styles.css. */
+.live-pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 var(--green);
+  animation: pulse 1.8s ease-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 oklch(0.78 0.16 155 / 0.6); }
+  70% { box-shadow: 0 0 0 8px oklch(0.78 0.16 155 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.78 0.16 155 / 0); }
+}

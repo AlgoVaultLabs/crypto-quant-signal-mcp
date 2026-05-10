@@ -1,0 +1,18 @@
+<!-- ==========================================================================
+     AlgoVault canonical design system — loader snippet (DESIGN-W2 / D2-C)
+     --------------------------------------------------------------------------
+     Inject this block into <head> of every landing/*.html + every
+     function-rendered page in src/index.ts (signup, account, welcome,
+     dashboard).
+
+     Per-host adjustment:
+     - Same-origin (algovault.com landing): use href="/_design/algovault-design.css"
+     - Cross-origin (api.algovault.com pages): use href="https://algovault.com/_design/algovault-design.css"
+     ========================================================================== -->
+
+<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<!-- END: AlgoVault canonical design loader -->
