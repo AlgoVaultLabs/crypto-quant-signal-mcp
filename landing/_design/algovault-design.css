@@ -155,3 +155,339 @@
   70% { box-shadow: 0 0 0 8px oklch(0.78 0.16 155 / 0); }
   100% { box-shadow: 0 0 0 0 oklch(0.78 0.16 155 / 0); }
 }
+
+/* ============================================================================
+   DESIGN-W3 / Tier A extensions (2026-05-10) — append-only.
+   D2-C foundation (above this line) preserved BYTE-IDENTICAL. Architect
+   pre-ratified fictional-↔-live mapping table; all numerical values bind to
+   live `<span data-tr-field>` or runtime polling. NO hardcoded sample data.
+   ============================================================================ */
+
+/* ---------- C1.A — Hero flow diagram (5 venues → MCP → AI agent) ---------- */
+/* SVG-based static diagram with CSS-keyframe animations (no JS state).
+   Translated from `Design/AlgoVault Landing Hero v1/v1-minimal.jsx`
+   V0Diagram component (lines 88-240). React hooks elided; SVG +
+   <animateMotion> + <animate> + CSS keyframes do the motion. */
+
+.hero-flow-container {
+  position: relative;
+  margin: 28px auto 0;
+  max-width: 720px;
+  padding: 18px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: oklch(0.13 0.012 265 / 0.7);
+}
+
+.hero-flow-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 240px;
+  overflow: visible;
+}
+
+.hero-flow-node-venue {
+  fill: oklch(0.2 0.012 265);
+  stroke: oklch(0.34 0.012 265);
+}
+
+.hero-flow-node-mcp {
+  fill: oklch(0.18 0.014 265);
+  stroke: var(--mint);
+  stroke-width: 1.2;
+}
+
+.hero-flow-node-mcp-pulse {
+  fill: none;
+  stroke: var(--mint);
+  stroke-opacity: 0.25;
+  stroke-width: 1.2;
+  transform-origin: center;
+  animation: pulse 2.4s ease-out infinite;
+}
+
+.hero-flow-node-agent {
+  fill: oklch(0.2 0.012 265);
+  stroke: oklch(0.4 0.012 265);
+}
+
+.hero-flow-edge {
+  stroke: oklch(0.32 0.012 265);
+  stroke-opacity: 0.7;
+  stroke-width: 1;
+  fill: none;
+}
+
+.hero-flow-edge-pulse {
+  stroke: var(--mint);
+  stroke-width: 1.4;
+  fill: none;
+  stroke-dasharray: 4 6;
+  animation: hero-flow-pulse 0.9s linear infinite;
+}
+
+.hero-flow-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+
+.hero-flow-label-accent {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--mint);
+  font-weight: 600;
+}
+
+.hero-flow-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid oklch(0.2 0.012 265 / 0.7);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+
+.hero-flow-meta-strong {
+  color: var(--mint);
+  font-weight: 600;
+}
+
+@keyframes hero-flow-pulse {
+  to { stroke-dashoffset: -120; }
+}
+
+/* ---------- C1.B — Recent calls live feed (5-row, 2.5s polling) ---------- */
+/* Replaces the JSX `LAST_CALLS` hardcoded array (5 fictional sample
+   strings). Vanilla JS poller (added in C3) hydrates rows from
+   /api/recent-calls?limit=5. Each row: coin · tf · call (BUY/SELL/HOLD)
+   · time. */
+
+.recent-calls-feed {
+  position: relative;
+  margin: 18px auto 0;
+  max-width: 540px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: oklch(0.13 0.012 265 / 0.7);
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+
+.recent-calls-feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.12em;
+}
+
+.recent-calls-feed-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--green);
+}
+
+.recent-calls-row {
+  display: grid;
+  grid-template-columns: 64px 36px 1fr 70px;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 12px;
+  height: 26px;
+  font-size: 12px;
+  border-bottom: 1px solid oklch(0.2 0.012 265 / 0.7);
+  color: var(--fg-2);
+  animation: recent-calls-row-fade-in 0.4s ease-out;
+}
+
+.recent-calls-row:last-child {
+  border-bottom: none;
+}
+
+.recent-calls-coin {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.recent-calls-tf {
+  color: var(--fg-3);
+}
+
+.recent-calls-call {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.recent-calls-call-buy {
+  color: var(--green);
+}
+
+.recent-calls-call-sell {
+  color: var(--red);
+}
+
+.recent-calls-call-hold {
+  color: var(--fg-3);
+}
+
+.recent-calls-time {
+  color: var(--fg-4);
+  text-align: right;
+  font-size: 10.5px;
+}
+
+.recent-calls-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg-4);
+}
+
+@keyframes recent-calls-row-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- C1.C — Tier stats grid (4-card per-tier breakdown) ---------- */
+/* Translated from `Design/AlgoVault Track Record v1/track-record.jsx`
+   TierSection (lines 218-292). All 4 tier names + counts + WR% bind to
+   /api/performance-public.byTier (page-load hydration only — no polling).
+   Tier colors are SEMANTIC non-brand (Tier 1 blue, T2 green, T3 purple,
+   T4 orange) — preserved per D1-C; NOT mint-swapped. */
+
+.tier-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin: 16px 0 28px;
+}
+
+.tier-stat-card {
+  position: relative;
+  overflow: hidden;
+  padding: 22px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: oklch(0.18 0.014 265 / 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tier-stat-card-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--tier-color, var(--mint));
+  opacity: 0.85;
+}
+
+.tier-stat-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tier-stat-tier-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  letter-spacing: 0.18em;
+}
+
+.tier-stat-name {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  color: var(--fg);
+  margin-top: 2px;
+}
+
+.tier-stat-sample {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.05em;
+  text-align: right;
+  max-width: 50%;
+  word-break: break-word;
+}
+
+.tier-stat-wr-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.tier-stat-wr {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  color: var(--mint);
+  line-height: 1;
+}
+
+.tier-stat-wr-suffix {
+  color: var(--fg-3);
+  font-size: 18px;
+}
+
+.tier-stat-wr-cap {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tier-stat-pfe-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: oklch(0.22 0.012 265);
+  overflow: hidden;
+}
+
+.tier-stat-pfe-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--tier-color, var(--mint));
+  border-radius: 2px;
+  transition: width 0.5s ease-out;
+}
+
+.tier-stat-divider {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.tier-stat-n {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg);
+  margin-top: 2px;
+}
+
+.tier-stat-n-cap {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  text-transform: uppercase;
+}

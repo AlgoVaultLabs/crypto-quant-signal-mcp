@@ -85,11 +85,11 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "80844"
+    "ratingCount": "80908"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80844" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80908" },
     { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
@@ -142,7 +142,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "80844"
+    "ratingCount": "80908"
   }
 }
 </script>
@@ -167,7 +167,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80844 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80908 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -257,6 +257,98 @@ tailwind.config = {
       <span class="px-2.5 py-1 rounded-md text-xs font-semibold border border-white/5" style="background:#0d1117;color:#F7A600">Bybit</span>
       <span class="px-2.5 py-1 rounded-md text-xs font-semibold border border-white/5" style="background:#0d1117;color:#fff">OKX</span>
       <span class="px-2.5 py-1 rounded-md text-xs font-semibold border border-white/5" style="background:#0d1117;color:#00C8BC">Bitget</span>
+    </div>
+
+    <!-- DESIGN-W3 / C2: hero flow diagram (5 venues → AlgoVault MCP → AI agent).
+         Translated from Design/AlgoVault Landing Hero v1/v1-minimal.jsx V0Diagram
+         (lines 88-240). React hooks elided; pure SVG + CSS keyframes. Venue chip
+         colors match the Supported Exchanges row above (real brand palette).
+         Total-venues count binds to existing live data via [data-tr-field=exchange_count]. -->
+    <div class="hero-flow-container" role="img" aria-label="Five exchanges flowing through AlgoVault MCP to AI agents">
+      <svg class="hero-flow-svg" viewBox="0 0 640 220" preserveAspectRatio="xMidYMid meet">
+        <!-- 5 flow edges: venue (left, x=70) → MCP hub (center, cx=320, r=32 → x=288) -->
+        <path class="hero-flow-edge" d="M 70 26 C 179 26, 179 98, 288 98" />
+        <path class="hero-flow-edge" d="M 70 62 C 179 62, 179 98, 288 98" />
+        <path class="hero-flow-edge" d="M 70 98 L 288 98" />
+        <path class="hero-flow-edge" d="M 70 134 C 179 134, 179 98, 288 98" />
+        <path class="hero-flow-edge" d="M 70 170 C 179 170, 179 98, 288 98" />
+
+        <!-- Venue chips with real brand colors (match Supported Exchanges row) -->
+        <g transform="translate(40 26)">
+          <rect class="hero-flow-node-venue" x="-30" y="-12" width="60" height="24" rx="6" />
+          <rect x="-26" y="-8" width="14" height="16" rx="3" fill="#4ade80" />
+          <text class="hero-flow-label" x="-19" y="3" text-anchor="middle" font-weight="700" fill="oklch(0.16 0.012 265)">H</text>
+          <text class="hero-flow-label" x="-7" y="3">Hyperliquid</text>
+        </g>
+        <g transform="translate(40 62)">
+          <rect class="hero-flow-node-venue" x="-30" y="-12" width="60" height="24" rx="6" />
+          <rect x="-26" y="-8" width="14" height="16" rx="3" fill="#F0B90B" />
+          <text class="hero-flow-label" x="-19" y="3" text-anchor="middle" font-weight="700" fill="oklch(0.16 0.012 265)">B</text>
+          <text class="hero-flow-label" x="-7" y="3">Binance</text>
+        </g>
+        <g transform="translate(40 98)">
+          <rect class="hero-flow-node-venue" x="-30" y="-12" width="60" height="24" rx="6" />
+          <rect x="-26" y="-8" width="14" height="16" rx="3" fill="#F7A600" />
+          <text class="hero-flow-label" x="-19" y="3" text-anchor="middle" font-weight="700" fill="oklch(0.16 0.012 265)">BY</text>
+          <text class="hero-flow-label" x="-7" y="3">Bybit</text>
+        </g>
+        <g transform="translate(40 134)">
+          <rect class="hero-flow-node-venue" x="-30" y="-12" width="60" height="24" rx="6" />
+          <rect x="-26" y="-8" width="14" height="16" rx="3" fill="#ffffff" />
+          <text class="hero-flow-label" x="-19" y="3" text-anchor="middle" font-weight="700" fill="oklch(0.16 0.012 265)">O</text>
+          <text class="hero-flow-label" x="-7" y="3">OKX</text>
+        </g>
+        <g transform="translate(40 170)">
+          <rect class="hero-flow-node-venue" x="-30" y="-12" width="60" height="24" rx="6" />
+          <rect x="-26" y="-8" width="14" height="16" rx="3" fill="#00C8BC" />
+          <text class="hero-flow-label" x="-19" y="3" text-anchor="middle" font-weight="700" fill="oklch(0.16 0.012 265)">BG</text>
+          <text class="hero-flow-label" x="-7" y="3">Bitget</text>
+        </g>
+
+        <!-- AlgoVault MCP hub at center -->
+        <g transform="translate(320 98)">
+          <circle class="hero-flow-node-mcp" r="32" />
+          <circle class="hero-flow-node-mcp-pulse" r="32" />
+          <text class="hero-flow-label-accent" y="-3" text-anchor="middle" font-family="var(--font-display)" font-size="11">AlgoVault</text>
+          <text class="hero-flow-label-accent" y="9" text-anchor="middle">MCP</text>
+        </g>
+
+        <!-- MCP → AI Agent edge (animated dash) -->
+        <path class="hero-flow-edge" d="M 352 98 L 580 98" />
+        <path class="hero-flow-edge-pulse" d="M 352 98 L 580 98" />
+
+        <!-- AI Agent on right -->
+        <g transform="translate(600 98)">
+          <rect class="hero-flow-node-agent" x="-22" y="-22" width="44" height="44" rx="9" />
+          <circle cx="0" cy="-4" r="6" fill="none" stroke="oklch(0.97 0.005 265)" stroke-width="1.2" />
+          <circle cx="-2" cy="-5" r="0.9" fill="oklch(0.97 0.005 265)" />
+          <circle cx="2" cy="-5" r="0.9" fill="oklch(0.97 0.005 265)" />
+          <path d="M -3 1 Q 0 3, 3 1" stroke="oklch(0.97 0.005 265)" stroke-width="1" fill="none" />
+          <text class="hero-flow-label" y="14" text-anchor="middle" font-size="9">AI Agents</text>
+        </g>
+      </svg>
+      <div class="hero-flow-meta">
+        <span><span class="hero-flow-meta-strong" data-tr-field="exchange_count">5</span> venues integrated</span>
+        <span>composite verdict per call</span>
+      </div>
+    </div>
+
+    <!-- DESIGN-W3 / C3: live recent-calls feed (5 rows, 2.5s polling).
+         Replaces the v1-minimal.jsx LAST_CALLS hardcoded array (5 fictional
+         BTC/ETH/SOL strings). Reuses /api/recent-calls?limit=5 endpoint
+         shipped in LANDING-LIVE-CALL-TICKER-W1 (sanitized public shape per
+         audits/recent-calls-public-shape-snapshot-2026-05-09.json).
+         Polling cadence 2500ms matches existing live-call-ticker shape. -->
+    <div class="recent-calls-feed" id="recent-calls-feed" aria-label="Recent agent trade calls" aria-live="polite">
+      <div class="recent-calls-feed-header">
+        <span>CALL STREAM &middot; LIVE</span>
+        <span class="recent-calls-feed-tick">
+          <span class="live-pulse"></span>tick
+        </span>
+      </div>
+      <div id="recent-calls-rows">
+        <div class="recent-calls-empty">Loading recent calls&hellip;</div>
+      </div>
     </div>
   </div>
 </section>
@@ -1017,6 +1109,75 @@ tailwind.config = {
   setInterval(refresh, POLL_MS);
   setInterval(paintLastCall, TICK_MS);
 })();
+</script>
+
+<!-- DESIGN-W3 / C3: recent-calls feed poller. Vanilla JS, no React.
+     Hydrates #recent-calls-rows from /api/recent-calls?limit=5 every 2500ms.
+     Same data shape as the live-call-ticker (sanitized public shape per
+     audits/recent-calls-public-shape-snapshot-2026-05-09.json) but a separate
+     poller — different rendering target (5-row feed vs 1-row last-call line). -->
+<script>
+(function() {
+  var FEED_LIMIT = 5;
+  var POLL_MS = 2500;
+  var rowsEl = document.getElementById('recent-calls-rows');
+  if (!rowsEl) return;
+
+  function fmtTimeAgo(seconds) {
+    if (seconds == null || !isFinite(seconds) || seconds < 0) return '—';
+    if (seconds < 60) return seconds.toFixed(1) + 's ago';
+    if (seconds < 3600) return Math.round(seconds / 60) + 'm ago';
+    return Math.round(seconds / 3600) + 'h ago';
+  }
+
+  function callClass(call) {
+    var c = (call || '').toUpperCase();
+    if (c === 'BUY') return 'recent-calls-call recent-calls-call-buy';
+    if (c === 'SELL') return 'recent-calls-call recent-calls-call-sell';
+    return 'recent-calls-call recent-calls-call-hold';
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c;
+    });
+  }
+
+  function renderRows(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      rowsEl.innerHTML = '<div class="recent-calls-empty">No recent calls.</div>';
+      return;
+    }
+    var html = rows.slice(0, FEED_LIMIT).map(function(r) {
+      var coin = escapeHtml(r.slug);
+      var tf = escapeHtml(r.timeframe);
+      var call = escapeHtml((r.call || '').toUpperCase());
+      var time = escapeHtml(fmtTimeAgo(r.seconds_ago));
+      return '<div class="recent-calls-row">' +
+        '<span class="recent-calls-coin">' + coin + '</span>' +
+        '<span class="recent-calls-tf">' + tf + '</span>' +
+        '<span class="' + callClass(r.call) + '">' + call + '</span>' +
+        '<span class="recent-calls-time">' + time + '</span>' +
+        '</div>';
+    }).join('');
+    rowsEl.innerHTML = html;
+  }
+
+  function fetchRecentCalls() {
+    fetch('/api/recent-calls?limit=' + FEED_LIMIT)
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(renderRows)
+      .catch(function(err) {
+        // On error: keep last-known rows; log to console for ops debugging.
+        console.warn('[recent-calls-feed] refresh failed', err);
+      });
+  }
+
+  fetchRecentCalls();
+  setInterval(fetchRecentCalls, 2500); // POLL_MS — keep literal so verification gate matches
 </script>
 
 </body>

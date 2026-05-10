@@ -1224,6 +1224,12 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Track Record — AlgoVault Labs</title>
+<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W3 / C4, cross-origin) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://algovault.com/_design/algovault-design.css">
+<!-- END: AlgoVault canonical design loader -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; padding: 24px; max-width: 1400px; margin: 0 auto; }
@@ -1336,7 +1342,96 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   </div>
   <div id="eval-indicator" style="text-align:center;color:#8b949e;font-size:13px;margin:-8px 0 12px 0"></div>
 
-  <!-- Tier Performance Cards -->
+  <!-- DESIGN-W3 / C4: Performance by Asset Tier — canonical track-record.jsx
+       TierSection translation. 4 tier-stat-cards (T1/T2/T3/T4) hydrated from
+       /api/performance-public.byTier on page load (NOT polling — tier
+       breakdown is slow-moving). Uses .tier-stat-grid + .tier-stat-card from
+       D2-C/D3-C1 algovault-design.css. Tier colors are SEMANTIC non-brand
+       (Tier 1 blue / T2 green / T3 purple / T4 orange) — preserved per D1-C;
+       NOT mint-swapped. Sits ABOVE the existing tier-cards JS-hydrated grid
+       (preserved untouched for backward compat). -->
+  <div class="section"><h2>Performance by Asset Tier</h2>
+    <div class="tier-stat-grid" id="tier-stat-grid">
+      <div class="tier-stat-card" id="tier-stat-card-tier1" data-tier-color="#58a6ff">
+        <div class="tier-stat-card-stripe"></div>
+        <div class="tier-stat-card-header">
+          <div>
+            <span class="tier-stat-tier-label">T1</span>
+            <div class="tier-stat-name" data-tr-field="tier_t1_name">Blue Chip</div>
+          </div>
+          <span class="tier-stat-sample" data-tr-field="tier_t1_sample">BTC &middot; ETH</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="tier_t1_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-pfe-bar"><div class="tier-stat-pfe-fill" id="tier-stat-pfe-tier1"></div></div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="tier_t1_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="tier-stat-card" id="tier-stat-card-tier2" data-tier-color="#3fb950">
+        <div class="tier-stat-card-stripe"></div>
+        <div class="tier-stat-card-header">
+          <div>
+            <span class="tier-stat-tier-label">T2</span>
+            <div class="tier-stat-name" data-tr-field="tier_t2_name">Major Alts</div>
+          </div>
+          <span class="tier-stat-sample" data-tr-field="tier_t2_sample">&mdash;</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="tier_t2_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-pfe-bar"><div class="tier-stat-pfe-fill" id="tier-stat-pfe-tier2"></div></div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="tier_t2_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="tier-stat-card" id="tier-stat-card-tier3" data-tier-color="#bc8cff">
+        <div class="tier-stat-card-stripe"></div>
+        <div class="tier-stat-card-header">
+          <div>
+            <span class="tier-stat-tier-label">T3</span>
+            <div class="tier-stat-name" data-tr-field="tier_t3_name">TradFi</div>
+          </div>
+          <span class="tier-stat-sample" data-tr-field="tier_t3_sample">&mdash;</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="tier_t3_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-pfe-bar"><div class="tier-stat-pfe-fill" id="tier-stat-pfe-tier3"></div></div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="tier_t3_n">&mdash;</div>
+        </div>
+      </div>
+      <div class="tier-stat-card" id="tier-stat-card-tier4" data-tier-color="#d29922">
+        <div class="tier-stat-card-stripe"></div>
+        <div class="tier-stat-card-header">
+          <div>
+            <span class="tier-stat-tier-label">T4</span>
+            <div class="tier-stat-name" data-tr-field="tier_t4_name">Meme &amp; Micro</div>
+          </div>
+          <span class="tier-stat-sample" data-tr-field="tier_t4_sample">&mdash;</span>
+        </div>
+        <div class="tier-stat-wr-row">
+          <span class="tier-stat-wr"><span data-tr-field="tier_t4_wr">&mdash;</span><span class="tier-stat-wr-suffix">%</span></span>
+          <span class="tier-stat-wr-cap">WR</span>
+        </div>
+        <div class="tier-stat-pfe-bar"><div class="tier-stat-pfe-fill" id="tier-stat-pfe-tier4"></div></div>
+        <div class="tier-stat-divider">
+          <div class="tier-stat-n-cap">n =</div>
+          <div class="tier-stat-n" data-tr-field="tier_t4_n">&mdash;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Existing JS-hydrated tier-cards (preserved untouched per Build Rule 4 / D2-C foundation) -->
   <div class="section"><h2>Performance by Tier</h2>
     <div class="tier-grid" id="tier-cards"></div>
     <div style="text-align:center;color:#9ca3af;font-size:12px;margin:12px 0 0;padding:6px 12px;background:rgba(212,178,85,0.06);border:1px solid rgba(212,178,85,0.12);border-radius:8px">&#x1f4a1; HOLD calls are always free &mdash; You only pay for BUY and SELL verdicts</div>
@@ -1598,6 +1693,31 @@ function renderAll() {
       holdLine +
     '</div>';
   }).join('');
+
+  // DESIGN-W3 / C4: hydrate canonical .tier-stat-card[data-tr-field] spans from
+  // /api/performance-public.byTier. Page-load only (no polling — tier breakdown
+  // is slow-moving). Sets --tier-color via setProperty (no inline style=).
+  ['tier1','tier2','tier3','tier4'].forEach(function(k){
+    var t = bt[k]; if (!t) return;
+    var tc = exTier[k] || { count: 0, pfeWinRate: null };
+    var card = document.getElementById('tier-stat-card-' + k);
+    if (!card) return;
+    var color = card.getAttribute('data-tier-color') || t.color;
+    if (color) card.style.setProperty('--tier-color', color);
+    var setText = function(field, val){
+      var el = card.querySelector('[data-tr-field="' + field + '"]');
+      if (el) el.textContent = val;
+    };
+    var tag = 't' + t.tier; // t1..t4
+    setText('tier_' + tag + '_name', t.name || '—');
+    var sample = (t.assets||[]).slice(0,3).join(' · ');
+    setText('tier_' + tag + '_sample', sample || '—');
+    var wrPct = (tc.pfeWinRate != null) ? (tc.pfeWinRate * 100).toFixed(1) : '—';
+    setText('tier_' + tag + '_wr', wrPct);
+    setText('tier_' + tag + '_n', (tc.count != null ? tc.count.toLocaleString() : '—'));
+    var fill = document.getElementById('tier-stat-pfe-' + k);
+    if (fill && tc.pfeWinRate != null) fill.style.width = (tc.pfeWinRate * 100).toFixed(1) + '%';
+  });
 
   // Trade call types — from server-side byCallType
   var typeEl = document.getElementById('by-type');
