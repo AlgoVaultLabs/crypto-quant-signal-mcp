@@ -10,7 +10,7 @@
  * Output: landing/integrations/{binance,okx,bybit,bitget}.html
  *
  * Each rendered HTML page wraps the tutorial body in the same Tailwind navy/
- * gold theme used by landing/docs.html so the mirror reads as part of
+ * mint theme used by landing/docs.html so the mirror reads as part of
  * algovault.com, not as a foreign drop-in.
  *
  * Re-run this script whenever algovault-skills/docs/integrations/<x>.md
@@ -130,7 +130,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -173,16 +173,16 @@ tailwind.config = {
          were noisy). Integrations now points to /integrations (the new manifest-
          driven index page) — clicking it on a tutorial mirror goes "back up" to
          the index, mirroring how /skills works. The current page is highlighted
-         via text-gold-400 font-medium (consistent with other landing pages). -->
+         via text-mint-400 font-medium (consistent with other landing pages). -->
     <nav class="text-sm text-steel-400 flex gap-4 flex-wrap">
-      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-gold-400">Track Record</a>
-      <a href="/#pricing" class="hover:text-gold-400">Pricing</a>
-      <a href="/integrations" class="text-gold-400 font-medium">Integrations</a>
-      <a href="/skills" class="hover:text-gold-400">Skills</a>
-      <a href="/docs.html" class="hover:text-gold-400">Docs</a>
-      <a href="/verify" class="hover:text-gold-400">Verify</a>
-      <a href="https://github.com/AlgoVaultLabs/algovault-skills" class="hover:text-gold-400">GitHub</a>
-      <a href="https://api.algovault.com/signup" class="text-gold-400 hover:text-gold-500">Signup</a>
+      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-mint-400">Track Record</a>
+      <a href="/#pricing" class="hover:text-mint-400">Pricing</a>
+      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
+      <a href="/skills" class="hover:text-mint-400">Skills</a>
+      <a href="/docs.html" class="hover:text-mint-400">Docs</a>
+      <a href="/verify" class="hover:text-mint-400">Verify</a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills" class="hover:text-mint-400">GitHub</a>
+      <a href="https://api.algovault.com/signup" class="text-mint-400 hover:text-mint-500">Signup</a>
     </nav>
   </div>
 </header>
@@ -197,8 +197,8 @@ ${bodyHtml}
 </main>
 <footer class="border-t border-navy-600 px-6 py-6 mt-12">
   <div class="max-w-4xl mx-auto text-center text-steel-500 text-sm">
-    <p>© AlgoVault Labs · MIT licensed · Tutorial source: <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/docs/integrations/${exchange}.md" class="text-gold-400 hover:text-gold-500">algovault-skills/docs/integrations/${exchange}.md</a></p>
-    <p class="mt-2">Snapshot taken 2026-04-25 · Live numbers at <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="text-gold-400 hover:text-gold-500">/track-record</a></p>
+    <p>© AlgoVault Labs · MIT licensed · Tutorial source: <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/docs/integrations/${exchange}.md" class="text-mint-400 hover:text-mint-500">algovault-skills/docs/integrations/${exchange}.md</a></p>
+    <p class="mt-2">Snapshot taken 2026-04-25 · Live numbers at <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="text-mint-400 hover:text-mint-500">/track-record</a></p>
   </div>
 </footer>
 </body>

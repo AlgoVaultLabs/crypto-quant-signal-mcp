@@ -18,7 +18,7 @@
 
 export const MCP_USAGE_HTML: string = `<section id="connect-mcp" class="mb-16">
   <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-    <span class="text-gold-400">&#9670;</span> Connect Your MCP Client
+    <span class="text-mint-400">&#9670;</span> Connect Your MCP Client
   </h2>
   <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 100 calls/month.</p>
 
@@ -162,14 +162,14 @@ export const MCP_USAGE_HTML: string = `<section id="connect-mcp" class="mb-16">
         <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
 npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
       </div>
-      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-gold-400 hover:underline">smithery.ai</a>.</p>
+      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>
     </div>
   </details>
 
   <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Plain HTTP / curl &mdash; advanced testing</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-gold-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
+      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
       <p><strong>One-shot smoke (free tier, no auth):</strong></p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
@@ -180,12 +180,12 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
 
   <p class="text-gray-500 text-xs mt-6">
     <strong>Config formats verified 2026-04-30 against:</strong>
-    <a class="text-gold-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
-    Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-gold-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
+    <a class="text-mint-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
+    Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
   </p>
 </section>
 `;

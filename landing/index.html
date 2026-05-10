@@ -28,7 +28,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -79,16 +79,16 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80740" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "30" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-10" }
   ]
 }
 </script>
@@ -122,7 +122,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -136,7 +136,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   }
 }
 </script>
@@ -161,7 +161,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80740 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -189,7 +189,7 @@ tailwind.config = {
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -202,7 +202,7 @@ tailwind.config = {
     <div class="flex justify-center mb-6">
       <img src="/logo.png" alt="AlgoVault" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl glow" loading="eager">
     </div>
-    <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
+    <h1 class="text-3xl sm:text-5xl font-bold text-mint-400 leading-tight tracking-tight glow-text">
       The Brain Layer for<br>AI Trading Agents
     </h1>
     <!-- GEO-W1 C4 / Spec 2 hero refinement: declarative answer-shape lead per Build Rule 9 (Public-facing copy = Professional + Concise). Two clean sentences; em-dash used for parenthetical, not reformulation. Numerical claim wrapped in data-tr-field per AUTO-TRACE-W1. -->
@@ -211,7 +211,7 @@ tailwind.config = {
     </p>
     <!-- WEBSITE-REFRESH-CLEANUP-W1 R1 dedup: prior version had this paragraph repeated (lines 121-122 byte-identical to 118-119, presumably a typo from a copy-paste during R6 editing). One <p class="quotable-fact"> per page is sufficient — schema.org/Claim itemtype + the LLM-targeted phrasing only need one DOM occurrence to be picked up by Plausible "Claim Quote Selected" + Google rich results / AI extraction. -->
     <p class="quotable-fact mt-3 text-sm text-emerald-400/90 max-w-xl mx-auto" itemscope itemtype="https://schema.org/Claim">
-      <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">56,375</span>+ trade calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
+      <span itemprop="claimReviewed">AlgoVault has <span data-tr-field="pfe_wr" class="text-emerald-300 font-semibold">89.4%</span>+ PFE Win Rate across <span data-tr-field="call_count" class="text-emerald-300 font-semibold">56,375</span>+ trade calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-mint-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>
     <!-- GEO-W1 C4 / Build Rule 9 F2: prior marketing-paste subheadline removed entirely (Mr.1 directive 2026-05-09). H1 + Spec 2 lead + live-track-record claim already carry the value statement; no replacement copy needed. -->
 
@@ -229,7 +229,7 @@ tailwind.config = {
     </div>
 
     <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-      <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+      <a href="#quickstart" class="w-full sm:w-auto px-6 py-2.5 bg-mint-500 hover:bg-mint-400 text-navy-900 font-semibold text-sm rounded-lg transition">
         Try Free in Claude
       </a>
       <a href="/track-record" class="w-full sm:w-auto px-6 py-2.5 border border-white/10 hover:border-white/25 text-white text-sm rounded-lg transition">
@@ -259,10 +259,10 @@ tailwind.config = {
 
     <h2 id="core-capabilities" class="text-xl sm:text-2xl font-bold text-white mb-3">Core capabilities</h2>
     <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
-      <li><strong>Composite trade calls.</strong> BUY / SELL / HOLD with confidence &mdash; <code class="text-gold-400">get_trade_call</code>.</li>
-      <li><strong>Market regime classification.</strong> Trending / ranging / volatile &mdash; <code class="text-gold-400">get_market_regime</code>.</li>
-      <li><strong>Cross-venue funding arbitrage.</strong> Top spreads across Hyperliquid, Binance, Bybit &mdash; <code class="text-gold-400">scan_funding_arb</code>.</li>
-      <li><strong>On-chain track record.</strong> Every call Merkle-anchored on Base L2 &mdash; verifiable at <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.</li>
+      <li><strong>Composite trade calls.</strong> BUY / SELL / HOLD with confidence &mdash; <code class="text-mint-400">get_trade_call</code>.</li>
+      <li><strong>Market regime classification.</strong> Trending / ranging / volatile &mdash; <code class="text-mint-400">get_market_regime</code>.</li>
+      <li><strong>Cross-venue funding arbitrage.</strong> Top spreads across Hyperliquid, Binance, Bybit &mdash; <code class="text-mint-400">scan_funding_arb</code>.</li>
+      <li><strong>On-chain track record.</strong> Every call Merkle-anchored on Base L2 &mdash; verifiable at <a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>.</li>
     </ul>
 
     <h2 id="when-to-use" class="text-xl sm:text-2xl font-bold text-white mb-3">When to use AlgoVault</h2>
@@ -275,9 +275,9 @@ tailwind.config = {
     <h2 id="vs-raw-exchange-apis" class="text-xl sm:text-2xl font-bold text-white mb-3">vs raw exchange APIs</h2>
     <ul class="text-gray-300 text-sm sm:text-base leading-relaxed space-y-2">
       <li><strong>Exchange APIs:</strong> 8 raw indicators per call. Your agent interprets each one.</li>
-      <li><strong>AlgoVault:</strong> one verdict per call. <code class="text-gold-400">{call, confidence, regime, factors}</code>.</li>
+      <li><strong>AlgoVault:</strong> one verdict per call. <code class="text-mint-400">{call, confidence, regime, factors}</code>.</li>
       <li><strong>TradingView and Coinglass:</strong> built for humans reading charts. AlgoVault: built for AI agents reading verdicts.</li>
-      <li><strong><span data-tr-field="exchange_count">5</span> venues unified behind one MCP</strong> &mdash; skip N adapter integrations. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a> + <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a>.</li>
+      <li><strong><span data-tr-field="exchange_count">5</span> venues unified behind one MCP</strong> &mdash; skip N adapter integrations. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> + <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a>.</li>
     </ul>
 
   </div>
@@ -293,8 +293,8 @@ tailwind.config = {
 
     <div class="space-y-6">
       <div class="flex gap-4 step-line">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">1</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">1</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Open Claude &rarr; Settings &rarr; Integrations</p>
@@ -302,20 +302,20 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex gap-4 step-line">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">2</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">2</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Add custom integration &rarr; paste the URL</p>
-          <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 font-mono text-sm text-gold-400 select-all cursor-pointer" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
+          <div class="mt-2 bg-navy-800 border border-white/5 rounded-lg px-4 py-2.5 font-mono text-sm text-mint-400 select-all cursor-pointer" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
             https://api.algovault.com/mcp
             <span class="text-gray-600 text-xs ml-2">(click to copy)</span>
           </div>
         </div>
       </div>
       <div class="flex gap-4 step-line">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">3</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">3</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Ask Claude:</p>
@@ -335,8 +335,8 @@ tailwind.config = {
       </div>
       <pre class="text-xs sm:text-sm text-gray-300 overflow-x-auto leading-relaxed"><code>{
   "call": "<span class="text-emerald-400 font-semibold">BUY</span>",
-  "confidence": <span class="text-gold-400">68</span>,
-  "price": <span class="text-gold-400">97245.50</span>,
+  "confidence": <span class="text-mint-400">68</span>,
+  "price": <span class="text-mint-400">97245.50</span>,
   "indicators": {
     "funding_rate": -0.0008,
     "funding_24h_avg": -0.00072,
@@ -380,13 +380,13 @@ tailwind.config = {
     <div class="grid md:grid-cols-3 gap-5">
       <!-- get_trade_call -->
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
-        <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_trade_call <span class="text-gray-500">(alias: get_trade_signal)</span></div>
+        <div class="text-mint-400 font-mono text-xs font-medium mb-3">get_trade_call <span class="text-gray-500">(alias: get_trade_signal)</span></div>
         <h3 class="text-white font-semibold text-base mb-2">Composite Trade Call</h3>
         <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Multi-factor composite scoring</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Regime-aware trade call filtering</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Crypto + TradFi perpetuals</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> 11 timeframes (1m &ndash; 1d)</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Multi-factor composite scoring</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Regime-aware trade call filtering</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Crypto + TradFi perpetuals</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> 11 timeframes (1m &ndash; 1d)</li>
         </ul>
         <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
           <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">BUY</span> <span class="text-gray-500">68% &middot; trend_persistence: HIGH</span><br>
@@ -396,29 +396,29 @@ tailwind.config = {
 
       <!-- scan_funding_arb -->
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
-        <div class="text-gold-400 font-mono text-xs font-medium mb-3">scan_funding_arb</div>
+        <div class="text-mint-400 font-mono text-xs font-medium mb-3">scan_funding_arb</div>
         <h3 class="text-white font-semibold text-base mb-2">Funding Rate Arbitrage</h3>
         <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Hyperliquid vs Binance vs Bybit</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Normalized hourly rates</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Annualized spreads in basis points</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Ranked by opportunity size</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Hyperliquid vs Binance vs Bybit</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Normalized hourly rates</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Annualized spreads in basis points</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Ranked by opportunity size</li>
         </ul>
         <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
-          <span class="text-gray-500">&rarr;</span> <span class="text-gold-400">DOGE</span> <span class="text-gray-500">+42 bps spread</span><br>
+          <span class="text-gray-500">&rarr;</span> <span class="text-mint-400">DOGE</span> <span class="text-gray-500">+42 bps spread</span><br>
           <span class="text-gray-500">&rarr;</span> <span class="text-gray-400">HL: -0.03% vs Binance: +0.01%</span>
         </div>
       </div>
 
       <!-- get_market_regime -->
       <div class="bg-navy-700 border border-white/5 rounded-xl p-6 card-hover">
-        <div class="text-gold-400 font-mono text-xs font-medium mb-3">get_market_regime</div>
+        <div class="text-mint-400 font-mono text-xs font-medium mb-3">get_market_regime</div>
         <h3 class="text-white font-semibold text-base mb-2">Market Regime Detection</h3>
         <ul class="text-gray-400 text-sm leading-relaxed mb-4 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Trending / Ranging / Volatile</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Multi-dimensional classification</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Cross-venue funding sentiment</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5 text-xs">&#9670;</span> Strategy &amp; sizing suggestions</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Trending / Ranging / Volatile</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Multi-dimensional classification</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Cross-venue funding sentiment</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5 text-xs">&#9670;</span> Strategy &amp; sizing suggestions</li>
         </ul>
         <div class="bg-navy-800 rounded-lg px-3 py-2 text-xs font-mono">
           <span class="text-gray-500">&rarr;</span> <span class="text-emerald-400">TRENDING_UP</span> <span class="text-gray-500">ADX=34.2</span><br>
@@ -435,7 +435,7 @@ tailwind.config = {
     <div class="text-center mb-10">
       <h2 class="text-2xl sm:text-3xl font-bold text-white">Use Cases &mdash; Brain + Execution Pairing</h2>
       <p class="text-gray-500 text-sm mt-2 max-w-2xl mx-auto">
-        AlgoVault MCP gives your agent a <strong class="text-gold-400">composite verdict</strong> in one call &mdash; call, confidence, regime, factors, every call Merkle-anchored on Base L2.
+        AlgoVault MCP gives your agent a <strong class="text-mint-400">composite verdict</strong> in one call &mdash; call, confidence, regime, factors, every call Merkle-anchored on Base L2.
         Pair it with any of these official Agent Trade Kits to ship a complete trading agent.
       </p>
     </div>
@@ -444,39 +444,39 @@ tailwind.config = {
 <!-- BUILD:USE_CASES_CARDS -->
       <a href="/docs/integrations/binance?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-binance"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'binance',source:'use-cases-card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <img src="/assets/logos/binance.svg" alt="Binance logo" class="w-10 h-10 object-contain mb-3">
         <h3 class="text-white font-semibold text-base mb-1">Binance &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + official Binance Skills Hub for Spot Testnet execution.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">binance/binance-skills-hub</code> (verified 2026-04-25)</p>
-        <span class="text-gold-400 text-xs">View tutorial &rarr;</span>
+        <span class="text-mint-400 text-xs">View tutorial &rarr;</span>
       </a>
       <a href="/docs/integrations/okx?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-okx"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'okx',source:'use-cases-card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <img src="/assets/logos/okx.svg" alt="OKX logo" class="w-10 h-10 object-contain mb-3 invert">
         <h3 class="text-white font-semibold text-base mb-1">OKX &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + 83 OKX execution tools across spot, swap, futures, options, grid bots.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">@okx_ai/okx-trade-mcp@1.3.1</code> </p>
-        <span class="text-gold-400 text-xs">View tutorial &rarr;</span>
+        <span class="text-mint-400 text-xs">View tutorial &rarr;</span>
       </a>
       <a href="/docs/integrations/bybit?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-bybit"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'bybit',source:'use-cases-card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <img src="/assets/logos/bybit.png" alt="Bybit logo" class="w-10 h-10 object-contain mb-3">
         <h3 class="text-white font-semibold text-base mb-1">Bybit &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + Bybit's official MCP for Linear Perpetual + conditional orders.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">bybit-official-trading-server@2.0.9</code> </p>
-        <span class="text-gold-400 text-xs">View tutorial &rarr;</span>
+        <span class="text-mint-400 text-xs">View tutorial &rarr;</span>
       </a>
       <a href="/docs/integrations/bitget?utm_source=index&utm_medium=use-cases-card&utm_campaign=integration-bitget"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'bitget',source:'use-cases-card'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <img src="/assets/logos/bitget.png" alt="Bitget logo" class="w-10 h-10 object-contain mb-3">
         <h3 class="text-white font-semibold text-base mb-1">Bitget &times; AlgoVault</h3>
         <p class="text-gray-500 text-xs mb-3">Composite verdict + GetClaw agent-native execution inside a dedicated AI account.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">bitget-mcp-server@1.1.0</code> </p>
-        <span class="text-gold-400 text-xs">View tutorial &rarr;</span>
+        <span class="text-mint-400 text-xs">View tutorial &rarr;</span>
       </a>
 <!-- /BUILD:USE_CASES_CARDS -->
     </div>
@@ -523,19 +523,19 @@ tailwind.config = {
     <!-- Methodology row -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
       <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
-        <div class="text-sm font-semibold text-gold-400">1m &ndash; 1d</div>
+        <div class="text-sm font-semibold text-mint-400">1m &ndash; 1d</div>
         <div class="text-gray-500 text-xs mt-1">All HL intervals</div>
       </div>
       <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
-        <div class="text-sm font-semibold text-gold-400">&ge; 60%</div>
+        <div class="text-sm font-semibold text-mint-400">&ge; 60%</div>
         <div class="text-gray-500 text-xs mt-1">Confidence filter</div>
       </div>
       <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
-        <div class="text-sm font-semibold text-gold-400">PFE / MAE</div>
+        <div class="text-sm font-semibold text-mint-400">PFE / MAE</div>
         <div class="text-gray-500 text-xs mt-1">Peak &amp; adverse excursion</div>
       </div>
       <div class="bg-navy-700/60 border border-white/5 rounded-lg p-4 text-center">
-        <div class="text-sm font-semibold text-gold-400">Per-TF Eval</div>
+        <div class="text-sm font-semibold text-mint-400">Per-TF Eval</div>
         <div class="text-gray-500 text-xs mt-1">5m=1hr, 1h=8hr, 4h=24hr</div>
       </div>
     </div>
@@ -561,11 +561,11 @@ tailwind.config = {
     </div>
 
     <div class="text-center mt-8">
-      <a href="/track-record" class="inline-block px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+      <a href="/track-record" class="inline-block px-6 py-2.5 bg-mint-500 hover:bg-mint-400 text-navy-900 font-semibold text-sm rounded-lg transition">
         View Live Track Record &rarr;
       </a>
       <p class="text-gray-600 text-xs mt-3">Updated live. Also queryable via <code class="text-gray-500">performance://signal-performance</code> MCP resource.</p>
-      <p class="text-gray-500 text-xs mt-2">&#x1f517; On-chain verified &mdash; every call hashed on Base L2 before outcome is known. <a href="/verify" class="text-gold-400 hover:underline">Verify any call &rarr;</a></p>
+      <p class="text-gray-500 text-xs mt-2">&#x1f517; On-chain verified &mdash; every call hashed on Base L2 before outcome is known. <a href="/verify" class="text-mint-400 hover:underline">Verify any call &rarr;</a></p>
     </div>
   </div>
 </section>
@@ -580,8 +580,8 @@ tailwind.config = {
           <span class="text-white text-sm font-semibold">Tamper-Proof Track Record</span>
           <p class="text-gray-400 text-sm mt-1">Every call hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can't edit history.</p>
           <div class="mt-3 flex flex-wrap gap-3 text-xs">
-            <a href="/verify" class="text-gold-400 hover:underline">Verify a Call &rarr;</a>
-            <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-gold-400 hover:underline">View Contract &rarr;</a>
+            <a href="/verify" class="text-mint-400 hover:underline">Verify a Call &rarr;</a>
+            <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-mint-400 hover:underline">View Contract &rarr;</a>
           </div>
         </div>
       </div>
@@ -607,7 +607,7 @@ tailwind.config = {
         </div>
         <p class="text-gray-400 text-sm mt-3 max-w-2xl mx-auto">
           Most signal tools always emit a verdict. We reject <span data-tr-field="hold_rate">93%</span> of scans as HOLD &mdash; and HOLDs are <span class="text-white font-semibold">always free</span>.
-          That selectivity is why the rest have <span data-tr-field="pfe_wr" class="text-gold-400">89.4%</span>+ Merkle-verified accuracy on <span data-tr-field="call_count" class="text-gold-400">56,375</span>+ signals.
+          That selectivity is why the rest have <span data-tr-field="pfe_wr" class="text-mint-400">89.4%</span>+ Merkle-verified accuracy on <span data-tr-field="call_count" class="text-mint-400">56,375</span>+ signals.
         </p>
       </div>
     </div>
@@ -652,21 +652,21 @@ tailwind.config = {
       </div>
 
       <!-- Pro -->
-      <div class="bg-navy-700 border border-gold-500/30 rounded-xl p-6 relative">
-        <div class="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gold-500 text-navy-900 text-xs font-bold rounded-full">
+      <div class="bg-navy-700 border border-mint-500/30 rounded-xl p-6 relative">
+        <div class="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-mint-500 text-navy-900 text-xs font-bold rounded-full">
           POPULAR
         </div>
-        <div class="text-gold-400 text-xs font-medium uppercase tracking-wider mb-1">Pro</div>
+        <div class="text-mint-400 text-xs font-medium uppercase tracking-wider mb-1">Pro</div>
         <div class="text-3xl font-bold text-white mb-1">$49<span class="text-lg text-gray-500 font-normal">/mo</span></div>
         <div class="text-gray-600 text-xs mb-5">For serious agent builders</div>
         <ul class="space-y-2.5 text-sm text-gray-400 mb-6">
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All crypto + TradFi assets</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes (1m&ndash;1d)</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> 15,000 calls/month</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> $0.01/call overage</li>
-          <li class="flex items-start gap-2"><span class="text-gold-400 mt-0.5">&#10003;</span> HOLD calls always free</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5">&#10003;</span> <span class="text-white">All crypto + TradFi assets</span></li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5">&#10003;</span> <span class="text-white">All 11 timeframes (1m&ndash;1d)</span></li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5">&#10003;</span> 15,000 calls/month</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5">&#10003;</span> $0.01/call overage</li>
+          <li class="flex items-start gap-2"><span class="text-mint-400 mt-0.5">&#10003;</span> HOLD calls always free</li>
         </ul>
-        <a href="https://api.algovault.com/signup?plan=pro" onclick="if(window.plausible){plausible('Signup Click',{props:{plan:'pro',source:'pricing-section'}});plausible('Plan Selection',{props:{plan:'pro'}})}" class="block w-full text-center px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition">
+        <a href="https://api.algovault.com/signup?plan=pro" onclick="if(window.plausible){plausible('Signup Click',{props:{plan:'pro',source:'pricing-section'}});plausible('Plan Selection',{props:{plan:'pro'}})}" class="block w-full text-center px-4 py-2 bg-mint-500 hover:bg-mint-400 text-navy-900 font-semibold text-sm rounded-lg transition">
           Subscribe to Pro
         </a>
       </div>
@@ -728,7 +728,7 @@ tailwind.config = {
           <span class="text-white text-sm font-medium">Remote &mdash; Streamable HTTP</span>
           <span class="text-xs text-gray-600 ml-auto">for AI agents &amp; production</span>
         </div>
-        <div class="bg-navy-800 rounded-lg px-4 py-2.5 font-mono text-sm text-gold-400 select-all cursor-pointer mt-2" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
+        <div class="bg-navy-800 rounded-lg px-4 py-2.5 font-mono text-sm text-mint-400 select-all cursor-pointer mt-2" onclick="navigator.clipboard.writeText('https://api.algovault.com/mcp')">
           https://api.algovault.com/mcp
         </div>
         <p class="text-gray-600 text-xs mt-2">Pro/Enterprise: add <code class="text-gray-500">Authorization: Bearer av_live_...</code> header</p>
@@ -839,7 +839,7 @@ tailwind.config = {
           <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </summary>
         <div class="px-6 pb-4 text-sm text-gray-400 leading-relaxed">
-          MCP is an open standard by Anthropic that lets AI assistants connect to external tools and data sources. AlgoVault implements MCP so any compatible client (Claude, Cursor, VS Code, custom agents) can discover and use its trading tools automatically. Learn more at <a href="https://modelcontextprotocol.io" target="_blank" class="text-gold-400 hover:underline">modelcontextprotocol.io</a>.
+          MCP is an open standard by Anthropic that lets AI assistants connect to external tools and data sources. AlgoVault implements MCP so any compatible client (Claude, Cursor, VS Code, custom agents) can discover and use its trading tools automatically. Learn more at <a href="https://modelcontextprotocol.io" target="_blank" class="text-mint-400 hover:underline">modelcontextprotocol.io</a>.
         </div>
       </details>
     </div>

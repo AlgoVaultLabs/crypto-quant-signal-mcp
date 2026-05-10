@@ -28,7 +28,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -152,16 +152,16 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80740" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "30" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-10" }
   ]
 }
 </script>
@@ -195,7 +195,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -209,7 +209,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   }
 }
 </script>
@@ -234,7 +234,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80740 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -259,7 +259,7 @@ tailwind.config = {
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -269,14 +269,14 @@ tailwind.config = {
 <!-- Hero -->
 <section class="pt-28 pb-10 sm:pt-36 sm:pb-12 px-6">
   <div class="max-w-3xl mx-auto text-center">
-    <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
+    <h1 class="text-3xl sm:text-5xl font-bold text-mint-400 leading-tight tracking-tight glow-text">
       Glossary
     </h1>
     <p class="mt-4 text-base sm:text-lg text-white max-w-2xl mx-auto leading-relaxed">
       Definitions for AlgoVault-specific terms used by AI trading agents.
     </p>
     <p class="mt-3 text-sm text-gray-400 max-w-xl mx-auto">
-      Live numbers refetched from <a href="https://api.algovault.com/api/performance-public" class="text-gold-400 hover:underline">/api/performance-public</a> on page load. See <a href="/faq" class="text-gold-400 hover:underline">/faq</a> for builder-facing answers.
+      Live numbers refetched from <a href="https://api.algovault.com/api/performance-public" class="text-mint-400 hover:underline">/api/performance-public</a> on page load. See <a href="/faq" class="text-mint-400 hover:underline">/faq</a> for builder-facing answers.
     </p>
   </div>
 </section>
@@ -290,30 +290,30 @@ tailwind.config = {
   <div class="max-w-3xl mx-auto space-y-8">
 
     <article id="composite-verdict" class="border-t border-white/5 pt-6">
-      <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Composite verdict</h3>
+      <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Composite verdict</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        AlgoVault&rsquo;s primary output unit. A single BUY/SELL/HOLD with confidence, regime label, and contributing factors. Multi-factor quant weighting across price, funding rate, open interest, and volume. Exposed via <code class="text-gold-400">get_trade_call</code>. See <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.
+        AlgoVault&rsquo;s primary output unit. A single BUY/SELL/HOLD with confidence, regime label, and contributing factors. Multi-factor quant weighting across price, funding rate, open interest, and volume. Exposed via <code class="text-mint-400">get_trade_call</code>. See <a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>.
       </p>
     </article>
 
     <article id="cross-venue-intelligence" class="border-t border-white/5 pt-6">
-      <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Cross-venue intelligence</h3>
+      <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Cross-venue intelligence</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
         Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification.
       </p>
     </article>
 
     <article id="data-flywheel" class="border-t border-white/5 pt-6">
-      <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Data flywheel</h3>
+      <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Data flywheel</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Every published trade call generates verifiable outcome data. That data feeds the composite weighting tuner, which improves signal quality, attracts more usage, and generates more data. Visible at <a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>.
+        Every published trade call generates verifiable outcome data. That data feeds the composite weighting tuner, which improves signal quality, attracts more usage, and generates more data. Visible at <a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>.
       </p>
     </article>
 
     <article id="funding-arbitrage" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Funding arbitrage</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        A cross-venue trading strategy that exploits differences in perpetual-swap funding rates between exchanges. AlgoVault&rsquo;s <code class="text-gold-400">scan_funding_arb</code> MCP tool returns ranked opportunities by annualized basis-point spread across Hyperliquid, Binance, and Bybit. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a> for ready-made agent recipes.
+        A cross-venue trading strategy that exploits differences in perpetual-swap funding rates between exchanges. AlgoVault&rsquo;s <code class="text-mint-400">scan_funding_arb</code> MCP tool returns ranked opportunities by annualized basis-point spread across Hyperliquid, Binance, and Bybit. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> for ready-made agent recipes.
       </p>
     </article>
 
@@ -327,42 +327,42 @@ tailwind.config = {
     <article id="mcp" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">MCP (Model Context Protocol)</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        An open protocol that lets AI agents call external tools and resources over Streamable HTTP or stdio. AlgoVault is an MCP server (the producer of trade calls); agents like Claude Desktop, Cursor, and Cline are MCP clients (the consumers). See <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a> for connection examples.
+        An open protocol that lets AI agents call external tools and resources over Streamable HTTP or stdio. AlgoVault is an MCP server (the producer of trade calls); agents like Claude Desktop, Cursor, and Cline are MCP clients (the consumers). See <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a> for connection examples.
       </p>
     </article>
 
     <article id="merkle-anchor" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Merkle anchor</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        A cryptographic commitment that proves a set of trade calls existed at a specific block. AlgoVault batches signals into Merkle trees and publishes the root to a Base L2 smart contract (<code class="text-gold-400">0x6485&hellip;bf81</code>). The <a href="/verify" class="text-gold-400 hover:underline">/verify</a> page reconstructs the proof tree for any individual call.
+        A cryptographic commitment that proves a set of trade calls existed at a specific block. AlgoVault batches signals into Merkle trees and publishes the root to a Base L2 smart contract (<code class="text-mint-400">0x6485&hellip;bf81</code>). The <a href="/verify" class="text-mint-400 hover:underline">/verify</a> page reconstructs the proof tree for any individual call.
       </p>
     </article>
 
     <article id="pfe-win-rate" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">PFE win rate</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Path-Forward Equity win rate. The percentage of AlgoVault&rsquo;s BUY/SELL trade calls that closed positive on the trader&rsquo;s intended path forward. Currently <span data-tr-field="pfe_wr">90.2%</span> across <span data-tr-field="call_count">79,527</span> verified calls on a rolling 30-day window. Refetched live from <code class="text-gold-400">/api/performance-public</code>.
+        Path-Forward Equity win rate. The percentage of AlgoVault&rsquo;s BUY/SELL trade calls that closed positive on the trader&rsquo;s intended path forward. Currently <span data-tr-field="pfe_wr">90.2%</span> across <span data-tr-field="call_count">79,527</span> verified calls on a rolling 30-day window. Refetched live from <code class="text-mint-400">/api/performance-public</code>.
       </p>
     </article>
 
     <article id="platform-ecosystem" class="border-t border-white/5 pt-6">
-      <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Platform ecosystem</h3>
+      <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Platform ecosystem</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        The network of MCP-compatible clients (Claude Desktop, Cursor, Cline, Smithery, custom agents) and downstream skills and recipes that consume AlgoVault output. Each new client connector strengthens the integration surface. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a>.
+        The network of MCP-compatible clients (Claude Desktop, Cursor, Cline, Smithery, custom agents) and downstream skills and recipes that consume AlgoVault output. Each new client connector strengthens the integration surface. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a>.
       </p>
     </article>
 
     <article id="published-track-record" class="border-t border-white/5 pt-6">
-      <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Published track record</h3>
+      <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Published track record</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Live, refetchable performance numbers exposed via <code class="text-gold-400">/api/performance-public</code>, with every signal Merkle-anchored on Base L2 and verifiable at <a href="/verify" class="text-gold-400 hover:underline">/verify</a>. Distinct from claimed-but-unverifiable backtests.
+        Live, refetchable performance numbers exposed via <code class="text-mint-400">/api/performance-public</code>, with every signal Merkle-anchored on Base L2 and verifiable at <a href="/verify" class="text-mint-400 hover:underline">/verify</a>. Distinct from claimed-but-unverifiable backtests.
       </p>
     </article>
 
     <article id="regime-classifier" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Regime classifier</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        A model that labels the current market state as trending, ranging, or volatile based on price action, funding sentiment, and cross-venue flow. Exposed via AlgoVault&rsquo;s <code class="text-gold-400">get_market_regime</code> MCP tool, which also returns strategy and sizing suggestions appropriate to the labeled regime.
+        A model that labels the current market state as trending, ranging, or volatile based on price action, funding sentiment, and cross-venue flow. Exposed via AlgoVault&rsquo;s <code class="text-mint-400">get_market_regime</code> MCP tool, which also returns strategy and sizing suggestions appropriate to the labeled regime.
       </p>
     </article>
 
@@ -374,23 +374,23 @@ tailwind.config = {
     </article>
 
     <article id="suite-lock-in" class="border-t border-white/5 pt-6">
-      <h3 class="text-lg sm:text-xl font-semibold text-gold-400 mb-2">Suite lock-in</h3>
+      <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Suite lock-in</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        The ergonomic advantage when an AI agent depends on multiple AlgoVault MCP tools (<code class="text-gold-400">get_trade_call</code> plus <code class="text-gold-400">scan_funding_arb</code> plus <code class="text-gold-400">get_market_regime</code>). Switching costs grow with each integration; consistency of the <code class="text-gold-400">_algovault</code> metadata block makes cross-tool reasoning easier.
+        The ergonomic advantage when an AI agent depends on multiple AlgoVault MCP tools (<code class="text-mint-400">get_trade_call</code> plus <code class="text-mint-400">scan_funding_arb</code> plus <code class="text-mint-400">get_market_regime</code>). Switching costs grow with each integration; consistency of the <code class="text-mint-400">_algovault</code> metadata block makes cross-tool reasoning easier.
       </p>
     </article>
 
     <article id="trade-call" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Trade call</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        AlgoVault&rsquo;s primary unit of output: a structured tuple <code class="text-gold-400">{call, confidence, regime, factors}</code> for a given (asset, timeframe, exchange) triple. Issued by the <code class="text-gold-400">get_trade_call</code> MCP tool. Each trade call is hashed into the next Merkle batch published on Base L2.
+        AlgoVault&rsquo;s primary unit of output: a structured tuple <code class="text-mint-400">{call, confidence, regime, factors}</code> for a given (asset, timeframe, exchange) triple. Issued by the <code class="text-mint-400">get_trade_call</code> MCP tool. Each trade call is hashed into the next Merkle batch published on Base L2.
       </p>
     </article>
 
     <article id="x402-micropayments" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">x402 micropayments</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        An HTTP 402 protocol for pay-per-API-call settlement using USDC on Base L2. AlgoVault accepts x402 payments as an alternative to subscription tiers, settling per-call without account creation. Note: x402 is revenue, not verification &mdash; distinct from <a href="#merkle-anchor" class="text-gold-400 hover:underline">Merkle-anchor</a> track record.
+        An HTTP 402 protocol for pay-per-API-call settlement using USDC on Base L2. AlgoVault accepts x402 payments as an alternative to subscription tiers, settling per-call without account creation. Note: x402 is revenue, not verification &mdash; distinct from <a href="#merkle-anchor" class="text-mint-400 hover:underline">Merkle-anchor</a> track record.
       </p>
     </article>
 

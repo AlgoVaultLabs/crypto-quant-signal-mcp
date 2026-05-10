@@ -1284,7 +1284,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   .methodology table th { border: none; padding: 4px 24px 4px 0; color: #8b949e; font-weight: 600; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; }
   .methodology table td { border: none; padding: 3px 24px 3px 0; color: #c9d1d9; }
   .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-  .id-link { color: #d4b255; text-decoration: none; font-family: monospace; font-size: 12px; } .id-link:hover { text-decoration: underline; color: #e8c96a; }
+  .id-link { color: #5BEEB3; text-decoration: none; font-family: monospace; font-size: 12px; } .id-link:hover { text-decoration: underline; color: #82EFB8; }
   .recent-table { table-layout: fixed; }
   .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 70px; }
   .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 80px; }
@@ -1355,8 +1355,8 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
           <span style="color:#fff;font-size:14px;font-weight:600">Tamper-Proof Track Record</span>
           <p style="color:#9ca3af;font-size:13px;margin:6px 0 0">Every call hashed on-chain (Base L2). Daily Merkle batches. Inspect the contract on Basescan &mdash; we can&rsquo;t edit history.</p>
           <div style="margin-top:12px;display:flex;gap:16px;font-size:12px">
-            <a href="/verify" style="color:#d4b255;text-decoration:none">Verify a Call &rarr;</a>
-            <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" style="color:#d4b255;text-decoration:none">View Contract &rarr;</a>
+            <a href="/verify" style="color:#5BEEB3;text-decoration:none">Verify a Call &rarr;</a>
+            <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" style="color:#5BEEB3;text-decoration:none">View Contract &rarr;</a>
           </div>
         </div>
       </div>
@@ -1745,7 +1745,7 @@ function getSignupPageHtml(): string {
   .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
   @media (max-width: 768px) { .plans { grid-template-columns: 1fr; } }
   .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; position: relative; }
-  .plan.popular { border-color: #d4a017; }
+  .plan.popular { border-color: #34D199; }
   .plan h2 { font-size: 20px; margin-bottom: 4px; }
   .plan .price { font-size: 36px; font-weight: 700; color: #58a6ff; margin: 12px 0; }
   .plan .price span { font-size: 16px; font-weight: 400; color: #8b949e; }
@@ -1756,7 +1756,7 @@ function getSignupPageHtml(): string {
   .btn:hover { background: #2ea043; }
   .btn.ent { background: #8957e5; }
   .btn.ent:hover { background: #a371f7; }
-  .pop-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #d4a017; color: #0f1117; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; letter-spacing: 0.5px; }
+  .pop-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #34D199; color: #0f1117; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; letter-spacing: 0.5px; }
 </style>
 </head>
 <body>

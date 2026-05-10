@@ -68,7 +68,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -111,30 +111,30 @@ tailwind.config = {
          were noisy). Integrations now points to /integrations (the new manifest-
          driven index page) — clicking it on a tutorial mirror goes "back up" to
          the index, mirroring how /skills works. The current page is highlighted
-         via text-gold-400 font-medium (consistent with other landing pages). -->
+         via text-mint-400 font-medium (consistent with other landing pages). -->
     <nav class="text-sm text-steel-400 flex gap-4 flex-wrap">
-      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-binance" class="hover:text-gold-400">Track Record</a>
-      <a href="/#pricing" class="hover:text-gold-400">Pricing</a>
-      <a href="/integrations" class="text-gold-400 font-medium">Integrations</a>
-      <a href="/skills" class="hover:text-gold-400">Skills</a>
-      <a href="/docs.html" class="hover:text-gold-400">Docs</a>
-      <a href="/verify" class="hover:text-gold-400">Verify</a>
-      <a href="https://github.com/AlgoVaultLabs/algovault-skills" class="hover:text-gold-400">GitHub</a>
-      <a href="https://api.algovault.com/signup" class="text-gold-400 hover:text-gold-500">Signup</a>
+      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-binance" class="hover:text-mint-400">Track Record</a>
+      <a href="/#pricing" class="hover:text-mint-400">Pricing</a>
+      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
+      <a href="/skills" class="hover:text-mint-400">Skills</a>
+      <a href="/docs.html" class="hover:text-mint-400">Docs</a>
+      <a href="/verify" class="hover:text-mint-400">Verify</a>
+      <a href="https://github.com/AlgoVaultLabs/algovault-skills" class="hover:text-mint-400">GitHub</a>
+      <a href="https://api.algovault.com/signup" class="text-mint-400 hover:text-mint-500">Signup</a>
     </nav>
   </div>
 </header>
 <main class="max-w-4xl mx-auto px-6 py-10">
 <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation -->
 <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-  <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">89.4%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">56,375</span></strong>+ trade calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+  <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">89.4%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">56,375</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
 </p>
 <article>
 <h1>AlgoVault × Binance — Build Verifiable AI Trading Agents</h1>
 <blockquote>
 <!-- snapshot: 2026-04-26 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </blockquote>
-<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="call_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ Merkle-verified on-chain batches.</strong></p>
+<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="signal_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ Merkle-verified on-chain batches.</strong></p>
 <blockquote>
 <p>Don’t trust — <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-binance">verify the track record →</a>
 <em>Snapshot taken 2026-04-26 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a></em></p>
@@ -145,7 +145,7 @@ tailwind.config = {
 </blockquote>
 <h2>TL;DR (3-line hook — MOAT-led)</h2>
 <ul>
-<li>One API call → composite verdict (call, confidence, regime, factors). Not 26 raw indicators.</li>
+<li>One API call → composite verdict (signal, confidence, regime, factors). Not 26 raw indicators.</li>
 <li>Cross-venue intelligence across <span data-tr-field="exchange_count">5</span> exchanges. Funding spreads, regime alignment, volatility — fused.</li>
 <li>Every signal Merkle-anchored on-chain. Verifiable accuracy, not a marketing claim.</li>
 </ul>
@@ -209,7 +209,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch the AlgoVault verdict.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin: 'ETH', timeframe: '1h'}</code>, and returns the parsed <code>signal</code>/<code>confidence</code>/<code>regime</code>/<code>factors</code> payload. Free tier covers 20 calls/day per IP — plenty for development.</p>
+<p><strong>Fetch the AlgoVault verdict.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_signal</code> with <code>{coin: 'ETH', timeframe: '1h'}</code>, and returns the parsed <code>signal</code>/<code>confidence</code>/<code>regime</code>/<code>factors</code> payload. Free tier covers 20 calls/day per IP — plenty for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> When the verdict satisfies the agent’s pre-configured policy (<code>signal === 'BUY' AND confidence &gt; 70</code>), the script proceeds to the execution branch. The policy lives in your code — AlgoVault returns the analytics; the agent decides.</p>
@@ -223,7 +223,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The agent calls AlgoVault <code>get_market_regime</code> for <code>BTC</code> on the <code>4h</code> timeframe. The agent’s pre-configured DCA policy fires its execution branch when the returned regime ∈ <code>{TRENDING_UP, RANGING}</code> and skips the week’s DCA entirely when the regime is <code>VOLATILE</code> or <code>TRENDING_DOWN</code>. On execution, the agent sends a <code>MARKET BUY</code> for a small BTC notional via Binance Spot Testnet (HMAC-signed <code>POST /api/v3/order/test</code> for read-only validation, or <code>POST /api/v3/order</code> once the operator has chosen to switch to authenticated testnet order placement).</p>
 <p>This recipe is the cleanest “AlgoVault as policy gate” pattern — DCA logic stays in your code; the regime read replaces hand-tuned VIX-style heuristics with a backtested cross-venue regime classifier.</p>
 <h3>Recipe 2 — Confidence-filtered swing entry on ETH</h3>
-<p>This is the recipe <code>examples/binance/demo.mjs</code> implements. The agent calls AlgoVault <code>get_trade_call</code> for <code>ETH</code> on the <code>1h</code> timeframe. The agent’s policy fires its execution branch only when <code>signal === 'BUY'</code> AND <code>confidence &gt; 70</code>. On execution, a small <code>LIMIT</code> order is validated via <code>POST /api/v3/order/test</code> against Binance Spot Testnet. The same shape works for <code>SELL</code> policies in production (with the appropriate side flip).</p>
+<p>This is the recipe <code>examples/binance/demo.mjs</code> implements. The agent calls AlgoVault <code>get_trade_signal</code> for <code>ETH</code> on the <code>1h</code> timeframe. The agent’s policy fires its execution branch only when <code>signal === 'BUY'</code> AND <code>confidence &gt; 70</code>. On execution, a small <code>LIMIT</code> order is validated via <code>POST /api/v3/order/test</code> against Binance Spot Testnet. The same shape works for <code>SELL</code> policies in production (with the appropriate side flip).</p>
 <h3>Recipe 3 — Funding-arb opportunity awareness</h3>
 <p>The agent calls AlgoVault <code>scan_funding_arb</code> to retrieve the top funding-spread opportunities across the 5 venues AlgoVault monitors. The output is a ranked list of <code>{coin, longVenue, shortVenue, spreadBps}</code> rows. <strong>Multi-venue execution is out of scope for this single-exchange tutorial — the agent uses the rank to surface awareness and could route the long leg through Binance perp testnet (when shipped) and the short leg via the venue indicated.</strong> AlgoVault returns the opportunity; the agent’s risk policy decides whether to act on it.</p>
 <h2>⚠️ Production setup (real-money)</h2>
@@ -244,7 +244,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <!-- snapshot: 2026-04-26 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="call_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-binance">view live track record</a></p>
+<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="signal_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-binance">view live track record</a></p>
 <h2>Install</h2>
 <pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
 </code></pre>
@@ -256,8 +256,8 @@ console.log('=== NO REAL ORDERS PLACED ===');
 </main>
 <footer class="border-t border-navy-600 px-6 py-6 mt-12">
   <div class="max-w-4xl mx-auto text-center text-steel-500 text-sm">
-    <p>© AlgoVault Labs · MIT licensed · Tutorial source: <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/docs/integrations/binance.md" class="text-gold-400 hover:text-gold-500">algovault-skills/docs/integrations/binance.md</a></p>
-    <p class="mt-2">Snapshot taken 2026-04-25 · Live numbers at <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-binance" class="text-gold-400 hover:text-gold-500">/track-record</a></p>
+    <p>© AlgoVault Labs · MIT licensed · Tutorial source: <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/docs/integrations/binance.md" class="text-mint-400 hover:text-mint-500">algovault-skills/docs/integrations/binance.md</a></p>
+    <p class="mt-2">Snapshot taken 2026-04-25 · Live numbers at <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-binance" class="text-mint-400 hover:text-mint-500">/track-record</a></p>
   </div>
 </footer>
 </body>

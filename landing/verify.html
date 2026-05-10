@@ -14,7 +14,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -54,16 +54,16 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80740" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "30" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-10" }
   ]
 }
 </script>
@@ -97,7 +97,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -111,7 +111,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   }
 }
 </script>
@@ -136,7 +136,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80740 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -160,9 +160,9 @@ tailwind.config = {
       <a href="/integrations" class="hover:text-white transition">Integrations</a>
       <a href="/skills" class="hover:text-white transition">Skills</a>
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
-      <a href="/verify" class="text-gold-400 font-medium">Verify</a>
+      <a href="/verify" class="text-mint-400 font-medium">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -180,9 +180,9 @@ tailwind.config = {
     <div class="bg-navy-700 border border-white/5 rounded-xl p-6">
       <div class="flex gap-3">
         <input type="number" id="signal-id" placeholder="Enter Call ID" min="1"
-          class="flex-1 bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold-500/50">
+          class="flex-1 bg-navy-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-mint-500/50">
         <button onclick="verifySignal()" id="verify-btn"
-          class="px-6 py-2.5 bg-gold-500 hover:bg-gold-400 text-navy-900 font-semibold text-sm rounded-lg transition whitespace-nowrap">
+          class="px-6 py-2.5 bg-mint-500 hover:bg-mint-400 text-navy-900 font-semibold text-sm rounded-lg transition whitespace-nowrap">
           Verify
         </button>
       </div>
@@ -204,7 +204,7 @@ tailwind.config = {
   <!-- Recent Batches -->
   <section class="mb-16">
     <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-      <span class="text-gold-400">&#9670;</span> Published Batches
+      <span class="text-mint-400">&#9670;</span> Published Batches
     </h2>
     <p class="text-gray-500 text-sm mb-5">Every day at 00:05 UTC, all new call hashes are batched into a Merkle tree and the root is published on Base L2.</p>
     <div id="batches-table" class="bg-navy-700 border border-white/5 rounded-xl overflow-hidden">
@@ -216,12 +216,12 @@ tailwind.config = {
   <!-- How to Verify -->
   <section class="mb-16">
     <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-      <span class="text-gold-400">&#9670;</span> How to Verify
+      <span class="text-mint-400">&#9670;</span> How to Verify
     </h2>
     <div class="space-y-5">
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">1</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">1</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Pick a Call</p>
@@ -242,8 +242,8 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">2</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">2</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Check the Proof</p>
@@ -251,8 +251,8 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">3</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">3</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Verify On-Chain</p>
@@ -265,13 +265,13 @@ tailwind.config = {
   <!-- How It Works -->
   <section class="mb-16">
     <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-      <span class="text-gold-400">&#9670;</span> How It Works
+      <span class="text-mint-400">&#9670;</span> How It Works
     </h2>
 
     <div class="space-y-5">
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">1</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">1</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Call Created</p>
@@ -279,8 +279,8 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">2</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">2</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Hash Stored</p>
@@ -288,8 +288,8 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">3</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">3</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">Daily Batch</p>
@@ -297,8 +297,8 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex gap-4">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gold-500/10 border border-gold-500/30 flex items-center justify-center">
-          <span class="text-gold-400 font-bold text-sm">4</span>
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-mint-500/10 border border-mint-500/30 flex items-center justify-center">
+          <span class="text-mint-400 font-bold text-sm">4</span>
         </div>
         <div class="pt-1.5">
           <p class="text-white text-sm font-medium">On-Chain Anchor</p>
@@ -402,8 +402,8 @@ async function verifySignal() {
         '<div class="border-t border-white/5 pt-4 space-y-2">' +
           '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Call Hash</span><span class="hash-text text-gray-300">' + s.hash + '</span></div>' +
           '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Merkle Root</span><span class="hash-text text-gray-300">' + b.root + '</span></div>' +
-          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Tx Hash</span><span class="hash-text text-gray-300">' + truncHash(b.txHash) + ' <a href="' + b.basescanUrl + '" target="_blank" class="text-gold-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
-          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Contract</span><span class="hash-text text-gray-300">' + truncHash(data.contractAddress) + ' <a href="https://basescan.org/address/' + data.contractAddress + '" target="_blank" class="text-gold-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Tx Hash</span><span class="hash-text text-gray-300">' + truncHash(b.txHash) + ' <a href="' + b.basescanUrl + '" target="_blank" class="text-mint-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
+          '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Contract</span><span class="hash-text text-gray-300">' + truncHash(data.contractAddress) + ' <a href="https://basescan.org/address/' + data.contractAddress + '" target="_blank" class="text-mint-400 hover:underline ml-1">View on Basescan &rarr;</a></span></div>' +
           '<div class="flex items-start gap-2"><span class="text-gray-500 text-xs w-24 shrink-0">Chain</span><span class="text-gray-300 text-xs">Base (8453)</span></div>' +
         '</div>' +
       '</div>';
@@ -469,7 +469,7 @@ document.getElementById('signal-id').addEventListener('keydown', function(e) {
         '<td class="text-white text-sm px-4 py-2.5 font-medium">#' + b.batch_id + '</td>' +
         '<td class="text-gray-300 text-sm px-4 py-2.5">' + b.signal_count.toLocaleString() + '</td>' +
         '<td class="text-gray-400 text-sm px-4 py-2.5">' + fmtDate(b.published_at) + '</td>' +
-        '<td class="text-sm px-4 py-2.5"><a href="' + b.basescanUrl + '" target="_blank" class="text-gold-400 hover:underline hash-text">' + truncHash(b.tx_hash) + ' &rarr;</a></td>' +
+        '<td class="text-sm px-4 py-2.5"><a href="' + b.basescanUrl + '" target="_blank" class="text-mint-400 hover:underline hash-text">' + truncHash(b.tx_hash) + ' &rarr;</a></td>' +
         '</tr>';
     });
 

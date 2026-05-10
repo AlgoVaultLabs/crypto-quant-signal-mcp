@@ -28,7 +28,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -154,16 +154,16 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80740" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "30" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-10" }
   ]
 }
 </script>
@@ -197,7 +197,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -211,7 +211,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   }
 }
 </script>
@@ -236,7 +236,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80740 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -261,7 +261,7 @@ tailwind.config = {
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -271,14 +271,14 @@ tailwind.config = {
 <!-- Hero -->
 <section class="pt-28 pb-10 sm:pt-36 sm:pb-12 px-6">
   <div class="max-w-3xl mx-auto text-center">
-    <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
+    <h1 class="text-3xl sm:text-5xl font-bold text-mint-400 leading-tight tracking-tight glow-text">
       Frequently Asked Questions
     </h1>
     <p class="mt-4 text-base sm:text-lg text-white max-w-2xl mx-auto leading-relaxed">
       Answers for builders integrating AlgoVault into AI trading agents &mdash; track record, coverage, pricing, integration, scope.
     </p>
     <p class="mt-3 text-sm text-gray-400 max-w-xl mx-auto">
-      Live numbers refetched from <a href="https://api.algovault.com/api/performance-public" class="text-gold-400 hover:underline">/api/performance-public</a> on page load. See <a href="/glossary" class="text-gold-400 hover:underline">/glossary</a> for term definitions.
+      Live numbers refetched from <a href="https://api.algovault.com/api/performance-public" class="text-mint-400 hover:underline">/api/performance-public</a> on page load. See <a href="/glossary" class="text-mint-400 hover:underline">/glossary</a> for term definitions.
     </p>
   </div>
 </section>
@@ -291,63 +291,63 @@ tailwind.config = {
     <article id="what-is-algovault" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What is AlgoVault?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across <span data-tr-field="exchange_count">5</span> crypto perp venues &mdash; Hyperliquid, Binance, Bybit, OKX, Bitget. Every call is Merkle-anchored on Base L2 (<a href="/track-record" class="text-gold-400 hover:underline">/track-record</a>).
+        AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across <span data-tr-field="exchange_count">5</span> crypto perp venues &mdash; Hyperliquid, Binance, Bybit, OKX, Bitget. Every call is Merkle-anchored on Base L2 (<a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>).
       </p>
     </article>
 
     <article id="most-accurate-mcp" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What&rsquo;s the most accurate crypto signal MCP server for AI agents?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        AlgoVault: <span data-tr-field="pfe_wr">90.2%</span> PFE win rate across <span data-tr-field="call_count">79,527</span> verified calls on a rolling 30-day window. Every batch is Merkle-anchored on Base L2 &mdash; reconstruct any proof at <a href="/verify" class="text-gold-400 hover:underline">/verify</a>. Compare any vendor by asking for their on-chain trail.
+        AlgoVault: <span data-tr-field="pfe_wr">90.2%</span> PFE win rate across <span data-tr-field="call_count">79,527</span> verified calls on a rolling 30-day window. Every batch is Merkle-anchored on Base L2 &mdash; reconstruct any proof at <a href="/verify" class="text-mint-400 hover:underline">/verify</a>. Compare any vendor by asking for their on-chain trail.
       </p>
     </article>
 
     <article id="pfe-win-rate" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What&rsquo;s AlgoVault&rsquo;s PFE win rate, and how is it verified?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        PFE (path-forward equity) win rate is <span data-tr-field="pfe_wr">90.2%</span> on a rolling 30-day window, refetched from <code class="text-gold-400">/api/performance-public</code>. Each batch is hashed into a Merkle root and published to a Base L2 contract (<code class="text-gold-400">0x6485&hellip;bf81</code>). <a href="/verify" class="text-gold-400 hover:underline">/verify</a> reconstructs the proof tree for any call.
+        PFE (path-forward equity) win rate is <span data-tr-field="pfe_wr">90.2%</span> on a rolling 30-day window, refetched from <code class="text-mint-400">/api/performance-public</code>. Each batch is hashed into a Merkle root and published to a Base L2 contract (<code class="text-mint-400">0x6485&hellip;bf81</code>). <a href="/verify" class="text-mint-400 hover:underline">/verify</a> reconstructs the proof tree for any call.
       </p>
     </article>
 
     <article id="vs-tradingview-coinglass" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">How does AlgoVault compare to TradingView, Coinglass, and raw exchange APIs?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts &mdash; one API call returns <code class="text-gold-400">{call, confidence, regime, factors}</code> across <span data-tr-field="exchange_count">5</span> venues. Skip N adapter integrations.
+        TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts &mdash; one API call returns <code class="text-mint-400">{call, confidence, regime, factors}</code> across <span data-tr-field="exchange_count">5</span> venues. Skip N adapter integrations.
       </p>
     </article>
 
     <article id="claude-cursor-agent" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Can a Claude / Cursor / custom AI agent trade crypto with AlgoVault?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Yes. Connect to <code class="text-gold-400">https://api.algovault.com/mcp</code> from any MCP-compatible client &mdash; Claude Desktop, Cursor, Cline, or a custom agent over Streamable HTTP. AlgoVault provides the thesis (call + confidence + regime + factors); your agent decides whether and how to execute. See <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a> for the integration guide.
+        Yes. Connect to <code class="text-mint-400">https://api.algovault.com/mcp</code> from any MCP-compatible client &mdash; Claude Desktop, Cursor, Cline, or a custom agent over Streamable HTTP. AlgoVault provides the thesis (call + confidence + regime + factors); your agent decides whether and how to execute. See <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a> for the integration guide.
       </p>
     </article>
 
     <article id="coverage" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Which exchanges, assets, and timeframes does AlgoVault cover?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        <span data-tr-field="asset_count">729</span>+ assets, <span data-tr-field="timeframe_count">11</span> timeframes (1m&ndash;1d), <span data-tr-field="exchange_count">5</span> exchanges &mdash; Hyperliquid, Binance, Bybit, OKX, Bitget. The public <a href="/track-record" class="text-gold-400 hover:underline">track record</a> covers 9 of 11 timeframes (5m&ndash;1d, cron-seeded). 1m and 3m are API-on-demand; sub-5min indicators are noise-dominated.
+        <span data-tr-field="asset_count">729</span>+ assets, <span data-tr-field="timeframe_count">11</span> timeframes (1m&ndash;1d), <span data-tr-field="exchange_count">5</span> exchanges &mdash; Hyperliquid, Binance, Bybit, OKX, Bitget. The public <a href="/track-record" class="text-mint-400 hover:underline">track record</a> covers 9 of 11 timeframes (5m&ndash;1d, cron-seeded). 1m and 3m are API-on-demand; sub-5min indicators are noise-dominated.
       </p>
     </article>
 
     <article id="mcp-tools" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What MCP tools does AlgoVault expose?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Three tools. <code class="text-gold-400">get_trade_call</code> returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. <code class="text-gold-400">scan_funding_arb</code> returns top cross-venue funding-rate arbitrage spreads (Hyperliquid vs Binance vs Bybit). <code class="text-gold-400">get_market_regime</code> returns trending / ranging / volatile classification with strategy and sizing suggestions. See <a href="/skills" class="text-gold-400 hover:underline">/skills</a> for ready-made agent recipes.
+        Three tools. <code class="text-mint-400">get_trade_call</code> returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. <code class="text-mint-400">scan_funding_arb</code> returns top cross-venue funding-rate arbitrage spreads (Hyperliquid vs Binance vs Bybit). <code class="text-mint-400">get_market_regime</code> returns trending / ranging / volatile classification with strategy and sizing suggestions. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> for ready-made agent recipes.
       </p>
     </article>
 
     <article id="pricing" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What does AlgoVault cost? Is there a free tier?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Free tier: 100 calls per month, all assets, all 11 timeframes, no signup required. Paid tiers: Starter $9.99/mo (3,000 calls), Pro $49/mo (15,000 calls), Enterprise $299/mo (100,000 calls). HOLD verdicts are always free at every tier &mdash; <span data-tr-field="hold_rate">98.8%</span> of scans return HOLD. x402 micropayments (USDC on Base) provide pay-per-call as an alternative; see <a href="/#pricing" class="text-gold-400 hover:underline">/pricing</a>.
+        Free tier: 100 calls per month, all assets, all 11 timeframes, no signup required. Paid tiers: Starter $9.99/mo (3,000 calls), Pro $49/mo (15,000 calls), Enterprise $299/mo (100,000 calls). HOLD verdicts are always free at every tier &mdash; <span data-tr-field="hold_rate">98.8%</span> of scans return HOLD. x402 micropayments (USDC on Base) provide pay-per-call as an alternative; see <a href="/#pricing" class="text-mint-400 hover:underline">/pricing</a>.
       </p>
     </article>
 
     <article id="integration" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">How do I integrate AlgoVault with my AI agent?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Add <code class="text-gold-400">https://api.algovault.com/mcp</code> as a custom MCP integration. Claude Desktop: Settings &rarr; Integrations &rarr; custom integration &rarr; paste the URL. <a href="/docs.html" class="text-gold-400 hover:underline">/docs</a> covers Streamable HTTP and stdio transports; <a href="/integrations" class="text-gold-400 hover:underline">/integrations</a> links per-exchange tutorials.
+        Add <code class="text-mint-400">https://api.algovault.com/mcp</code> as a custom MCP integration. Claude Desktop: Settings &rarr; Integrations &rarr; custom integration &rarr; paste the URL. <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a> covers Streamable HTTP and stdio transports; <a href="/integrations" class="text-mint-400 hover:underline">/integrations</a> links per-exchange tutorials.
       </p>
     </article>
 

@@ -23,7 +23,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -162,16 +162,16 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80740" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "30" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-10" }
   ]
 }
 </script>
@@ -205,7 +205,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -219,7 +219,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   }
 }
 </script>
@@ -244,7 +244,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80740 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -262,12 +262,12 @@ tailwind.config = {
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="/track-record" class="hover:text-white transition">Track Record</a>
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>
-      <a href="/integrations" class="text-gold-400 font-medium">Integrations</a>
+      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
       <a href="/skills" class="hover:text-white transition">Skills</a>
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -275,14 +275,14 @@ tailwind.config = {
 <!-- Hero -->
 <section class="pt-24 pb-12 px-6 text-center">
   <div class="max-w-4xl mx-auto">
-    <h1 class="text-3xl sm:text-5xl font-bold text-gold-400 leading-tight tracking-tight glow-text">
+    <h1 class="text-3xl sm:text-5xl font-bold text-mint-400 leading-tight tracking-tight glow-text">
       Pair AlgoVault with Any Exchange.
     </h1>
     <p class="text-gray-400 text-base sm:text-lg mt-4 max-w-2xl mx-auto">
       <span data-tr-field="pfe_wr">89.4%</span>+ Merkle-verified accuracy across <span data-tr-field="call_count">56,375</span>+ signals. AlgoVault returns the analytics; the exchange Agent Trade Kit executes; your agent decides.
     </p>
     <p class="quotable-fact mt-4 text-sm text-emerald-400/90 max-w-2xl mx-auto" itemscope itemtype="https://schema.org/Claim">
-      <span itemprop="claimReviewed">AlgoVault is the composite-verdict layer for AI trading agents &mdash; one JSON call replaces 26 raw indicators, fused across <span data-tr-field="exchange_count">5</span> exchanges, anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-gold-400 hover:underline">algovault.com/track-record</a>).</span>
+      <span itemprop="claimReviewed">AlgoVault is the composite-verdict layer for AI trading agents &mdash; one JSON call replaces 26 raw indicators, fused across <span data-tr-field="exchange_count">5</span> exchanges, anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" class="text-mint-400 hover:underline">algovault.com/track-record</a>).</span>
     </p>
   </div>
 </section>
@@ -291,15 +291,15 @@ tailwind.config = {
 <section class="py-8 px-6 border-t border-white/5">
   <div class="max-w-4xl mx-auto grid sm:grid-cols-3 gap-4 text-center text-sm">
     <div class="bg-navy-700/60 border border-white/5 rounded-xl p-5">
-      <div class="text-gold-400 font-semibold mb-2">1. AlgoVault returns analytics</div>
+      <div class="text-mint-400 font-semibold mb-2">1. AlgoVault returns analytics</div>
       <div class="text-gray-500 text-xs">Composite verdict: call, confidence, regime, factors. One JSON per call.</div>
     </div>
     <div class="bg-navy-700/60 border border-white/5 rounded-xl p-5">
-      <div class="text-gold-400 font-semibold mb-2">2. Exchange kit executes</div>
+      <div class="text-mint-400 font-semibold mb-2">2. Exchange kit executes</div>
       <div class="text-gray-500 text-xs">Your chosen Agent Trade Kit places orders, manages positions, queries balances.</div>
     </div>
     <div class="bg-navy-700/60 border border-white/5 rounded-xl p-5">
-      <div class="text-gold-400 font-semibold mb-2">3. Your agent decides</div>
+      <div class="text-mint-400 font-semibold mb-2">3. Your agent decides</div>
       <div class="text-gray-500 text-xs">Risk policy, position sizing, kill-switches &mdash; all in your code.</div>
     </div>
   </div>
@@ -314,7 +314,7 @@ tailwind.config = {
 <!-- BUILD:INTEGRATIONS_INDEX_GRID -->
       <a href="/docs/integrations/binance?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-binance"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'binance',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/binance.svg" alt="Binance logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Binance &times; AlgoVault</h3>
@@ -322,13 +322,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + official Binance Skills Hub for Spot Testnet execution.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">binance/binance-skills-hub</code> (verified 2026-04-25)</p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-gold-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="text-steel-400 hover:text-gold-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
         </div>
       </a>
       <a href="/docs/integrations/okx?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-okx"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'okx',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/okx.svg" alt="OKX logo" class="w-10 h-10 object-contain invert">
           <h3 class="text-white font-semibold text-base">OKX &times; AlgoVault</h3>
@@ -336,13 +336,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + 83 OKX execution tools across spot, swap, futures, options, grid bots.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">@okx_ai/okx-trade-mcp@1.3.1</code> </p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-gold-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx" class="text-steel-400 hover:text-gold-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
         </div>
       </a>
       <a href="/docs/integrations/bybit?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-bybit"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'bybit',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/bybit.png" alt="Bybit logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Bybit &times; AlgoVault</h3>
@@ -350,13 +350,13 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + Bybit's official MCP for Linear Perpetual + conditional orders.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">bybit-official-trading-server@2.0.9</code> </p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-gold-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit" class="text-steel-400 hover:text-gold-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
         </div>
       </a>
       <a href="/docs/integrations/bitget?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-bitget"
          onclick="if(window.plausible)plausible('Integration View',{props:{exchange:'bitget',source:'integrations_index'}})"
-         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-gold-500/40 transition block">
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">
           <img src="/assets/logos/bitget.png" alt="Bitget logo" class="w-10 h-10 object-contain">
           <h3 class="text-white font-semibold text-base">Bitget &times; AlgoVault</h3>
@@ -364,8 +364,8 @@ tailwind.config = {
         <p class="text-gray-400 text-xs mb-3">Composite verdict + GetClaw agent-native execution inside a dedicated AI account.</p>
         <p class="text-gray-600 text-xs mb-3"><code class="text-xs">bitget-mcp-server@1.1.0</code> </p>
         <div class="flex items-center gap-3 text-xs">
-          <span class="text-gold-400">View tutorial &rarr;</span>
-          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bitget" class="text-steel-400 hover:text-gold-400" onclick="event.stopPropagation()">Demo &rarr;</a>
+          <span class="text-mint-400">View tutorial &rarr;</span>
+          <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bitget" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
         </div>
       </a>
 <!-- /BUILD:INTEGRATIONS_INDEX_GRID -->
@@ -382,20 +382,20 @@ tailwind.config = {
   <div class="max-w-3xl mx-auto">
     <h2 class="text-2xl font-bold text-white text-center mb-8">Why pair AlgoVault with an exchange kit?</h2>
     <ul class="space-y-3 text-gray-300 text-sm">
-      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Composite verdict, not raw indicators.</strong> One JSON response replaces 26-indicator vote-counting in your agent code.</span></li>
-      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Cross-venue intelligence.</strong> Funding spreads, regime, and sentiment fused across <span data-tr-field="exchange_count">5</span> exchanges &mdash; not derivable from any single-venue API.</span></li>
-      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Merkle-verified.</strong> Every signal anchored to Base L2 via on-chain Merkle proof. <span data-tr-field="call_count">56,375</span>+ calls, <span data-tr-field="batch_count">16</span>+ batches at last snapshot.</span></li>
-      <li class="flex items-start gap-3"><span class="text-gold-400 mt-1">&diams;</span><span><strong class="text-white">Add a new exchange = manifest entry.</strong> Adding a 5th/6th/Nth exchange is a 1-line edit to <code>algovault-skills/integrations/manifest.json</code> &mdash; this index page auto-rebuilds.</span></li>
+      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Composite verdict, not raw indicators.</strong> One JSON response replaces 26-indicator vote-counting in your agent code.</span></li>
+      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Cross-venue intelligence.</strong> Funding spreads, regime, and sentiment fused across <span data-tr-field="exchange_count">5</span> exchanges &mdash; not derivable from any single-venue API.</span></li>
+      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Merkle-verified.</strong> Every signal anchored to Base L2 via on-chain Merkle proof. <span data-tr-field="call_count">56,375</span>+ calls, <span data-tr-field="batch_count">16</span>+ batches at last snapshot.</span></li>
+      <li class="flex items-start gap-3"><span class="text-mint-400 mt-1">&diams;</span><span><strong class="text-white">Add a new exchange = manifest entry.</strong> Adding a 5th/6th/Nth exchange is a 1-line edit to <code>algovault-skills/integrations/manifest.json</code> &mdash; this index page auto-rebuilds.</span></li>
     </ul>
 
     <div class="mt-10 grid sm:grid-cols-2 gap-4 text-center">
       <a href="/track-record?utm_source=integrations_index&utm_medium=footer&utm_campaign=track-record-cta"
-         class="bg-gold-500/10 border border-gold-500/30 hover:bg-gold-500/20 rounded-xl p-5 block transition">
-        <div class="text-gold-400 text-sm font-semibold">View Live Track Record &rarr;</div>
+         class="bg-mint-500/10 border border-mint-500/30 hover:bg-mint-500/20 rounded-xl p-5 block transition">
+        <div class="text-mint-400 text-sm font-semibold">View Live Track Record &rarr;</div>
         <div class="text-gray-500 text-xs mt-1">Public on-chain verification</div>
       </a>
       <a href="/skills?utm_source=integrations_index&utm_medium=footer&utm_campaign=skills"
-         class="bg-navy-700 border border-white/5 hover:border-gold-500/30 rounded-xl p-5 block transition">
+         class="bg-navy-700 border border-white/5 hover:border-mint-500/30 rounded-xl p-5 block transition">
         <div class="text-gray-300 text-sm font-semibold">Browse 20 Skills &rarr;</div>
         <div class="text-gray-500 text-xs mt-1">Pre-built prompt wrappers</div>
       </a>
@@ -406,7 +406,7 @@ tailwind.config = {
 <!-- Footer -->
 <footer class="py-8 px-6 border-t border-white/5 text-center text-gray-600 text-xs">
   <p>&copy; AlgoVault Labs &middot; MIT licensed</p>
-  <p class="mt-2">Live numbers refreshed in-page from <a href="/api/performance-public" class="text-gold-400 hover:underline">/api/performance-public</a></p>
+  <p class="mt-2">Live numbers refreshed in-page from <a href="/api/performance-public" class="text-mint-400 hover:underline">/api/performance-public</a></p>
 </footer>
 
 </body>

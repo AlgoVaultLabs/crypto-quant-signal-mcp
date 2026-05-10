@@ -14,7 +14,7 @@ tailwind.config = {
     extend: {
       colors: {
         navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
-        gold: { 400: '#d4b255', 500: '#c4a34a', 600: '#a8893d' },
+        mint: { 50: '#ECFEF5', 100: '#C5F8DC', 200: '#A2F2C6', 300: '#82EFB8', 400: '#5BEEB3', 500: '#34D199', 600: '#1AB582', 700: '#0F8761', 800: '#0E6447', 900: '#0E4F36' },
         steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
       }
     }
@@ -80,16 +80,16 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "79812" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "729" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80740" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "29" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-09" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "30" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-10" }
   ]
 }
 </script>
@@ -123,7 +123,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 729+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -137,7 +137,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "79812"
+    "ratingCount": "80740"
   }
 }
 </script>
@@ -162,7 +162,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 79812 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80740 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -185,10 +185,10 @@ tailwind.config = {
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>
       <a href="/integrations" class="hover:text-white transition">Integrations</a>
       <a href="/skills" class="hover:text-white transition">Skills</a>
-      <a href="/docs.html" class="text-gold-400 font-medium">Docs</a>
+      <a href="/docs.html" class="text-mint-400 font-medium">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-gold-500/15 border border-gold-500/30 text-gold-400 hover:bg-gold-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>
@@ -220,7 +220,7 @@ tailwind.config = {
     <!-- ============ QUICK START ============ -->
     <section id="quick-start" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> Quick Start
+        <span class="text-mint-400">&#9670;</span> Quick Start
       </h2>
       <p class="text-gray-400 text-sm mb-4">Add AlgoVault to Claude Desktop in under 30 seconds. Paste this into your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">claude_desktop_config.json</code>:</p>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
@@ -238,7 +238,7 @@ tailwind.config = {
       <div class="bg-navy-700 border border-white/5 rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
         "Get me a trade call for BTC on the 1h timeframe"
       </div>
-      <p class="text-gray-500 text-xs">Free tier: all 716 assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-gold-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
+      <p class="text-gray-500 text-xs">Free tier: all 716 assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
     </section>
 
     <!-- ============ RAW HTTP TESTING ============ -->
@@ -283,7 +283,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
     <a id="get-trade-signal" aria-hidden="true"></a>
     <section id="get-trade-call" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> get_trade_call <span class="text-gray-500 text-xs">(alias: get_trade_signal)</span>
+        <span class="text-mint-400">&#9670;</span> get_trade_call <span class="text-gray-500 text-xs">(alias: get_trade_signal)</span>
       </h2>
       <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning across <span data-tr-field="exchange_count">5</span> exchanges.</p>
 
@@ -335,7 +335,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
     <!-- scan_funding_arb -->
     <section id="scan-funding-arb" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> scan_funding_arb
+        <span class="text-mint-400">&#9670;</span> scan_funding_arb
       </h2>
       <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.</p>
 
@@ -387,7 +387,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
     <!-- get_market_regime -->
     <section id="get-market-regime" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> get_market_regime
+        <span class="text-mint-400">&#9670;</span> get_market_regime
       </h2>
       <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across <span data-tr-field="exchange_count">5</span> exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
 
@@ -437,30 +437,30 @@ curl -sS -X POST https://api.algovault.com/mcp \
 
     <section id="on-chain-verification" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> On-Chain Verification
+        <span class="text-mint-400">&#9670;</span> On-Chain Verification
       </h2>
       <p class="text-gray-500 text-sm mb-6">Every call is hashed and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">How It Works</h3>
       <div class="space-y-3 mb-8">
         <div class="flex gap-3 items-start">
-          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">1</span>
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">1</span>
           <p class="text-gray-400 text-sm">Every BUY/SELL call is hashed using <code class="text-xs bg-navy-800 px-1 rounded">keccak256(coin, signal, confidence, timeframe, timestamp, price)</code> at the moment it's generated</p>
         </div>
         <div class="flex gap-3 items-start">
-          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">2</span>
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">2</span>
           <p class="text-gray-400 text-sm">Hashes accumulate throughout the day</p>
         </div>
         <div class="flex gap-3 items-start">
-          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">3</span>
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">3</span>
           <p class="text-gray-400 text-sm">At 00:05 UTC, all new hashes are assembled into a Merkle tree</p>
         </div>
         <div class="flex gap-3 items-start">
-          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">4</span>
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">4</span>
           <p class="text-gray-400 text-sm">The Merkle root is published to the <code class="text-xs bg-navy-800 px-1 rounded">MerkleRootRegistry</code> smart contract on Base L2</p>
         </div>
         <div class="flex gap-3 items-start">
-          <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded mt-0.5">5</span>
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">5</span>
           <p class="text-gray-400 text-sm">Anyone can verify that a specific call existed in a batch by checking its Merkle proof against the on-chain root</p>
         </div>
       </div>
@@ -478,14 +478,14 @@ curl -sS -X POST https://api.algovault.com/mcp \
       </div>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Visual Verification</h3>
-      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-gold-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
+      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
         <tbody>
           <tr class="param-row"><td class="text-gray-400">Address</td><td class="text-gray-300"><code class="text-xs">0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81</code></td></tr>
           <tr class="param-row"><td class="text-gray-400">Chain</td><td class="text-gray-300">Base (chain ID 8453)</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400">Explorer</td><td><a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-gold-400 hover:underline text-sm">View on Basescan &rarr;</a></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400">Explorer</td><td><a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-mint-400 hover:underline text-sm">View on Basescan &rarr;</a></td></tr>
         </tbody>
       </table>
 
@@ -502,7 +502,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
 
     <section id="usage-examples" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> Usage Examples
+        <span class="text-mint-400">&#9670;</span> Usage Examples
       </h2>
       <p class="text-gray-500 text-sm mb-8">20 real-world workflows for AI agents and human developers. From simple one-liners to multi-agent orchestration.</p>
 
@@ -511,7 +511,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
         <!-- 1 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">01</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">01</span>
             <h3 class="text-white font-semibold text-sm">Quick BTC Check</h3>
             <span class="text-xs text-gray-600 ml-auto">Beginner</span>
           </div>
@@ -519,17 +519,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get me a trade call for BTC on the 1h timeframe"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code></div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/quick-btc-check?utm_source=docs&utm_medium=card&utm_campaign=skill-install-quick-btc-check"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'quick-btc-check',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 2 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">02</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">02</span>
             <h3 class="text-white font-semibold text-sm">Portfolio Scanner</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
@@ -537,17 +537,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK, DOT, and MATIC on the 15m timeframe. Only show me the ones with confidence above 70%."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 10 &nbsp;|&nbsp; Pattern: batch calling, confidence filtering</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/portfolio-scanner?utm_source=docs&utm_medium=card&utm_campaign=skill-install-portfolio-scanner"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'portfolio-scanner',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 3 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">03</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">03</span>
             <h3 class="text-white font-semibold text-sm">Regime-Aware Trading</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
@@ -555,17 +555,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"First check the market regime for ETH on the 4h timeframe. If it's TRENDING_UP or TRENDING_DOWN, get me a trade call on the 15m timeframe. If it's RANGING or VOLATILE, skip it."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: conditional chaining</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/regime-aware-trading?utm_source=docs&utm_medium=card&utm_campaign=skill-install-regime-aware-trading"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'regime-aware-trading',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 4 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">04</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">04</span>
             <h3 class="text-white font-semibold text-sm">Funding Arb Monitor</h3>
             <span class="text-xs text-gray-600 ml-auto">Intermediate</span>
           </div>
@@ -573,17 +573,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan for funding arbitrage opportunities with a minimum spread of 10 basis points. Show me the top 5 ranked by annualized return."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: threshold-based alerting</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/funding-arb-monitor?utm_source=docs&utm_medium=card&utm_campaign=skill-install-funding-arb-monitor"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'funding-arb-monitor',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 5 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">05</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">05</span>
             <h3 class="text-white font-semibold text-sm">Full 3-Tool Pipeline</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -591,17 +591,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For SOL: first get the market regime on 4h, then get a trade call on 15m, then check if there are any funding arb opportunities. Give me a combined recommendation based on all three."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: full pipeline composition</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/full-3-tool-pipeline?utm_source=docs&utm_medium=card&utm_campaign=skill-install-full-3-tool-pipeline"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'full-3-tool-pipeline',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 6 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">06</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">06</span>
             <h3 class="text-white font-semibold text-sm">Multi-Timeframe Confirmation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -609,17 +609,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for ETH on the 5m, 15m, and 1h timeframes. Only tell me to trade if all three agree on the same direction (all BUY or all SELL)."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: multi-timeframe consensus</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/multi-timeframe-confirmation?utm_source=docs&utm_medium=card&utm_campaign=skill-install-multi-timeframe-confirmation"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'multi-timeframe-confirmation',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 7 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">07</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">07</span>
             <h3 class="text-white font-semibold text-sm">TradFi Rotation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -627,17 +627,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime and trade call for TSLA, GOLD, and SP500 on the 4h timeframe. Which one has the strongest trend with the highest confidence trade call? Recommend the best one to trade."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 + <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: cross-asset comparison</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/tradfi-rotation?utm_source=docs&utm_medium=card&utm_campaign=skill-install-tradfi-rotation"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'tradfi-rotation',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 8 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">08</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">08</span>
             <h3 class="text-white font-semibold text-sm">Risk-Gated Entry</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -645,17 +645,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check BTC regime on 4h, then get a trade call on 15m. Only recommend entry if confidence is 75% or higher AND the regime is TRENDING (not VOLATILE or RANGING). Otherwise say 'no trade'."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: dual risk filter</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/risk-gated-entry?utm_source=docs&utm_medium=card&utm_campaign=skill-install-risk-gated-entry"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'risk-gated-entry',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 9 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">09</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">09</span>
             <h3 class="text-white font-semibold text-sm">Funding Sentiment Dashboard</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -663,17 +663,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for BTC, ETH, and SOL on the 4h timeframe. Summarize the cross-venue funding sentiment for each. Is the overall market leaning bullish or bearish based on where funding is concentrated?"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 3 &nbsp;|&nbsp; Pattern: macro sentiment aggregation</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/funding-sentiment-dashboard?utm_source=docs&utm_medium=card&utm_campaign=skill-install-funding-sentiment-dashboard"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'funding-sentiment-dashboard',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 10 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">10</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">10</span>
             <h3 class="text-white font-semibold text-sm">Contrarian Meme Scanner</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -681,17 +681,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get the market regime for DOGE, SHIB, PEPE, WIF, and BONK on 4h. For any that are TRENDING_UP, get a trade call on 15m. Flag any that return SELL with confidence above 70% &mdash; those might be crowded longs ready to unwind."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 + <code class="text-xs">get_trade_call</code> (conditional) &nbsp;|&nbsp; Pattern: contrarian divergence detection</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/contrarian-meme-scanner?utm_source=docs&utm_medium=card&utm_campaign=skill-install-contrarian-meme-scanner"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'contrarian-meme-scanner',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 11 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">11</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">11</span>
             <h3 class="text-white font-semibold text-sm">Divergence Detector</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -699,17 +699,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"For BTC and ETH: get the market regime on 4h and a trade call on 15m. If the trade call says BUY but the regime is TRENDING_DOWN (or vice versa), flag it as a divergence with a risk warning."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> + <code class="text-xs">get_trade_call</code> per asset &nbsp;|&nbsp; Pattern: signal-regime divergence</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/divergence-detector?utm_source=docs&utm_medium=card&utm_campaign=skill-install-divergence-detector"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'divergence-detector',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 12 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">12</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">12</span>
             <h3 class="text-white font-semibold text-sm">Hourly Digest Bot</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -717,17 +717,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan BTC, ETH, SOL, AVAX, LINK, DOGE, XRP, ADA for trade calls on 1h. Also get the market regime for BTC and ETH on 4h. Summarize as a brief market digest: how many BUYs vs SELLs, overall regime, and top 3 highest-confidence calls."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 8 + <code class="text-xs">get_market_regime</code> &times; 2 &nbsp;|&nbsp; Pattern: periodic digest, notification-ready</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/hourly-digest-bot?utm_source=docs&utm_medium=card&utm_campaign=skill-install-hourly-digest-bot"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'hourly-digest-bot',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 13 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">13</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">13</span>
             <h3 class="text-white font-semibold text-sm">Hedging Advisor</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -735,17 +735,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I'm currently long ETH. Get the market regime on 4h and a trade call on 1h. If both are bearish, scan funding arb for ETH and tell me which venue has the cheapest short to hedge my position."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &rarr; <code class="text-xs">get_trade_call</code> &rarr; <code class="text-xs">scan_funding_arb</code> &nbsp;|&nbsp; Pattern: defensive hedging</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/hedging-advisor?utm_source=docs&utm_medium=card&utm_campaign=skill-install-hedging-advisor"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'hedging-advisor',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 14 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">14</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">14</span>
             <h3 class="text-white font-semibold text-sm">Volatility Breakout Watch</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -753,17 +753,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Check the market regime for BTC, ETH, SOL, AVAX, LINK, and DOGE on 4h. For any in VOLATILE regime with confidence above 70%, get a trade call on 5m. Those are potential breakout trades."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 6 + <code class="text-xs">get_trade_call</code> (conditional) &nbsp;|&nbsp; Pattern: regime as screener</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/volatility-breakout-watch?utm_source=docs&utm_medium=card&utm_campaign=skill-install-volatility-breakout-watch"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'volatility-breakout-watch',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 15 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">15</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">15</span>
             <h3 class="text-white font-semibold text-sm">Cross-Asset Correlation</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -771,17 +771,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Get trade calls for BTC, ETH, and SOL on the 1h timeframe. If all three say the same direction, flag it as a market-wide move. If they disagree, note which ones are diverging."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &times; 3 &nbsp;|&nbsp; Pattern: correlation / macro signal</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/cross-asset-correlation?utm_source=docs&utm_medium=card&utm_campaign=skill-install-cross-asset-correlation"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'cross-asset-correlation',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 16 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">16</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">16</span>
             <h3 class="text-white font-semibold text-sm">Funding Cash-and-Carry</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -789,17 +789,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Scan funding arb with minimum 10 bps spread. For the top opportunity, get a trade call for the asset on 15m. If the trade call agrees with the long side of the arb, flag it as a high-conviction cash-and-carry setup."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">scan_funding_arb</code> &rarr; <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: arb + directional alignment</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/funding-cash-and-carry?utm_source=docs&utm_medium=card&utm_campaign=skill-install-funding-cash-and-carry"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'funding-cash-and-carry',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 17 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">17</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">17</span>
             <h3 class="text-white font-semibold text-sm">Weekend vs Weekday Patterns</h3>
             <span class="text-xs text-purple-400 ml-auto">Research</span>
           </div>
@@ -807,17 +807,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Every 4 hours, get a trade call for BTC on 4h and log the regime, direction, and confidence. After a week, compare weekend vs weekday patterns. Are weekends more RANGING? Do SELL calls cluster on Sundays?"</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> + <code class="text-xs">get_market_regime</code> (scheduled) &nbsp;|&nbsp; Pattern: data collection, research</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/weekend-vs-weekday-patterns?utm_source=docs&utm_medium=card&utm_campaign=skill-install-weekend-vs-weekday-patterns"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'weekend-vs-weekday-patterns',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 18 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">18</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">18</span>
             <h3 class="text-white font-semibold text-sm">Agent Portfolio Rebalance</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -825,17 +825,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"My portfolio holds BTC, ETH, SOL, AVAX, and LINK. Get the market regime for each on the 1d timeframe. Recommend which ones to overweight (TRENDING) and which to underweight (VOLATILE or RANGING)."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_market_regime</code> &times; 5 &nbsp;|&nbsp; Pattern: regime-based portfolio allocation</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/agent-portfolio-rebalance?utm_source=docs&utm_medium=card&utm_campaign=skill-install-agent-portfolio-rebalance"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'agent-portfolio-rebalance',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 19 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">19</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">19</span>
             <h3 class="text-white font-semibold text-sm">Smart DCA Bot</h3>
             <span class="text-xs text-emerald-500 ml-auto">Advanced</span>
           </div>
@@ -843,17 +843,17 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"I DCA into BTC every day. Before today's buy, get a trade call on the 4h timeframe. If it says SELL with confidence above 70%, skip today's buy and wait. Otherwise proceed normally."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: <code class="text-xs">get_trade_call</code> &nbsp;|&nbsp; Pattern: strategy enhancement, DCA optimization</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/smart-dca-bot?utm_source=docs&utm_medium=card&utm_campaign=skill-install-smart-dca-bot"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'smart-dca-bot',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
         <!-- 20 -->
         <div class="example-card bg-navy-700 border border-white/5 rounded-xl p-5">
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-gold-400 font-mono text-xs font-bold bg-gold-400/10 px-2 py-0.5 rounded">20</span>
+            <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded">20</span>
             <h3 class="text-white font-semibold text-sm">Multi-Agent War Room</h3>
             <span class="text-xs text-red-400 ml-auto">Expert</span>
           </div>
@@ -861,10 +861,10 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
           <div class="text-gray-600 text-xs mt-2">Tools: All 3 tools in parallel &nbsp;|&nbsp; Pattern: multi-agent orchestration</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-            <code class="text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
+            <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/multi-agent-war-room?utm_source=docs&utm_medium=card&utm_campaign=skill-install-multi-agent-war-room"
              onclick="if(window.plausible)plausible('Skill Install Click',{props:{slug:'multi-agent-war-room',surface:'docs'}})"
-             class="text-xs text-gold-400 hover:underline">View Skill &rarr;</a>
+             class="text-xs text-mint-400 hover:underline">View Skill &rarr;</a>
           </div>
         </div>
 
@@ -876,7 +876,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
 
     <section id="pricing" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> Pricing &amp; Limits
+        <span class="text-mint-400">&#9670;</span> Pricing &amp; Limits
       </h2>
       <p class="text-gray-500 text-sm mb-6">Two payment rails: Stripe subscriptions for human developers, x402 micropayments (USDC on Base) for autonomous agents.</p>
 
@@ -913,7 +913,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
       <!-- BUILD:mcp-usage:start -->
 <section id="connect-mcp" class="mb-16">
   <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-    <span class="text-gold-400">&#9670;</span> Connect Your MCP Client
+    <span class="text-mint-400">&#9670;</span> Connect Your MCP Client
   </h2>
   <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 100 calls/month.</p>
 
@@ -1057,14 +1057,14 @@ curl -sS -X POST https://api.algovault.com/mcp \
         <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
 npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
       </div>
-      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-gold-400 hover:underline">smithery.ai</a>.</p>
+      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>
     </div>
   </details>
 
   <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Plain HTTP / curl &mdash; advanced testing</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-gold-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
+      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
       <p><strong>One-shot smoke (free tier, no auth):</strong></p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
@@ -1075,12 +1075,12 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
 
   <p class="text-gray-500 text-xs mt-6">
     <strong>Config formats verified 2026-04-30 against:</strong>
-    <a class="text-gold-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
-    <a class="text-gold-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
-    Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-gold-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
+    <a class="text-mint-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
+    Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
   </p>
 </section>
 
@@ -1130,7 +1130,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
 
     <section id="faq" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-        <span class="text-gold-400">&#9670;</span> FAQ
+        <span class="text-mint-400">&#9670;</span> FAQ
       </h2>
 
       <div class="space-y-3">
@@ -1150,7 +1150,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Yes &mdash; and it's encouraged. The recommended flow is: <strong>regime &rarr; trade call &rarr; arb</strong>. Check the regime first to decide if conditions favor directional trading, then get a trade call for direction, then check if a funding arb exists on the same asset. See the <a href="#usage-examples" class="text-gold-400 hover:underline">usage examples</a> for 20 real-world workflows.
+            Yes &mdash; and it's encouraged. The recommended flow is: <strong>regime &rarr; trade call &rarr; arb</strong>. Check the regime first to decide if conditions favor directional trading, then get a trade call for direction, then check if a funding arb exists on the same asset. See the <a href="#usage-examples" class="text-mint-400 hover:underline">usage examples</a> for 20 real-world workflows.
           </div>
         </details>
 
@@ -1170,7 +1170,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Every trade call with confidence &ge; 60% is automatically recorded. After enough candles have passed, the system measures PFE (Peak Favorable Excursion) win rate &mdash; did price move in the called direction at any point during the evaluation window? Results are available via the <code class="text-xs bg-navy-800 px-1 rounded">performance://signal-performance</code> MCP resource and on the <a href="https://api.algovault.com/dashboard" class="text-gold-400 hover:underline">live dashboard</a>.
+            Every trade call with confidence &ge; 60% is automatically recorded. After enough candles have passed, the system measures PFE (Peak Favorable Excursion) win rate &mdash; did price move in the called direction at any point during the evaluation window? Results are available via the <code class="text-xs bg-navy-800 px-1 rounded">performance://signal-performance</code> MCP resource and on the <a href="https://api.algovault.com/dashboard" class="text-mint-400 hover:underline">live dashboard</a>.
           </div>
         </details>
 
@@ -1220,7 +1220,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Every call is hashed and anchored on Base L2 via daily Merkle batches. Visit <a href="/verify" class="text-gold-400 hover:underline">algovault.com/verify</a> to look up any call by ID. You'll see its hash, Merkle proof, batch details, and a direct link to the transaction on Basescan. You can also call the API directly: <code class="text-xs bg-navy-800 px-1 rounded">GET /api/verify-signal?signalId=&lt;ID&gt;</code>.
+            Every call is hashed and anchored on Base L2 via daily Merkle batches. Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call by ID. You'll see its hash, Merkle proof, batch details, and a direct link to the transaction on Basescan. You can also call the API directly: <code class="text-xs bg-navy-800 px-1 rounded">GET /api/verify-signal?signalId=&lt;ID&gt;</code>.
           </div>
         </details>
 
