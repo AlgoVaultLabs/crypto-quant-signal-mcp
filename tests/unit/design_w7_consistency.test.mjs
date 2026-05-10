@@ -170,7 +170,7 @@ test('W6 below-fold + landing-rest preserved BYTE-IDENTICAL through W7', async (
   }
   // W6 landing-rest sections (8, TradFiCallout SKIPPED)
   for (const heading of [
-    'Try it in 30 seconds.', '3 tools, one verdict.', 'Brain + execution pairing.',
+    'Try it in 30 seconds.', '3 tools, One verdict.', 'Brain + execution pairing.',
     'Every qualifying call, on the record.', 'Simple pricing.', 'Two transports. Same tools.', 'Frequently asked.',
   ]) {
     assert.ok(html.includes(heading), `W6 landing-rest heading "${heading}" preserved`);

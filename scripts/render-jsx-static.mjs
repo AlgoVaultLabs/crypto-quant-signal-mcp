@@ -88,18 +88,48 @@ async function evalJsxSrc(src, filePath, exportNames) {
 // ── JSX-source patches (pre-Babel) ──────────────────────────────────────────
 
 function patchBelowFold(src) {
-  // Q-W16: CoreCapabilities subtitle — "Four MCP tools" → "Three MCP tools + on-chain track record"
+  // Q-W16 + Mr.1 fix-forward 2026-05-11 ROUND 3: CoreCapabilities subtitle — "Four MCP tools" →
+  // "Three MCP tools + on-chain track record" with line break between sentences per Mr.1 directive.
   // Factuality LAW: AlgoVault has 3 MCP tools + 1 on-chain track record callout (NOT 4 tools).
   return src.replace(
     'Four MCP tools your agent can call directly. Each returns a single, structured verdict — not raw indicators.',
-    'Three MCP tools your agent can call — plus an on-chain track record. Each returns a single, structured verdict — not raw indicators.'
+    'Three MCP tools your agent can call — plus an on-chain track record.   Each returns a single, structured verdict — not raw indicators.'
   );
 }
 
 function patchLandingRest(src) {
   // FAQ all-open default for SSR — so all 5 answer divs ship in the DOM.
-  // Vanilla-JS init script (appended at section end) collapses items 2-5 on load + wires toggle.
   let s = src.replace('defaultOpen={!!it.open}', 'defaultOpen={true}');
+
+  // Mr.1 fix-forward 2026-05-11 ROUND 3 — 5 specific copy edits:
+
+  // 1) ThreeTools H2: "3 tools, one verdict." → "3 tools, One verdict." (capital O)
+  s = s.replaceAll('3 tools, one verdict.', '3 tools, One verdict.');
+
+  // 2) ThreeTools subtitle: keep text but no specific change required (sentences are already split
+  // by canonical layout LRLead component); Mr.1's text matches what's there.
+
+  // 3) UseCases subtitle: drop the "call, confidence, regime, factors, every call Merkle-anchored
+  // on Base L2" middle phrase per Mr.1 directive. New shorter form.
+  s = s.replace(
+    'AlgoVault MCP gives your agent a composite verdict in one call — call, confidence, regime, factors, every call Merkle-anchored on Base L2. Pair it with any of these official Agent Trade Kits to ship a complete trading agent.',
+    'AlgoVault MCP gives your agent a composite verdict in one call. Pair it with any of these official Agent Trade Kits to ship a complete trading agent.'
+  );
+
+  // 4) UseCases trademark notice: drop the "All demos run testnet/demo only — zero real-money
+  // risk in any code path." prefix per Mr.1 directive.
+  s = s.replace(
+    'All demos run testnet/demo only — zero real-money risk in any code path. AlgoVault returns analytics; your agent and risk policy decide what to execute. Exchange logos and names are trademarks of their respective owners. Used for nominative reference to integration tutorials. No partnership or endorsement implied.',
+    'AlgoVault returns analytics; your agent and risk policy decide what to execute. Exchange logos and names are trademarks of their respective owners. Used for nominative reference to integration tutorials. No partnership or endorsement implied.'
+  );
+
+  // 5) LiveTrackRecord subtitle per Mr.1: "Every qualifying trade call (confidence ≥ 60%) is
+  // tracked, Merkle-anchored on Base L2." (drops "PFE directional accuracy and excursion analysis. All public.")
+  s = s.replace(
+    'Every qualifying trade call (confidence ≥ 60%) is tracked. PFE directional accuracy and excursion analysis. All public.',
+    'Every qualifying trade call (confidence ≥ 60%) is tracked, Merkle-anchored on Base L2.'
+  );
+
   return s;
 }
 
@@ -189,25 +219,29 @@ function injectUseCasesLogos(html) {
   // Q-W7 hero pattern carries to UseCases card grid: replace the <span class="xchg-mark"...>{mark}</span>
   // letter chip with <img src="/_design/logos/{exchange}.{ext}" alt="{Exchange} logo"> per architect ratification.
   // Mark letters: B=Binance, O=OKX, BY=Bybit, BG=Bitget. Hyperliquid NOT in UseCases (HL is hero only).
-  // Preserve --mark CSS custom property + size styles by keeping the surrounding <span class="xchg-mark">
-  // shell as a flex container, but replace its letter child with the <img>.
+  //
+  // Mr.1 fix-forward 2026-05-11 ROUND 3: "exchange logo is not visible here, change the shape color
+  // to the image attached color" — strip JSX `--mark` brand-color background (yellow/white/etc) which
+  // visually merged with the logo's same-colored brand mark, replacing with dark canvas color so
+  // logos pop. Also enlarge the chip from 28×28 to 32×32 + image 26×26 (was 22×22) to fill more
+  // space and make logo recognizable. Border lightens the chip outline for definition against
+  // dark UseCases card background.
   const logoMap = {
     'B':  { src: '/_design/logos/binance.png', alt: 'Binance logo' },
     'O':  { src: '/_design/logos/okx.png',     alt: 'OKX logo' },
     'BY': { src: '/_design/logos/bybit.jpg',   alt: 'Bybit logo' },
     'BG': { src: '/_design/logos/bitget.png',  alt: 'Bitget logo' },
   };
-  // Pattern: <span class="xchg-mark" style="--mark:...;width:28px;height:28px;font-size:11px">{LETTER}</span>
-  // After: <span class="xchg-mark" style="--mark:...;width:28px;height:28px;font-size:11px;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="..." alt="..." style="width:22px;height:22px;object-fit:contain"></span>
   return html.replace(
-    /(<span class="xchg-mark" style="[^"]*">)(B|O|BY|BG)(<\/span>)/g,
-    (match, openSpan, letter, closeSpan) => {
+    /(<span class="xchg-mark" style=")[^"]*(">)(B|O|BY|BG)(<\/span>)/g,
+    (match, openSpan, closeQuote, letter, closeSpan) => {
       const cfg = logoMap[letter];
       if (!cfg) return match;
-      // Inject flex/center styling for image container (style attr appends; ReactDOMServer would
-      // also accept class but xchg-mark already has its base style on the JSX inline-style).
-      const styledOpen = openSpan.replace(/">$/, ';display:flex;align-items:center;justify-content:center;overflow:hidden">');
-      const img = `<img src="${cfg.src}" alt="${cfg.alt}" style="width:22px;height:22px;object-fit:contain">`;
+      // Override the chip's --mark brand-color background with dark canvas color + thin border for
+      // definition; enlarge to 32×32 so logo (26×26) fills more visibly. White-ish space around
+      // the logo for compositing on dark page.
+      const styledOpen = openSpan + 'width:32px;height:32px;border-radius:7px;background:oklch(0.97 0.005 265);border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0' + closeQuote;
+      const img = `<img src="${cfg.src}" alt="${cfg.alt}" style="width:26px;height:26px;object-fit:contain">`;
       return styledOpen + img + closeSpan;
     }
   );
@@ -338,6 +372,23 @@ function w7HeroNavVersion(html, version) {
   return html.replace(/v1\.4 shipped/g, `v${version} shipped`);
 }
 
+function w7HeroCTAUrls(html) {
+  // Mr.1 fix-forward 2026-05-11 ROUND 3: V1Hero CTAs link to "#" placeholder. Wire real URLs.
+  // - "Try Free in Claude" → /#quickstart (the TryIn30 section on this page = in-page jump to
+  //   the 3-step quickstart guide for Claude Desktop integration). Default suggestion since
+  //   Mr.1 asked. Alternative: /docs.html, https://claude.ai/, or external Claude Desktop dl page.
+  // - "View Track Record" → /track-record per Mr.1 explicit directive.
+  return html
+    .replace(
+      /<a href="#" class="btn btn-primary accent-cyan"([^>]*)>(\s*Try Free in Claude)/g,
+      '<a href="/#quickstart" class="btn btn-primary accent-cyan"$1>$2'
+    )
+    .replace(
+      /<a href="#" class="btn btn-secondary"([^>]*)>(\s*View Track Record)/g,
+      '<a href="/track-record" class="btn btn-secondary"$1>$2'
+    );
+}
+
 function w7HeroStripNav(html) {
   // Strip the V1Hero-rendered <nav class="nav"...>...</nav> block — the existing live W3 nav
   // (top of landing/index.html, consistent across all sub-pages: faq.html, glossary.html etc.)
@@ -364,13 +415,14 @@ function w7HeroCallStreamLiveBind(html) {
 
 function w7HeroDiagramChipsToLogos(html) {
   // Q-W7 carry-forward (W6 hero chip→logo migration extends to V0Diagram chips).
-  // V0Diagram featured chips render: outer rect (40×32) + inner colored rect (22×22) + monogram text + name text.
-  // Replace inner colored rect + monogram with <image href> + <title> (WCAG accessible-name).
+  // V0Diagram featured chips render: outer rect (40×32 dark fill + thin border) + inner colored
+  // rect (22×22) + monogram text + name text. Replace ALL inner content (colored rect + monogram)
+  // AND override outer rect to a uniform white-ish background where the logo can sit visibly.
   //
-  // Mr.1 fix-forward 2026-05-11: "make the exchange logo fillup the shape" — increase image
-  // size from 22×22 (centered with whitespace) to 38×30 (fill the entire 40×32 chip with 1px
-  // margin on each side). preserveAspectRatio stays "xMidYMid meet" (no distortion); larger
-  // bounding box means logos appear visually larger inside the chip.
+  // Mr.1 fix-forward 2026-05-11 ROUND 3: same shape size for 5 exchanges (uniform 40×32 white-ish
+  // chip), logo fills via xMidYMid meet (preserves aspect, no distortion). Brand-color outer rect
+  // replaced because the logos themselves carry brand color — 5 yellow/white/teal chips are
+  // visually noisy + obscure logos.
   const logoMap = {
     'H':  { src: '/_design/logos/hyperliquid.png', alt: 'Hyperliquid logo' },
     'B':  { src: '/_design/logos/binance.png',     alt: 'Binance logo' },
@@ -378,12 +430,19 @@ function w7HeroDiagramChipsToLogos(html) {
     'O':  { src: '/_design/logos/okx.png',         alt: 'OKX logo' },
     'BG': { src: '/_design/logos/bitget.png',      alt: 'Bitget logo' },
   };
+  // Match the FULL chip block: outer rect.hero-flow-node-venue is preceded by translate(40 N)
+  // wrapper. Replace inner `<rect> opacity="0.95">` + `<text>{mono}</text>` with `<image>` filling
+  // the chip. Outer dark rect stays as the chip frame — logo sits centered on it with white-ish bg.
   return html.replace(
     /<rect x="-15" y="-11" width="22" height="22" rx="6" fill="oklch\([^)]+\)" opacity="0\.95"><\/rect><text x="-4" y="5\.5" text-anchor="middle"[^>]*>(H|B|BY|O|BG)<\/text>/g,
     (match, mono) => {
       const cfg = logoMap[mono];
       if (!cfg) return match;
-      return `<image href="${cfg.src}" x="-19" y="-15" width="38" height="30" preserveAspectRatio="xMidYMid meet"><title>${cfg.alt}</title></image>`;
+      // White-ish background rect inside the chip (so logos with transparent backgrounds remain
+      // visible against the dark page) + image filling the rect via xMidYMid meet.
+      // Inner rect: 36×28 (centered in 40×32 outer chip with 2px margin).
+      // Image: same dimensions, preserveAspectRatio="xMidYMid meet" fits-within without distortion.
+      return `<rect x="-18" y="-14" width="36" height="28" rx="5" fill="oklch(0.97 0.005 265)"></rect><image href="${cfg.src}" x="-17" y="-13" width="34" height="26" preserveAspectRatio="xMidYMid meet"><title>${cfg.alt}</title></image>`;
     }
   );
 }
@@ -402,17 +461,19 @@ function w7HeroArtboardWidth(html) {
   // Mr.1 fix-forward 2026-05-11: "Fill up the whole page, you can see the right side is blank"
   // V1Hero JSX renders <div class="artboard" style="width:1440px;height:900px;padding:28px 80px">.
   // Fixed width:1440px causes left-aligned layout on wider viewports (>1440px).
-  // Strip fixed width + height; replace with max-width + auto margin so artboard centers and
-  // fills viewport up to 1440px. Padding stays for inner layout.
+  // Strip fixed width + height; replace with max-width + auto margin so artboard centers.
+  // Mr.1 fix-forward 2026-05-11 ROUND 3: top-padding increased from 28px to 100px so eyebrow
+  // clears the W3 fixed nav (~56px tall + 8px gap). Without this, the "Model Context Protocol
+  // server · 5 venues monitored" eyebrow renders BEHIND the nav and is invisible.
   return html
     .replace(
       /<div class="artboard" style="width:1440px;height:900px;padding:28px 80px">/g,
-      '<div class="artboard" style="padding:28px 80px;max-width:1440px;margin:0 auto;width:100%">'
+      '<div class="artboard" style="padding:100px 80px 28px;max-width:1440px;margin:0 auto;width:100%">'
     )
-    // Mobile artboard (375px wide) — keep narrow but center
+    // Mobile artboard (375px wide) — keep narrow but center; mobile nav is also fixed
     .replace(
       /<div class="artboard" style="width:375px;height:1100px;padding:20px 22px">/g,
-      '<div class="artboard" style="padding:20px 22px;max-width:375px;margin:0 auto;width:100%">'
+      '<div class="artboard" style="padding:80px 22px 20px;max-width:375px;margin:0 auto;width:100%">'
     );
 }
 
@@ -617,7 +678,8 @@ async function main() {
       raw = w7HeroDiagramChipsToLogos(raw);        // W6 Q-W7 carry-forward (5 SVG <image> logos in V0Diagram chips, Mr.1 fix-forward: fill chip)
       raw = w7HeroCallStreamLiveBind(raw);         // Mr.1 fix-forward: V1Feed FEED_BASE → live /api/recent-calls?limit=6 poller
       raw = w7HeroHideFlowDiagramLabel(raw);       // Mr.1 fix-forward 2026-05-11: hide "flow.diagram" placeholder-cap label
-      raw = w7HeroArtboardWidth(raw);              // Mr.1 fix-forward 2026-05-11: strip fixed 1440px width, allow max-width centering
+      raw = w7HeroArtboardWidth(raw);              // Mr.1 fix-forward 2026-05-11: strip fixed 1440px width, allow max-width centering + top-pad to clear W3 nav
+      raw = w7HeroCTAUrls(raw);                    // Mr.1 fix-forward 2026-05-11 R3: Try Free in Claude → /#quickstart, View Track Record → /track-record
       raw = w7HeroStripNav(raw);                   // strip V1Hero's nav (existing live W3 nav preserved for cross-page consistency)
       // Append vanilla-JS poller for MOST RECENT CALL (mounts to all [data-w7-recent-call] in the dual-render block)
       html = raw + W7_RECENT_CALL_POLLER_JS;

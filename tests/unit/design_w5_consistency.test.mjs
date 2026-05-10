@@ -2,7 +2,7 @@
  * DESIGN-W5 C5 — JSX-faithful consistency unit tests.
  *
  * Asserts the architect-ratified 14 decisions from audits/DESIGN-W5-mapping.md:
- *   - Q-A1: #core-capabilities anchor retargeted to JSX H2 "3 tools, one verdict."
+ *   - Q-A1: #core-capabilities anchor retargeted to JSX H2 "3 tools, One verdict."
  *   - Q-A2: #when-to-use anchor retargeted to JSX H2 "Brain + execution pairing."
  *   - Q-A3: #vs-raw-exchange-apis anchor DROPPED (CI canary literal-string check)
  *   - Q-D1: 4-tier pricing preserved (Free/Starter/Pro/Enterprise; NO X402 5th card)
@@ -62,7 +62,7 @@ test('Q-D3..Q-D9: 7 H2 texts adopted from JSX verbatim', async () => {
   // 7 H2 texts — at least one occurrence of each (some may appear in JSON-LD / description / OG meta too)
   const jsxHeadings = [
     'Try it in 30 seconds.',                       // Q-D3
-    '3 tools, one verdict.',                       // Q-D4
+    '3 tools, One verdict.',                       // Q-D4
     'Brain + execution pairing.',                  // Q-D5
     'Every qualifying call, on the record.',       // Q-D6
     'Simple pricing.',                             // Q-D7

@@ -196,7 +196,7 @@ test('Build-pipeline render output: JSX components present in SSR output', async
   // Landing-rest sections (8 from v1-landing-rest.jsx, TradFiCallout SKIPPED)
   for (const heading of [
     'Try it in 30 seconds.',
-    '3 tools, one verdict.',
+    '3 tools, One verdict.',
     'Brain + execution pairing.',
     'Every qualifying call, on the record.',
     'Simple pricing.',
