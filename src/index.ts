@@ -1521,7 +1521,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
        15m / 30m / 1h / 2h / 4h / 8h / 12h / 1d) horizontal bars. Hydrated from
        /api/performance-public.byTimeframe on page load. Bars graceful-empty
        on missing TFs (live API currently has 9; 1m/3m may show "—"). -->
-  <div class="section"><h2>Performance by Timeframe (canonical bar chart)</h2>
+  <div class="section"><h2>Performance by Timeframe</h2>
     <div class="tf-bar-chart" id="tf-bar-chart">
       <div class="tf-bar-row" data-tf="1m"><span class="tf-bar-label">1m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-1m"></div></div><span class="tf-bar-value" data-tr-field="tf_1m_wr">&mdash;</span></div>
       <div class="tf-bar-row" data-tf="3m"><span class="tf-bar-label">3m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-3m"></div></div><span class="tf-bar-value" data-tr-field="tf_3m_wr">&mdash;</span></div>
@@ -1542,7 +1542,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
        /api/recent-calls?limit=10 endpoint shipped in LANDING-LIVE-CALL-TICKER-W1
        (sanitized public shape). Same polling cadence as landing's LAST_CALLS
        feed. aria-live="polite" for screen-reader updates. -->
-  <div class="section"><h2>Live Recent Calls</h2>
+  <div class="section"><h2>Latest Trade Calls</h2>
     <div class="tr-recent-calls-panel" id="tr-recent-calls-panel" aria-live="polite">
       <div class="tr-recent-calls-panel-header">
         <span>CALL STREAM &middot; LIVE</span>

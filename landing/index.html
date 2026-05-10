@@ -85,11 +85,11 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "80963"
+    "ratingCount": "81026"
   },
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.2%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "80963" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "81026" },
     { "@type": "PropertyValue", "name": "Asset count", "value": "730" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
@@ -142,7 +142,7 @@ tailwind.config = {
     "ratingValue": "90.2",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "80963"
+    "ratingCount": "81026"
   }
 }
 </script>
@@ -167,7 +167,7 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 80963 verified calls, Merkle-anchored on Base L2.",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.2% PFE win rate across 81026 verified calls, Merkle-anchored on Base L2.",
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "inLanguage": "en"
 }
@@ -350,49 +350,48 @@ tailwind.config = {
         <div class="recent-calls-empty">Loading recent calls&hellip;</div>
       </div>
     </div>
+
+    <!-- DESIGN-W5 / Q-F1 (architect-ratified 2026-05-10): hero 3-stat row
+         translated from v1-minimal.jsx V1Hero 4-stat row. JSX latency placeholder
+         REMOVED (no live source — internal timing metric not exposed via public API;
+         logged as VERIFY-LATENCY-METRIC-W1 follow-up). 3 stats remaining all live-bound:
+         venues / timeframes / signals. Counter classes from D2-C+W3 algovault-design.css. -->
+    <div class="mt-6 max-w-md mx-auto grid grid-cols-3 gap-4 pt-4 border-t border-white/10 text-center">
+      <div>
+        <div class="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Venues</div>
+        <div class="counter text-lg font-bold text-white"><span data-tr-field="exchange_count">5</span></div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Timeframes</div>
+        <div class="counter text-lg font-bold text-white"><span data-tr-field="timeframe_count">11</span></div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Signals</div>
+        <div class="counter text-lg font-bold text-white"><span data-tr-field="call_count">81000</span>+</div>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- GEO-W1 C4 / Spec 2 refinement of C1: answer-page H2s rewritten per Build Rule 9
-     (Public-facing copy = Professional & Concise). Bold-prefix bullets, parallel cadence,
-     ≤25 word bullets. H2s now carry id= anchors for FAQ/glossary internal links and
-     Spec 2 verification (grep id="(core-capabilities|when-to-use|vs-raw-exchange-apis)" >= 3).
-     Internal links target /track-record + /skills + /docs.html. Numerical claims via
-     data-tr-field per AUTO-TRACE-W1. -->
-<section id="answer" class="py-12 sm:py-16 px-6 border-t border-white/5">
-  <div class="max-w-3xl mx-auto">
-
-    <h2 id="core-capabilities" class="text-xl sm:text-2xl font-bold text-white mb-3">Core capabilities</h2>
-    <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
-      <li><strong>Composite trade calls.</strong> BUY / SELL / HOLD with confidence &mdash; <code class="text-mint-400">get_trade_call</code>.</li>
-      <li><strong>Market regime classification.</strong> Trending / ranging / volatile &mdash; <code class="text-mint-400">get_market_regime</code>.</li>
-      <li><strong>Cross-venue funding arbitrage.</strong> Top spreads across Hyperliquid, Binance, Bybit &mdash; <code class="text-mint-400">scan_funding_arb</code>.</li>
-      <li><strong>On-chain track record.</strong> Every call Merkle-anchored on Base L2 &mdash; verifiable at <a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>.</li>
-    </ul>
-
-    <h2 id="when-to-use" class="text-xl sm:text-2xl font-bold text-white mb-3">When to use AlgoVault</h2>
-    <ul class="text-gray-300 text-sm sm:text-base leading-relaxed mb-10 space-y-2">
-      <li>Building an AI agent that trades crypto perps across multiple venues.</li>
-      <li>Needing one composite verdict per call instead of raw OHLC, funding, and OI.</li>
-      <li>Wanting verifiable signal performance before relying on a source.</li>
-    </ul>
-
-    <h2 id="vs-raw-exchange-apis" class="text-xl sm:text-2xl font-bold text-white mb-3">vs raw exchange APIs</h2>
-    <ul class="text-gray-300 text-sm sm:text-base leading-relaxed space-y-2">
-      <li><strong>Exchange APIs:</strong> 8 raw indicators per call. Your agent interprets each one.</li>
-      <li><strong>AlgoVault:</strong> one verdict per call. <code class="text-mint-400">{call, confidence, regime, factors}</code>.</li>
-      <li><strong>TradingView and Coinglass:</strong> built for humans reading charts. AlgoVault: built for AI agents reading verdicts.</li>
-      <li><strong><span data-tr-field="exchange_count">5</span> venues unified behind one MCP</strong> &mdash; skip N adapter integrations. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> + <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a>.</li>
-    </ul>
-
-  </div>
-</section>
+<!-- GEO-W1 C4 / Spec 2 refinement of C1: answer-page H2s + DESIGN-W5 anchor remap
+     (architect-ratified 2026-05-10). Per architect Q-A1/Q-A2/Q-A3 decisions:
+       core-capabilities anchor → JSX-translated H2 "3 tools, one verdict." (3 Tools section)
+       when-to-use anchor → JSX-translated H2 "Brain + execution pairing." (Use Cases section)
+       Third GEO-W1 anchor (raw-exchange-API comparison) → DROPPED entirely; JSX-faithful mandate;
+       no semantic match in JSX layout. Aggregator-citation 404 risk accepted.
+     W5 verification: 2 retargeted anchor IDs present on JSX-translated H2s. -->
+<!-- DESIGN-W5 / Q-A1+Q-A2+Q-A3 (architect-ratified 2026-05-10):
+     Standalone GEO-W1 answer-page section REMOVED per JSX-faithful mandate.
+     Anchor IDs remapped: core-capabilities → 3 Tools section H2; when-to-use → Use Cases section H2.
+     Third anchor (raw-exchange-API comparison) DROPPED entirely (no JSX equivalent).
+     Bullet content preserved in spirit by the JSX-translated below-fold sections; JSON-LD blocks
+     remain authoritative source-of-truth for crawlers. -->
 
 <!-- Quick Start -->
 <section id="quickstart" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-2xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">Try it in 30 seconds</h2>
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Try it in 30 seconds.</h2>
       <p class="text-gray-500 text-sm mt-2">Works with any MCP client. Here's Claude Desktop:</p>
     </div>
 
@@ -478,7 +477,7 @@ tailwind.config = {
 <section id="tools" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-5xl mx-auto">
     <div class="text-center mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">3 Tools, One Verdict</h2>
+      <h2 id="core-capabilities" class="text-2xl sm:text-3xl font-bold text-white">3 tools, one verdict.</h2>
       <p class="text-gray-500 text-sm mt-2">Each tool combines multiple data sources into a single, actionable answer. Assets are classified into quality tiers with institutional-grade liquidity filtering.</p>
     </div>
 
@@ -538,7 +537,7 @@ tailwind.config = {
 <section id="use-cases" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">Use Cases &mdash; Brain + Execution Pairing</h2>
+      <h2 id="when-to-use" class="text-2xl sm:text-3xl font-bold text-white">Brain + execution pairing.</h2>
       <p class="text-gray-500 text-sm mt-2 max-w-2xl mx-auto">
         AlgoVault MCP gives your agent a <strong class="text-mint-400">composite verdict</strong> in one call &mdash; call, confidence, regime, factors, every call Merkle-anchored on Base L2.
         Pair it with any of these official Agent Trade Kits to ship a complete trading agent.
@@ -602,7 +601,7 @@ tailwind.config = {
 <section id="track-record" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-4xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">Live Track Record</h2>
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Every qualifying call, on the record.</h2>
       <p class="text-gray-500 text-sm mt-2 max-w-lg mx-auto">Every qualifying trade call (confidence &ge; 60%) is tracked. PFE directional accuracy and excursion analysis. All public.</p>
     </div>
 
@@ -698,7 +697,7 @@ tailwind.config = {
 <section id="pricing" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">Simple Pricing</h2>
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Simple pricing.</h2>
       <p class="text-gray-500 text-sm mt-2">Start free. Pay when you need more.</p>
 
       <!-- WEBSITE-REFRESH-W1 C5: M3 hero badge — "we only fire when we mean it" -->
@@ -821,7 +820,7 @@ tailwind.config = {
 <section id="developers" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-3xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">For Developers</h2>
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Two transports. Same tools.</h2>
       <p class="text-gray-500 text-sm mt-2">Two transports. Same tools. Pick what fits your stack.</p>
     </div>
 
@@ -894,7 +893,7 @@ tailwind.config = {
 <section id="faq" class="py-16 sm:py-20 px-6 border-t border-white/5">
   <div class="max-w-3xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-2xl sm:text-3xl font-bold text-white">Frequently Asked Questions</h2>
+      <h2 class="text-2xl sm:text-3xl font-bold text-white">Frequently asked.</h2>
     </div>
 
     <div class="space-y-4">
