@@ -670,7 +670,7 @@ const VERIFY_HEAD_AND_NAV = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Verify Any AlgoVault Trade Call</title>
-<meta name="description" content="Verify any AlgoVault trade call on-chain. Every signal is hashed on Base L2 before the outcome is known.">
+<meta name="description" content="Verify any AlgoVault trade call on-chain. Every trade call is hashed on Base L2 before the outcome is known.">
 <meta name="last-updated" content="2026-05-11">
 <link rel="icon" type="image/png" href="/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -1353,6 +1353,83 @@ function applyVerifyC3Overrides(html, isDesktop) {
   html = applyVerifyFixForwardR2InsertResultMount(html, isDesktop); // R2-1: result mount inside VInput
   html = applyVerifyFixForwardR2StripRadialAccent(html);            // R2-2: strip green radial glow
   html = applyVerifyFixForwardR2AddHowSections(html, isDesktop);    // R2-3: How to Verify + How It Works cards above VFaq
+  // Fix-Forward Round 3 additions (Mr.1 post-Round-2 visual review 2026-05-11):
+  html = applyVerifyFixForwardR3Placeholder(html);                  // R3-1: placeholder #86... integer-style
+  html = applyVerifyFixForwardR3HeroSubhead(html);                  // R3-3: subhead 2-line + trade call + cannot
+  html = applyVerifyFixForwardR3SignalToCall(html);                 // R3-4: user-facing "Signal" → "Call" sweep
+  return html;
+}
+
+// ── DESIGN-W9 FIX-FORWARD ROUND 3 (2026-05-11 Mr.1 post-Round-2 visual review) ──
+
+// R3-1: VInput placeholder format. JSX renders `0x4a2…f91   ·   or   2026-05-09T17:42:18Z`
+// (hex hash example + ISO timestamp); Mr.1 wants integer-style `#86...` per Image 1 (matches
+// Recent ID pills format like #86995, #87554 etc.). Keep the timestamp branch for clarity.
+function applyVerifyFixForwardR3Placeholder(html) {
+  return html.replace(
+    /placeholder="0x4a2…f91   ·   or   2026-05-09T17:42:18Z"/g,
+    'placeholder="#86...   ·   or   2026-05-09T17:42:18Z"'
+  );
+}
+
+// R3-3: Hero subhead — 2-line arrangement + "signal" → "trade call" + "can't" → "cannot".
+// Actual rendered shape (verified via grep):
+//   Every signal is hashed on Base L2 <em style="...">before</em> the outcome is known. Inspect
+//   the contract on Basescan — we can’t edit history.
+// (Note: apostrophe is U+2019 RIGHT SINGLE QUOTATION MARK, NOT ASCII apostrophe.)
+function applyVerifyFixForwardR3HeroSubhead(html) {
+  // Body hero subhead (×2 dual-render). Meta description in HEAD updated directly in
+  // VERIFY_HEAD_AND_NAV constant (this function runs on artboard HTML only, before head assembly).
+  return html.replace(
+    /Every signal is hashed on Base L2 <em style="([^"]*)">before<\/em> the outcome is known\. Inspect the contract on Basescan — we can’t edit history\./g,
+    'Every trade call is hashed on Base L2 <em style="$1">before</em> the outcome is known.<br/>Inspect the contract on Basescan — we cannot edit history.'
+  );
+}
+
+// R3-4: User-facing "Signal" → "Call" terminology sweep. Preserves technical terms:
+//   - verify://signal/{id} (MCP URI — load-bearing primitive)
+//   - signal_hash, signal_id (DB column names)
+//   - /api/verify-signal (API endpoint URL)
+//   - signal-performance (MCP resource name)
+// Targets user-visible copy ONLY: labels, eyebrow text, headings, FAQ Q&A, placeholder caps.
+function applyVerifyFixForwardR3SignalToCall(html) {
+  // 1. VInput label + aria — JSX renders both as "signal id or call timestamp" and "Signal ID or call timestamp"
+  html = html.replaceAll('signal id or call timestamp', 'call id or call timestamp');
+  html = html.replaceAll('Signal ID or call timestamp', 'Call ID or call timestamp');
+  // 2. VFaq Q&A: "What does it mean that a signal is Merkle-anchored?"
+  html = html.replaceAll(
+    'What does it mean that a signal is Merkle-anchored?',
+    'What does it mean that a call is Merkle-anchored?'
+  );
+  // 3. VFaq: "How do I verify a signal myself without trusting algovault.com?"
+  html = html.replaceAll(
+    'How do I verify a signal myself without trusting algovault.com?',
+    'How do I verify a call myself without trusting algovault.com?'
+  );
+  // 4. VFaq: "Can a signal be edited after it's batched?" (apostrophe is unicode right-single-quote)
+  html = html.replaceAll(
+    'Can a signal be edited after it’s batched?',
+    'Can a call be edited after it’s batched?'
+  );
+  // 5. VFaq answer prose: "Each signal's payload is hashed..." → "Each call's payload..."
+  html = html.replaceAll('Each signal’s payload', 'Each call’s payload');
+  // 6. VFaq answer "Once anchored, neither the signal nor the root..." → "Once anchored, neither the call nor the root..."
+  html = html.replaceAll(
+    'Once anchored, neither the signal nor the root can be modified',
+    'Once anchored, neither the call nor the root can be modified'
+  );
+  // 7. JSX VHowItWorks step 1 title "Signal generated" → "Call generated"
+  html = html.replaceAll('>Signal generated<', '>Call generated<');
+  // 8. JSX VHowItWorks intro paragraph: "A signal can't be edited..." → "A trade call cannot be edited..."
+  html = html.replaceAll(
+    'A signal can’t be edited after the market answers',
+    'A trade call cannot be edited after the market answers'
+  );
+  // 8. JSX VHowItWorks step 1 body: "Model emits a typed call (asset · TF · direction · confidence) from live market features."
+  //    — already uses "call", fine. No change.
+  // 9. JSX VHowItWorks H2 "Hashed first. Outcome second." — fine, no signal/call ambiguity.
+  // 10. JSX VHero badge `<span data-tr-field="latest_batch">#31</span>` — fine, no change.
+  // 11. JSX VFooter `<pre>` example `mcp:read("verify://signal/0x4a2…f91")` — PRESERVED (MCP URI primitive).
   return html;
 }
 

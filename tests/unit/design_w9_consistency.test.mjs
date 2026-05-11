@@ -52,7 +52,8 @@ test('landing/verify.html: C2 7 JSX sections render in canonical order (VHero H1
   const html = await read('landing/verify.html');
   // VHero — H1 "Verify Any AlgoVault Trade Call"
   const hero = html.indexOf('Verify Any AlgoVault');
-  const input = html.indexOf('signal id or call timestamp');
+  // R3-4: VInput label renamed `signal id or call timestamp` → `call id or call timestamp`
+  const input = html.indexOf('call id or call timestamp');
   const how = html.indexOf('Hashed first. Outcome second.');
   const recent = html.indexOf('Recent verifications');
   const faq = html.indexOf('Verification, in detail');

@@ -1251,8 +1251,13 @@
    The verify markup nests <section>s inside <div class="artboard"> (not direct children of
    .lp-verify-*), so the W7-R7 `> section` selector misses. Instead target the artboard wrapper
    itself with margin:0 auto; the artboard keeps its JSX-default width:1440px (desktop) / 375px
-   (mobile) and centers within the page. */
+   (mobile) and centers within the page.
+   R3-2 (2026-05-11): added padding-top to push artboard content BELOW the fixed 56px W7 nav.
+   Without this, the JSX VHero badge pill at section padding-top:36px sits at viewport y:36
+   — INSIDE the nav region (0-56px) — and shows through the nav's backdrop-filter blur as a
+   green pill peeking above the nav. 80px clears nav (56px) + 24px visual buffer. */
 .lp-verify-desktop > .artboard,
 .lp-verify-mobile > .artboard {
   margin: 0 auto;
+  padding-top: 80px;
 }
