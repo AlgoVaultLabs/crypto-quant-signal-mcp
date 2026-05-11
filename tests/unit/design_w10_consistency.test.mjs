@@ -182,12 +182,14 @@ for (const ex of INTEGRATIONS) {
       `VEyebrow "· ${ex} integration" missing`);
   });
 
-  test(`/integrations/${ex}: Q-W10-6 — tier-stat-card wraps each h2 section + intro`, async () => {
+  test(`/integrations/${ex}: Q-W10-6 (DESIGN-W10-FF reversal) — tier-stat-card per-section wrapping REMOVED per Mr.1 visual review`, async () => {
     const html = await read(`landing/integrations/${ex}.html`);
+    // DESIGN-W10-FF (2026-05-12): Mr.1 dispatched "Remove cards in Image 1 on 4 pages above"
+    // post-W10 visual review. wrapH2InTierStatCard() call removed from htmlShell();
+    // markdown body renders as flowing prose inside canonical artboard scaffolding.
+    // /account still uses tier-stat-card to wrap forms+tabs (separate page-render context).
     const cards = countOcc(html, 'class="tier-stat-card"');
-    const h2s = countOcc(html, /<h2[^>]*>/);
-    assert.ok(cards >= h2s, `expected ≥${h2s} tier-stat-cards (one per h2 + intro), got ${cards}`);
-    assert.ok(cards >= 5, `expected ≥5 tier-stat-card wrappers, got ${cards}`);
+    assert.strictEqual(cards, 0, `tier-stat-card per-section wrapping removed from /integrations; expected 0 instances, got ${cards}`);
   });
 
   test(`/integrations/${ex}: Q-W10-7 — utm-injected canonical Nav (preserves Plausible attribution)`, async () => {
@@ -235,6 +237,45 @@ for (const ex of INTEGRATIONS) {
     // Per-exchange utm params on body-embedded links preserved (≥1 instance from markdown).
     assert.ok(countOcc(html, `utm_campaign=integration-${ex}`) >= 2,
       `utm_campaign=integration-${ex} must appear at least twice (Nav + body links)`);
+  });
+}
+
+// ── DESIGN-W10-FF (2026-05-12) — top-left logo links to homepage on every page ──
+
+test('DESIGN-W10-FF: /account brand-mark wrapped in <a href="https://algovault.com/"> (absolute URL — cross-host /account on api.algovault.com)', async () => {
+  const src = await read('src/lib/account-handlers.ts');
+  // Cross-host: /account is on api.algovault.com; relative `/` would resolve to api.algovault.com/ which 404s.
+  assert.match(src, /<a href="https:\/\/algovault\.com\/" class="flex items-center gap-2\.5"/,
+    '/account brand-mark must wrap in <a> with absolute URL https://algovault.com/');
+  assert.ok(src.includes('aria-label="AlgoVault home"'),
+    'brand-mark <a> should have aria-label for accessibility');
+});
+
+for (const ex of INTEGRATIONS) {
+  test(`DESIGN-W10-FF: /integrations/${ex} brand-mark wrapped in <a href="/"> (relative — same-origin algovault.com)`, async () => {
+    const html = await read(`landing/integrations/${ex}.html`);
+    assert.match(html, /<a href="\/" class="flex items-center gap-2\.5"/,
+      `/integrations/${ex} brand-mark must wrap in <a> with relative href="/"`);
+    assert.ok(html.includes('aria-label="AlgoVault home"'),
+      'brand-mark <a> should have aria-label for accessibility');
+  });
+}
+
+test('DESIGN-W10-FF: landing/index.html brand-mark wrapped in <a href="/"> (was the outlier — other landing pages already had it)', async () => {
+  const html = await read('landing/index.html');
+  assert.match(html, /<a href="\/" class="flex items-center gap-2\.5"/,
+    'landing/index.html brand-mark must wrap in <a> with relative href="/"');
+  // Plain <div class="flex items-center gap-2.5"> at the brand-mark position should be absent.
+  assert.strictEqual(countOcc(html, /<div class="flex items-center gap-2\.5">\s*<img src="\/logo\.png" alt="AlgoVault Logo"/), 0,
+    'legacy plain <div> at brand-mark must be replaced by <a>');
+});
+
+// Spot-check 3 sister landing pages already had the link (no fix needed; confirm preservation).
+for (const page of ['landing/integrations.html', 'landing/skills.html', 'landing/faq.html']) {
+  test(`DESIGN-W10-FF: ${page} brand-mark <a href="/"> preserved (no regression — was already correct pre-FF)`, async () => {
+    const html = await read(page);
+    assert.ok(html.includes('href="/"') && html.includes('AlgoVault Logo'),
+      `${page} must preserve <a href="/"> brand-mark wrap`);
   });
 }
 

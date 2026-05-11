@@ -62,10 +62,10 @@ const DISPLAY_NAMES = {
 function canonicalNavHtml(exchange) {
   return `<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-    <div class="flex items-center gap-2.5">
+    <a href="/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
       <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
-    </div>
+    </a>
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-white transition">Track Record</a>
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>
@@ -267,8 +267,14 @@ ${canonicalNavHtml(exchange)}
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
         <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT_PFE_WR}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">${SNAPSHOT_SIGNAL_COUNT}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
+      <!-- DESIGN-W10-FF (2026-05-12): tier-stat-card per-section wrapping REMOVED per Mr.1
+           visual review directive ("Remove cards in Image 1 on 4 pages above"). Markdown
+           body renders as flowing prose inside the canonical artboard scaffolding;
+           quotable-fact callout (above) keeps its own visual treatment. The
+           wrapH2InTierStatCard() helper retained for potential future use but no longer
+           called from htmlShell(). -->
       <article>
-${wrapH2InTierStatCard(bodyHtml)}
+${bodyHtml}
       </article>
     </div>
   </div>

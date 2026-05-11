@@ -84,10 +84,10 @@ tailwind.config = {
 // link Q-W10-2 active-link substitution: hover:text-white transition → text-mint-400 font-medium.
 const ACCOUNT_NAV_HTML = `<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-    <div class="flex items-center gap-2.5">
+    <a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
       <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
-    </div>
+    </a>
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="/track-record" class="hover:text-white transition">Track Record</a>
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>

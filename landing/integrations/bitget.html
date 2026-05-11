@@ -117,10 +117,10 @@ tailwind.config = {
      legacy header block per Q-W10-8 ratification. -->
 <nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-    <div class="flex items-center gap-2.5">
+    <a href="/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
       <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
       <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
-    </div>
+    </a>
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-bitget" class="hover:text-white transition">Track Record</a>
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>
@@ -146,8 +146,14 @@ tailwind.config = {
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
         <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">89.4%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">56,375</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
+      <!-- DESIGN-W10-FF (2026-05-12): tier-stat-card per-section wrapping REMOVED per Mr.1
+           visual review directive ("Remove cards in Image 1 on 4 pages above"). Markdown
+           body renders as flowing prose inside the canonical artboard scaffolding;
+           quotable-fact callout (above) keeps its own visual treatment. The
+           wrapH2InTierStatCard() helper retained for potential future use but no longer
+           called from htmlShell(). -->
       <article>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault × Bitget — Build Verifiable AI Trading Agents</h1>
+<h1>AlgoVault × Bitget — Build Verifiable AI Trading Agents</h1>
 <blockquote>
 <!-- snapshot: 2026-04-26 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </blockquote>
@@ -159,22 +165,22 @@ tailwind.config = {
 <p>AlgoVault MCP gives your agent a <strong>composite verdict</strong> in one call — direction, confidence, regime, and cross-venue funding/sentiment context — backed by a publicly auditable record anchored to Base L2. Pair it with Bitget’s <a href="https://github.com/BitgetLimited/agent_hub">Agent Hub</a> (and its agent-native AI account, <strong>GetClaw</strong>) and your agent has both the analytics brain and an execution venue purpose-built for autonomous AI trading.</p>
 <blockquote>
 <p><strong>Provenance:</strong> Official Bitget <a href="https://www.npmjs.com/package/bitget-mcp-server"><code>bitget-mcp-server@1.1.0</code></a> (npm; description “Official Bitget MCP Server”, maintained by <code>secaudit@bitget.com</code>) + <a href="https://github.com/BitgetLimited/agent_hub"><code>github.com/BitgetLimited/agent_hub</code></a> (default branch <code>main</code>). Demo execution requires a separate <strong>GetClaw demo account</strong> — Bitget’s per-account demo balance — because the Bitget MCP server has <strong>no env-var-level demo flag</strong>. This tutorial wraps the demo with <code>BITGET_DEMO=true</code> + <code>MAINNET_BLOCKED=true</code> constants + a hard <code>0.0001 BTC</code> order-size cap. Verified 2026-04-25.</p>
-</blockquote></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>TL;DR (3-line hook — MOAT-led)</h2>
+</blockquote>
+<h2>TL;DR (3-line hook — MOAT-led)</h2>
 <ul>
 <li>One API call → composite verdict (signal, confidence, regime, factors). Not 26 raw indicators.</li>
 <li>Cross-venue intelligence across <span data-tr-field="exchange_count">5</span> exchanges. Funding spreads, regime alignment, volatility — fused.</li>
 <li>Every signal Merkle-anchored on-chain. Verifiable accuracy, not a marketing claim.</li>
-</ul></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>What you’ll build (90s read)</h2>
+</ul>
+<h2>What you’ll build (90s read)</h2>
 <p>A runnable Node.js agent that:</p>
 <ol>
 <li>Calls AlgoVault MCP for <code>get_trade_signal</code> on <code>BTC</code> at the <code>1h</code> timeframe.</li>
 <li>Reads the verdict’s <code>signal</code> and <code>confidence</code> and renders them as a natural-language instruction (e.g. <em>“BUY 0.0001 BTC because confidence is 78% and the regime is TRENDING_UP”</em>).</li>
 <li>Hands the instruction to Bitget’s GetClaw agent — which, when run against a GetClaw demo account, executes the order autonomously inside its dedicated AI account.</li>
 </ol>
-<p>The whole loop runs in <strong>GetClaw demo mode</strong> with our wrapper guards — <strong>zero real-money risk in any code path</strong>.</p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Prerequisites (4 items)</h2>
+<p>The whole loop runs in <strong>GetClaw demo mode</strong> with our wrapper guards — <strong>zero real-money risk in any code path</strong>.</p>
+<h2>Prerequisites (4 items)</h2>
 <ol>
 <li><strong>Node.js ≥ 22</strong> (<code>node --version</code> to check).</li>
 <li><strong>AlgoVault skills plugin</strong> installed:<pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
@@ -188,8 +194,8 @@ tailwind.config = {
   bitget -- npx -y bitget-mcp-server@1.1.0
 </code></pre>
 </li>
-</ol></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Demo: Natural-language verdict + GetClaw execution (≤80 lines)</h2>
+</ol>
+<h2>Demo: Natural-language verdict + GetClaw execution (≤80 lines)</h2>
 <pre><code class="language-javascript">// examples/bitget/demo.mjs (excerpt — see file for full source)
 import { getAlgoVaultVerdict } from '../_shared/algovault-helper.mjs';
 
@@ -225,8 +231,8 @@ console.log('=== NO REAL ORDERS PLACED ===');
 [bitget | contracts HTTP 200 | host=api.bitget.com BTCUSDT minTradeNum=0.0001]
 [getclaw | SKIPPED — see README for authenticated POST /v2/mix/order/place-order with BITGET_API_KEY/SECRET/PASSPHRASE]
 === NO REAL ORDERS PLACED ===
-</code></pre></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Walkthrough (line-by-line — neutral narration)</h2>
+</code></pre>
+<h2>Walkthrough (line-by-line — neutral narration)</h2>
 <p>The script does three things in order:</p>
 <ol>
 <li>
@@ -238,15 +244,15 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <li>
 <p><strong>Probe Bitget contract specs.</strong> The script issues <code>GET /api/v2/mix/market/contracts?productType=USDT-FUTURES</code> to confirm Bitget’s BTCUSDT perpetual is available + records the exchange’s minimum trade unit (<code>minTradeNum: 0.0001</code>). The agent’s pre-configured policy uses this minimum as the order size cap. The <code>=== NO REAL ORDERS PLACED ===</code> banner closes every run regardless of the policy outcome. The script aborts immediately if <code>BITGET_DEMO</code> is not set to <code>true</code>, if <code>MAINNET_BLOCKED</code> has been edited away from <code>true</code>, or if the requested order size exceeds the <code>MAX_QTY_BTC = 0.0001</code> cap — three independent guards against accidental mainnet execution.</p>
 </li>
-</ol></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>3 Recipes</h2>
+</ol>
+<h2>3 Recipes</h2>
 <h3>Recipe 1 — Natural-language verdict + GetClaw execution</h3>
 <p>This is the recipe <code>examples/bitget/demo.mjs</code> implements. The agent calls AlgoVault <code>get_trade_signal</code> for <code>BTC</code> on <code>1h</code>, renders the verdict as a natural-language instruction, and hands the instruction to GetClaw running inside a dedicated demo account. GetClaw interprets the instruction, applies its own pre-configured risk policy (size cap, slippage tolerance), and either executes via <code>POST /v2/mix/order/place-order</code> or skips with a logged reason. <strong>GetClaw’s autonomy is bounded by the demo account’s balance + your wrapper’s <code>BITGET_DEMO=true</code> env contract — never by code-level checks alone.</strong></p>
 <h3>Recipe 2 — Five Bitget AI Skills + AlgoVault composite verdict (complementary)</h3>
 <p>Bitget Agent Hub ships five analytical AI Skills out of the box: macro, technical, sentiment, intel, and news. Each Skill looks at one dimension of the market in isolation. AlgoVault’s composite verdict is <strong>complementary</strong> — it fuses the underlying primitives (RSI, EMA, funding rate, OI momentum, volume, plus cross-venue regime) into a single direction-and-confidence call. The agent runs both: Bitget Skills give per-dimension narrative context the agent can show to the user; AlgoVault gives the cross-dimensional decision. Use them together — they answer different questions.</p>
 <h3>Recipe 3 — Agent-native portfolio rebalance via GetClaw</h3>
-<p>The agent runs a daily regime scan via AlgoVault <code>get_market_regime</code> (or reads <code>regime</code> off <code>get_trade_signal</code>) across the assets in the GetClaw demo account’s portfolio. For any asset whose regime has shifted (e.g. moved from <code>RANGING</code> to <code>TRENDING_DOWN</code>), the agent’s pre-configured rebalance policy issues a natural-language rebalance instruction to GetClaw — <strong>inside the demo account’s walled garden</strong>. GetClaw’s account-isolation guarantees the rebalance can’t touch any other Bitget account funds. <strong>Multi-asset position state lives in the GetClaw demo account, not in agent memory — the agent reads, decides, and instructs; GetClaw owns and executes.</strong></p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>⚠️ Production setup (real-money)</h2>
+<p>The agent runs a daily regime scan via AlgoVault <code>get_market_regime</code> (or reads <code>regime</code> off <code>get_trade_signal</code>) across the assets in the GetClaw demo account’s portfolio. For any asset whose regime has shifted (e.g. moved from <code>RANGING</code> to <code>TRENDING_DOWN</code>), the agent’s pre-configured rebalance policy issues a natural-language rebalance instruction to GetClaw — <strong>inside the demo account’s walled garden</strong>. GetClaw’s account-isolation guarantees the rebalance can’t touch any other Bitget account funds. <strong>Multi-asset position state lives in the GetClaw demo account, not in agent memory — the agent reads, decides, and instructs; GetClaw owns and executes.</strong></p>
+<h2>⚠️ Production setup (real-money)</h2>
 <p>The demo above runs in a Bitget GetClaw demo account only. Real-money setup requires:</p>
 <ul>
 <li>KYC completion on Bitget.</li>
@@ -254,8 +260,8 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <li>Risk controls: per-order size cap, daily loss limit, kill switch.</li>
 <li>Position monitoring: a separate agent or watchdog that tracks open positions independently. With GetClaw’s account-isolation model, the watchdog reads from the GetClaw account specifically — not the master Bitget account.</li>
 </ul>
-<p>See <code>examples/bitget/README.md</code> for the full real-money checklist + the Bitget Agent Hub install via <code>claude mcp add ... -- npx -y bitget-mcp-server@1.1.0</code>. <strong>AlgoVault provides analytics; your agent (and GetClaw) decide what to execute inside the policy you set.</strong></p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Why AlgoVault? (closing — MOAT recap)</h2>
+<p>See <code>examples/bitget/README.md</code> for the full real-money checklist + the Bitget Agent Hub install via <code>claude mcp add ... -- npx -y bitget-mcp-server@1.1.0</code>. <strong>AlgoVault provides analytics; your agent (and GetClaw) decide what to execute inside the policy you set.</strong></p>
+<h2>Why AlgoVault? (closing — MOAT recap)</h2>
 <ul>
 <li><strong>Composite verdict, not raw indicators.</strong> One JSON response replaces 26-indicator vote-counting.</li>
 <li><strong>Cross-venue intelligence.</strong> Funding spreads, regime, and sentiment fused across <span data-tr-field="exchange_count">5</span> exchanges — not derivable from any single-venue API.</li>
@@ -264,13 +270,14 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <!-- snapshot: 2026-04-26 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="signal_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-bitget">view live track record</a></p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
+<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="signal_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-bitget">view live track record</a></p>
+<h2>Install</h2>
 <pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
 </code></pre>
 <p>Once installed, every Skill in the <a href="https://github.com/AlgoVaultLabs/algovault-skills">pack</a> is one-line invokable from Claude Code, Cowork, or any MCP-compatible client.</p>
 <hr>
-<p><em>Tutorial © AlgoVault Labs · MIT licensed · Provenance verified 2026-04-25 · Bitget <code>bitget-mcp-server@1.1.0</code> (npm) + <code>BitgetLimited/agent_hub</code> (GitHub)</em></p></div>
+<p><em>Tutorial © AlgoVault Labs · MIT licensed · Provenance verified 2026-04-25 · Bitget <code>bitget-mcp-server@1.1.0</code> (npm) + <code>BitgetLimited/agent_hub</code> (GitHub)</em></p>
+
       </article>
     </div>
   </div>
