@@ -54,6 +54,82 @@ const DISPLAY_NAMES = {
   bitget: 'Bitget',
 };
 
+// DESIGN-W10 / C3 (2026-05-11): canonical Nav (8-item, post-W9 + post-W7-FF state)
+// VERBATIM from live algovault.com lines 178-201 per audits/DESIGN-W10-canonical-
+// chrome-extract.md §1. Per-page substitutions: (a) Q-W10-2 active-link styling on
+// `Integrations` link → `text-mint-400 font-medium`; (b) Q-W10-7 OPTION B utm-
+// injection on `/track-record` link to preserve Plausible attribution.
+function canonicalNavHtml(exchange) {
+  return `<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+    </div>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-white transition">Track Record</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
+      <a href="/skills" class="hover:text-white transition">Skills</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/verify" class="hover:text-white transition">Verify</a>
+      <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+    </div>
+  </div>
+</nav>`;
+}
+
+// DESIGN-W10 / C3: canonical Footer VERBATIM (desktop variant, /tmp/live-landing.html
+// line 493 per chrome-extract §2). Per Q-W10-7: canonical Footer ships verbatim WITHOUT
+// utm-injection (no /track-record link in default Footer; utm preservation applies to
+// Nav-Footer-Body links, not Footer-only links).
+const CANONICAL_FOOTER_HTML = `<footer style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)">
+  <div style="display:flex;align-items:center;gap:10px">
+    <img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0">
+    <span style="color:var(--fg-2)">Built by AlgoVault Labs</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
+    <a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener" style="color:var(--fg-3);text-decoration:none">GitHub</a>
+    <a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener" style="color:var(--fg-3);text-decoration:none">X / Twitter</a>
+    <a href="/signup" style="color:var(--fg-3);text-decoration:none">Signup</a>
+    <a href="/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a>
+  </div>
+</footer>`;
+
+// DESIGN-W10 / C3 / Q-W10-4 + Q-W10-6: wrap each top-level h2 section of markdown-
+// rendered HTML in a tier-stat-card VCard. Splits bodyHtml on `<h2>` boundaries.
+// First chunk (pre-first-h2) — the markdown H1 + intro paragraph + quotable-fact +
+// callout block — gets its own tier-stat-card wrapper (the "intro section").
+// Each subsequent chunk (`<h2>...next-h2-or-end`) gets its own wrapper.
+function wrapH2InTierStatCard(bodyHtml) {
+  // Find all <h2 offsets (allow optional attrs on <h2 e.g. <h2 id="..."> from markdown-it linkify).
+  const re = /<h2(?=[ >])/g;
+  const offsets = [];
+  let m;
+  while ((m = re.exec(bodyHtml)) !== null) {
+    offsets.push(m.index);
+  }
+  if (offsets.length === 0) {
+    // No h2 — wrap the entire body in a single card.
+    return `<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px">${bodyHtml}</div>`;
+  }
+  // First chunk: before-first-h2 (intro section)
+  const chunks = [];
+  const intro = bodyHtml.slice(0, offsets[0]).trim();
+  if (intro) {
+    chunks.push(`<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px">${intro}</div>`);
+  }
+  // Per-h2 chunks
+  for (let i = 0; i < offsets.length; i++) {
+    const start = offsets[i];
+    const end = i + 1 < offsets.length ? offsets[i + 1] : bodyHtml.length;
+    const section = bodyHtml.slice(start, end).trim();
+    chunks.push(`<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px">${section}</div>`);
+  }
+  return chunks.join('\n');
+}
+
 function pageTitle(exchange) {
   const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
   return `AlgoVault × ${display} — Build Verifiable AI Trading Agents`;
@@ -145,68 +221,62 @@ tailwind.config = {
 </script>
 <style>
   html { scroll-behavior: smooth; }
-  body { background: #060a14; color: #d1d5db; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-  pre { overflow-x: auto; background: #0a0e1a; border: 1px solid #1f2937; border-radius: 8px; padding: 16px; margin: 16px 0; }
-  pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; color: #e5e7eb; }
-  article h1 { font-size: 2.25rem; font-weight: 700; margin: 1.5em 0 0.5em; color: #d4b255; }
-  article h2 { font-size: 1.6rem; font-weight: 600; margin: 1.5em 0 0.5em; color: #d4b255; padding-top: 0.5em; border-top: 1px solid #1f2937; }
-  article h2:first-of-type { border-top: none; padding-top: 0; }
-  article h3 { font-size: 1.2rem; font-weight: 600; margin: 1.25em 0 0.4em; color: #c4a34a; }
+  /* DESIGN-W10 / C3 / Q-W10-10 cascade: use canonical CSS variables for body background.
+     algovault-design.css defines --bg / --fg / --fg-2 / --fg-3 / --line / --mint tokens. */
+  body { background: var(--bg); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
+  /* Inline code + pre code — neutral colors preserved (no gold per DESIGN-W10 swap).
+     Build Rule 8 exemption applies to syntax-highlighting inline color spans inside
+     code blocks (preserved if present in markdown source). */
+  code { font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
+  pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; color: var(--fg); }
+  /* DESIGN-W10 / C3: article headings — gold (#d4b255 / #c4a34a) → var(--fg) neutral. */
+  article h1 { font-size: 2.25rem; font-weight: 700; margin: 0 0 0.5em; color: var(--fg); }
+  article h2 { font-size: 1.6rem; font-weight: 600; margin: 0 0 0.5em; color: var(--fg); padding-top: 0; border-top: none; }
+  article h3 { font-size: 1.2rem; font-weight: 600; margin: 1.25em 0 0.4em; color: var(--fg-2); }
   article p { margin: 0.75em 0; line-height: 1.7; }
   article ul, article ol { margin: 0.75em 0; padding-left: 1.5em; line-height: 1.7; }
   article li { margin: 0.25em 0; }
-  article a { color: #d4b255; text-decoration: underline; }
-  article a:hover { color: #c4a34a; }
-  article strong { color: #fff; font-weight: 600; }
-  article blockquote { border-left: 3px solid #d4b255; padding-left: 16px; margin: 1em 0; color: #8b9bb5; font-style: italic; background: rgba(212, 178, 85, 0.05); padding: 12px 16px; border-radius: 0 4px 4px 0; }
+  /* DESIGN-W10 / C3: article links — gold → var(--mint). */
+  article a { color: var(--mint); text-decoration: underline; }
+  article a:hover { filter: brightness(1.1); }
+  article strong { color: var(--fg); font-weight: 600; }
+  /* DESIGN-W10 / C3: blockquote — gold accent → mint. */
+  article blockquote { border-left: 3px solid var(--mint); padding-left: 16px; margin: 1em 0; color: var(--fg-3); font-style: italic; background: oklch(0.86 0.16 165 / 0.05); padding: 12px 16px; border-radius: 0 4px 4px 0; }
   article table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-  article th, article td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #1f2937; }
-  article th { color: #d4b255; font-weight: 600; }
-  article hr { border: none; border-top: 1px solid #1f2937; margin: 2em 0; }
+  article th, article td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  article th { color: var(--fg); font-weight: 600; }
+  article hr { border: none; border-top: 1px solid var(--line); margin: 2em 0; }
 </style>
 </head>
 <body>
-<header class="border-b border-navy-600 px-6 py-4">
-  <div class="max-w-4xl mx-auto flex items-center justify-between">
-    <a href="/" class="flex items-center gap-3 text-white font-bold text-lg">
-      <img src="/logo.png" alt="AlgoVault" class="h-8 w-8" />
-      <span>AlgoVault</span>
-    </a>
-    <!-- WEBSITE-REFRESH-CLEANUP-W1 R3: 8-item ordered nav (Track Record / Pricing /
-         Integrations / Skills / Docs / Verify / GitHub / Signup). Removed Tools +
-         Use Cases (#tools/#use-cases anchors live only on /; the cross-page jumps
-         were noisy). Integrations now points to /integrations (the new manifest-
-         driven index page) — clicking it on a tutorial mirror goes "back up" to
-         the index, mirroring how /skills works. The current page is highlighted
-         via text-mint-400 font-medium (consistent with other landing pages). -->
-    <nav class="text-sm text-steel-400 flex gap-4 flex-wrap">
-      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-mint-400">Track Record</a>
-      <a href="/#pricing" class="hover:text-mint-400">Pricing</a>
-      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
-      <a href="/skills" class="hover:text-mint-400">Skills</a>
-      <a href="/docs.html" class="hover:text-mint-400">Docs</a>
-      <a href="/verify" class="hover:text-mint-400">Verify</a>
-      <a href="https://github.com/AlgoVaultLabs/algovault-skills" class="hover:text-mint-400">GitHub</a>
-      <a href="https://api.algovault.com/signup" class="text-mint-400 hover:text-mint-500">Signup</a>
-    </nav>
+<!-- DESIGN-W10 / C3 / Q-W10-1 + Q-W10-2 + Q-W10-7 OPTION B: canonical Nav (Integrations
+     active-link + per-page utm-injected /track-record link). REPLACES the pre-W10
+     legacy header block per Q-W10-8 ratification. -->
+${canonicalNavHtml(exchange)}
+
+<!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
+<main class="lp-integrations-desktop">
+  <div class="artboard" style="padding:100px 24px 64px;max-width:1024px;margin:0 auto;width:100%">
+    <div class="bg-grid"></div>
+    <div class="bg-radial-accent"></div>
+    <div class="bg-noise"></div>
+    <div style="position:relative;z-index:1">
+      <div class="placeholder-cap" style="margin-bottom:14px">· ${exchange} integration</div>
+      <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
+      <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT_PFE_WR}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">${SNAPSHOT_SIGNAL_COUNT}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+      </p>
+      <article>
+${wrapH2InTierStatCard(bodyHtml)}
+      </article>
+    </div>
   </div>
-</header>
-<main class="max-w-4xl mx-auto px-6 py-10">
-<!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation -->
-<p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-  <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT_PFE_WR}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">${SNAPSHOT_SIGNAL_COUNT}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
-</p>
-<article>
-${bodyHtml}
-</article>
 </main>
-<footer class="border-t border-navy-600 px-6 py-6 mt-12">
-  <div class="max-w-4xl mx-auto text-center text-steel-500 text-sm">
-    <p>© AlgoVault Labs · MIT licensed · Tutorial source: <a href="https://github.com/AlgoVaultLabs/algovault-skills/blob/main/docs/integrations/${exchange}.md" class="text-mint-400 hover:text-mint-500">algovault-skills/docs/integrations/${exchange}.md</a></p>
-    <p class="mt-2">Snapshot taken 2026-04-25 · Live numbers at <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="text-mint-400 hover:text-mint-500">/track-record</a></p>
-  </div>
-</footer>
+
+<!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
+     REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
+${CANONICAL_FOOTER_HTML}
 </body>
 </html>
 `;
