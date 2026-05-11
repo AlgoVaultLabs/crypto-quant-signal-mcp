@@ -200,6 +200,21 @@ for (const ex of INTEGRATIONS) {
     assert.strictEqual(countOcc(html, 'Verifiable accuracy, not a marketing claim'), 0, 'TL;DR bullet 3 text must be stripped');
   });
 
+  test(`/integrations/${ex}: DESIGN-W10-FF-3 — top snapshot blockquote pair stripped (3 elements: marker + metrics line + Don't trust callout)`, async () => {
+    const html = await read(`landing/integrations/${ex}.html`);
+    // Body residuals must be 0; meta tags in <head> intentionally preserved (out of scope).
+    assert.strictEqual(countOcc(html, /Don['’]t trust/g), 0,
+      '"Don\'t trust" callout must be stripped from body');
+    assert.strictEqual(countOcc(html, 'live numbers refreshed in-page from'), 0,
+      '"live numbers refreshed in-page from" snapshot date line must be stripped');
+    // The top snapshot block's <blockquote><!-- snapshot --></blockquote> + <p><strong>...</strong></p>
+    // is gone. Closing "Why AlgoVault?" recap section may still contain a similar
+    // <!-- snapshot --> comment (out of W10-FF-3 scope; Mr.1 directive applied to top block only).
+    // PRESERVED: composite-verdict intro paragraph + Provenance blockquote.
+    assert.ok(html.includes('composite verdict'), 'composite-verdict intro paragraph must be preserved');
+    assert.ok(html.includes('<strong>Provenance:</strong>'), 'Provenance blockquote must be preserved');
+  });
+
   test(`/integrations/${ex}: Q-W10-7 — utm-injected canonical Nav (preserves Plausible attribution)`, async () => {
     const html = await read(`landing/integrations/${ex}.html`);
     // Per-page utm params on /track-record nav link.

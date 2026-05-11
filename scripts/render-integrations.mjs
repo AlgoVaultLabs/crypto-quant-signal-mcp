@@ -110,6 +110,24 @@ function stripTLDRSection(bodyHtml) {
   );
 }
 
+// DESIGN-W10-FF-3 (2026-05-12): strip the snapshot blockquote pair (3 consecutive
+// elements after the markdown H1) from rendered tutorial HTML per Mr.1 directive
+// ("Remove the whole part that I circle in red"). Block structure:
+//   1. <blockquote><!-- snapshot: ... --></blockquote>   ← marker block
+//   2. <p><strong>X% PFE Win Rate · Y+ calls · Z+ Merkle-verified on-chain batches.</strong></p>
+//   3. <blockquote>Don't trust — verify the track record → Snapshot taken DATE
+//      — live numbers refreshed in-page from API_URL</blockquote>
+// All 3 are redundant with the quotable-fact callout above the article (which
+// already shows live PFE WR / signal count / Merkle batch count via data-tr-field
+// hydration). Upstream markdown source PRESERVED at algovault-skills/docs/
+// integrations/<x>.md for GitHub readers + Skills Hub PR consumers.
+function stripSnapshotBlock(bodyHtml) {
+  return bodyHtml.replace(
+    /<blockquote>\s*<!-- snapshot:[\s\S]*?-->\s*<\/blockquote>\s*<p><strong>[\s\S]*?Merkle-verified on-chain batches\.<\/strong><\/p>\s*<blockquote>\s*<p>Don['’]t trust[\s\S]*?performance-public<\/a>[\s\S]*?<\/blockquote>\s*/,
+    ''
+  );
+}
+
 // DESIGN-W10 / C3 / Q-W10-4 + Q-W10-6: wrap each top-level h2 section of markdown-
 // rendered HTML in a tier-stat-card VCard. Splits bodyHtml on `<h2>` boundaries.
 // First chunk (pre-first-h2) — the markdown H1 + intro paragraph + quotable-fact +
@@ -287,7 +305,7 @@ ${canonicalNavHtml(exchange)}
            wraps each h2 section + intro in a card; stripTLDRSection() removes the
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
-${wrapH2InTierStatCard(stripTLDRSection(bodyHtml))}
+${wrapH2InTierStatCard(stripTLDRSection(stripSnapshotBlock(bodyHtml)))}
       </article>
     </div>
   </div>

@@ -154,14 +154,6 @@ tailwind.config = {
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault × Bitget — Build Verifiable AI Trading Agents</h1>
-<blockquote>
-<!-- snapshot: 2026-04-26 — live source of truth: /api/performance-public + /api/merkle-batches -->
-</blockquote>
-<p><strong><span data-tr-field="pfe_wr">89.4%</span> PFE Win Rate · <span data-tr-field="signal_count">56,375</span>+ calls · <span data-tr-field="batch_count">16</span>+ Merkle-verified on-chain batches.</strong></p>
-<blockquote>
-<p>Don’t trust — <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-bitget">verify the track record →</a>
-<em>Snapshot taken 2026-04-26 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a></em></p>
-</blockquote>
 <p>AlgoVault MCP gives your agent a <strong>composite verdict</strong> in one call — direction, confidence, regime, and cross-venue funding/sentiment context — backed by a publicly auditable record anchored to Base L2. Pair it with Bitget’s <a href="https://github.com/BitgetLimited/agent_hub">Agent Hub</a> (and its agent-native AI account, <strong>GetClaw</strong>) and your agent has both the analytics brain and an execution venue purpose-built for autonomous AI trading.</p>
 <blockquote>
 <p><strong>Provenance:</strong> Official Bitget <a href="https://www.npmjs.com/package/bitget-mcp-server"><code>bitget-mcp-server@1.1.0</code></a> (npm; description “Official Bitget MCP Server”, maintained by <code>secaudit@bitget.com</code>) + <a href="https://github.com/BitgetLimited/agent_hub"><code>github.com/BitgetLimited/agent_hub</code></a> (default branch <code>main</code>). Demo execution requires a separate <strong>GetClaw demo account</strong> — Bitget’s per-account demo balance — because the Bitget MCP server has <strong>no env-var-level demo flag</strong>. This tutorial wraps the demo with <code>BITGET_DEMO=true</code> + <code>MAINNET_BLOCKED=true</code> constants + a hard <code>0.0001 BTC</code> order-size cap. Verified 2026-04-25.</p>
