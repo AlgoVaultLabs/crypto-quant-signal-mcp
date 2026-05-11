@@ -522,10 +522,11 @@ const W7_RECENT_CALL_POLLER_JS = `<script>
       return r.json();
     }).then(function(rows){
       if (!Array.isArray(rows)) return;
-      // Render rows matching V1Feed grid markup. V1Feed grid columns:
-      //   46px (sym) · 30px (tf) · 26px (vx) · 1fr (verdict) · 38px (conf) · 38px (lat→ago)
-      // Replace lat/ms (fictional) with seconds_ago since canonical canvas's ms timing is fictional;
-      // confidence renders as r.confidence/100 to match JSX r.c.toFixed(2) format (e.g. 84 → '0.84').
+      // DESIGN-W7 fix-forward ROUND 5 (Mr.1 directive 2026-05-11): drop the confidence column;
+      // distribute remaining 5 columns evenly. Final shape:
+      //   Asset · TF · VX · Call · Time-ago (1fr 1fr 1fr 1fr 1fr).
+      // r.confidence is still received but not rendered (still available on the API for
+      // future callers via /api/recent-calls; the public response shape is unchanged).
       var dirColor = function(d){
         d = (d||'').toUpperCase();
         if (d === 'BUY' || d === 'LONG') return 'oklch(0.78 0.15 165)';
@@ -539,14 +540,12 @@ const W7_RECENT_CALL_POLLER_JS = `<script>
         var tf = escapeHtml(r.timeframe || '');
         var vx = escapeHtml(EX_SHORT[r.exchange] || r.exchange || '');
         var d = ((r.call||'').toUpperCase());
-        var conf = (typeof r.confidence === 'number') ? (r.confidence/100).toFixed(2) : '—';
         var ago = fmtAgo(r.seconds_ago);
-        return '<div style="display:grid;grid-template-columns:46px 30px 26px 1fr 38px 38px;align-items:center;gap:6px;padding:3px 10px;height:22px;line-height:16px;border-bottom:1px solid oklch(0.2 0.012 265 / 0.7);color:var(--fg-2)">' +
+        return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;align-items:center;gap:6px;padding:3px 10px;height:22px;line-height:16px;border-bottom:1px solid oklch(0.2 0.012 265 / 0.7);color:var(--fg-2)">' +
           '<span style="color:var(--fg)">' + sym + '</span>' +
           '<span style="color:var(--fg-3)">' + tf + '</span>' +
           '<span style="color:var(--fg-4)">' + vx + '</span>' +
           '<span style="color:' + dirColor(d) + ';font-weight:600;letter-spacing:0.04em">' + escapeHtml(d) + '</span>' +
-          '<span style="color:var(--fg-2);text-align:right">' + conf + '</span>' +
           '<span style="color:var(--fg-4);text-align:right;font-size:9px">' + escapeHtml(ago) + '</span>' +
         '</div>';
       }).join('');
