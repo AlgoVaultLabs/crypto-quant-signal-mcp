@@ -502,19 +502,37 @@ const W7_RECENT_CALL_POLLER_JS = `<script>
       return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c;
     });
   }
-  function refreshRecentCall(){
-    fetch('/api/recent-calls?limit=1').then(function(r){
+  // DESIGN-W7 fix-forward ROUND 7 (Mr.1 directive 2026-05-11): MOST RECENT CALL was
+  // re-fetching /api/recent-calls?limit=1 on every 1-3s tick, which returns the SAME
+  // latest call until a new one is generated (typical cadence is 30-60s between new calls)
+  // → panel re-renders identical row with only "57s ago" → "1m ago" updating. Mr.1 wants
+  // VARIETY each tick. Refactor: fetch /api/recent-calls?limit=10 (server-enforced cap
+  // per audits/recent-calls-public-shape-snapshot-2026-05-09.json) every 30s into a
+  // recentCallsCache; rotationIndex cursor advances per 1-3s tick; refreshRecentCall
+  // reads from cache + renders the call at the current cursor (mod cache.length).
+  // Full cycle through 10 rows takes ~10-30s depending on jitter; cache refresh ensures
+  // freshness.
+  var recentCallsCache = [];
+  var rotationIndex = 0;
+  function fetchRecentCallsCache(){
+    fetch('/api/recent-calls?limit=10').then(function(r){
       if (!r.ok) throw new Error('HTTP '+r.status);
       return r.json();
     }).then(function(rows){
-      if (!Array.isArray(rows) || !rows.length) return;
-      var r = rows[0];
-      var ex = EX_NAMES[r.exchange] || r.exchange;
-      var line = (r.slug||'') + ' ' + (r.timeframe||'') + ' ' + ex + ' · ' + ((r.call||'').toUpperCase()) + ' · ' + fmtAgo(r.seconds_ago);
-      document.querySelectorAll('[data-w7-recent-call]').forEach(function(el){ el.textContent = line; });
+      if (Array.isArray(rows) && rows.length) {
+        recentCallsCache = rows;
+      }
     }).catch(function(err){
-      console.warn('[w7-recent-call] refresh failed', err);
+      console.warn('[w7-recent-call-cache] fetch failed', err);
     });
+  }
+  function refreshRecentCall(){
+    if (!recentCallsCache.length) return; // wait for first cache fill
+    var r = recentCallsCache[rotationIndex % recentCallsCache.length];
+    rotationIndex++;
+    var ex = EX_NAMES[r.exchange] || r.exchange;
+    var line = (r.slug||'') + ' ' + (r.timeframe||'') + ' ' + ex + ' · ' + ((r.call||'').toUpperCase()) + ' · ' + fmtAgo(r.seconds_ago);
+    document.querySelectorAll('[data-w7-recent-call]').forEach(function(el){ el.textContent = line; });
   }
   function refreshCallStream(){
     fetch('/api/recent-calls?limit=6').then(function(r){
@@ -561,6 +579,9 @@ const W7_RECENT_CALL_POLLER_JS = `<script>
     });
   }
   function bothRefresh(){ refreshRecentCall(); refreshCallStream(); }
+  // ROUND 7: warm the rotation cache (resolves async; refreshRecentCall waits for cache).
+  fetchRecentCallsCache();
+  setInterval(fetchRecentCallsCache, 30000); // 30s cache refresh — keeps rotation rows fresh.
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', bothRefresh);
   } else { bothRefresh(); }

@@ -1228,3 +1228,21 @@
   width: 100%;
   margin: 0 auto;
 }
+
+/* DESIGN-W7 fix-forward ROUND 7 (Mr.1 directive 2026-05-11): the below-fold + landing-rest
+   wrappers contain <section>/<footer> direct children — NOT .artboard children. The rule
+   above was a no-op for those. Constrain section/footer to the same 1440px max-width as the
+   hero so the page reads as a single centered column on wider viewports (no edge-to-edge
+   stretching below the hero). Mobile wrappers also included — max-width:1440px is
+   unbounded vs mobile viewports (always wider), so this preserves mobile full-width
+   within the viewport while letting the centering kick in on desktop. */
+.lp-belowfold-desktop > section,
+.lp-belowfold-mobile > section,
+.lp-rest-desktop > section,
+.lp-rest-mobile > section,
+.lp-rest-desktop > footer,
+.lp-rest-mobile > footer {
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+}
