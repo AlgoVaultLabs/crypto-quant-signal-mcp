@@ -373,7 +373,7 @@
 .tier-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
+  gap: 16px;
   margin: 16px 0 28px;
 }
 
@@ -649,7 +649,7 @@
 .exchange-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  gap: 16px;
   margin: 16px 0 28px;
 }
 
@@ -743,12 +743,15 @@
   font-weight: 600;
 }
 
-/* Recent-calls panel for /track-record */
+/* Recent-calls panel for /track-record. DESIGN-W8-FIX (2026-05-11): bg
+   updated from oklch(0.13 0.012 265 / 0.7) to match .tier-stat-card
+   reference (oklch(0.18 0.014 265 / 0.5)) — Mr.1 directive to unify
+   /track-record card backgrounds. */
 .tr-recent-calls-panel {
   margin: 16px 0 28px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: oklch(0.13 0.012 265 / 0.7);
+  background: oklch(0.18 0.014 265 / 0.5);
   overflow: hidden;
   font-family: var(--font-mono);
 }

@@ -1264,7 +1264,8 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   .tier-tab:hover { border-color: #58a6ff80; } .tier-tab.active { border-width: 2px; }
   .tier-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
   .tradfi-badge { background: linear-gradient(135deg, #bc8cff20, #8957e520); border: 1px solid #bc8cff40; color: #bc8cff; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
-  .onchain-badge { display: flex; align-items: center; gap: 10px; background: #0d1117; border: 1px solid #238636; border-radius: 10px; padding: 12px 18px; margin-bottom: 20px; }
+  /* DESIGN-W8-FIX (2026-05-11): onchain-badge bg unified to .tier-stat-card reference. */
+  .onchain-badge { display: flex; align-items: center; gap: 10px; background: oklch(0.18 0.014 265 / 0.5); border: 1px solid #238636; border-radius: 10px; padding: 12px 18px; margin-bottom: 20px; }
   .onchain-badge .badge-icon { font-size: 18px; }
   .onchain-badge .badge-text { color: #3fb950; font-weight: 700; font-size: 14px; }
   .onchain-badge .badge-detail { color: #8b949e; font-size: 12px; }
@@ -1284,25 +1285,34 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   #loading { color: #8b949e; font-size: 16px; padding: 40px; text-align: center; }
   .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   .empty { color: #8b949e; padding: 40px; text-align: center; font-size: 14px; }
-  .methodology { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; font-size: 13px; line-height: 1.7; color: #c9d1d9; }
+  /* DESIGN-W8-FIX (2026-05-11): methodology bg unified to .tier-stat-card reference. */
+  .methodology { background: oklch(0.18 0.014 265 / 0.5); border: 1px solid #30363d; border-radius: 12px; padding: 20px; font-size: 13px; line-height: 1.7; color: #c9d1d9; }
   .methodology p { margin-top: 12px; } .methodology p:first-child { margin-top: 0; }
   .methodology table { width: auto; background: transparent; border: none; margin-top: 8px; }
   .methodology table th { border: none; padding: 4px 24px 4px 0; color: #8b949e; font-weight: 600; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; }
   .methodology table td { border: none; padding: 3px 24px 3px 0; color: #c9d1d9; }
   .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .id-link { color: #5BEEB3; text-decoration: none; font-family: monospace; font-size: 12px; } .id-link:hover { text-decoration: underline; color: #82EFB8; }
-  .recent-table { table-layout: fixed; }
-  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 70px; }
-  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 80px; }
-  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 50px; }
-  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 80px; }
-  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 60px; }
-  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 80px; }
-  .recent-table th:nth-child(7), .recent-table td:nth-child(7) { width: 60px; }
-  .recent-table th:nth-child(8), .recent-table td:nth-child(8) { width: 80px; }
+  /* DESIGN-W8-FIX (2026-05-11): Latest Trade Calls 8-col proportional widths
+     filling full panel width edge-to-edge. Override global table max-width:800px
+     for this table so columns distribute across the wider tr-recent-calls-panel.
+     ID + Exchange get slightly wider slots (1.2fr equivalent = 15%) for "#88150"
+     IDs and "Hyperliquid" names; others get 11-12.5% each. Sum = 100%. */
+  .recent-table { table-layout: fixed; max-width: none; width: 100%; }
+  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 15%; }
+  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 12.5%; }
+  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 10%; }
+  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 12.5%; }
+  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 10%; }
+  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 12.5%; }
+  .recent-table th:nth-child(7), .recent-table td:nth-child(7) { width: 12.5%; }
+  .recent-table th:nth-child(8), .recent-table td:nth-child(8) { width: 15%; }
   /* DESIGN-W8 / C2: Verify Any Call card — matches canonical track-record-2.jsx:VerifySection */
   .verify-any-call-section { margin-bottom: 28px; }
-  .verify-any-call-card { background: linear-gradient(180deg, rgba(91,238,179,0.06), rgba(91,238,179,0.02)); border: 1px solid rgba(91,238,179,0.25); border-radius: 14px; padding: 32px 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+  /* DESIGN-W8-FIX (2026-05-11): bg unified with .tier-stat-card reference per
+     Mr.1's "match Performance by Asset Tier card bg" directive — drops the
+     mint-tint gradient. Border retains subtle mint accent for accent identity. */
+  .verify-any-call-card { background: oklch(0.18 0.014 265 / 0.5); border: 1px solid rgba(91,238,179,0.25); border-radius: 14px; padding: 32px 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
   @media (max-width: 768px) { .verify-any-call-card { grid-template-columns: 1fr; gap: 24px; padding: 24px 22px; } }
   .verify-any-call-eyebrow { color: #5BEEB3; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
   .verify-any-call-h2 { font-family: 'Inter Tight', sans-serif; font-size: 32px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.05; color: #f0eee9; margin: 0 0 14px; text-transform: none; }
@@ -1314,6 +1324,9 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
   .verify-any-call-meta-label { color: #6e7681; }
   .verify-any-call-meta-mono { color: #e1e4e8; }
   .verify-any-call-meta-accent { color: #5BEEB3; }
+  /* DESIGN-W8-FIX (2026-05-11): full EIP-55 contract address as clickable link. */
+  .verify-any-call-contract-link { text-decoration: none; word-break: break-all; }
+  .verify-any-call-contract-link:hover { text-decoration: underline; }
   .verify-any-call-meta-dot { color: #6e7681; }
   .verify-any-call-basescan { color: #8b949e; text-decoration: none; margin-left: auto; font-size: 11px; }
   .verify-any-call-basescan:hover { color: #5BEEB3; }
@@ -1544,15 +1557,17 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
     </div>
   </div>
 
-  <!-- DESIGN-W4 / C3: Performance by Timeframe canonical bar chart — translated
-       from track-record-2.jsx TimeframeSection. 11 timeframes (1m / 3m / 5m /
-       15m / 30m / 1h / 2h / 4h / 8h / 12h / 1d) horizontal bars. Hydrated from
-       /api/performance-public.byTimeframe on page load. Bars graceful-empty
-       on missing TFs (live API currently has 9; 1m/3m may show "—"). -->
+  <!-- DESIGN-W4 / C3 + DESIGN-W8-FIX (2026-05-11): Performance by Timeframe
+       canonical bar chart — translated from track-record-2.jsx TimeframeSection.
+       8 evaluated timeframes (5m / 15m / 30m / 1h / 2h / 4h / 8h / 12h).
+       1m / 3m / 1d trimmed per Mr.1 directive — 1m/3m have insufficient signal
+       count for meaningful WR; 1d shows wide variance due to small n.
+       Hydrated from /api/performance-public.byTimeframe on page load. The
+       "11 TIMEFRAMES" marketing claim is preserved verbatim across landing /
+       signup / faq / docs (claim of SUPPORTED TF count via the get_trade_call
+       MCP tool, distinct from the 8-row evaluated-WR chart granularity). -->
   <div class="section"><h2>Performance by Timeframe</h2>
     <div class="tf-bar-chart" id="tf-bar-chart">
-      <div class="tf-bar-row" data-tf="1m"><span class="tf-bar-label">1m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-1m"></div></div><span class="tf-bar-value" data-tr-field="tf_1m_wr">&mdash;</span></div>
-      <div class="tf-bar-row" data-tf="3m"><span class="tf-bar-label">3m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-3m"></div></div><span class="tf-bar-value" data-tr-field="tf_3m_wr">&mdash;</span></div>
       <div class="tf-bar-row" data-tf="5m"><span class="tf-bar-label">5m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-5m"></div></div><span class="tf-bar-value" data-tr-field="tf_5m_wr">&mdash;</span></div>
       <div class="tf-bar-row" data-tf="15m"><span class="tf-bar-label">15m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-15m"></div></div><span class="tf-bar-value" data-tr-field="tf_15m_wr">&mdash;</span></div>
       <div class="tf-bar-row" data-tf="30m"><span class="tf-bar-label">30m</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-30m"></div></div><span class="tf-bar-value" data-tr-field="tf_30m_wr">&mdash;</span></div>
@@ -1561,17 +1576,16 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
       <div class="tf-bar-row" data-tf="4h"><span class="tf-bar-label">4h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-4h"></div></div><span class="tf-bar-value" data-tr-field="tf_4h_wr">&mdash;</span></div>
       <div class="tf-bar-row" data-tf="8h"><span class="tf-bar-label">8h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-8h"></div></div><span class="tf-bar-value" data-tr-field="tf_8h_wr">&mdash;</span></div>
       <div class="tf-bar-row" data-tf="12h"><span class="tf-bar-label">12h</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-12h"></div></div><span class="tf-bar-value" data-tr-field="tf_12h_wr">&mdash;</span></div>
-      <div class="tf-bar-row" data-tf="1d"><span class="tf-bar-label">1d</span><div class="tf-bar-track"><div class="tf-bar-fill" id="tf-bar-fill-1d"></div></div><span class="tf-bar-value" data-tr-field="tf_1d_wr">&mdash;</span></div>
     </div>
   </div>
 
-  <!-- DESIGN-W8 / C2: Verify Any Call teaser card — translated from
-       Design/AlgoVault Track Record v1/track-record-2.jsx VerifySection
-       (lines 195-275). Real Basescan contract address (NOT the canvas
-       placeholder address); live-bind batch number via merkle_batch_count
-       + NEW latest_batch_at from /api/merkle-batches.batches[0].published_at;
-       static next-batch-in placeholder (live countdown deferred to
-       VERIFY-COUNTDOWN-W1 per spec + architect ratification). -->
+  <!-- DESIGN-W8-FIX / C2 (2026-05-11): Verify Any Call teaser card — translated
+       from Design/AlgoVault Track Record v1/track-record-2.jsx VerifySection.
+       FULL EIP-55 contract address (per Mr.1 directive 2026-05-11 — on-chain
+       public, zero risk); clickable to Basescan. Live-bound merkle_batch_count
+       + latest_batch_at hydrated from /api/merkle-batches.batches[0]; NEW
+       next_batch_in countdown live-computed client-side (60s refresh) from
+       next-00:05-UTC daily Merkle publish cadence. -->
   <div class="section verify-any-call-section">
     <div class="verify-any-call-card">
       <div class="verify-any-call-left">
@@ -1581,8 +1595,8 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
         <div class="verify-any-call-meta">
           <div class="verify-any-call-meta-row">
             <span class="verify-any-call-meta-label">contract</span>
-            <span class="verify-any-call-meta-mono verify-any-call-meta-accent">0x6485&hellip;bf81</span>
-            <a class="verify-any-call-basescan" href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" rel="noopener">basescan &#x2197;</a>
+            <a class="verify-any-call-meta-mono verify-any-call-meta-accent verify-any-call-contract-link" href="https://basescan.org/address/0x6485396ac981Fe0A58540dfBF3E730f6F7BcbF81" target="_blank" rel="noopener">0x6485396ac981Fe0A58540dfBF3E730f6F7BcbF81</a>
+            <a class="verify-any-call-basescan" href="https://basescan.org/address/0x6485396ac981Fe0A58540dfBF3E730f6F7BcbF81" target="_blank" rel="noopener">basescan &#x2197;</a>
           </div>
           <div class="verify-any-call-meta-row">
             <span class="verify-any-call-meta-label">latest batch</span>
@@ -1592,7 +1606,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
           </div>
           <div class="verify-any-call-meta-row">
             <span class="verify-any-call-meta-pulse"></span>
-            <span class="verify-any-call-meta-mono">next batch in <span class="verify-any-call-meta-accent">3h 41m</span></span>
+            <span class="verify-any-call-meta-mono">next batch in <span class="verify-any-call-meta-accent" data-tr-field="next_batch_in">&mdash;</span></span>
           </div>
         </div>
       </div>
@@ -1846,12 +1860,14 @@ function renderAll() {
     if (nEl)  nEl.textContent  = (exData.count != null) ? exData.count.toLocaleString() : '—';
   });
 
-  // DESIGN-W4 / C3: hydrate canonical .tf-bar-chart from
-  // /api/performance-public.byTimeframe. Page-load only. Renders 11 spec TFs
-  // (1m/3m/5m/.../1d); missing TFs show "—" gracefully (live API currently
-  // has 9 keys: 5m → 1d).
+  // DESIGN-W4 / C3 + DESIGN-W8-FIX (2026-05-11): hydrate canonical .tf-bar-chart
+  // from /api/performance-public.byTimeframe. Page-load only. Renders 8 evaluated
+  // TFs (5m/15m/30m/1h/2h/4h/8h/12h); 1m/3m/1d trimmed per Mr.1 directive
+  // (insufficient signal count for meaningful WR on 1m/3m; 1d high variance).
+  // "11 TIMEFRAMES" marketing claim preserved elsewhere — refers to SUPPORTED
+  // TF count via get_trade_call MCP tool, not evaluated-WR chart granularity.
   var byTF = d.byTimeframe || {};
-  ['1m','3m','5m','15m','30m','1h','2h','4h','8h','12h','1d'].forEach(function(tf){
+  ['5m','15m','30m','1h','2h','4h','8h','12h'].forEach(function(tf){
     var row = document.querySelector('[data-tf="' + tf + '"]');
     if (!row) return;
     var tfData = byTF[tf] || { pfeWinRate: null };
@@ -1927,8 +1943,12 @@ async function load() {
         var totalVerified = md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
         var latest = md.batches[0];
         document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published · ' + totalVerified.toLocaleString() + ' calls verified · <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan →</a>';
-        // DESIGN-W8 / C4: hydrate Verify card's latest batch timestamp.
-        // Format: "YYYY-MM-DD HH:MM UTC" (matches canonical track-record-2.jsx).
+        // DESIGN-W8-FIX / C3 (2026-05-11): hydrate Verify card's latest batch
+        // number + timestamp. Batch # from latest.batch_id; timestamp formatted
+        // as "YYYY-MM-DD HH:MM UTC" (matches canonical track-record-2.jsx).
+        if (latest.batch_id != null) {
+          document.querySelectorAll('[data-tr-field="merkle_batch_count"]').forEach(function(el){ el.textContent = latest.batch_id; });
+        }
         if (latest.published_at) {
           var dt = new Date(latest.published_at);
           var pad = function(n){return String(n).padStart(2,'0');};
@@ -1968,6 +1988,27 @@ function verifyAnyCallSubmit(ev) {
     return true;
   } catch (e) { return true; }
 }
+
+// DESIGN-W8-FIX (2026-05-11): live countdown to next Merkle batch publish.
+// Merkle batches publish daily at 00:05 UTC (confirmed via /api/merkle-batches
+// historical data: every batch's published_at lies in [00:05, 00:06) UTC).
+// Updates every 60s; format "Xh Ym" matches canonical track-record-2.jsx.
+function updateNextBatchCountdown() {
+  try {
+    var now = new Date();
+    var nextBatch = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 5, 0));
+    if (nextBatch <= now) {
+      nextBatch = new Date(nextBatch.getTime() + 86400000); // +1 day
+    }
+    var diffMs = nextBatch - now;
+    var hours = Math.floor(diffMs / 3600000);
+    var minutes = Math.floor((diffMs % 3600000) / 60000);
+    var str = hours + 'h ' + minutes + 'm';
+    document.querySelectorAll('[data-tr-field="next_batch_in"]').forEach(function(el){ el.textContent = str; });
+  } catch (e) { /* best-effort */ }
+}
+updateNextBatchCountdown();
+setInterval(updateNextBatchCountdown, 60000);
 </script>
 </body>
 </html>`;

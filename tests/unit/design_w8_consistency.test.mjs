@@ -59,8 +59,11 @@ test('src/index.ts: W8 Q-W8-1 LATEST TRADE CALLS 8-col table from cachedData.rec
 test('src/index.ts: W8 Q-W8-2 Verify card real contract + live-binds', async () => {
   const ts = await read('src/index.ts');
   const dash = dashboardFn(ts);
-  // Real Basescan contract address (NOT canvas placeholder)
-  assert.match(dash, /0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81/, 'real contract address');
+  // Real Basescan contract address. DESIGN-W8-FIX (2026-05-11): rendered text
+  // is the FULL EIP-55 checksummed form per Mr.1 directive (mixed-case casing
+  // disambiguates the lowercase-input forgery class). The hyperlink href stays
+  // case-insensitive on Basescan so we match the EIP-55 form here.
+  assert.match(dash, /0x6485396ac981Fe0A58540dfBF3E730f6F7BcbF81/, 'real EIP-55 contract address');
   // 0 occurrences of canvas placeholder address pattern in rendered fields
   // (comments are documentation, not rendered fields)
   const placeholderRe = />0x9aF3</;
@@ -139,9 +142,13 @@ test('src/index.ts: W8 preservation-LAW — W3/W4/W6 deliverables intact', async
   for (const ex of ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']) {
     assert.ok(dash.includes(`id="exchange-stat-card-${ex}"`), `W4 exchange-stat-card-${ex} preserved`);
   }
-  // W4 C3: 11 tf-bar-row entries
-  for (const tf of ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']) {
+  // W4 C3 + W8-FIX (2026-05-11): 8 tf-bar-row entries (1m/3m/1d trimmed)
+  for (const tf of ['5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h']) {
     assert.ok(dash.includes(`data-tf="${tf}"`), `W4 tf-bar-row data-tf="${tf}" preserved`);
+  }
+  // Trimmed TFs MUST be absent from bar chart
+  for (const tf of ['1m', '3m', '1d']) {
+    assert.ok(!dash.includes(`data-tf="${tf}"`), `W8-FIX: tf-bar-row data-tf="${tf}" trimmed`);
   }
   // W4 panel wrapper preserved
   assert.match(dash, /id="tr-recent-calls-panel"/, 'tr-recent-calls-panel wrapper preserved');
@@ -169,4 +176,64 @@ test('src/index.ts: W8 Factuality LAW canary — 0 canvas-placeholder values ren
   for (const f of renderedFictional) {
     assert.ok(!dash.includes(f), `Factuality canary: '${f}' not in dashboard HTML`);
   }
+});
+
+// ─── DESIGN-W8-FIX (2026-05-11) — spacing + TF trim + Verify live-binds + 8-col + black bg ───
+
+test('src/index.ts: W8-FIX Verify card full EIP-55 contract + Basescan anchor', async () => {
+  const ts = await read('src/index.ts');
+  const dash = dashboardFn(ts);
+  // Full EIP-55 checksummed address (not truncated 0x6485...bf81)
+  assert.match(dash, /0x6485396ac981Fe0A58540dfBF3E730f6F7BcbF81/, 'full EIP-55 address present');
+  // Truncated form removed from rendered text
+  assert.ok(!/>0x6485&hellip;bf81</.test(dash), 'truncated address removed from rendered text');
+  // Contract anchor links to Basescan
+  assert.match(dash, /href="https:\/\/basescan\.org\/address\/0x6485396ac981Fe0A58540dfBF3E730f6F7BcbF81"/, 'Basescan link');
+  assert.match(dash, /verify-any-call-contract-link/, 'contract link class for hover style');
+});
+
+test('src/index.ts: W8-FIX merkle_batch_count + latest_batch_at + next_batch_in live-binds', async () => {
+  const ts = await read('src/index.ts');
+  const dash = dashboardFn(ts);
+  // merkle_batch_count hydration was MISSING in W8; W8-FIX adds it to load()
+  assert.match(dash, /data-tr-field="merkle_batch_count"\]'\)\.forEach/, 'merkle_batch_count hydration in load()');
+  // latest_batch_at hydration (from W8, preserved)
+  assert.match(dash, /data-tr-field="latest_batch_at"\]'\)\.forEach/, 'latest_batch_at hydration');
+  // NEW next_batch_in data-tr-field span in Verify card
+  assert.match(dash, /data-tr-field="next_batch_in"/, 'next_batch_in span in Verify card');
+  // Countdown function + 60s interval
+  assert.match(dash, /function updateNextBatchCountdown/, 'updateNextBatchCountdown function');
+  assert.match(dash, /setInterval\(updateNextBatchCountdown,\s*60000\)/, '60s countdown interval');
+});
+
+test('src/index.ts: W8-FIX Latest Trade Calls 8-col proportional widths', async () => {
+  const ts = await read('src/index.ts');
+  const dash = dashboardFn(ts);
+  // Override global table max-width:800px for recent-table
+  assert.match(dash, /\.recent-table \{[^}]*max-width:\s*none/, 'recent-table max-width: none override');
+  // Each column gets percentage width (proportional distribution)
+  assert.match(dash, /\.recent-table th:nth-child\(1\),[^{]+\{ width: 15%/, 'col 1 width: 15%');
+  assert.match(dash, /\.recent-table th:nth-child\(8\),[^{]+\{ width: 15%/, 'col 8 width: 15%');
+});
+
+test('src/index.ts + algovault-design.css: W8-FIX card backgrounds unified to tier-stat-card reference', async () => {
+  const ts = await read('src/index.ts');
+  const css = await read('landing/_design/algovault-design.css');
+  // tier-stat-card reference value (unchanged)
+  assert.match(css, /\.tier-stat-card \{[\s\S]*?background:\s*oklch\(0\.18 0\.014 265 \/ 0\.5\)/, 'tier-stat-card reference bg preserved');
+  // tr-recent-calls-panel matches reference
+  assert.match(css, /\.tr-recent-calls-panel \{[\s\S]*?background:\s*oklch\(0\.18 0\.014 265 \/ 0\.5\)/, 'tr-recent-calls-panel matches reference');
+  // verify-any-call-card matches reference (in src/index.ts inline CSS)
+  assert.match(ts, /\.verify-any-call-card \{ background: oklch\(0\.18 0\.014 265 \/ 0\.5\)/, 'verify-any-call-card matches reference');
+  // methodology + onchain-badge updated
+  assert.match(ts, /\.methodology \{ background: oklch\(0\.18 0\.014 265 \/ 0\.5\)/, 'methodology matches reference');
+  assert.match(ts, /\.onchain-badge \{[^}]*background: oklch\(0\.18 0\.014 265 \/ 0\.5\)/, 'onchain-badge matches reference');
+});
+
+test('algovault-design.css: W8-FIX card spacing gap 16px', async () => {
+  const css = await read('landing/_design/algovault-design.css');
+  // tier-stat-grid gap raised 14 -> 16
+  assert.match(css, /\.tier-stat-grid \{[\s\S]*?gap:\s*16px/, 'tier-stat-grid gap: 16px');
+  // exchange-stat-grid gap raised 12 -> 16
+  assert.match(css, /\.exchange-stat-grid \{[\s\S]*?gap:\s*16px/, 'exchange-stat-grid gap: 16px');
 });

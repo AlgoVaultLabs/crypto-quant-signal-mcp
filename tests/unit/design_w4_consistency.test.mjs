@@ -123,7 +123,12 @@ test('src/index.ts: getPerformanceDashboardHtml W3 + W4 layers both present', as
     assert.ok(ts.includes(`id="exchange-stat-card-${ex}"`), `W4 exchange-stat-card-${ex}`);
   }
   // W4 tf-bar 11 rows (1m..1d)
-  for (const tf of ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']) {
+  // DESIGN-W8-FIX (2026-05-11): 1m / 3m / 1d trimmed from bar chart per Mr.1
+  // directive (insufficient signal count for meaningful WR on 1m/3m; 1d high
+  // variance). 8 evaluated TFs remain. "11 TIMEFRAMES" marketing claim
+  // preserved elsewhere (refers to SUPPORTED TF count via get_trade_call MCP
+  // tool, distinct from evaluated-WR chart granularity).
+  for (const tf of ['5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h']) {
     assert.ok(ts.includes(`data-tf="${tf}"`), `W4 tf-bar-row data-tf="${tf}"`);
   }
   // W4 tr-recent-calls panel preserved through W8 architectural shift.

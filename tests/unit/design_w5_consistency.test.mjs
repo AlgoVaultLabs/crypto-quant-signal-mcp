@@ -170,7 +170,8 @@ test('src/index.ts: dashboard JSX-faithful H2 alignment + W3+W4 deliverables pre
   for (const ex of ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']) {
     assert.ok(ts.includes(`id="exchange-stat-card-${ex}"`), `W4 exchange-stat-card-${ex} preserved`);
   }
-  for (const tf of ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']) {
+  // DESIGN-W8-FIX (2026-05-11): 1m / 3m / 1d trimmed; 8 evaluated TFs.
+  for (const tf of ['5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h']) {
     assert.ok(ts.includes(`data-tf="${tf}"`), `W4 tf-bar-row data-tf="${tf}" preserved`);
   }
   assert.match(ts, /id="tr-recent-calls-panel"/, 'W4 tr-recent-calls panel preserved');
