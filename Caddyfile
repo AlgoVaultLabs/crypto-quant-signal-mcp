@@ -45,6 +45,14 @@ algovault.com {
     handle /api/verify-sample-ids {
         reverse_proxy localhost:3000
     }
+    # DESIGN-W7 fix-forward 2026-05-11 — landing-page hero hydration
+    # (MOST RECENT CALL + CALL STREAM) fetches /api/recent-calls?limit=N
+    # via relative URL; without this handle the request falls through to
+    # the static file_server below and 404s. Endpoint was added in
+    # LANDING-LIVE-CALL-TICKER-W1 (2026-05-09); allowlist update missed.
+    handle /api/recent-calls {
+        reverse_proxy localhost:3000
+    }
     # INTEGRATIONS-W1 C6 — proxy integration tutorial mirrors to Express.
     # Allowlisted in src/index.ts. Placed BEFORE the static catch-all so
     # /docs/integrations/* never falls through to a 404 from file_server.

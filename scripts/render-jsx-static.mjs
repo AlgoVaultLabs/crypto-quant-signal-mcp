@@ -229,7 +229,7 @@ function injectUseCasesLogos(html) {
   const logoMap = {
     'B':  { src: '/_design/logos/binance.png', alt: 'Binance logo' },
     'O':  { src: '/_design/logos/okx.png',     alt: 'OKX logo' },
-    'BY': { src: '/_design/logos/bybit.jpg',   alt: 'Bybit logo' },
+    'BY': { src: '/_design/logos/bybit.png',   alt: 'Bybit logo' },
     'BG': { src: '/_design/logos/bitget.png',  alt: 'Bitget logo' },
   };
   return html.replace(
@@ -237,11 +237,14 @@ function injectUseCasesLogos(html) {
     (match, openSpan, closeQuote, letter, closeSpan) => {
       const cfg = logoMap[letter];
       if (!cfg) return match;
-      // Override the chip's --mark brand-color background with dark canvas color + thin border for
-      // definition; enlarge to 32×32 so logo (26×26) fills more visibly. White-ish space around
-      // the logo for compositing on dark page.
-      const styledOpen = openSpan + 'width:32px;height:32px;border-radius:7px;background:oklch(0.97 0.005 265);border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0' + closeQuote;
-      const img = `<img src="${cfg.src}" alt="${cfg.alt}" style="width:26px;height:26px;object-fit:contain">`;
+      // DESIGN-W7 fix-forward 2026-05-11 ROUND 4 (Mr.1 directive: chip bg matches page,
+      // brand-color logos render directly on dark): chip background changes from white-ish
+      // (which competed with the logo's brand color) to var(--bg-2) dark grey. The logos
+      // were re-processed (scripts/process-exchange-logos.mjs) with transparent backgrounds
+      // so the dark chip is visible around the logo's filled brand color.
+      // Chip 32×32, logo 26×26 with object-fit:contain for safe aspect preservation.
+      const styledOpen = openSpan + 'width:32px;height:32px;border-radius:7px;background:var(--bg-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0' + closeQuote;
+      const img = `<img src="${cfg.src}" alt="${cfg.alt}" style="width:26px;height:26px;object-fit:contain;padding:2px">`;
       return styledOpen + img + closeSpan;
     }
   );
@@ -426,23 +429,23 @@ function w7HeroDiagramChipsToLogos(html) {
   const logoMap = {
     'H':  { src: '/_design/logos/hyperliquid.png', alt: 'Hyperliquid logo' },
     'B':  { src: '/_design/logos/binance.png',     alt: 'Binance logo' },
-    'BY': { src: '/_design/logos/bybit.jpg',       alt: 'Bybit logo' },
+    'BY': { src: '/_design/logos/bybit.png',       alt: 'Bybit logo' },
     'O':  { src: '/_design/logos/okx.png',         alt: 'OKX logo' },
     'BG': { src: '/_design/logos/bitget.png',      alt: 'Bitget logo' },
   };
-  // Match the FULL chip block: outer rect.hero-flow-node-venue is preceded by translate(40 N)
-  // wrapper. Replace inner `<rect> opacity="0.95">` + `<text>{mono}</text>` with `<image>` filling
-  // the chip. Outer dark rect stays as the chip frame — logo sits centered on it with white-ish bg.
+  // DESIGN-W7 fix-forward 2026-05-11 ROUND 4 (Mr.1 directive: chip bg matches page,
+  // brand-color logos render directly on dark): drop the white-ish inner rect entirely.
+  // Logos were re-processed (scripts/process-exchange-logos.mjs) with transparent backgrounds
+  // so they sit directly on the outer .hero-flow-node-venue dark chip (fill=oklch(0.2 0.012 265),
+  // stroke=oklch(0.34 0.012 265)). The image fills the chip area via xMidYMid meet.
   return html.replace(
     /<rect x="-15" y="-11" width="22" height="22" rx="6" fill="oklch\([^)]+\)" opacity="0\.95"><\/rect><text x="-4" y="5\.5" text-anchor="middle"[^>]*>(H|B|BY|O|BG)<\/text>/g,
     (match, mono) => {
       const cfg = logoMap[mono];
       if (!cfg) return match;
-      // White-ish background rect inside the chip (so logos with transparent backgrounds remain
-      // visible against the dark page) + image filling the rect via xMidYMid meet.
-      // Inner rect: 36×28 (centered in 40×32 outer chip with 2px margin).
-      // Image: same dimensions, preserveAspectRatio="xMidYMid meet" fits-within without distortion.
-      return `<rect x="-18" y="-14" width="36" height="28" rx="5" fill="oklch(0.97 0.005 265)"></rect><image href="${cfg.src}" x="-17" y="-13" width="34" height="26" preserveAspectRatio="xMidYMid meet"><title>${cfg.alt}</title></image>`;
+      // Image only — no inner rect. Image fills 36×28 within the 40×32 outer chip (2px breathing
+      // room on each side). xMidYMid meet preserves aspect without distortion.
+      return `<image href="${cfg.src}" x="-18" y="-14" width="36" height="28" preserveAspectRatio="xMidYMid meet"><title>${cfg.alt}</title></image>`;
     }
   );
 }

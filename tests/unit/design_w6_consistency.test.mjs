@@ -5,7 +5,7 @@
  *   - Q-W1: Inline-style baseline raise (pragmatic; capped at 1500 — DESIGN-W6-INLINE-STYLE-CLEANUP follow-up)
  *   - Q-W2: Hyperliquid logo file extension preserved (.png — browser MIME-sniffs WebP content)
  *   - Q-W3: Bybit logo resized one-time to 256×256 (124KB perf win)
- *   - Q-W4: 5 logo filenames canonicalized (hyperliquid.png / binance.png / bybit.jpg / okx.png / bitget.png)
+ *   - Q-W4: 5 logo filenames canonicalized (hyperliquid.png / binance.png / bybit.png / okx.png / bitget.png — DESIGN-W7 fix-forward 2026-05-11 renamed bybit.jpg → bybit.png after transparent-bg processing)
  *   - Q-W5: VsRawAPIs anchor RESTORED (#vs-raw-exchange-apis on belowfold section)
  *   - Q-W6: Specific factual JSX claims adopted verbatim (positioning copy)
  *   - Q-W7: Hero chip → SVG <image> migration (5 venue logos with <title> WCAG alt-text)
@@ -54,14 +54,14 @@ test('Q-W1: build pipeline scripts/render-jsx-static.mjs exists + valid', async 
 });
 
 test('Q-W4: 5 exchange logos present in landing/_design/logos/ with canonical filenames', async () => {
-  for (const f of ['hyperliquid.png', 'binance.png', 'bybit.jpg', 'okx.png', 'bitget.png']) {
+  for (const f of ['hyperliquid.png', 'binance.png', 'bybit.png', 'okx.png', 'bitget.png']) {
     assert.ok(await fileExists(`landing/_design/logos/${f}`), `${f} present`);
   }
 });
 
-test('Q-W3: Bybit logo resized to ≤30KB (one-time 256×256 from 132KB / 2500×2500 source)', async () => {
-  const stats = await stat(path.join(REPO_ROOT, 'landing/_design/logos/bybit.jpg'));
-  assert.ok(stats.size <= 30_000, `bybit.jpg = ${stats.size} bytes (cap 30KB; was 132KB pre-resize)`);
+test('Q-W3: Bybit logo resized to ≤30KB (one-time 256×256 from 132KB / 2500×2500 source; DESIGN-W7 fix-forward 2026-05-11 strip-black-bg → transparent PNG)', async () => {
+  const stats = await stat(path.join(REPO_ROOT, 'landing/_design/logos/bybit.png'));
+  assert.ok(stats.size <= 30_000, `bybit.png = ${stats.size} bytes (cap 30KB; was 132KB pre-resize)`);
 });
 
 test('Q-W7: hero W3 region — 5 SVG <image> venue logos + <title> WCAG alt-text', async () => {
@@ -74,8 +74,8 @@ test('Q-W7: hero W3 region — 5 SVG <image> venue logos + <title> WCAG alt-text
     { name: 'okx',         alt: 'OKX logo' },
     { name: 'bitget',      alt: 'Bitget logo' },
   ]) {
-    const ext = ex.name === 'bybit' ? 'jpg' : 'png';
-    const re = new RegExp(`<image href="/_design/logos/${ex.name}\\.${ext}"[^>]*>(?:[^<]*<title>${ex.alt}</title>)?`);
+    // DESIGN-W7 fix-forward 2026-05-11: all 5 logos are PNG now (bybit was .jpg pre-fix)
+    const re = new RegExp(`<image href="/_design/logos/${ex.name}\\.png"[^>]*>(?:[^<]*<title>${ex.alt}</title>)?`);
     assert.match(html, re, `hero ${ex.name} <image> + WCAG <title>`);
   }
   // Letter chips REMOVED — no `<text class="hero-flow-label" font-weight="700">[HBYO][A-Z]?</text>` in hero
@@ -92,8 +92,8 @@ test('Q-W7 (UseCases): 4 logo <img> tags in UseCases card grid with WCAG alt att
     { name: 'bybit',   alt: 'Bybit logo' },
     { name: 'bitget',  alt: 'Bitget logo' },
   ]) {
-    const ext = ex.name === 'bybit' ? 'jpg' : 'png';
-    const re = new RegExp(`<img src="/_design/logos/${ex.name}\\.${ext}"[^>]*alt="${ex.alt}"`);
+    // DESIGN-W7 fix-forward 2026-05-11: all 4 UseCases logos are PNG now (bybit was .jpg pre-fix)
+    const re = new RegExp(`<img src="/_design/logos/${ex.name}\\.png"[^>]*alt="${ex.alt}"`);
     assert.match(html, re, `UseCases ${ex.name} <img> with alt="${ex.alt}"`);
   }
   // Hyperliquid logo NOT in UseCases (HL is hero only — Trade Kit partners are 4 exchanges)

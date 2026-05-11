@@ -123,8 +123,8 @@ test('Q-W7 carry-forward (W6→W7): 5 SVG <image> logos in V0Diagram chips + WCA
     const re = new RegExp(`<title>${ex} logo</title>`);
     assert.match(html, re, `<title>${ex} logo</title> WCAG accessible-name`);
   }
-  // 5 logo files present
-  for (const f of ['hyperliquid.png', 'binance.png', 'bybit.jpg', 'okx.png', 'bitget.png']) {
+  // 5 logo files present (DESIGN-W7 fix-forward 2026-05-11: bybit.jpg → bybit.png after transparent-bg processing)
+  for (const f of ['hyperliquid.png', 'binance.png', 'bybit.png', 'okx.png', 'bitget.png']) {
     const html2 = await read('landing/index.html');
     assert.ok(html2.includes(`/_design/logos/${f}`), `logo /_design/logos/${f} referenced`);
   }
