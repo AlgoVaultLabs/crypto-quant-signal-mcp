@@ -287,6 +287,11 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
 
+  // Cross-DB boolean encoding (matches logRequest at line 96-98).
+  // PG: native BOOLEAN; SQLite: INTEGER 0/1.
+  const BOT_TRUE = process.env.DATABASE_URL ? true : 1;
+  const BOT_FALSE = process.env.DATABASE_URL ? false : 0;
+
   const [
     total,
     last24h,
@@ -298,6 +303,9 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     uniqueSessionsAll,
     topAssets,
     toolStats,
+    externalCalls24h,
+    internalCalls24h,
+    externalSessions24h,
   ] = await Promise.all([
     dbQuery<{ count: string }>('SELECT COUNT(*) as count FROM request_log'),
     dbQuery<{ count: string }>('SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ?', [dayAgo]),
@@ -307,8 +315,15 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL', [dayAgo]),
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL', [weekAgo]),
     dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE session_id IS NOT NULL'),
-    dbQuery<{ asset: string; count: string }>('SELECT asset, COUNT(*) as count FROM request_log WHERE asset IS NOT NULL GROUP BY asset ORDER BY count DESC LIMIT 10'),
+    // Top assets — 24h window so the digest reflects today's activity, not all-time.
+    dbQuery<{ asset: string; count: string }>('SELECT asset, COUNT(*) as count FROM request_log WHERE asset IS NOT NULL AND timestamp >= ? GROUP BY asset ORDER BY count DESC LIMIT 10', [dayAgo]),
     getToolLatencyStats(),  // last 7d window, app-layer percentiles
+    // External vs internal split — driven by is_bot_internal column (BOT-W1 / D1-C).
+    // Used by monitor.ts daily digest to distinguish algovault-bot self-traffic from
+    // organic external MCP-client traffic. ~99% of current traffic is bot-internal.
+    dbQuery<{ count: string }>('SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ?', [dayAgo, BOT_FALSE]),
+    dbQuery<{ count: string }>('SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ?', [dayAgo, BOT_TRUE]),
+    dbQuery<{ count: string }>('SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ?', [dayAgo, BOT_FALSE]),
   ]);
 
   return {
@@ -324,6 +339,13 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       last24h: Number(uniqueSessions24h[0]?.count ?? 0),
       last7d: Number(uniqueSessions7d[0]?.count ?? 0),
     },
+    // External / internal split — additive fields, last24h only (digest scope).
+    // Existing totalCalls/uniqueSessions remain unchanged (include both) for
+    // backward compat with the admin /dashboard and the paywalled
+    // analytics-summary MCP resource.
+    totalCallsExternal: { last24h: Number(externalCalls24h[0]?.count ?? 0) },
+    totalCallsInternal: { last24h: Number(internalCalls24h[0]?.count ?? 0) },
+    uniqueSessionsExternal: { last24h: Number(externalSessions24h[0]?.count ?? 0) },
     topAssets: topAssets.map(r => ({ asset: r.asset, calls: Number(r.count) })),
     // C1 (LATENCY-W1): truthful per-tool latency stats. Replaces the misleading
     // single-number `avgResponseTimeMs` (kept as a field per row for context but
