@@ -5,7 +5,7 @@
   "serviceType": "Composite trade-call API for AI trading agents",
   "provider": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "url": "https://algovault.com",
-  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. {{exchange_count}} crypto perp venues. Every signal Merkle-anchored on Base L2 and verifiable at /verify.",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. {{exchange_count}} crypto perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
   "areaServed": "Worldwide",
   "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
   "hasOfferCatalog": {

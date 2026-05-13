@@ -20,7 +20,11 @@ const REQUIRED_PHRASES = [
   'Autonomous Optimization Engine',
   'Like an LLM',
   "don't train your own GPT",
+  // FF-1 (2026-05-13): Mr.1 changed the LEAD from "Don't train your own trading model."
+  // to "Why train your own trading model?". The H2 still carries the "Don't train your
+  // own trading model" phrase verbatim — both forms must remain present.
   "Don't train your own trading model",
+  'Why train your own trading model',
   "Don't trust",
   'The Brain Layer for AI Trading Agents',
 ];
@@ -55,6 +59,13 @@ const FORBIDDEN_PHRASES = [
   'intelligence layer',
   'industry-leading',
   'cutting-edge',
+  // FF-1 (2026-05-13): Mr.1 mandate — public-facing materials use "call"/"calls" only,
+  // never "signal"/"signals". Identifier strings (MCP resource URIs, API routes,
+  // package names) are excluded — only word "signal" in rendered prose is forbidden
+  // for THIS page. landing/how-it-works.html is the first page to enforce; broader
+  // MARKETING-SIGNAL-TO-CALL-W1 sweep covers other surfaces.
+  'signal',
+  'signals',
 ];
 
 for (const phrase of FORBIDDEN_PHRASES) {

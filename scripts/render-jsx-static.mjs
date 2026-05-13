@@ -802,7 +802,7 @@ tailwind.config = {
   "name": "AlgoVault Labs",
   "url": "https://algovault.com",
   "logo": "https://algovault.com/logo.png",
-  "description": "Composite signal-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
+  "description": "Composite call-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
   "sameAs": [
     "https://github.com/AlgoVaultLabs",
     "https://twitter.com/AlgoVaultLabs"

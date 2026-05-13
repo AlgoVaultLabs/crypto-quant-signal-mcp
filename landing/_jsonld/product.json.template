@@ -2,7 +2,7 @@
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "AlgoVault",
-  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "image": "https://algovault.com/logo.png",
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },

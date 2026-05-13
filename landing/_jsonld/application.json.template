@@ -4,7 +4,7 @@
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. {{exchange_count}} crypto perp venues, {{asset_count}}+ assets, {{timeframe_count}} timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. {{exchange_count}} crypto perp venues, {{asset_count}}+ assets, {{timeframe_count}} timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
