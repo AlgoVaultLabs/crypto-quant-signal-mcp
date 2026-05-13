@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How AlgoVault Works — The Trading Model API for AI Agents</title>
+<meta name="description" content="AlgoVault is a self-tuning quant ML model served as an MCP API. One call returns a composite verdict — direction, confidence, regime — across 5 perp venues. Every call Merkle-anchored on Base L2.">
+<meta name="last-updated" content="2026-05-13">
+<link rel="canonical" href="https://algovault.com/how-it-works">
+<link rel="icon" type="image/png" href="/logo.png">
+<!-- Open Graph -->
+<meta property="og:title" content="How AlgoVault Works — The Trading Model API">
+<meta property="og:description" content="A self-tuning quant ML model with a published track record. One MCP call returns a composite verdict — direction, confidence, regime — Merkle-anchored on Base L2.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/how-it-works">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta property="og:site_name" content="AlgoVault Labs">
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How AlgoVault Works — The Trading Model API">
+<meta name="twitter:description" content="A self-tuning quant ML model with a published track record. One MCP call returns a composite verdict — Merkle-anchored on Base L2.">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
+<!-- Tailwind for nav/footer chrome -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<!-- END: AlgoVault canonical design loader -->
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #d1d5db; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  /* Section primitives mirror v1-belowfold.jsx canonical inline-style patterns. */
+  .hiw-section { position: relative; padding: 96px 24px; border-top: 1px solid var(--line); }
+  .hiw-inner { max-width: 1040px; margin: 0 auto; }
+  .hiw-eyebrow {
+    display: inline-flex; align-items: center; gap: 10px; margin-bottom: 18px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--fg-3);
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .hiw-eyebrow::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent, var(--mint));
+    box-shadow: 0 0 8px var(--accent, var(--mint));
+  }
+  .hiw-h1 {
+    font-family: var(--font-display); font-size: 56px; line-height: 1.04;
+    letter-spacing: -0.025em; font-weight: 500; margin: 0 0 20px;
+    text-wrap: balance; color: var(--fg);
+  }
+  .hiw-h2 {
+    font-family: var(--font-display); font-size: 36px; line-height: 1.08;
+    letter-spacing: -0.022em; font-weight: 500; margin: 0 0 18px;
+    text-wrap: balance; color: var(--fg);
+  }
+  .hiw-h3 {
+    font-family: var(--font-display); font-size: 22px; line-height: 1.2;
+    letter-spacing: -0.012em; font-weight: 500; margin: 0 0 10px;
+    color: var(--fg);
+  }
+  .hiw-lead {
+    font-size: 18px; color: var(--fg-2); line-height: 1.6;
+    max-width: 640px; margin: 0 0 28px;
+  }
+  .hiw-p {
+    font-size: 16px; color: var(--fg-2); line-height: 1.7;
+    max-width: 720px; margin: 0 0 16px;
+  }
+  .hiw-accent { color: var(--accent, oklch(0.86 0.16 165)); }
+  .hiw-card {
+    position: relative; padding: 28px 28px 24px;
+    border: 1px solid var(--line); border-radius: 14px;
+    background: oklch(0.18 0.014 265 / 0.5);
+  }
+  .hiw-cta-arrow {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--accent, oklch(0.86 0.16 165));
+    text-decoration: none; font-weight: 500;
+  }
+  .hiw-cta-arrow:hover { text-decoration: underline; }
+  .hiw-code {
+    background: oklch(0.13 0.012 265 / 0.7);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #d1d5db;
+    margin: 0 0 16px;
+  }
+  .hiw-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px;
+    background: oklch(0.13 0.012 265 / 0.7);
+    font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--accent, var(--mint));
+  }
+  .hiw-faq-q {
+    font-family: var(--font-display); font-size: 19px;
+    color: var(--fg); margin: 0 0 10px; font-weight: 500;
+  }
+  .hiw-faq-a { font-size: 15.5px; line-height: 1.65; color: var(--fg-2); }
+  .hiw-faq-block + .hiw-faq-block { margin-top: 22px; }
+  @media (min-width: 720px) {
+    .hiw-section { padding: 120px 56px; }
+    .hiw-h1 { font-size: 68px; }
+    .hiw-h2 { font-size: 44px; }
+  }
+</style>
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+<!-- track-record-proxy.js hydrates [data-tr-field] spans from /api/performance-public -->
+<script defer src="/js/track-record-proxy.js"></script>
+<!-- JSON-LD: TechArticle for the page body (GEO-W1 pattern). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How AlgoVault Works - The Trading Model API for AI Trading Agents",
+  "url": "https://algovault.com/how-it-works",
+  "datePublished": "2026-05-13T00:00:00+00:00",
+  "dateModified": "2026-05-13T00:00:00+00:00",
+  "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
+  "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
+  "description": "A self-tuning quant ML model with a published track record. One MCP call returns a composite verdict - direction, confidence, regime - across 5 perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
+  "articleBody": "AlgoVault is the Trading Model API for AI trading agents. A self-tuning quant ML model with a published track record. Every MCP call returns a composite verdict backed by tens of thousands of Merkle-anchored calls on Base L2. The Autonomous Optimization Engine continuously tunes the model from published trade outcomes; like an LLM, the model gets smarter with every call. You don't train your own GPT - don't train your own trading model.",
+  "proficiencyLevel": "Intermediate",
+  "about": { "@type": "Thing", "name": "Composite trading verdicts via Model Context Protocol" },
+  "mainEntityOfPage": { "@type": "WebPage", "@id": "https://algovault.com/how-it-works" }
+}
+</script>
+<!-- JSON-LD: FAQPage for the adverse-selection mini-FAQ (Section 6). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "If your model works, why sell access instead of trading it yourself?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AlgoVault is infrastructure, not an alpha bet. We sell access to a trading model the same way OpenAI sells access to GPT - the model itself is the asset, and per-call access is the revenue."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Won't alpha decay if everyone uses your signals?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A composite verdict isn't a single trade. Alpha decay applies to discrete strategies like 'buy at 50-MA cross'. A continuous multi-factor regime-aware verdict updating across 700+ assets has no single trade to crowd. Market depth swamps subscriber flow - Hyperliquid alone clears $10B+ daily perp volume."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does selling calls strengthen the model?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Like OpenAI's API traffic improves GPT, every AlgoVault call adds to the outcome dataset that the Autonomous Optimization Engine learns from. Selling calls strengthens the model that paid customers rely on."
+      }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Product">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "AlgoVault",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "url": "https://algovault.com",
+  "image": "https://algovault.com/logo.png",
+  "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
+  "category": "Software / API / FinanceApplication",
+  "offers": [
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes, HOLDs always free" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
+    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "100,000 calls/month, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+  ],
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "90.4",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "84865"
+  },
+  "additionalProperty": [
+    { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.4%" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "84865" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "732" },
+    { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
+    { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "33" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-13" }
+  ]
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Service">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "name": "AlgoVault Trade Call Intelligence",
+  "serviceType": "Composite trade-call API for AI trading agents",
+  "provider": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "url": "https://algovault.com",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 5 crypto perp venues. Every signal Merkle-anchored on Base L2 and verifiable at /verify.",
+  "areaServed": "Worldwide",
+  "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
+  "hasOfferCatalog": {
+    "@type": "OfferCatalog",
+    "name": "AlgoVault subscription tiers",
+    "itemListElement": [
+      { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Starter", "price": "9.99", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Enterprise", "price": "299", "priceCurrency": "USD" }
+    ]
+  }
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="SoftwareApplication">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "AlgoVault",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Any (MCP-compatible)",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 732+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "url": "https://algovault.com",
+  "offers": [
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
+    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+  ],
+  "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "90.4",
+    "bestRating": "100",
+    "worstRating": "0",
+    "ratingCount": "84865"
+  }
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Organization">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "AlgoVault Labs",
+  "url": "https://algovault.com",
+  "logo": "https://algovault.com/logo.png",
+  "description": "Composite signal-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
+  "sameAs": [
+    "https://github.com/AlgoVaultLabs",
+    "https://twitter.com/AlgoVaultLabs"
+  ],
+  "foundingDate": "2026"
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="WebSite">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "AlgoVault",
+  "url": "https://algovault.com",
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.4% PFE win rate across 84865 verified calls, Merkle-anchored on Base L2.",
+  "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "inLanguage": "en"
+}
+</script>
+</head>
+<body class="min-h-screen">
+
+<!-- Nav -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <a href="/" class="flex items-center gap-2.5">
+        <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+        <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+      </a>
+    </div>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="/track-record" class="hover:text-white transition">Track Record</a>
+      <a href="/how-it-works" class="text-mint-400 font-medium" aria-current="page">How it works</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/integrations" class="hover:text-white transition">Integrations</a>
+      <a href="/skills" class="hover:text-white transition">Skills</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/verify" class="hover:text-white transition">Verify</a>
+      <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Body wrapper (clears fixed nav; canonical chrome contract per DESIGN-W10) -->
+<div style="position:relative;z-index:1;padding-top:72px;padding-bottom:96px">
+
+  <!-- Hero -->
+  <section class="hiw-section" id="hero" style="border-top:0;padding-top:64px">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· the trading model api</div>
+      <h1 class="hiw-h1">How AlgoVault Works</h1>
+      <div style="font-family:var(--font-display);font-size:30px;line-height:1.1;font-weight:500;color:var(--fg);margin:6px 0 22px;letter-spacing:-0.018em">The Trading Model API.</div>
+      <p class="hiw-lead">
+        A self-tuning quant ML model with a published track record. Every MCP call returns a composite verdict &mdash; direction, confidence, regime &mdash; backed by <span data-tr-field="call_count">84,859</span>+ verified calls Merkle-anchored on Base L2.
+      </p>
+    </div>
+  </section>
+
+  <!-- Section 1: What AlgoVault is -->
+  <section class="hiw-section" id="what-algovault-is">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· composite verdict</div>
+      <h2 class="hiw-h2">What AlgoVault is</h2>
+      <p class="hiw-p">
+        One MCP call returns a composite verdict. Your agent receives direction, confidence, regime, and a factor breakdown &mdash; interpretation already done. Skip parsing 8 raw indicators.
+      </p>
+      <p class="hiw-p">
+        Calls span <span data-tr-field="exchange_count">5</span> perpetual venues &mdash; Hyperliquid, Binance, Bybit, OKX, and Bitget. Cross-venue data is normalized into one verdict across <span data-tr-field="asset_count">732</span>+ assets and 11 timeframes.
+      </p>
+      <p class="hiw-p">
+        Every published call is Merkle-anchored on Base L2. <span data-tr-field="merkle_batch_count">33</span> batches are live; any signal hash reconstructs to its on-chain root. Don't trust &mdash; verify.
+      </p>
+    </div>
+  </section>
+
+  <!-- Section 2: How the model improves (AOE results-only) -->
+  <section class="hiw-section" id="how-the-model-improves">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· self-tuning model</div>
+      <h2 class="hiw-h2">How the model improves</h2>
+      <p class="hiw-p">
+        AlgoVault's composite verdict is produced by a self-tuning quant ML model. The Autonomous Optimization Engine (AOE) continuously tunes the model from published trade outcomes &mdash; each call adds to the dataset, the dataset feeds the model, the model gets sharper.
+      </p>
+      <p class="hiw-p">
+        Our PFE win rate has improved monotonically since launch &mdash; verifiable in every Merkle batch on Base L2, with the live rate at <span data-tr-field="pfe_wr">90.4%</span> today.
+      </p>
+      <p class="hiw-p" style="font-family:var(--font-display);font-size:20px;color:var(--fg);font-weight:500;margin-top:24px">
+        Like an LLM, our model gets smarter with every call.
+      </p>
+      <p class="hiw-p">
+        Each call enriches the outcome dataset. The dataset feeds AOE. AOE updates the model. Improvements flow back to every caller, on the next call.
+      </p>
+    </div>
+  </section>
+
+  <!-- Section 3: How agents call it -->
+  <section class="hiw-section" id="how-agents-call-it">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· integration</div>
+      <h2 class="hiw-h2">How agents call it</h2>
+      <p class="hiw-p">
+        Agents discover AlgoVault through standard MCP <code class="hiw-accent">tools/list</code>. Connect to <code class="hiw-accent">https://api.algovault.com/mcp</code> from any MCP-compatible client &mdash; Claude Desktop, Cursor, Cline, or a custom agent. A minimal call:
+      </p>
+      <pre class="hiw-code"><code>const result = await client.callTool({
+  name: 'get_trade_call',
+  arguments: { asset: 'BTC', timeframe: '1h', exchange: 'hyperliquid' }
+});
+// =&gt; { verdict: 'BUY', confidence: 0.84, regime: 'trending', factors: {...} }</code></pre>
+      <p class="hiw-p">
+        That's the whole integration. No keys for the free tier, no charges on HOLD verdicts, no parsing of raw indicators on your side.
+      </p>
+    </div>
+  </section>
+
+  <!-- Section 4: Verify -->
+  <section class="hiw-section" id="verify">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· cryptographic proof</div>
+      <h2 class="hiw-h2">Verify</h2>
+      <p class="hiw-p">
+        Every published call is Merkle-anchored on Base L2. The contract address is <code class="hiw-accent">0x6485&hellip;bf81</code> on Base; <span data-tr-field="merkle_batch_count">33</span> batches are live. Reconstruct the proof tree for any individual call &mdash; independent of AlgoVault &mdash; at the <a href="/verify" class="hiw-accent">/verify</a> page.
+      </p>
+      <p class="hiw-p" style="font-family:var(--font-display);font-size:20px;color:var(--fg);font-weight:500;margin-top:16px">
+        Don't trust &mdash; verify.
+      </p>
+      <p class="hiw-p">
+        <a href="/verify" class="hiw-cta-arrow">Verify any call &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- Section 5: Build-vs-buy -->
+  <section class="hiw-section" id="build-vs-buy">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· build vs buy</div>
+      <h2 class="hiw-h2">Don't train your own trading model</h2>
+      <p class="hiw-p" style="font-family:var(--font-display);font-size:22px;color:var(--fg);font-weight:500;margin-top:6px">
+        You don't train your own GPT. Don't train your own trading model.
+      </p>
+      <p class="hiw-p">
+        Building a 5-venue composite-verdict signal model in-house takes months of data engineering, model tuning, on-chain proof infrastructure, and a multi-year track record before any caller can trust the output.
+      </p>
+      <p class="hiw-p">
+        AlgoVault is one MCP call returning a <span data-tr-field="pfe_wr">90.4%</span> PFE win rate verdict &mdash; backed by a rolling 30-day window of outcomes, every batch Merkle-anchored on Base L2.
+      </p>
+      <p class="hiw-p">
+        The same infrastructure-decision shape applies to language models, databases, payment rails, SMS gateways. You consume the API, not the substrate. The Brain Layer for AI Trading Agents is the trading-model variant.
+      </p>
+      <p class="hiw-p" style="margin-top:24px">
+        <a href="https://api.algovault.com/signup" class="hiw-cta-arrow" style="font-family:var(--font-display);font-size:17px">Start free &rarr;</a>
+        <span style="color:var(--fg-3);margin-left:14px;font-size:14px">100 free calls/month. HOLDs never cost. Start in 30 seconds.</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- Section 6: Why sell calls if the model works (adverse-selection rebuttal) -->
+  <section class="hiw-section" id="why-sell-calls">
+    <div class="hiw-inner">
+      <div class="hiw-eyebrow">· why we sell access</div>
+      <h2 class="hiw-h2">Why sell calls if the model works?</h2>
+      <p class="hiw-lead">
+        Three questions builders ask before integrating &mdash; answered.
+      </p>
+
+      <div class="hiw-faq-block hiw-card">
+        <h3 class="hiw-faq-q">If your model works, why sell access instead of trading it yourself?</h3>
+        <p class="hiw-faq-a">
+          AlgoVault is infrastructure, not an alpha bet. We sell access to a trading model the same way OpenAI sells access to GPT &mdash; the model itself is the asset, and per-call access is the revenue.
+        </p>
+      </div>
+
+      <div class="hiw-faq-block hiw-card">
+        <h3 class="hiw-faq-q">Won't alpha decay if everyone uses your signals?</h3>
+        <p class="hiw-faq-a">
+          A composite verdict isn't a single trade. Alpha decay applies to discrete strategies like &ldquo;buy at 50-MA cross.&rdquo; A continuous multi-factor regime-aware verdict updating across <span data-tr-field="asset_count">732</span>+ assets has no single trade to crowd. Market depth swamps subscriber flow &mdash; Hyperliquid alone clears $10B+ daily perp volume.
+        </p>
+      </div>
+
+      <div class="hiw-faq-block hiw-card">
+        <h3 class="hiw-faq-q">How does selling calls strengthen the model?</h3>
+        <p class="hiw-faq-a">
+          Like OpenAI's API traffic improves GPT, every AlgoVault call adds to the outcome dataset that the Autonomous Optimization Engine learns from. Selling calls strengthens the model that paid customers rely on.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer class="border-t border-white/5 py-8 text-center text-gray-500 text-sm">
+  <div class="max-w-6xl mx-auto px-6">
+    <p>&copy; 2026 AlgoVault Labs &middot; <a href="/" class="hover:text-white transition">Home</a> &middot; <a href="/track-record" class="hover:text-white transition">Track Record</a> &middot; <a href="/verify" class="hover:text-white transition">Verify</a> &middot; <a href="/faq" class="hover:text-white transition">FAQ</a> &middot; <a href="/privacy" class="hover:text-white transition">Privacy</a></p>
+    <p class="mt-2">Live numbers refetched from <a href="https://api.algovault.com/api/performance-public" class="text-mint-400 hover:underline">/api/performance-public</a> on page load.</p>
+  </div>
+</footer>
+
+</body>
+</html>

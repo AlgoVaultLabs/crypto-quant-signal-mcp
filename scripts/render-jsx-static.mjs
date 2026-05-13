@@ -92,10 +92,12 @@ async function evalJsxSrc(src, filePath, exportNames) {
 function patchBelowFold(src) {
   // Q-W16 + Mr.1 fix-forward 2026-05-11 ROUND 3: CoreCapabilities subtitle — "Four MCP tools" →
   // "Three MCP tools + on-chain track record" with line break between sentences per Mr.1 directive.
-  // Factuality LAW: AlgoVault has 3 MCP tools + 1 on-chain track record callout (NOT 4 tools).
+  // LANDING-HOW-IT-WORKS-W1 (2026-05-13): "on-chain track record" 4th card replaced with
+  // "Self-tuning ML model" card linking to /how-it-works (substrate M6 frame). Subtitle text updated
+  // to reflect the new 4th card. Factuality LAW: AlgoVault has 3 MCP tools + 1 substrate-model card.
   return src.replace(
     'Four MCP tools your agent can call directly. Each returns a single, structured verdict — not raw indicators.',
-    'Three MCP tools your agent can call — plus an on-chain track record.<br/>Each returns a single, structured verdict — not raw indicators.'
+    'Three MCP tools your agent can call — plus the self-tuning model behind them.<br/>Each returns a single, structured verdict — not raw indicators.'
   );
 }
 

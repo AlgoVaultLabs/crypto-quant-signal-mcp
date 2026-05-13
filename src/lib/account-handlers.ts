@@ -90,6 +90,7 @@ const ACCOUNT_NAV_HTML = `<nav class="fixed top-0 w-full z-50 border-b border-wh
     </a>
     <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
       <a href="/track-record" class="hover:text-white transition">Track Record</a>
+      <a href="https://algovault.com/how-it-works" class="hover:text-white transition">How it works</a>
       <a href="/#pricing" class="hover:text-white transition">Pricing</a>
       <a href="/integrations" class="hover:text-white transition">Integrations</a>
       <a href="/skills" class="hover:text-white transition">Skills</a>
