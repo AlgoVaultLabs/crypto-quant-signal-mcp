@@ -183,11 +183,12 @@ test('/track-record W11-FF: H1 uses canonical enlarged content-H1 hierarchy', as
     'H1 must use inline style="color:var(--fg)" (FF-REL-1 inline-fix: text-fg not in Tailwind config)');
 });
 
-test('/track-record W11-FF: brand-block wrapper is space-y-2 (canonical vertical rhythm)', async () => {
+test('/track-record W11-FF: brand-block wrapper is space-y-2 + mb-8 (canonical vertical rhythm + section gap)', async () => {
   const src = await read('src/index.ts');
   const func = scopeToPerfFunc(src);
-  assert.ok(/<div class="space-y-2">\s*<h1/.test(func),
-    'Brand block must be wrapped in <div class="space-y-2"> for canonical vertical rhythm');
+  // W11-FF2 (2026-05-14): added mb-8 (32px) for section-gap between brand block + exchange-logo strip.
+  assert.ok(/<div class="space-y-2 mb-8">\s*<h1/.test(func),
+    'Brand block must be wrapped in <div class="space-y-2 mb-8"> (W11-FF2 added mb-8 for canonical section gap)');
 });
 
 test('/track-record W11-FF: logo icon REMOVED from brand block context', async () => {

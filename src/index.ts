@@ -1472,7 +1472,10 @@ tailwind.config = {
      style="color:var(--fg)" / style="color:var(--fg-3)" per /account +
      landing precedent. Subtitle data-tr-field spans preserved byte-identical;
      pkg_version added as 45th unique data-tr-field key (additive; baseline 44 still satisfied via ≥). -->
-<div class="space-y-2">
+<!-- DESIGN-W11-FF2 (2026-05-14): added mb-8 (32px margin-bottom) for canonical
+     section-gap rhythm between brand block and exchange-logo strip below
+     (matches Cross-Venue ↔ On-Chain Verified visual gap per Mr.1 directive). -->
+<div class="space-y-2 mb-8">
   <h1 class="text-5xl sm:text-6xl font-semibold tracking-tight" style="color:var(--fg)">Live <span class="text-mint-400">Track Record</span></h1>
   <p class="text-sm" style="color:var(--fg-3)">v<span data-tr-field="pkg_version">${PKG_VERSION}</span> &middot; <span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges &middot; <span data-tr-field="asset_count">710</span>+ assets</p>
 </div>
