@@ -1381,20 +1381,18 @@ tailwind.config = {
   .methodology table td { border: none; padding: 3px 24px 3px 0; color: #c9d1d9; }
   .methodology code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .id-link { color: #5BEEB3; text-decoration: none; font-family: monospace; font-size: 12px; } .id-link:hover { text-decoration: underline; color: #82EFB8; }
-  /* DESIGN-W8-FIX (2026-05-11): Latest Trade Calls 8-col proportional widths
-     filling full panel width edge-to-edge. Override global table max-width:800px
-     for this table so columns distribute across the wider tr-recent-calls-panel.
-     ID + Exchange get slightly wider slots (1.2fr equivalent = 15%) for "#88150"
-     IDs and "Hyperliquid" names; others get 11-12.5% each. Sum = 100%. */
+  /* DESIGN-W11-FF3 (2026-05-14): Latest Trade Calls 6-col even-distribution
+     widths per Mr.1 directive (Call + Confidence cols REMOVED for Data Integrity).
+     100% / 6 cols = 16.66% each. Cols: ID / Time / Tier / Asset / Timeframe /
+     Exchange. table-layout:fixed preserves consistent column rendering across
+     varying row content (e.g. "#93097" vs "#88150", "Hyperliquid" vs "OKX"). */
   .recent-table { table-layout: fixed; max-width: none; width: 100%; }
-  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 15%; }
-  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 12.5%; }
-  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 10%; }
-  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 12.5%; }
-  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 10%; }
-  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 12.5%; }
-  .recent-table th:nth-child(7), .recent-table td:nth-child(7) { width: 12.5%; }
-  .recent-table th:nth-child(8), .recent-table td:nth-child(8) { width: 15%; }
+  .recent-table th:nth-child(1), .recent-table td:nth-child(1) { width: 16.66%; }
+  .recent-table th:nth-child(2), .recent-table td:nth-child(2) { width: 16.66%; }
+  .recent-table th:nth-child(3), .recent-table td:nth-child(3) { width: 16.66%; }
+  .recent-table th:nth-child(4), .recent-table td:nth-child(4) { width: 16.66%; }
+  .recent-table th:nth-child(5), .recent-table td:nth-child(5) { width: 16.66%; }
+  .recent-table th:nth-child(6), .recent-table td:nth-child(6) { width: 16.66%; }
   /* DESIGN-W8 / C2: Verify Any Call card — matches canonical track-record-2.jsx:VerifySection */
   .verify-any-call-section { margin-bottom: 28px; }
   /* DESIGN-W8-FIX (2026-05-11): bg unified with .tier-stat-card reference per
@@ -1764,8 +1762,9 @@ tailwind.config = {
         <span class="recent-calls-feed-tick"><span class="live-pulse"></span>tick</span>
       </div>
       <div id="tr-recent-calls-rows">
-        <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th>Call</th><th class="num">Confidence</th><th class="num">Timeframe</th><th>Exchange</th></tr></thead>
-        <tbody id="tr-recent-calls-tbody"><tr><td colspan="8" class="empty">Loading recent calls&hellip;</td></tr></tbody></table>
+        <!-- DESIGN-W11-FF3 (2026-05-14): Call + Confidence columns REMOVED per Mr.1 Data Integrity directive ("should not be disclosure at here"). Public track record now shows 6 cols: ID, Time, Tier, Asset, Timeframe, Exchange. NOTE: underlying API /api/performance-public.recentSignals STILL returns .call + .confidence fields (legacy leakage flagged in LANDING-LIVE-CALL-TICKER-W1 audit snapshot); a follow-up wave should sanitize the API response shape to enforce Data Integrity LAW at the data layer, not just the UI layer. -->
+        <table class="recent-table"><thead><tr><th>ID</th><th>Time</th><th>Tier</th><th>Asset</th><th class="num">Timeframe</th><th>Exchange</th></tr></thead>
+        <tbody id="tr-recent-calls-tbody"><tr><td colspan="6" class="empty">Loading recent calls&hellip;</td></tr></tbody></table>
       </div>
     </div>
   </div>
@@ -2026,8 +2025,9 @@ function renderAll() {
   if (recentEl) {
     var recent = getFilteredRecent().slice(0,20);
     if (recent.length) {
-      recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+s.id+'" class="id-link">#'+s.id+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td>'+badge(s.call)+'</td><td class="num">'+s.confidence+'%</td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
-    } else { recentEl.innerHTML='<tr><td colspan="8" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
+      // DESIGN-W11-FF3 (2026-05-14): Call + Confidence <td> cells REMOVED per Mr.1 Data Integrity directive. 6-col row: ID / Time / Tier / Asset / Timeframe / Exchange.
+      recentEl.innerHTML = recent.map(function(s){return '<tr><td><a href="/verify?signalId='+s.id+'" class="id-link">#'+s.id+'</a></td><td class="muted">'+timeAgo(s.created_at)+'</td><td>'+tierBadge(s.tier)+'</td><td><strong>'+s.coin+'</strong></td><td class="num">'+s.timeframe+'</td><td class="muted">'+(s.exchange||'HL')+'</td></tr>';}).join('');
+    } else { recentEl.innerHTML='<tr><td colspan="6" class="empty">No trade calls'+(activeTfFilter!=='all'?' for '+activeTfFilter:'')+' yet.</td></tr>'; }
   }
 }
 
