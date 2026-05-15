@@ -54,7 +54,7 @@ Every signal is **hashed on-chain (Base L2) before its outcome is known**. Daily
 **Input:**
 - `coin` (string, required): Asset symbol (e.g. `"BTC"`, `"ETH"`, `"SOL"`)
 - `timeframe` (enum): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`. Default `"15m"`.
-- `exchange` (enum): `"HL"` (Hyperliquid, default), `"BINANCE"`, `"BYBIT"`, `"OKX"`, `"BITGET"`.
+- `exchange` (enum): `"BINANCE"` (Binance USDT-M Futures, default), `"HL"` (Hyperliquid), `"BYBIT"`, `"OKX"`, `"BITGET"`.
 - `includeReasoning` (bool, default true): Include human-readable reasoning.
 
 **Output:** Composite verdict per JSON shape above.

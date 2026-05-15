@@ -96,7 +96,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     throw new Error(getQuotaExhaustedMessage(quota.used, quota.total));
   }
 
-  const exchange = input.exchange || 'HL';
+  const exchange = input.exchange || 'BINANCE';
 
   // Determine which HL dex this coin trades on (standard vs xyz/TradFi)
   // Only applicable for Hyperliquid — Binance doesn't have dex types

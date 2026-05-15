@@ -23,7 +23,7 @@ export interface TierDefinition {
 export const TIER_DEFINITIONS: TierDefinition[] = [
   { tier: 1, name: 'Blue Chip',    label: 'Tier 1', color: '#58a6ff', description: 'BTC & ETH — highest liquidity, institutional benchmark' },
   { tier: 2, name: 'Major Alts',   label: 'Tier 2', color: '#3fb950', description: 'Top alts by open interest — liquid, tradeable, TA-responsive' },
-  { tier: 3, name: 'TradFi',       label: 'Tier 3', color: '#bc8cff', description: 'TradFi perps — stocks, indices, commodities, FX via Hyperliquid' },
+  { tier: 3, name: 'TradFi',       label: 'Tier 3', color: '#bc8cff', description: 'TradFi perps — stocks, indices, commodities, FX (seeded across Binance, Bybit, Bitget, OKX, and Hyperliquid via demand-driven SHADOW-SEED-W1 fan-out)' },
   { tier: 4, name: 'Meme & Micro', label: 'Tier 4', color: '#d29922', description: 'Meme perps & micro-caps — liquidity-filtered, top 50 OI or >$10M vol' },
 ];
 

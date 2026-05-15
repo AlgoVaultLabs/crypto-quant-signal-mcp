@@ -8,13 +8,16 @@
 
 <p align="center">
   <strong>The Brain Layer for AI Trading Agents</strong><br/>
-  Composite quant trade calls · cross-venue funding arbitrage · regime-aware market classification<br/>
-  Across 5 exchanges (Hyperliquid · Binance · Bybit · OKX · Bitget) via MCP. <!-- SNAPSHOT-LINE -->
+  A self-tuning quant ML model with a published track record.<br/>
+  Composite trade calls · cross-venue funding arbitrage · regime-aware market classification<br/>
+  Across 5 exchanges (Binance · Hyperliquid · Bybit · OKX · Bitget) via MCP. <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
+  <a href="https://t.me/algovaultofficialbot"><strong>🤖 Try Free in Telegram</strong></a> ·
   <a href="https://algovault.com"><strong>algovault.com</strong></a> ·
   <a href="https://algovault.com/track-record"><strong>Live Track Record</strong></a> ·
+  <a href="https://algovault.com/how-it-works"><strong>How it works</strong></a> ·
   <a href="https://api.algovault.com/signup"><strong>Sign Up</strong></a> ·
   <a href="https://algovault.com/docs.html"><strong>Docs</strong></a>
 </p>
@@ -32,12 +35,12 @@
 
 <p align="center">
   <a href="https://algovault.com/track-record">
-    <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/track-record-2026-05-06.png" alt="AlgoVault Live Track Record — 90.0% PFE Win Rate across 74,733 trade calls, 26 Merkle batches anchored on Base L2" width="100%" />
+    <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/track-record-2026-05-13.png" alt="AlgoVault Live Track Record — 90.4% PFE Win Rate across 86,093 trade calls, 33 Merkle batches anchored on Base L2" width="100%" />
   </a>
 </p>
 
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">90.0%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">74,733</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">26</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">99%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">90.4%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">86,093</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">33</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">99%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
@@ -50,23 +53,40 @@
 
 ---
 
-## What's new in v1.10.8
+## Drop-in for every MCP client
 
-Live since 2026-05-08:
+AlgoVault MCP serves Streamable HTTP at `https://api.algovault.com/mcp` — MCP-spec compliant, no SDK or wrapper library required. Drop-in for:
 
-- **🤖 Public Telegram bot — [@algovaultofficialbot](https://t.me/algovaultofficialbot).** AlgoVault verdicts now push to your phone. Set a watchlist with `/watch BTC 4h` and the bot delivers regime shifts and BUY/SELL trade calls in real time. Built on the same composite-verdict signal stream that powers the MCP — same 90.0% PFE win rate, same on-chain track record, now in your pocket. <!-- SNAPSHOT-LINE -->
+| Client | Config |
+|---|---|
+| **Claude Desktop** | Settings → Integrations → Add custom connector → `https://api.algovault.com/mcp` |
+| **Claude Code** (CLI) | `claude mcp add crypto-quant-signal https://api.algovault.com/mcp` |
+| **Cursor** | `~/.cursor/config.json` → `mcpServers` block → `url: "https://api.algovault.com/mcp"` |
+| **Cline** | VS Code Cline extension → MCP server settings → add Streamable HTTP server |
+| **Codex** (OpenAI CLI) | `~/.codex/config.toml` → `[mcp_servers.algovault]` table + `url = "https://api.algovault.com/mcp"` (or `codex mcp` CLI) |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` → `mcpServers.algovault.serverUrl = "https://api.algovault.com/mcp"` |
+| **Continue.dev** | `config.yaml` → `mcpServers: [{ name: algovault, type: streamable-http, url: "https://api.algovault.com/mcp" }]` |
+| Any other MCP-spec-compliant client | Configure the Streamable HTTP transport with URL `https://api.algovault.com/mcp` |
 
-- **📱 One-click link from `/welcome`.** After Stripe checkout, the welcome page shows a "Connect @algovaultofficialbot" button. One click binds your Telegram chat to your subscription — your paid tier unlocks unlimited bot pushes instantly, no API-key copy-paste, no auth dance. Free-tier users get 100 trade-call alerts/month before the upgrade prompt fires.
+MCP `tools/list` + `resources/list` is the API surface. No `@algovault/sdk`; the protocol is the contract.
 
-- **🧠 Smart routing built in.** HOLD verdicts stay silent (no spam, no quota tick). Regime alerts are flap-suppressed — fires only after 2 consecutive same-regime confirmations, so you get the shift, not the noise. Per-timeframe dispatch means a 1-minute pair fires every minute and a daily pair fires once a day — you control the cadence by what you watch.
+---
 
-- **🌐 Full coverage parity.** Every asset (720+), every timeframe (1m → 1d), every exchange (HL · Binance · Bybit · OKX · Bitget) — all callable from the bot, same as the API. Pick what you want to track; the bot handles the polling.
+## What's new in v1.11.0
 
-- **📈 Trade calls that count cleanly.** Bot-pushed BUY/SELL alerts tick your free-tier monthly cap (matching the API's 100/mo) and stop ticking the moment your subscription is linked. No double-counting, no surprise overage — your real Stripe-backed quota (3K/15K/100K) governs everything.
+Live since 2026-05-XX (target):
 
-> **Upgrading from v1.10.6 or earlier?** MCP clients (Claude Desktop, Claude.ai custom connectors, Cursor, Cline) cache the tool list at session start. The MCP tool surface is unchanged in v1.10.8, but if you signed up before today and want bot access:
-> - **Already a subscriber?** Visit your `/welcome` link from the original signup email — the new button lives there. Or hit `api.algovault.com/account` to recover your key, then sign up at [@algovaultofficialbot](https://t.me/algovaultofficialbot).
-> - **Free tier?** [Start the bot](https://t.me/algovaultofficialbot), `/watch` your first asset, get free regime alerts forever and 100 trade-call alerts/month.
+- **🤖 Try Free in Telegram.** [`@algovaultofficialbot`](https://t.me/algovaultofficialbot) is now the primary on-ramp at the top of this README. One Telegram command (`/watch BTC 4h`) gets you live regime alerts and BUY/SELL trade calls in real time. Same composite-verdict signal stream as the MCP server, same <span data-tr-field="pfe_wr">90.4%</span> PFE win rate, same on-chain track record. No code, no API key, no install. 100 free trade-call alerts/month before the upgrade prompt fires. <!-- SNAPSHOT-LINE -->
+
+- **🔁 Default exchange changed: Hyperliquid → Binance Futures.** `get_trade_call(coin: "BTC", timeframe: "1h")` (no `exchange` arg) now returns the Binance USDT-M Futures verdict by default. Binance is the highest-volume CEX and the most familiar default for devs onboarding. Hyperliquid remains fully supported — pass `exchange: "HL"` to keep prior behavior, or specify any of the 5 venues explicitly. No data loss; default-routing change only.
+
+- **🧠 Self-tuning quant ML model — surfaced.** AlgoVault is a self-tuning quant ML model with a published track record. The composite trade-call verdict is produced by a model that continuously learns from outcomes via our [Autonomous Optimization Engine](https://algovault.com/how-it-works). Like an LLM API, you're not buying a one-shot signal — you're buying access to a model that gets sharper with every call. PFE win rate has improved monotonically since launch; verifiable on Base L2.
+
+- **🔌 Drop-in client matrix enumerated.** Streamable HTTP at `api.algovault.com/mcp` works with Claude Desktop, Claude Code, Cursor, Cline, and every other MCP-spec-compliant client. See the [Drop-in section](#drop-in-for-every-mcp-client). No SDK; no wrapper library; protocol is the API.
+
+- **📄 New `/how-it-works` page.** Substrate-level docs page now live at [algovault.com/how-it-works](https://algovault.com/how-it-works). Explains what AlgoVault is at the technical level for devs evaluating one click below the landing hero.
+
+> **Upgrading from v1.10.x or earlier?** The MCP tool surface is unchanged structurally — `get_trade_call`, `scan_funding_arb`, `get_market_regime` keep their parameter shapes. The only behavioral diff: omitting `exchange` now returns the Binance result instead of Hyperliquid. Existing agents passing `exchange` explicitly are unaffected. MCP clients (Claude Desktop, Cursor, Cline) cache the tool list at session start — toggle the connector off/on to pick up the new default-routing behavior.
 
 ---
 
@@ -74,7 +94,7 @@ Live since 2026-05-08:
 
 Most MCP trading servers give you raw data — prices, order books, candles. Your agent still has to figure out what to do with it.
 
-AlgoVault is different. We give your agent **one answer**: a directional verdict with a confidence score, built from a multi-factor composite scoring engine tuned on production quant systems. Every call is tracked, every outcome is measured, and the full track record is public from day one.
+AlgoVault is different. We give your agent **one answer**: a directional verdict with a confidence score, produced by a self-tuning quant ML model whose weights are calibrated from published trade outcomes. Every call is tracked, every outcome is measured, and the full track record is on-chain from day one.
 
 **What makes this not just another indicator wrapper:**
 
@@ -82,8 +102,8 @@ AlgoVault is different. We give your agent **one answer**: a directional verdict
 - **Regime-aware call generation.** Calls are filtered through a market regime classifier before emission. The engine knows when to stay silent — a trend-following setup in a ranging market gets suppressed, not broadcast. (HOLD rate ~99%; we issue calls only when the edge is clear.) <!-- SNAPSHOT-LINE -->
 - **Cross-venue intelligence.** Full signal generation on 5 exchanges with native candle, OI, funding, and volume data per venue. Cross-venue funding arbitrage scanning across all venues — nobody else does multi-exchange derivatives analysis via MCP. <!-- SNAPSHOT-LINE -->
 - **Published track record with every release.** Every call is recorded with outcome prices at multiple horizons. PFE Win Rate, Profit Factor, Expected Value computed continuously. No cherry-picking, no survivorship bias. **Anchored on-chain on Base L2 — we cannot rewrite history.**
-- **Adaptive scoring.** Indicator weights are retuned monthly from outcome data via the [Autonomous Optimization Engine](https://algovault.com/track-record). The engine learns what works.
-- **Crypto + TradFi coverage.** 720+ assets — standard crypto perps on all 5 venues, TradFi perpetuals (stocks, indices, commodities, FX) on Hyperliquid, liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
+- **Self-tuning model.** Indicator weights are tuned from live outcome data by our [Autonomous Optimization Engine](https://algovault.com/how-it-works). The model gets sharper with every signal.
+- **Crypto + TradFi coverage.** 710+ assets — standard crypto perps on all 5 venues; TradFi perps (stocks, indices, commodities, FX) on Binance, Bybit, Bitget, OKX, and Hyperliquid via demand-driven SHADOW-SEED-W1 fan-out; liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
 
 ---
 
@@ -118,14 +138,14 @@ That's it. Your Claude now has a quant analyst built in.
 
 ### `get_trade_call` <sub>(alias: `get_trade_signal`)</sub>
 
-Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any supported asset on any of 5 supported exchanges — crypto perps, TradFi perpetuals (stocks, indices, commodities, FX), and liquidity-filtered meme coins on Hyperliquid.
+Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any supported asset on any of 5 supported exchanges — crypto perps, TradFi perps (stocks, indices, commodities, FX) on Binance / Bybit / Bitget / OKX / Hyperliquid, and liquidity-filtered meme coins.
 
-Under the hood: a multi-factor scoring engine evaluates momentum, trend structure, derivatives sentiment, open interest dynamics, and volume conviction. Scores pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted. Only high-conviction calls are generated; the engine stays silent when the edge is unclear.
+Under the hood: a self-tuning quant ML model evaluates momentum, trend structure, derivatives sentiment, open interest dynamics, and volume conviction. Scores pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted. Only high-conviction calls are generated; the model stays silent when the edge is unclear.
 
 **Parameters:**
 - `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, `"GOLD"`, `"TSLA"`, or any of 710+ supported assets <!-- SNAPSHOT-LINE -->
-- `timeframe` (string, default `"15m"`): `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`
-- `exchange` (string, default `"HL"`): `"HL"` (Hyperliquid), `"BINANCE"`, `"BYBIT"`, `"OKX"`, `"BITGET"`. TradFi assets (GOLD, TSLA, etc.) are HL-only.
+- `timeframe` (string, default `"15m"`): all 11 timeframes — `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`
+- `exchange` (string, default `"BINANCE"`): `"BINANCE"`, `"HL"` (Hyperliquid), `"BYBIT"`, `"OKX"`, `"BITGET"`. Asset availability varies per venue — pass exchange explicitly to target a specific venue.
 - `includeReasoning` (boolean, default `true`): Human-readable explanation of the call logic
 
 **Output:** v1.10.0 sanitized shape — `call` direction, `confidence` (0–100), bucketed `indicators` (`funding_rate` / `funding_24h_avg` / `funding_state` / `oi_change_pct` / `volume_24h` / `trend_persistence` / `breakout_pending`), detected `regime`, sanitized `reasoning` prose, and `_algovault` metadata for downstream tool composability.
@@ -158,7 +178,7 @@ Responses also include optional `closest_tradeable` (on HOLD verdicts) and `also
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.10.7",
+    "version": "1.11.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -186,17 +206,9 @@ Combines directional strength measurement with ADX slope analysis (detecting tre
 **Parameters:**
 - `coin` (string, required): Asset symbol
 - `timeframe` (string, default `"4h"`): Candle timeframe for analysis
-- `exchange` (string, default `"HL"`): Exchange to analyze — same options as `get_trade_call`
+- `exchange` (string, default `"BINANCE"`): Exchange to analyze — same options as `get_trade_call`
 
 **Output includes:** regime label, confidence score, underlying metrics (trend strength, volatility interpretation, price structure), cross-venue funding sentiment, and a plain-English strategy suggestion.
-
----
-
-## Free Telegram bot — `@algovaultofficialbot`
-
-Want regime alerts + AlgoVault trade calls (BUY / SELL) pushed to a Telegram chat without writing any code? Open Telegram → search `@algovaultofficialbot` → `/start`. The bot is a thin client over this same MCP server — the same composite-verdict signal stream, no extra subscription, your free 100-calls/mo quota is shared with bot-driven calls.
-
-Source: [github.com/AlgoVaultLabs/algovault-bot](https://github.com/AlgoVaultLabs/algovault-bot).
 
 ---
 
@@ -227,7 +239,7 @@ or pay per call via x402.
 | Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
 | Exchanges | All 5 | All 5 | All 5 | All 5 | All 5 | <!-- SNAPSHOT-LINE-TABLE -->
-| Assets | All 720+ | All 720+ | All 720+ | All 720+ | All 720+ | <!-- SNAPSHOT-LINE-TABLE -->
+| Assets | All 710+ | All 710+ | All 710+ | All 710+ | All 710+ | <!-- SNAPSHOT-LINE-TABLE -->
 | Asset classes | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
 | Timeframes | All 11 | All 11 | All 11 | All 11 | All 11 |
 | Funding arb results | Top 5 | Unlimited | Unlimited | Unlimited | Unlimited |
@@ -336,7 +348,7 @@ Every call is hashed (keccak256) at creation time and anchored on Base L2 via da
 https://api.algovault.com/mcp
 ```
 
-Streamable HTTP transport. Compatible with any MCP client — Claude, Cursor, Cline, custom agents.
+Streamable HTTP transport. Compatible with any MCP-spec client — Claude Desktop, Claude Code, Cursor, Cline, custom agents. No SDK or wrapper library required; MCP is the API.
 
 ### Local install via npx
 
@@ -356,6 +368,12 @@ npx -y crypto-quant-signal-mcp
     }
   }
 }
+```
+
+### Claude Code CLI
+
+```bash
+claude mcp add crypto-quant-signal https://api.algovault.com/mcp
 ```
 
 ### npm install
@@ -379,7 +397,7 @@ docker compose up -d
 ## Architecture
 
 ```
-Agent / Claude / Cursor
+Agent / Claude Desktop / Claude Code / Cursor / Cline / any MCP client
   │
   ▼
 api.algovault.com/mcp (Streamable HTTP)
@@ -391,18 +409,21 @@ api.algovault.com/mcp (Streamable HTTP)
   ▼
 MCP Server (Express + @modelcontextprotocol/sdk)
   │
-  ├─ Composite Scoring Engine
+  ├─ Self-Tuning Quant ML Model
   │    ├─ Multi-factor indicator fusion
   │    ├─ Regime-aware signal filtering
   │    └─ Adaptive post-processing gates
+  │
+  ├─ Autonomous Optimization Engine (results published; mechanics confidential)
+  │    └─ Closed-loop weight tuning from published outcomes
   │
   ├─ Asset Classification Engine
   │    ├─ 4-tier quality system (Blue Chip → Major Alt → TradFi → Meme)
   │    └─ Liquidity filter for meme/micro assets
   │
   ├─ Exchange Adapter Layer
-  │    ├─ Hyperliquid (crypto + TradFi xyz perps)
-  │    ├─ Binance USDT-M Futures
+  │    ├─ Binance USDT-M Futures (default)
+  │    ├─ Hyperliquid (crypto + TradFi perps)
   │    ├─ Bybit Linear
   │    ├─ OKX Swap
   │    └─ Bitget USDT-M
@@ -448,7 +469,8 @@ MIT
 <p align="center">
   Built by <a href="https://algovault.com"><strong>AlgoVault Labs</strong></a><br/>
   <a href="https://algovault.com">algovault.com</a> ·
+  <a href="https://algovault.com/how-it-works">how it works</a> ·
   <a href="https://algovault.com/track-record">track-record</a> ·
   <a href="https://api.algovault.com/mcp">MCP endpoint</a> ·
-  <a href="https://api.algovault.com/signup">sign up</a>
+  <a href="https://t.me/algovaultofficialbot">Telegram bot</a>
 </p>

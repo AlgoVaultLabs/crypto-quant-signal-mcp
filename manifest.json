@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "crypto-quant-signal",
   "display_name": "Crypto Quant Signal",
-  "description": "Composite trading signals across crypto and TradFi perpetuals, cross-venue funding arb scanning, and regime-aware market classification via MCP. 720+ assets on Hyperliquid.",
+  "description": "Composite trading signals across crypto and TradFi perpetuals, cross-venue funding arb scanning, and regime-aware market classification via MCP. 710+ assets on Hyperliquid.",
   "version": "1.6.0",
   "author": {
     "name": "AlgoVault Labs",

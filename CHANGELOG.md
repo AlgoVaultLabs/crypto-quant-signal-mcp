@@ -5,6 +5,41 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-05-15 — Default exchange flipped HL → Binance + README v1.11.0 refresh
+
+### Changed (BEHAVIOR — minor bump)
+
+- **Default `exchange` for `get_trade_call` and `get_trade_signal` flipped from `'HL'` (Hyperliquid) → `'BINANCE'` (Binance USDT-M Futures).** Callers omitting the `exchange` argument now receive the Binance verdict by default. Hyperliquid remains fully supported — pass `exchange: 'HL'` to preserve prior behavior, or any of the 5 venues explicitly. Rationale: Binance has higher per-IP rate-limit headroom than Hyperliquid (verified live during the wave's Plan-Mode probe — `GOLD/HL` returned `Hyperliquid API rate-limited (429)`; `TSLA/BINANCE` + `XAU/BINANCE` returned live verdicts in the same session), Binance is the most familiar venue for first-time integrators, and the `algovault-bot` already defaults to BINANCE (BOT-W1 D8 alignment).
+- **`get_market_regime` default `exchange` is UNCHANGED** (still `'HL'`). Wave is scoped to call/signal tools per directive.
+- **Tool describe-text rewritten** to lead with `BINANCE` as default and drop venue-order bias.
+- **Schema-and-handler default coherent** — `src/tools/get-trade-call.ts` fallback `input.exchange || 'HL'` → `input.exchange || 'BINANCE'` (dead-code-equivalent post-Zod-default, flipped for consistency + future-proofing).
+
+### Removed (FACTUALITY — stale claim deletion)
+
+- **Dropped the "TradFi assets (GOLD, TSLA, etc.) are HL-only" claim** from README, tool describe-text, dashboard, asset-tiers description, llms-full.txt, and welcome-page. The claim was verifiably false at two layers:
+  - **Exchange landscape (May 2026):** Binance ships TSLAUSDT (2026-01-28 launch), XAUUSDT + XAGUSDT (TradFi Perpetuals via Nest Exchange / FSRA regulated); Bybit launched 20 US stock perps + XAU/XAG/CL + 3 global ETFs (April 2026); Bitget ships 79+ TradFi instruments at launch (forex, metals, oil, indices, stock perps via Ondo); OKX announced ICE partnership for tokenized NYSE stocks targeting H2 2026.
+  - **Repo behavior:** `src/scripts/seed-signals.ts:446` uses `SHADOW-SEED-W1` restricted-universe top-N-by-call-count fan-out across all 5 venues; venue-unsupported pairs self-skip via the existing 'Insufficient candle data' error path inside `seedExchange`. Confirmed empirically via 2026-05-15 postgres GROUP BY (signal_performance.signals): TSLA seeded on HL/BINANCE/BYBIT/OKX/BITGET (260 total), XAU on BINANCE/BYBIT/OKX/BITGET (497 total — notably zero on HL), MSTR on 5 venues (193), NVDA on 4 venues (124), SPX on 5 (192), COIN on 5 (104), AAPL on 4 (103). Only GOLD is HL-only (125) — but that's a symbol-naming artifact: Binance uses `XAUUSDT`, not `GOLDUSDT`; XAU coverage on Binance is heavy.
+- **Tier-3 asset description rewritten** in `src/lib/asset-tiers.ts:26` and the dashboard `getPerformanceDashboardHtml` Tier-3 row in `src/index.ts:~1800`: `'TradFi perps — stocks, indices, commodities, FX via Hyperliquid'` → `'TradFi perps — stocks, indices, commodities, FX (seeded across Binance, Bybit, Bitget, OKX, and Hyperliquid via demand-driven SHADOW-SEED-W1 fan-out)'`.
+
+### Added
+
+- **NPM-readme-DRAFT.md transplanted to live `README.md`** as canonical README v1.11.0 source (per Mr.1 directive). Includes: hero substrate-frame line "A self-tuning quant ML model with a published track record"; new primary CTA "🤖 Try Free in Telegram"; "Drop-in for every MCP client" matrix (Claude Desktop, Claude Code, Cursor, Cline, Codex, Windsurf, Continue.dev); "What's new in v1.11.0" block with the default-exchange-change announcement; `/how-it-works` page reference. Architecture diagram updated to put Binance first as default in the exchange-adapter-layer.
+- **`audits/CHANGE-DEFAULT-EXCHANGE-W1-endpoint-truth.md`** — Plan-Mode Step 0 artifact: identifier-diff table (36 sites), system-map edge-mutation table, TradFi cross-CEX seed-and-score empirical confirmation (per-coin × per-exchange postgres matrix + live MCP `tools/call` probes), test-runner probe, schema baseline.
+- **NEW canary test `tests/unit/default-exchange-binance.test.ts`** — locks: TRADE_CALL_SCHEMA Zod default = `'BINANCE'`, describe-text contains `"Binance USDT-M Futures (default)"`, handler fallback uses `'BINANCE'`, `get_market_regime` keeps `'HL'`, no public surface ships the "HL-only TradFi" claim, package.json version = `1.11.0`.
+
+### Cache-refresh notice for MCP clients
+
+**Upgrading?** Refresh tool list — Claude.ai / Claude Desktop: toggle connector off+on; Cursor / Cline: restart MCP server connection. MCP clients cache `tools/list` at session start.
+
+### Source citations (web research, 2026-05-13)
+
+- Binance TSLAUSDT launch — https://www.binance.com/en/support/announcement/detail/40c76b4deaa247f09774e5d1ee747cb8
+- Binance XAU/XAG TradFi launch — https://www.binance.com/en/support/announcement/detail/ecf7318c0d434c339e80878588e700d0
+- Bybit 24/7 TradFi perpetuals (Chainwire, 2026-05-08) — https://chainwire.org/2026/05/08/bybit-introduces-24-7-tradfi-perpetual-contracts-trading-for-dozens-of-us-stocks-and-global-etfs/
+- 2026 crypto-exchanges TradFi roundup (Bitget 79+ instruments + OKX/ICE) — https://forklog.com/en/old-is-new-again-top-5-crypto-exchanges-with-tradfi-trading-in-2026/
+
+---
+
 ## [1.10.8] - 2026-05-08 — Telegram bot launch + per-user attribution loop
 
 ### Added
