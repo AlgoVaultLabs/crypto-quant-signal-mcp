@@ -79,5 +79,5 @@
     "title": "Crypto Quant Signal MCP",
     "description": "Signal intelligence for AI trading agents — composite quant signals across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP."
   },
-  "version": "1"
+  "version": "2"
 }
