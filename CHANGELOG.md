@@ -5,6 +5,30 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-05-16 — ERC-8004 Verified Agent on Base (identity + reputation endpoint)
+
+### Added — first AlgoVault on-chain presence beyond Merkle anchoring
+
+- **ERC-8004 agent identity adopted on Base mainnet.** AgentId `44544` at canonical Identity Registry [`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544) (impl `getVersion()=2.0.0`). Originally minted 2026-04-12 by archived `molthunt-launch.ts` with non-canonical metadata; ERC-8004-W1 adopted the existing tokenId via `setAgentURI(44544, ipfs://bafkreidx3luset63ky5px35fbykcejwgn2ngwtx66tzgq67pvprc4hv5ki)` to land canonical-shape registration JSON on-chain. AgentURI now resolves to a spec-compliant ERC-8004 registration file (`type/name/description/image/services[]/registrations[]/supportedTrust[]`) with an `algovault` extension namespace (performance pointer, Merkle anchor pointer, verify/track-record URLs).
+- **New `GET /api/erc-8004-reputation` endpoint** — public read-only JSON exposing agentId + identity registry + Basescan link + (deferred) attestation aggregator. Path-3 'pending' shape per Plan-Mode Amendment C: `score=null, status="pending", attestation_registry=null` until ERC-8004-W2 wires attestation (canonical mainnet ValidationRegistry not deployed as of 2026-05-16; Reputation Registry `giveFeedback` enforces hard-on-chain self-rejection). 5-min in-memory cache. Shape locked by `audits/api-erc-8004-reputation-shape-snapshot-2026-05-16.json` (6 sections: allowed_keys / forbidden_keys / error_contract / cache_contract / consumers / drift_check_command).
+- **`landing/index.html` + `landing/verify.html` + `README.md` Verified-On-Chain surfaces.** Hero trust-mark line + verify-page footer row + README `### Verified on-chain` subsection, each citing agentId 44544 + the Basescan deep link. `data-tr-field="erc8004_agent_id"` span hydrated by extended `landing/js/track-record-proxy.js` (new `/api/erc-8004-reputation` fetch).
+
+### Added — new library + script primitives
+
+- **`src/lib/erc8004.ts`** — Identity Registry ABI + EIP-55-checksummed Base mainnet address constants (`IDENTITY_REGISTRY_ADDRESS`, `REPUTATION_REGISTRY_ADDRESS`, `VALIDATION_REGISTRY_ADDRESS=null` with rationale comment) + CAIP-10 binding + `getBaseRpcUrl()` + `normalizePrivateKey()`.
+- **`src/lib/erc8004-registration-json.ts`** — pure `buildRegistrationJson(opts)` returning the canonical ERC-8004 + algovault-extension shape. Forbidden-key canary in tests covers top-level + algovault subtree against `/outcome_return_pct|outcome_price|phase_e/`.
+- **`src/lib/erc8004-reputation.ts`** — pure `buildErc8004ReputationBody(opts)` for the new `/api/erc-8004-reputation` endpoint. Same forbidden-key canary.
+- **`src/scripts/register-erc8004-agent.ts`** — dual-mode (mint OR `--update-uri`) script. Mint mode: pin v1 → register → pin v2 → setAgentURI (2 txs). Update-uri mode (this wave): single setAgentURI tx, adopts existing agentId with ownership verification. Idempotency via env-pin (`~/.config/algovault/erc8004.env`) + `balanceOf` PRE_MINT canary + Transfer-event scan hint. Pinata IPFS pinning.
+- **`tests/unit/erc8004-registration.test.ts` (16 cases)** + **`tests/unit/erc8004-public-shape.test.ts` (12 cases)** — schema locks + forbidden-key canaries + idempotency subprocess + snapshot-vs-builder parity.
+
+### Archived
+
+- **`src/scripts/molthunt-launch.ts` → `archived/scripts/molthunt-launch.ts.deprecated`** per Plan-Mode Amendment E (D3 — zero external consumers per repo-wide grep). Referenced non-existent `agentIdOf(address)` ABI fn (canonical IdentityRegistry has only `ownerOf(uint256)` + `balanceOf(address)`); used non-canonical `{name, description, website, github}` metadata shape. `archived/scripts/README.md` carries deprecation rationale + restore command.
+
+### Path 3 (DEFERRED) — attestation pipeline rolling out in ERC-8004-W2
+
+- Per-resolved-signal attestation flow NOT yet shipped. Path 1 (ValidationRegistry) blocked because canonical mainnet ValidationRegistry not deployed (per `erc-8004/erc-8004-contracts/scripts/addresses.ts` `MAINNET_ADDRESSES.validationRegistry = TBD - need to mine vanity salts`; testnet v0.0.1 contract `0x8004Cb1B...` squats at the same Base-mainnet address but is risky to use). Path 2 (client-authorized feedback) contradicts zero-friction product positioning. ERC-8004-W2 will re-evaluate once canonical mainnet ValidationRegistry ships.
+
 ## [1.12.0] - 2026-05-16 — 2-DEX shadow cohort (Aster + edgeX) + tools/list enum widening
 
 ### Added — new shadow venues callable via explicit `exchange` arg

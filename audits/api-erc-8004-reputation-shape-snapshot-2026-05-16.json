@@ -1,0 +1,102 @@
+{
+  "wave": "ERC-8004-W1",
+  "endpoint": "GET https://api.algovault.com/api/erc-8004-reputation",
+  "snapshot_taken": "2026-05-16",
+  "purpose": "Public-response-shape no-data-loss gate per CLAUDE.md '## Verification gate patterns' + Plan-Mode Amendment C. Future commits touching /api/erc-8004-reputation MUST diff against this snapshot before deploy. ANY new key requires a NEW dated snapshot file (never mutate this one); ANY removal of a key requires consumer-audit. Path-3 'pending' shape is locked here — when ERC-8004-W2 lands attestation, a NEW snapshot ships with score/total_attestations as integers + status='active'.",
+  "path_mode": "Path 3 (DEFERRED) per Plan-Mode 0.E ratification — attestation pipeline rolling out in ERC-8004-W2 when canonical mainnet ValidationRegistry deploys",
+  "response_top_level": {
+    "type": "object",
+    "stable_keys_count": 13,
+    "agent_id_source": "process.env.ERC8004_AGENT_ID (env-pinned by register-erc8004-agent.ts; agentId 44544 on Base mainnet as of 2026-05-16)",
+    "first_registered_at_source": "process.env.ERC8004_FIRST_REGISTERED_AT (env-pinned by register-erc8004-agent.ts; 2026-04-12T08:57:21Z = original mint timestamp preserved across the --update-uri pivot)"
+  },
+  "allowed_keys": [
+    "agent_id",
+    "registry",
+    "chain",
+    "chain_id",
+    "identity_registry",
+    "attestation_registry",
+    "score",
+    "total_attestations",
+    "status",
+    "status_message",
+    "first_registered_at",
+    "last_attestation_at",
+    "basescan_url",
+    "_algovault"
+  ],
+  "key_shape": {
+    "agent_id": { "type": "string|null", "example": "44544", "note": "uint256-as-string; null only if ERC8004_AGENT_ID env unset" },
+    "registry": { "type": "string", "value": "ERC-8004" },
+    "chain": { "type": "string", "value": "base" },
+    "chain_id": { "type": "integer", "value": 8453 },
+    "identity_registry": { "type": "string", "value": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432", "note": "EIP-55-checksummed Base mainnet address; canonical across all 24+ chain deployments per erc-8004/erc-8004-contracts README" },
+    "attestation_registry": { "type": "string|null", "current_value": null, "note": "null under Path 3; ERC-8004-W2 will populate either Reputation Registry (0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) or Validation Registry address once canonical mainnet deployment ships" },
+    "score": { "type": "number|null", "current_value": null, "range_when_active": "0..100", "note": "null under Path 3" },
+    "total_attestations": { "type": "integer", "current_value": 0, "note": "0 under Path 3" },
+    "status": { "type": "string", "enum": ["pending", "active"], "current_value": "pending", "note": "'pending' under Path 3; 'active' when ERC-8004-W2 wires attestation aggregation" },
+    "status_message": { "type": "string", "current_value": "Identity verified on-chain via ERC-8004 Identity Registry. Attestation pipeline rolling out — interim verification via /api/merkle-batches." },
+    "first_registered_at": { "type": "string|null", "format": "ISO 8601 UTC", "example": "2026-04-12T08:57:21Z" },
+    "last_attestation_at": { "type": "string|null", "format": "ISO 8601 UTC", "current_value": null, "note": "null under Path 3" },
+    "basescan_url": { "type": "string|null", "example": "https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544", "note": "null only if ERC8004_AGENT_ID env unset" },
+    "_algovault": {
+      "type": "object",
+      "keys": ["version", "endpoint_version", "freshness_seconds"],
+      "version_source": "PKG_VERSION from src/lib/pkg-version.ts (= package.json .version)",
+      "endpoint_version": { "type": "string", "value": "v1" },
+      "freshness_seconds": { "type": "integer", "note": "elapsed seconds since cache entry was created (0..300); recomputed at each serve, not cached" }
+    }
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "phase_e",
+    "phase_e_won",
+    "phase_e_pfe_bps",
+    "any private key shape (0x[0-9a-fA-F]{64}$)",
+    "any non-public signal metadata",
+    "MERKLE_PUBLISHER_KEY",
+    "ERC8004_AGENT_OWNER_KEY",
+    "IPFS_PINNING_TOKEN"
+  ],
+  "forbidden_rationale": "Data Integrity LAW + Plan-Mode Amendment C. outcome_return_pct / Phase-E numbers are internal-only to AlgoVault's quant engine — never expose via MCP or any public surface (CLAUDE.md ## Data Integrity 'Outcome WR is internal only'). Private-key shapes never appear in any public response.",
+  "error_contract": {
+    "200": "canonical body above",
+    "500": "{\"error\": \"Failed to load erc-8004 reputation\"} — generic catch-all, no internal-state leak"
+  },
+  "cache_contract": {
+    "ttl_ms": 300000,
+    "ttl_human": "5 minutes",
+    "scope": "module-level (single in-memory cache shared across all requests on this process; not per-request)",
+    "invalidation": "TTL-only; no explicit invalidation API (body is env-driven + path-3 static, so cache miss on TTL expiry is fine)",
+    "freshness_field": "_algovault.freshness_seconds (0..ttl_seconds, recomputed at each serve)"
+  },
+  "consumers": [
+    {
+      "surface": "landing/index.html",
+      "section": "Verified On-Chain badge",
+      "fields_read": ["agent_id", "basescan_url"],
+      "hydration": "client-side fetch (DOMContentLoaded) → populate data-tr-field=erc8004_agent_id span + Basescan deep link"
+    },
+    {
+      "surface": "landing/verify.html",
+      "section": "ERC-8004 identity row",
+      "fields_read": ["agent_id", "identity_registry", "basescan_url", "first_registered_at"],
+      "hydration": "client-side fetch"
+    },
+    {
+      "surface": "README.md ## Verified on-chain",
+      "section": "documentation-only snapshot citation",
+      "fields_read": "n/a (static markdown; refetch on each docs review)"
+    },
+    {
+      "surface": "external 3rd-party indexers (8004-aware ecosystem)",
+      "section": "discovery + verification",
+      "fields_read": "all keys; expected to consume canonical shape going forward"
+    }
+  ],
+  "drift_check_command": "curl -s https://api.algovault.com/api/erc-8004-reputation | jq -e 'has(\"agent_id\") and has(\"identity_registry\") and (.identity_registry == \"0x8004A169FB4a3325136EB29fA0ceB6D2e539a432\") and (.chain_id == 8453) and (.score == null) and (.status == \"pending\") and (.attestation_registry == null) and has(\"basescan_url\") and has(\"_algovault\") and (._algovault.endpoint_version == \"v1\") and ([.outcome_return_pct, .outcome_price, .phase_e_wr, .phase_e_won] | all(. == null))' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL",
+  "drift_check_lock_semantics": "Locks the Path-3 'pending' shape per Plan-Mode Amendment C: score===null AND status==='pending' AND attestation_registry===null. ERC-8004-W2 will ship a NEW dated snapshot file (audits/api-erc-8004-reputation-shape-snapshot-<W2 date>.json) with the active-attestation shape; THIS file is preserved unmutated for historical lineage."
+}

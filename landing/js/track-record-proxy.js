@@ -56,6 +56,7 @@
 
   var PERF_URL = '/api/performance-public';
   var MERKLE_URL = '/api/merkle-batches';
+  var ERC8004_URL = '/api/erc-8004-reputation';
 
   function formatPfe(rate) {
     if (typeof rate !== 'number' || isNaN(rate)) return null;
@@ -166,6 +167,21 @@
     }).catch(function (err) {
       if (typeof console !== 'undefined' && console.debug) {
         console.debug('[track-record-proxy] merkle fetch failed:', err.message || err);
+      }
+    });
+
+    // ERC-8004-W1 C3: hydrate the agentId span in the "ERC-8004 Verified Agent"
+    // badge (landing/index.html hero + landing/verify.html). The Basescan
+    // deep-link href ships hardcoded with the same agentId (44544) — if the
+    // NFT is ever transferred to a new agentId via safeTransferFrom, update
+    // the static fallback in both HTML files in the same wave.
+    fetchJson(ERC8004_URL).then(function (data) {
+      if (data && typeof data.agent_id === 'string') {
+        setField('erc8004_agent_id', data.agent_id);
+      }
+    }).catch(function (err) {
+      if (typeof console !== 'undefined' && console.debug) {
+        console.debug('[track-record-proxy] erc-8004 fetch failed:', err.message || err);
       }
     });
   }

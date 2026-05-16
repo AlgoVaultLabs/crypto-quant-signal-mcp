@@ -338,6 +338,10 @@ Every call is hashed (keccak256) at creation time and anchored on Base L2 via da
 - **Visual verification**: [algovault.com/verify](https://algovault.com/verify)
 - **Live dashboard**: [algovault.com/track-record](https://algovault.com/track-record)
 
+### Verified on-chain (ERC-8004)
+
+AlgoVault holds a canonical [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) agent identity on Base L2 — the open standard for trustless AI-agent discovery + verification. AgentId `44544` at Identity Registry [`0x8004A169…a432`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544), registered 2026-04-12, owner-controlled by the same wallet that publishes Merkle anchors. Agent registration JSON conforms to the canonical ERC-8004 shape with an `algovault` extension namespace (performance + Merkle pointers); machine-readable at [`/api/erc-8004-reputation`](https://api.algovault.com/api/erc-8004-reputation). Attestation pipeline rolling out. **Verify on Basescan**: [basescan.org/token/0x8004A169…?a=44544](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544).
+
 ---
 
 ## For Developers

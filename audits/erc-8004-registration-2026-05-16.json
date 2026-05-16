@@ -1,0 +1,54 @@
+{
+  "mode": "update-uri-adopt",
+  "agentId": "44544",
+  "agent_registry_caip10": "eip155:8453:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+  "identity_registry_address": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+  "owner_address": "0x804B82544E0B779c69192Ff5FC64a4c5d1017B80",
+  "base_chain_id": 8453,
+  "v1_ipfs_cid": null,
+  "v2_ipfs_cid": "bafkreidx3luset63ky5px35fbykcejwgn2ngwtx66tzgq67pvprc4hv5ki",
+  "registration_tx_hash": "0xd2c1983e4fb55691736733960ddbdbd87ca2f7c4eb08faa856b85f30953786d8",
+  "registration_block_number": null,
+  "set_agent_uri_tx_hash": "0xadb2c86196f9e5a1a44f2cf2c26bd51b80c0a1c44d012b0b673e4d1fcd1749e8",
+  "set_agent_uri_block_number": "46069108",
+  "prior_token_uri": "data:application/json;base64,eyJuYW1lIjoiQWxnb1ZhdWx0IFNpZ25hbCBBZ2VudCIsImRlc2NyaXB0aW9uIjoiQUktbmF0aXZlIGNyeXB0byBzaWduYWwgZW5naW5lLiBNQ1Agc2VydmVyIGRlbGl2ZXJpbmcgdHJhZGUgc2lnbmFscywgZnVuZGluZyBhcmIgc2NhbnMsIGFuZCBtYXJrZXQgcmVnaW1lIGRldGVjdGlvbi4iLCJ3ZWJzaXRlIjoiaHR0cHM6Ly9hcGkuYWxnb3ZhdWx0LmNvbSIsImdpdGh1YiI6Imh0dHBzOi8vZ2l0aHViLmNvbS9BbGdvVmF1bHRMYWJzL2NyeXB0by1xdWFudC1zaWduYWwtbWNwIn0=",
+  "registration_json_v2": {
+    "type": "AgentCard",
+    "name": "AlgoVault MCP",
+    "description": "The Brain Layer for AI Trading Agents — cross-venue composite trade calls, market regime, and funding arbitrage signals over the Model Context Protocol. Verified track record on Base via Merkle anchoring.",
+    "image": "https://algovault.com/logo.png",
+    "services": [
+      {
+        "type": "ModelContextProtocol",
+        "endpoint": "https://api.algovault.com/mcp",
+        "transport": "streamable-http"
+      }
+    ],
+    "registrations": [
+      {
+        "agentId": "44544",
+        "agentRegistry": "eip155:8453:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+      }
+    ],
+    "supportedTrust": [
+      "reputation",
+      "merkle-anchor"
+    ],
+    "algovault": {
+      "schema_version": "algovault-extension-v1",
+      "performance_pointer": "https://api.algovault.com/api/performance-public",
+      "merkle_anchor_pointer": "https://api.algovault.com/api/merkle-batches",
+      "verify_url": "https://algovault.com/verify",
+      "track_record_url": "https://algovault.com/track-record",
+      "x402_facilitator": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "operator": "AlgoVault Labs",
+      "operator_contact": "admin@algovault.com",
+      "x_handle": "@AlgoVaultLabs",
+      "license": "MIT",
+      "first_registered_at": "2026-04-12T08:57:21Z"
+    }
+  },
+  "basescan_token_url": "https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544",
+  "first_registered_at": "2026-04-12T08:57:21Z",
+  "recorded_at": "2026-05-16T10:32:45.198Z"
+}

@@ -21,6 +21,7 @@ import { getSignalPerformance, runBackfill } from './resources/signal-performanc
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
+import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
@@ -1051,6 +1052,34 @@ async function startHttp() {
       res.json(value);
     } catch {
       res.status(500).json({ error: 'Failed to fetch recent calls' });
+    }
+  });
+
+  // ERC-8004-W1 / C3: public read endpoint exposing the AlgoVault ERC-8004
+  // agent identity + (deferred) reputation rollup. Path 3 active per Plan-Mode
+  // Amendment C: score=null, status='pending', attestation_registry=null
+  // (ValidationRegistry not canonically deployed on Base mainnet + Reputation
+  // Registry self-feedback rejected — wait for ERC-8004-W2). 5-min cache.
+  // Shape locked by audits/api-erc-8004-reputation-shape-snapshot-<date>.json.
+  const ERC8004_REPUTATION_CACHE_TTL_MS = 5 * 60 * 1000;
+  let erc8004ReputationCacheAt: number | null = null;
+  app.get('/api/erc-8004-reputation', async (_req, res) => {
+    try {
+      const now = Date.now();
+      if (!erc8004ReputationCacheAt || now - erc8004ReputationCacheAt > ERC8004_REPUTATION_CACHE_TTL_MS) {
+        erc8004ReputationCacheAt = now;
+      }
+      const freshness = Math.floor((now - erc8004ReputationCacheAt) / 1000);
+      res.json(
+        buildErc8004ReputationBody({
+          pkgVersion: PKG_VERSION,
+          agentId: process.env.ERC8004_AGENT_ID || null,
+          firstRegisteredAt: process.env.ERC8004_FIRST_REGISTERED_AT || null,
+          freshnessSeconds: freshness,
+        }),
+      );
+    } catch {
+      res.status(500).json({ error: 'Failed to load erc-8004 reputation' });
     }
   });
 
