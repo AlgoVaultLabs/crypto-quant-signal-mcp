@@ -96,7 +96,14 @@ jobs:
             cp landing/*.txt /var/www/algovault/ 2>/dev/null && echo "Landing txt/ synced" || echo "No landing txt/ to sync"
             cp landing/sitemap.xml /var/www/algovault/ 2>/dev/null && echo "Landing sitemap.xml synced" || echo "No landing sitemap.xml to sync"
 
-            docker compose up -d --build
+            # --force-recreate defends against env_file race: docker compose
+            # only auto-recreates if image OR compose-config mtime changed,
+            # which loses host-side `.env` appends made simultaneously with
+            # the deploy. Forcing recreate adds ~2-3s and is idempotent.
+            # Surfaced by ERC-8004-W1 (2026-05-16) post-deploy probe that
+            # caught ERC8004_* env vars missing from the first-pass container
+            # after a same-window .env append.
+            docker compose up -d --build --force-recreate
             docker compose ps
 
             # Capture new version after pull
