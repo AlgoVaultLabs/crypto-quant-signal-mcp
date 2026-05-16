@@ -1,3 +1,4 @@
+
 <p align="center">
   <a href="https://algovault.com">
     <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png" alt="AlgoVault" width="120" />
@@ -27,6 +28,7 @@
   <a href="https://www.npmjs.com/package/crypto-quant-signal-mcp"><img src="https://img.shields.io/npm/dw/crypto-quant-signal-mcp" alt="npm downloads" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT" /></a>
   <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81"><img src="https://img.shields.io/badge/Track_Record-On--Chain_Verified-blue?logo=ethereum" alt="On-Chain Verified" /></a>
+  <a href="https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544"><img src="https://img.shields.io/badge/ERC--8004-Verified_Agent-8A2BE2?logo=ethereum" alt="ERC-8004 Verified Agent" /></a>
 </p>
 
 ---
@@ -35,12 +37,12 @@
 
 <p align="center">
   <a href="https://algovault.com/track-record">
-    <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/track-record-2026-05-13.png" alt="AlgoVault Live Track Record — 90.4% PFE Win Rate across 86,093 trade calls, 33 Merkle batches anchored on Base L2" width="100%" />
+    <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/docs/screenshots/track-record-2026-05-16.png" alt="AlgoVault Live Track Record — 90.5% PFE Win Rate across 92,995 trade calls, 36 Merkle batches anchored on Base L2" width="100%" />
   </a>
 </p>
 
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">90.4%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">86,093</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">33</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">99%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">90.5%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">92,995</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">36</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">99%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
@@ -50,6 +52,19 @@
 <p align="center">
   <a href="https://algovault.com/track-record"><strong>→ Open the live dashboard</strong></a>
 </p>
+
+---
+
+## 🪪 ERC-8004 Verified Agent on Base
+
+AlgoVault MCP is registered as a canonical trading-brain agent on the ERC-8004 Identity Registry (Base L2). The agent identity is on-chain; the track record links from it.
+
+- **Identity Registry**: [`0x8004A169...e539a432`](https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432)
+- **AlgoVault agentId**: [`44544`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544) (8004-spec ERC-721)
+- **Agent metadata (tokenURI)**: pinned to IPFS, mirrored at [`api.algovault.com/api/erc-8004-reputation`](https://api.algovault.com/api/erc-8004-reputation)
+- **Trust signals**: Merkle-anchored track record. On-chain attestation pipeline rolling out separately.
+
+> Verify the agent on Basescan: [open agentId](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544)
 
 ---
 
@@ -72,21 +87,20 @@ MCP `tools/list` + `resources/list` is the API surface. No `@algovault/sdk`; the
 
 ---
 
-## What's new in v1.11.0
+## What's new in v1.13.0
 
-Live since 2026-05-XX (target):
+Live since 2026-05-16:
 
-- **🤖 Try Free in Telegram.** [`@algovaultofficialbot`](https://t.me/algovaultofficialbot) is now the primary on-ramp at the top of this README. One Telegram command (`/watch BTC 4h`) gets you live regime alerts and BUY/SELL trade calls in real time. Same composite-verdict signal stream as the MCP server, same <span data-tr-field="pfe_wr">90.4%</span> PFE win rate, same on-chain track record. No code, no API key, no install. 100 free trade-call alerts/month before the upgrade prompt fires. <!-- SNAPSHOT-LINE -->
+- **🪪 ERC-8004 Verified Agent on Base.** AlgoVault MCP is now registered on the canonical ERC-8004 Identity Registry at [`0x8004A169...e539a432`](https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432). Each call you make traces back to a portable, censorship-resistant agent identity on Base L2. Same on-chain track record, plus a verified agent handle that AI orchestrators can resolve. agentId [`44544`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544). Verify on Basescan.
+- **🔌 New `/api/erc-8004-reputation` endpoint.** Read-only JSON aggregator exposing agentId, identity registry address, registration timestamp, and Basescan link. Cached 5 minutes. Drop-in for any agent that wants to verify AlgoVault's on-chain handle programmatically. See `curl -s api.algovault.com/api/erc-8004-reputation | jq`.
+- **🧭 Attestation pipeline rolling out separately.** The per-call on-chain attestation flow is in active design. v1.13.0 ships the identity layer cleanly; reputation scoring lands once the canonical ValidationRegistry deployment on Base mainnet is finalized upstream.
 
-- **🔁 Default exchange changed: Hyperliquid → Binance Futures.** `get_trade_call(coin: "BTC", timeframe: "1h")` (no `exchange` arg) now returns the Binance USDT-M Futures verdict by default. Binance is the highest-volume CEX and the most familiar default for devs onboarding. Hyperliquid remains fully supported — pass `exchange: "HL"` to keep prior behavior, or specify any of the 5 venues explicitly. No data loss; default-routing change only.
+### v1.12.0 highlights (recap)
 
-- **🧠 Self-tuning quant ML model — surfaced.** AlgoVault is a self-tuning quant ML model with a published track record. The composite trade-call verdict is produced by a model that continuously learns from outcomes via our [Autonomous Optimization Engine](https://algovault.com/how-it-works). Like an LLM API, you're not buying a one-shot signal — you're buying access to a model that gets sharper with every call. PFE win rate has improved monotonically since launch; verifiable on Base L2.
+- **🪐 DEX adapters added — Aster + edgeX (experimental).** AlgoVault now produces signals on 2 DEX venues in shadow phase. DEX signals are produced internally for validation; promotion to the public `get_trade_call` exchange parameter happens after the shadow cohort meets the same performance bar as the 5 CEX. Direct callers continue to target the 5 CEX (Binance / Hyperliquid / Bybit / OKX / Bitget).
+- **🏷️ Per-CEX TradFi symbol aliasing (v1.11.1).** `get_trade_call({coin:"GOLD", exchange:"BINANCE"})` now resolves to `XAUUSDT` natively. 4 CEX × 4-6 TradFi aliases (GOLD/SILVER/PLATINUM/PALLADIUM, plus COPPER/NATGAS on OKX). Unsupported venue + asset combinations return a structured `TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE` error with `suggested_venues` so agents can self-retry.
 
-- **🔌 Drop-in client matrix enumerated.** Streamable HTTP at `api.algovault.com/mcp` works with Claude Desktop, Claude Code, Cursor, Cline, and every other MCP-spec-compliant client. See the [Drop-in section](#drop-in-for-every-mcp-client). No SDK; no wrapper library; protocol is the API.
-
-- **📄 New `/how-it-works` page.** Substrate-level docs page now live at [algovault.com/how-it-works](https://algovault.com/how-it-works). Explains what AlgoVault is at the technical level for devs evaluating one click below the landing hero.
-
-> **Upgrading from v1.10.x or earlier?** The MCP tool surface is unchanged structurally — `get_trade_call`, `scan_funding_arb`, `get_market_regime` keep their parameter shapes. The only behavioral diff: omitting `exchange` now returns the Binance result instead of Hyperliquid. Existing agents passing `exchange` explicitly are unaffected. MCP clients (Claude Desktop, Cursor, Cline) cache the tool list at session start — toggle the connector off/on to pick up the new default-routing behavior.
+> **Upgrading from v1.12.x or earlier?** The MCP tool surface is unchanged structurally — `get_trade_call`, `scan_funding_arb`, `get_market_regime` keep their parameter shapes. v1.13.0 only adds a new HTTP endpoint (`/api/erc-8004-reputation`) and a public-facing badge. MCP clients (Claude Desktop, Cursor, Cline) cache `tools/list` at session start — toggle the connector off/on to pick up the latest catalog metadata.
 
 ---
 
@@ -94,16 +108,17 @@ Live since 2026-05-XX (target):
 
 Most MCP trading servers give you raw data — prices, order books, candles. Your agent still has to figure out what to do with it.
 
-AlgoVault is different. We give your agent **one answer**: a directional verdict with a confidence score, produced by a self-tuning quant ML model whose weights are calibrated from published trade outcomes. Every call is tracked, every outcome is measured, and the full track record is on-chain from day one.
+AlgoVault is different. We give your agent **one answer**: a directional verdict with a confidence score, produced by a self-tuning quant ML model whose weights are calibrated from published trade outcomes. Every call is tracked, every outcome is measured, and the full track record is on-chain from day one. The agent itself is registered on ERC-8004.
 
 **What makes this not just another indicator wrapper:**
 
 - **Composite scoring, not single-indicator noise.** Multiple orthogonal signals — momentum oscillators, trend structure, derivatives positioning, volume dynamics, open interest flow — fused into a single weighted verdict. Weights are calibrated from live market outcome data, not textbook defaults.
 - **Regime-aware call generation.** Calls are filtered through a market regime classifier before emission. The engine knows when to stay silent — a trend-following setup in a ranging market gets suppressed, not broadcast. (HOLD rate ~99%; we issue calls only when the edge is clear.) <!-- SNAPSHOT-LINE -->
-- **Cross-venue intelligence.** Full signal generation on 5 exchanges with native candle, OI, funding, and volume data per venue. Cross-venue funding arbitrage scanning across all venues — nobody else does multi-exchange derivatives analysis via MCP. <!-- SNAPSHOT-LINE -->
+- **Cross-venue intelligence.** Full signal generation on 5 exchanges with native candle, OI, funding, and volume data per venue. 2 DEX venues (Aster, edgeX) in experimental shadow phase. Cross-venue funding arbitrage scanning across the major CEX — nobody else does multi-exchange derivatives analysis via MCP. <!-- SNAPSHOT-LINE -->
 - **Published track record with every release.** Every call is recorded with outcome prices at multiple horizons. PFE Win Rate, Profit Factor, Expected Value computed continuously. No cherry-picking, no survivorship bias. **Anchored on-chain on Base L2 — we cannot rewrite history.**
+- **ERC-8004 verified agent.** AlgoVault MCP holds a registered agentId on the Base L2 Identity Registry. The agent identity is portable and on-chain.
 - **Self-tuning model.** Indicator weights are tuned from live outcome data by our [Autonomous Optimization Engine](https://algovault.com/how-it-works). The model gets sharper with every signal.
-- **Crypto + TradFi coverage.** 730+ assets — standard crypto perps on all 5 venues; TradFi perps (stocks, indices, commodities, FX); liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
+- **Crypto + TradFi coverage.** 730+ assets — standard crypto perps on all 5 CEX; TradFi perps (stocks, indices, commodities, FX); liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
 
 ---
 
@@ -143,9 +158,9 @@ Returns a composite **BUY / SELL / HOLD** verdict with confidence score for any 
 Under the hood: a self-tuning quant ML model evaluates momentum, trend structure, derivatives sentiment, open interest dynamics, and volume conviction. Scores pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted. Only high-conviction calls are generated; the model stays silent when the edge is unclear.
 
 **Parameters:**
-- `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, `"GOLD"`, `"TSLA"`, or any of 710+ supported assets <!-- SNAPSHOT-LINE -->
+- `coin` (string, required): Asset symbol — e.g. `"ETH"`, `"BTC"`, `"SOL"`, `"GOLD"`, `"TSLA"`, or any of 730+ supported assets <!-- SNAPSHOT-LINE -->
 - `timeframe` (string, default `"15m"`): all 11 timeframes — `"1m"`, `"3m"`, `"5m"`, `"15m"`, `"30m"`, `"1h"`, `"2h"`, `"4h"`, `"8h"`, `"12h"`, `"1d"`
-- `exchange` (string, default `"BINANCE"`): `"BINANCE"`, `"HL"` (Hyperliquid), `"BYBIT"`, `"OKX"`, `"BITGET"`. Asset availability varies per venue — pass exchange explicitly to target a specific venue.
+- `exchange` (string, default `"BINANCE"`): `"BINANCE"`, `"HL"` (Hyperliquid), `"BYBIT"`, `"OKX"`, `"BITGET"`. Asset availability varies per venue — pass exchange explicitly to target a specific venue. (DEX venues Aster + edgeX are in experimental shadow phase and not exposed via this parameter yet.)
 - `includeReasoning` (boolean, default `true`): Human-readable explanation of the call logic
 
 **Output:** v1.10.0 sanitized shape — `call` direction, `confidence` (0–100), bucketed `indicators` (`funding_rate` / `funding_24h_avg` / `funding_state` / `oi_change_pct` / `volume_24h` / `trend_persistence` / `breakout_pending`), detected `regime`, sanitized `reasoning` prose, and `_algovault` metadata for downstream tool composability.
@@ -178,7 +193,7 @@ Responses also include optional `closest_tradeable` (on HOLD verdicts) and `also
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.11.0",
+    "version": "1.13.1",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -330,17 +345,15 @@ Every call is tracked from emission to outcome. No exceptions.
 
 ### On-Chain Verification
 
-Every call is hashed (keccak256) at creation time and anchored on Base L2 via daily Merkle batches. The track record is tamper-proof — we cannot edit past calls.
+Every call is hashed (keccak256) at creation time and anchored on Base L2 via daily Merkle batches. The agent identity is registered on the ERC-8004 Identity Registry. The track record is tamper-proof — we cannot edit past calls.
 
-- **Contract**: [`0x6485...0f81`](https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81) (Base L2)
+- **Merkle Anchor Contract**: [`0x6485...0f81`](https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81) (Base L2)
+- **ERC-8004 Identity Registry**: [`0x8004...a432`](https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432) — AlgoVault agentId [`44544`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544)
 - **Verify any call**: [`api.algovault.com/api/verify-signal?signalId=<ID>`](https://api.algovault.com/api/verify-signal)
 - **View all batches**: [`api.algovault.com/api/merkle-batches`](https://api.algovault.com/api/merkle-batches)
+- **Agent metadata**: [`api.algovault.com/api/erc-8004-reputation`](https://api.algovault.com/api/erc-8004-reputation)
 - **Visual verification**: [algovault.com/verify](https://algovault.com/verify)
 - **Live dashboard**: [algovault.com/track-record](https://algovault.com/track-record)
-
-### Verified on-chain (ERC-8004)
-
-AlgoVault holds a canonical [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) agent identity on Base L2 — the open standard for trustless AI-agent discovery + verification. AgentId `44544` at Identity Registry [`0x8004A169…a432`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544), registered 2026-04-12, owner-controlled by the same wallet that publishes Merkle anchors. Agent registration JSON conforms to the canonical ERC-8004 shape with an `algovault` extension namespace (performance + Merkle pointers); machine-readable at [`/api/erc-8004-reputation`](https://api.algovault.com/api/erc-8004-reputation). Attestation pipeline rolling out. **Verify on Basescan**: [basescan.org/token/0x8004A169…?a=44544](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544).
 
 ---
 
@@ -430,12 +443,18 @@ MCP Server (Express + @modelcontextprotocol/sdk)
   │    ├─ Hyperliquid (crypto + TradFi perps)
   │    ├─ Bybit Linear
   │    ├─ OKX Swap
-  │    └─ Bitget USDT-M
+  │    ├─ Bitget USDT-M
+  │    ├─ Aster (DEX — experimental, shadow signal production)
+  │    └─ edgeX (DEX — experimental, shadow signal production)
   │
   ├─ Performance Tracker
   │    └─ PostgreSQL (remote) / SQLite (local)
   │
-  └─ Exchange Public APIs (free, no auth — all 5 venues)
+  ├─ On-Chain Layer
+  │    ├─ Merkle Anchor (daily) — Base L2 0x6485...0f81
+  │    └─ ERC-8004 Identity Registry — Base L2 0x8004...a432
+  │
+  └─ Exchange Public APIs (free, no auth — all 5 CEX + 2 experimental DEX)
 ```
 
 ---

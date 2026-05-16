@@ -5,7 +5,15 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.13.0] - 2026-05-16 — ERC-8004 Verified Agent on Base (identity + reputation endpoint)
+## [1.13.1] - 2026-05-16 — README republish (NPM-readme-DRAFT.md → README.md)
+
+### Changed — npm-surface README only (no code change)
+
+- **README.md fully replaced from `NPM-readme-DRAFT.md` SoT**: canonical hero badge row (Track Record + ERC-8004 Verified Agent), expanded `## 🪪 ERC-8004 Verified Agent on Base` mini-section directly under the Live Track Record block, `## What's new in v1.13.0` block + v1.12.0 highlights recap, Architecture diagram now lists 5 CEX + 2 DEX experimental adapters (Aster + edgeX) explicitly, `_algovault.version` example bumped to `1.13.0`. AgentId placeholder `<AGENT_ID_PLACEHOLDER>` resolved to live `44544` across 5 anchor sites (hero badge href, identity mini-section bullets + blockquote, what's-new bullet, On-Chain Verification list).
+- **Snapshot lines refreshed** from live API at publish time: PFE WR `90.4%` → `90.5%`; total calls `86,093` → `92,995`; Merkle batches `33` → `36`; asset count `720+` → `730+` (in 3 places — Tools `coin` description, pricing table assets row, Why AlgoVault crypto+TradFi bullet).
+- **No `src/`, `dist/`, `tests/`, `landing/`, or runtime contract changes.** Pure README/marketing patch — publishes new tarball so npm registry README reflects v1.13.0's ERC-8004 surface for crawlers that read npm's `dist-tags.latest` content (npm caches README from the latest publish).
+
+
 
 ### Added — first AlgoVault on-chain presence beyond Merkle anchoring
 
