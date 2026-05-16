@@ -13,6 +13,7 @@ import { BybitAdapter } from './adapters/bybit.js';
 import { OKXAdapter } from './adapters/okx.js';
 import { BitgetAdapter } from './adapters/bitget.js';
 import { AsterAdapter } from './adapters/aster.js';
+import { EdgeXAdapter } from './adapters/edgex.js';
 
 const adapters = new Map<ExchangeId, ExchangeAdapter>();
 
@@ -35,6 +36,9 @@ export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
         break;
       case 'ASTER':
         adapter = new AsterAdapter();
+        break;
+      case 'EDGEX':
+        adapter = new EdgeXAdapter();
         break;
       case 'HL':
       default:

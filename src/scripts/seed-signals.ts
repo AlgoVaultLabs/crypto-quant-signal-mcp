@@ -53,6 +53,12 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
   // but won't auto-accumulate from this cron until follow-up wave extends
   // the seed-loop branches. Tracked as PILOT-ADAPTERS-SEED-LOOP-W2 (deferred).
   'ASTER':   300,
+  // PILOT-ADAPTERS-W1 / C2 (2026-05-16): EDGEX shadow venue. Same scope
+  // deferral as ASTER — Record<ExchangeId, number> key required for type-
+  // system compat; seed-loop branch is OUT of C2 scope (PILOT-ADAPTERS-
+  // SEED-LOOP-W2 follow-up). Slightly higher delay (400ms) because edgeX
+  // has no published rate-limit budget; conservative throttle for unknown.
+  'EDGEX':   400,
 };
 
 // Idempotency windows per timeframe (slightly less than the interval)

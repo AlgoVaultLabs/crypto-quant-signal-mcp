@@ -114,7 +114,7 @@ function createServer(): McpServer {
     coin: z.string().max(20).describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
     timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: all 11 timeframes available, 100 calls/month.'),
     includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
-    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER']).default('BINANCE').describe("Exchange to analyze. 'BINANCE' = Binance USDT-M Futures (default), 'HL' = Hyperliquid, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table. Asset availability varies per venue — pass exchange explicitly to target a specific venue."),
+    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX']).default('BINANCE').describe("Exchange to analyze. 'BINANCE' = Binance USDT-M Futures (default), 'HL' = Hyperliquid, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table. Asset availability varies per venue — pass exchange explicitly to target a specific venue."),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
     return async ({ coin, timeframe, includeReasoning, exchange }: { coin: string; timeframe: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange: ExchangeId }) => {
@@ -217,7 +217,7 @@ function createServer(): McpServer {
     {
       coin: z.string().max(20).describe("Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"),
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe('Candle timeframe'),
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table."),
+      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table."),
     },
     { readOnlyHint: true, openWorldHint: true },
     async ({ coin, timeframe, exchange }) => {
