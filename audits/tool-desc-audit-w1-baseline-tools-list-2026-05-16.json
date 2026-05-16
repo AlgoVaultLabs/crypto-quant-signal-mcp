@@ -1,0 +1,216 @@
+{
+  "result": {
+    "tools": [
+      {
+        "name": "get_trade_call",
+        "description": "Returns a composite BUY/SELL/HOLD trade call for a perpetual on Binance / Hyperliquid / Bybit / OKX / Bitget. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "coin": {
+              "type": "string",
+              "maxLength": 20,
+              "description": "Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"
+            },
+            "timeframe": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "8h",
+                "12h",
+                "1d"
+              ],
+              "default": "15m",
+              "description": "Candle timeframe. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: all 11 timeframes available, 100 calls/month."
+            },
+            "includeReasoning": {
+              "type": "boolean",
+              "default": true,
+              "description": "Include human-readable reasoning"
+            },
+            "exchange": {
+              "type": "string",
+              "enum": [
+                "HL",
+                "BINANCE",
+                "BYBIT",
+                "OKX",
+                "BITGET",
+                "ASTER",
+                "EDGEX"
+              ],
+              "default": "BINANCE",
+              "description": "Exchange to analyze. 'BINANCE' = Binance USDT-M Futures (default), 'HL' = Hyperliquid, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table. Asset availability varies per venue — pass exchange explicitly to target a specific venue."
+            }
+          },
+          "required": [
+            "coin"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "get_trade_signal",
+        "description": "Returns a composite BUY/SELL/HOLD trade call for a perpetual on Binance / Hyperliquid / Bybit / OKX / Bitget. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage. (Alias for `get_trade_call` since v1.10.0; identical behavior. New agents should call `get_trade_call`.)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "coin": {
+              "type": "string",
+              "maxLength": 20,
+              "description": "Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"
+            },
+            "timeframe": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "8h",
+                "12h",
+                "1d"
+              ],
+              "default": "15m",
+              "description": "Candle timeframe. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: all 11 timeframes available, 100 calls/month."
+            },
+            "includeReasoning": {
+              "type": "boolean",
+              "default": true,
+              "description": "Include human-readable reasoning"
+            },
+            "exchange": {
+              "type": "string",
+              "enum": [
+                "HL",
+                "BINANCE",
+                "BYBIT",
+                "OKX",
+                "BITGET",
+                "ASTER",
+                "EDGEX"
+              ],
+              "default": "BINANCE",
+              "description": "Exchange to analyze. 'BINANCE' = Binance USDT-M Futures (default), 'HL' = Hyperliquid, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table. Asset availability varies per venue — pass exchange explicitly to target a specific venue."
+            }
+          },
+          "required": [
+            "coin"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "scan_funding_arb",
+        "description": "Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "minSpreadBps": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 5,
+              "description": "Minimum spread in basis points to include (0-10000)"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 10,
+              "description": "Max results 1-200 (free: max 5)"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "get_market_regime",
+        "description": "Classifies the current market regime (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE) for a Hyperliquid perp using ADX(14), volatility ratio, price structure, and cross-venue funding sentiment.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "coin": {
+              "type": "string",
+              "maxLength": 20,
+              "description": "Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"
+            },
+            "timeframe": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "4h",
+                "1d"
+              ],
+              "default": "4h",
+              "description": "Candle timeframe"
+            },
+            "exchange": {
+              "type": "string",
+              "enum": [
+                "HL",
+                "BINANCE",
+                "BYBIT",
+                "OKX",
+                "BITGET",
+                "ASTER",
+                "EDGEX"
+              ],
+              "default": "HL",
+              "description": "Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table."
+            }
+          },
+          "required": [
+            "coin"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ]
+  },
+  "jsonrpc": "2.0",
+  "id": 3
+}

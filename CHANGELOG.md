@@ -5,6 +5,29 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.2] - 2026-05-16 — Tool descriptions rewritten for BM25 + regex retrieval ranking
+
+### Changed — `tools/list` description copy (no behavior change)
+
+- **`get_trade_call`, `scan_funding_arb`, `get_market_regime` descriptions rewritten** for Anthropic Tool Search (`tool_search_tool_regex_20251119` + `tool_search_tool_bm25_20251119`) which ranks over `tools/list` name + description + arg-name + arg-description. Each tool's combined-text (tool description + sum of param `describe()` strings) now contains ≥15 of 20 canonical keyword phrases observed in AI-agent-builder search vocabulary. Length budget tightened: tool descriptions ≤350 chars, param descriptions ≤80 chars.
+- **`get_trade_signal` alias** — same canonical description as `get_trade_call` + back-compat suffix unchanged.
+- **`get_market_regime` no longer claims "for a Hyperliquid perp"** — the description now reflects the actual 5-venue coverage (Binance / Bybit / OKX / Bitget / Hyperliquid) via the same enum that `get_trade_call` uses; default value remains `HL` (out of scope for this wave).
+- **Param `describe()` strings tightened** — verbose shadow-venue prose dropped from `exchange` describe (5+2 enum still functional; shadow status lives on the canonical `mcp://algovault/venues` resource).
+- **Zero schema mutation.** Same enum members, same default values, same Zod constraints. Only the prose payload of `tools/list` changed.
+
+### Added — keyword + brand-voice canary
+
+- **`src/tool-descriptions.ts`** — new pure-data module exporting the description constants + `TOP_20_KEYWORDS` lock. Hoisted out of `src/index.ts` so the canary test can import without triggering bottom-of-file `startHttp()` / `startStdio()` bootstrap.
+- **`tests/unit/tool-description-keywords.test.ts`** (14 cases) — locks: TOP_20 keyword constant shape; ≥15-of-20 keyword coverage per tool; brand-voice forbidden-phrase canary (`/intelligence layer|powerful|seamless|robust|cutting-edge|industry-leading|Quant LLM|Wall Street Quant Brain/i`); internal-detail forbidden-phrase canary (wave IDs, archetype labels, AOE substrate mechanics); length budget; alias-suffix structure.
+
+### Cache-refresh recommended
+
+MCP clients cache tools/list at session start. To pick up the refreshed tool descriptions — Claude.ai / Claude Desktop: toggle connector off+on. Cursor / Cline: restart MCP server connection.
+
+### Why this matters
+
+The [Arcade benchmark](https://blog.arcade.dev/anthropic-tool-search-claude-mcp-runtime) measured 56% regex / 64% BM25 retrieval at 4,027 tools — keyword tightness compounds with catalog growth. The [Stacklok comparison](https://stacklok.com/blog/stackloks-mcp-optimizer-vs-anthropics-tool-search-tool-a-head-to-head-comparison/) shows gateway-side semantic routers reaching 98% retrieval; that's the medium-term direction but keyword retrieval remains the dominant path for the next ~6 months. This rewrite stays inside the brand-voice LAWs (`feedback_public_copy_professional_concise.md` + `feedback_no_internal_details_in_public_copy.md`) while packing the substantive search vocabulary AI-agent builders actually type.
+
 ## [1.13.1] - 2026-05-16 — README republish (NPM-readme-DRAFT.md → README.md)
 
 ### Changed — npm-surface README only (no code change)

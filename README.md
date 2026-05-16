@@ -87,9 +87,14 @@ MCP `tools/list` + `resources/list` is the API surface. No `@algovault/sdk`; the
 
 ---
 
-## What's new in v1.13.0
+## What's new in v1.13.2
 
 Live since 2026-05-16:
+
+- **🎯 Tool descriptions rewritten for Anthropic Tool Search.** `get_trade_call`, `scan_funding_arb`, `get_market_regime` (plus the `get_trade_signal` alias) now rank cleanly under BOTH `tool_search_tool_regex_20251119` + `tool_search_tool_bm25_20251119`, which retrieve over `tools/list` name + description + arg-name + arg-description. Combined-text coverage hits ≥15 of 20 canonical search phrases AI-agent builders actually type. `get_market_regime` no longer claims "for a Hyperliquid perp" — description now reflects the actual 5-venue coverage. Zero schema mutation; same enum members, same defaults, same Zod constraints.
+- **Cache-refresh recommended.** MCP clients cache tools/list at session start. To pick up the refreshed tool descriptions — Claude.ai / Claude Desktop: toggle connector off+on. Cursor / Cline: restart MCP server connection.
+
+### v1.13.0 highlights (recap)
 
 - **🪪 ERC-8004 Verified Agent on Base.** AlgoVault MCP is now registered on the canonical ERC-8004 Identity Registry at [`0x8004A169...e539a432`](https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432). Each call you make traces back to a portable, censorship-resistant agent identity on Base L2. Same on-chain track record, plus a verified agent handle that AI orchestrators can resolve. agentId [`44544`](https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544). Verify on Basescan.
 - **🔌 New `/api/erc-8004-reputation` endpoint.** Read-only JSON aggregator exposing agentId, identity registry address, registration timestamp, and Basescan link. Cached 5 minutes. Drop-in for any agent that wants to verify AlgoVault's on-chain handle programmatically. See `curl -s api.algovault.com/api/erc-8004-reputation | jq`.

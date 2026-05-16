@@ -43,6 +43,21 @@ import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVe
 import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
+import {
+  TRADE_CALL_DESCRIPTION,
+  TRADE_CALL_ALIAS_SUFFIX,
+  SCAN_FUNDING_ARB_DESCRIPTION,
+  GET_MARKET_REGIME_DESCRIPTION,
+  PARAM_DESC_TRADE_CALL_COIN,
+  PARAM_DESC_TRADE_CALL_TIMEFRAME,
+  PARAM_DESC_TRADE_CALL_INCLUDE_REASONING,
+  PARAM_DESC_TRADE_CALL_EXCHANGE,
+  PARAM_DESC_FUNDING_MIN_SPREAD_BPS,
+  PARAM_DESC_FUNDING_LIMIT,
+  PARAM_DESC_REGIME_COIN,
+  PARAM_DESC_REGIME_TIMEFRAME,
+  PARAM_DESC_REGIME_EXCHANGE,
+} from './tool-descriptions.js';
 
 /**
  * Format a thrown error into the MCP tool-content payload. v1.10.2: when the
@@ -109,13 +124,14 @@ function createServer(): McpServer {
   // The handler is identical; we register the same factory under two names so
   // existing agents calling `get_trade_signal` continue to work without changes.
   // The `_algovault.tool` field in the response always reports `get_trade_call`
-  // (the canonical name).
-  const TRADE_CALL_DESCRIPTION = "Returns a composite BUY/SELL/HOLD trade call for a perpetual on Binance / Hyperliquid / Bybit / OKX / Bitget. Combines RSI(14), EMA(9/21) crossover, funding rate, OI momentum, and volume into a weighted score with confidence percentage.";
+  // (the canonical name). TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX +
+  // param describe() constants are module-scope-exported above (see
+  // TOOL-DESC-AUDIT-W1 block) so the keyword canary test can import them.
   const TRADE_CALL_SCHEMA = {
-    coin: z.string().max(20).describe("Asset symbol, e.g. 'ETH', 'BTC', 'SOL'"),
-    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe('Candle timeframe. 1m/3m for HFT scalping, 5m/15m for intraday agents (most popular), 30m/1h/2h for swing, 4h/8h/12h/1d for position trading. Free tier: all 11 timeframes available, 100 calls/month.'),
-    includeReasoning: z.boolean().default(true).describe('Include human-readable reasoning'),
-    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX']).default('BINANCE').describe("Exchange to analyze. 'BINANCE' = Binance USDT-M Futures (default), 'HL' = Hyperliquid, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table. Asset availability varies per venue — pass exchange explicitly to target a specific venue."),
+    coin: z.string().max(20).describe(PARAM_DESC_TRADE_CALL_COIN),
+    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
+    includeReasoning: z.boolean().default(true).describe(PARAM_DESC_TRADE_CALL_INCLUDE_REASONING),
+    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX']).default('BINANCE').describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
     return async ({ coin, timeframe, includeReasoning, exchange }: { coin: string; timeframe: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange: ExchangeId }) => {
@@ -162,7 +178,7 @@ function createServer(): McpServer {
   );
   server.tool(
     'get_trade_signal',
-    TRADE_CALL_DESCRIPTION + ' (Alias for `get_trade_call` since v1.10.0; identical behavior. New agents should call `get_trade_call`.)',
+    TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX,
     TRADE_CALL_SCHEMA,
     { readOnlyHint: true, openWorldHint: true },
     makeTradeCallHandler('get_trade_signal')
@@ -171,14 +187,14 @@ function createServer(): McpServer {
   // ── Tool 2: scan_funding_arb ──
   server.tool(
     'scan_funding_arb',
-    'Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.',
+    SCAN_FUNDING_ARB_DESCRIPTION,
     {
       // DoS-prevention bounds (delta audit 2026-04-15): minSpreadBps clamped to
       // [0, 10000] bps (0-100%), limit clamped to [1, 200] integers. Paid tier
       // downstream clamp via getFundingArbLimit() is preserved; these are the
       // hard boundary validation at the handler edge.
-      minSpreadBps: z.number().min(0).max(10_000).default(5).describe('Minimum spread in basis points to include (0-10000)'),
-      limit: z.number().int().min(1).max(200).default(10).describe('Max results 1-200 (free: max 5)'),
+      minSpreadBps: z.number().min(0).max(10_000).default(5).describe(PARAM_DESC_FUNDING_MIN_SPREAD_BPS),
+      limit: z.number().int().min(1).max(200).default(10).describe(PARAM_DESC_FUNDING_LIMIT),
     },
     { readOnlyHint: true, openWorldHint: true },
     async ({ minSpreadBps, limit }) => {
@@ -214,11 +230,11 @@ function createServer(): McpServer {
   // ── Tool 3: get_market_regime ──
   server.tool(
     'get_market_regime',
-    'Classifies the current market regime (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE) for a Hyperliquid perp using ADX(14), volatility ratio, price structure, and cross-venue funding sentiment.',
+    GET_MARKET_REGIME_DESCRIPTION,
     {
-      coin: z.string().max(20).describe("Asset symbol, e.g. 'BTC', 'ETH', 'SOL'"),
-      timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe('Candle timeframe'),
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX']).default('HL').describe("Exchange to analyze. 'HL' = Hyperliquid (default), 'BINANCE' = Binance USDT-M Futures, 'BYBIT' = Bybit Linear, 'OKX' = OKX Swap, 'BITGET' = Bitget USDT-M, 'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental). Shadow venues (experimental, not yet on public dashboard) require explicit exchange param; query the mcp://algovault/venues resource for the live per-venue status table."),
+      coin: z.string().max(20).describe(PARAM_DESC_REGIME_COIN),
+      timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe(PARAM_DESC_REGIME_TIMEFRAME),
+      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX']).default('HL').describe(PARAM_DESC_REGIME_EXCHANGE),
     },
     { readOnlyHint: true, openWorldHint: true },
     async ({ coin, timeframe, exchange }) => {

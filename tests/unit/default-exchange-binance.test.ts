@@ -40,8 +40,15 @@ describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
   });
 
   it('TRADE_CALL_SCHEMA describe-text leads with "Binance USDT-M Futures (default)"', () => {
-    const src = read('src/index.ts');
-    expect(src).toContain("'BINANCE' = Binance USDT-M Futures (default)");
+    // TOOL-DESC-AUDIT-W1 (2026-05-16): describe constants refactored into
+    // src/tool-descriptions.ts (pure-data module). The canary substring now
+    // lives in PARAM_DESC_TRADE_CALL_EXCHANGE; assert it's reachable from
+    // src/index.ts's import + present in the descriptions module.
+    const desc = read('src/tool-descriptions.ts');
+    expect(desc).toContain("'BINANCE' = Binance USDT-M Futures (default)");
+    const indexSrc = read('src/index.ts');
+    expect(indexSrc).toContain('PARAM_DESC_TRADE_CALL_EXCHANGE');
+    expect(indexSrc).toContain("from './tool-descriptions.js'");
   });
 
   it('get_trade_call handler fallback uses BINANCE (not HL)', () => {
