@@ -1603,7 +1603,7 @@ tailwind.config = {
      (matches Cross-Venue ↔ On-Chain Verified visual gap per Mr.1 directive). -->
 <div class="space-y-2 mb-8">
   <h1 class="text-5xl sm:text-6xl font-semibold tracking-tight" style="color:var(--fg)">Live <span class="text-mint-400">Track Record</span></h1>
-  <p class="text-sm" style="color:var(--fg-3)">v<span data-tr-field="pkg_version">${PKG_VERSION}</span> &middot; <span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> promoted exchanges &middot; <span data-tr-field="shadow_venue_count">0</span> shadow (experimental &mdash; see <a href="/api/performance-shadow" style="color:var(--mint);text-decoration:underline">/api/performance-shadow</a>) &middot; <span data-tr-field="asset_count">710</span>+ assets</p>
+  <p class="text-sm" style="color:var(--fg-3)">v<span data-tr-field="pkg_version">${PKG_VERSION}</span> &middot; <span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> Exchanges &middot; <span data-tr-field="asset_count">736</span> assets</p>
 </div>
 <div id="loading">Loading performance data...</div>
 <div id="content" style="display:none">
@@ -1925,7 +1925,7 @@ tailwind.config = {
       <table><thead><tr><th>Tier</th><th>Name</th><th>Description</th></tr></thead><tbody>
         <tr><td style="color:#58a6ff">Tier 1</td><td>Blue Chip</td><td>BTC, ETH</td></tr>
         <tr><td style="color:#3fb950">Tier 2</td><td>Major Alts</td><td>Top 20 by notional OI across <span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (dynamic, hourly)</td></tr>
-        <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX (seeded across Binance, Bybit, Bitget, OKX, and Hyperliquid via demand-driven SHADOW-SEED-W1 fan-out)</td></tr>
+        <tr><td style="color:#bc8cff">Tier 3</td><td>TradFi</td><td>Stocks, indices, commodities, FX</td></tr>
         <tr><td style="color:#d29922">Tier 4</td><td>Meme &amp; Micro</td><td>Meme &amp; micro-caps (liquidity-filtered: top 50 OI or &gt;$10M vol)</td></tr>
       </tbody></table>
       <p><strong>Default view</strong> shows all assets across all tiers. Use tier tabs to filter by quality tier.</p>

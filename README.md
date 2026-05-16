@@ -103,7 +103,7 @@ AlgoVault is different. We give your agent **one answer**: a directional verdict
 - **Cross-venue intelligence.** Full signal generation on 5 exchanges with native candle, OI, funding, and volume data per venue. Cross-venue funding arbitrage scanning across all venues — nobody else does multi-exchange derivatives analysis via MCP. <!-- SNAPSHOT-LINE -->
 - **Published track record with every release.** Every call is recorded with outcome prices at multiple horizons. PFE Win Rate, Profit Factor, Expected Value computed continuously. No cherry-picking, no survivorship bias. **Anchored on-chain on Base L2 — we cannot rewrite history.**
 - **Self-tuning model.** Indicator weights are tuned from live outcome data by our [Autonomous Optimization Engine](https://algovault.com/how-it-works). The model gets sharper with every signal.
-- **Crypto + TradFi coverage.** 730+ assets — standard crypto perps on all 5 venues; TradFi perps (stocks, indices, commodities, FX) on Binance, Bybit, Bitget, OKX, and Hyperliquid via demand-driven SHADOW-SEED-W1 fan-out; liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
+- **Crypto + TradFi coverage.** 730+ assets — standard crypto perps on all 5 venues; TradFi perps (stocks, indices, commodities, FX); liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
 
 ---
 

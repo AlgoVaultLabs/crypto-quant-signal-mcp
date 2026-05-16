@@ -231,8 +231,12 @@ describe('Forbidden-phrase canary — no HL-only TradFi claim (carries from CHAN
 });
 
 describe('Version coherence', () => {
-  it('package.json version === 1.11.1', () => {
+  it('package.json version is in 1.x major (TRADFI alias maps persist across all 1.x patches/minors)', () => {
+    // Originally pinned 1.11.1 (TRADFI-SYMBOL-ALIAS-W1 shipped at that version);
+    // widened to 1.x major after PILOT-ADAPTERS-W1 bumped to 1.12.0. The TradFi
+    // alias invariants persist across releases; locking the test to a single
+    // patch creates churn at every wave.
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('1.11.1');
+    expect(pkg.version).toMatch(/^1\.\d+\.\d+$/);
   });
 });
