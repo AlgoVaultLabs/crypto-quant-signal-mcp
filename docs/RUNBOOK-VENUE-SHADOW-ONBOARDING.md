@@ -252,3 +252,133 @@ curl -sS https://api.algovault.com/api/performance-shadow | jq '.venues[].exchan
 ```
 
 Expected: new venue appears in all three views with `status='shadow'`.
+
+---
+
+## Appendix — Wave 1 DEX adapter lessons (PILOT-ADAPTERS-W1, 2026-05-16)
+
+The first DEX cohort surfaced 3 architecture-specific lessons that should
+shape future DEX adapter authoring. Each candidate from the 11-DEX Plan-Mode
+probe pool fell into one of these archetypes:
+
+### Archetype A: Binance-clone (Aster pattern)
+
+**Aster (BNB Chain, 410 perps)** ships a near-verbatim Binance Futures REST
+API at `fapi.asterdex.com/fapi/v1/*`:
+
+- Same paths (`/fapi/v1/{exchangeInfo, klines, premiumIndex, openInterest, ticker/24hr, fundingRate}`)
+- Same response shapes (array-of-arrays for klines; flat objects for ticker)
+- Same Binance funding-period convention (per-8h → annualized × 1095)
+- Same query-param conventions (`symbol`, `interval`, `startTime`, `limit`)
+
+**Adapter authoring**: copy `src/lib/adapters/binance.ts` template; swap
+`BASE_URL`, exchange-name string in `UpstreamRateLimitError`, and (if absent)
+drop `SYMBOL_OVERRIDES` + `TRADFI_ALIASES` constants. ~180 LoC.
+
+**When to use this pattern**: any DEX or CEX advertising "Binance-compatible
+API" in their docs (common for newer BNB-Chain perps + Binance-derived
+forks). Verify via Plan-Mode probe: instrument-list path, kline response
+array-shape, premiumIndex field names.
+
+### Archetype B: Custom-envelope L2 (edgeX pattern)
+
+**edgeX (L2 zk-rollup, 292 contracts)** uses a custom REST API at
+`pro.edgex.exchange/api/v1/public/*`:
+
+- Response envelope: `{code:"SUCCESS", data:..., msg, errorParam, requestTime, responseTime, traceId}` — adapter must unwrap `.data` at every call site
+- Numeric `contractId` ("10000001") as primary key — adapter needs a lazy-
+  init `contractName ↔ contractId` lookup map fetched once from
+  `/api/v1/public/meta/getMetaData` (cache TTL 1h)
+- `<COIN>USD` naming (NOT `<COIN>USDT`)
+- Kline `klineType` SNAKE_UPPERCASE values: `MINUTE_1` / `HOUR_1` / `DAY_1`
+- `getKline` REQUIRES explicit `from`/`to` millisecond params; empty params
+  silently return `dataList:[]` (catch this in Plan-Mode probe — test with
+  valid params before declaring "kline broken")
+- `getTicker` is an all-in-one bundle (mark + index + oracle + last price,
+  fundingRate + fundingTime + nextFundingTime, openInterest, 24h
+  high/low/open/close/volume) — single REST call satisfies `getAssetContext`
+- Funding cadence varies — edgeX is 4 hours (nextFundingTime - fundingTime =
+  14.4M ms). Annualized = rate × 2190. DIFFERENT from Binance/Bybit/Bitget/
+  Aster (8h, ×1095) and HL (1h, ×8760).
+
+**Adapter authoring**: fresh module, ~280 LoC. Plan-Mode MUST probe the
+funding-period delta (`nextFundingTime - fundingTime` in ms) to compute the
+annualization multiplier — DO NOT assume 8h. Probe via:
+
+```bash
+curl -sS '<venue>/quote/getTicker?contractId=<id>' | jq '{fundingTime, nextFundingTime}'
+# Compute: (nextFundingTime - fundingTime) / 3_600_000 = funding-hour cadence
+# Annualized multiplier: 8760 / funding-hour
+```
+
+**When to use this pattern**: any DEX with a custom REST envelope (most L2
+zk-rollup perps; most modern DEX launches). Plan-Mode probe MUST surface
+the funding-period in ms BEFORE authoring the `fundingAnnualized` field.
+
+### Archetype C: Auth-gated public REST (Lighter pattern — DEFERRED)
+
+**Lighter (zkSync, 177 perps)** has rich per-market data via
+`mainnet.zklighter.elliot.ai/api/v1/orderBookDetails` (OI, last_trade_price,
+24h ticker — 4 of 5 required capabilities in one call) BUT `/candlesticks`
+is CloudFront-Function-blocked: `HTTP/1.1 403 Forbidden` + `X-Cache:
+FunctionGeneratedResponse from cloudfront`. Reproduces from both Kuala
+Lumpur (KUL51-P1 PoP) AND Hetzner-DE (HEL51-P4 PoP) → function-level auth
+gate, not a geo block.
+
+**Adapter authoring**: HALT-class. Without OHLCV bars, indicator pipeline
+cannot compute RSI/EMA/Hurst/squeeze.
+
+**Architect ratified Path A** for PILOT-ADAPTERS-W1 (defer Lighter; ship
+2-DEX cohort instead). `LIGHTER-WHEN-CANDLES-W1` follow-up wave to revisit
+when one of these unblocks:
+
+1. Lighter publishes the auth scheme for `/candlesticks` (some SDK
+   key-generation flow surfaces in their GitHub `elliottech/lighter-go` or
+   `app.lighter.xyz` web-app cookie inspection).
+2. Lighter removes the CloudFront Function rule on `/candlesticks` (lifts
+   the public-read gate).
+3. We invest in synthesizing candles from the WSS trade-tick feed (custom
+   adapter pattern; ~3-5 days of work; out of scope for the "ship 3-DEX
+   cohort" wave shape).
+
+**When to use this pattern (DON'T — flag the venue):** any DEX where the
+candle endpoint requires authentication that the public docs don't disclose.
+Plan-Mode probe MUST attempt the candle endpoint from at least 2 distinct
+geographic PoPs (local + Hetzner) BEFORE declaring "no candles" — geo
+restrictions are common, function-level gates are rarer but more permanent.
+
+### Cross-archetype Plan-Mode probe checklist for future DEX waves
+
+Run BEFORE adapter authoring (5-min effort):
+
+```bash
+# Liveness + auth posture
+curl -sSI '<BASE_URL>' --max-time 10
+
+# Instrument list (count + sample symbol)
+curl -sS '<BASE_URL>/<INSTRUMENTS_PATH>' --max-time 15 | jq '. | length // .data | length // .symbols | length'
+
+# Kline shape + interval support (probe 1m + 1h + 1d at minimum)
+NOW_MS=$(date +%s000); START_MS=$((NOW_MS - 86400000))
+for interval_or_klinetype in <VENUE_SPECIFIC>; do
+  curl -sS '<BASE_URL>/<KLINE_PATH>?<params>' --max-time 10 | jq '. | length // .data.dataList | length'
+done
+
+# Funding cadence probe (CRITICAL — annualization multiplier depends on this)
+curl -sS '<BASE_URL>/<TICKER_OR_FUNDING_PATH>?<sym_param>' \
+  | jq '{fundingTime, nextFundingTime, fundingRate}'
+# Compute: cadence_h = (nextFundingTime - fundingTime) / 3_600_000
+# Annualization multiplier: 8760 / cadence_h
+
+# OI endpoint (separate or bundled into ticker)
+curl -sS '<BASE_URL>/<OI_PATH_OR_TICKER>?<sym_param>' | jq '.data.openInterest // .openInterest // .open_interest'
+
+# 2-geo probe for CloudFront/auth gates (do BOTH)
+curl -sS -i 'https://<host>/<candle_path>' --max-time 10 | head -5      # local
+ssh -i ~/.ssh/algovault_deploy root@<hetzner-ip> "curl -sS -i 'https://<host>/<candle_path>' --max-time 10 | head -5"  # Hetzner-DE
+```
+
+If any returns `HTTP 4xx` with `X-Cache: FunctionGeneratedResponse from
+cloudfront` or similar function-level rejection from BOTH geos → flag
+HALT-class and triage paths (defer / degraded / auth-investigate).
+

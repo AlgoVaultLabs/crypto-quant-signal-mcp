@@ -5,6 +5,41 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-05-16 — 2-DEX shadow cohort (Aster + edgeX) + tools/list enum widening
+
+### Added — new shadow venues callable via explicit `exchange` arg
+
+- **Aster (`ASTER`)** — BNB-Chain perp DEX, 410 listed perps, ~$2.14B 24h OI per CoinGecko 2026-05-16. REST API is a near-verbatim Binance Futures clone (`fapi.asterdex.com/fapi/v1/*`). Live trade-call probe: `get_trade_call({coin:"BTC", timeframe:"1h", exchange:"ASTER"})` returns Aster's BTCUSDT verdict.
+- **edgeX (`EDGEX`)** — L2 zk-rollup perp DEX, 292 contracts, ~$970M OI per AMBCrypto 2026-05-16. REST API at `pro.edgex.exchange/api/v1/public/*` with `{code, data, msg}` envelope; numeric `contractId` ("10000001") with lazy-init lookup table (`byCoin/byId` cache, 1h TTL); `<COIN>USD` symbol naming; SNAKE_UPPERCASE klineType (`MINUTE_1`/`HOUR_1`/`DAY_1`); 4-hour funding cadence (annualized × 2190).
+
+Both venues default to `status='shadow'` per the EXCHANGE-SHADOW-PROMOTE-W1 state machine. NOT in `/api/performance-public.byExchange` aggregates until promoted (≥80% PFE WR after `asset_count × 10` BUY/SELL calls, day-15 minimum window). Visible via:
+- `mcp://algovault/venues` MCP resource (returns 7 venues: 5 promoted + 2 shadow)
+- `/api/performance-shadow` public HTTP endpoint (returns per-venue lifecycle metadata)
+- Daily `evaluate-venues` cron at 06:00 UTC (advances state machine; Telegram alerts on transitions)
+
+### Changed
+
+- **MCP `tools/list` exchange enum widened 5 → 7 venues.** Affects both `get_trade_call`/`get_trade_signal` (`TRADE_CALL_SCHEMA.exchange`) and `get_market_regime.exchange`. Describe-text gains addendum: `'ASTER' = Aster BNB-Chain perp DEX (shadow — experimental), 'EDGEX' = edgeX L2 zk-rollup perp DEX (shadow — experimental)`.
+- `ExchangeId` TypeScript union widened 5 → 7 in `src/types.ts`.
+- `getAdapter()` dispatch (`src/lib/exchange-adapter.ts`) gains `AsterAdapter` + `EdgeXAdapter` cases.
+
+### Deferred (out of scope for this wave)
+
+- **Lighter (zkSync perp DEX)** — Plan-Mode probe surfaced HALT-class finding: `/candlesticks` endpoint returns `HTTP/1.1 403 Forbidden` from CloudFront (`X-Cache: FunctionGeneratedResponse`) for unauthenticated callers (reproduces from both Kuala Lumpur and Hetzner-DE PoPs → function-level auth gate, not geo block). Without OHLCV bars, indicator pipeline cannot compute RSI/EMA/Hurst/squeeze. Architect ratified Path A (defer); file `LIGHTER-WHEN-CANDLES-W1` follow-up wave to revisit when (a) Lighter's candles endpoint becomes public or (b) we discover an auth scheme via Lighter's GitHub SDK / `app.lighter.xyz` web-app cookie. See `audits/PILOT-ADAPTERS-W1-endpoint-truth.md` §2.c.
+- **Auto-seeding of ASTER + EDGEX from the daily restricted-universe cron** — `src/scripts/seed-signals.ts` has hardcoded per-venue branches and was out of C1/C2 scope per Bulk-Spec Scope Rule. Tracked as `PILOT-ADAPTERS-SEED-LOOP-W2` follow-up. Until then, ASTER + EDGEX are callable via explicit `get_trade_call({exchange:'ASTER'|'EDGEX'})` but won't auto-accumulate from the cron.
+
+### Cache-refresh notice for MCP clients
+
+**Upgrading?** MCP clients cache tools/list at session start. Refresh tool list — Claude.ai / Claude Desktop: toggle connector off+on; Cursor / Cline: restart MCP server connection.
+
+The cached 5-venue enum will reject `exchange: 'ASTER'` / `'EDGEX'` until the client re-reads tools/list. After refresh, the new 7-venue enum + shadow-venue describe-text caveat surface.
+
+### Plan-Mode artifact
+
+`audits/PILOT-ADAPTERS-W1-endpoint-truth.md` — 22-row probe matrix across 3 DEX candidates (Aster, edgeX, Lighter); 15-site identifier diff (3 venues × 5 sites: ExchangeId union / TRADE_CALL_SCHEMA / get_market_regime / dispatch / venues seed); 7 nomenclature inline corrections (spec used pre-1.0 `fetchCandles`/`fetchAssetContext`/etc.; production is `getCandles`/`getAssetContext` per `ExchangeAdapter` interface); HALT-class Lighter finding with 3 architect-evaluated paths (defer / degraded-shadow / auth-investigate).
+
+---
+
 ## [1.11.1] - 2026-05-15 — TradFi symbol aliasing across all 4 CEX adapters
 
 ### Added

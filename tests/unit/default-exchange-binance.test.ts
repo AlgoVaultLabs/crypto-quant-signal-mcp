@@ -95,8 +95,13 @@ describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
     expect(violations, violations.join('\n')).toEqual([]);
   });
 
-  it('package.json version is in the 1.11.x minor (release coherent with this wave + future patches)', () => {
+  it('package.json version is in the 1.x major (release coherent with this wave + future minor/patch bumps)', () => {
     const pkg = JSON.parse(read('package.json'));
-    expect(pkg.version).toMatch(/^1\.11\.\d+$/);
+    // Originally pinned 1.11.x (CHANGE-DEFAULT-EXCHANGE-W1); widened to 1.x
+    // after PILOT-ADAPTERS-W1 bumped to 1.12.0 — the W1 invariants persist
+    // across all 1.x releases (default exchange = BINANCE; describe-text;
+    // handler fallback; forbidden-phrase canary). Locking to a single minor
+    // creates churn at every release.
+    expect(pkg.version).toMatch(/^1\.\d+\.\d+$/);
   });
 });
