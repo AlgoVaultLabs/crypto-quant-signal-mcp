@@ -210,6 +210,9 @@ tailwind.config = {
     <a href="#get-trade-signal" class="sidebar-link">get_trade_call</a>
     <a href="#scan-funding-arb" class="sidebar-link">scan_funding_arb</a>
     <a href="#get-market-regime" class="sidebar-link">get_market_regime</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Integration</div>
+    <a href="#connect-mcp" class="sidebar-link">Connect Your MCP Client</a>
+    <a href="#connect-ai-agent" class="sidebar-link">Connect Your AI Agent</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Verification</div>
     <a href="#on-chain-verification" class="sidebar-link">On-Chain Verification</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">More</div>
@@ -438,6 +441,324 @@ curl -sS -X POST https://api.algovault.com/mcp \
 }</code></pre>
       </div>
     </section>
+
+    <!-- ============ INTEGRATION ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+      <!-- BUILD:mcp-usage:start -->
+<section id="integration" class="mb-16">
+  <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+    <span class="text-mint-400">&#9670;</span> Integration
+  </h2>
+  <p class="text-gray-400 text-sm mb-8">Drop AlgoVault into any MCP-compatible client, or any major agent framework. Pick your path below.</p>
+
+  <h3 id="connect-mcp" class="text-lg font-semibold text-white mb-4 mt-8 flex items-center gap-2">
+    <span class="text-mint-400">&#9670;</span> Connect Your MCP Client
+  </h3>
+  <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 100 calls/month.</p>
+
+  <div class="overflow-x-auto mb-6">
+    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
+      <thead><tr class="border-b border-white/5">
+        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Surface</th>
+        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
+        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">What you get</th>
+      </tr></thead>
+      <tbody>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Claude Desktop</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Settings &rarr; Connectors &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Cursor</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> (project)</td>
+          <td class="text-gray-400 text-sm px-4 py-3">IDE-native MCP. Cursor's coding agent pulls live signals while editing strategy code.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Cline (VSCode)</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Cline panel &rarr; MCP Servers &rarr; Remote Servers tab, or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">VSCode-side coding agent with AlgoVault tools available.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Claude Code</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">claude mcp add --transport http &hellip; --header &hellip;</code> &mdash; or commit <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> to repo root</td>
+          <td class="text-gray-400 text-sm px-4 py-3">Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Smithery</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">Auto-managed connection via Smithery registry. Easiest install across clients.</td>
+        </tr>
+        <tr>
+          <td class="text-white text-sm px-4 py-3 font-medium">Plain HTTP / curl</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">curl -X POST https://api.algovault.com/mcp &hellip;</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">Raw JSON-RPC. For developers integrating into bots, scripts, or non-MCP services.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Claude Desktop &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p><strong>Easiest path (UI):</strong> Open Claude Desktop &rarr; <em>Settings</em> &rarr; <em>Connectors</em> &rarr; <em>Add custom connector</em>. Name it <code class="text-xs bg-navy-800 px-1 rounded">AlgoVault</code>. URL: <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp</code>. Add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code> as a custom header (paid tier). Save and restart Claude Desktop.</p>
+      <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\Claude\claude_desktop_config.json</code> (Windows):</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
+               "--header", "Authorization: Bearer ${AV_API_KEY}"]
+    }
+  }
+}</code></pre>
+      </div>
+      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in the env block or your shell. Free tier: drop the <code class="text-xs">--header</code> args entirely.</p>
+      <p><strong>Verify:</strong> ask Claude <em>"Get me a trade call for BTC on the 1h timeframe"</em>. Tool indicator appears bottom-right of the input box.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Cursor &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global, all projects) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> in the project root (per-project, commit-friendly):</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">{
+  "mcpServers": {
+    "algovault": {
+      "url": "https://api.algovault.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:AV_API_KEY}"
+      }
+    }
+  }
+}</code></pre>
+      </div>
+      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in your shell. Restart Cursor. The Cursor agent now has AlgoVault tools available while editing strategy code.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Cline (VSCode) &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Open the Cline panel in VSCode &rarr; <em>MCP Servers</em> &rarr; <em>Remote Servers</em> tab &rarr; <em>Add server</em>. Or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code> (path varies by OS; access via <em>Configure MCP Servers</em>):</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">{
+  "mcpServers": {
+    "algovault": {
+      "type": "streamableHttp",
+      "url": "https://api.algovault.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:AV_API_KEY}"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}</code></pre>
+      </div>
+      <p><code class="text-xs bg-navy-800 px-1 rounded">type: "streamableHttp"</code> is the modern transport (recommended). The legacy <code class="text-xs">"sse"</code> type still works but is being deprecated upstream.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Claude Code &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p><strong>One-liner (recommended):</strong></p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp \
+  --header "Authorization: Bearer $AV_API_KEY"</code></pre>
+      </div>
+      <p>This writes a <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> in your repo root which you can commit so every teammate gets the same MCP config:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">{
+  "mcpServers": {
+    "algovault": {
+      "type": "http",
+      "url": "https://api.algovault.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AV_API_KEY}"
+      }
+    }
+  }
+}</code></pre>
+      </div>
+      <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its 3 tools.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Smithery &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
+npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
+      </div>
+      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Plain HTTP / curl &mdash; advanced testing</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
+      <p><strong>One-shot smoke (free tier, no auth):</strong></p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
+      </div>
+      <p>Returns <code class="text-xs bg-navy-800 px-1 rounded">{"status":"ok","version":"1.10.3","stripe":true}</code>.</p>
+    </div>
+  </details>
+
+  <p class="text-gray-500 text-xs mt-6">
+    <strong>Config formats verified 2026-04-30 against:</strong>
+    <a class="text-mint-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
+    Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
+  </p>
+
+  <h3 id="connect-ai-agent" class="text-lg font-semibold text-white mb-4 mt-12 flex items-center gap-2">
+    <span class="text-mint-400">&#9670;</span> Connect Your AI Agent
+  </h3>
+  <p class="text-gray-400 text-sm mb-6">Building on a major agent framework? AlgoVault MCP plugs into 4 of them via the framework's canonical MCP-adapter library. Each pairing ships with a runnable Python demo.</p>
+
+  <div class="overflow-x-auto mb-6">
+    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
+      <thead><tr class="border-b border-white/5">
+        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Framework</th>
+        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
+        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">What you get</th>
+      </tr></thead>
+      <tbody>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">LangChain</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install langchain-mcp-adapters</code> &middot; <code class="text-xs">MultiServerMCPClient</code> with streamable HTTP</td>
+          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools as LangChain <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">create_react_agent</code> or LangGraph workflow.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">LlamaIndex</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install llama-index-tools-mcp</code> &middot; <code class="text-xs">BasicMCPClient</code> + <code class="text-xs">McpToolSpec</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools as LlamaIndex <code class="text-xs">FunctionTool</code> objects in any <code class="text-xs">FunctionAgent</code> or <code class="text-xs">ReActAgent</code>.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Microsoft Agent Framework</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install agent-framework</code> &middot; <code class="text-xs">MCPStreamableHTTPTool(url=&hellip;)</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools called directly or handed to any <code class="text-xs">ChatAgent</code> in the MAF ecosystem.</td>
+        </tr>
+        <tr>
+          <td class="text-white text-sm px-4 py-3 font-medium">CrewAI</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install crewai 'crewai-tools[mcp]'</code> &middot; <code class="text-xs">MCPServerAdapter</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools as CrewAI <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">Crew</code> or single <code class="text-xs">Agent</code> workflow.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">LangChain &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Install the canonical bridge maintained by LangChain:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">pip install langchain-mcp-adapters</code></pre>
+      </div>
+      <p>Connect once, then call tools from any LangChain agent:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({"algovault": {
+    "url": "https://api.algovault.com/mcp",
+    "transport": "streamable_http"}})
+tools = await client.get_tools()
+verdict = await tools[0].ainvoke({"coin": "BTC", "timeframe": "4h"})</code></pre>
+      </div>
+      <p><a href="/integrations/langchain" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">LlamaIndex &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Install the canonical bridge maintained by LlamaIndex:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">pip install llama-index-tools-mcp</code></pre>
+      </div>
+      <p>Call directly via <code class="text-xs bg-navy-800 px-1 rounded">BasicMCPClient</code>, or adapt all 4 tools to <code class="text-xs">FunctionTool</code> via <code class="text-xs">McpToolSpec</code>:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">from llama_index.tools.mcp import BasicMCPClient
+
+client = BasicMCPClient("https://api.algovault.com/mcp")
+result = await client.call_tool(
+    "get_trade_call", {"coin": "BTC", "timeframe": "4h"})</code></pre>
+      </div>
+      <p><a href="/integrations/llamaindex" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Microsoft Agent Framework &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Install the framework (MCP support is built in):</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">pip install agent-framework</code></pre>
+      </div>
+      <p>Open an MCP session, call tools directly, or hand the tool to a <code class="text-xs bg-navy-800 px-1 rounded">ChatAgent</code>:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">from agent_framework import MCPStreamableHTTPTool
+
+tool = MCPStreamableHTTPTool(
+    name="algovault",
+    url="https://api.algovault.com/mcp",
+    load_prompts=False)
+async with tool:
+    contents = await tool.call_tool(
+        "get_trade_call", coin="BTC", timeframe="4h")</code></pre>
+      </div>
+      <p>Note: <code class="text-xs bg-navy-800 px-1 rounded">load_prompts=False</code> matters because AlgoVault MCP is tools-only.</p>
+      <p><a href="/integrations/maf" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">CrewAI &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Install CrewAI with the MCP extras (the canonical adapter):</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">pip install crewai 'crewai-tools[mcp]'</code></pre>
+      </div>
+      <p>Open the adapter as a context manager; all 4 AlgoVault tools land as CrewAI <code class="text-xs bg-navy-800 px-1 rounded">BaseTool</code> objects:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">from crewai_tools import MCPServerAdapter
+
+server_params = {"url": "https://api.algovault.com/mcp",
+                 "transport": "streamable-http"}
+with MCPServerAdapter(server_params) as tools:
+    raw = tools[0].run(coin="BTC", timeframe="4h", exchange="BINANCE")</code></pre>
+      </div>
+      <p><a href="/integrations/crewai" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
+    </div>
+  </details>
+
+  <p class="text-gray-500 text-xs mt-6">
+    <strong>Tutorials verified 2026-05-18 against:</strong>
+    <a class="text-mint-400 hover:underline" href="https://github.com/langchain-ai/langchain-mcp-adapters">langchain-mcp-adapters</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://pypi.org/project/llama-index-tools-mcp/">llama-index-tools-mcp</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://learn.microsoft.com/en-us/agent-framework/">agent-framework</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://docs.crewai.com/en/mcp/overview">crewAI-tools MCP</a>.
+    Snippets can drift &mdash; if one doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
+  </p>
+
+  <p class="text-gray-400 text-sm mt-8 text-center">
+    Try a framework integration: <a class="text-mint-400 hover:underline" href="/integrations/langchain">algovault.com/integrations/langchain</a>
+  </p>
+</section>
+
+      <!-- BUILD:mcp-usage:end -->
 
     <!-- ============ ON-CHAIN VERIFICATION ============ -->
     <div class="border-t border-white/5 mb-16"></div>
@@ -917,320 +1238,6 @@ curl -sS -X POST https://api.algovault.com/mcp \
         <p class="text-gray-500 text-xs mt-3">This aligns incentives: you only pay when we see a tradeable opportunity. Current HOLD rate is ~84%, meaning the engine rejects most scans.</p>
       </div>
 
-      <!-- BUILD:mcp-usage:start -->
-<section id="integration" class="mb-16">
-  <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-    <span class="text-mint-400">&#9670;</span> Integration
-  </h2>
-  <p class="text-gray-400 text-sm mb-8">Drop AlgoVault into any MCP-compatible client, or any major agent framework. Pick your path below.</p>
-
-  <h3 id="connect-mcp" class="text-lg font-semibold text-white mb-4 mt-8 flex items-center gap-2">
-    <span class="text-mint-400">&#9670;</span> Connect Your MCP Client
-  </h3>
-  <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 100 calls/month.</p>
-
-  <div class="overflow-x-auto mb-6">
-    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
-      <thead><tr class="border-b border-white/5">
-        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Surface</th>
-        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
-        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">What you get</th>
-      </tr></thead>
-      <tbody>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Claude Desktop</td>
-          <td class="text-gray-300 text-sm px-4 py-3">Settings &rarr; Connectors &rarr; <em>Add custom connector</em>, or edit <code class="text-xs bg-navy-800 px-1 rounded">claude_desktop_config.json</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">Native Streamable-HTTP MCP. AlgoVault tools (<code class="text-xs">get_trade_call</code>, <code class="text-xs">scan_funding_arb</code>, <code class="text-xs">get_market_regime</code>) callable in any chat.</td>
-        </tr>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Cursor</td>
-          <td class="text-gray-300 text-sm px-4 py-3">Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> (project)</td>
-          <td class="text-gray-400 text-sm px-4 py-3">IDE-native MCP. Cursor's coding agent pulls live signals while editing strategy code.</td>
-        </tr>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Cline (VSCode)</td>
-          <td class="text-gray-300 text-sm px-4 py-3">Cline panel &rarr; MCP Servers &rarr; Remote Servers tab, or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">VSCode-side coding agent with AlgoVault tools available.</td>
-        </tr>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Claude Code</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">claude mcp add --transport http &hellip; --header &hellip;</code> &mdash; or commit <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> to repo root</td>
-          <td class="text-gray-400 text-sm px-4 py-3">Per-project MCP. Useful for backtest / strategy-dev repos. Team-shared via <code class="text-xs">.mcp.json</code>.</td>
-        </tr>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Smithery</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">Auto-managed connection via Smithery registry. Easiest install across clients.</td>
-        </tr>
-        <tr>
-          <td class="text-white text-sm px-4 py-3 font-medium">Plain HTTP / curl</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">curl -X POST https://api.algovault.com/mcp &hellip;</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">Raw JSON-RPC. For developers integrating into bots, scripts, or non-MCP services.</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Claude Desktop &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p><strong>Easiest path (UI):</strong> Open Claude Desktop &rarr; <em>Settings</em> &rarr; <em>Connectors</em> &rarr; <em>Add custom connector</em>. Name it <code class="text-xs bg-navy-800 px-1 rounded">AlgoVault</code>. URL: <code class="text-xs bg-navy-800 px-1 rounded">https://api.algovault.com/mcp</code>. Add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code> as a custom header (paid tier). Save and restart Claude Desktop.</p>
-      <p><strong>JSON path:</strong> Edit <code class="text-xs bg-navy-800 px-1 rounded">~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or <code class="text-xs bg-navy-800 px-1 rounded">%APPDATA%\Claude\claude_desktop_config.json</code> (Windows):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">{
-  "mcpServers": {
-    "algovault": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp",
-               "--header", "Authorization: Bearer ${AV_API_KEY}"]
-    }
-  }
-}</code></pre>
-      </div>
-      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in the env block or your shell. Free tier: drop the <code class="text-xs">--header</code> args entirely.</p>
-      <p><strong>Verify:</strong> ask Claude <em>"Get me a trade call for BTC on the 1h timeframe"</em>. Tool indicator appears bottom-right of the input box.</p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Cursor &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.cursor/mcp.json</code> (global, all projects) or <code class="text-xs bg-navy-800 px-1 rounded">.cursor/mcp.json</code> in the project root (per-project, commit-friendly):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">{
-  "mcpServers": {
-    "algovault": {
-      "url": "https://api.algovault.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:AV_API_KEY}"
-      }
-    }
-  }
-}</code></pre>
-      </div>
-      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in your shell. Restart Cursor. The Cursor agent now has AlgoVault tools available while editing strategy code.</p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Cline (VSCode) &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Open the Cline panel in VSCode &rarr; <em>MCP Servers</em> &rarr; <em>Remote Servers</em> tab &rarr; <em>Add server</em>. Or edit <code class="text-xs bg-navy-800 px-1 rounded">cline_mcp_settings.json</code> (path varies by OS; access via <em>Configure MCP Servers</em>):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">{
-  "mcpServers": {
-    "algovault": {
-      "type": "streamableHttp",
-      "url": "https://api.algovault.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:AV_API_KEY}"
-      },
-      "disabled": false,
-      "autoApprove": []
-    }
-  }
-}</code></pre>
-      </div>
-      <p><code class="text-xs bg-navy-800 px-1 rounded">type: "streamableHttp"</code> is the modern transport (recommended). The legacy <code class="text-xs">"sse"</code> type still works but is being deprecated upstream.</p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Claude Code &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p><strong>One-liner (recommended):</strong></p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">claude mcp add --transport http --scope project algovault https://api.algovault.com/mcp \
-  --header "Authorization: Bearer $AV_API_KEY"</code></pre>
-      </div>
-      <p>This writes a <code class="text-xs bg-navy-800 px-1 rounded">.mcp.json</code> in your repo root which you can commit so every teammate gets the same MCP config:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">{
-  "mcpServers": {
-    "algovault": {
-      "type": "http",
-      "url": "https://api.algovault.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${AV_API_KEY}"
-      }
-    }
-  }
-}</code></pre>
-      </div>
-      <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its 3 tools.</p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Smithery &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>The Smithery CLI installs and configures the MCP server in your client of choice automatically:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300"># Pick one — replace &lt;client&gt; with: claude, cursor, cline, claude-code
-npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</code></pre>
-      </div>
-      <p>The CLI writes the right config file for your client and prompts for any required env vars (like <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> for paid-tier access). Easiest path if you're new to MCP. Browse the AlgoVault listing at <a href="https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp" class="text-mint-400 hover:underline">smithery.ai</a>.</p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Plain HTTP / curl &mdash; advanced testing</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
-      <p><strong>One-shot smoke (free tier, no auth):</strong></p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
-      </div>
-      <p>Returns <code class="text-xs bg-navy-800 px-1 rounded">{"status":"ok","version":"1.10.3","stripe":true}</code>.</p>
-    </div>
-  </details>
-
-  <p class="text-gray-500 text-xs mt-6">
-    <strong>Config formats verified 2026-04-30 against:</strong>
-    <a class="text-mint-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
-    Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
-  </p>
-
-  <h3 id="connect-ai-agent" class="text-lg font-semibold text-white mb-4 mt-12 flex items-center gap-2">
-    <span class="text-mint-400">&#9670;</span> Connect Your AI Agent
-  </h3>
-  <p class="text-gray-400 text-sm mb-6">Building on a major agent framework? AlgoVault MCP plugs into 4 of them via the framework's canonical MCP-adapter library. Each pairing ships with a runnable Python demo.</p>
-
-  <div class="overflow-x-auto mb-6">
-    <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
-      <thead><tr class="border-b border-white/5">
-        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Framework</th>
-        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Setup</th>
-        <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">What you get</th>
-      </tr></thead>
-      <tbody>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">LangChain</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install langchain-mcp-adapters</code> &middot; <code class="text-xs">MultiServerMCPClient</code> with streamable HTTP</td>
-          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools as LangChain <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">create_react_agent</code> or LangGraph workflow.</td>
-        </tr>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">LlamaIndex</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install llama-index-tools-mcp</code> &middot; <code class="text-xs">BasicMCPClient</code> + <code class="text-xs">McpToolSpec</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools as LlamaIndex <code class="text-xs">FunctionTool</code> objects in any <code class="text-xs">FunctionAgent</code> or <code class="text-xs">ReActAgent</code>.</td>
-        </tr>
-        <tr class="border-b border-white/10">
-          <td class="text-white text-sm px-4 py-3 font-medium">Microsoft Agent Framework</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install agent-framework</code> &middot; <code class="text-xs">MCPStreamableHTTPTool(url=&hellip;)</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools called directly or handed to any <code class="text-xs">ChatAgent</code> in the MAF ecosystem.</td>
-        </tr>
-        <tr>
-          <td class="text-white text-sm px-4 py-3 font-medium">CrewAI</td>
-          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install crewai 'crewai-tools[mcp]'</code> &middot; <code class="text-xs">MCPServerAdapter</code></td>
-          <td class="text-gray-400 text-sm px-4 py-3">AlgoVault tools as CrewAI <code class="text-xs">BaseTool</code> objects in any <code class="text-xs">Crew</code> or single <code class="text-xs">Agent</code> workflow.</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">LangChain &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Install the canonical bridge maintained by LangChain:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">pip install langchain-mcp-adapters</code></pre>
-      </div>
-      <p>Connect once, then call tools from any LangChain agent:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">from langchain_mcp_adapters.client import MultiServerMCPClient
-
-client = MultiServerMCPClient({"algovault": {
-    "url": "https://api.algovault.com/mcp",
-    "transport": "streamable_http"}})
-tools = await client.get_tools()
-verdict = await tools[0].ainvoke({"coin": "BTC", "timeframe": "4h"})</code></pre>
-      </div>
-      <p><a href="/integrations/langchain" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">LlamaIndex &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Install the canonical bridge maintained by LlamaIndex:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">pip install llama-index-tools-mcp</code></pre>
-      </div>
-      <p>Call directly via <code class="text-xs bg-navy-800 px-1 rounded">BasicMCPClient</code>, or adapt all 4 tools to <code class="text-xs">FunctionTool</code> via <code class="text-xs">McpToolSpec</code>:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">from llama_index.tools.mcp import BasicMCPClient
-
-client = BasicMCPClient("https://api.algovault.com/mcp")
-result = await client.call_tool(
-    "get_trade_call", {"coin": "BTC", "timeframe": "4h"})</code></pre>
-      </div>
-      <p><a href="/integrations/llamaindex" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Microsoft Agent Framework &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Install the framework (MCP support is built in):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">pip install agent-framework</code></pre>
-      </div>
-      <p>Open an MCP session, call tools directly, or hand the tool to a <code class="text-xs bg-navy-800 px-1 rounded">ChatAgent</code>:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">from agent_framework import MCPStreamableHTTPTool
-
-tool = MCPStreamableHTTPTool(
-    name="algovault",
-    url="https://api.algovault.com/mcp",
-    load_prompts=False)
-async with tool:
-    contents = await tool.call_tool(
-        "get_trade_call", coin="BTC", timeframe="4h")</code></pre>
-      </div>
-      <p>Note: <code class="text-xs bg-navy-800 px-1 rounded">load_prompts=False</code> matters because AlgoVault MCP is tools-only.</p>
-      <p><a href="/integrations/maf" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
-    </div>
-  </details>
-
-  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
-    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">CrewAI &mdash; setup walkthrough</summary>
-    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>Install CrewAI with the MCP extras (the canonical adapter):</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">pip install crewai 'crewai-tools[mcp]'</code></pre>
-      </div>
-      <p>Open the adapter as a context manager; all 4 AlgoVault tools land as CrewAI <code class="text-xs bg-navy-800 px-1 rounded">BaseTool</code> objects:</p>
-      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
-        <pre><code class="text-xs text-gray-300">from crewai_tools import MCPServerAdapter
-
-server_params = {"url": "https://api.algovault.com/mcp",
-                 "transport": "streamable-http"}
-with MCPServerAdapter(server_params) as tools:
-    raw = tools[0].run(coin="BTC", timeframe="4h", exchange="BINANCE")</code></pre>
-      </div>
-      <p><a href="/integrations/crewai" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
-    </div>
-  </details>
-
-  <p class="text-gray-500 text-xs mt-6">
-    <strong>Tutorials verified 2026-05-18 against:</strong>
-    <a class="text-mint-400 hover:underline" href="https://github.com/langchain-ai/langchain-mcp-adapters">langchain-mcp-adapters</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://pypi.org/project/llama-index-tools-mcp/">llama-index-tools-mcp</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://learn.microsoft.com/en-us/agent-framework/">agent-framework</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://docs.crewai.com/en/mcp/overview">crewAI-tools MCP</a>.
-    Snippets can drift &mdash; if one doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
-  </p>
-
-  <p class="text-gray-400 text-sm mt-8 text-center">
-    Try a framework integration: <a class="text-mint-400 hover:underline" href="/integrations/langchain">algovault.com/integrations/langchain</a>
-  </p>
-</section>
-
-      <!-- BUILD:mcp-usage:end -->
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What happens after you subscribe</h3>
       <!-- BUILD:signup-flow:start -->
