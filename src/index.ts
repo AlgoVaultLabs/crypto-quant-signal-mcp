@@ -49,6 +49,7 @@ import {
   SCAN_FUNDING_ARB_DESCRIPTION,
   GET_MARKET_REGIME_DESCRIPTION,
   SEARCH_KNOWLEDGE_DESCRIPTION,
+  CHAT_KNOWLEDGE_DESCRIPTION,
   PARAM_DESC_TRADE_CALL_COIN,
   PARAM_DESC_TRADE_CALL_TIMEFRAME,
   PARAM_DESC_TRADE_CALL_INCLUDE_REASONING,
@@ -73,6 +74,13 @@ import { KnowledgeIndex } from './lib/knowledge-index.js';
 import { SearchEngine, type SearchResult } from './lib/search-engine.js';
 import { ResultCache } from './lib/result-cache.js';
 import { formatSearchKnowledgeResponse } from './lib/search-knowledge-formatter.js';
+// AV-CHAT-MCP-W1 (C3, 2026-05-18) — chat substrate. ChatEngine reuses the
+// SearchEngine singleton from C2; quota tracked separately via ChatRateLimit
+// against the new `chat_usage_monthly` Postgres table.
+import { getLLMProvider, type LLMProvider } from './lib/llm-provider.js';
+import { ChatEngine, type ChatResult } from './lib/chat-engine.js';
+import { ChatRateLimit, ensureChatUsageTable, type ChatTier } from './lib/chat-rate-limit.js';
+import { formatChatKnowledgeResponse } from './lib/chat-knowledge-formatter.js';
 
 /**
  * Format a thrown error into the MCP tool-content payload. v1.10.2: when the
@@ -158,6 +166,59 @@ async function getKnowledgeSearch(): Promise<{ index: KnowledgeIndex; engine: Se
     })();
   }
   return _searchEnginePromise;
+}
+
+// ── Chat singletons (AV-CHAT-MCP-W1 C3) ──
+// One ChatEngine + LLMProvider + ChatRateLimit + ResultCache<ChatResult> per
+// process. ChatEngine reuses the SAME SearchEngine instance from
+// getKnowledgeSearch() — single SoT for the index + retrieval.
+const ALLOWED_CHAT_MODELS = new Set([
+  'claude-haiku-4-5-20251001',
+  'claude-sonnet-4-6',
+]);
+
+let _chatEnginePromise: Promise<{
+  index: KnowledgeIndex;
+  chatEngine: ChatEngine;
+  rateLimit: ChatRateLimit;
+  llm: LLMProvider;
+}> | null = null;
+
+async function getChatStack(): Promise<{
+  index: KnowledgeIndex;
+  chatEngine: ChatEngine;
+  rateLimit: ChatRateLimit;
+  llm: LLMProvider;
+}> {
+  if (!_chatEnginePromise) {
+    _chatEnginePromise = (async () => {
+      const { index, engine } = await getKnowledgeSearch();
+      const llm = getLLMProvider();
+      const cache = new ResultCache<ChatResult>({ ttlMs: 86_400_000, max: 200 });
+      const chatEngine = new ChatEngine(engine, llm, cache);
+      const rateLimit = new ChatRateLimit();
+      return { index, chatEngine, rateLimit, llm };
+    })();
+  }
+  return _chatEnginePromise;
+}
+
+/**
+ * Map LicenseTier → ChatTier. License tiers `internal` and `x402` map to
+ * `enterprise` (effectively unmetered for the chat surface).
+ */
+function chatTierFor(licenseTier: string): ChatTier {
+  if (licenseTier === 'free') return 'free';
+  if (licenseTier === 'starter') return 'starter';
+  if (licenseTier === 'pro') return 'pro';
+  // 'enterprise' | 'internal' | 'x402' | any other paid tier
+  return 'enterprise';
+}
+
+function chatQuotaApiKey(licenseKey: string | null, ipHash: string | null): string {
+  // Free-tier callers have no api_key — bucket by ip_hash so anonymous
+  // traffic doesn't share a single global counter.
+  return licenseKey ?? `ip:${ipHash ?? 'unknown'}`;
 }
 
 function createServer(): McpServer {
@@ -340,6 +401,60 @@ function createServer(): McpServer {
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'search_knowledge',
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+          isBotInternal: license.tier === 'internal',
+        });
+        return { content: [{ type: 'text' as const, text: JSON.stringify(response, null, 2) }] };
+      } catch (err: unknown) {
+        return toolErrorContent(err);
+      }
+    }
+  );
+
+  // ── Tool 5: chat_knowledge ──
+  // AV-CHAT-MCP-W1 (C3, 2026-05-18). LLM-synthesized answer with citations
+  // grounded in the canonical knowledge bundle. Quota-gated separately from
+  // trading-tool quotas via ChatRateLimit (Free 10/mo, Starter 50/mo,
+  // Pro 200/mo, Enterprise 2000/mo). Falls back to StubLLMProvider with
+  // [STUB] response if ANTHROPIC_API_KEY is unset (server boots cleanly).
+  server.tool(
+    'chat_knowledge',
+    CHAT_KNOWLEDGE_DESCRIPTION,
+    {
+      question: z.string().min(5).max(500).describe('Natural-language question (5-500 chars).'),
+      model: z.enum(['claude-haiku-4-5-20251001', 'claude-sonnet-4-6']).optional().describe('Optional model override (default claude-haiku-4-5-20251001).'),
+    },
+    { readOnlyHint: true, openWorldHint: true },
+    async ({ question, model }) => {
+      const startMs = Date.now();
+      try {
+        const license = getRequestLicense();
+        const { index, chatEngine, rateLimit } = await getChatStack();
+        const tier = chatTierFor(license.tier);
+        const quotaKey = chatQuotaApiKey(license.key, getRequestIpHash() ?? null);
+        const check = await rateLimit.check(quotaKey, tier);
+        if (!check.allowed) {
+          const days = Math.max(1, Math.ceil((check.resetAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+          const payload = {
+            code: 'CHAT_QUOTA_EXHAUSTED',
+            message: `Monthly chat quota exhausted for tier ${tier} (${check.limit}/mo). Resets in ${days} day(s).`,
+            retry_after_days: days,
+            limit: check.limit,
+            tier,
+            upgrade_url: 'https://algovault.com/#pricing',
+          };
+          return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
+        }
+        const result = await chatEngine.chat(question, { model });
+        // Record AFTER successful LLM call (rate-limit reflects actual usage)
+        await rateLimit.record(quotaKey, result.usage);
+        const bundle = index.getBundle();
+        const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1));
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'chat_knowledge',
           licenseTier: license.tier,
           responseTimeMs: Date.now() - startMs,
           ipHash: getRequestIpHash(),
@@ -1269,6 +1384,10 @@ async function startHttp() {
     res.json(bundle);
   });
 
+  // ── AV-CHAT-MCP-W1 (C3, 2026-05-18): ensure chat_usage_monthly table ──
+  // Fire-and-forget DDL at server boot. Idempotent (CREATE TABLE IF NOT EXISTS).
+  ensureChatUsageTable();
+
   // ── AV-CHAT-MCP-W1 (C2, 2026-05-18): /api/search HTTP endpoint ──
   // BM25 lexical retrieval over the auto-generated KnowledgeBundle. Shape
   // contract: audits/search-knowledge-shape-snapshot-2026-05-18.json (6
@@ -1300,6 +1419,65 @@ async function startHttp() {
     } catch (err) {
       console.error(`[/api/search] internal error: ${err instanceof Error ? err.message : err}`);
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'search engine path failed' });
+    }
+  });
+
+  // ── AV-CHAT-MCP-W1 (C3, 2026-05-18): /api/chat HTTP endpoint ──
+  // LLM-synthesized answer with citations. Quota tracked separately from
+  // tool quotas via ChatRateLimit + chat_usage_monthly table. Falls back
+  // to [STUB] LLM if ANTHROPIC_API_KEY unset. Shape contract:
+  // audits/chat-knowledge-shape-snapshot-2026-05-18.json (6 sections,
+  // 6 error codes incl. CHAT_QUOTA_EXHAUSTED + INVALID_MODEL).
+  app.post('/api/chat', express.json({ limit: '8kb' }), async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as { question?: unknown; model?: unknown };
+      if (typeof body.question !== 'string') {
+        return res.status(400).json({ code: 'INVALID_QUESTION', message: 'question field is required and must be a string' });
+      }
+      const question = body.question;
+      if (question.length < 5) {
+        return res.status(400).json({ code: 'QUESTION_TOO_SHORT', message: 'question must be at least 5 characters' });
+      }
+      if (question.length > 500) {
+        return res.status(400).json({ code: 'QUESTION_TOO_LONG', message: 'question must be at most 500 characters' });
+      }
+      let model: string | undefined;
+      if (body.model !== undefined) {
+        if (typeof body.model !== 'string' || !ALLOWED_CHAT_MODELS.has(body.model)) {
+          return res.status(400).json({
+            code: 'INVALID_MODEL',
+            message: 'model must be one of the allowed values',
+            allowed_models: [...ALLOWED_CHAT_MODELS],
+          });
+        }
+        model = body.model;
+      }
+
+      const license = getRequestLicense();
+      const { index, chatEngine, rateLimit } = await getChatStack();
+      const tier = chatTierFor(license.tier);
+      const quotaKey = chatQuotaApiKey(license.key, getRequestIpHash() ?? null);
+      const check = await rateLimit.check(quotaKey, tier);
+      if (!check.allowed) {
+        const days = Math.max(1, Math.ceil((check.resetAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+        return res.status(429).json({
+          code: 'CHAT_QUOTA_EXHAUSTED',
+          message: `Monthly chat quota exhausted for tier ${tier} (${check.limit}/mo). Resets in ${days} day(s).`,
+          retry_after_days: days,
+          limit: check.limit,
+          tier,
+          upgrade_url: 'https://algovault.com/#pricing',
+        });
+      }
+      const result = await chatEngine.chat(question, model ? { model } : undefined);
+      await rateLimit.record(quotaKey, result.usage);
+      const bundle = index.getBundle();
+      const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1));
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (err) {
+      console.error(`[/api/chat] internal error: ${err instanceof Error ? err.message : err}`);
+      res.status(500).json({ code: 'INTERNAL_ERROR', message: 'chat engine path failed' });
     }
   });
 

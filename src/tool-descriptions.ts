@@ -45,6 +45,14 @@ export const GET_MARKET_REGIME_DESCRIPTION =
 export const SEARCH_KNOWLEDGE_DESCRIPTION =
   'Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.';
 
+// AV-CHAT-MCP-W1 (C3, 2026-05-18) — describe-text for the `chat_knowledge`
+// MCP tool. Locked verbatim per spec L264-266. LLM-synthesized answer with
+// citations grounded in the canonical knowledge bundle. Quota-gated separately
+// from trading-tool quotas (Free 10/mo, Starter 50/mo, Pro 200/mo, Enterprise
+// 2000/mo). Excluded from TOP_20_KEYWORDS coverage canary.
+export const CHAT_KNOWLEDGE_DESCRIPTION =
+  'Ask AlgoVault a natural-language question — get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost). Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month.';
+
 // Param describe() strings — ≤80 chars each.
 export const PARAM_DESC_TRADE_CALL_COIN =
   'Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol.';
