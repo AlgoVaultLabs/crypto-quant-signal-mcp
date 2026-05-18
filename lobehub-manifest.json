@@ -30,7 +30,7 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "scan_funding_arb",
-      "description": "Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.",
+      "description": "Scans cross-venue funding rate differences across Hyperliquid, Binance, Bybit, OKX, and Bitget. Returns top arbitrage opportunities ranked by annualized spread.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -77,7 +77,7 @@
     "avatar": "https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png",
     "tags": ["trading", "crypto", "signals", "defi", "hyperliquid", "quant", "mcp"],
     "title": "Crypto Quant Signal MCP",
-    "description": "Signal intelligence for AI trading agents — composite quant signals across crypto and TradFi perps, cross-venue arbitrage detection, and regime-aware market classification via MCP."
+    "description": "Composite BUY/SELL/HOLD trade calls across 5 crypto perp venues (Binance, Bybit, OKX, Bitget, Hyperliquid). Verified track record, Merkle-anchored on Base L2. Drop-in tutorials for LangChain, LlamaIndex, Microsoft Agent Framework, and CrewAI."
   },
-  "version": "2"
+  "version": "3"
 }
