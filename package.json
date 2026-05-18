@@ -50,6 +50,7 @@
   "author": "AlgoVault Labs",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
     "@buildersgarden/siwa": "^0.0.24",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@slicekit/erc8128": "^0.3.3",

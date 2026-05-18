@@ -1,0 +1,83 @@
+{
+  "endpoint": "/api/chat (HTTP POST) + tools/call name=chat_knowledge (MCP)",
+  "wave": "AV-CHAT-MCP-W1 / C3",
+  "snapshot_date": "2026-05-18",
+  "allowed_keys": [
+    "question",
+    "answer",
+    "citations",
+    "model",
+    "_algovault"
+  ],
+  "allowed_keys_nested": {
+    "citations[*]": [
+      "source_type",
+      "source_url",
+      "title",
+      "excerpt"
+    ],
+    "_algovault": [
+      "bundle_version",
+      "bundle_generated_at",
+      "quota_remaining"
+    ]
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "phase_e_ev",
+    "internal_score_breakdown",
+    "raw_bundle",
+    "usage",
+    "prompt_tokens",
+    "completion_tokens",
+    "api_key",
+    "system_prompt"
+  ],
+  "error_contract": {
+    "QUESTION_TOO_SHORT": {
+      "http_status": 400,
+      "shape": { "code": "QUESTION_TOO_SHORT", "message": "string" },
+      "fires_on": "question.length < 5"
+    },
+    "QUESTION_TOO_LONG": {
+      "http_status": 400,
+      "shape": { "code": "QUESTION_TOO_LONG", "message": "string" },
+      "fires_on": "question.length > 500"
+    },
+    "INVALID_QUESTION": {
+      "http_status": 400,
+      "shape": { "code": "INVALID_QUESTION", "message": "string" },
+      "fires_on": "request body missing question field OR question not a string"
+    },
+    "INVALID_MODEL": {
+      "http_status": 400,
+      "shape": { "code": "INVALID_MODEL", "message": "string", "allowed_models": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"] },
+      "fires_on": "model not in allow-list"
+    },
+    "CHAT_QUOTA_EXHAUSTED": {
+      "http_status": 429,
+      "shape": { "code": "CHAT_QUOTA_EXHAUSTED", "message": "string", "retry_after_days": "number", "limit": "number", "tier": "string", "upgrade_url": "string" },
+      "fires_on": "this calendar month's per-tier quota is exhausted"
+    },
+    "INTERNAL_ERROR": {
+      "http_status": 500,
+      "shape": { "code": "INTERNAL_ERROR", "message": "string" },
+      "fires_on": "unexpected error in chat engine path"
+    }
+  },
+  "cache_contract": {
+    "in_memory_ttl_ms": 86400000,
+    "in_memory_max_entries": 200,
+    "http_cache_control": "no-store",
+    "rationale": "Chat answers are LLM-synthesized — replaying the same answer for 24h saves repeat-call cost without staling (knowledge bundle is the source of truth and the underlying search results are themselves 1h-cached). HTTP cache disabled so downstream proxies don't share answers across api_keys."
+  },
+  "consumers": [
+    "Cursor IDE / Claude Code / Claude Desktop MCP clients asking 'how do I' questions",
+    "curl / HTTP-only consumers calling /api/chat",
+    "embedded help widgets on landing pages",
+    "internal AlgoVault developer-facing tools (drift-debug, support-handoff)"
+  ],
+  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/api/chat -H 'Content-Type: application/json' -d '{\"question\":\"how do I get a BTC trade signal\"}' | jq -e 'has(\"question\") and has(\"answer\") and has(\"citations\") and has(\"model\") and has(\"_algovault\") and (has(\"usage\") | not) and (has(\"prompt_tokens\") | not) and (has(\"outcome_return_pct\") | not) and (has(\"system_prompt\") | not)' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL"
+}
