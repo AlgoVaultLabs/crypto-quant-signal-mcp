@@ -97,9 +97,14 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ---
 
-## What's new in v1.14.0
+## What's new in v1.14.1
 
-Live since 2026-05-XX (target):
+Live since 2026-05-18:
+
+- **🧠 Auto-generated knowledge bundle JSON.** New public endpoints `https://api.algovault.com/knowledge/latest.json` (+ versioned `/knowledge/v1.14.1.json` + index `/knowledge/index.json`) serve a single source-derived `KnowledgeBundle` (every MCP tool description, response-shape audit snapshot, integration tutorial, package metadata, README "What's new" section) indexed for LLM consumption. Discoverable via MCP resource scheme `algovault://knowledge/latest`. Also attached as a GitHub Release asset on every `npm version`. Cache-Control: 1 hour. Foundation for future `algovault.search` / `algovault.chat` agent tools.
+- **🪪 `get_trade_signal` alias description refreshed.** The `[ALIAS]` tag prefix replaces the prior parenthetical suffix. Future tool aliases follow the same shape. **Cache-refresh recommended** — MCP clients cache `tools/list` at session start; toggle the connector off/on (Claude.ai / Claude Desktop) or restart the MCP server connection (Cursor / Cline) to pick up the new description.
+
+### v1.14.0 highlights (recap)
 
 - **🧩 Framework integrations live.** 4 drop-in tutorials shipped in [algovault-skills](https://github.com/AlgoVaultLabs/algovault-skills): LangChain, LlamaIndex, Microsoft Agent Framework, CrewAI. Each tutorial pairs AlgoVault MCP with the framework's canonical MCP-adapter library. Copy-pasteable demo code; no SDK required. See the [Framework integrations](#framework-integrations) section above.
 - **📦 Cross-linked from algovault-skills + signal-MCP READMEs.** Both repos surface the 4 tutorials so framework users discovering AlgoVault from either side find the right entry point.

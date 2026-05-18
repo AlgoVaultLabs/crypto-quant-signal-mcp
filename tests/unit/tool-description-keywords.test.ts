@@ -135,9 +135,10 @@ describe('TOOL-DESC-AUDIT-W1 keyword + canary suite (post-1.13.1 invariants)', (
     const aliasFull = TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX;
     expect(aliasFull.startsWith(TRADE_CALL_DESCRIPTION)).toBe(true);
     expect(aliasFull.slice(TRADE_CALL_DESCRIPTION.length)).toBe(TRADE_CALL_ALIAS_SUFFIX);
-    expect(TRADE_CALL_ALIAS_SUFFIX).toMatch(/Alias for `get_trade_call`/);
-    // Alias suffix itself must NOT trip the internal-detail canary (v1.10.0 is
-    // a public version reference, not a wave ID).
+    // KNOWLEDGE-ARTIFACT-W1 (2026-05-18): suffix rewritten to use [ALIAS] tag
+    // pattern so future tool aliases follow the same shape.
+    expect(TRADE_CALL_ALIAS_SUFFIX).toMatch(/\[ALIAS\] This tool is an alias of get_trade_call/);
+    // Alias suffix itself must NOT trip the internal-detail canary.
     expect(TRADE_CALL_ALIAS_SUFFIX.match(INTERNAL_FORBIDDEN_RE)).toBeNull();
   });
 });

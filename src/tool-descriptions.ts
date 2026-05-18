@@ -22,8 +22,12 @@
 export const TRADE_CALL_DESCRIPTION =
   'Composite verdict BUY SELL HOLD trade call for crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid. Returns verdict, confidence, market regime, funding rate, reasoning. Verified track record, merkle anchor on Base — on-chain verified. MCP tool for trading. Cross-venue multi-exchange AI trading signal for Claude trading agents.';
 
+// KNOWLEDGE-ARTIFACT-W1 (Q-5, 2026-05-18): suffix literal updated to use the
+// [ALIAS] tag prefix pattern so future tool aliases follow the same shape.
+// Public MCP tools/list output for get_trade_signal changes — cache-refresh
+// notice shipped in CHANGELOG.md + README.md "What's new in v1.14.1".
 export const TRADE_CALL_ALIAS_SUFFIX =
-  ' (Alias for `get_trade_call` since v1.10.0; identical behavior. New agents should call `get_trade_call`.)';
+  ' [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility.';
 
 export const SCAN_FUNDING_ARB_DESCRIPTION =
   'Cross-venue funding arbitrage scanner. Funding rate spreads across Binance Bybit OKX Bitget Hyperliquid perpetual futures — long one, short other. Composite verdict, multi-exchange funding intelligence. MCP tool for trading. AI trading signal for crypto quant + Claude trading agents. Verified track record, on-chain verified merkle anchor on Base.';

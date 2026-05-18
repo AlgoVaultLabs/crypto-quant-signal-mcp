@@ -34,6 +34,15 @@ jobs:
       - name: Compile TS (produces dist/lib/signup-flow.js for the guard)
         run: npm run build
 
+      # KNOWLEDGE-ARTIFACT-W1 (2026-05-18): mirror the Docker Stage 1
+      # `RUN npm run build:knowledge` on the GHA runner so a broken generator
+      # fails BEFORE the SSH-deploy step (matching the build_landing --check
+      # pattern below). The runner-side output is NOT used by the deployed
+      # image — Dockerfile Stage 1 re-runs the generator inside the build
+      # context on Hetzner. This is a fail-fast gate, not a deployment input.
+      - name: Knowledge bundle generator (pre-deploy fail-fast)
+        run: npm run build:knowledge
+
       - name: Landing-page sync guard (build_landing --check)
         run: node scripts/build_landing.mjs --check
 

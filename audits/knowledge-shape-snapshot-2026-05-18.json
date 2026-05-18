@@ -1,0 +1,64 @@
+{
+  "snapshot_id": "knowledge-shape-snapshot-2026-05-18",
+  "wave": "KNOWLEDGE-ARTIFACT-W1",
+  "snapshot_date": "2026-05-18",
+  "endpoint": "/knowledge/latest.json (+ /knowledge/:version.json + /knowledge/index.json)",
+  "bundle_version": 1,
+  "allowed_keys": [
+    "version",
+    "generated_at",
+    "package_name",
+    "description",
+    "keywords",
+    "whats_new",
+    "tools",
+    "response_shapes",
+    "integrations",
+    "examples",
+    "discussions",
+    "_algovault"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_*",
+    "internal_*",
+    "return_1candle"
+  ],
+  "error_contract": {
+    "404": {
+      "shape": "{ \"error\": \"<message>\" }",
+      "when": "Version slug does not match a file in dist/knowledge/, or version slug fails the /^v\\d+\\.\\d+\\.\\d+$/ regex.",
+      "examples": [
+        "GET /knowledge/v9.9.9.json → 404 { \"error\": \"Knowledge bundle not found for v9.9.9\" }",
+        "GET /knowledge/foo.json → 404 { \"error\": \"Invalid version slug; expected v<MAJOR>.<MINOR>.<PATCH>\" }"
+      ]
+    },
+    "500": {
+      "shape": "{ \"error\": \"<message>\" }",
+      "when": "Bundle file exists but fails formatKnowledgeBundle validation (e.g. dist/knowledge/ was corrupted at runtime).",
+      "examples": [
+        "GET /knowledge/latest.json → 500 { \"error\": \"Knowledge bundle failed shape validation\" }"
+      ]
+    }
+  },
+  "cache_contract": {
+    "boot_time": "Each bundle file is read from disk ONCE at server boot via fs.readFileSync and held in memory. No disk I/O on request path.",
+    "http_headers": "Cache-Control: public, max-age=3600 (1 hour) — clients SHOULD revalidate hourly. Server-side cache is invalidated by container restart (every deploy).",
+    "mcp_resource": "MCP server enumerates dist/knowledge/*.json at every ListResources call (cheap directory listing); ReadResource serves from the same boot-time in-memory cache."
+  },
+  "consumers": [
+    "algovault.search MCP tool (future — AV-CHAT-MCP-W1)",
+    "algovault.chat MCP tool (future — AV-CHAT-MCP-W1)",
+    "Cursor knowledge ingestion",
+    "Claude Code training-data crawlers",
+    "External LLM agents fetching https://api.algovault.com/knowledge/latest.json directly",
+    "MCP clients listing algovault://knowledge/* resources via tools/list ResourceTemplate"
+  ],
+  "drift_check_command": "curl -fsS https://api.algovault.com/knowledge/latest.json | jq -e 'has(\"version\") and has(\"generated_at\") and has(\"tools\") and has(\"response_shapes\") and has(\"integrations\") and has(\"examples\") and has(\"discussions\") and (has(\"outcome_return_pct\") | not)' >/dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL",
+  "notes": [
+    "Mr.1-approved 2026-05-18 (KNOWLEDGE-ARTIFACT-W1 Plan-Mode Q-1): drift_check_command mirrors the R3 KnowledgeBundle interface exactly, including has(\"discussions\"). Spec line 88 originally asserted has(\"pages\") — that field does NOT exist in R3 interface; dropped per Plan-Mode resolution.",
+    "Two-sided PII guard (Q-3): build-time generator runs /\"(outcome_return_pct|outcome_price)\"\\s*:\\s*[-\\d.]/ against JSON.stringify(bundle) to deny VALUE bindings; vitest canary additionally asserts response_shapes[*].forbidden_keys contains \"outcome_return_pct\" to REQUIRE the metadata listing.",
+    "forbidden_keys array is documentary; the formatter (src/lib/knowledge-formatter.ts) is allow-list, not deny-list — extra keys in raw input are silently dropped, so the only way a forbidden key could reach the public shape is via an allow-listed field (impossible for outcome_return_pct since no field is typed to carry it)."
+  ]
+}

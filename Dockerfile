@@ -5,6 +5,15 @@ COPY package*.json tsconfig.json ./
 RUN npm ci
 COPY src/ ./src/
 RUN npm run build
+# KNOWLEDGE-ARTIFACT-W1 (2026-05-18, Q-2 Path B): generator runs INSIDE Stage 1
+# (NOT on the GHA runner — Hetzner re-builds the image post-`git pull`, so any
+# artifacts produced on the runner are thrown away). The generator globs the
+# 4 source paths below; each must be COPYed into the build context here.
+COPY scripts/build-knowledge-json.mjs ./scripts/build-knowledge-json.mjs
+COPY audits/ ./audits/
+COPY landing/integrations/ ./landing/integrations/
+COPY README.md ./README.md
+RUN npm run build:knowledge
 
 # Stage 2: Production
 FROM node:20-alpine

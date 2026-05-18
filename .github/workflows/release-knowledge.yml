@@ -1,0 +1,63 @@
+name: Release Knowledge Bundle
+
+# KNOWLEDGE-ARTIFACT-W1 (2026-05-18) — auto-attach the generated knowledge
+# JSON bundle to every `npm version`-driven GitHub Release. Trigger: tag push
+# matching v*. Independent from the main Hetzner deploy workflow (deploy.yml
+# runs on push:main; this runs on push:tags).
+#
+# Bundle path inside the runner after `npm run build:knowledge`:
+#   dist/knowledge/algovault-knowledge-v<VERSION>.json
+#   dist/knowledge/latest.json
+#   dist/knowledge/index.json
+#
+# Drift contract: audits/knowledge-shape-snapshot-2026-05-18.json.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-knowledge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Compile TS
+        run: npm run build
+
+      - name: Build knowledge bundle
+        run: npm run build:knowledge
+
+      - name: Verify knowledge artifacts exist
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version package.json)
+          test -f "dist/knowledge/algovault-knowledge-v${VERSION}.json" || (echo "missing versioned bundle"; exit 1)
+          test -f "dist/knowledge/latest.json"   || (echo "missing latest.json"; exit 1)
+          test -f "dist/knowledge/index.json"    || (echo "missing index.json";  exit 1)
+          diff "dist/knowledge/algovault-knowledge-v${VERSION}.json" "dist/knowledge/latest.json" >/dev/null || (echo "latest.json drift vs versioned bundle"; exit 1)
+          jq -e 'has("version") and has("generated_at") and has("tools") and has("response_shapes") and has("integrations") and has("examples") and has("discussions") and (has("outcome_return_pct") | not)' "dist/knowledge/latest.json" >/dev/null
+          echo "KNOWLEDGE_BUNDLE_OK"
+
+      - name: Attach bundle to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/knowledge/algovault-knowledge-*.json
+            dist/knowledge/latest.json
+            dist/knowledge/index.json
+          fail_on_unmatched_files: true
+          generate_release_notes: true

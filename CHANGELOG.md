@@ -5,6 +5,35 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] - 2026-05-18 — Auto-generated per-release knowledge bundle JSON (KNOWLEDGE-ARTIFACT-W1)
+
+### Added — `KnowledgeBundle` artifact through 3 surfaces
+
+- **`/knowledge/latest.json` + `/knowledge/:slug.json` + `/knowledge/index.json` public HTTP endpoints.** Each serves the auto-generated per-release `KnowledgeBundle` (12-field allow-list — every MCP tool description, response-shape audit snapshot, integration tutorial, package metadata, and README "What's new" slice). `Cache-Control: public, max-age=3600`. Slug regex `^v\d+\.\d+\.\d+$` guards against path traversal.
+- **MCP resource scheme `algovault://knowledge/*`.** New `server.resource()` registrations for `algovault://knowledge/latest` + every versioned bundle. MCP clients listing resources via the `tools/list` extension can discover and read the bundle in-session.
+- **GitHub Release asset.** Every `npm version` git-tag push attaches `dist/knowledge/algovault-knowledge-v*.json` + `latest.json` + `index.json` via the new `.github/workflows/release-knowledge.yml` workflow (`softprops/action-gh-release@v2`, first-use in this repo).
+- **Generator: `scripts/build-knowledge-json.mjs`** (ESM, Node-20-safe, idempotent). Generator-first design — globs over `src/tool-descriptions.ts` (4 tool entries) + `audits/*-shape-snapshot-*.json` (response_shapes) + `landing/integrations/*.html` (integrations) + `README.md` (whats_new) + `package.json` (metadata). Adding any new audit snapshot / integration HTML / tool flows automatically into the next bundle. **Zero hand-listed knowledge items.**
+- **Pure formatter: `src/lib/knowledge-formatter.ts`** + **lazy-load store: `src/lib/knowledge-store.ts`.** Allow-list semantics — extra keys are silently dropped, so the public shape is guaranteed even if a buggy generator produces extras.
+- **Two-sided PII guard** (Data Integrity LAW). DENY: build-time regex over the stringified bundle rejects value bindings of `outcome_return_pct` or `outcome_price`. REQUIRE: vitest canary asserts at least one `response_shapes[*].forbidden_keys` array lists `"outcome_return_pct"` — proves the term exists AS METADATA in the right place, never as a leaked value.
+- **Public-shape snapshot:** `audits/knowledge-shape-snapshot-2026-05-18.json` (`allowed_keys` / `forbidden_keys` / `error_contract` / `cache_contract` / `consumers` / `drift_check_command`). Live drift probe: `curl -fsS https://api.algovault.com/knowledge/latest.json | jq -e '<has-chain> and (has("outcome_return_pct") | not)'`.
+- **Vitest canary:** `tests/unit/knowledge-bundle.test.ts` (15 tests). Locks: schema-valid output, byte-idempotent generator, 4-entry tool runtime shape, response_shapes count matches `audits/*-shape-snapshot-*.json` glob, integrations count matches `landing/integrations/*.html` glob, two-sided PII guard, empty `examples` array, formatter rejects empty input.
+
+### Changed — MCP `tools/list` description for `get_trade_signal`
+
+- **`TRADE_CALL_ALIAS_SUFFIX` literal rewritten.** OLD: `" (Alias for \`get_trade_call\` since v1.10.0; identical behavior. New agents should call \`get_trade_call\`.)"`. NEW: `" [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility."`. Future tool aliases follow the same `[ALIAS]` tag pattern.
+
+### Cache-refresh recommended
+
+MCP clients cache `tools/list` at session start. To pick up the refreshed `get_trade_signal` alias description — Claude.ai / Claude Desktop: toggle connector off+on. Cursor / Cline: restart MCP server connection.
+
+### Dockerfile
+
+- **Stage 1 extended** with `COPY scripts/build-knowledge-json.mjs ./scripts/` + `COPY audits/ ./audits/` + `COPY landing/integrations/ ./landing/integrations/` + `COPY README.md ./README.md` + `RUN npm run build:knowledge`. The Hetzner host re-builds the image post-`git pull` via `docker compose up -d --build`, so the generator runs INSIDE the build context — NOT on the GHA runner. `dist/knowledge/*.json` is inherited into Stage 2 via the existing wholesale `COPY --from=builder /app/dist/ ./dist/`.
+
+### Why a patch (not minor)
+
+- New endpoints + new MCP resources are additive; no schema mutation on the existing 3 production tools. The alias-suffix copy change is non-breaking (back-compat alias still exists and works identically). Patch bump per SemVer.
+
 ## [1.14.0] - 2026-05-18 — Framework integrations live: LangChain · LlamaIndex · Microsoft Agent Framework · CrewAI
 
 ### Added — README cross-links to 4 framework tutorials

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:knowledge": "node scripts/build-knowledge-json.mjs",
     "start": "node dist/index.js",
     "start:stdio": "TRANSPORT=stdio node dist/index.js",
     "dev": "tsx src/index.ts",

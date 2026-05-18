@@ -58,6 +58,12 @@ import {
   PARAM_DESC_REGIME_TIMEFRAME,
   PARAM_DESC_REGIME_EXCHANGE,
 } from './tool-descriptions.js';
+import {
+  getKnowledgeBundle,
+  getKnowledgeIndex,
+  listKnowledgeResources,
+  VERSION_SLUG_REGEX,
+} from './lib/knowledge-store.js';
 
 /**
  * Format a thrown error into the MCP tool-content payload. v1.10.2: when the
@@ -446,6 +452,46 @@ function createServer(): McpServer {
       };
     }
   );
+
+  // ── Resource: knowledge bundle (PUBLIC — auto-generated per-release artifact) ──
+  // KNOWLEDGE-ARTIFACT-W1 (2026-05-18). Each registered URI is backed by a
+  // file in dist/knowledge/. `algovault://knowledge/latest` always points at
+  // the most-recent generated bundle; `algovault://knowledge/algovault-
+  // knowledge-vX.Y.Z` pins a specific version. The bundle includes every MCP
+  // tool description, response-shape audit snapshot, integration tutorial,
+  // and code example — indexed for LLM consumption (future algovault.search
+  // + algovault.chat). See audits/knowledge-shape-snapshot-2026-05-18.json
+  // for the public-shape contract + drift_check_command.
+  for (const res of listKnowledgeResources()) {
+    server.resource(
+      res.name,
+      res.uri,
+      { description: res.description, mimeType: 'application/json' },
+      async () => {
+        // Slug = the trailing path segment after `algovault://knowledge/`.
+        const slugMatch = res.uri.match(/^algovault:\/\/knowledge\/(.+)$/);
+        if (!slugMatch) {
+          throw new Error(`Invalid knowledge URI: ${res.uri}`);
+        }
+        const rawSlug = slugMatch[1];
+        // 'latest' is direct; version-pinned URIs are 'algovault-knowledge-vX.Y.Z'.
+        const versionSlug = rawSlug === 'latest' ? 'latest' : rawSlug.replace(/^algovault-knowledge-/, '');
+        const bundle = getKnowledgeBundle(versionSlug);
+        if (!bundle) {
+          throw new Error(`Knowledge bundle not found for ${versionSlug}`);
+        }
+        return {
+          contents: [
+            {
+              uri: res.uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(bundle, null, 2),
+            },
+          ],
+        };
+      }
+    );
+  }
 
   return server;
 }
@@ -1103,6 +1149,47 @@ async function startHttp() {
     } catch {
       res.status(500).json({ error: 'Failed to load erc-8004 reputation' });
     }
+  });
+
+  // ── KNOWLEDGE-ARTIFACT-W1 (2026-05-18): public knowledge bundle endpoints ──
+  // Cache: bundle files are read once at server boot (knowledge-store lazy
+  // load); served with Cache-Control: public, max-age=3600. Container restart
+  // is the cache invalidation boundary (every deploy).
+  // Drift contract: audits/knowledge-shape-snapshot-2026-05-18.json.
+  const KNOWLEDGE_CACHE_HEADER = 'public, max-age=3600';
+
+  app.get('/knowledge/index.json', (_req, res) => {
+    const idx = getKnowledgeIndex();
+    if (!idx) {
+      return res.status(404).json({ error: 'Knowledge index not available' });
+    }
+    res.setHeader('Cache-Control', KNOWLEDGE_CACHE_HEADER);
+    res.json(idx);
+  });
+
+  app.get('/knowledge/latest.json', (_req, res) => {
+    const bundle = getKnowledgeBundle('latest');
+    if (!bundle) {
+      return res.status(404).json({ error: 'Latest knowledge bundle not available' });
+    }
+    res.setHeader('Cache-Control', KNOWLEDGE_CACHE_HEADER);
+    res.json(bundle);
+  });
+
+  app.get('/knowledge/:slug.json', (req, res) => {
+    const slug = req.params.slug;
+    // Two acceptable shapes: 'latest' (handled above but defensive) and
+    // 'vX.Y.Z' (regex-validated to prevent path traversal / arbitrary file
+    // reads). Anything else → 400.
+    if (slug !== 'latest' && !VERSION_SLUG_REGEX.test(slug)) {
+      return res.status(400).json({ error: 'Invalid version slug; expected v<MAJOR>.<MINOR>.<PATCH>' });
+    }
+    const bundle = getKnowledgeBundle(slug);
+    if (!bundle) {
+      return res.status(404).json({ error: `Knowledge bundle not found for ${slug}` });
+    }
+    res.setHeader('Cache-Control', KNOWLEDGE_CACHE_HEADER);
+    res.json(bundle);
   });
 
   // BOT-W2 / D1-C: bot validates api_keys it receives via /start auth_<key>
