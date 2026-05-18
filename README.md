@@ -97,15 +97,19 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ---
 
-## What's new in v1.15.0
+## What's new in v1.15.1
 
 Live since 2026-05-18:
 
-- **🔎 `search_knowledge` MCP tool.** BM25 lexical search over AlgoVault's full knowledge bundle (every MCP tool description, response-shape audit snapshot, integration tutorial, code example). Free, fast, no LLM call, no quota cost. Use it BEFORE attempting any other tool call to confirm correct parameter usage. Auto-rebuilds within ≤30s of any release. Also available via `POST /api/search` with the same response shape. Drift-checked: `audits/search-knowledge-shape-snapshot-2026-05-18.json`.
-- **💬 `chat_knowledge` MCP tool.** Natural-language Q&A with citations, grounded in the canonical knowledge bundle. Backed by Claude Haiku 4.5 with prompt caching enabled (locked system prompt cached at the Anthropic edge). Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month. Tracked separately from trading-tool quotas via the new `chat_usage_monthly` Postgres table. Also available via `POST /api/chat` with the same response shape. Drift-checked: `audits/chat-knowledge-shape-snapshot-2026-05-18.json`.
-- **🔁 Zero manual refresh.** Both tools index the auto-generated `dist/knowledge/latest.json` bundle from v1.14.1 via an in-process `fs.watchFile` poll (30s). Any future tool description, integration tutorial, or audit snapshot flows automatically into the next search/chat result — no rebuild step, no manual seeding.
+- **📊 Chat usage analytics.** Admin-gated `/admin/chat-analytics` dashboard with weekly Telegram digest. PII-safe per-call telemetry.
+- **🎨 Track-record dashboard polish.** LATEST TRADE CALLS panel now matches surrounding card surfaces (visual unification).
+- **📦 npm catches up.** v1.15.0 was published to MCP Registry + LobeHub + DXT + GitHub Release but skipped `npm publish`. v1.15.1 publishes to all surfaces simultaneously.
 
-**Refresh tool list** — MCP clients cache `tools/list` at session start. To see the new tools: Claude.ai / Claude Desktop — toggle the connector off/on; Cursor / Cline — restart the MCP server connection.
+### v1.15.0 highlights (recap)
+
+- **🔎 `search_knowledge` MCP tool.** BM25 lexical search over AlgoVault's full knowledge bundle. Free, fast, no LLM call, no quota cost. Also available via `POST /api/search`.
+- **💬 `chat_knowledge` MCP tool.** Natural-language Q&A with citations, grounded in the canonical knowledge bundle. Backed by Claude Haiku 4.5 with prompt caching. Also available via `POST /api/chat`.
+- **🔁 Zero manual refresh.** Both tools index the auto-generated `dist/knowledge/latest.json` bundle via an in-process `fs.watchFile` poll (30s).
 
 ### v1.14.1 highlights (recap)
 
