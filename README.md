@@ -97,12 +97,20 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ---
 
-## What's new in v1.14.1
+## What's new in v1.15.0
 
 Live since 2026-05-18:
 
-- **🧠 Auto-generated knowledge bundle JSON.** New public endpoints `https://api.algovault.com/knowledge/latest.json` (+ versioned `/knowledge/v1.14.1.json` + index `/knowledge/index.json`) serve a single source-derived `KnowledgeBundle` (every MCP tool description, response-shape audit snapshot, integration tutorial, package metadata, README "What's new" section) indexed for LLM consumption. Discoverable via MCP resource scheme `algovault://knowledge/latest`. Also attached as a GitHub Release asset on every `npm version`. Cache-Control: 1 hour. Foundation for future `algovault.search` / `algovault.chat` agent tools.
-- **🪪 `get_trade_signal` alias description refreshed.** The `[ALIAS]` tag prefix replaces the prior parenthetical suffix. Future tool aliases follow the same shape. **Cache-refresh recommended** — MCP clients cache `tools/list` at session start; toggle the connector off/on (Claude.ai / Claude Desktop) or restart the MCP server connection (Cursor / Cline) to pick up the new description.
+- **🔎 `search_knowledge` MCP tool.** BM25 lexical search over AlgoVault's full knowledge bundle (every MCP tool description, response-shape audit snapshot, integration tutorial, code example). Free, fast, no LLM call, no quota cost. Use it BEFORE attempting any other tool call to confirm correct parameter usage. Auto-rebuilds within ≤30s of any release. Also available via `POST /api/search` with the same response shape. Drift-checked: `audits/search-knowledge-shape-snapshot-2026-05-18.json`.
+- **💬 `chat_knowledge` MCP tool.** Natural-language Q&A with citations, grounded in the canonical knowledge bundle. Backed by Claude Haiku 4.5 with prompt caching enabled (locked system prompt cached at the Anthropic edge). Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month. Tracked separately from trading-tool quotas via the new `chat_usage_monthly` Postgres table. Also available via `POST /api/chat` with the same response shape. Drift-checked: `audits/chat-knowledge-shape-snapshot-2026-05-18.json`.
+- **🔁 Zero manual refresh.** Both tools index the auto-generated `dist/knowledge/latest.json` bundle from v1.14.1 via an in-process `fs.watchFile` poll (30s). Any future tool description, integration tutorial, or audit snapshot flows automatically into the next search/chat result — no rebuild step, no manual seeding.
+
+**Refresh tool list** — MCP clients cache `tools/list` at session start. To see the new tools: Claude.ai / Claude Desktop — toggle the connector off/on; Cursor / Cline — restart the MCP server connection.
+
+### v1.14.1 highlights (recap)
+
+- **🧠 Auto-generated knowledge bundle JSON.** New public endpoints `https://api.algovault.com/knowledge/latest.json` (+ versioned `/knowledge/v1.14.1.json` + index `/knowledge/index.json`) serve a single source-derived `KnowledgeBundle` (every MCP tool description, response-shape audit snapshot, integration tutorial, package metadata, README "What's new" section) indexed for LLM consumption. Discoverable via MCP resource scheme `algovault://knowledge/latest`. Also attached as a GitHub Release asset on every `npm version`. Cache-Control: 1 hour. Foundation for v1.15.0's `search_knowledge` / `chat_knowledge` agent tools above.
+- **🪪 `get_trade_signal` alias description refreshed.** The `[ALIAS]` tag prefix replaces the prior parenthetical suffix. Future tool aliases follow the same shape.
 
 ### v1.14.0 highlights (recap)
 

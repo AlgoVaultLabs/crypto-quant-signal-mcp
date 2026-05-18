@@ -5,6 +5,23 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-05-18 — v1.15.0 — `search_knowledge` + `chat_knowledge` MCP tools (AV-CHAT-MCP-W1)
+
+### Added — two new MCP tools indexed automatically from the v1.14.1 KnowledgeBundle
+
+- **`search_knowledge` MCP tool + `POST /api/search` HTTP endpoint.** BM25 lexical retrieval over `dist/knowledge/latest.json`. Free, fast, no LLM call, no quota cost. Self-pitching describe-text intentionally reads as an instruction to the calling agent ("Use this BEFORE attempting any tool call to confirm correct parameter usage"). Backed by `wink-bm25-text-search@^3.1.2` (MIT). Field weights: name=3, title=3, description=2, content_markdown=1. Response shape: `{ query, total_results, results[*], _algovault: { bundle_version, bundle_generated_at } }`. Public-shape contract: `audits/search-knowledge-shape-snapshot-2026-05-18.json`.
+- **`chat_knowledge` MCP tool + `POST /api/chat` HTTP endpoint.** Natural-language Q&A with citations. Backed by Claude Haiku 4.5 (default) or Claude Sonnet 4.6 (opt-in). Locked verbatim 6-rule system prompt; prompt caching enabled (`cache_control: ephemeral`) for ~90% input-cost discount on the cached system block. Citations carry `source_type`, `source_url`, `title`, `excerpt`. Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month — tracked separately from trading-tool quotas in the new `chat_usage_monthly` Postgres table. Response shape: `{ question, answer, citations[*], model, _algovault: { bundle_version, bundle_generated_at, quota_remaining } }`. Token counts remain operator-internal — never leak to the public response. Public-shape contract: `audits/chat-knowledge-shape-snapshot-2026-05-18.json`.
+- **In-process file watcher.** Both tools share a single `KnowledgeIndex` instance that watches `dist/knowledge/latest.json` via `fs.watchFile` (poll every 30s) and atomically rebuilds the BM25 docs on mtime change. Any future tool description, integration tutorial, audit snapshot, or `npm version` bump flows automatically into the next search/chat response within ≤30s — zero manual refresh, zero hand-curated answers.
+- **`StubLLMProvider` graceful fallback.** If `ANTHROPIC_API_KEY` is unset, server still boots (once-only `console.warn` at startup); `chat_knowledge` returns recognizable `[STUB] <question>` text with citations intact. Live-key provisioning is a post-deploy operator step.
+- **New deps.** `@anthropic-ai/sdk@^0.96.0` (MIT, Anthropic), `wink-bm25-text-search@^3.1.2` (MIT, GRAYPE Systems), `lru-cache@^10.4.3` (ISC, Isaac Schlueter) added as direct production dependencies.
+- **Vitest coverage.** 30 new tests across 6 files: `tests/unit/{knowledge-index,search-engine,result-cache,llm-provider,chat-engine}.test.ts` + `tests/integration/knowledge-flow.test.ts`. Locks: BM25 build/rebuild semantics, atomic swap, cache TTL + LRU + clear, query/limit/cache invariants, stub fallback, chat context building + citations + cache + truncation, fix-at-generator regex canary (no `if question.includes(X) return Y` shortcuts), public response shapes match snapshot.
+
+### Cache-refresh recommended
+
+MCP clients cache `tools/list` at session start. To see the new tools:
+- Claude.ai / Claude Desktop — toggle the connector off/on
+- Cursor / Cline — restart the MCP server connection
+
 ## [1.14.1] - 2026-05-18 — Auto-generated per-release knowledge bundle JSON (KNOWLEDGE-ARTIFACT-W1)
 
 ### Added — `KnowledgeBundle` artifact through 3 surfaces
