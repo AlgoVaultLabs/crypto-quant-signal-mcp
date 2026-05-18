@@ -3,25 +3,63 @@
   "api": [
     {
       "url": "https://api.algovault.com/mcp",
-      "name": "get_trade_signal",
-      "description": "Returns a composite BUY/SELL/HOLD signal with confidence score for any supported asset. Multi-factor scoring engine evaluates momentum, trend structure, derivatives sentiment, and volume conviction across crypto and TradFi perpetuals.",
+      "name": "get_trade_call",
+      "description": "Composite verdict BUY SELL HOLD trade call for crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid. Returns verdict, confidence, market regime, funding rate, reasoning. Verified track record, merkle anchor on Base — on-chain verified. MCP tool for trading. Cross-venue multi-exchange AI trading signal for Claude trading agents.",
       "parameters": {
         "type": "object",
         "properties": {
           "coin": {
             "type": "string",
-            "description": "Asset symbol — e.g. 'ETH', 'BTC', 'SOL', 'GOLD', 'TSLA'"
+            "description": "Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol."
           },
           "timeframe": {
             "type": "string",
-            "enum": ["1h", "4h", "1d"],
-            "default": "1h",
-            "description": "Candle timeframe (free: 1h only)"
+            "enum": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+            "default": "15m",
+            "description": "Candle timeframe (1m to 1d) for crypto quant agents. Default 15m intraday."
           },
           "includeReasoning": {
             "type": "boolean",
             "default": true,
-            "description": "Include human-readable reasoning"
+            "description": "Include reasoning for the trade call verdict (regime, trend ranging signals)."
+          },
+          "exchange": {
+            "type": "string",
+            "enum": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET", "ASTER", "EDGEX"],
+            "default": "BINANCE",
+            "description": "Exchange — 'BINANCE' = Binance USDT-M Futures (default), HL/BYBIT/OKX/BITGET."
+          }
+        },
+        "required": ["coin"]
+      }
+    },
+    {
+      "url": "https://api.algovault.com/mcp",
+      "name": "get_trade_signal",
+      "description": "Composite verdict BUY SELL HOLD trade call for crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid. Returns verdict, confidence, market regime, funding rate, reasoning. Verified track record, merkle anchor on Base — on-chain verified. MCP tool for trading. Cross-venue multi-exchange AI trading signal for Claude trading agents. [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "coin": {
+            "type": "string",
+            "description": "Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol."
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+            "default": "15m",
+            "description": "Candle timeframe (1m to 1d) for crypto quant agents. Default 15m intraday."
+          },
+          "includeReasoning": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include reasoning for the trade call verdict (regime, trend ranging signals)."
+          },
+          "exchange": {
+            "type": "string",
+            "enum": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET", "ASTER", "EDGEX"],
+            "default": "BINANCE",
+            "description": "Exchange — 'BINANCE' = Binance USDT-M Futures (default), HL/BYBIT/OKX/BITGET."
           }
         },
         "required": ["coin"]
@@ -30,19 +68,19 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "scan_funding_arb",
-      "description": "Scans cross-venue funding rate differences across Hyperliquid, Binance, Bybit, OKX, and Bitget. Returns top arbitrage opportunities ranked by annualized spread.",
+      "description": "Cross-venue funding arbitrage scanner. Funding rate spreads across Binance Bybit OKX Bitget Hyperliquid perpetual futures — long one, short other. Composite verdict, multi-exchange funding intelligence. MCP tool for trading. AI trading signal for crypto quant + Claude trading agents. Verified track record, on-chain verified merkle anchor on Base.",
       "parameters": {
         "type": "object",
         "properties": {
           "minSpreadBps": {
             "type": "number",
             "default": 5,
-            "description": "Minimum spread in basis points to include"
+            "description": "Minimum funding rate spread (bps) for buy sell hold trade call cross-venue scan."
           },
           "limit": {
             "type": "number",
             "default": 10,
-            "description": "Max results (free: max 5)"
+            "description": "Max funding arbitrage results returned (free tier cap 5). Crypto signal query."
           }
         }
       }
@@ -50,22 +88,28 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "get_market_regime",
-      "description": "Classifies the current market regime (TRENDING_UP/DOWN, RANGING, VOLATILE) using multi-dimensional analysis with cross-venue funding sentiment.",
+      "description": "Market regime classifier — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — for crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid. Composite verdict blends trend ranging signals, volatility, cross-venue funding rate sentiment. Returns label, confidence, strategy hint. MCP tool for trading. Verified track record, merkle anchor on Base.",
       "parameters": {
         "type": "object",
         "properties": {
-          "coins": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Array of asset symbols to analyze"
+          "coin": {
+            "type": "string",
+            "description": "Asset symbol — BTC ETH SOL signal. Crypto quant trade call classification."
           },
           "timeframe": {
             "type": "string",
             "enum": ["1h", "4h", "1d"],
             "default": "4h",
-            "description": "Candle timeframe"
+            "description": "Candle timeframe — 1h 4h 1d. Buy sell hold regime context for AI trading signal."
+          },
+          "exchange": {
+            "type": "string",
+            "enum": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET", "ASTER", "EDGEX"],
+            "default": "HL",
+            "description": "Exchange BINANCE HL BYBIT OKX BITGET. Multi-exchange Claude trading agent."
           }
-        }
+        },
+        "required": ["coin"]
       }
     },
     {
@@ -120,5 +164,5 @@
     "title": "Crypto Quant Signal MCP",
     "description": "Composite BUY/SELL/HOLD trade calls across 5 crypto perp venues (Binance, Bybit, OKX, Bitget, Hyperliquid). Verified track record, Merkle-anchored on Base L2. Drop-in tutorials for LangChain, LlamaIndex, Microsoft Agent Framework, and CrewAI. Ask-AlgoVault-anything via search_knowledge + chat_knowledge tools."
   },
-  "version": "4"
+  "version": "5"
 }
