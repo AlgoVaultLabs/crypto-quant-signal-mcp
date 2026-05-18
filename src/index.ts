@@ -48,6 +48,7 @@ import {
   TRADE_CALL_ALIAS_SUFFIX,
   SCAN_FUNDING_ARB_DESCRIPTION,
   GET_MARKET_REGIME_DESCRIPTION,
+  SEARCH_KNOWLEDGE_DESCRIPTION,
   PARAM_DESC_TRADE_CALL_COIN,
   PARAM_DESC_TRADE_CALL_TIMEFRAME,
   PARAM_DESC_TRADE_CALL_INCLUDE_REASONING,
@@ -64,6 +65,14 @@ import {
   listKnowledgeResources,
   VERSION_SLUG_REGEX,
 } from './lib/knowledge-store.js';
+// AV-CHAT-MCP-W1 (C2, 2026-05-18) — knowledge search substrate. Module-level
+// singletons shared between the MCP tool handler (in createServer()) and the
+// /api/search Express route (in startHttp()). C3 wires its ChatEngine to
+// receive the SAME SearchEngine instance via constructor injection.
+import { KnowledgeIndex } from './lib/knowledge-index.js';
+import { SearchEngine, type SearchResult } from './lib/search-engine.js';
+import { ResultCache } from './lib/result-cache.js';
+import { formatSearchKnowledgeResponse } from './lib/search-knowledge-formatter.js';
 
 /**
  * Format a thrown error into the MCP tool-content payload. v1.10.2: when the
@@ -118,6 +127,37 @@ function safeCompare(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// ── Knowledge search singletons ──
+// AV-CHAT-MCP-W1 (C2, 2026-05-18). One KnowledgeIndex + ResultCache + SearchEngine
+// per process; lazy-initialized on first use; subsequent calls reuse the same
+// instance. The watcher inside KnowledgeIndex rebuilds the BM25 docs whenever
+// /app/dist/knowledge/latest.json changes (30s poll). C3 ChatEngine constructor
+// receives the SAME SearchEngine instance so chat-engine context is fresh.
+let _searchEnginePromise: Promise<{
+  index: KnowledgeIndex;
+  engine: SearchEngine;
+}> | null = null;
+
+function getKnowledgeBundlePath(): string {
+  if (process.env.KNOWLEDGE_BUNDLE_PATH) return process.env.KNOWLEDGE_BUNDLE_PATH;
+  // Compiled location: dist/index.js → dist/knowledge/latest.json
+  return path.resolve(__dirname, 'knowledge', 'latest.json');
+}
+
+async function getKnowledgeSearch(): Promise<{ index: KnowledgeIndex; engine: SearchEngine }> {
+  if (!_searchEnginePromise) {
+    _searchEnginePromise = (async () => {
+      const bundlePath = getKnowledgeBundlePath();
+      const index = new KnowledgeIndex(bundlePath);
+      await index.build();
+      const cache = new ResultCache<SearchResult[]>({ ttlMs: 3_600_000, max: 500 });
+      const engine = new SearchEngine(index, cache);
+      return { index, engine };
+    })();
+  }
+  return _searchEnginePromise;
 }
 
 function createServer(): McpServer {
@@ -269,6 +309,43 @@ function createServer(): McpServer {
           }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
         }
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return toolErrorContent(err);
+      }
+    }
+  );
+
+  // ── Tool 4: search_knowledge ──
+  // AV-CHAT-MCP-W1 (C2, 2026-05-18). BM25 lexical retrieval over the auto-
+  // generated KnowledgeBundle (dist/knowledge/latest.json). Free, fast, no
+  // LLM call, no quota cost. Bundle is rebuilt automatically on every release
+  // via KNOWLEDGE-ARTIFACT-W1's `release-knowledge.yml` workflow; the
+  // KnowledgeIndex fs.watchFile poll picks up changes within 30s.
+  server.tool(
+    'search_knowledge',
+    SEARCH_KNOWLEDGE_DESCRIPTION,
+    {
+      query: z.string().min(3).max(500).describe('Natural-language search query (3-500 chars).'),
+      limit: z.number().int().min(1).max(50).optional().describe('Max ranked results (1-50, default 10).'),
+    },
+    { readOnlyHint: true, openWorldHint: true },
+    async ({ query, limit }) => {
+      const startMs = Date.now();
+      try {
+        const license = getRequestLicense();
+        const { index, engine } = await getKnowledgeSearch();
+        const results = await engine.query(query, limit ?? 10);
+        const bundle = index.getBundle();
+        const response = formatSearchKnowledgeResponse(query, results, bundle);
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'search_knowledge',
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+          isBotInternal: license.tier === 'internal',
+        });
+        return { content: [{ type: 'text' as const, text: JSON.stringify(response, null, 2) }] };
       } catch (err: unknown) {
         return toolErrorContent(err);
       }
@@ -1190,6 +1267,40 @@ async function startHttp() {
     }
     res.setHeader('Cache-Control', KNOWLEDGE_CACHE_HEADER);
     res.json(bundle);
+  });
+
+  // ── AV-CHAT-MCP-W1 (C2, 2026-05-18): /api/search HTTP endpoint ──
+  // BM25 lexical retrieval over the auto-generated KnowledgeBundle. Shape
+  // contract: audits/search-knowledge-shape-snapshot-2026-05-18.json (6
+  // sections incl. error_contract + drift_check_command). HTTP cache 5min;
+  // in-memory result cache 1h via ResultCache primitive.
+  app.post('/api/search', express.json({ limit: '8kb' }), async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as { query?: unknown; limit?: unknown };
+      if (typeof body.query !== 'string') {
+        return res.status(400).json({ code: 'INVALID_QUERY', message: 'query field is required and must be a string' });
+      }
+      const query = body.query;
+      if (query.length < 3) {
+        return res.status(400).json({ code: 'QUERY_TOO_SHORT', message: 'query must be at least 3 characters' });
+      }
+      if (query.length > 500) {
+        return res.status(400).json({ code: 'QUERY_TOO_LONG', message: 'query must be at most 500 characters' });
+      }
+      let limit = 10;
+      if (typeof body.limit === 'number' && Number.isFinite(body.limit)) {
+        limit = Math.max(1, Math.min(50, Math.floor(body.limit)));
+      }
+      const { index, engine } = await getKnowledgeSearch();
+      const results = await engine.query(query, limit);
+      const bundle = index.getBundle();
+      const response = formatSearchKnowledgeResponse(query, results, bundle);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json(response);
+    } catch (err) {
+      console.error(`[/api/search] internal error: ${err instanceof Error ? err.message : err}`);
+      res.status(500).json({ code: 'INTERNAL_ERROR', message: 'search engine path failed' });
+    }
   });
 
   // BOT-W2 / D1-C: bot validates api_keys it receives via /start auth_<key>

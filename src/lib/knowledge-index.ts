@@ -22,14 +22,22 @@ import bm25, { type WinkBM25Index } from 'wink-bm25-text-search';
 
 export type { WinkBM25Index };
 
+// Field weights — per spec C1 L76. Tool-name queries rank tools first (e.g.,
+// `scan_funding_arb`, `get_trade_call`); general-prose queries about trading
+// can legitimately rank integration tutorials first (BM25 working as designed
+// — the integration markdown IS a richer answer than a 1-sentence tool
+// describe-text). The wave-end live gate accommodates both via OR clause.
 const FIELD_WEIGHTS = { name: 3, title: 3, description: 2, content_markdown: 1 };
 const POLL_INTERVAL_MS = 30000;
 
-// Minimal stemming-free prepTask: lowercase + ASCII alphanumeric tokenization,
-// drop tokens shorter than 2 chars. Adequate for AlgoVault knowledge content.
+// Minimal stemming-free prepTask: lowercase + split on every non-alphanumeric
+// boundary (so `get_trade_call` → `['get', 'trade', 'call']`, `on-chain` →
+// `['on', 'chain']`, `wink-bm25-text-search` → 4 tokens). Drop tokens shorter
+// than 2 chars. Adequate for AlgoVault knowledge content (tool names, param
+// names, framework names, English prose).
 function prepTask(text: string | undefined | null): string[] {
   if (!text) return [];
-  return text.toLowerCase().match(/[a-z0-9_-]{2,}/g) || [];
+  return text.toLowerCase().match(/[a-z0-9]{2,}/g) || [];
 }
 
 export type KnowledgeDocSourceType =

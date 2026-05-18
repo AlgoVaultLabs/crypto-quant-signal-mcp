@@ -1,0 +1,72 @@
+{
+  "endpoint": "/api/search (HTTP POST) + tools/call name=search_knowledge (MCP)",
+  "wave": "AV-CHAT-MCP-W1 / C2",
+  "snapshot_date": "2026-05-18",
+  "allowed_keys": [
+    "query",
+    "total_results",
+    "results",
+    "_algovault"
+  ],
+  "allowed_keys_nested": {
+    "results[*]": [
+      "id",
+      "score",
+      "source_type",
+      "source_url",
+      "title",
+      "excerpt"
+    ],
+    "_algovault": [
+      "bundle_version",
+      "bundle_generated_at"
+    ]
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "phase_e_ev",
+    "internal_score_breakdown",
+    "raw_bundle",
+    "raw_score_breakdown",
+    "raw_bm25_idf",
+    "raw_bm25_tf"
+  ],
+  "error_contract": {
+    "QUERY_TOO_SHORT": {
+      "http_status": 400,
+      "shape": { "code": "QUERY_TOO_SHORT", "message": "string" },
+      "fires_on": "query.length < 3"
+    },
+    "QUERY_TOO_LONG": {
+      "http_status": 400,
+      "shape": { "code": "QUERY_TOO_LONG", "message": "string" },
+      "fires_on": "query.length > 500"
+    },
+    "INVALID_QUERY": {
+      "http_status": 400,
+      "shape": { "code": "INVALID_QUERY", "message": "string" },
+      "fires_on": "request body missing query field OR query is not a string"
+    },
+    "INTERNAL_ERROR": {
+      "http_status": 500,
+      "shape": { "code": "INTERNAL_ERROR", "message": "string" },
+      "fires_on": "unexpected error in search engine path"
+    }
+  },
+  "cache_contract": {
+    "in_memory_ttl_ms": 3600000,
+    "in_memory_max_entries": 500,
+    "http_cache_control": "public, max-age=300",
+    "rationale": "Search results are stable across bundle updates within a 5-minute HTTP cache window. In-process LRU+TTL caches per-query at 1h to absorb retry-heavy chat-engine traffic (C3)."
+  },
+  "consumers": [
+    "chat_knowledge MCP tool (AV-CHAT-MCP-W1 / C3 of same wave)",
+    "Cursor IDE / Claude Code / Claude Desktop MCP clients",
+    "third-party MCP clients listing AlgoVault tools",
+    "curl / HTTP-only consumers calling /api/search",
+    "future GEO crawlers / LLM training-data ingest pipelines"
+  ],
+  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/api/search -H 'Content-Type: application/json' -d '{\"query\":\"how do I get a trade signal\"}' | jq -e 'has(\"query\") and has(\"total_results\") and has(\"results\") and has(\"_algovault\") and (has(\"outcome_return_pct\") | not) and (has(\"phase_e_wr\") | not)' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL"
+}
