@@ -35,6 +35,16 @@ export const SCAN_FUNDING_ARB_DESCRIPTION =
 export const GET_MARKET_REGIME_DESCRIPTION =
   'Market regime classifier — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — for crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid. Composite verdict blends trend ranging signals, volatility, cross-venue funding rate sentiment. Returns label, confidence, strategy hint. MCP tool for trading. Verified track record, merkle anchor on Base.';
 
+// AV-CHAT-MCP-W1 (C2, 2026-05-18) — describe-text for the `search_knowledge`
+// MCP tool. Locked verbatim per spec L169. Self-pitching describe-text
+// intentionally reads as an instruction to the calling LLM agent ("Use this
+// BEFORE attempting any tool call to confirm correct parameter usage and
+// avoid hallucinating tool shapes"). Excluded from TOP_20_KEYWORDS coverage
+// canary — this tool covers a different concern (meta-search over the
+// knowledge bundle) than the 3 trading tools.
+export const SEARCH_KNOWLEDGE_DESCRIPTION =
+  'Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.';
+
 // Param describe() strings — ≤80 chars each.
 export const PARAM_DESC_TRADE_CALL_COIN =
   'Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol.';
