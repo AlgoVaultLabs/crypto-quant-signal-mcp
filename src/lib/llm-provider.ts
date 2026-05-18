@@ -39,8 +39,14 @@ export interface LLMCompletion {
   };
 }
 
+// Provider name union — extended for forward-compat per CHAT-USAGE-ANALYTICS-W1
+// Q-4 Path B (Cowork-ratified). LLM-PROVIDER-A/B-W1 will add concrete classes
+// for 'openai' / 'gemini'; the union widens here so analytics + dashboards
+// can reference all 4 from day one with zero migration coordination.
+export type LLMProviderName = 'anthropic' | 'stub' | 'openai' | 'gemini';
+
 export interface LLMProvider {
-  readonly name: 'anthropic' | 'stub';
+  readonly name: LLMProviderName;
   complete(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<LLMCompletion>;
 }
 

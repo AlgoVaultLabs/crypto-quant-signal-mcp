@@ -1885,7 +1885,12 @@ tailwind.config = {
   .call-type-verification-row .call-type-section { flex: 1; min-width: 0; }
   .call-type-verification-row .tamper-proof-card { flex: 0 0 340px; }
   @media (max-width: 768px) { .call-type-verification-row { flex-direction: column; } .call-type-verification-row .call-type-section, .call-type-verification-row .tamper-proof-card { width: 100%; flex: none; } }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; }
+  /* DESIGN-W11-FF-CARD-BG (2026-05-15): bg + border unified to canonical
+     tier-stat-card / exchange-stat-card reference per Mr.1 directive. Was:
+     background:#161b22; border:1px solid #30363d. Now: canonical oklch +
+     var(--line). padding:18px kept (within ±4px of tier-stat 22 / exchange-
+     stat 20 — Q-CARDBG-4 tolerance). */
+  .card { background: oklch(0.18 0.014 265 / 0.5); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
   .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .card .value { font-size: 28px; font-weight: 700; color: #58a6ff; }
   .card .value.hero { font-size: 32px; }
@@ -1899,12 +1904,20 @@ tailwind.config = {
   th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: #0d1117; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
   .badge-buy { background: #0d2818; color: #3fb950; } .badge-sell { background: #2d0b0e; color: #f85149; } .badge-hold { background: #1c1c1c; color: #8b949e; }
+  /* DESIGN-W11-FF-CARD-BG (2026-05-15): filter pill bg + border unified to
+     canonical tier-stat-card reference per Mr.1 directive (Q-CARDBG-2/3).
+     border-radius:8px preserved (Q-CARDBG-3 — pills are CONTROLS, not content
+     cards; rounded shape is UX affordance). Active-state per Q-CARDBG-1:
+     text + border ONLY (no bg-tint). Exchange-tab active uses canonical mint
+     (#5BEEB3); tier-tab active uses per-tier color via inline JS style
+     (T1 blue / T2 green / T3 purple / T4 orange) — Q-CARDBG-1 RELAXATION
+     to preserve per-tier semantic color identity. */
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; transition: all 0.15s; }
-  .tab:hover { border-color: #58a6ff80; } .tab.active { background: #58a6ff20; color: #58a6ff; border-color: #58a6ff; }
+  .tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid var(--line); background: oklch(0.18 0.014 265 / 0.5); color: #8b949e; transition: all 0.15s; }
+  .tab:hover { border-color: #5BEEB380; } .tab.active { color: #5BEEB3; border-color: #5BEEB3; font-weight: 600; }
   .tier-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tier-tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid #30363d; background: #161b22; color: #8b949e; transition: all 0.15s; }
-  .tier-tab:hover { border-color: #58a6ff80; } .tier-tab.active { border-width: 2px; }
+  .tier-tab { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid var(--line); background: oklch(0.18 0.014 265 / 0.5); color: #8b949e; transition: all 0.15s; }
+  .tier-tab:hover { border-color: #5BEEB380; } .tier-tab.active { border-width: 2px; }
   .tier-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
   .tradfi-badge { background: linear-gradient(135deg, #bc8cff20, #8957e520); border: 1px solid #bc8cff40; color: #bc8cff; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
   /* DESIGN-W8-FIX (2026-05-11): onchain-badge bg unified to .tier-stat-card reference. */
