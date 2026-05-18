@@ -546,15 +546,21 @@ async function startHttp() {
   // and `import.meta.url` is forbidden. Read each mirror once at startup
   // into INTEGRATION_HTML so per-request overhead is a Map.get(), no fs hit.
   const INTEGRATION_EXCHANGES = ['binance', 'okx', 'bybit', 'bitget'] as const;
+  // AI-AGENT-FRAMEWORK-TUTORIALS-W1 (2026-05-18): 4 framework integration mirrors
+  // added to the allow-list. Same render pipeline (scripts/render-integrations.mjs);
+  // same Map-on-startup serving pattern. Slugs match the FRAMEWORKS array in the
+  // render script.
+  const INTEGRATION_FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'] as const;
+  const ALL_INTEGRATION_SLUGS = [...INTEGRATION_EXCHANGES, ...INTEGRATION_FRAMEWORKS];
   const INTEGRATION_HTML = new Map<string, string>();
   {
     // dist/index.js → ../landing/integrations
     const integrationsDir = path.resolve(__dirname, '..', 'landing', 'integrations');
-    for (const ex of INTEGRATION_EXCHANGES) {
+    for (const slug of ALL_INTEGRATION_SLUGS) {
       try {
-        INTEGRATION_HTML.set(ex, fs.readFileSync(path.join(integrationsDir, `${ex}.html`), 'utf8'));
+        INTEGRATION_HTML.set(slug, fs.readFileSync(path.join(integrationsDir, `${slug}.html`), 'utf8'));
       } catch (err) {
-        console.warn(`integration mirror ${ex}.html not loaded at startup:`, err instanceof Error ? err.message : err);
+        console.warn(`integration mirror ${slug}.html not loaded at startup:`, err instanceof Error ? err.message : err);
       }
     }
   }
