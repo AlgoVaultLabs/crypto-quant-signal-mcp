@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlgoVault Docs — API Reference, Usage Examples & FAQ</title>
+<title>AlgoVault Docs — API Reference, Knowledge Tools, Integrations & FAQ</title>
 <meta name="description" content="AlgoVault API documentation. Tool schemas, usage examples, pricing, and FAQ for AI trading agents and human developers.">
 <meta name="last-updated" content="2026-04-26">
 <link rel="icon" type="image/png" href="/logo.png">
@@ -53,14 +53,14 @@ tailwind.config = {
 {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "AlgoVault Docs - API Reference, Usage Examples & FAQ",
+  "headline": "AlgoVault Docs - API Reference, Knowledge Tools, Integrations & FAQ",
   "url": "https://algovault.com/docs.html",
   "datePublished": "2026-03-01T00:00:00+00:00",
-  "dateModified": "2026-04-26T15:00:00+00:00",
+  "dateModified": "2026-05-19T00:00:00+00:00",
   "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
   "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
-  "description": "Complete API reference for the 3 AlgoVault MCP tools (get_trade_call, scan_funding_arb, get_market_regime), 20 usage examples, on-chain verification guide, pricing tiers, and FAQ.",
+  "description": "Complete API reference for the 5 AlgoVault MCP tools (get_trade_call, scan_funding_arb, get_market_regime, search_knowledge, chat_knowledge), worked examples, on-chain verification, pricing, and FAQ.",
   "proficiencyLevel": "Beginner|Intermediate|Advanced",
   "about": { "@type": "Thing", "name": "Composite trading verdicts via Model Context Protocol" }
 }
@@ -210,6 +210,14 @@ tailwind.config = {
     <a href="#get-trade-signal" class="sidebar-link">get_trade_call</a>
     <a href="#scan-funding-arb" class="sidebar-link">scan_funding_arb</a>
     <a href="#get-market-regime" class="sidebar-link">get_market_regime</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Knowledge Tools</div>
+    <a href="#knowledge-tools-overview" class="sidebar-link">Overview</a>
+    <a href="#knowledge-tools-search" class="sidebar-link">search_knowledge</a>
+    <a href="#knowledge-tools-chat" class="sidebar-link">chat_knowledge</a>
+    <a href="#knowledge-tools-when" class="sidebar-link">When to use which</a>
+    <a href="#knowledge-tools-examples" class="sidebar-link">Worked examples</a>
+    <a href="#knowledge-tools-api" class="sidebar-link">HTTP API</a>
+    <a href="#knowledge-tools-quota" class="sidebar-link">Rate limits &amp; cost</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Integration</div>
     <a href="#connect-mcp" class="sidebar-link">Connect Your MCP Client</a>
     <a href="#connect-ai-agent" class="sidebar-link">Connect Your AI Agent</a>
@@ -249,6 +257,7 @@ tailwind.config = {
         "Get me a trade call for BTC on the 1h timeframe"
       </div>
       <p class="text-gray-500 text-xs">Free tier: all 716 assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
+      <p class="text-gray-400 text-sm mt-4">Your agent can also ask AlgoVault to teach itself how to use the tools &mdash; see <a href="#knowledge-tools-overview" class="text-mint-400 hover:underline">Knowledge Tools</a> below.</p>
     </section>
 
     <!-- ============ RAW HTTP TESTING ============ -->
@@ -440,6 +449,164 @@ curl -sS -X POST https://api.algovault.com/mcp \
   }
 }</code></pre>
       </div>
+    </section>
+
+    <!-- ============ KNOWLEDGE TOOLS ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="knowledge-tools" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> Knowledge Tools
+      </h2>
+      <p class="text-gray-400 text-sm mb-8">Two MCP tools that let your AI agent learn how to use AlgoVault before calling the trading tools. Search the docs lexically; ask synthesized questions; never invent a parameter shape again.</p>
+
+      <h3 id="knowledge-tools-overview" class="text-lg font-semibold text-white mb-3 mt-8 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> What are knowledge tools
+      </h3>
+      <p class="text-gray-400 text-sm mb-3">Most MCP-aware agents read <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/list</code> once, then invent parameter shapes when calling tools. AlgoVault ships two meta-tools that let an agent self-serve documentation instead:</p>
+      <ul class="text-gray-400 text-sm space-y-2 mb-4 list-disc pl-5">
+        <li><code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">search_knowledge</code> &mdash; BM25 lexical search over every tool description, response shape, integration tutorial, and code example.</li>
+        <li><code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">chat_knowledge</code> &mdash; natural-language answer with citations, grounded in the same bundle.</li>
+      </ul>
+      <p class="text-gray-500 text-xs mb-6">Both tools query a knowledge bundle auto-rebuilt within 30 seconds of every release &mdash; no stale answers.</p>
+
+      <h3 id="knowledge-tools-search" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> search_knowledge
+      </h3>
+      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.</p>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language search query (3&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="knowledge-tools-chat" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> chat_knowledge
+      </h3>
+      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault a natural-language question &mdash; get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost). Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month.</p>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>question</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language question (5&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Optional model override. <code class="text-xs bg-navy-800 px-1 rounded">claude-haiku-4-5-20251001</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">claude-sonnet-4-6</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="knowledge-tools-when" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> When to use which
+      </h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Use case</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Pick</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Why</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Param lookup before tool call</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">search_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Free, fast (no LLM call), returns the exact describe-text snippet.</td></tr>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">"How do I integrate with X"</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">search_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Integration tutorials are indexed verbatim. BM25 ranks the right tutorial first.</td></tr>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Compare two tools</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">chat_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Synthesis across multiple snippets needs an LLM. Cited answer beats raw retrieval.</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium">"Write me code for X"</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">chat_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Pattern synthesis from code examples needs reasoning. Free tier covers 10/month.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="knowledge-tools-examples" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> Worked examples
+      </h3>
+
+      <p class="text-gray-300 text-sm mb-2 mt-4"><strong>1. Discovery query</strong> &mdash; agent asks for trade-signal docs before calling <code class="text-xs">get_trade_call</code>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">search_knowledge({
+  query: "how do I get a trade signal with stop loss for BTC"
+})
+// → ranked snippets including get_trade_call describe-text + integration excerpts</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>2. Comparison query</strong> &mdash; ask for synthesis across two tool descriptions:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">chat_knowledge({
+  question: "what's the difference between get_trade_call and get_market_regime"
+})
+// → synthesized answer with [source: ...] citations</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>3. Integration discovery</strong> &mdash; agent finds the LangChain tutorial:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">search_knowledge({
+  query: "how do I integrate with LangChain"
+})
+// → LangChain integration tutorial ranks first, with full code snippet</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>4. Direct HTTP &mdash; search</strong>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"BTC stop loss","limit":3}'
+
+# → { "query": "BTC stop loss", "total_results": 3, "results": [...], "_algovault": {...} }</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>5. Direct HTTP &mdash; chat</strong>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question":"how do I get a BTC trade signal","model":"claude-haiku-4-5-20251001"}'
+
+# → { "question": "...", "answer": "...", "citations": [...], "model": "...", "_algovault": {...} }</code></pre>
+      </div>
+
+      <h3 id="knowledge-tools-api" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> HTTP API
+      </h3>
+      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Cache</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/search</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"query": "string", "limit": 10}</code></td><td class="text-gray-400 text-sm px-4 py-3">public, max-age=300</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/chat</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"question": "string", "model": "..."}</code></td><td class="text-gray-400 text-sm px-4 py-3">no-store (per-user)</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-6">Error contract: <code class="text-xs">INVALID_QUERY</code> / <code class="text-xs">QUERY_TOO_SHORT</code> / <code class="text-xs">QUERY_TOO_LONG</code> / <code class="text-xs">INVALID_QUESTION</code> / <code class="text-xs">QUESTION_TOO_SHORT</code> / <code class="text-xs">QUESTION_TOO_LONG</code> / <code class="text-xs">INVALID_MODEL</code> / <code class="text-xs">CHAT_QUOTA_EXHAUSTED</code> / <code class="text-xs">INTERNAL_ERROR</code>. All return JSON <code class="text-xs">{"code": "...", "message": "..."}</code>.</p>
+
+      <h3 id="knowledge-tools-quota" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
+        <span class="text-mint-400">&#9670;</span> Rate limits &amp; cost
+      </h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-32">Tier</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">search_knowledge</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">chat_knowledge</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Notes</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Free</td><td class="text-gray-300 text-sm px-4 py-3">Unlimited</td><td class="text-gray-300 text-sm px-4 py-3">10 / month</td><td class="text-gray-400 text-sm px-4 py-3">Search is BM25-only, no LLM cost.</td></tr>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Starter</td><td class="text-gray-300 text-sm px-4 py-3">Unlimited</td><td class="text-gray-300 text-sm px-4 py-3">50 / month</td><td class="text-gray-400 text-sm px-4 py-3">Default model: <code class="text-xs">claude-haiku-4-5-20251001</code>.</td></tr>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Pro</td><td class="text-gray-300 text-sm px-4 py-3">Unlimited</td><td class="text-gray-300 text-sm px-4 py-3">200 / month</td><td class="text-gray-400 text-sm px-4 py-3">Adds <code class="text-xs">claude-sonnet-4-6</code> upgrade option.</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium">Enterprise</td><td class="text-gray-300 text-sm px-4 py-3">Unlimited</td><td class="text-gray-300 text-sm px-4 py-3">2000 / month</td><td class="text-gray-400 text-sm px-4 py-3">Custom limits available.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs">Cost transparency: <code class="text-xs">chat_knowledge</code> costs about $0.002 per call with prompt caching. Quota resets at the first of each UTC month.</p>
     </section>
 
     <!-- ============ INTEGRATION ============ -->
