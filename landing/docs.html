@@ -225,7 +225,7 @@ tailwind.config = {
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Verification</div>
     <a href="#on-chain-verification" class="sidebar-link">On-Chain Verification</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">More</div>
-    <a href="#usage-examples" class="sidebar-link">Usage Examples</a>
+    <a href="#usage-examples" class="sidebar-link">Skills &amp; Usage Examples</a>
     <a href="#pricing" class="sidebar-link">Pricing &amp; Limits</a>
     <a href="#faq" class="sidebar-link">FAQ</a>
   </aside>
@@ -491,7 +491,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
       <h3 id="knowledge-tools-chat" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
         <span class="text-mint-400">&#9670;</span> chat_knowledge
       </h3>
-      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault a natural-language question &mdash; get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost). Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month.</p>
+      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault a natural-language question &mdash; get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost).</p>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
@@ -526,11 +526,11 @@ curl -sS -X POST https://api.algovault.com/mcp \
         <span class="text-mint-400">&#9670;</span> Worked examples
       </h3>
 
-      <p class="text-gray-300 text-sm mb-2 mt-4"><strong>1. Discovery query</strong> &mdash; agent asks for trade-signal docs before calling <code class="text-xs">get_trade_call</code>:</p>
+      <p class="text-gray-300 text-sm mb-2 mt-4"><strong>1. Discovery query</strong> &mdash; agent asks for trade-call docs before calling <code class="text-xs">get_trade_call</code>:</p>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">search_knowledge({
-  query: "how do I get a trade signal with stop loss for BTC"
+  query: "how do I get a trade call with stop loss for BTC"
 })
 // → ranked snippets including get_trade_call describe-text + integration excerpts</code></pre>
       </div>
@@ -568,7 +568,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"question":"how do I get a BTC trade signal","model":"claude-haiku-4-5-20251001"}'
+  -d '{"question":"how do I get a BTC trade call","model":"claude-haiku-4-5-20251001"}'
 
 # → { "question": "...", "answer": "...", "citations": [...], "model": "...", "_algovault": {...} }</code></pre>
       </div>
@@ -1112,7 +1112,7 @@ claude plugin install binance/binance-skills-hub</code></pre>
 
     <section id="usage-examples" class="mb-16">
       <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Usage Examples
+        <span class="text-mint-400">&#9670;</span> Skills &amp; Usage Examples
       </h2>
       <p class="text-gray-500 text-sm mb-8">20 real-world workflows for AI agents and human developers. From simple one-liners to multi-agent orchestration.</p>
 
