@@ -351,8 +351,14 @@ async function build() {
     integrations,
     examples,
     discussions,
+    // BUNDLE-EXPAND-BLOG-W1 (C1, 2026-05-19): pages[] starts empty at build
+    // time; populated weekly by Hetzner Sun-06:00-UTC cron via
+    // scripts/refresh-knowledge-pages.mjs (Path A — runtime-refresh, NOT
+    // baked at Docker build). The existing KnowledgeIndex file-watcher polls
+    // the bundle on a 30s interval and rebuilds BM25 transparently.
+    pages: [],
     _algovault: {
-      bundle_version: 1,
+      bundle_version: 2,
       generator: 'build-knowledge-json.mjs',
       repo: 'AlgoVaultLabs/crypto-quant-signal-mcp',
     },

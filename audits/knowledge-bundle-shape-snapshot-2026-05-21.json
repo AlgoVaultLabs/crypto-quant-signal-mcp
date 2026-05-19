@@ -1,0 +1,73 @@
+{
+  "_meta": {
+    "endpoint": "GET /knowledge/latest.json (auto-generated KnowledgeBundle artifact)",
+    "snapshot_date": "2026-05-21",
+    "wave": "BUNDLE-EXPAND-BLOG-W1 (C1)",
+    "bundle_version": 2,
+    "supersedes": "audits/knowledge-shape-snapshot-2026-05-18.json (KNOWLEDGE-ARTIFACT-W1, bundle_version: 1)",
+    "comment": "v2 adds pages[] (4-source-type long-form content from dev.to + Medium + YouTube + GitHub Discussions). algovault_blog source_type was DROPPED before C1 ship per Mr.1 Q-5 ratification 2026-05-19 (/var/www/algovault/blog absent + sitemap.xml /blog/ = 0 hits; dev.to IS canonical blog surface)."
+  },
+  "allowed_keys": [
+    "version",
+    "generated_at",
+    "package_name",
+    "description",
+    "keywords",
+    "whats_new",
+    "tools",
+    "response_shapes",
+    "integrations",
+    "examples",
+    "discussions",
+    "pages",
+    "pages_refreshed_at",
+    "_algovault"
+  ],
+  "pages_element_allowed_keys": [
+    "source_type",
+    "source_url",
+    "title",
+    "published_at",
+    "content_markdown",
+    "author",
+    "tags",
+    "duration_seconds",
+    "thumbnail_url"
+  ],
+  "pages_source_type_enum": [
+    "devto",
+    "medium",
+    "youtube",
+    "github_discussion"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_won",
+    "phase_e_bps",
+    "internal_admin_key",
+    "ADMIN_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "DEV_TO_API_KEY",
+    "YOUTUBE_API_KEY"
+  ],
+  "error_contract": {
+    "schema_validation_failure": "formatKnowledgeBundle throws Error with field-name + expected-vs-actual; HTTP 500 from the static-file consumer (bundle file would be unreadable)",
+    "fetcher_failure": "individual fetcher returns [] + WARNING log + Telegram digest mention; Promise.allSettled() in refresh-knowledge-pages.mjs guarantees partial-success bundle ships",
+    "bundle_version_mismatch": "formatKnowledgeBundle throws on bundle_version !== 2 (forward-only schema)",
+    "missing_pages_field": "formatKnowledgeBundle throws 'missing required field pages' (REQUIRED in v2)"
+  },
+  "cache_contract": {
+    "static_file_cache_control": "depends on consumer (Caddy static-file serving; default 5-min CDN-cache-friendly)",
+    "in_process_cache_ttl_ms": "file-watcher KnowledgeIndex polls bundle JSON on 30s interval; BM25 index rebuilds atomically on mtime change",
+    "refresh_cadence": "Sun 06:00 UTC weekly (Hetzner cron); 2h before GEO-MEASUREMENT-W1 Mon 08:00 UTC fire so fresh content indexed before next probe",
+    "ttl_for_fetched_pages": "n-a (no per-page TTL; whole bundle is rewritten atomically on every refresh fire)"
+  },
+  "consumers": [
+    "src/lib/knowledge-index.ts::KnowledgeIndex (file-watcher; fs.watchFile 30s poll; reads bundle.pages and indexes each via wink-bm25 with source_type prefix `page_${source_type}`)",
+    "src/lib/search-engine.ts::SearchEngine (BM25 query → top-N results; surfaces page_devto / page_medium / page_youtube / page_github_discussion via _source_type field)",
+    "src/lib/chat-engine.ts::ChatEngine (uses SearchEngine output as Anthropic context-injection snippets; cites page URLs in chat_knowledge responses)",
+    "scripts/refresh-knowledge-pages.mjs (writes bundle.pages + bundle.pages_refreshed_at atomically; Sun 06:00 UTC cron entry point)"
+  ],
+  "drift_check_command": "curl -fsS https://api.algovault.com/knowledge/latest.json | jq -e '._algovault.bundle_version == 2 and (.pages | type) == \"array\"' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL"
+}

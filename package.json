@@ -62,6 +62,7 @@
     "bybit-api": "^4.6.1",
     "express": "^4.21.2",
     "express-rate-limit": "^8.3.2",
+    "fast-xml-parser": "^5.8.0",
     "js-yaml": "^4.1.0",
     "lru-cache": "^10.4.3",
     "markdown-it": "14.1.1",

@@ -33,7 +33,9 @@ const FIXTURE_BUNDLE = {
   integrations: [],
   examples: [],
   discussions: [],
-  _algovault: { bundle_version: 1, generator: 'build-knowledge-json.mjs', repo: 'AlgoVaultLabs/crypto-quant-signal-mcp' },
+  // BUNDLE-EXPAND-BLOG-W1 (2026-05-19): schema bumped 1 → 2 (pages[] added)
+  pages: [],
+  _algovault: { bundle_version: 2, generator: 'build-knowledge-json.mjs', repo: 'AlgoVaultLabs/crypto-quant-signal-mcp' },
 };
 
 async function makeEngine(): Promise<{ engine: SearchEngine; index: KnowledgeIndex; cleanup: () => void }> {

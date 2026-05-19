@@ -47,8 +47,26 @@ export interface KnowledgeBundleDiscussion {
   created_at: string;
 }
 
+// BUNDLE-EXPAND-BLOG-W1 (C1, 2026-05-19) — long-form content pages compounded
+// from dev.to + Medium + YouTube + GitHub Discussions via weekly Hetzner cron.
+// Refreshed on Sun 06:00 UTC (NOT baked at Docker build); file-watcher
+// (`KnowledgeIndex`) rebuilds BM25 index on poll. 4 source_types (algovault_blog
+// dropped per Mr.1 Q-5 ratification: /var/www/algovault/blog absent +
+// sitemap.xml /blog/ = 0 hits → dev.to IS canonical blog surface).
+export interface KnowledgeBundlePage {
+  source_type: 'devto' | 'medium' | 'youtube' | 'github_discussion';
+  source_url: string;
+  title: string;
+  published_at: string;       // ISO 8601 UTC
+  content_markdown: string;
+  author?: string;
+  tags?: string[];
+  duration_seconds?: number;  // YouTube only
+  thumbnail_url?: string;     // YouTube only
+}
+
 export interface KnowledgeBundleMeta {
-  bundle_version: 1;
+  bundle_version: 2;  // bumped 1 → 2 in BUNDLE-EXPAND-BLOG-W1
   generator: 'build-knowledge-json.mjs';
   repo: 'AlgoVaultLabs/crypto-quant-signal-mcp';
 }
@@ -65,6 +83,8 @@ export interface KnowledgeBundle {
   integrations: KnowledgeBundleIntegration[];
   examples: KnowledgeBundleExample[];
   discussions: KnowledgeBundleDiscussion[];
+  pages: KnowledgeBundlePage[];  // BUNDLE-EXPAND-BLOG-W1: 4-source-type long-form content
+  pages_refreshed_at?: string;   // ISO 8601 UTC; set by the weekly refresh cron, absent at build time
   _algovault: KnowledgeBundleMeta;
 }
 
@@ -80,7 +100,15 @@ const REQUIRED_KEYS: ReadonlyArray<keyof KnowledgeBundle> = [
   'integrations',
   'examples',
   'discussions',
+  'pages',
   '_algovault',
+];
+
+const ALLOWED_PAGE_SOURCE_TYPES: ReadonlyArray<KnowledgeBundlePage['source_type']> = [
+  'devto',
+  'medium',
+  'youtube',
+  'github_discussion',
 ];
 
 function assertString(value: unknown, field: string): string {
@@ -164,11 +192,49 @@ function formatDiscussion(raw: unknown, idx: number): KnowledgeBundleDiscussion 
   };
 }
 
+function formatPage(raw: unknown, idx: number): KnowledgeBundlePage {
+  const obj = assertObject(raw, `pages[${idx}]`);
+  const sourceType = assertString(obj.source_type, `pages[${idx}].source_type`);
+  if (!ALLOWED_PAGE_SOURCE_TYPES.includes(sourceType as KnowledgeBundlePage['source_type'])) {
+    throw new Error(
+      `KnowledgeBundle.pages[${idx}].source_type: expected one of ${JSON.stringify(ALLOWED_PAGE_SOURCE_TYPES)}, got ${JSON.stringify(sourceType)}`,
+    );
+  }
+  const page: KnowledgeBundlePage = {
+    source_type: sourceType as KnowledgeBundlePage['source_type'],
+    source_url: assertString(obj.source_url, `pages[${idx}].source_url`),
+    title: assertString(obj.title, `pages[${idx}].title`),
+    published_at: assertString(obj.published_at, `pages[${idx}].published_at`),
+    content_markdown: assertString(obj.content_markdown, `pages[${idx}].content_markdown`),
+  };
+  if (obj.author !== undefined && obj.author !== null) {
+    page.author = assertString(obj.author, `pages[${idx}].author`);
+  }
+  if (obj.tags !== undefined && obj.tags !== null) {
+    page.tags = assertStringArray(obj.tags, `pages[${idx}].tags`);
+  }
+  if (obj.duration_seconds !== undefined && obj.duration_seconds !== null) {
+    if (typeof obj.duration_seconds !== 'number') {
+      throw new Error(
+        `KnowledgeBundle.pages[${idx}].duration_seconds: expected number, got ${typeof obj.duration_seconds}`,
+      );
+    }
+    page.duration_seconds = obj.duration_seconds;
+  }
+  if (obj.thumbnail_url !== undefined && obj.thumbnail_url !== null) {
+    page.thumbnail_url = assertString(obj.thumbnail_url, `pages[${idx}].thumbnail_url`);
+  }
+  return page;
+}
+
 function formatMeta(raw: unknown): KnowledgeBundleMeta {
   const obj = assertObject(raw, '_algovault');
   const bundleVersion = obj.bundle_version;
-  if (bundleVersion !== 1) {
-    throw new Error(`KnowledgeBundle._algovault.bundle_version: expected 1, got ${JSON.stringify(bundleVersion)}`);
+  if (bundleVersion !== 2) {
+    // BUNDLE-EXPAND-BLOG-W1: schema bumped 1 → 2; v1 bundles are forward-only
+    // upgraded by the build generator. Old bundles in dev / disk caches will
+    // throw here — re-run `npm run build:knowledge` to emit the new shape.
+    throw new Error(`KnowledgeBundle._algovault.bundle_version: expected 2, got ${JSON.stringify(bundleVersion)}`);
   }
   const generator = assertString(obj.generator, '_algovault.generator');
   if (generator !== 'build-knowledge-json.mjs') {
@@ -178,7 +244,7 @@ function formatMeta(raw: unknown): KnowledgeBundleMeta {
   if (repo !== 'AlgoVaultLabs/crypto-quant-signal-mcp') {
     throw new Error(`KnowledgeBundle._algovault.repo: expected 'AlgoVaultLabs/crypto-quant-signal-mcp', got ${JSON.stringify(repo)}`);
   }
-  return { bundle_version: 1, generator: 'build-knowledge-json.mjs', repo: 'AlgoVaultLabs/crypto-quant-signal-mcp' };
+  return { bundle_version: 2, generator: 'build-knowledge-json.mjs', repo: 'AlgoVaultLabs/crypto-quant-signal-mcp' };
 }
 
 /**
@@ -199,7 +265,7 @@ export function formatKnowledgeBundle(raw: unknown): KnowledgeBundle {
     }
   }
 
-  return {
+  const out: KnowledgeBundle = {
     version: assertString(obj.version, 'version'),
     generated_at: assertString(obj.generated_at, 'generated_at'),
     package_name: assertString(obj.package_name, 'package_name'),
@@ -211,6 +277,12 @@ export function formatKnowledgeBundle(raw: unknown): KnowledgeBundle {
     integrations: assertArray(obj.integrations, 'integrations').map(formatIntegration),
     examples: assertArray(obj.examples, 'examples').map(formatExample),
     discussions: assertArray(obj.discussions, 'discussions').map(formatDiscussion),
+    pages: assertArray(obj.pages, 'pages').map(formatPage),
     _algovault: formatMeta(obj._algovault),
   };
+  // pages_refreshed_at is optional and only set by the weekly refresh cron.
+  if (obj.pages_refreshed_at !== undefined && obj.pages_refreshed_at !== null) {
+    out.pages_refreshed_at = assertString(obj.pages_refreshed_at, 'pages_refreshed_at');
+  }
+  return out;
 }

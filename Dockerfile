@@ -43,6 +43,18 @@ COPY landing/integrations.html ./landing/integrations.html
 # weekly-cron-fire time by dist/lib/geo-orchestrator.js::loadQueries().
 # Path resolution: path.resolve(__dirname, '..', '..', 'landing', 'Prompt', ...).
 COPY landing/Prompt/ ./landing/Prompt/
+# BUNDLE-EXPAND-BLOG-W1 (C1, 2026-05-19) — content fetchers used by the
+# weekly Sun-06:00-UTC refresh cron at scripts/refresh-knowledge-pages.mjs.
+# Stage 1 doesn't need them (build-knowledge-json.mjs emits pages: []
+# at build time; the cron populates pages[] at runtime). Stage 2 must
+# include them because docker exec ... node scripts/refresh-knowledge-pages.mjs
+# reads from /app/scripts/fetchers/* in the running container.
+COPY scripts/fetchers/ ./scripts/fetchers/
+# BUNDLE-EXPAND-BLOG-W1 (C3, 2026-05-19) — Sun-06:00-UTC weekly refresh entry
+# point. Calls the 4 fetchers in scripts/fetchers/, dedups, writes bundle
+# atomically. Required at runtime (NOT build time — pages: [] starts empty
+# per Path A; cron populates).
+COPY scripts/refresh-knowledge-pages.mjs ./scripts/refresh-knowledge-pages.mjs
 EXPOSE 3000
 ENV TRANSPORT=http
 USER node

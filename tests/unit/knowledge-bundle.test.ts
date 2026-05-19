@@ -57,7 +57,7 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
     expect(reshaped.package_name).toBe('crypto-quant-signal-mcp');
     expect(Array.isArray(reshaped.keywords)).toBe(true);
     expect(reshaped.keywords.length).toBeGreaterThan(0);
-    expect(reshaped._algovault.bundle_version).toBe(1);
+    expect(reshaped._algovault.bundle_version).toBe(2); // BUNDLE-EXPAND-BLOG-W1 (2026-05-19): schema bumped 1 → 2 (pages[] added)
     expect(reshaped._algovault.generator).toBe('build-knowledge-json.mjs');
     expect(reshaped._algovault.repo).toBe('AlgoVaultLabs/crypto-quant-signal-mcp');
   });

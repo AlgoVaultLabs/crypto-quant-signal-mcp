@@ -45,7 +45,15 @@ export type KnowledgeDocSourceType =
   | 'response_shape'
   | 'integration'
   | 'example'
-  | 'discussion';
+  | 'discussion'
+  // BUNDLE-EXPAND-BLOG-W1 (C1, 2026-05-19): 4 long-form-content source_types
+  // mirror KnowledgeBundlePage.source_type (devto, medium, youtube,
+  // github_discussion) with `page_` prefix to disambiguate from the existing
+  // `discussion` source_type (a different schema — KnowledgeBundleDiscussion).
+  | 'page_devto'
+  | 'page_medium'
+  | 'page_youtube'
+  | 'page_github_discussion';
 
 export interface KnowledgeDoc {
   // Searchable fields (match FIELD_WEIGHTS keys)
@@ -212,6 +220,34 @@ export class KnowledgeIndex {
         _source_type: 'discussion',
         _source_url: d.url,
         _excerpt_source: d.body_markdown,
+      };
+      docs.set(id, doc);
+      engine.addDoc(
+        {
+          name: doc.name,
+          title: doc.title,
+          description: doc.description,
+          content_markdown: doc.content_markdown,
+        },
+        id,
+      );
+    }
+
+    // BUNDLE-EXPAND-BLOG-W1 (C1, 2026-05-19) — long-form content pages
+    // (dev.to + Medium + YouTube + GitHub Discussions). Refreshed weekly by the
+    // Hetzner Sun-06:00-UTC cron; this index picks them up on the file-watcher's
+    // next 30s poll. Empty `pages` array is gracefully handled (initial Path A
+    // deploy ships with pages=[] and the first refresh populates).
+    for (const p of bundle.pages) {
+      const id = `page:${p.source_type}:${p.source_url}`;
+      const doc: KnowledgeDoc = {
+        name: p.title,
+        title: p.title,
+        description: p.title,
+        content_markdown: p.content_markdown,
+        _source_type: `page_${p.source_type}`,
+        _source_url: p.source_url,
+        _excerpt_source: p.content_markdown,
       };
       docs.set(id, doc);
       engine.addDoc(
