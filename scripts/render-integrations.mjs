@@ -31,7 +31,12 @@ const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget'];
 // extend the same render pipeline. Same template — eyebrow shows `<slug> integration`,
 // canonical URL = /integrations/<slug>, page title = AlgoVault × <Display>.
 const FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'];
-const ALL_TARGETS = [...EXCHANGES, ...FRAMEWORKS];
+// INTEGRATIONS-FULL-STACK-W1 C4 (2026-05-19): 5 MCP-client pages sourced
+// from THIS repo at `docs/integrations/mcp-clients/<slug>.md` (NOT the
+// algovault-skills repo). Same htmlShell template; getSrcPath() routes
+// per-slug.
+const MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery'];
+const ALL_TARGETS = [...EXCHANGES, ...FRAMEWORKS, ...MCP_CLIENTS];
 
 const args = process.argv.slice(2);
 const sourceArg = args[args.indexOf('--source') + 1];
@@ -40,7 +45,15 @@ const SOURCE_REPO = sourceArg && sourceArg !== '--source'
   : join(homedir(), 'git', 'algovault-skills');
 
 const SOURCE_DIR = join(SOURCE_REPO, 'docs', 'integrations');
+const LOCAL_MCP_CLIENTS_DIR = join(ROOT, 'docs', 'integrations', 'mcp-clients');
 const TARGET_DIR = join(ROOT, 'landing', 'integrations');
+
+function getSrcPath(slug) {
+  if (MCP_CLIENTS.includes(slug)) {
+    return join(LOCAL_MCP_CLIENTS_DIR, `${slug}.md`);
+  }
+  return join(SOURCE_DIR, `${slug}.md`);
+}
 
 // html: true required so source MDs can include <span data-tr-field="..."> for
 // the live track-record proxy (see WEBSITE-REFRESH-W1 C1).
@@ -62,6 +75,12 @@ const DISPLAY_NAMES = {
   llamaindex: 'LlamaIndex',
   maf: 'Microsoft Agent Framework',
   crewai: 'CrewAI',
+  // INTEGRATIONS-FULL-STACK-W1 C4 MCP clients
+  'claude-desktop': 'Claude Desktop',
+  'claude-code': 'Claude Code',
+  cursor: 'Cursor',
+  cline: 'Cline (VSCode)',
+  smithery: 'Smithery',
 };
 
 // DESIGN-W10 / C3 (2026-05-11): canonical Nav (8-item, post-W9 + post-W7-FF state)
@@ -330,7 +349,7 @@ ${CANONICAL_FOOTER_HTML}
 }
 
 async function renderOne(exchange) {
-  const srcPath = join(SOURCE_DIR, `${exchange}.md`);
+  const srcPath = getSrcPath(exchange);
   const dstPath = join(TARGET_DIR, `${exchange}.html`);
   let mdSource = await readFile(srcPath, 'utf8');
 
@@ -361,12 +380,13 @@ async function renderOne(exchange) {
 
 async function main() {
   await mkdir(TARGET_DIR, { recursive: true });
-  console.log(`[render] source=${SOURCE_DIR}`);
+  console.log(`[render] source(exchanges + frameworks)=${SOURCE_DIR}`);
+  console.log(`[render] source(mcp-clients)=${LOCAL_MCP_CLIENTS_DIR}`);
   console.log(`[render] target=${TARGET_DIR}`);
   for (const slug of ALL_TARGETS) {
     await renderOne(slug);
   }
-  console.log(`[render] OK — ${ALL_TARGETS.length} HTML mirrors written (${EXCHANGES.length} exchanges + ${FRAMEWORKS.length} frameworks)`);
+  console.log(`[render] OK — ${ALL_TARGETS.length} HTML mirrors written (${EXCHANGES.length} exchanges + ${FRAMEWORKS.length} frameworks + ${MCP_CLIENTS.length} mcp-clients)`);
 }
 
 main().catch((err) => {

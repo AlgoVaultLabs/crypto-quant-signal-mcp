@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlgoVault × Claude Desktop — Build Verifiable AI Trading Agents</title>
+<meta name="description" content="Pair AlgoVault MCP&#39;s composite verdict with Claude Desktop&#39;s agent execution kit. Free testnet demo · 89.4% PFE Win Rate · 56,375+ calls · 16+ Merkle-verified on-chain batches.">
+<link rel="canonical" href="https://algovault.com/integrations/claude-desktop">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="AlgoVault × Claude Desktop — Build Verifiable AI Trading Agents">
+<meta property="og:description" content="Pair AlgoVault MCP&#39;s composite verdict with Claude Desktop&#39;s agent execution kit. Free testnet demo · 89.4% PFE Win Rate · 56,375+ calls · 16+ Merkle-verified on-chain batches.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/integrations/claude-desktop">
+<!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
+<meta name="last-updated" content="2026-04-26">
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<!-- END: AlgoVault canonical design loader -->
+<script defer src="/js/track-record-proxy.js"></script>
+<!-- WEBSITE-REFRESH-W1 C7 — Schema.org TechArticle for Google rich-results
+     eligibility (replaced HowTo which Google deprecated for SERP rich
+     results in Aug 2023; TechArticle is current rich-result-eligible). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents",
+  "url": "https://algovault.com/integrations/claude-desktop",
+  "datePublished": "2026-04-25T00:00:00+00:00",
+  "dateModified": "2026-04-26T15:00:00+00:00",
+  "author": {
+    "@type": "Organization",
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://algovault.com/logo.png",
+      "width": 512,
+      "height": 512
+    }
+  },
+  "image": {
+    "@type": "ImageObject",
+    "url": "https://algovault.com/logo.png",
+    "width": 512,
+    "height": 512
+  },
+  "description": "Pair AlgoVault MCP's composite verdict (89.4%+ PFE Win Rate, Merkle-anchored on Base L2) with Claude Desktop's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.",
+  "proficiencyLevel": "Intermediate|Advanced",
+  "about": {
+    "@type": "Thing",
+    "name": "Claude Desktop integration with AlgoVault MCP composite verdict"
+  }
+}
+</script>
+<!-- Privacy-friendly analytics by Plausible (WEBSITE-REFRESH-W1 C6) -->
+<script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  /* DESIGN-W10 / C3 / Q-W10-10 cascade: use canonical CSS variables for body background.
+     algovault-design.css defines --bg / --fg / --fg-2 / --fg-3 / --line / --mint tokens. */
+  body { background: var(--bg); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
+  /* Inline code + pre code — neutral colors preserved (no gold per DESIGN-W10 swap).
+     Build Rule 8 exemption applies to syntax-highlighting inline color spans inside
+     code blocks (preserved if present in markdown source). */
+  code { font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
+  pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; color: var(--fg); }
+  /* DESIGN-W10 / C3: article headings — gold (#d4b255 / #c4a34a) → var(--fg) neutral. */
+  article h1 { font-size: 2.25rem; font-weight: 700; margin: 0 0 0.5em; color: var(--fg); }
+  article h2 { font-size: 1.6rem; font-weight: 600; margin: 0 0 0.5em; color: var(--fg); padding-top: 0; border-top: none; }
+  article h3 { font-size: 1.2rem; font-weight: 600; margin: 1.25em 0 0.4em; color: var(--fg-2); }
+  article p { margin: 0.75em 0; line-height: 1.7; }
+  article ul, article ol { margin: 0.75em 0; padding-left: 1.5em; line-height: 1.7; }
+  article li { margin: 0.25em 0; }
+  /* DESIGN-W10 / C3: article links — gold → var(--mint). */
+  article a { color: var(--mint); text-decoration: underline; }
+  article a:hover { filter: brightness(1.1); }
+  article strong { color: var(--fg); font-weight: 600; }
+  /* DESIGN-W10 / C3: blockquote — gold accent → mint. */
+  article blockquote { border-left: 3px solid var(--mint); padding-left: 16px; margin: 1em 0; color: var(--fg-3); font-style: italic; background: oklch(0.86 0.16 165 / 0.05); padding: 12px 16px; border-radius: 0 4px 4px 0; }
+  article table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  article th, article td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  article th { color: var(--fg); font-weight: 600; }
+  article hr { border: none; border-top: 1px solid var(--line); margin: 2em 0; }
+</style>
+</head>
+<body>
+<!-- DESIGN-W10 / C3 / Q-W10-1 + Q-W10-2 + Q-W10-7 OPTION B: canonical Nav (Integrations
+     active-link + per-page utm-injected /track-record link). REPLACES the pre-W10
+     legacy header block per Q-W10-8 ratification. -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
+      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+    </a>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-claude-desktop" class="hover:text-white transition">Track Record</a>
+      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
+      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
+      <a href="/skills" class="hover:text-white transition">Skills</a>
+      <a href="/docs.html" class="hover:text-white transition">Docs</a>
+      <a href="/verify" class="hover:text-white transition">Verify</a>
+      <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
+      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+    </div>
+  </div>
+</nav>
+
+<!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
+<main class="lp-integrations-desktop">
+  <div class="artboard" style="padding:100px 24px 64px;max-width:1024px;margin:0 auto;width:100%">
+    <div class="bg-grid"></div>
+    <div class="bg-radial-accent"></div>
+    <div class="bg-noise"></div>
+    <div style="position:relative;z-index:1">
+      <div class="placeholder-cap" style="margin-bottom:14px">· claude-desktop integration</div>
+      <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
+      <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">89.4%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">56,375</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+      </p>
+      <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
+           (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
+           "I means remove this section, not the section cards" — referring to the
+           TL;DR section content, not the visual card structure. wrapH2InTierStatCard()
+           wraps each h2 section + intro in a card; stripTLDRSection() removes the
+           redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
+      <article>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Desktop</h1>
+<p>Add AlgoVault’s 4 MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (100 calls/month, no signup).</p>
+<blockquote>
+<p><em>Snapshot taken 2026-05-19 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
+</blockquote></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
+<p>Placeholder — full setup walkthrough lands in C5 of INTEGRATIONS-FULL-STACK-W1 (pre-flagged drafts in <code>audits/INTEGRATIONS-FULL-STACK-W1-endpoint-truth.md</code> §G).</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Worked example</h2>
+<p>Coming in C5.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
+<p>Coming in C5.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
+<p>Coming in C5.</p></div>
+      </article>
+    </div>
+  </div>
+</main>
+
+<!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
+     REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
+<footer style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)">
+  <div style="display:flex;align-items:center;gap:10px">
+    <img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0">
+    <span style="color:var(--fg-2)">Built by AlgoVault Labs</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
+    <a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener" style="color:var(--fg-3);text-decoration:none">GitHub</a>
+    <a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener" style="color:var(--fg-3);text-decoration:none">X / Twitter</a>
+    <a href="/signup" style="color:var(--fg-3);text-decoration:none">Signup</a>
+    <a href="/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a>
+  </div>
+</footer>
+</body>
+</html>
