@@ -5,6 +5,16 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-05-19
+
+### Added
+- 3-minute timeframe added to the public track record. PFE win rate and sample count visible at algovault.com/track-record.
+- Integration walkthroughs at algovault.com/integrations for Claude Desktop, Claude.ai, Cursor, Cline, and Codex CLI.
+- Documentation section at algovault.com/docs covering the search_knowledge and chat_knowledge MCP tools.
+
+### Improved
+- Knowledge tools (search_knowledge, chat_knowledge) now index blog posts, YouTube videos, and GitHub Discussions. Bundle refreshes weekly.
+
 ## [1.15.1] - 2026-05-18
 
 ### Added
