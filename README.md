@@ -146,7 +146,7 @@ AlgoVault is different. We give your agent **one answer**: a directional verdict
 - **ERC-8004 verified agent.** AlgoVault MCP holds a registered agentId on the Base L2 Identity Registry. The agent identity is portable and on-chain.
 - **Drop-in for every major agent framework.** First-party tutorials + runnable demos for LangChain, LlamaIndex, Microsoft Agent Framework, CrewAI. ≤5 minutes to first call. See the [Framework integrations](#framework-integrations) section.
 - **Self-tuning model.** Indicator weights are tuned from live outcome data by our [Autonomous Optimization Engine](https://algovault.com/how-it-works). The model gets sharper with every signal.
-- **Crypto + TradFi coverage.** 730+ assets — standard crypto perps on all 5 CEX; TradFi perps (stocks, indices, commodities, FX); liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
+- **Crypto + TradFi coverage.** 740+ assets — standard crypto perps on all 5 CEX; TradFi perps (stocks, indices, commodities, FX); liquidity-filtered meme coins. <!-- SNAPSHOT-LINE -->
 
 ---
 
@@ -282,7 +282,7 @@ or pay per call via x402.
 | Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
 | Exchanges | All 5 | All 5 | All 5 | All 5 | All 5 | <!-- SNAPSHOT-LINE-TABLE -->
-| Assets | All 730+ | All 730+ | All 730+ | All 730+ | All 730+ | <!-- SNAPSHOT-LINE-TABLE -->
+| Assets | All 740+ | All 740+ | All 740+ | All 740+ | All 740+ | <!-- SNAPSHOT-LINE-TABLE -->
 | Asset classes | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
 | Timeframes | All 11 | All 11 | All 11 | All 11 | All 11 |
 | Funding arb results | Top 5 | Unlimited | Unlimited | Unlimited | Unlimited |
