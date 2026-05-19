@@ -121,9 +121,18 @@ describe('getVenuesSupporting — venue-coverage matrix', () => {
     expect(venues).toContain('OKX');
   });
 
-  it('SILVER: supported on all 5 venues (XAG alias)', () => {
+  it('SILVER: supported on 5 promoted venues (XAG alias) plus GATE shadow', () => {
+    // PILOT-ADAPTERS-W2 / C1 (2026-05-19): Gate.io added to SILVER coverage
+    // (Gate has XAG_USDT). Test widened from strict `length == 5` (5 promoted
+    // venues only) to "all 5 promoted PLUS shadow extensions". C2/C3 may
+    // extend further with MEXC/KuCoin XAG entries.
     const venues = getVenuesSupporting('SILVER');
-    expect(venues.length).toBe(5);
+    expect(venues).toContain('HL');
+    expect(venues).toContain('BINANCE');
+    expect(venues).toContain('BYBIT');
+    expect(venues).toContain('BITGET');
+    expect(venues).toContain('OKX');
+    expect(venues).toContain('GATE');
   });
 
   it('SPX (memecoin): all 5 venues — present on every CEX + HL standard perp', () => {
