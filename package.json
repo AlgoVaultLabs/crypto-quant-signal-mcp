@@ -52,6 +52,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@buildersgarden/siwa": "^0.0.24",
+    "@circle-fin/x402-batching": "^3.0.4",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@slicekit/erc8128": "^0.3.3",
     "@x402/core": "^2.9.0",
