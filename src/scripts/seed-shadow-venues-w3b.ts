@@ -35,8 +35,7 @@ const W3B_VENUES: ShadowVenueSeed[] = [
     exchangeId: 'BITMART',
     assetCount: 949,
     notes: 'PILOT-ADAPTERS-W3B C2 (2026-05-20) — Bitmart Futures V2 USDT-M; $6.35B OI / 949 USDT-quote perps under /contract/public/details (977 total) / 2017-founded / CoinGecko rank 13. Symbol BTCUSDT (Binance-style no separator). kline step ENUM {1,3,5,15,30,60,120,240,720} minutes; limit not honored (uses start/end time window). Single /contract/public/details bundles funding + OI + mark.',
-    guardEnv: 'W3B_C2_ACTIVATED',
-  },
+      },
   {
     exchangeId: 'XT',
     assetCount: 893,

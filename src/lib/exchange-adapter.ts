@@ -21,6 +21,7 @@ import { PhemexAdapter } from './adapters/phemex.js';
 import { BingxAdapter } from './adapters/bingx.js';
 import { HTXAdapter } from './adapters/htx.js';
 import { WeexAdapter } from './adapters/weex.js';
+import { BitmartAdapter } from './adapters/bitmart.js';
 
 const adapters = new Map<ExchangeId, ExchangeAdapter>();
 
@@ -67,6 +68,9 @@ export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
         break;
       case 'WEEX':
         adapter = new WeexAdapter();
+        break;
+      case 'BITMART':
+        adapter = new BitmartAdapter();
         break;
       case 'HL':
       default:

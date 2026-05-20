@@ -92,7 +92,7 @@ export interface ExchangeAdapter {
 
 // ── Exchange Types ──
 
-export type ExchangeId = 'HL' | 'BINANCE' | 'BYBIT' | 'OKX' | 'BITGET' | 'ASTER' | 'EDGEX' | 'GATE' | 'MEXC' | 'KUCOIN' | 'PHEMEX' | 'BINGX' | 'HTX' | 'WEEX';
+export type ExchangeId = 'HL' | 'BINANCE' | 'BYBIT' | 'OKX' | 'BITGET' | 'ASTER' | 'EDGEX' | 'GATE' | 'MEXC' | 'KUCOIN' | 'PHEMEX' | 'BINGX' | 'HTX' | 'WEEX' | 'BITMART';
 
 // ── Venue lifecycle state machine (EXCHANGE-SHADOW-PROMOTE-W1 / C1) ──
 // New exchange integrations default to 'shadow', auto-promote via daily cron
