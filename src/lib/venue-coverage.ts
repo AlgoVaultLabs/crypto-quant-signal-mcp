@@ -80,7 +80,7 @@ const PARTIAL_COVERAGE: Record<string, ExchangeId[]> = {
   BRENTOIL:  ['HL', 'MEXC'],                                // C2: MEXC has UKOIL_USDT (alias)
 
   // NEW rows: TradFi symbols that previously defaulted to ALL_5 but Gate.io adds shadow-venue coverage
-  GOLD:      ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX'],     // W2 Gate XAU + MEXC XAUT + KuCoin XAUT; W3A C1 Phemex XAU
+  GOLD:      ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX'],     // W2 Gate XAU + MEXC XAUT + KuCoin XAUT; W3A C1 Phemex XAU; W3A C2 BingX XAUT
   SILVER:    ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX'],     // W2 Gate XAG + MEXC literal + KuCoin XAG; W3A C1 Phemex XAG
   CL:        ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'GATE', 'MEXC', 'KUCOIN'],     // C1 Gate + C2 MEXC USOIL + C3 KuCoin CL direct
   EWJ:       ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'GATE', 'MEXC', 'KUCOIN'],     // C1+C2+C3
@@ -152,4 +152,4 @@ export function isVenueSupportedFor(coin: string, exchange: ExchangeId): boolean
  * Probe-date marker — useful for future "is this matrix stale?" audits.
  * Update in lockstep with re-running the alias coverage CSV.
  */
-export const COVERAGE_PROBED_AT = '2026-05-20';   // PILOT-ADAPTERS-W3A / C1 — Phemex shadow-venue TradFi coverage added (16 row extensions + SP500 moved out of HL_ONLY + USOIL new row); semantic-fingerprint probes confirm SP500USDT=$7338 (real S&P 500) vs SPXUSDT=$0.36 (memecoin)
+export const COVERAGE_PROBED_AT = '2026-05-20';   // PILOT-ADAPTERS-W3A / C1+C2 — Phemex (16 row extensions + SP500 moved out of HL_ONLY + USOIL new row); BingX (1 row extension: GOLD only — sparse TradFi catalog, only XAUT listed). Semantic-fingerprint probes confirm SP500USDT=$7338 (real S&P 500) vs SPXUSDT=$0.36 (memecoin) on Phemex; BingX SPX-USDT=$0.36 memecoin + XAUT-USDT=$4464.81 Tether Gold

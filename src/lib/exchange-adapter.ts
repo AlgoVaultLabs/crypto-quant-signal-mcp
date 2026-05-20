@@ -18,6 +18,7 @@ import { GateAdapter } from './adapters/gateio.js';
 import { MEXCAdapter } from './adapters/mexc.js';
 import { KuCoinAdapter } from './adapters/kucoin.js';
 import { PhemexAdapter } from './adapters/phemex.js';
+import { BingxAdapter } from './adapters/bingx.js';
 
 const adapters = new Map<ExchangeId, ExchangeAdapter>();
 
@@ -55,6 +56,9 @@ export function getAdapter(exchange?: ExchangeId): ExchangeAdapter {
         break;
       case 'PHEMEX':
         adapter = new PhemexAdapter();
+        break;
+      case 'BINGX':
+        adapter = new BingxAdapter();
         break;
       case 'HL':
       default:

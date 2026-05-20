@@ -264,7 +264,7 @@ function createServer(): McpServer {
     coin: z.string().max(20).describe(PARAM_DESC_TRADE_CALL_COIN),
     timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
     includeReasoning: z.boolean().default(true).describe(PARAM_DESC_TRADE_CALL_INCLUDE_REASONING),
-    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX']).default('BINANCE').describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
+    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX']).default('BINANCE').describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
     return async ({ coin, timeframe, includeReasoning, exchange }: { coin: string; timeframe: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange: ExchangeId }) => {
@@ -367,7 +367,7 @@ function createServer(): McpServer {
     {
       coin: z.string().max(20).describe(PARAM_DESC_REGIME_COIN),
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe(PARAM_DESC_REGIME_TIMEFRAME),
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX']).default('HL').describe(PARAM_DESC_REGIME_EXCHANGE),
+      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX']).default('HL').describe(PARAM_DESC_REGIME_EXCHANGE),
     },
     { readOnlyHint: true, openWorldHint: true },
     async ({ coin, timeframe, exchange }) => {

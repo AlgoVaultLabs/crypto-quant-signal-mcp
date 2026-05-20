@@ -78,6 +78,11 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
   // Phemex hedged USDT-M perpetual (perpProductsV2, 538 USDT-listed). Per-
   // endpoint rate limit not documented in primary docs; conservative 300ms.
   'PHEMEX':  300,
+  // PILOT-ADAPTERS-W3A / C2 (2026-05-20): BINGX shadow venue. Type-system
+  // cascade only; seed-loop branch deferred to PILOT-ADAPTERS-SEED-LOOP-W2.
+  // BingX Swap V2 USDT-M perpetual (638 USDT-listed). Rate-limit upgrade
+  // 2025-10-16 (per primary docs); conservative 300ms.
+  'BINGX':   300,
 };
 
 // Idempotency windows per timeframe (slightly less than the interval)

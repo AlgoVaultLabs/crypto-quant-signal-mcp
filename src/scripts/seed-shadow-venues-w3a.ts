@@ -51,8 +51,7 @@ const W3A_VENUES: ShadowVenueSeed[] = [
   {
     exchangeId: 'BINGX',
     assetCount: 638,
-    notes: 'PILOT-ADAPTERS-W3A C2 (2026-05-20) — BingX Swap V2 USDT-M Perpetual; $3.52B 24h OI / 638 USDT perps / 88% derivs-mix / CoinGecko rank 19 / Tier-A reputation. Plan-Mode probe 2026-05-20 confirmed direct-float JSON shape (no encoding).',
-    guardEnv: 'W3A_C2_ACTIVATED',
+    notes: 'PILOT-ADAPTERS-W3A C2 (2026-05-20) — BingX Swap V2 USDT-M Perpetual; $3.52B 24h OI / 638 USDT perps / 88% derivs-mix / CoinGecko rank 19 / Tier-A reputation. Plan-Mode probe 2026-05-20 confirmed direct-float JSON shape (no encoding); kline limit normal integer range up to 1440. C2 ACTIVATED (guard removed).',
   },
   {
     exchangeId: 'HTX',
