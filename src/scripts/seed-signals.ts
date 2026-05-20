@@ -73,6 +73,11 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
   // PILOT-ADAPTERS-W2 / C3 (2026-05-19): KUCOIN shadow venue. Type-system
   // cascade only; seed-loop branch deferred to PILOT-ADAPTERS-SEED-LOOP-W2.
   'KUCOIN':  300,
+  // PILOT-ADAPTERS-W3A / C1 (2026-05-20): PHEMEX shadow venue. Type-system
+  // cascade only; seed-loop branch deferred to PILOT-ADAPTERS-SEED-LOOP-W2.
+  // Phemex hedged USDT-M perpetual (perpProductsV2, 538 USDT-listed). Per-
+  // endpoint rate limit not documented in primary docs; conservative 300ms.
+  'PHEMEX':  300,
 };
 
 // Idempotency windows per timeframe (slightly less than the interval)
