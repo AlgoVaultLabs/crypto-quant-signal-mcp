@@ -2,35 +2,38 @@
 /**
  * seed-shadow-venues-w3a.ts — One-shot bootstrap script for PILOT-ADAPTERS-W3A.
  *
- * Calls `venue-store.insertVenue()` for the 3 new Tier-A established CEX
- * shadow venues (Phemex + BingX + HTX) with Plan-Mode-probed asset_count
- * values (2026-05-20). Idempotent via `ON CONFLICT (exchange_id) DO NOTHING`
- * — safe to re-run.
+ * Inserts the 3 new Tier-A established CEX shadow venues (Phemex + BingX +
+ * HTX) into the `venues` postgres table with Plan-Mode-probed asset_count
+ * values (2026-05-20). Idempotent via `ON CONFLICT (exchange_id) DO NOTHING`.
+ *
+ * Implementation note: bypasses `venue-store.insertVenue()` because that
+ * helper calls `dbRun(...)` which is fire-and-forget on the PgBackend
+ * (`this.pool.query(...).catch(...)` — Promise dropped). In a one-shot
+ * script context the pool gets closed BEFORE the INSERT actually commits.
+ * This script uses `pg.Pool` directly + awaits the query result so the
+ * INSERT lands before the pool ends. Same shape as the existing async
+ * methods on PgBackend (`runAsync` / `execAsync` / `query`).
  *
  * Usage (post-deploy, operator-side per chapter):
- *   ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 'docker exec crypto-quant-signal-mcp-server-1 node /app/dist/scripts/seed-shadow-venues-w3a.js'
+ *   ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
+ *     'docker exec crypto-quant-signal-mcp-mcp-server-1 \
+ *      node /app/dist/scripts/seed-shadow-venues-w3a.js'
  *
  * Per-chapter activation:
- *   - C1: only PHEMEX is fully wired (adapter + dispatch + Zod + venue-coverage).
- *     BINGX/HTX insertVenue calls are GUARDED behind an env flag so this
- *     script can be safely run after C1 without erroring on missing adapters.
- *   - C2 lifts the BINGX guard.
- *   - C3 lifts the HTX guard.
+ *   - C1: PHEMEX always inserts.
+ *   - C2: `W3A_C2_ACTIVATED=1` env unlocks BINGX.
+ *   - C3: `W3A_C3_ACTIVATED=1` env unlocks HTX.
  *
  * Plan-Mode probe (2026-05-20):
- *   - Phemex: 538 USDT-margined hedged perpetuals listed under data.perpProductsV2;
- *     $3.30B 24h OI; 100% PoR + 99.999% uptime claim; Tier-A reputation.
- *   - BingX: 638 USDT-perp listed (.data[currency=USDT,status=1]); $3.52B OI;
- *     88% derivs-mix; CoinGecko rank 19; Tier-A reputation.
- *   - HTX: 233 USDT swap listed; $4.75B OI; +14.48pp derivs swing Q1 2026;
- *     Tier-A reputation, recovery story.
- *
- * Status: shadow. evaluate-venues daily cron auto-tests each on the
- * promotion criteria (PFE WR ≥ 0.80 over asset_count × 10 BUY/SELL signals).
+ *   - Phemex: 538 USDT-margined hedged perpetuals (perpProductsV2); $3.30B OI;
+ *     100% PoR + 99.999% uptime claim; Tier-A reputation.
+ *   - BingX:  638 USDT-perp listed; $3.52B OI; CoinGecko rank 19; Tier-A.
+ *   - HTX:    233 USDT swap listed; $4.75B OI; +14.48pp derivs swing Q1 2026;
+ *     Tier-A recovery story.
  */
 
-import { insertVenue } from '../lib/venue-store.js';
-import { closeDb } from '../lib/performance-db.js';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { Pool } = require('pg');
 
 interface ShadowVenueSeed {
   exchangeId: string;
@@ -60,35 +63,58 @@ const W3A_VENUES: ShadowVenueSeed[] = [
 ];
 
 async function main(): Promise<void> {
-  let inserted = 0;
-  let skipped = 0;
-
-  for (const venue of W3A_VENUES) {
-    if (venue.guardEnv && process.env[venue.guardEnv] !== '1') {
-      console.log(`[seed-shadow-venues-w3a] SKIP ${venue.exchangeId} (guard env ${venue.guardEnv}!=1; chapter not yet activated)`);
-      skipped++;
-      continue;
-    }
-
-    try {
-      await insertVenue({
-        exchangeId: venue.exchangeId,
-        status: 'shadow',
-        assetCount: venue.assetCount,
-        // minBuySellSample defaults to assetCount × 10 per insertVenue helper
-        integratedAt: new Date(),
-        notes: venue.notes,
-      });
-      console.log(`[seed-shadow-venues-w3a] OK ${venue.exchangeId} status=shadow asset_count=${venue.assetCount} min_buy_sell_sample=${venue.assetCount * 10}`);
-      inserted++;
-    } catch (err) {
-      console.error(`[seed-shadow-venues-w3a] ERROR ${venue.exchangeId}: ${err instanceof Error ? err.message : String(err)}`);
-      throw err;
-    }
+  // Connection string from env — mirrors performance-db.ts PgBackend
+  // constructor (which uses process.env.DATABASE_URL).
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL env var is required');
   }
 
-  console.log(`[seed-shadow-venues-w3a] DONE inserted=${inserted} skipped=${skipped}`);
-  await closeDb();
+  const pool = new Pool({ connectionString });
+  let inserted = 0;
+  let skipped = 0;
+  let alreadyPresent = 0;
+
+  try {
+    for (const venue of W3A_VENUES) {
+      if (venue.guardEnv && process.env[venue.guardEnv] !== '1') {
+        console.log(`[seed-shadow-venues-w3a] SKIP ${venue.exchangeId} (guard env ${venue.guardEnv}!=1; chapter not yet activated)`);
+        skipped++;
+        continue;
+      }
+
+      const minBuySellSample = venue.assetCount * 10;
+      const integratedAt = new Date();
+
+      // INSERT with ON CONFLICT DO NOTHING; RETURNING * tells us if the row
+      // actually landed (no-op when already present).
+      const result = await pool.query(
+        `INSERT INTO venues (exchange_id, status, asset_count, min_buy_sell_sample, integrated_at, notes)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (exchange_id) DO NOTHING
+         RETURNING exchange_id`,
+        [venue.exchangeId, 'shadow', venue.assetCount, minBuySellSample, integratedAt, venue.notes]
+      );
+
+      if (result.rowCount > 0) {
+        console.log(`[seed-shadow-venues-w3a] OK ${venue.exchangeId} status=shadow asset_count=${venue.assetCount} min_buy_sell_sample=${minBuySellSample}`);
+        inserted++;
+      } else {
+        // Row already present; verify by selecting it for the operator's audit trail
+        const existing = await pool.query(
+          `SELECT status, asset_count, min_buy_sell_sample, integrated_at FROM venues WHERE exchange_id = $1`,
+          [venue.exchangeId]
+        );
+        const row = existing.rows[0];
+        console.log(`[seed-shadow-venues-w3a] PRESENT ${venue.exchangeId} status=${row?.status} asset_count=${row?.asset_count} min_buy_sell_sample=${row?.min_buy_sell_sample} integrated_at=${row?.integrated_at}`);
+        alreadyPresent++;
+      }
+    }
+
+    console.log(`[seed-shadow-venues-w3a] DONE inserted=${inserted} already_present=${alreadyPresent} skipped=${skipped}`);
+  } finally {
+    await pool.end();
+  }
 }
 
 main().catch((err) => {
