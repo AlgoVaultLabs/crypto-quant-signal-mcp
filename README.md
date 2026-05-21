@@ -97,13 +97,19 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ---
 
-## What's new in v1.16.0
+## What's new in v1.17.0
 
-Live since 2026-05-19:
+Live since 2026-05-21:
+
+- **📊 Free-tier quota visibility.** MCP tool responses surface usage progress at 75% and 90% of the monthly quota. At 100% the tool returns a structured error (`TIER_LIMIT_REACHED`) with an upgrade link. Existing 100-call monthly quota unchanged.
+- **💳 Stripe webhook idempotency.** `checkout.session.completed` events are processed exactly once; UTM tags round-trip through Stripe metadata for paid-conversion attribution.
+- **📦 TensorBlock listing.** AlgoVault now listed in TensorBlock's awesome-mcp-servers catalog (5th external discovery channel alongside npm registry, MCP Registry, LobeHub, and Claude Desktop DXT manifest).
+
+### v1.16.0 highlights (recap)
 
 - **⏱️ 3-minute timeframe public.** Added to the public track record. PFE win rate and sample count visible at [algovault.com/track-record](https://algovault.com/track-record).
 - **🧩 Integration walkthroughs.** Five new walkthroughs at [algovault.com/integrations](https://algovault.com/integrations) for Claude Desktop, Claude.ai, Cursor, Cline, and Codex CLI.
-- **📚 Knowledge tools docs.** New documentation section at [algovault.com/docs](https://algovault.com/docs.html) covering the `search_knowledge` and `chat_knowledge` MCP tools (parameter tables, example responses, rate limits, troubleshooting).
+- **📚 Knowledge tools docs.** New documentation section at [algovault.com/docs](https://algovault.com/docs.html) covering the `search_knowledge` and `chat_knowledge` MCP tools.
 - **📰 Bundle expansion.** Knowledge tools now index blog posts, YouTube videos, and GitHub Discussions. Bundle refreshes weekly.
 
 ### v1.15.1 highlights (recap)
