@@ -5,6 +5,15 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-05-21
+
+### Added
+- Free-tier quota visibility. MCP tool responses surface usage progress at 75% and 90% of the monthly quota. At 100% the tool returns a structured error (`TIER_LIMIT_REACHED`) with an upgrade link. Existing 100-call monthly quota unchanged.
+- Stripe webhook idempotency. `checkout.session.completed` events are processed exactly once; UTM tags round-trip through Stripe metadata for paid-conversion attribution.
+
+### Distribution
+- AlgoVault listed in TensorBlock's awesome-mcp-servers catalog (5th external discovery channel alongside npm registry, MCP Registry, LobeHub, and Claude Desktop DXT manifest).
+
 ## [1.16.0] - 2026-05-19
 
 ### Added
