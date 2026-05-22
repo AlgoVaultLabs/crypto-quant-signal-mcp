@@ -41,7 +41,13 @@ const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
 
 // Per-exchange delay between API calls (ms)
 const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
-  'HL':      500,  // polite to public API
+  // OPS-HL-RATELIMIT-W1 (2026-05-22): bumped 500 → 750ms as safety margin
+  // alongside adapter-layer metaAndAssetCtxs coalescing (hyperliquid.ts).
+  // Coalescing collapses redundant per-coin universe fetches (~50% load cut);
+  // 750ms cushions against residual burst stacking when 1m/3m/5m/15m HL crons
+  // overlap at 15-min boundaries. 750ms × 20 coins = 15s/fire (well within
+  // 3m cadence); 750ms × ~230-coin 15m HL top-100 fire = ~173s (acceptable).
+  'HL':      750,  // polite to public API — 60s/min budget cushion
   'BINANCE': 200,  // generous rate limits
   'BYBIT':   200,  // 50 req/sec
   'OKX':     150,  // 10 req/sec — keep margin

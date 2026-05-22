@@ -19,6 +19,62 @@ const BASE_URL = 'https://api.hyperliquid.xyz/info';
 const TIMEOUT_MS = 3000;
 const MAX_RETRIES = 1;
 
+// OPS-HL-RATELIMIT-W1 (2026-05-22): per-coin getAssetContext used to issue
+// N redundant `metaAndAssetCtxs` fetches per seed fire — each returning the
+// same ~230-perp universe payload. At ~weight 20 per call, a 20-coin top-20
+// 3m fire burned ~400 weight on identical responses; the 15m HL top-100 fire
+// (~230 coins with TradFi) burned ~4600 weight on identical responses. Burst
+// stacking across overlapping 1m/3m/5m/15m HL crons pushed peak load to
+// ~10x the documented 1200 weight/min/IP budget, triggering intermittent 429
+// storms (worst observed fire: 0 seeded, 20 errors at 2026-05-22T06:24 UTC).
+// This in-process coalescing cache (60s TTL, dex-keyed) collapses N concurrent
+// or near-sequential `metaAndAssetCtxs` callers within ONE node process to a
+// single backend fetch. Cross-process coalescing (separate cron-fire node
+// processes) is out of scope and deferred to OPS-HL-RATELIMITER-W2.
+const META_TTL_MS = 60_000;
+type MetaCacheEntry = { value: unknown; ts: number };
+const metaCache = new Map<string, MetaCacheEntry>();
+const metaInflight = new Map<string, Promise<unknown>>();
+
+function metaCacheKey(dex: DexType): string {
+  return dex === 'xyz' ? 'xyz' : 'standard';
+}
+
+async function getMetaAndAssetCtxsCoalesced<T>(dex: DexType): Promise<T> {
+  const key = metaCacheKey(dex);
+  const cached = metaCache.get(key);
+  if (cached && Date.now() - cached.ts < META_TTL_MS) {
+    return cached.value as T;
+  }
+  const existing = metaInflight.get(key);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+  const body: Record<string, unknown> = { type: 'metaAndAssetCtxs' };
+  if (dex === 'xyz') body.dex = 'xyz';
+  const promise = hlPost<T>(body)
+    .then((value) => {
+      metaCache.set(key, { value, ts: Date.now() });
+      metaInflight.delete(key);
+      return value;
+    })
+    .catch((err) => {
+      metaInflight.delete(key);
+      throw err;
+    });
+  metaInflight.set(key, promise as Promise<unknown>);
+  return promise;
+}
+
+/**
+ * Test-only reset of the adapter's metaAndAssetCtxs coalescing cache.
+ * Production code MUST NOT call this — used by unit tests to isolate cases.
+ */
+export function _resetHyperliquidMetaCache(): void {
+  metaCache.clear();
+  metaInflight.clear();
+}
+
 async function hlPost<T>(body: Record<string, unknown>, retries = MAX_RETRIES): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
@@ -81,10 +137,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getAssetContext(coin: string, dex: DexType = 'standard'): Promise<AssetContext> {
-    const body: Record<string, unknown> = { type: 'metaAndAssetCtxs' };
-    if (dex === 'xyz') body.dex = 'xyz';
-
-    const raw = await hlPost<[HLMetaAndAssetCtxs['meta'], HLMetaAndAssetCtxs['assetCtxs']]>(body);
+    // OPS-HL-RATELIMIT-W1: route through the in-process coalescing cache so
+    // N per-coin callers within a seed fire share one backend fetch (60s TTL).
+    const raw = await getMetaAndAssetCtxsCoalesced<
+      [HLMetaAndAssetCtxs['meta'], HLMetaAndAssetCtxs['assetCtxs']]
+    >(dex);
     const meta = raw[0];
     const ctxs = raw[1];
     // xyz universe names include 'xyz:' prefix (e.g. 'xyz:GOLD'), so match both formats
