@@ -127,18 +127,19 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // Only applicable for Hyperliquid — Binance doesn't have dex types
   const dex = exchange === 'HL' ? getDexForCoin(coin) : undefined;
 
-  // Meme coin liquidity gate — reject illiquid micro-caps before wasting API calls
-  // Only applicable for HL where we have tier data
-  if (exchange === 'HL') {
-    const tier = classifyAsset(coin, null);
-    if (tier === 4) {
-      const liquid = await isMemeCoinLiquid(coin);
-      if (!liquid) {
-        throw new Error(
-          `Signal generation unavailable for ${coin}: insufficient liquidity (not in top 50 by OI and <$10M 24h volume). ` +
-          `TA signals are unreliable for illiquid micro-caps.`
-        );
-      }
+  // Meme coin liquidity gate — reject illiquid micro-caps before wasting API calls.
+  // OPS-3M-EXPAND-W1 (2026-05-22): outer `if (exchange === 'HL')` guard REMOVED;
+  // gate now runs for ALL 17 ExchangeId values uniformly via per-exchange-AND
+  // semantics in isMemeCoinLiquid. Shadow venues (12 of 17) short-circuit TRUE
+  // at the gate level pending per-venue promotion to PUBLIC tier.
+  const tier = classifyAsset(coin, null);
+  if (tier === 4) {
+    const liquid = await isMemeCoinLiquid(coin, exchange);
+    if (!liquid) {
+      throw new Error(
+        `Signal generation unavailable for ${coin} on ${exchange}: not in ${exchange}'s top-50 by OI ` +
+        `or <$10M 24h volume on ${exchange}. TA signals are unreliable for illiquid micro-caps.`
+      );
     }
   }
 

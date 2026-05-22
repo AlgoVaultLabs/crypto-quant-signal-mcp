@@ -8,7 +8,8 @@
  * Tier 4: Meme & Micro (liquidity-filtered — top 50 OI or >$10M vol)
  */
 
-import type { DexType } from '../types.js';
+import type { DexType, ExchangeId } from '../types.js';
+import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
 
 export type AssetTier = 1 | 2 | 3 | 4;
 
@@ -181,87 +182,127 @@ export function _getFallbackTop20(): Set<string> {
   return FALLBACK_TOP20;
 }
 
-// ── Meme coin liquidity filter ──
+// ── Meme coin liquidity filter (per-exchange-AND, OPS-3M-EXPAND-W1) ──
 
 const MIN_VOLUME_24H = 10_000_000; // $10M
-let liquidMemesCache: { coins: Set<string>; fetchedAt: number } | null = null;
 
 /**
- * Check if a meme/micro coin has sufficient liquidity for reliable TA signals.
- * Must be in top 50 by OI OR have >$10M 24h volume.
+ * The 5 PROMOTED venues — full per-exchange-AND gate logic runs against
+ * each exchange's own top-50 + 24h USD volume.
  */
-export async function isMemeCoinLiquid(coin: string): Promise<boolean> {
-  // Refresh cache every hour
-  if (liquidMemesCache && Date.now() - liquidMemesCache.fetchedAt < CACHE_TTL_MS) {
-    return liquidMemesCache.coins.has(coin.toUpperCase());
+const PROMOTED_VENUES: ReadonlyArray<ExchangeId> = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'] as const;
+
+/**
+ * The 12 SHADOW venues — gate short-circuits TRUE pending per-venue
+ * promotion to PUBLIC tier. Re-audit at each promotion wave.
+ *
+ * NOTE: hard-coded here because no canonical venue-tier classification module
+ * exists yet (`venues` postgres table is the runtime SoT but not importable
+ * client-side). See OPS-3M-EXPAND-W1 WIS for `OPS-VENUE-TIER-CANONICALIZATION-W1`
+ * follow-up.
+ */
+const SHADOW_VENUES: ReadonlyArray<ExchangeId> = [
+  'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX',
+  'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT',
+] as const;
+
+/**
+ * Per-exchange liquid-coin cache. Keyed by `ExchangeId`; entries hold the
+ * set of coin symbols that passed the per-exchange-AND gate on the most
+ * recent fetch, plus the fetch timestamp for TTL.
+ */
+const liquidCoinsByExchange: Map<ExchangeId, { coins: Set<string>; fetchedAt: number }> = new Map();
+
+/**
+ * Check if a meme/micro coin has sufficient liquidity on `exchange` for
+ * reliable TA signals. Per-exchange-AND semantics (OPS-3M-EXPAND-W1):
+ *
+ * Returns TRUE iff:
+ *   1. `exchange` is a SHADOW venue (12 of 17 ExchangeId values) — short-circuits
+ *      TRUE without any external fetch (SHADOW_VENUE_PERMISSIVE_PASS).
+ *   OR
+ *   2. `exchange` is a PROMOTED venue AND `coin` is in that exchange's top-50
+ *      by notional OI AND has ≥ $10M 24h USD-equivalent volume on that exchange.
+ *
+ * Cache: per-exchange Map with 1h TTL.
+ *
+ * Error path: permissive (returns TRUE) on fetch failure — matches pre-C1 behavior;
+ * see `console.warn` log line for ops visibility.
+ *
+ * Callers: `src/tools/get-trade-call.ts` Tier-4 branch (OPS-3M-EXPAND-W1 removed
+ * the outer `if (exchange === 'HL')` guard at that call site; gate now runs for
+ * all 17 ExchangeId values uniformly).
+ */
+export async function isMemeCoinLiquid(coin: string, exchange: ExchangeId): Promise<boolean> {
+  // SHADOW_VENUE_PERMISSIVE_PASS — tighten per-venue when promoted to PUBLIC tier (OPS-3M-EXPAND-W1 Q3)
+  if (SHADOW_VENUES.includes(exchange)) {
+    return true;
+  }
+
+  const upper = coin.toUpperCase();
+
+  // Cache hit (per-exchange)
+  const cached = liquidCoinsByExchange.get(exchange);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.coins.has(upper);
   }
 
   try {
-    const { getTopAssetsByOI } = await import('./oi-ranking.js');
-    const top50 = await getTopAssetsByOI(50);
-    const top50Set = new Set(top50.map(a => a.coin.toUpperCase()));
-
-    // Also fetch all assets to check volume for those outside top 50
-    const allAssets = await getTopAssetsByOI(500); // get all
-    const liquidCoins = new Set<string>();
-
-    for (const asset of allAssets) {
+    const universe = await getExchangeTopAssetsWithVolume(exchange, 50);
+    const top50Set = new Set(universe.map((a) => a.coin.toUpperCase()));
+    const liquidSet = new Set<string>();
+    for (const asset of universe) {
       const sym = asset.coin.toUpperCase();
-      // Skip non-meme coins (they don't need this filter)
-      if (TIER_1.has(sym) || isKnownTradFi(sym)) continue;
-      // Include if top 50 by OI
-      if (top50Set.has(sym)) {
-        liquidCoins.add(sym);
-        continue;
-      }
-      // For volume check, we need dayNtlVlm — approximate from OI data
-      // The getTopAssetsByOI doesn't include volume, so use a conservative approach:
-      // if it's in the full list (has any OI), we'll accept top-50 OR known-meme with OI
-    }
-
-    // Simpler approach: fetch metaAndAssetCtxs directly for volume data
-    const res = await fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
-    });
-    const data = await res.json() as [{ universe: { name: string }[] }, { dayNtlVlm?: string; openInterest?: string; markPx?: string }[]];
-    const universe = data[0].universe;
-    const ctxs = data[1];
-
-    for (let i = 0; i < universe.length; i++) {
-      const sym = universe[i].name.toUpperCase();
-      if (TIER_1.has(sym) || isKnownTradFi(sym)) continue;
-
-      const oi = parseFloat(ctxs[i].openInterest || '0');
-      const px = parseFloat(ctxs[i].markPx || '0');
-      const notionalOI = oi * px;
-      const vol = parseFloat(ctxs[i].dayNtlVlm || '0');
-
-      // Top 50 by OI check
-      if (top50Set.has(sym)) {
-        liquidCoins.add(sym);
-      } else if (vol >= MIN_VOLUME_24H) {
-        liquidCoins.add(sym);
+      // per-exchange-AND: in top-50 (by construction since universe is already top-50)
+      // AND volume24h_usd >= $10M
+      if (top50Set.has(sym) && asset.volume24h_usd >= MIN_VOLUME_24H) {
+        liquidSet.add(sym);
       }
     }
-
-    liquidMemesCache = { coins: liquidCoins, fetchedAt: Date.now() };
-    return liquidCoins.has(coin.toUpperCase());
-  } catch {
-    // On error, be permissive — allow signal generation
+    liquidCoinsByExchange.set(exchange, { coins: liquidSet, fetchedAt: Date.now() });
+    return liquidSet.has(upper);
+  } catch (err) {
+    // On error, be permissive — allow signal generation (matches pre-C1 behavior).
+    // Log for ops visibility.
+    console.warn(`[isMemeCoinLiquid] ${exchange} universe fetch failed: ${(err as Error).message ?? err}`);
     return true;
   }
 }
 
 /**
- * Pre-warm all caches (xyz symbols, top 20, liquid memes).
- * Called at server startup to avoid cold-start delays.
+ * Test seam — clears the per-exchange liquid-coin cache between tests so each
+ * runs in isolation. Underscore-prefixed; non-public.
+ */
+export function _clearLiquidCoinsByExchangeCache(): void {
+  liquidCoinsByExchange.clear();
+}
+
+/**
+ * Test seam — preseeds the per-exchange cache for a specific exchange with a
+ * known set of coins. Used to assert cache-hit behavior + isolation between
+ * exchanges. Underscore-prefixed; non-public.
+ */
+export function _setLiquidCoinsForTest(exchange: ExchangeId, coins: Iterable<string>): void {
+  liquidCoinsByExchange.set(exchange, {
+    coins: new Set([...coins].map((c) => c.toUpperCase())),
+    fetchedAt: Date.now(),
+  });
+}
+
+/**
+ * Pre-warm all caches at server startup to avoid cold-start delays on first
+ * MCP-tool invocation. Iterates the 5 PROMOTED venues for the meme-liquidity
+ * gate. Shadow venues are NOT pre-warmed — they short-circuit TRUE without
+ * an external fetch (no work to warm).
+ *
+ * `Promise.allSettled` so any single failed exchange doesn't block boot —
+ * runtime error path of `isMemeCoinLiquid` then handles individual failures
+ * permissively.
  */
 export async function warmTierCaches(): Promise<void> {
   await Promise.allSettled([
     getXyzSymbols(),
     getTop20ByOI(),
-    isMemeCoinLiquid('BTC'), // triggers liquid memes cache build
+    ...PROMOTED_VENUES.map((venue) => isMemeCoinLiquid('BTC', venue)),
   ]);
 }
