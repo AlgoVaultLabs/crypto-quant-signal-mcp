@@ -17,6 +17,44 @@ const BASE_URL = 'https://fapi.binance.com';
 const TIMEOUT_MS = 3000;
 const MAX_RETRIES = 1;
 
+// OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): per-coin getAssetContext used to
+// issue 3 separate per-symbol calls (premiumIndex@symbol + openInterest@symbol
+// + ticker/24hr@symbol = 3 weight per coin); plus seed-signals.fetchBinanceCoins
+// and exchange-universe.fetchBinance each issued their own full-universe
+// ticker/24hr fetch (weight 40 each, redundant). At top-50 5m fires this drove
+// per-fire weight to ~290 (universe 40 + 3×50 per-coin + 50×2 klines); at top-
+// 100 15m fires ~540. Cron burst-stacking at minute :02 (5m+1h) / :07 (5m+30m)
+// pushed peak per-minute weight to 1835-1846 / 2400 cap (76-77%) on
+// 2026-05-22T13:13:58 — 37 in-adapter "Rate limit warning" hits in a 1.7-second
+// concurrent-fire burst. This in-process coalescing collapses three patterns:
+//   (a) full-universe ticker/24hr fetched by N callers → 1 backend fetch / 60s
+//       (consumers: fetchBinanceCoins, exchange-universe.fetchBinance,
+//       getAssetContext per-coin ticker24hr@symbol replaced by cache lookup);
+//   (b) bulk premiumIndex (weight 10 for all 746 perps) fetched by N callers
+//       → 1 backend fetch / 60s (consumers: getAssetContext per-coin
+//       premiumIndex@symbol replaced by cache lookup, getPredictedFundings).
+// openInterest has NO bulk endpoint (confirmed via Binance docs) — stays per
+// symbol at weight 1. Cross-process coalescing (separate cron-fire node
+// processes) is out of scope; deferred to OPS-BINANCE-RATELIMITER-W2 if R4
+// verification gates do not clear. Pattern mirrors OPS-HL-RATELIMIT-W1's
+// metaAndAssetCtxs coalescer at hyperliquid.ts:34-67.
+const TICKER24HR_TTL_MS = 60_000;
+const PREMIUM_INDEX_TTL_MS = 60_000;
+
+interface Ticker24hrCacheEntry {
+  value: BinanceTicker24hr[];
+  ts: number;
+}
+interface PremiumIndexCacheEntry {
+  value: BinancePremiumIndex[];
+  ts: number;
+}
+
+let ticker24hrCache: Ticker24hrCacheEntry | null = null;
+let ticker24hrInflight: Promise<BinanceTicker24hr[]> | null = null;
+let premiumIndexCache: PremiumIndexCacheEntry | null = null;
+let premiumIndexInflight: Promise<BinancePremiumIndex[]> | null = null;
+
 // Map our intervals to Binance kline intervals
 const INTERVAL_MAP: Record<string, string> = {
   '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m',
@@ -73,6 +111,73 @@ export function fromBinanceSymbol(symbol: string): string {
     if (binName === base) return ourCoin;
   }
   return base;
+}
+
+/**
+ * OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): coalesced full-universe
+ * ticker/24hr (weight 40). Returns ALL USDT-perp 24hr stats. Cached
+ * for 60s in-process, with inflight-promise dedup. Consumers should
+ * read per-symbol fields via `.find(t => t.symbol === ...)`.
+ *
+ * Mirrors OPS-HL-RATELIMIT-W1's getMetaAndAssetCtxsCoalesced shape.
+ */
+export async function getTicker24hrFullCoalesced(): Promise<BinanceTicker24hr[]> {
+  if (ticker24hrCache && Date.now() - ticker24hrCache.ts < TICKER24HR_TTL_MS) {
+    return ticker24hrCache.value;
+  }
+  if (ticker24hrInflight) {
+    return ticker24hrInflight;
+  }
+  const promise = binGet<BinanceTicker24hr[]>('/fapi/v1/ticker/24hr')
+    .then((value) => {
+      ticker24hrCache = { value, ts: Date.now() };
+      ticker24hrInflight = null;
+      return value;
+    })
+    .catch((err) => {
+      ticker24hrInflight = null;
+      throw err;
+    });
+  ticker24hrInflight = promise;
+  return promise;
+}
+
+/**
+ * OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): coalesced bulk premiumIndex
+ * (weight 10 for all ~750 perps, vs weight 1 × N for per-symbol). Cached
+ * for 60s in-process, with inflight-promise dedup. Consumers should read
+ * per-symbol fields via `.find(t => t.symbol === ...)`.
+ */
+export async function getPremiumIndexBulkCoalesced(): Promise<BinancePremiumIndex[]> {
+  if (premiumIndexCache && Date.now() - premiumIndexCache.ts < PREMIUM_INDEX_TTL_MS) {
+    return premiumIndexCache.value;
+  }
+  if (premiumIndexInflight) {
+    return premiumIndexInflight;
+  }
+  const promise = binGet<BinancePremiumIndex[]>('/fapi/v1/premiumIndex')
+    .then((value) => {
+      premiumIndexCache = { value, ts: Date.now() };
+      premiumIndexInflight = null;
+      return value;
+    })
+    .catch((err) => {
+      premiumIndexInflight = null;
+      throw err;
+    });
+  premiumIndexInflight = promise;
+  return promise;
+}
+
+/**
+ * Test-only reset of the adapter's coalescing caches. Production code MUST
+ * NOT call this — used by unit tests to isolate cases.
+ */
+export function _resetBinanceAdapterCaches(): void {
+  ticker24hrCache = null;
+  ticker24hrInflight = null;
+  premiumIndexCache = null;
+  premiumIndexInflight = null;
 }
 
 async function binGet<T>(path: string, params?: Record<string, string | number>, retries = MAX_RETRIES): Promise<T> {
@@ -174,12 +279,27 @@ export class BinanceAdapter implements ExchangeAdapter {
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
     const symbol = toBinanceSymbol(coin);
 
-    // Parallel fetch: premiumIndex + openInterest + 24hr ticker
-    const [premiumIndex, oi, ticker] = await Promise.all([
-      binGet<BinancePremiumIndex>('/fapi/v1/premiumIndex', { symbol }),
+    // OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): premiumIndex + ticker/24hr served
+    // from in-process coalesced bulk caches (60s TTL each); openInterest stays
+    // per-symbol — Binance has no bulk OI endpoint. Reduces per-coin weight from
+    // 3 (3 per-symbol calls: premiumIndex@symbol + openInterest@symbol +
+    // ticker24hr@symbol) to 1 (openInterest only) once the per-fire bulk
+    // fetches are warm. Net per-50-coin fire: 290 weight → 200 (-31%).
+    const [premiumIndexBulk, ticker24hrBulk, oi] = await Promise.all([
+      getPremiumIndexBulkCoalesced(),
+      getTicker24hrFullCoalesced(),
       binGet<BinanceOpenInterest>('/fapi/v1/openInterest', { symbol }),
-      binGet<BinanceTicker24hr>('/fapi/v1/ticker/24hr', { symbol }),
     ]);
+
+    const premiumIndex = premiumIndexBulk.find(p => p.symbol === symbol);
+    const ticker = ticker24hrBulk.find(t => t.symbol === symbol);
+
+    if (!premiumIndex) {
+      throw new Error(`Binance premiumIndex not found for symbol ${symbol}`);
+    }
+    if (!ticker) {
+      throw new Error(`Binance ticker24hr not found for symbol ${symbol}`);
+    }
 
     // R2: Binance funding is per-8h period → annualized = raw × 1095 (8h periods/year)
     const fundingRaw = parseFloat(premiumIndex.lastFundingRate || '0');
@@ -196,8 +316,11 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   async getPredictedFundings(): Promise<FundingData[]> {
-    // Fetch all premium indices (weight: 10)
-    const raw = await binGet<BinancePremiumIndex[]>('/fapi/v1/premiumIndex');
+    // OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): served from in-process coalesced
+    // bulk premiumIndex cache (60s TTL). Saves weight 10 per `scan_funding_arb`
+    // tool invocation when called within 60s of any other premiumIndex consumer
+    // (esp. concurrent getAssetContext callers from the seed loop).
+    const raw = await getPremiumIndexBulkCoalesced();
 
     return raw
       .filter(entry => entry.symbol.endsWith('USDT'))

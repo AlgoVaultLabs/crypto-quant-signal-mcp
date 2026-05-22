@@ -17,6 +17,7 @@
  */
 
 import type { ExchangeId } from '../types.js';
+import { getTicker24hrFullCoalesced } from './adapters/binance.js';
 
 export interface ExchangeAsset {
   /** Bare coin symbol, uppercase (e.g. `BTC`, `SOL`). */
@@ -76,10 +77,14 @@ async function fetchHL(limit: number): Promise<ExchangeAsset[]> {
  * Binance: `fapi/v1/ticker/24hr` returns `quoteVolume` (USDT-denominated for USDT-margined perps).
  * No bulk OI endpoint exists; use `quoteVolume` as the OI-rank proxy (matches existing
  * `fetchBinanceCoins` precedent in seed-signals.ts).
+ *
+ * OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): served from adapter's coalesced
+ * full-universe ticker/24hr cache (60s TTL). Eliminates the previous duplicate
+ * full-universe fetch (40 weight) when `isMemeCoinLiquid` cache cold-starts
+ * within the same fire window that `fetchBinanceCoins` (seed loop) is using.
  */
 async function fetchBinance(limit: number): Promise<ExchangeAsset[]> {
-  const res = await fetchWithTimeout('https://fapi.binance.com/fapi/v1/ticker/24hr');
-  const data = (await res.json()) as Array<{ symbol: string; quoteVolume?: string }>;
+  const data = await getTicker24hrFullCoalesced();
   const assets: ExchangeAsset[] = data
     .filter((t) => t.symbol.endsWith('USDT'))
     .map((t) => {

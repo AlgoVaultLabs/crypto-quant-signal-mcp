@@ -46,6 +46,7 @@
 import { getTradeSignal } from '../tools/get-trade-call.js';
 import { hasRecentSignalAsync, closeDb, bulkWarmFundingCache } from '../lib/performance-db.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
+import { getTicker24hrFullCoalesced } from '../lib/adapters/binance.js';
 import type { LicenseInfo, ExchangeId } from '../types.js';
 
 // Internal license bypasses free-tier gating
@@ -60,7 +61,15 @@ const DELAY_PER_EXCHANGE: Record<ExchangeId, number> = {
   // overlap at 15-min boundaries. 750ms × 20 coins = 15s/fire (well within
   // 3m cadence); 750ms × ~230-coin 15m HL top-100 fire = ~173s (acceptable).
   'HL':      750,  // polite to public API — 60s/min budget cushion
-  'BINANCE': 200,  // generous rate limits
+  // OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): bumped 200 → 400ms as defense-in-
+  // depth alongside adapter-layer bulk-coalescing (binance.ts ticker24hr +
+  // premiumIndex). Coalescing cuts per-fire weight 290 → 200 (top-50); polite-
+  // delay bump doubles burst spread (10s → 20s for top-50) so minute-boundary
+  // overlap windows have less concentrated weight rate. 400ms × 50 = 20s
+  // (well within 5m cadence); 400ms × 100 = 40s for top-100 (within 15m).
+  // Pre-fix observed burst: 1835-1846 weight (76-77% cap) in 1.7s at
+  // 2026-05-22T13:13:58. Post-fix target: <50% sustained, <90% projected top-50.
+  'BINANCE': 400,
   'BYBIT':   200,  // 50 req/sec
   'OKX':     150,  // 10 req/sec — keep margin
   'BITGET':  200,  // 20-50 req/sec
@@ -391,10 +400,15 @@ const BINANCE_OVERRIDES: Record<string, string> = {
 /**
  * Fetch Binance USDT-M pairs sorted by 24h quoteVolume (proxy for OI —
  * Binance has no bulk OI endpoint; quoteVolume is highly correlated).
+ *
+ * OPS-BINANCE-POLITE-DELAY-W1 (2026-05-22): served from adapter's coalesced
+ * full-universe ticker/24hr cache (60s TTL). Within a fire window, the
+ * per-coin `getAssetContext.ticker24hr@symbol` lookups read from the same
+ * cache populated by this call — total ticker24hr weight per fire: 40
+ * (one bulk fetch) instead of 40 + 50×1 (was 90).
  */
 async function fetchBinanceCoins(topN: number): Promise<string[]> {
-  const res = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
-  const data = await res.json() as Array<{ symbol: string; quoteVolume: string; lastPrice: string }>;
+  const data = await getTicker24hrFullCoalesced();
 
   const usdtPairs = data
     .filter(t => t.symbol.endsWith('USDT'))
