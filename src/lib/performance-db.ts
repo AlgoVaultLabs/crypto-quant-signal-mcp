@@ -281,6 +281,40 @@ const CREATE_AGENT_SESSIONS_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_agent_sessions_last_seen ON agent_sessions(last_seen);
 `;
 
+/**
+ * OPS-POSTGRES-RECAUDIT-W1 (2026-05-22): composite index on `signals` matching
+ * the WHERE-clause cardinality of `hasRecentSignalAsync()` at L1030 below
+ * (idempotency check for seed-signals; called once per signal write at
+ * `src/scripts/seed-signals.ts:478`).
+ *
+ * Root-cause analysis (audits/OPS-POSTGRES-RECAUDIT-W1-endpoint-truth.md):
+ * the `signals` table was historically created with ONLY `signals_pkey` on
+ * `(id)`. The idempotency query filters on 4 columns NONE of which are `id`,
+ * forcing a parallel sequential scan on the entire 105K-row × 117 MB table on
+ * every call. pg_stat_statements showed 7,027,454 calls × 38.07ms mean =
+ * 267,559 sec (74 hours) cumulative CPU over the 21-day measurement window
+ * — 22% of total postgres CPU, the dominant baseline contributor in the
+ * 1% → 33% baseline drift (2026-04-30 → 2026-05-22).
+ *
+ * Live EXPLAIN ANALYZE post-index: `Index Scan using idx_signals_idempotency`,
+ * 0.072ms execution (vs 55.855ms pre-index) — 776× speedup.
+ *
+ * Index column order matches the query's WHERE-clause cardinality:
+ *   - `coin` (highest cardinality of the 4 — ~740 values)
+ *   - `timeframe` (11 values)
+ *   - `exchange` (17 values; mostly 5 promoted)
+ *   - `created_at DESC` (time-axis range — DESC matches `created_at >= $4 LIMIT 1`
+ *     semantics — postgres can stop after first matching row in descending order)
+ *
+ * On fresh deployments / test fixtures, `CREATE INDEX IF NOT EXISTS` is
+ * non-blocking on an empty table. On the live production DB, the index was
+ * created via `CREATE INDEX CONCURRENTLY` (non-blocking) before this commit;
+ * `IF NOT EXISTS` makes this schema-setup idempotent against the live DB.
+ */
+const CREATE_SIGNALS_IDEMPOTENCY_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_signals_idempotency ON signals (coin, timeframe, exchange, created_at DESC);
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -299,6 +333,14 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_AGENT_SESSIONS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
   runMigrations(backend, isPg);
+  // OPS-POSTGRES-RECAUDIT-W1 (2026-05-22): create idempotency-check index AFTER
+  // migrations so that the `exchange` column (added by v1.5 migration) exists
+  // before the index is created on (coin, timeframe, exchange, created_at).
+  // For SQLite the migrations are synchronous; for PG they are fire-and-forget
+  // but the production DB already has all columns + the index was created
+  // manually via CONCURRENTLY before this commit (IF NOT EXISTS makes the
+  // schema-setup line idempotent against the live DB).
+  backend.exec(CREATE_SIGNALS_IDEMPOTENCY_INDEX_SQL);
   return backend;
 }
 
