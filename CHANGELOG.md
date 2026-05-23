@@ -5,6 +5,11 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.1] - 2026-05-23
+
+### Fixed
+- Added `repository` field to `package.json` so npm provenance attestation cross-check succeeds. Substantive content unchanged from v1.18.0.
+
 ## [1.18.0] - 2026-05-23
 
 ### Added — 3-minute timeframe goes live on the public Live Track Record

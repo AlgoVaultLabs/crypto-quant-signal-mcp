@@ -14,7 +14,19 @@
           },
           "timeframe": {
             "type": "string",
-            "enum": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "12h",
+              "1d"
+            ],
             "default": "15m",
             "description": "Candle timeframe (1m to 1d) for crypto quant agents. Default 15m intraday."
           },
@@ -25,12 +37,22 @@
           },
           "exchange": {
             "type": "string",
-            "enum": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET", "ASTER", "EDGEX"],
+            "enum": [
+              "HL",
+              "BINANCE",
+              "BYBIT",
+              "OKX",
+              "BITGET",
+              "ASTER",
+              "EDGEX"
+            ],
             "default": "BINANCE",
             "description": "Exchange — 'BINANCE' = Binance USDT-M Futures (default), HL/BYBIT/OKX/BITGET."
           }
         },
-        "required": ["coin"]
+        "required": [
+          "coin"
+        ]
       }
     },
     {
@@ -46,7 +68,19 @@
           },
           "timeframe": {
             "type": "string",
-            "enum": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "12h",
+              "1d"
+            ],
             "default": "15m",
             "description": "Candle timeframe (1m to 1d) for crypto quant agents. Default 15m intraday."
           },
@@ -57,12 +91,22 @@
           },
           "exchange": {
             "type": "string",
-            "enum": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET", "ASTER", "EDGEX"],
+            "enum": [
+              "HL",
+              "BINANCE",
+              "BYBIT",
+              "OKX",
+              "BITGET",
+              "ASTER",
+              "EDGEX"
+            ],
             "default": "BINANCE",
             "description": "Exchange — 'BINANCE' = Binance USDT-M Futures (default), HL/BYBIT/OKX/BITGET."
           }
         },
-        "required": ["coin"]
+        "required": [
+          "coin"
+        ]
       }
     },
     {
@@ -98,18 +142,32 @@
           },
           "timeframe": {
             "type": "string",
-            "enum": ["1h", "4h", "1d"],
+            "enum": [
+              "1h",
+              "4h",
+              "1d"
+            ],
             "default": "4h",
             "description": "Candle timeframe — 1h 4h 1d. Buy sell hold regime context for AI trading signal."
           },
           "exchange": {
             "type": "string",
-            "enum": ["HL", "BINANCE", "BYBIT", "OKX", "BITGET", "ASTER", "EDGEX"],
+            "enum": [
+              "HL",
+              "BINANCE",
+              "BYBIT",
+              "OKX",
+              "BITGET",
+              "ASTER",
+              "EDGEX"
+            ],
             "default": "HL",
             "description": "Exchange BINANCE HL BYBIT OKX BITGET. Multi-exchange Claude trading agent."
           }
         },
-        "required": ["coin"]
+        "required": [
+          "coin"
+        ]
       }
     },
     {
@@ -129,7 +187,9 @@
             "description": "Max ranked results (1-50)"
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -145,12 +205,17 @@
           },
           "model": {
             "type": "string",
-            "enum": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"],
+            "enum": [
+              "claude-haiku-4-5-20251001",
+              "claude-sonnet-4-6"
+            ],
             "default": "claude-haiku-4-5-20251001",
             "description": "Optional model override"
           }
         },
-        "required": ["question"]
+        "required": [
+          "question"
+        ]
       }
     }
   ],
@@ -160,9 +225,17 @@
   "identifier": "crypto-quant-signal-mcp",
   "meta": {
     "avatar": "https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png",
-    "tags": ["trading", "crypto", "signals", "defi", "hyperliquid", "quant", "mcp"],
+    "tags": [
+      "trading",
+      "crypto",
+      "signals",
+      "defi",
+      "hyperliquid",
+      "quant",
+      "mcp"
+    ],
     "title": "Crypto Quant Signal MCP",
     "description": "Composite BUY/SELL/HOLD trade calls across 5 crypto perp venues (Binance, Bybit, OKX, Bitget, Hyperliquid). Verified track record, Merkle-anchored on Base L2. Drop-in tutorials for LangChain, LlamaIndex, Microsoft Agent Framework, and CrewAI. Ask-AlgoVault-anything via search_knowledge + chat_knowledge tools."
   },
-  "version": "9"
+  "version": "10"
 }

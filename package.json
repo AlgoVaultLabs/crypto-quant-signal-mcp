@@ -1,6 +1,14 @@
 {
   "name": "crypto-quant-signal-mcp",
-  "version": "1.18.0",
+  "version": "1.18.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git"
+  },
+  "homepage": "https://algovault.com",
+  "bugs": {
+    "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues"
+  },
   "mcpName": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
   "description": "The Brain Layer for AI Trading Agents — composite quant calls across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget), cross-venue arb, regime-aware classification, and a 20-skill catalog via MCP.",
   "main": "dist/index.js",
