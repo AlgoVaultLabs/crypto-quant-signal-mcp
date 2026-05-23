@@ -241,6 +241,42 @@ describe('OPTIMIZE-FUNDING-CACHE-CRON-W1: bulkWarmFundingCache', () => {
     expect(missLogs).toBe(0);
   });
 
+  // ── Test 9: OPS-FUNDING-STATS-CACHE-W1 — bulk-warm log surfaces matview hit-rate fields ──
+  // The PG branch reads from `funding_stats_14d` matview first; the SQLite path skips
+  // matview entirely (matview is PG-only). The log line MUST surface `n_matview=N`
+  // and `n_fallback=N` fields so post-deploy operators can grep for matview hit-rate.
+  // In the SQLite test environment, both are 0 by construction (SQLite has no
+  // materialized views); the structural assertion verifies the field name is
+  // present in the log format so future regression cannot drop the field silently.
+  it('OPS-FUNDING-STATS-CACHE-W1: log format surfaces n_matview + n_fallback fields', async () => {
+    const a = uniq('MATVIEW_LOG_A');
+    const b = uniq('MATVIEW_LOG_B');
+    for (const r of makeRows(30)) {
+      recordFunding(a, r.funding_rate);
+      recordFunding(b, r.funding_rate);
+    }
+
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    await bulkWarmFundingCache([a, b]);
+
+    const matviewLogs = debugSpy.mock.calls.filter((args) =>
+      typeof args[0] === 'string' &&
+      args[0].includes('[funding-cache] bulk-warm') &&
+      args[0].includes('n_matview=') &&
+      args[0].includes('n_fallback='),
+    ).length;
+    expect(matviewLogs).toBe(1);
+
+    // SQLite test environment: matview path is skipped → both counters MUST be 0.
+    const sqliteZeroMatviewLogs = debugSpy.mock.calls.filter((args) =>
+      typeof args[0] === 'string' &&
+      args[0].includes('n_matview=0') &&
+      args[0].includes('n_fallback=0'),
+    ).length;
+    expect(sqliteZeroMatviewLogs).toBe(1);
+  });
+
   // ── Test 8: TTL expiry → next bulk-warm re-fetches everything ──
   it('TTL-expired entries are re-fetched by next bulk-warm', async () => {
     const a = uniq('TTL_BULK_A');

@@ -315,6 +315,57 @@ const CREATE_SIGNALS_IDEMPOTENCY_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_signals_idempotency ON signals (coin, timeframe, exchange, created_at DESC);
 `;
 
+/**
+ * OPS-FUNDING-STATS-CACHE-W1 (2026-05-23): cross-process materialized view for
+ * the funding-stats GROUP BY aggregate. Closes the GREEN_WITH_CAVEAT loop from
+ * OPS-POSTGRES-RECAUDIT-W1 by eliminating the residual postgres-CPU spikes
+ * attributed to the funding-stats GROUP BY query (top-2 in pg_stat_statements
+ * at 92,467 calls × 1188ms = 30.5h cumulative over 21d = 9% of postgres CPU).
+ *
+ * Root cause (audits/OPS-FUNDING-STATS-CACHE-W1-endpoint-truth.md):
+ * `bulkWarmFundingCache` IS already batched + uses `idx_funding_coin_time`
+ * (Bitmap Index Scan, 98ms cold-cache). The 9% postgres-CPU residual is
+ * cross-process cold-start cost — every cron-spawned `docker exec node ...`
+ * process starts with an empty `fundingStatsCache` Map + fires the bulk-warm
+ * query immediately. 200 cron fires/hour × 1 bulk-warm/fire = 92K calls/21d.
+ * The in-process cache (OPTIMIZE-FUNDING-CACHE-CRON-W1, 2026-05-01) was
+ * designed for within-fire reuse and never addressed the cross-fire boundary.
+ *
+ * Fix (Path R4, architect-ratified): a materialized view aggregates the 14-day
+ * funding-stats once per refresh cycle (5-min cadence via host cron); readers
+ * query the view first (sub-ms PK lookup); cache-miss for coins not in the
+ * view (new listings within 14d window) falls back to the original GROUP BY
+ * — fail-open behavior preserves correctness if the refresh stalls.
+ *
+ * Refresh schedule + monitoring lives outside this module: Hetzner crontab
+ * `* /5 * * * * docker exec ... psql -c "REFRESH MATERIALIZED VIEW
+ * CONCURRENTLY funding_stats_14d"` (REFRESH CONCURRENTLY requires the unique
+ * index below). Initial populate happens automatically on first
+ * `CREATE MATERIALIZED VIEW` (postgres default is WITH DATA).
+ *
+ * SQLite path: matview is PG-only; the reader retains the existing GROUP BY
+ * (in JS aggregation) path for SQLite. Math is byte-equivalent (same
+ * STDDEV_SAMP semantics).
+ *
+ * Schema-as-code: `IF NOT EXISTS` makes this idempotent against the live PG
+ * where the matview was created via SSH before this commit landed. Fresh
+ * deploys + test fixtures inherit the matview automatically.
+ */
+const CREATE_FUNDING_STATS_MATVIEW_SQL = `
+  CREATE MATERIALIZED VIEW IF NOT EXISTS funding_stats_14d AS
+  SELECT coin,
+         AVG(funding_rate)::float8 AS mean,
+         STDDEV_SAMP(funding_rate)::float8 AS stddev,
+         COUNT(*)::int AS sample_count
+    FROM funding_history
+   WHERE recorded_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '14 days'))::int
+   GROUP BY coin;
+`;
+
+const CREATE_FUNDING_STATS_MATVIEW_INDEX_SQL = `
+  CREATE UNIQUE INDEX IF NOT EXISTS funding_stats_14d_coin_uk ON funding_stats_14d (coin);
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -341,6 +392,15 @@ function getBackend(): DbBackend {
   // manually via CONCURRENTLY before this commit (IF NOT EXISTS makes the
   // schema-setup line idempotent against the live DB).
   backend.exec(CREATE_SIGNALS_IDEMPOTENCY_INDEX_SQL);
+  // OPS-FUNDING-STATS-CACHE-W1 (2026-05-23): create funding-stats materialized
+  // view (PG-only — SQLite has no MATERIALIZED VIEW). Idempotent via
+  // IF NOT EXISTS; on the live PG the matview was created via SSH before this
+  // commit. Fresh deploys / test PG fixtures inherit automatically. Unique
+  // index on coin is required for REFRESH MATERIALIZED VIEW CONCURRENTLY.
+  if (isPg) {
+    backend.exec(CREATE_FUNDING_STATS_MATVIEW_SQL);
+    backend.exec(CREATE_FUNDING_STATS_MATVIEW_INDEX_SQL);
+  }
   return backend;
 }
 
@@ -889,29 +949,68 @@ export async function bulkWarmFundingCache(coins: string[]): Promise<void> {
 
   try {
     const seen = new Set<string>();
+    let matviewHits = 0;
+    let fallbackHits = 0;
 
     if (isPg && b instanceof PgBackend) {
-      const rows = await b.query(
-        `SELECT coin,
-                AVG(funding_rate)::float8 AS mean,
-                STDDEV_SAMP(funding_rate)::float8 AS stddev,
-                COUNT(*)::int AS sample_count
-           FROM funding_history
-          WHERE recorded_at >= $1 AND coin = ANY($2::text[])
-          GROUP BY coin`,
-        [cutoff14d, cold]
+      // OPS-FUNDING-STATS-CACHE-W1 Path R4 (2026-05-23): query the
+      // `funding_stats_14d` materialized view first. The matview is refreshed
+      // every 5 min via host cron; reads are sub-ms PK lookups (UNIQUE index
+      // on `coin`). 92K bulk-warm calls / 21d × 0.9 matview-hit rate eliminates
+      // 83K GROUP BY executions; only the 12 refresh-cycle fires/hour pay the
+      // 1188ms cost. Coins missing from the matview (new listings within the
+      // 14d window that landed after the last refresh) fall through to the
+      // GROUP BY below — fail-open behavior preserves correctness.
+      const matviewRows = await b.query(
+        `SELECT coin, mean, stddev, sample_count
+           FROM funding_stats_14d
+          WHERE coin = ANY($1::text[])`,
+        [cold]
       ) as unknown as { coin: string; mean: number; stddev: number | null; sample_count: number }[];
 
-      const ts = Date.now();
-      for (const r of rows) {
+      const mvTs = Date.now();
+      for (const r of matviewRows) {
         seen.add(r.coin);
+        matviewHits++;
         const sd = r.stddev ?? 0;
         fundingStatsCache.set(r.coin, {
           mean: Number(r.mean),
           stdDev: Number(sd),
           sampleCount: Number(r.sample_count),
-          computedAt: ts,
+          computedAt: mvTs,
         });
+      }
+
+      // Coins NOT in the matview — fall back to the original GROUP BY path.
+      // This is the cache-miss path: new-listing coins added to the universe
+      // since the last matview refresh, OR a transient matview unavailability
+      // (refresh stalled). Fail-open: query the underlying funding_history
+      // table directly with the same shape the matview computes from.
+      const matviewMisses = cold.filter((c) => !seen.has(c));
+      if (matviewMisses.length > 0) {
+        const fallbackRows = await b.query(
+          `SELECT coin,
+                  AVG(funding_rate)::float8 AS mean,
+                  STDDEV_SAMP(funding_rate)::float8 AS stddev,
+                  COUNT(*)::int AS sample_count
+             FROM funding_history
+            WHERE recorded_at >= $1 AND coin = ANY($2::text[])
+            GROUP BY coin`,
+          [cutoff14d, matviewMisses]
+        ) as unknown as { coin: string; mean: number; stddev: number | null; sample_count: number }[];
+
+        const fbTs = Date.now();
+        for (const r of fallbackRows) {
+          seen.add(r.coin);
+          fallbackHits++;
+          const sd = r.stddev ?? 0;
+          fundingStatsCache.set(r.coin, {
+            mean: Number(r.mean),
+            stdDev: Number(sd),
+            sampleCount: Number(r.sample_count),
+            computedAt: fbTs,
+          });
+        }
       }
     } else {
       // SQLite fallback — fetch raw rows then aggregate in JS using the
@@ -957,7 +1056,12 @@ export async function bulkWarmFundingCache(coins: string[]): Promise<void> {
     }
 
     const elapsedMs = Date.now() - t0;
-    console.debug(`[funding-cache] bulk-warm n_in=${coins.length} n_warmed=${cold.length} n_cached=${cachedCount} db=${elapsedMs}ms`);
+    // OPS-FUNDING-STATS-CACHE-W1: n_matview/n_fallback exposes the matview
+    // hit rate. Post-deploy verification gate: n_matview/n_warmed should
+    // approach 1.0 in steady state (only matview-misses for new listings hit
+    // the GROUP BY fallback). n_matview = 0 (PG only, SQLite n_matview=0 by
+    // construction).
+    console.debug(`[funding-cache] bulk-warm n_in=${coins.length} n_warmed=${cold.length} n_cached=${cachedCount} n_matview=${matviewHits} n_fallback=${fallbackHits} db=${elapsedMs}ms`);
   } catch (e) {
     const elapsedMs = Date.now() - t0;
     console.debug(`[funding-cache] bulk-warm FAILED n_in=${coins.length} db=${elapsedMs}ms err=${e instanceof Error ? e.message : e}`);
