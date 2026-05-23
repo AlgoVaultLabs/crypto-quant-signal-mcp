@@ -3,7 +3,7 @@
   "name": "crypto-quant-signal",
   "display_name": "Crypto Quant Signal",
   "description": "Brain Layer for AI Trading Agents. Composite trade calls, cross-venue funding arb, regime classification across 5 crypto perps. Ask anything via search_knowledge + chat_knowledge. On-chain verified.",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "author": {
     "name": "AlgoVault Labs",
     "url": "https://algovault.com"
