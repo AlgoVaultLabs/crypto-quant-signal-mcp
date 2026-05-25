@@ -97,12 +97,19 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ---
 
-## What's new in v1.18.0
+## What's new in v1.18.2
 
-Live since 2026-05-23:
+Live since 2026-05-25:
+
+- **🔌 Two new platform integration examples.** The `algovault-integrations` mono-repo now ships 5 reference implementations total (was 3 at v1.18.0):
+  - **QuantDinger** (reference-architecture doc) — cross-MCP IDE-mediated orchestration. AlgoVault MCP and QuantDinger MCP connect through the user's IDE (Claude Desktop / Cursor / Codex CLI); no transformer code.
+  - **Cryptohopper** (TypeScript) — Signaler webhook with HMAC-sha512 signed payloads. First HMAC-authed transport in the integrations repo.
+- **🧭 "Connect Your Trading Platform" section** added to [algovault.com/integrations](https://algovault.com/integrations). Discoverable tiles for the 5 platform examples; "Why integrate with AlgoVault?" framing replaces the prior exchange-kit framing.
+
+### v1.18.0 highlights (recap)
 
 - **⏱️ 3-minute timeframe goes LIVE on the public Live Track Record.** The 3m card and Methodology > Evaluation Windows row are now visible at [algovault.com/track-record](https://algovault.com/track-record). The 9th evaluated timeframe is live. (The `3m` key shipped to `/api/performance-public.byTimeframe` in v1.16.0; v1.18.0 completes the dashboard-display chain.)
-- **🔌 Platform integration examples.** New public repo at [github.com/AlgoVaultLabs/algovault-integrations](https://github.com/AlgoVaultLabs/algovault-integrations) ships reference implementations of the Verifiable-Signal v1.0 spec (introduced in v1.17.0). Three platforms in this release:
+- **🔌 Platform integration examples.** New public repo at [github.com/AlgoVaultLabs/algovault-integrations](https://github.com/AlgoVaultLabs/algovault-integrations) ships reference implementations of the Verifiable-Signal v1.0 spec (introduced in v1.17.0). Three platforms in v1.18.0:
   - **AI4Trade** (TypeScript) — REST POST with token-in-body auth.
   - **Nautilus Trader** (Python) — Subclass of Nautilus's `Data` abstract base.
   - **3Commas** (TypeScript) — Signal Bot webhook via per-bot curry-pattern factory.
