@@ -1766,13 +1766,20 @@ async function startHttp() {
     // log the invocation fire-and-forget BEFORE dispatching to the transport.
     // Slug values are public (Skill names are open-source); user_agent is
     // truncated to 200 chars in logSkillInvocation.
+    //
+    // DASH-EXTERNAL-ONLY-W1-PATCH-A (2026-05-24): write-side gate — skip the
+    // entire attribution write when license.tier === 'internal' (algovault-bot
+    // loopback or any future internal consumer carrying the bypass header).
+    // Internal traffic should never count toward public Skills analytics. Pair
+    // with the read-side filter on getSkillInvocationStats() + the
+    // is_bot_internal column on skill_invocations (belt + suspenders defense).
     const skillSlugHeader = (req.headers['x-algovault-skill-slug'] as string | undefined)?.trim();
-    if (skillSlugHeader && req.method === 'POST' && req.body && typeof req.body === 'object') {
+    if (skillSlugHeader && req.method === 'POST' && req.body && typeof req.body === 'object' && license.tier !== 'internal') {
       const body = req.body as { method?: string; params?: { name?: string } };
       if (body.method === 'tools/call' && typeof body.params?.name === 'string') {
         // Fire-and-forget; never blocks the request.
         try {
-          logSkillInvocation(skillSlugHeader, body.params.name, sessionId, req.headers['user-agent'] as string | undefined);
+          logSkillInvocation(skillSlugHeader, body.params.name, sessionId, req.headers['user-agent'] as string | undefined, false);
         } catch { /* best-effort */ }
       }
     }

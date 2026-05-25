@@ -17,14 +17,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   initAnalytics,
   logRequest,
+  logSkillInvocation,
   getUsageStats,
   getToolLatencyStats,
+  getSkillInvocationStats,
 } from '../src/lib/analytics.js';
 import { dbQuery, dbRun } from '../src/lib/performance-db.js';
 
 const SENTINEL_TOOL = 'test_dash_ext_w1';
 const SENTINEL_TIER_EXT = 'TESTSENT_W1_external';
 const SENTINEL_TIER_INT = 'TESTSENT_W1_internal';
+const SENTINEL_SKILL_SLUG = 'test-dash-ext-w1-patcha';
 
 const SKIP = !!process.env.DATABASE_URL;
 
@@ -32,6 +35,11 @@ async function cleanSentinels(): Promise<void> {
   // Hit both `is_bot_internal` flavors and both sentinel tiers; idempotent.
   try {
     dbRun('DELETE FROM request_log WHERE tool_name = ?', SENTINEL_TOOL);
+  } catch {
+    // Table may not exist yet; initAnalytics will create it
+  }
+  try {
+    dbRun('DELETE FROM skill_invocations WHERE slug = ?', SENTINEL_SKILL_SLUG);
   } catch {
     // Table may not exist yet; initAnalytics will create it
   }
@@ -150,5 +158,54 @@ describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bo
     expect(sentinelStats).toBeDefined();
     expect(sentinelStats!.n).toBe(2);  // includes both
     expect(sentinelStats!.max_ms).toBe(999);
+  });
+
+  // ── DASH-EXTERNAL-ONLY-W1-PATCH-A: skill_invocations harden ──
+
+  it('logSkillInvocation(...isBotInternal:true) writes is_bot_internal=1/true', async () => {
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-int', 'node', true);
+    await new Promise((r) => setTimeout(r, 50));
+    const rows = await dbQuery<{ is_bot_internal: number | boolean }>(
+      'SELECT is_bot_internal FROM skill_invocations WHERE slug = ?',
+      [SENTINEL_SKILL_SLUG],
+    );
+    expect(rows.length).toBe(1);
+    expect(Boolean(rows[0].is_bot_internal)).toBe(true);
+  });
+
+  it('logSkillInvocation default isBotInternal omitted writes is_bot_internal=0/false', async () => {
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-ext', 'node');
+    await new Promise((r) => setTimeout(r, 50));
+    const rows = await dbQuery<{ is_bot_internal: number | boolean }>(
+      'SELECT is_bot_internal FROM skill_invocations WHERE slug = ?',
+      [SENTINEL_SKILL_SLUG],
+    );
+    expect(rows.length).toBe(1);
+    expect(Boolean(rows[0].is_bot_internal)).toBe(false);
+  });
+
+  it('getSkillInvocationStats() excludes internal rows for sentinel slug', async () => {
+    // 2 external + 1 internal → slug should report calls_all_time=2 (NOT 3)
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-ext-1', 'node', false);
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-ext-2', 'node', false);
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-int', 'node', true);
+    await new Promise((r) => setTimeout(r, 80));
+
+    const stats = await getSkillInvocationStats();
+    const sentinelEntry = stats.find((s) => s.slug === SENTINEL_SKILL_SLUG);
+    expect(sentinelEntry).toBeDefined();
+    expect(sentinelEntry!.calls_all_time).toBe(2);
+    expect(sentinelEntry!.calls_7d).toBe(2);
+    expect(sentinelEntry!.calls_24h).toBe(2);
+  });
+
+  it('getSkillInvocationStats() returns no entry when only internal rows exist', async () => {
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-int-1', 'node', true);
+    logSkillInvocation(SENTINEL_SKILL_SLUG, 'get_trade_call', 'sess-int-2', 'node', true);
+    await new Promise((r) => setTimeout(r, 80));
+
+    const stats = await getSkillInvocationStats();
+    const sentinelEntry = stats.find((s) => s.slug === SENTINEL_SKILL_SLUG);
+    expect(sentinelEntry).toBeUndefined();
   });
 });

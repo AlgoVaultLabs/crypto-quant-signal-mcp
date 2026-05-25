@@ -26,11 +26,15 @@ const CREATE_TABLE_SQL = `
 `;
 
 // BOT-W1 / D1-C, 2026-05-08: idempotent ALTER for existing deployments where
-// request_log was created before is_bot_internal landed. PG 9.6+ + SQLite 3.35+
-// both support `ADD COLUMN IF NOT EXISTS`; older versions hit the catch-all.
-const ALTER_BOT_INTERNAL_SQL = `
-  ALTER TABLE request_log ADD COLUMN IF NOT EXISTS is_bot_internal ${process.env.DATABASE_URL ? 'BOOLEAN' : 'INTEGER'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'};
-`;
+// request_log was created before is_bot_internal landed.
+//
+// SQLite 3.49 (verified empirically 2026-05-24 in DASH-EXTERNAL-ONLY-W1-PATCH-A)
+// does NOT support `ADD COLUMN IF NOT EXISTS` (despite older CLAUDE.md claim).
+// Split per backend: PG uses IF NOT EXISTS (idempotent no-op); SQLite omits it
+// (throws "duplicate column" on re-run — caught by the try/catch in initAnalytics).
+const ALTER_BOT_INTERNAL_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS is_bot_internal BOOLEAN DEFAULT FALSE;`
+  : `ALTER TABLE request_log ADD COLUMN is_bot_internal INTEGER DEFAULT 0;`;
 
 // DASH-EXTERNAL-ONLY-W1, 2026-05-24: partial index for external-only reads.
 // Speeds the 24h/7d/all-time tiles in getUsageStats() + getToolLatencyStats(),
@@ -44,6 +48,12 @@ const CREATE_REQUEST_LOG_EXTERNAL_INDEX_SQL = `
 // C6 (algovault-skills SKILLS-W1): per-Skill attribution.
 // Populated when MCP request carries the X-AlgoVault-Skill-Slug header.
 // Public surface: src/resources/skills-analytics.ts + landing/analytics/skills.html
+//
+// DASH-EXTERNAL-ONLY-W1-PATCH-A (2026-05-24): is_bot_internal column added at
+// table creation. Defense-in-depth alongside the write-side gate at the /mcp
+// middleware (src/index.ts ~L1769) which short-circuits the entire
+// logSkillInvocation call when license.tier === 'internal'. Either layer alone
+// would prevent leak; both together is belt + suspenders.
 const CREATE_SKILL_INVOCATIONS_SQL = `
   CREATE TABLE IF NOT EXISTS skill_invocations (
     id ${process.env.DATABASE_URL ? 'SERIAL' : 'INTEGER'} PRIMARY KEY${process.env.DATABASE_URL ? '' : ' AUTOINCREMENT'},
@@ -51,9 +61,22 @@ const CREATE_SKILL_INVOCATIONS_SQL = `
     slug TEXT NOT NULL,
     tool TEXT NOT NULL,
     session_id TEXT,
-    user_agent TEXT
+    user_agent TEXT,
+    is_bot_internal ${process.env.DATABASE_URL ? 'BOOLEAN' : 'INTEGER'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'}
   );
 `;
+// DASH-EXTERNAL-ONLY-W1-PATCH-A: idempotent ALTER for existing deployments
+// where skill_invocations was created pre-W1-PATCH-A. Mirrors the W1
+// is_bot_internal pattern on request_log.
+//
+// SQLite 3.49 (verified empirically 2026-05-24) does NOT support
+// `ADD COLUMN IF NOT EXISTS` despite CLAUDE.md claim of "SQLite 3.35+
+// supports it". Split per backend: PG uses IF NOT EXISTS (idempotent;
+// no-op on re-run); SQLite omits IF NOT EXISTS (throws "duplicate
+// column" if already added — caught by the try/catch in initAnalytics).
+const ALTER_SKILL_INVOCATIONS_BOT_INTERNAL_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE skill_invocations ADD COLUMN IF NOT EXISTS is_bot_internal BOOLEAN DEFAULT FALSE;`
+  : `ALTER TABLE skill_invocations ADD COLUMN is_bot_internal INTEGER DEFAULT 0;`;
 const CREATE_SKILL_INVOCATIONS_INDEX_SLUG_SQL = `
   CREATE INDEX IF NOT EXISTS idx_skill_invocations_slug ON skill_invocations(slug);
 `;
@@ -80,6 +103,16 @@ export function initAnalytics(): void {
     // planner falls back to seq scan on the read path, no correctness loss.
   }
   dbExec(CREATE_SKILL_INVOCATIONS_SQL);
+  // DASH-EXTERNAL-ONLY-W1-PATCH-A: idempotent is_bot_internal column on
+  // skill_invocations for existing deployments. Best-effort try/catch matches
+  // the request_log shape above.
+  try {
+    dbExec(ALTER_SKILL_INVOCATIONS_BOT_INTERNAL_SQL);
+  } catch {
+    // Older PG (<9.6) / SQLite (<3.35) — column may already exist or syntax
+    // differs. Best-effort; column has DEFAULT 0/FALSE so old rows remain
+    // queryable.
+  }
   dbExec(CREATE_SKILL_INVOCATIONS_INDEX_SLUG_SQL);
   dbExec(CREATE_SKILL_INVOCATIONS_INDEX_TS_SQL);
 }
@@ -139,24 +172,35 @@ export function logRequest(entry: LogEntry): void {
  * Fire-and-forget log of a Skill invocation.
  * Called from index.ts /mcp POST handler when X-AlgoVault-Skill-Slug header is present.
  * Slug values are caller-supplied — store as-is, query side does aggregation.
+ *
+ * DASH-EXTERNAL-ONLY-W1-PATCH-A (2026-05-24): `isBotInternal` optional param
+ * (default false) populates the column for defense-in-depth alongside the
+ * write-side gate at /mcp middleware. In practice today, the /mcp middleware
+ * short-circuits the entire call when license.tier === 'internal', so this
+ * param will only land TRUE if a future code path bypasses the gate.
  */
 export function logSkillInvocation(
   slug: string,
   tool: string,
   sessionId?: string,
   userAgent?: string,
+  isBotInternal?: boolean,
 ): void {
   if (!slug || !tool) return;
   // Light input sanity — reject anything that looks like injection rather than slug.
   if (!/^[a-z0-9][a-z0-9-]{0,59}$/i.test(slug)) return;
+  const botInternalValue = isBotInternal
+    ? (process.env.DATABASE_URL ? true : 1)
+    : (process.env.DATABASE_URL ? false : 0);
   try {
     dbRun(
-      `INSERT INTO skill_invocations (timestamp, slug, tool, session_id, user_agent) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO skill_invocations (timestamp, slug, tool, session_id, user_agent, is_bot_internal) VALUES (?, ?, ?, ?, ?, ?)`,
       new Date().toISOString(),
       slug.toLowerCase(),
       tool,
       sessionId || null,
       userAgent ? userAgent.slice(0, 200) : null,
+      botInternalValue,
     );
   } catch {
     // Never fail the request — logging is best-effort.
@@ -177,6 +221,9 @@ export async function getSkillInvocationStats(): Promise<Array<{
 }>> {
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  // DASH-EXTERNAL-ONLY-W1-PATCH-A: external-only filter mirrors getUsageStats.
+  // Cross-DB boolean encoding matches logRequest at line 96-98 / logSkillInvocation.
+  const BOT_FALSE = process.env.DATABASE_URL ? false : 0;
   const rows = await dbQuery<{
     slug: string;
     calls_all_time: string | number;
@@ -188,18 +235,20 @@ export async function getSkillInvocationStats(): Promise<Array<{
             MIN(timestamp) AS first_seen,
             MAX(timestamp) AS last_seen
        FROM skill_invocations
+       WHERE is_bot_internal = ?
        GROUP BY slug
        ORDER BY calls_all_time DESC`,
+    [BOT_FALSE],
   );
   if (!rows.length) return [];
   // Pull 24h + 7d windows in two extra queries (cheap on indexed table).
   const wk = await dbQuery<{ slug: string; n: string | number }>(
-    `SELECT slug, COUNT(*) AS n FROM skill_invocations WHERE timestamp >= ? GROUP BY slug`,
-    [weekAgo],
+    `SELECT slug, COUNT(*) AS n FROM skill_invocations WHERE timestamp >= ? AND is_bot_internal = ? GROUP BY slug`,
+    [weekAgo, BOT_FALSE],
   );
   const dy = await dbQuery<{ slug: string; n: string | number }>(
-    `SELECT slug, COUNT(*) AS n FROM skill_invocations WHERE timestamp >= ? GROUP BY slug`,
-    [dayAgo],
+    `SELECT slug, COUNT(*) AS n FROM skill_invocations WHERE timestamp >= ? AND is_bot_internal = ? GROUP BY slug`,
+    [dayAgo, BOT_FALSE],
   );
   const wkMap = new Map(wk.map(r => [r.slug, Number(r.n)]));
   const dyMap = new Map(dy.map(r => [r.slug, Number(r.n)]));
