@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-05-25T10:10:44.967Z",
+  "window": {
+    "from": "2026-05-11T10:10:44.817Z",
+    "to": "2026-05-25T10:10:44.817Z"
+  },
+  "sessions": {
+    "total": 12069,
+    "unique_ips": 146,
+    "new_in_window": 12069
+  },
+  "funnel": {
+    "install": null,
+    "first_call": 12069,
+    "second_call": 535,
+    "fifth_plus_call": 8,
+    "paid_upgrade": 0
+  },
+  "conversion": {
+    "install_to_first_call": null,
+    "first_to_second": 0.04432844477587207,
+    "second_to_fifth": 0.014953271028037384,
+    "fifth_to_paid": 0
+  },
+  "stick_rate": 0.04432844477587207,
+  "time_to_first_call_ms": {
+    "p50": 1941,
+    "p90": 7991.600000000002
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 11,
+    "get_market_regime": 499,
+    "scan_funding_arb": 4,
+    "other": 12457
+  },
+  "hold_rate_get_trade_signal": 1,
+  "tier_cohort_sizes": {
+    "free": 106,
+    "starter": 0,
+    "pro": 0,
+    "enterprise": 0,
+    "x402": 0
+  },
+  "warnings": [
+    "unknown license_tier 'internal' in request_log — ignored"
+  ]
+}
