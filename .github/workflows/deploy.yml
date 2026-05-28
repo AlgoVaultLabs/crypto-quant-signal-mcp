@@ -137,6 +137,24 @@ jobs:
             mkdir -p /var/log/algovault-seed-confidence
             echo "logrotate config installed: /etc/logrotate.d/algovault-seed-confidence"
 
+            # OPS-TRADE-CALL-CLUSTER-W1 CH1 — per-TF threshold firewall.
+            # Outer ENABLE_PERTF_THRESHOLDS + 11 per-TF inner ENABLE_PERTF_<TF>.
+            # All OFF on first deploy (zero behavioral change). Architect flips
+            # per-TF via follow-up OPS-TRADE-CALL-PERTF-ROLLOUT-W<N> wave once
+            # [seed-confidence-bucket] evidence confirms fire-rate impact.
+            # Idempotent: only appends each line if not already present.
+            for KV in 'ENABLE_PERTF_THRESHOLDS=0' \
+                      'ENABLE_PERTF_1M=0' 'ENABLE_PERTF_3M=0' 'ENABLE_PERTF_5M=0' \
+                      'ENABLE_PERTF_15M=0' 'ENABLE_PERTF_30M=0' 'ENABLE_PERTF_1H=0' \
+                      'ENABLE_PERTF_2H=0' 'ENABLE_PERTF_4H=0' 'ENABLE_PERTF_8H=0' \
+                      'ENABLE_PERTF_12H=0' 'ENABLE_PERTF_1D=0'; do
+              KEY="${KV%%=*}"
+              if ! grep -q "^${KEY}=" /opt/crypto-quant-signal-mcp/.env 2>/dev/null; then
+                echo "$KV" >> /opt/crypto-quant-signal-mcp/.env
+                echo "$KV appended to /opt/crypto-quant-signal-mcp/.env"
+              fi
+            done
+
             # --force-recreate defends against env_file race: docker compose
             # only auto-recreates if image OR compose-config mtime changed,
             # which loses host-side `.env` appends made simultaneously with

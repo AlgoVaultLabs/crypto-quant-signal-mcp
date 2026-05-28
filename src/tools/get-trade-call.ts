@@ -17,6 +17,7 @@ import {
   regimeProse, fundingProse, breakoutProse, trendProse, convictionProse,
 } from '../lib/indicator-buckets.js';
 import { logConfidenceBucket } from '../lib/confidence-bucket-logger.js';
+import { getThresholdForTF } from '../lib/pertf-thresholds.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -348,12 +349,19 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   let signal: SignalVerdict;
   const absScore = Math.abs(rawScore);
 
+  // OPS-TRADE-CALL-CLUSTER-W1 CH1 — per-TF threshold lookup behind 2-flag firewall.
+  // Outer ENABLE_PERTF_THRESHOLDS + per-TF inner ENABLE_PERTF_<TF>. Both unset →
+  // fallback to BUY_BASE_THRESHOLD=40 / SELL_THRESHOLD_GATED=55 (zero behavioral change).
+  // Architect flips per-TF via follow-up OPS-TRADE-CALL-PERTF-ROLLOUT-W<N> wave.
+  const buyThreshold = getThresholdForTF(timeframe, 'buy', BUY_BASE_THRESHOLD);
+  const sellThreshold = getThresholdForTF(timeframe, 'sell', SELL_THRESHOLD_GATED);
+
   if (rawScore > 0) {
     // R4: inverted per audit — BUY edge +10-14pp WR. BUY never gated.
-    signal = rawScore > BUY_BASE_THRESHOLD ? 'BUY' : 'HOLD';
+    signal = rawScore > buyThreshold ? 'BUY' : 'HOLD';
   } else {
     // R4: inverted per audit — BUY edge +10-14pp WR. SELL always gated (stricter).
-    signal = absScore > SELL_THRESHOLD_GATED ? 'SELL' : 'HOLD';
+    signal = absScore > sellThreshold ? 'SELL' : 'HOLD';
   }
 
   // ── Confidence: scale rawScore to 0-100 range properly ──
@@ -373,7 +381,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     rawScore,
     confidence,
     signal,
-    thresholdUsed: signal === 'BUY' ? BUY_BASE_THRESHOLD : signal === 'SELL' ? SELL_THRESHOLD_GATED : null,
+    thresholdUsed: signal === 'BUY' ? buyThreshold : signal === 'SELL' ? sellThreshold : null,
   });
 
   // ── v1.10.0 Sanitized Reasoning ──
