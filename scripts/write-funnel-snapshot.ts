@@ -204,9 +204,52 @@ function formatMarkdown(snap: FunnelSnapshot, baseline: Baseline | null, tag: st
   lines.push(`| fifth_plus_call | ${fmtInt(snap.funnel.fifth_plus_call)} | ${fmtInt(b.fifth_plus_call)} | ${deltaInt(snap.funnel.fifth_plus_call, b.fifth_plus_call)} |`);
   lines.push(`| paid_upgrade | ${fmtInt(snap.funnel.paid_upgrade)} | ${fmtInt(b.paid_upgrade)} | ${deltaInt(snap.funnel.paid_upgrade, b.paid_upgrade)} |`);
   lines.push('');
-  lines.push('> install (NPM) is not queryable from the performance-db. It is populated from');
-  lines.push('> `https://api.npmjs.org/downloads/point/last-month/crypto-quant-signal-mcp` in a');
-  lines.push('> separate fetch; v1 snapshots always show `—`.');
+  lines.push('> install (NPM) is fetched from `https://api.npmjs.org/downloads/range/<from>:<to>/crypto-quant-signal-mcp`');
+  lines.push('> at snapshot time (ACTIVATION-FUNNEL-AUDIT-W1, 2026-05-28). Returns null on network failure;');
+  lines.push('> per-day sum across the window.');
+  lines.push('');
+  lines.push('## Extended 14-stage funnel (ACTIVATION-FUNNEL-AUDIT-W1)');
+  lines.push('');
+  lines.push('| # | Stage | Count | Source |');
+  lines.push('|---:|---|---:|---|');
+  lines.push(`| 1 | npm_install | ${fmtInt(snap.funnel.install)} | npm registry API |`);
+  lines.push(`| 2 | mcp_tools_list | ${fmtInt((snap.funnel as Record<string, number | null>).mcp_tools_list)} | request_log (distinct session_id WHERE tool_name='tools/list') |`);
+  lines.push(`| 3 | first_tool_call | ${fmtInt(snap.funnel.first_call)} | agent_sessions (call_count ≥ 1) |`);
+  lines.push(`| 4 | quota_hit_soft | ${fmtInt((snap.funnel as Record<string, number | null>).quota_hit_soft)} | funnel_events |`);
+  lines.push(`| 5 | quota_hit_hard | ${fmtInt((snap.funnel as Record<string, number | null>).quota_hit_hard)} | funnel_events |`);
+  lines.push(`| 6 | quota_hit_block | ${fmtInt((snap.funnel as Record<string, number | null>).quota_hit_block)} | funnel_events |`);
+  lines.push(`| 7 | upgrade_cta_clicked | ${fmtInt((snap.funnel as Record<string, number | null>).upgrade_cta_clicked)} | funnel_events |`);
+  lines.push(`| 8 | stripe_checkout_started | ${fmtInt((snap.funnel as Record<string, number | null>).stripe_checkout_started)} | processed_stripe_events |`);
+  lines.push(`| 9 | stripe_payment_succeeded | ${fmtInt(snap.funnel.paid_upgrade)} | agent_sessions.tiers_seen (== paid_upgrade) |`);
+  lines.push(`| 10 | tg_bot_start | ${fmtInt((snap.funnel as Record<string, number | null>).tg_bot_start)} | bot SQLite subscribers |`);
+  lines.push(`| 11 | tg_bot_first_command | ${fmtInt((snap.funnel as Record<string, number | null>).tg_bot_first_command)} | /var/log/algovault-bot/alerts.log |`);
+  lines.push(`| 12 | tg_bot_watchlist_add | ${fmtInt((snap.funnel as Record<string, number | null>).tg_bot_watchlist_add)} | bot SQLite watchlists |`);
+  lines.push(`| 13 | tg_bot_quota_hit | ${fmtInt((snap.funnel as Record<string, number | null>).tg_bot_quota_hit)} | /var/log/algovault-bot/alerts.log |`);
+  lines.push(`| 14 | tg_bot_upgrade_clicked | ${fmtInt((snap.funnel as Record<string, number | null>).tg_bot_upgrade_clicked)} | (deferred — OPS-FUNNEL-STRIPE-PIXEL-W1) |`);
+  lines.push('');
+  lines.push('### Stage-to-stage retentions');
+  lines.push('');
+  if (snap.stage_retentions && Object.keys(snap.stage_retentions).length > 0) {
+    lines.push('| Transition | Retention |');
+    lines.push('|---|---:|');
+    for (const [transition, retention] of Object.entries(snap.stage_retentions)) {
+      lines.push(`| ${transition.replace(/_to_/g, ' → ')} | ${fmtPct(retention)} |`);
+    }
+  } else {
+    lines.push('_(empty — extended funnel disabled)_');
+  }
+  lines.push('');
+  lines.push('### Weakest stage transition (leak step)');
+  lines.push('');
+  if (snap.weakest_stage_transition && snap.weakest_stage_transition.retention !== null) {
+    const w = snap.weakest_stage_transition;
+    lines.push(`**${w.from}** → **${w.to}** at ${fmtPct(w.retention)} retention`);
+    lines.push('');
+    lines.push('> This is the funnel stage with the lowest retention drop in the current window.');
+    lines.push('> Follow-up wave: `OPS-ACTIVATION-LEAK-FIX-W{NEXT}` should investigate this transition.');
+  } else {
+    lines.push('_(no non-null adjacent transitions — insufficient data)_');
+  }
   lines.push('');
   lines.push('## Conversion ratios');
   lines.push('');

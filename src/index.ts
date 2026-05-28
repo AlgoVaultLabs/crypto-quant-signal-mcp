@@ -34,6 +34,7 @@ import { sendOptinConfirmationEmail } from './lib/email.js';
 import { EMAIL_RE } from './lib/stripe.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
+import { generateFunnelSnapshot } from './lib/funnel-snapshot.js';
 import {
   isStripeConfigured,
   constructWebhookEvent,
@@ -1015,9 +1016,34 @@ async function startHttp() {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const utmSource = typeof req.query.utm_source === 'string' ? req.query.utm_source : undefined;
       const utmCampaign = typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : undefined;
+      const upgradeFrom = typeof req.query.upgrade_from === 'string' ? req.query.upgrade_from : undefined;
       // Derive a session-unique client_reference_id for downstream attribution
       // join even when UTM tags are absent (e.g. direct /signup typing).
       const clientReferenceId = `${utmSource ?? 'direct'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): captures `upgrade_cta_clicked`
+      // (stage 7) when traffic carries `?upgrade_from=quota` attribution from
+      // tier-warning CTAs / quota-block error envelopes. Recorded BEFORE Stripe
+      // redirect so we capture clicks that never complete checkout (funnel
+      // diff stage 7 → 8). Lazy-import + fail-open.
+      if (upgradeFrom && upgradeFrom.length > 0) {
+        try {
+          const { recordFunnelEvent } = await import('./lib/performance-db.js');
+          recordFunnelEvent({
+            eventType: 'upgrade_cta_clicked',
+            sessionId: clientReferenceId,
+            licenseTier: 'free',
+            meta: {
+              plan,
+              upgrade_from: upgradeFrom,
+              utm_source: utmSource ?? null,
+              utm_campaign: utmCampaign ?? null,
+            },
+          });
+        } catch (err) {
+          // Fail-open per CLAUDE.md `## Automation-first recovery → fail-open`.
+          console.warn('[upgrade_cta_clicked] recordFunnelEvent failed:', err instanceof Error ? err.message : err);
+        }
+      }
       const url = await createCheckoutSession(plan, baseUrl, {
         utmSource,
         utmCampaign,
@@ -1173,6 +1199,47 @@ async function startHttp() {
         res.json(stats);
       } catch (err) {
         res.status(500).json({ error: 'Failed to fetch skills analytics' });
+      }
+    });
+
+    // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): admin-only 14-stage funnel snapshot.
+    // Wraps the same `generateFunnelSnapshot()` library function used by the
+    // weekly systemd-timer snapshot pipeline (scripts/funnel-snapshot.ts CLI +
+    // commit-funnel-snapshot.sh). Window selectable via ?window=24h|7d|14d|30d|all_time
+    // (default 14d). Returns full FunnelSnapshot JSON with all 14 stages +
+    // stage_retentions + weakest_stage_transition. Same admin-auth pattern as
+    // /dashboard/api/skills-analytics. window_label echo so clients verify the
+    // server interpreted ?window correctly.
+    app.get('/api/admin/funnel-snapshot', async (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const windowRaw = String(req.query.window ?? '14d').trim().toLowerCase();
+        const windowToDays: Record<string, number> = {
+          '24h': 1,
+          '7d': 7,
+          '14d': 14,
+          '30d': 30,
+          'all_time': 3650,
+        };
+        const days = windowToDays[windowRaw];
+        if (days === undefined) {
+          return res.status(400).json({
+            error: 'Invalid window',
+            allowed: Object.keys(windowToDays),
+            got: windowRaw,
+          });
+        }
+        const snapshot = await generateFunnelSnapshot({ days });
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+          window_label: windowRaw,
+          ...snapshot,
+        });
+      } catch (err) {
+        console.error(`[/api/admin/funnel-snapshot] internal error: ${err instanceof Error ? err.message : err}`);
+        res.status(500).json({ error: 'Failed to generate funnel snapshot' });
       }
     });
 

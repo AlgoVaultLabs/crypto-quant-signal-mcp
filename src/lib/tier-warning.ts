@@ -14,6 +14,8 @@
  * SoT for the quota) so changes to quota tiers propagate automatically.
  */
 import type { AlgoVaultMeta, TierWarning, LicenseTier } from '../types.js';
+import { recordFunnelEvent } from './performance-db.js';
+import { getRequestSessionId } from './license.js';
 
 export const SOFT_THRESHOLD = 0.75;
 export const HARD_THRESHOLD = 0.90;
@@ -24,8 +26,11 @@ export const HARD_THRESHOLD = 0.90;
  * `client_reference_id` + `metadata.utm_*` set so the post-payment webhook
  * can attribute the conversion back to the originating channel.
  */
+// ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): `upgrade_from=quota` lets the /signup
+// handler capture `upgrade_cta_clicked` (stage 7) funnel event. Existing UTM
+// params preserved for prior attribution chain.
 export const DEFAULT_UPGRADE_URL =
-  'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_warning';
+  'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_warning&upgrade_from=quota';
 
 export interface TierWarningContext {
   tier: LicenseTier;
@@ -95,5 +100,22 @@ export function computeTierWarning(ctx: TierWarningContext): TierWarning | undef
 export function withTierWarning(meta: AlgoVaultMeta, ctx: TierWarningContext): AlgoVaultMeta {
   const warning = computeTierWarning(ctx);
   if (!warning) return meta;
+  // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): capture quota_hit_soft (stage 4)
+  // and quota_hit_hard (stage 5) funnel events. Dedup happens at snapshot
+  // query time via `COUNT(DISTINCT session_id)` — fire-and-forget on every
+  // call after threshold; the funnel-snapshot reader's DISTINCT semantics
+  // collapses these to one session per stage. Fail-open per recordFunnelEvent
+  // contract.
+  const eventType = warning.level === 'soft' ? 'quota_hit_soft' : 'quota_hit_hard';
+  recordFunnelEvent({
+    eventType,
+    sessionId: getRequestSessionId() ?? null,
+    licenseTier: ctx.tier,
+    meta: {
+      current_usage: ctx.currentUsage,
+      monthly_limit: ctx.monthlyLimit,
+      ratio: ctx.currentUsage / ctx.monthlyLimit,
+    },
+  });
   return { ...meta, tier_warning: warning };
 }

@@ -9,7 +9,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { verifyX402Payment, isX402Configured } from './x402.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
-import { dbExec, dbRun, dbQuery } from './performance-db.js';
+import { dbExec, dbRun, dbQuery, recordFunnelEvent } from './performance-db.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 
 // v1.10.3 FREE-UNLOCK-W1: free tier now grants ALL coins + ALL timeframes —
@@ -350,6 +350,18 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
   const overage = Math.max(0, tracker.count - quota);
 
   if (license.tier === 'free' && tracker.count >= quota) {
+    // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): stage 6 quota_hit_block. Fires
+    // on EVERY blocked call (snapshot reader's COUNT(DISTINCT session_id)
+    // collapses to 1-per-session). Fail-open per recordFunnelEvent contract.
+    recordFunnelEvent({
+      eventType: 'quota_hit_block',
+      sessionId: getRequestSessionId() ?? null,
+      licenseTier: license.tier,
+      meta: {
+        used: tracker.count,
+        total: quota,
+      },
+    });
     return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
   }
 
@@ -385,7 +397,9 @@ export function trackCall(license: LicenseInfo): TrackCallResult {
 
 // ── Upgrade hint for free-tier users ──
 
-const UPGRADE_URL = 'https://api.algovault.com/signup?plan=starter';
+// ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): `upgrade_from=quota` allows the
+// /signup handler to capture `upgrade_cta_clicked` (stage 7) funnel event.
+const UPGRADE_URL = 'https://api.algovault.com/signup?plan=starter&upgrade_from=quota';
 
 export function getUpgradeHint(
   license: LicenseInfo,

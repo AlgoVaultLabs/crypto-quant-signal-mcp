@@ -422,6 +422,46 @@ const CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_pse_email_processed_at ON processed_signup_email_events (processed_at);
 `;
 
+/**
+ * ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): narrow funnel-events table for the 7
+ * NEW activation-funnel stages that don't already live in canonical sources
+ * (request_log / processed_stripe_events / agent_sessions / bot SQLite). Stages
+ * 4-7 (quota soft/hard/block + upgrade_cta_clicked) emit from MCP-side hooks
+ * (tier-warning.ts + license.ts + /signup handler). Bot-side stages (11, 13, 14)
+ * stay in `/var/log/algovault-bot/alerts.log` per Q-C Option α — snapshot
+ * reader greps alerts.log JSON lines + this table is the SoT for MCP-side
+ * funnel events only.
+ *
+ * Schema rationale: narrow (7 cols) + tightly indexed (ts + event_type +
+ * session_id partial) keeps the table fast even at 100K+ rows; mixing into
+ * request_log (currently 19K+ rows) would hurt query latency for the dominant
+ * analytics path. meta_json is TEXT (portable across PG and SQLite); JSON
+ * parsing happens at read time in the snapshot reader.
+ */
+const CREATE_FUNNEL_EVENTS_SQL = `
+  CREATE TABLE IF NOT EXISTS funnel_events (
+    id ${process.env.DATABASE_URL ? 'SERIAL' : 'INTEGER'} PRIMARY KEY${process.env.DATABASE_URL ? '' : ' AUTOINCREMENT'},
+    event_type TEXT NOT NULL,
+    ts ${process.env.DATABASE_URL ? 'TIMESTAMPTZ NOT NULL DEFAULT NOW()' : 'TEXT NOT NULL DEFAULT (datetime(\'now\'))'},
+    session_id TEXT,
+    chat_id ${process.env.DATABASE_URL ? 'BIGINT' : 'INTEGER'},
+    license_tier TEXT,
+    meta_json TEXT
+  );
+`;
+
+const CREATE_FUNNEL_EVENTS_TS_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_funnel_events_ts ON funnel_events (ts);
+`;
+
+const CREATE_FUNNEL_EVENTS_TYPE_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_funnel_events_event_type ON funnel_events (event_type);
+`;
+
+const CREATE_FUNNEL_EVENTS_SESSION_INDEX_SQL = process.env.DATABASE_URL
+  ? `CREATE INDEX IF NOT EXISTS idx_funnel_events_session_id ON funnel_events (session_id) WHERE session_id IS NOT NULL;`
+  : `CREATE INDEX IF NOT EXISTS idx_funnel_events_session_id ON funnel_events (session_id);`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -449,6 +489,15 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_SIGNUP_EMAILS_SOURCE_INDEX_SQL);
   backend.exec(CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_SQL);
   backend.exec(CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_INDEX_SQL);
+  // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): narrow funnel_events table for the
+  // 7 NEW activation-funnel MCP-side stages (quota_hit_{soft,hard,block},
+  // upgrade_cta_clicked, etc.). Bot-side stages stay in alerts.log per Q-C
+  // Option α. Snapshot reader (src/lib/funnel-snapshot.ts) UNIONs across this
+  // table + request_log + processed_stripe_events + bot alerts.log.
+  backend.exec(CREATE_FUNNEL_EVENTS_SQL);
+  backend.exec(CREATE_FUNNEL_EVENTS_TS_INDEX_SQL);
+  backend.exec(CREATE_FUNNEL_EVENTS_TYPE_INDEX_SQL);
+  backend.exec(CREATE_FUNNEL_EVENTS_SESSION_INDEX_SQL);
   runMigrations(backend, isPg);
   // OPS-POSTGRES-RECAUDIT-W1 (2026-05-22): create idempotency-check index AFTER
   // migrations so that the `exchange` column (added by v1.5 migration) exists
@@ -623,6 +672,47 @@ export function recordHoldCount(coin: string, timeframe: string): void {
        DO UPDATE SET hold_count = hold_count + 1`,
       today, timeframe, coin
     );
+  }
+}
+
+/**
+ * ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): Record a funnel-stage event.
+ *
+ * Used by MCP-side captures (tier-warning.ts soft/hard, license.ts checkQuota
+ * block, /signup handler upgrade_cta_clicked). Bot-side events stay in alerts.log
+ * per Q-C Option α — do NOT call this from algovault-bot.
+ *
+ * Failure-tolerant: callers fire-and-forget; this is on hot quota-check + signup
+ * paths and must not throw on DB error. Same shape as upsertAgentSession().
+ *
+ * @param eventType one of: 'mcp_tools_list', 'quota_hit_soft', 'quota_hit_hard',
+ *   'quota_hit_block', 'upgrade_cta_clicked', 'stripe_checkout_started',
+ *   'stripe_payment_succeeded'.
+ * @param sessionId optional MCP session-id; null OK for non-MCP events
+ * @param chatId optional Telegram chat_id (reserved for future bot→postgres route)
+ * @param licenseTier optional 'free'|'starter'|'pro'|'enterprise'|'x402'
+ * @param meta optional structured meta; JSON-stringified to TEXT
+ */
+export function recordFunnelEvent(params: {
+  eventType: string;
+  sessionId?: string | null;
+  chatId?: number | null;
+  licenseTier?: string | null;
+  meta?: Record<string, unknown> | null;
+}): void {
+  const { eventType, sessionId, chatId, licenseTier, meta } = params;
+  const b = getBackend();
+  try {
+    const metaJson = meta ? JSON.stringify(meta) : null;
+    b.run(
+      `INSERT INTO funnel_events (event_type, session_id, chat_id, license_tier, meta_json) VALUES (?, ?, ?, ?, ?)`,
+      eventType, sessionId ?? null, chatId ?? null, licenseTier ?? null, metaJson
+    );
+  } catch (err) {
+    // Fail-open per CLAUDE.md `Automation-first recovery → fail-open` rule.
+    if (process.env.DEBUG_FUNNEL_EVENTS === '1') {
+      console.warn('[funnel-events] recordFunnelEvent error:', err instanceof Error ? err.message : err);
+    }
   }
 }
 

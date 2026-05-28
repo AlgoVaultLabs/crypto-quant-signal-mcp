@@ -4,56 +4,59 @@
 # Sends a Telegram CRITICAL alert when the funnel snapshot cron fails.
 # Invoked by systemd's OnFailure= directive on algovault-funnel-snapshot.service.
 #
-# Env vars (sourced from /etc/algovault/funnel-snapshot.env + the mcp-server
-# container's TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID via docker inspect):
-#   TELEGRAM_BOT_TOKEN — the Telegram Bot API token
-#   TELEGRAM_CHAT_ID   — the chat ID for alerts (same as the monitor uses)
+# ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): migrated from direct
+# `curl https://api.telegram.org/...` to canonical
+# `/opt/algovault-monitoring/send_telegram.sh` wrapper invocation per
+# CLAUDE.md `wrapper-pure-pipe-subprocess-contract-3rd-consumer-confirmed`
+# permanent rule (opportunistic compliance + 7th wrapper consumer
+# alongside the new funnel-leak-detector.py as the 6th).
+#
+# Wrapper handles: severity gate, 24h cooldown per alert_id,
+# DRY_RUN_TG=1 gate, fail-open semantics, recommended_wave template
+# resolution. Caller (this script) just builds the body + pipes it.
 
 set -euo pipefail
 
-# Source env for DATABASE_URL (which also contains the Telegram creds if
-# appended to /etc/algovault/funnel-snapshot.env during setup).
-[ -f /etc/algovault/funnel-snapshot.env ] && source /etc/algovault/funnel-snapshot.env
+WRAPPER="/opt/algovault-monitoring/send_telegram.sh"
+ALERT_ID="FUNNEL_SNAPSHOT_CRON_FAILED"
+SEVERITY="CRITICAL_PERSISTENT"
 
-# If Telegram creds aren't in the env file, try to read them from the
-# running mcp-server container (which gets them from docker-compose .env).
-if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-  TELEGRAM_BOT_TOKEN=$(docker inspect crypto-quant-signal-mcp-mcp-server-1 \
-    --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
-    | grep '^TELEGRAM_BOT_TOKEN=' | cut -d= -f2 || true)
-  TELEGRAM_CHAT_ID=$(docker inspect crypto-quant-signal-mcp-mcp-server-1 \
-    --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
-    | grep '^TELEGRAM_CHAT_ID=' | cut -d= -f2 || true)
-fi
-
-if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-  echo "[funnel-cron-alert] WARN: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not available — cannot send alert" >&2
-  exit 1
+if [ ! -x "${WRAPPER}" ]; then
+  echo "[funnel-cron-alert] ERROR: wrapper not executable at ${WRAPPER} — cannot send alert" >&2
+  # Fail-open per CLAUDE.md `Recovery alerts are noise, default policy is
+  # silent recovery` — don't bounce systemd OnFailure handler.
+  exit 0
 fi
 
 UNIT_NAME="${1:-algovault-funnel-snapshot.service}"
 JOURNAL=$(journalctl -u "${UNIT_NAME}" --since "10 min ago" --no-pager --lines 30 2>&1 || echo "(journal read failed)")
 
-# Telegram sendMessage with Markdown parse mode.
-# Escape backticks and newlines for the Telegram API.
-TEXT="🛑 *CRITICAL: Funnel snapshot cron failed*
+# Compose alert body matching operator-action-required contract shape.
+# recommended_wave_template uses W{NEXT} template form per CLAUDE.md
+# `Hardcoded recommended_wave strings FORBIDDEN` rule; wrapper PATCH-B
+# resolves at fire time via status.md grep.
+BODY=$(cat <<EOF
+🛑 ${ALERT_ID}
+Unit: ${UNIT_NAME}
+Host: $(hostname)
+Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-Unit: \`${UNIT_NAME}\`
-Host: \`$(hostname)\`
-Time: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`
-
-\`\`\`
+Last 10 min of journal output:
 ${JOURNAL}
-\`\`\`"
 
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "${TEXT}" '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')" \
-  2>/dev/null || echo "000")
+Action: dispatch OPS-FUNNEL-SNAPSHOT-CRON-FIX-W{NEXT} via Cowork → Claude Code
+Audit shape: audits/ACTIVATION-FUNNEL-AUDIT-W1-endpoint-truth.md
+Source unit: ${UNIT_NAME}
+EOF
+)
 
-if [ "${HTTP_CODE}" = "200" ]; then
-  echo "[funnel-cron-alert] Telegram alert sent (HTTP ${HTTP_CODE})"
+set +e
+echo "${BODY}" | "${WRAPPER}" "${ALERT_ID}" "${SEVERITY}" -
+RC=$?
+set -e
+if [ "${RC}" = "0" ]; then
+  echo "[funnel-cron-alert] wrapper exited OK (alert dispatched OR cooldown-suppressed OR DRY_RUN)"
 else
-  echo "[funnel-cron-alert] Telegram alert FAILED (HTTP ${HTTP_CODE})" >&2
+  echo "[funnel-cron-alert] wrapper exited ${RC} — see /var/log/send-telegram.log" >&2
 fi
+exit 0
