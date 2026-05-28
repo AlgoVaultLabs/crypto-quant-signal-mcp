@@ -16,7 +16,6 @@ import {
   bucketTrendPersistence, bucketFundingState, bucketBreakoutPending,
   regimeProse, fundingProse, breakoutProse, trendProse, convictionProse,
 } from '../lib/indicator-buckets.js';
-import { logConfidenceBucket } from '../lib/confidence-bucket-logger.js';
 import { getThresholdForTF } from '../lib/pertf-thresholds.js';
 import { getR4Thresholds } from '../lib/r4-relax-flag.js';
 
@@ -372,22 +371,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // ── Confidence: scale rawScore to 0-100 range properly ──
   const confidence = Math.min(Math.round((absScore / MAX_RAW_SCORE) * 100), 100);
 
-  // OPS-TRADE-CALL-CALIBRATION-AUDIT-W1 R3 — additive observability ONLY.
-  // Gated on `ENABLE_CONFIDENCE_BUCKET_LOGGING=1` (default OFF). Captures
-  // the HOLD-side rawScore/confidence distribution that `recordSignal` at
-  // L485 doesn't persist. Zero-side-effect when env var unset.
-  // TODO: ENABLE_CONFIDENCE_BUCKET_LOGGING revisit by 2026-06-11
-  // (14-day rule per CLAUDE.md "Defensive thresholds get tracked follow-ups").
-  logConfidenceBucket({
-    coin,
-    tf: timeframe,
-    regime,
-    exchange,
-    rawScore,
-    confidence,
-    signal,
-    thresholdUsed: signal === 'BUY' ? buyThreshold : signal === 'SELL' ? sellThreshold : null,
-  });
+  // OPS-TRADE-CALL-CLUSTER-W1 CH5 (2026-05-28) — OPS-TRADE-CALL-CALIBRATION-AUDIT-W1
+  // R3 confidence-bucket logger RETIRED. Code-side strip lands today; Hetzner-side
+  // env-strip + logrotate-strip + container force-recreate scheduled for
+  // 2026-06-04T06:00:00Z (7d capture window honored per Plan-Mode #6 Path B
+  // ratification). Captured logs preserved at /var/log/algovault-seed-confidence
+  // /*.log.gz via logrotate weekly rotation.
 
   // ── v1.10.0 Sanitized Reasoning ──
   // Closes moat-1 (composite-verdict quant-weighting) leakage. The previous
