@@ -44,10 +44,29 @@ export function getWelcomePageHtml(
     ? `&${utmSource ? `utm_source=${encodeURIComponent(utmSource)}` : ''}${utmSource && utmCampaign ? '&' : ''}${utmCampaign ? `utm_campaign=${encodeURIComponent(utmCampaign)}` : ''}`
     : '';
 
+  // POWER-USER-OUTREACH-W1-V2 (2026-05-28): paywall CTA adds an optional
+  // email-capture form ABOVE the Stripe upgrade button. Free-tier visitors
+  // who aren't ready to pay can opt in to ~1/mo product updates. Form POSTs
+  // to /api/signup-email via fetch(); success swaps to ✓ message; failure
+  // surfaces an inline error.
   const paywallCta = isOrganicVisit
     ? `<div class="paywall-cta">
          <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
          <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div id="signup-email-block">
+           <form id="signup-email-form" class="signup-email-form" novalidate>
+             <label for="signup-email-input" class="signup-email-label">Want product updates? (Optional — ~1 email/month, no spam)</label>
+             <div class="signup-email-row">
+               <input type="email" id="signup-email-input" name="email" placeholder="you@example.com" autocomplete="email" required>
+               <button type="submit" class="signup-email-btn">Subscribe</button>
+             </div>
+             <label class="signup-email-consent">
+               <input type="checkbox" id="signup-email-consent" name="optin_consent" required>
+               <span>I agree to receive ~1 email/month from AlgoVault.</span>
+             </label>
+             <div id="signup-email-error" class="signup-email-error" aria-live="polite"></div>
+           </form>
+         </div>
          <a class="paywall-btn" href="/signup?plan=starter&utm_source=welcome_page${utmSource ? `_${utmSource}` : ''}${utmQuery}">Upgrade to Starter — $9.99/mo</a>
          <p class="paywall-fineprint">Or stay on the free tier — your API key is auto-provisioned on every <code>/signup</code> click. <a href="/signup?plan=pro${utmQuery}">Need higher volume? See Pro / Enterprise →</a></p>
        </div>`
@@ -102,6 +121,19 @@ export function getWelcomePageHtml(
   .paywall-btn:hover { background: #2ea043; }
   .paywall-fineprint { color: #8b949e; font-size: 12px; margin-top: 12px; }
   .paywall-fineprint a { color: #58a6ff; text-decoration: none; }
+  /* POWER-USER-OUTREACH-W1-V2 signup-email form */
+  .signup-email-form { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 14px 16px; margin: 0 0 16px; }
+  .signup-email-label { display: block; color: #8b949e; font-size: 12px; margin-bottom: 8px; }
+  .signup-email-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .signup-email-row input[type="email"] { flex: 1; background: #161b22; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+  .signup-email-row input[type="email"]:focus { outline: none; border-color: #3fb950; }
+  .signup-email-btn { background: #1f6feb; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .signup-email-btn:hover { background: #388bfd; }
+  .signup-email-btn:disabled { background: #21262d; color: #6e7681; cursor: not-allowed; }
+  .signup-email-consent { display: flex; align-items: center; gap: 6px; color: #8b949e; font-size: 12px; cursor: pointer; }
+  .signup-email-consent input { margin: 0; }
+  .signup-email-error { color: #f85149; font-size: 12px; margin-top: 6px; min-height: 16px; }
+  .signup-email-success { color: #3fb950; font-size: 13px; padding: 12px 0; }
 </style>
 </head>
 <body>
@@ -125,6 +157,58 @@ export function getWelcomePageHtml(
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Want to test with raw HTTP/curl? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">3-step handshake guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
+<script>
+  // POWER-USER-OUTREACH-W1-V2 signup-email form handler. Inline so no extra
+  // network request; small payload; no framework dependency.
+  (function () {
+    var form = document.getElementById('signup-email-form');
+    if (!form) return;
+    var block = document.getElementById('signup-email-block');
+    var emailEl = document.getElementById('signup-email-input');
+    var consentEl = document.getElementById('signup-email-consent');
+    var errEl = document.getElementById('signup-email-error');
+    var btn = form.querySelector('button[type="submit"]');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      errEl.textContent = '';
+      var email = (emailEl.value || '').trim();
+      if (!email || email.length > 254 || email.indexOf('@') < 1 || email.lastIndexOf('.') < email.indexOf('@')) {
+        errEl.textContent = 'Please enter a valid email.';
+        return;
+      }
+      if (!consentEl.checked) {
+        errEl.textContent = 'Please check the consent box to subscribe.';
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Subscribing…';
+      fetch('/api/signup-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, source: 'welcome-paywall', optin_consent: true })
+      })
+        .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'parse_error' }; }); })
+        .then(function (data) {
+          if (data && data.ok === true) {
+            block.innerHTML = '<p class="signup-email-success">✓ Subscribed. Confirmation email sent to ' + email.replace(/</g, '&lt;') + '.</p>';
+          } else {
+            var code = (data && data.error) || 'send_failed';
+            var msg = code === 'invalid_email' ? 'Please enter a valid email.'
+                    : code === 'consent_required' ? 'Please check the consent box to subscribe.'
+                    : 'Subscription failed. Try again or email support@algovault.com.';
+            errEl.textContent = msg;
+            btn.disabled = false;
+            btn.textContent = 'Subscribe';
+          }
+        })
+        .catch(function () {
+          errEl.textContent = 'Network error. Try again.';
+          btn.disabled = false;
+          btn.textContent = 'Subscribe';
+        });
+    });
+  })();
+</script>
 </body>
 </html>`;
 }

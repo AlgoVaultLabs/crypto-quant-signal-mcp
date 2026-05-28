@@ -291,7 +291,8 @@ export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId:
   }
 }
 
-const EMAIL_RE = /^[^\s@'"\\]+@[^\s@'"\\]+\.[^\s@'"\\]+$/;
+// Exported for cross-module reuse (POWER-USER-OUTREACH-W1-V2 /api/signup-email).
+export const EMAIL_RE = /^[^\s@'"\\]+@[^\s@'"\\]+\.[^\s@'"\\]+$/;
 
 /**
  * Look up an active-subscription customer by billing email.

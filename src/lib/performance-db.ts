@@ -366,6 +366,62 @@ const CREATE_FUNDING_STATS_MATVIEW_INDEX_SQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS funding_stats_14d_coin_uk ON funding_stats_14d (coin);
 `;
 
+// POWER-USER-OUTREACH-W1-V2 (2026-05-28): NEW signup_emails table for free-tier
+// email opt-in capture on the /welcome paywall CTA. The v1 wave HALTed at
+// Plan-Mode Step 0 with 10 fictional spec primitives; v2 pre-resolves all 10
+// in the spec body. This table is the new authoritative store for free-tier
+// opt-in emails — Stripe Customer object remains the SoT for PAID-tier emails.
+// Dual-backend: PG ships in prod; SQLite branch keeps local-dev + test fixtures
+// aligned per CLAUDE.md `Dual-backend PG-only SQL fails local SQLite` rule.
+const CREATE_SIGNUP_EMAILS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS signup_emails (
+      id BIGSERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL,
+      optin_consent BOOLEAN NOT NULL DEFAULT TRUE,
+      optin_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      confirmation_sent_at TIMESTAMPTZ NULL,
+      unsubscribed_at TIMESTAMPTZ NULL
+    );`
+  : `CREATE TABLE IF NOT EXISTS signup_emails (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL,
+      optin_consent INTEGER NOT NULL DEFAULT 1,
+      optin_at TEXT NOT NULL DEFAULT (datetime('now')),
+      confirmation_sent_at TEXT NULL,
+      unsubscribed_at TEXT NULL
+    );`;
+
+const CREATE_SIGNUP_EMAILS_OPTIN_AT_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_signup_emails_optin_at ON signup_emails (optin_at);
+`;
+
+const CREATE_SIGNUP_EMAILS_SOURCE_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_signup_emails_source ON signup_emails (source);
+`;
+
+// POWER-USER-OUTREACH-W1-V2: idempotency sibling for signup_emails, mirroring
+// the `processed_stripe_events` pattern from src/lib/stripe-events-store.ts.
+// Caller (POST /api/signup-email) computes event_id as
+// `signup-email:<sha256(email)>:<NOW>`; INSERT ON CONFLICT DO NOTHING ensures
+// at-most-once confirmation-email send even on caller retries.
+const CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS processed_signup_email_events (
+      event_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`
+  : `CREATE TABLE IF NOT EXISTS processed_signup_email_events (
+      event_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );`;
+
+const CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_pse_email_processed_at ON processed_signup_email_events (processed_at);
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -383,6 +439,16 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_MERKLE_BATCHES_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
+  // POWER-USER-OUTREACH-W1-V2 (2026-05-28): signup_emails + idempotency sibling
+  // for free-tier email opt-in capture (POST /api/signup-email endpoint feeds
+  // these tables). Idempotent via CREATE TABLE IF NOT EXISTS; on live PG the
+  // tables were pre-applied via SSH before this commit landed. Fresh deploys
+  // and test fixtures inherit automatically.
+  backend.exec(CREATE_SIGNUP_EMAILS_SQL);
+  backend.exec(CREATE_SIGNUP_EMAILS_OPTIN_AT_INDEX_SQL);
+  backend.exec(CREATE_SIGNUP_EMAILS_SOURCE_INDEX_SQL);
+  backend.exec(CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_SQL);
+  backend.exec(CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_INDEX_SQL);
   runMigrations(backend, isPg);
   // OPS-POSTGRES-RECAUDIT-W1 (2026-05-22): create idempotency-check index AFTER
   // migrations so that the `exchange` column (added by v1.5 migration) exists

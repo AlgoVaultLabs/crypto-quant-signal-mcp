@@ -29,6 +29,9 @@ import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, 
 import { initX402, settleX402Async } from './lib/x402.js';
 import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } from './lib/analytics.js';
 import { ensureProcessedStripeEventsSchema, tryClaimEvent } from './lib/stripe-events-store.js';
+import { upsertSignupEmail, markConfirmationSent, tryClaimSignupEmailEvent } from './lib/signup-emails-store.js';
+import { sendOptinConfirmationEmail } from './lib/email.js';
+import { EMAIL_RE } from './lib/stripe.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import {
@@ -1604,6 +1607,63 @@ async function startHttp() {
     } catch (err) {
       console.error(`[/api/search] internal error: ${err instanceof Error ? err.message : err}`);
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'search engine path failed' });
+    }
+  });
+
+  // ── POWER-USER-OUTREACH-W1-V2 (2026-05-28): /api/signup-email ──
+  // Free-tier email opt-in capture from /welcome paywall CTA. Distinct from
+  // GET /signup (Stripe Checkout redirect for paid tiers). Insert idempotent
+  // via signup_emails.email UNIQUE constraint + processed_signup_email_events
+  // claim. Confirmation email fire-and-forget so a Resend outage never 500s
+  // the request. Public-shape: see audits/signup-email-shape-snapshot-2026-05-28.json
+  app.post('/api/signup-email', express.json({ limit: '2kb' }), async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as { email?: unknown; source?: unknown; optin_consent?: unknown };
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      const source = typeof body.source === 'string' ? body.source : 'welcome-paywall';
+      const optinConsent = body.optin_consent === true;
+
+      if (!email || !EMAIL_RE.test(email) || email.length > 254) {
+        return res.status(400).json({ ok: false, error: 'invalid_email' });
+      }
+      if (!optinConsent) {
+        return res.status(400).json({ ok: false, error: 'consent_required' });
+      }
+      const allowedSources = new Set(['welcome-paywall', 'outreach-reply', 'manual']);
+      const safeSource = allowedSources.has(source) ? source : 'welcome-paywall';
+
+      const claim = await tryClaimSignupEmailEvent(email, 'optin');
+      const result = await upsertSignupEmail({
+        email,
+        source: safeSource as 'welcome-paywall' | 'outreach-reply' | 'manual',
+        optin_consent: true,
+      });
+      const optinAt = new Date().toISOString();
+
+      // Fire-and-forget confirmation email. Only send on a fresh claim — if a
+      // retry hits within the same second, the claim returns false and we skip
+      // re-sending (caller protection). Resend outage logs but does not 500.
+      if (claim.claimed) {
+        sendOptinConfirmationEmail(email)
+          .then(async (sent) => {
+            if (sent?.id) {
+              await markConfirmationSent(email);
+              console.log(`[/api/signup-email] confirmation sent to ${email[0]}***@*** id=${sent.id}`);
+            }
+          })
+          .catch((err: unknown) => {
+            console.error(`[/api/signup-email] confirmation send failed: ${err instanceof Error ? err.message : err}`);
+          });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        optin_at: optinAt,
+        inserted: result.inserted,
+      });
+    } catch (err) {
+      console.error(`[/api/signup-email] internal error: ${err instanceof Error ? err.message : err}`);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   });
 
