@@ -118,6 +118,25 @@ jobs:
             cp landing/*.txt /var/www/algovault/ 2>/dev/null && echo "Landing txt/ synced" || echo "No landing txt/ to sync"
             cp landing/sitemap.xml /var/www/algovault/ 2>/dev/null && echo "Landing sitemap.xml synced" || echo "No landing sitemap.xml to sync"
 
+            # OPS-TRADE-CALL-CALIBRATION-AUDIT-W1 R3 — 7d capture window for the
+            # follow-up threshold-change wave (OPS-TRADE-CALL-THRESHOLD-PERTF-W1).
+            # Idempotent env-append + logrotate install. Default OFF in prod
+            # outside this 7d window.
+            # TODO: ENABLE_CONFIDENCE_BUCKET_LOGGING revisit by 2026-06-11
+            # (14-day rule per CLAUDE.md "Defensive thresholds get tracked follow-ups";
+            # follow-up wave: OPS-TRADE-CALL-CALIBRATION-LOG-STOP-W1 at audit-window-close).
+            if ! grep -q '^ENABLE_CONFIDENCE_BUCKET_LOGGING=' /opt/crypto-quant-signal-mcp/.env 2>/dev/null; then
+              echo 'ENABLE_CONFIDENCE_BUCKET_LOGGING=1' >> /opt/crypto-quant-signal-mcp/.env
+              echo "ENABLE_CONFIDENCE_BUCKET_LOGGING=1 appended to /opt/crypto-quant-signal-mcp/.env"
+            else
+              echo "ENABLE_CONFIDENCE_BUCKET_LOGGING already set in .env (idempotent skip)"
+            fi
+            # Install logrotate config (idempotent — cp -p overwrites if present).
+            cp -p deploy/logrotate-seed-confidence /etc/logrotate.d/algovault-seed-confidence
+            chmod 0644 /etc/logrotate.d/algovault-seed-confidence
+            mkdir -p /var/log/algovault-seed-confidence
+            echo "logrotate config installed: /etc/logrotate.d/algovault-seed-confidence"
+
             # --force-recreate defends against env_file race: docker compose
             # only auto-recreates if image OR compose-config mtime changed,
             # which loses host-side `.env` appends made simultaneously with
