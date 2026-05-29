@@ -655,11 +655,24 @@ export function recordSignal(
   regime?: string | null  // R5: regime label persisted for audit round H5
 ): void {
   const b = getBackend();
+  const createdAt = Math.floor(Date.now() / 1000);
   b.run(
     `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    coin, signal, confidence, timeframe, exchange, priceAtSignal, Math.floor(Date.now() / 1000), signalHash || null, regime ?? null
+    coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, signalHash || null, regime ?? null
   );
+  // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): post-insert webhook event hook.
+  // Flag-gated (default OFF → zero new behavior); fire-and-forget so it never
+  // delays or fails a signal write; lazy dynamic import avoids a circular
+  // dependency (webhook-events → webhooks-store → performance-db).
+  if (process.env.WEBHOOK_DELIVERY_ENABLED === 'true') {
+    import('./webhook-events.js')
+      .then((m) => m.onSignalRecorded({
+        coin, signal, confidence, timeframe, exchange,
+        priceAtSignal, signalHash: signalHash || null, regime: regime ?? null, createdAt,
+      }))
+      .catch((err) => console.error('[webhook-events] hook error:', err instanceof Error ? err.message : err));
+  }
 }
 
 /**

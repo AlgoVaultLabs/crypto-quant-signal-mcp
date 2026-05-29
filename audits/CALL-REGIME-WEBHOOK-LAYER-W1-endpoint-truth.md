@@ -105,6 +105,8 @@ Cross-checked every cited identifier across prompt sections — **internally con
 - **YES** → coupling is fine; proceed as specced (post-insert hook only).
 - **NO** → expand C3: capture regime per **scanned** asset in `seed-signals.ts` (even when no row inserted), OR add a bounded poller over the distinct assets under active `regime_shift` subscriptions. Requirement: `regime_shift` fires on the transition INTO RANGING/VOLATILE, not only at BUY/SELL moments. Bound cost to subscribed assets only.
 
+**RESOLVED (C3 live probe, 2026-05-29) → YES, post-insert hook is sufficient.** Prod `signal_performance` 30-day distribution: `TRENDING_UP` 34,638 / `RANGING` 21,493 / `TRENDING_DOWN` 10,698 / `VOLATILE` 0. RANGING rows = **8,270 in the last 7d (~32% of all calls)**; ~2,785 calls/day across 1,044 distinct (coin,tf,exchange) tuples. BUY/SELL calls fire frequently enough in RANGING that the transition INTO hostile regime is caught promptly by the post-insert hook — no poller / `seed-signals.ts` expansion needed this wave. Caveat: `VOLATILE` is never emitted by the current classifier (0 rows), so detectable transitions are among {TRENDING_UP, TRENDING_DOWN, RANGING}; a standalone regime poller (catching idle-market flips with no tradeable call, + VOLATILE once the classifier emits it) is filed as follow-up `OPS-WEBHOOK-REGIME-POLL-EMITTER-W1`.
+
 ---
 
 ## 6. Postgres safe-window + pre-apply plan (C2)
