@@ -17,6 +17,8 @@
  */
 import crypto from 'crypto';
 import { PKG_VERSION } from './pkg-version.js';
+import { checkQuotaByKey, trackCallByKey } from './license.js';
+import type { LicenseTier } from '../types.js';
 import {
   pendingDeliveries,
   markDelivery,
@@ -194,6 +196,22 @@ export async function deliverOne(
     };
   }
 
+  // Quota gate (Mr.1/Cowork-ratified): each delivered event draws down the
+  // OWNER's monthly call quota exactly like a pull call. If exhausted, PAUSE —
+  // leave the delivery 'pending' (no attempt, no failure) so it resumes on the
+  // next monthly reset / tier upgrade. No Telegram (background pause is silent).
+  const quota = checkQuotaByKey(sub.owner_key, sub.tier as LicenseTier);
+  if (!quota.allowed) {
+    return {
+      deliveryId: delivery.id,
+      status: 'pending',
+      attempts: delivery.attempts,
+      responseCode: null,
+      subscriptionDisabled: false,
+      suggested_action: `owner monthly quota exhausted (${quota.used}/${quota.total}); deliveries paused until reset or upgrade`,
+    };
+  }
+
   let eventData: WebhookEventData;
   try {
     eventData = JSON.parse(delivery.event_data) as WebhookEventData;
@@ -221,6 +239,8 @@ export async function deliverOne(
       if (ok) {
         await markDelivery(delivery.id, 'delivered', { attempts, responseCode: status });
         await recordDeliverySuccess(sub.id);
+        // Charge the owner's monthly quota for the delivered event.
+        trackCallByKey(sub.owner_key, sub.tier as LicenseTier);
         return { deliveryId: delivery.id, status: 'delivered', attempts, responseCode: status, subscriptionDisabled: false };
       }
     } catch {

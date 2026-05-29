@@ -204,6 +204,35 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
   });
 });
 
+describe('quota gate', () => {
+  it('pauses delivery (stays pending, no HTTP) when the owner quota is exhausted, and charges on success', async () => {
+    const license = await import('../src/lib/license.js');
+    // Free quota = 100. Exhaust the owner's bucket.
+    const ownerKey = 'free:exhausted';
+    for (let i = 0; i < 100; i++) license.trackCallByKey(ownerKey, 'free');
+
+    const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey });
+    const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:x', eventType: 'trade_call', eventData: eventData() });
+    const d = (await store.pendingDeliveries(10)).find(x => x.id === deliveryId)!;
+
+    const { impl, calls } = mockFetch([200]);
+    const res = await delivery.deliverOne(d, { fetchImpl: impl, sleep: noopSleep });
+    expect(res.status).toBe('pending');         // paused
+    expect(calls.length).toBe(0);                // no HTTP attempt
+    expect(res.suggested_action).toMatch(/quota exhausted/);
+    expect((await store.pendingDeliveries(10)).length).toBe(1); // still queued
+
+    // A subscription with quota remaining delivers AND charges one call.
+    const ok = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey: 'free:fresh' });
+    const e2 = await store.enqueueDelivery({ subscriptionId: ok.id, eventId: 'call:y', eventType: 'trade_call', eventData: eventData() });
+    const d2 = (await store.pendingDeliveries(10)).find(x => x.id === e2.deliveryId)!;
+    const before = license.checkQuotaByKey('free:fresh', 'free').used;
+    const r2 = await delivery.deliverOne(d2, { fetchImpl: mockFetch([200]).impl, sleep: noopSleep });
+    expect(r2.status).toBe('delivered');
+    expect(license.checkQuotaByKey('free:fresh', 'free').used).toBe(before + 1);
+  });
+});
+
 describe('worker lifecycle', () => {
   it('start is idempotent and stop clears the handle', async () => {
     expect(delivery.isWorkerRunning()).toBe(false);

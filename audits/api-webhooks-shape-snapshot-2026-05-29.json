@@ -1,0 +1,90 @@
+{
+  "wave": "CALL-REGIME-WEBHOOK-LAYER-W1",
+  "chapter": "C5",
+  "captured_at": "2026-05-29",
+  "surface": "REST /api/webhooks (CRUD + test-ping) and the outbound webhook payload",
+  "naming_law": "public fields use 'call' (BUY|SELL|HOLD), never 'signal'; price_at_call (not price_at_signal)",
+  "auth": "Authorization: Bearer <api-key>. A non-null key is required to OWN a subscription (keyless-anon / x402 / internal rejected). Universal access — no per-event/asset/endpoint tiering; gated only by the monthly call quota (Free 100 / Starter 3000 / Pro 15000 / Enterprise 100000). Each DELIVERED event draws down the owner's quota.",
+  "endpoints": {
+    "POST /api/webhooks": {
+      "request_keys": ["url", "events", "assets?", "timeframes?", "min_confidence?"],
+      "success_status": 201,
+      "response_allowed_keys": {
+        "top": ["ok", "subscription", "quota", "note", "upgrade_hint?"],
+        "subscription": ["id", "url", "secret", "events", "assets", "timeframes", "min_confidence", "tier", "active", "consecutive_failures", "created_at", "last_delivered_at"],
+        "quota": ["used", "total", "remaining"]
+      },
+      "secret_exposure": "subscription.secret is returned ONCE here only; never on GET"
+    },
+    "GET /api/webhooks": {
+      "success_status": 200,
+      "response_allowed_keys": {
+        "top": ["ok", "subscriptions", "quota"],
+        "subscription_item": ["id", "url", "events", "assets", "timeframes", "min_confidence", "tier", "active", "consecutive_failures", "created_at", "last_delivered_at"]
+      },
+      "scope": "owner-scoped (only the caller's subscriptions)"
+    },
+    "DELETE /api/webhooks/:id": {
+      "success_status": 200,
+      "response_allowed_keys": { "top": ["ok", "deleted", "id"] },
+      "scope": "owner-scoped delete; non-owned id → 404"
+    },
+    "POST /api/webhooks/:id/test": {
+      "success_status": 200,
+      "response_allowed_keys": {
+        "top": ["ok", "delivery_id", "result"],
+        "result": ["status", "response_code", "attempts", "suggested_action?"]
+      }
+    }
+  },
+  "outbound_payload": {
+    "description": "JSON POSTed to the subscriber URL, HMAC-SHA256 signed",
+    "headers": ["X-AlgoVault-Signature", "X-AlgoVault-Event", "X-AlgoVault-Delivery", "X-AlgoVault-Timestamp", "User-Agent", "Content-Type"],
+    "signature": "X-AlgoVault-Signature = hex(HMAC_SHA256(raw_body, subscription.secret))",
+    "allowed_keys": {
+      "top": ["event", "delivery_id", "created_at", "data", "_algovault"],
+      "data": ["type", "coin", "timeframe", "exchange", "call", "confidence", "regime", "prior_regime?", "price_at_call", "signal_hash", "verify_url"],
+      "_algovault": ["service", "version", "docs", "disclaimer"]
+    },
+    "event_values": ["trade_call", "regime_shift"],
+    "call_values": ["BUY", "SELL", "HOLD"],
+    "regime_values": ["TRENDING_UP", "TRENDING_DOWN", "RANGING", "VOLATILE"]
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "return_pct_15m",
+    "return_pct_1h",
+    "return_pct_4h",
+    "return_pct_24h",
+    "pfe_return_pct",
+    "pfe_price",
+    "pfe_candles",
+    "mae_return_pct",
+    "mae_price",
+    "price_after_15m",
+    "price_after_1h",
+    "price_after_4h",
+    "price_after_24h",
+    "owner_key",
+    "signal"
+  ],
+  "forbidden_key_rationale": "outcome_*/pfe_*/mae_*/return_pct_*/price_after_* are Phase-E internal (Data Integrity LAW); owner_key is the API key (never echoed); 'signal' violates the NAMING LAW for NEW public fields (use 'call').",
+  "error_contract": {
+    "shape": { "ok": false, "code": "<string>", "error": "<string>", "suggested_action": "<string?>" },
+    "codes": {
+      "401": ["auth_required"],
+      "400": ["invalid_url", "invalid_events", "invalid_min_confidence", "invalid_id"],
+      "404": ["not_found"],
+      "500": ["internal_error"]
+    }
+  },
+  "cache_contract": "none — all responses are dynamic, no-store",
+  "consumers": [
+    "P0-3 per-platform adapters (3commas / cryptohopper / tradingview) — future waves",
+    "algovault-integrations (client-side examples mono-repo)",
+    "T2 platforms (FreqTrade / Hummingbot / 3Commas / Cryptohopper / Nautilus)"
+  ],
+  "drift_check_command": "K=av_starter_DRIFTCHECK; B=https://api.algovault.com; curl -s -X POST $B/api/webhooks -H \"Authorization: Bearer $K\" -H 'Content-Type: application/json' -d '{\"url\":\"https://example.com/hook\",\"events\":[\"trade_call\"]}' | jq 'keys, .subscription|keys' ; echo 'assert: no key in subscription matches ^(outcome_|pfe_|mae_|return_pct_|price_after_|owner_key$|signal$)'",
+  "notes": "verify_url uses the spec hash form (https://algovault.com/verify?hash=<signal_hash>); the public /verify page + the HTTP /api/verify-signal route currently key off integer signalId — a ?hash= handler is filed as a landing follow-up (getSignalByHash + the MCP verify-signal tool already resolve hashes)."
+}

@@ -395,6 +395,48 @@ export function trackCall(license: LicenseInfo): TrackCallResult {
   return { allowed: true, remaining, overage, used: tracker.count, total: quota };
 }
 
+// ── Key-addressed quota meter (CALL-REGIME-WEBHOOK-LAYER-W1, 2026-05-29) ──
+// Webhook deliveries are charged to the OWNER's monthly call quota "exactly like
+// a pull call" (Mr.1/Cowork-ratified) but run in a background worker with NO
+// request context, so the IP-derived free-tier key in trackCall()/checkQuota()
+// is unavailable. These two helpers charge/check an EXPLICIT tracker key against
+// the SAME in-memory meter (callTrackers) + the SAME getMonthlyQuota() values —
+// they add a key-addressed seam, they do NOT change any quota or tier. The
+// webhook subscription stores its owner's tracker key (= the API key) so each
+// delivery draws from the identical bucket the owner's API key already uses.
+
+/** Check (without incrementing) an explicit tracker key against the monthly meter. */
+export function checkQuotaByKey(trackerKey: string, tier: LicenseTier): TrackCallResult {
+  if (tier === 'x402' || tier === 'internal') {
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+  }
+  const tracker = getCallTracker(trackerKey);
+  const quota = getMonthlyQuota(tier);
+  const remaining = Math.max(0, quota - tracker.count);
+  const overage = Math.max(0, tracker.count - quota);
+  if (tracker.count >= quota) {
+    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
+  }
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+}
+
+/** Increment + check an explicit tracker key against the monthly meter. */
+export function trackCallByKey(trackerKey: string, tier: LicenseTier): TrackCallResult {
+  if (tier === 'x402' || tier === 'internal') {
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+  }
+  const tracker = getCallTracker(trackerKey);
+  const quota = getMonthlyQuota(tier);
+  tracker.count++;
+  persistTracker(trackerKey, tracker);
+  const remaining = Math.max(0, quota - tracker.count);
+  const overage = Math.max(0, tracker.count - quota);
+  if (tracker.count > quota) {
+    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
+  }
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+}
+
 // ── Upgrade hint for free-tier users ──
 
 // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): `upgrade_from=quota` allows the

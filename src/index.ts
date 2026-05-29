@@ -20,6 +20,7 @@ import { getMarketRegime } from './tools/get-market-regime.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
+import { registerWebhookRoutes } from './lib/webhook-api.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
 import { verifyProof } from './lib/merkle.js';
@@ -1689,6 +1690,14 @@ async function startHttp() {
   // via signup_emails.email UNIQUE constraint + processed_signup_email_events
   // claim. Confirmation email fire-and-forget so a Resend outage never 500s
   // the request. Public-shape: see audits/signup-email-shape-snapshot-2026-05-28.json
+  // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): outbound webhook subscription API
+  // (POST/GET/DELETE /api/webhooks + POST /api/webhooks/:id/test). Universal
+  // access gated only by the monthly call quota; ships dark — the delivery worker
+  // only runs when WEBHOOK_DELIVERY_ENABLED=true (registration routes are always
+  // mounted so subscribers can pre-register, but nothing is delivered until the
+  // flag is on).
+  registerWebhookRoutes(app);
+
   app.post('/api/signup-email', express.json({ limit: '2kb' }), async (req, res) => {
     try {
       const body = (req.body ?? {}) as { email?: unknown; source?: unknown; optin_consent?: unknown };
