@@ -21,6 +21,7 @@ import { getSignalPerformance, runBackfill } from './resources/signal-performanc
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes } from './lib/webhook-api.js';
+import { startDeliveryWorker } from './lib/webhook-delivery.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
 import { verifyProof } from './lib/merkle.js';
@@ -2034,6 +2035,16 @@ async function startHttp() {
     console.log('[backfill] Auto-backfill enabled: every 5 minutes');
     setTimeout(() => runBackfill().catch(() => {}), 10_000); // first run after 10s
     setInterval(() => runBackfill().catch(() => {}), 300_000); // then every 5 min
+
+    // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): outbound webhook delivery worker.
+    // Ships DARK — only starts when WEBHOOK_DELIVERY_ENABLED=true. Flag-off = zero
+    // new behavior (worker never starts; the post-insert detection hook in
+    // recordSignal is also flag-gated). Registration routes stay mounted either
+    // way so subscribers can pre-register. Mirrors the backfill setInterval above.
+    if (process.env.WEBHOOK_DELIVERY_ENABLED === 'true') {
+      console.log('[webhook-delivery] WEBHOOK_DELIVERY_ENABLED=true — starting outbound delivery worker');
+      startDeliveryWorker();
+    }
 
     // LATENCY-W1 C3: background grid warmer.
     //   Pre-empts the 60s GRID_TTL_MS so user-facing get_trade_signal calls
