@@ -35,6 +35,12 @@ import { EMAIL_RE } from './lib/stripe.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import { generateFunnelSnapshot } from './lib/funnel-snapshot.js';
+import { recordFunnelEvent } from './lib/performance-db.js';
+import {
+  captureArgvTrackToken,
+  resolveTrackTokenForRequest,
+  shouldEmitForRequest,
+} from './lib/track-token.js';
 import {
   isStripeConfigured,
   constructWebhookEvent,
@@ -791,7 +797,7 @@ async function startHttp() {
   app.use((_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || 'https://api.algovault.com');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-payment, mcp-session-id, x-algovault-skill-slug');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-payment, mcp-session-id, x-algovault-skill-slug, x-algovault-track-token');
     if (_req.method === 'OPTIONS') return res.sendStatus(204);
     next();
   });
@@ -1908,6 +1914,34 @@ async function startHttp() {
         try {
           logSkillInvocation(skillSlugHeader, body.params.name, sessionId, req.headers['user-agent'] as string | undefined, false);
         } catch { /* best-effort */ }
+      }
+    }
+
+    // TG-BROADCAST-STACK-W1 CH6 (2026-05-28): track-token capture for the
+    // /unlock_premium_alerts npm-install verification path β. Header
+    // `X-AlgoVault-Track-Token` (set by stdio-client wrapper) takes
+    // precedence over `--track-token=` argv (process-wide fallback).
+    // Idempotent per (session_id, token); first tools/call emits one
+    // funnel_events row, subsequent calls suppressed. The bot's */10 cron
+    // polls funnel_events for matching tokens. Fire-and-forget; non-blocking.
+    if (req.method === 'POST' && req.body && typeof req.body === 'object' && license.tier !== 'internal') {
+      const body = req.body as { method?: string; params?: { name?: string } };
+      if (body.method === 'tools/call' && typeof body.params?.name === 'string') {
+        const trackToken = resolveTrackTokenForRequest(req.headers as Record<string, unknown>);
+        if (trackToken && shouldEmitForRequest(sessionId ?? null, trackToken)) {
+          try {
+            recordFunnelEvent({
+              eventType: 'first_tool_call_with_track_token',
+              sessionId: sessionId ?? null,
+              licenseTier: license.tier,
+              meta: {
+                track_token: trackToken,
+                tool_name: body.params.name,
+                source: (req.headers['x-algovault-track-token'] ? 'header' : 'argv'),
+              },
+            });
+          } catch { /* best-effort; never blocks request */ }
+        }
       }
     }
 
@@ -3236,6 +3270,11 @@ function getSignupPageHtml(): string {
 
 
 // ── Entry Point ──
+// TG-BROADCAST-STACK-W1 CH6 (2026-05-28): capture `--track-token=` from
+// process.argv at startup (no-op if absent). Used by the /unlock_premium_alerts
+// viral mechanic — see src/lib/track-token.ts for full semantics.
+captureArgvTrackToken();
+
 const transport = (process.env.TRANSPORT || 'http').toLowerCase();
 
 if (transport === 'stdio') {
