@@ -462,6 +462,99 @@ const CREATE_FUNNEL_EVENTS_SESSION_INDEX_SQL = process.env.DATABASE_URL
   ? `CREATE INDEX IF NOT EXISTS idx_funnel_events_session_id ON funnel_events (session_id) WHERE session_id IS NOT NULL;`
   : `CREATE INDEX IF NOT EXISTS idx_funnel_events_session_id ON funnel_events (session_id);`;
 
+// CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): hosted outbound webhook delivery
+// service. Two tables under the SIGNAL DB (`signal_performance` on prod PG;
+// SQLite locally). CRUD + idempotency helpers live in src/lib/webhooks-store.ts;
+// detection in webhook-events.ts; HMAC sign + retry in webhook-delivery.ts.
+// Storage notes:
+//   - events/assets/timeframes are stored as JSON TEXT on BOTH backends (not
+//     PG TEXT[]). Fan-out filtering happens in JS over active subscriptions, so
+//     native-array querying isn't needed; JSON TEXT keeps the dual-backend path
+//     identical and side-steps PG array-literal param edge cases (CLAUDE.md
+//     "Dual-backend PG-only SQL fails SQLite").
+//   - webhook_deliveries.event_data is a JSON snapshot of the ALLOW-LISTED event
+//     captured at enqueue time, so the delivery worker is fully stateless — it
+//     never reads `signals` (no forbidden-key leakage risk) and there is no
+//     enqueue→deliver lookup race.
+//   - owner_key is the quota tracker key (paid = license.key, free =
+//     `free:<ipHash@registration>`), so each delivery draws down the OWNER's
+//     monthly call quota via the existing license meter even though the worker
+//     runs with no request context.
+//   - On live PG these tables are pre-applied via SSH before the code commit
+//     lands (CLAUDE.md "pre-apply schema via SSH then deploy code with
+//     IF NOT EXISTS idempotency"); `IF NOT EXISTS` makes this a no-op there.
+const CREATE_WEBHOOK_SUBSCRIPTIONS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+      id BIGSERIAL PRIMARY KEY,
+      url TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      events TEXT NOT NULL,
+      assets TEXT NULL,
+      timeframes TEXT NULL,
+      min_confidence INTEGER NULL,
+      tier TEXT NOT NULL DEFAULT 'free',
+      owner_key TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      created_at BIGINT NOT NULL,
+      last_delivered_at BIGINT NULL
+    );`
+  : `CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      events TEXT NOT NULL,
+      assets TEXT NULL,
+      timeframes TEXT NULL,
+      min_confidence INTEGER NULL,
+      tier TEXT NOT NULL DEFAULT 'free',
+      owner_key TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      last_delivered_at INTEGER NULL
+    );`;
+
+const CREATE_WEBHOOK_SUBSCRIPTIONS_ACTIVE_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_webhook_subscriptions_active ON webhook_subscriptions (active);
+`;
+
+const CREATE_WEBHOOK_SUBSCRIPTIONS_OWNER_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_webhook_subscriptions_owner_key ON webhook_subscriptions (owner_key);
+`;
+
+const CREATE_WEBHOOK_DELIVERIES_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id BIGSERIAL PRIMARY KEY,
+      subscription_id BIGINT NOT NULL,
+      event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      event_data TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at BIGINT NULL,
+      response_code INTEGER NULL,
+      created_at BIGINT NOT NULL,
+      UNIQUE (subscription_id, event_id)
+    );`
+  : `CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subscription_id INTEGER NOT NULL,
+      event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      event_data TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at INTEGER NULL,
+      response_code INTEGER NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (subscription_id, event_id)
+    );`;
+
+const CREATE_WEBHOOK_DELIVERIES_STATUS_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status, created_at);
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -498,6 +591,13 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_FUNNEL_EVENTS_TS_INDEX_SQL);
   backend.exec(CREATE_FUNNEL_EVENTS_TYPE_INDEX_SQL);
   backend.exec(CREATE_FUNNEL_EVENTS_SESSION_INDEX_SQL);
+  // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): outbound webhook delivery tables.
+  // Pre-applied to live PG via SSH before this commit; IF NOT EXISTS = no-op there.
+  backend.exec(CREATE_WEBHOOK_SUBSCRIPTIONS_SQL);
+  backend.exec(CREATE_WEBHOOK_SUBSCRIPTIONS_ACTIVE_INDEX_SQL);
+  backend.exec(CREATE_WEBHOOK_SUBSCRIPTIONS_OWNER_INDEX_SQL);
+  backend.exec(CREATE_WEBHOOK_DELIVERIES_SQL);
+  backend.exec(CREATE_WEBHOOK_DELIVERIES_STATUS_INDEX_SQL);
   runMigrations(backend, isPg);
   // OPS-POSTGRES-RECAUDIT-W1 (2026-05-22): create idempotency-check index AFTER
   // migrations so that the `exchange` column (added by v1.5 migration) exists
