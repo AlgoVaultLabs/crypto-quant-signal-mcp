@@ -1470,6 +1470,50 @@ async function startHttp() {
   const MERKLE_CONTRACT_ADDR = process.env.MERKLE_CONTRACT_ADDRESS || '';
 
   app.get('/api/verify-signal', async (req, res) => {
+    // WEBHOOK-HARDENING-W1 C3: dual lookup — `?hash=<signal_hash>` (the form
+    // baked into every webhook verify_url) OR the existing `?signalId=<int>`.
+    // The signalId path below is byte-for-byte unchanged.
+    const hashParam = typeof req.query.hash === 'string' ? req.query.hash.trim() : '';
+    if (hashParam) {
+      if (!/^0x[0-9a-fA-F]{64}$/.test(hashParam)) {
+        return res.status(400).json({ error: 'invalid hash (expected 0x + 64 hex chars)' });
+      }
+      try {
+        const s = await getSignalByHash(hashParam);
+        if (!s) {
+          return res.status(404).json({ error: 'Signal not found', hash: hashParam, hint: 'No trade call matches this hash. Check the value from your webhook payload.' });
+        }
+        if (!s.signal_hash || !s.merkle_batch_id) {
+          return res.json({
+            verified: false,
+            reason: 'Trade call recorded, awaiting next daily Merkle batch (00:05 UTC)',
+            // PUBLIC allow-list only (no Phase-E keys). Calls-not-signals public names + existing render-compat names.
+            signal: { id: s.id, coin: s.coin, call: s.signal, direction: s.signal, confidence: s.confidence, timeframe: s.timeframe, exchange: s.exchange, regime: s.regime },
+          });
+        }
+        const proof = typeof s.merkle_proof === 'string' ? JSON.parse(s.merkle_proof) : s.merkle_proof;
+        const isValid = verifyProof(s.signal_hash as `0x${string}`, proof, s.merkle_root as `0x${string}`);
+        return res.json({
+          verified: isValid,
+          signal: {
+            id: s.id, coin: s.coin, call: s.signal, direction: s.signal, confidence: s.confidence,
+            timeframe: s.timeframe, exchange: s.exchange, regime: s.regime,
+            price_at_call: s.price_at_signal, price: s.price_at_signal, timestamp: s.created_at, hash: s.signal_hash,
+          },
+          batch: {
+            id: s.merkle_batch_id, root: s.merkle_root, signalCount: s.signal_count,
+            txHash: s.tx_hash, blockNumber: s.block_number, publishedAt: s.published_at,
+            basescanUrl: `https://basescan.org/tx/${s.tx_hash}`,
+          },
+          proof,
+          contractAddress: MERKLE_CONTRACT_ADDR,
+          howToVerify: 'Check the Merkle root on-chain at the contract address on Base. The call hash + proof should reconstruct the published root.',
+        });
+      } catch {
+        return res.status(500).json({ error: 'Verification failed' });
+      }
+    }
+
     const signalId = parseInt(req.query.signalId as string);
     if (!signalId || isNaN(signalId)) {
       return res.status(400).json({ error: 'signalId required (integer)' });

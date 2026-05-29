@@ -243,7 +243,9 @@ async function verifySignal() {
   if (btn) { btn.textContent = 'Checking...'; btn.disabled = true; }
   function setAll(content) { mounts.forEach(function(m){ m.innerHTML = content; }); }
   try {
-    var res = await fetch(API_BASE + '/api/verify-signal?signalId=' + id);
+    // WEBHOOK-HARDENING-W1 C3: 0x… input → ?hash= lookup (webhook verify_url form); else ?signalId=.
+    var qp = /^0x[0-9a-fA-F]{1,64}$/.test(id) ? 'hash=' + encodeURIComponent(id) : 'signalId=' + encodeURIComponent(id);
+    var res = await fetch(API_BASE + '/api/verify-signal?' + qp);
     var data = await res.json();
     if (data.error === 'Signal not found') {
       setAll(
@@ -317,7 +319,7 @@ document.querySelectorAll('.signal-id-input').forEach(function(el) {
 // Verify on-chain → button OR navigates with ?id=<hex> deep-link.
 (function() {
   var params = new URLSearchParams(window.location.search);
-  var id = params.get('signalId') || params.get('id');
+  var id = params.get('signalId') || params.get('id') || params.get('hash');
   if (id) {
     document.querySelectorAll('.signal-id-input').forEach(function(el) { el.value = id; });
     verifySignal();
@@ -360,7 +362,7 @@ document.querySelectorAll('.signal-id-input').forEach(function(el) {
 // wrapper toggle — verifySignal() also reveals on user call, this handles the case where the page
 // loads with ?id= present but verifySignal hasn't yet completed).
 document.addEventListener('DOMContentLoaded', function() {
-  if (new URLSearchParams(location.search).has('id') || new URLSearchParams(location.search).has('signalId')) {
+  if (new URLSearchParams(location.search).has('id') || new URLSearchParams(location.search).has('signalId') || new URLSearchParams(location.search).has('hash')) {
     document.querySelectorAll('.verify-result-wrapper').forEach(function(w){ w.style.display = 'block'; });
   }
 });

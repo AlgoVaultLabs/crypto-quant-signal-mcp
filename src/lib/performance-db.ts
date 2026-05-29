@@ -1059,6 +1059,7 @@ export async function getSignalByHash(signalHash: string): Promise<any | null> {
   const sql = `
     SELECT s.id, s.coin, s.signal, s.confidence, s.timeframe, s.price_at_signal,
            s.created_at, s.signal_hash, s.merkle_batch_id, s.merkle_proof,
+           s.regime, s.exchange,
            mb.merkle_root, mb.tx_hash, mb.block_number, mb.signal_count, mb.published_at
     FROM signals s
     LEFT JOIN merkle_batches mb ON s.merkle_batch_id = mb.batch_id

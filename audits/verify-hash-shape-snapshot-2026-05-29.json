@@ -1,0 +1,38 @@
+{
+  "wave": "WEBHOOK-HARDENING-W1",
+  "chapter": "C3",
+  "captured_at": "2026-05-29",
+  "surface": "GET /api/verify-signal?hash=<signal_hash> (the form baked into every webhook verify_url) — dual with the existing ?signalId=<int>",
+  "serving": "Caddy proxies /api/verify-signal → app:3000. The /verify landing page (static, Caddy file_server) reads ?hash= and calls this endpoint. R2 (Mr.1-ratified): no Caddyfile change.",
+  "naming_law": "public response uses calls-language; verdict surfaced as both `call` (NAMING-LAW) and `direction` (existing render-compat); price as both `price_at_call` and `price`. `signal_hash` kept (existing identifier).",
+  "request": { "params": ["hash (0x + 64 hex)", "OR signalId (int) — existing path unchanged"] },
+  "responses": {
+    "verified_200": {
+      "allowed_keys": {
+        "top": ["verified", "signal", "batch", "proof", "contractAddress", "howToVerify"],
+        "signal": ["id", "coin", "call", "direction", "confidence", "timeframe", "exchange", "regime", "price_at_call", "price", "timestamp", "hash"],
+        "batch": ["id", "root", "signalCount", "txHash", "blockNumber", "publishedAt", "basescanUrl"]
+      }
+    },
+    "pending_200": {
+      "when": "call recorded but not yet in a Merkle batch",
+      "allowed_keys": { "top": ["verified", "reason", "signal"], "signal": ["id", "coin", "call", "direction", "confidence", "timeframe", "exchange", "regime"] }
+    },
+    "not_found_404": { "allowed_keys": { "top": ["error", "hash", "hint"] } },
+    "bad_hash_400": { "allowed_keys": { "top": ["error"] }, "when": "hash not /^0x[0-9a-fA-F]{64}$/" }
+  },
+  "forbidden_keys": [
+    "outcome_return_pct", "outcome_price",
+    "return_pct_15m", "return_pct_1h", "return_pct_4h", "return_pct_24h",
+    "pfe_return_pct", "pfe_price", "pfe_candles",
+    "mae_return_pct", "mae_price",
+    "price_after_15m", "price_after_1h", "price_after_4h", "price_after_24h"
+  ],
+  "forbidden_key_rationale": "Phase-E internal outcome metrics (Data Integrity LAW). getSignalByHash's SELECT is the allow-list — it never projects these even when the underlying signals row has them populated (asserted by tests/verify-hash.test.ts).",
+  "existing_path_invariant": "GET /api/verify-signal?signalId=<int> response is byte-for-byte unchanged (signal:{id,coin,direction,confidence,timeframe,price,timestamp,hash}); only the new ?hash= branch adds call/exchange/regime/price_at_call.",
+  "consumers": [
+    "every webhook payload data.verify_url = https://algovault.com/verify?hash=<signal_hash>",
+    "landing/verify.html (reads ?hash=, calls this endpoint)"
+  ],
+  "drift_check_command": "H=$(curl -s 'https://algovault.com/api/merkle-batches' | jq -r '.batches[0]' >/dev/null; echo 0x...); curl -s \"https://algovault.com/api/verify-signal?hash=$KNOWN_HASH\" | jq 'keys, .signal|keys'; echo 'assert: no key matches ^(outcome_|pfe_|mae_|return_pct_|price_after_)'; curl -s -o /dev/null -w '%{http_code}\\n' \"https://algovault.com/api/verify-signal?hash=0x$(printf 'f%.0s' {1..64})\"  # expect 404"
+}
