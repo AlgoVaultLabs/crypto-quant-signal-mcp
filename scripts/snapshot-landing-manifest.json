@@ -14,7 +14,11 @@
       "sot": "performance",
       "accessor": "totalCalls",
       "format": "integer_with_commas",
-      "apply_to_files": ["landing/index.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -24,7 +28,11 @@
       "sot": "performance",
       "accessor": "exchange_count",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -34,7 +42,10 @@
       "sot": "performance",
       "accessor": "hold_rate",
       "format": "float_1dp",
-      "apply_to_files": ["landing/index.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "README.md"
+      ],
       "replace_all": true
     },
     {
@@ -44,7 +55,10 @@
       "sot": "merkle",
       "accessor": "batches.length",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/how-it-works.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/how-it-works.html"
+      ],
       "replace_all": true
     },
     {
@@ -54,7 +68,9 @@
       "sot": "merkle",
       "accessor": "batches.length",
       "format": "integer",
-      "apply_to_files": ["landing/skills.html"],
+      "apply_to_files": [
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -64,7 +80,12 @@
       "sot": "performance",
       "accessor": "overall.pfeWinRate*100",
       "format": "float_1dp",
-      "apply_to_files": ["landing/index.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/how-it-works.html",
+        "landing/skills.html",
+        "README.md"
+      ],
       "replace_all": true
     },
     {
@@ -74,7 +95,10 @@
       "sot": "performance",
       "accessor": "timeframe_count",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/how-it-works.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/how-it-works.html"
+      ],
       "replace_all": true
     },
     {
@@ -84,7 +108,9 @@
       "sot": "performance",
       "accessor": "asset_count_rounded_to_10",
       "format": "integer",
-      "apply_to_files": ["landing/how-it-works.html"],
+      "apply_to_files": [
+        "landing/how-it-works.html"
+      ],
       "replace_all": true
     },
     {
@@ -94,7 +120,9 @@
       "sot": "performance",
       "accessor": "totalCalls+totalHolds",
       "format": "integer_with_commas",
-      "apply_to_files": ["landing/index.html"],
+      "apply_to_files": [
+        "landing/index.html"
+      ],
       "replace_all": true
     },
     {
@@ -104,7 +132,9 @@
       "sot": "merkle",
       "accessor": "batches.latest.published_at",
       "format": "iso_to_human",
-      "apply_to_files": ["landing/verify.html"],
+      "apply_to_files": [
+        "landing/verify.html"
+      ],
       "replace_all": true
     },
     {
@@ -114,7 +144,9 @@
       "sot": "merkle",
       "accessor": "batches.latest.batch_id",
       "format": "integer",
-      "apply_to_files": ["landing/verify.html"],
+      "apply_to_files": [
+        "landing/verify.html"
+      ],
       "replace_all": true
     },
     {
@@ -124,7 +156,9 @@
       "sot": "merkle",
       "accessor": "batches.latest.batch_id",
       "format": "integer",
-      "apply_to_files": ["landing/verify.html"],
+      "apply_to_files": [
+        "landing/verify.html"
+      ],
       "replace_all": true
     },
     {
@@ -134,7 +168,12 @@
       "sot": "performance",
       "accessor": "totalCalls",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -144,7 +183,12 @@
       "sot": "performance",
       "accessor": "totalCalls",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -154,7 +198,12 @@
       "sot": "performance",
       "accessor": "asset_count",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -164,7 +213,12 @@
       "sot": "performance",
       "accessor": "exchange_count",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -174,7 +228,12 @@
       "sot": "performance",
       "accessor": "timeframe_count",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -184,7 +243,12 @@
       "sot": "merkle",
       "accessor": "batches.length",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -194,7 +258,12 @@
       "sot": "performance",
       "accessor": "totalCalls",
       "format": "integer",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
       "replace_all": true
     },
     {
@@ -204,7 +273,36 @@
       "sot": "performance",
       "accessor": "overall.pfeWinRate*100",
       "format": "float_1dp",
-      "apply_to_files": ["landing/index.html", "landing/verify.html", "landing/how-it-works.html", "landing/skills.html"],
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/verify.html",
+        "landing/how-it-works.html",
+        "landing/skills.html"
+      ],
+      "replace_all": true
+    },
+    {
+      "id": "dtrf-readme-total-calls",
+      "find_pattern": "(data-tr-field=\"total_calls\"[^>]*>)[^<]+(<)",
+      "replace_template": "$1{value}$2",
+      "sot": "performance",
+      "accessor": "totalCalls",
+      "format": "integer_with_commas",
+      "apply_to_files": [
+        "README.md"
+      ],
+      "replace_all": true
+    },
+    {
+      "id": "dtrf-readme-merkle-batches",
+      "find_pattern": "(data-tr-field=\"merkle_batches\"[^>]*>)[^<]+(<)",
+      "replace_template": "$1{value}$2",
+      "sot": "merkle",
+      "accessor": "batches.length",
+      "format": "integer",
+      "apply_to_files": [
+        "README.md"
+      ],
       "replace_all": true
     }
   ]

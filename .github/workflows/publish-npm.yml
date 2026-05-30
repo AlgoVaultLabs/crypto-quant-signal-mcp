@@ -40,6 +40,15 @@ jobs:
       - name: Compile TS
         run: npm run build
 
+      # Refresh the published README's SNAPSHOT-LINE track-record numbers from live SoT
+      # so the npm/GitHub README can never go stale. Wired by OPS-NPM-README-SINGLE-SOT-W1
+      # (2026-05-31): the snapshot injector now covers README.md (manifest claims
+      # dtrf-pfe-wr / dtrf-hold-rate / dtrf-readme-total-calls / dtrf-readme-merkle-batches).
+      # Fail-open if SoT unreachable (exit 0 → publish proceeds with the committed fallbacks);
+      # catastrophic >50%-zero-match → exit 1 (blocks publishing a structurally-drifted README).
+      - name: Refresh README track-record numbers (snapshot injector)
+        run: node scripts/snapshot-landing-data.mjs
+
       - name: Publish to npm with provenance
         run: npm publish --provenance
         env:

@@ -34,8 +34,12 @@
 
 ## 📊 Live Track Record
 
+<!-- SoT: this README is the single canonical source. The data-tr-field numbers below are
+     auto-injected from live /api/performance-public + /api/merkle-batches by
+     scripts/snapshot-landing-data.mjs at npm-publish + Hetzner-deploy. Do NOT hand-edit the
+     numbers; edit "What's new" by hand. Wired by OPS-NPM-README-SINGLE-SOT-W1 (2026-05-31). -->
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">91.3%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">134,276</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">50</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">99%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">91.3</span>% PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">134,276</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">50</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">98.9</span>% HOLD rate</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
