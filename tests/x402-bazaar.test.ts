@@ -6,6 +6,7 @@ import {
   isDiscoverableTool,
   assertNoBazaarLeak,
   FORBIDDEN_BAZAAR_TOKENS,
+  bazaarResourceUrl,
 } from '../src/lib/x402-bazaar.js';
 import { TOOL_PRICING } from '../src/lib/x402.js';
 
@@ -32,6 +33,26 @@ describe('Bazaar discovery routes', () => {
     for (const tool of Object.keys(BAZAAR_ROUTES)) {
       const ext = declareBazaarRoute(tool);
       expect(Object.keys(ext).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('declares HTTP body-discovery (type:http, bodyType:json) — NOT mcp (CDP catalog is http-only)', () => {
+    for (const tool of Object.keys(BAZAAR_ROUTES)) {
+      const ext = declareBazaarRoute(tool) as {
+        bazaar?: { info?: { input?: { type?: string; bodyType?: string; method?: string } }; schema?: unknown };
+      };
+      expect(ext.bazaar, `${tool} missing bazaar block`).toBeDefined();
+      expect(ext.bazaar?.info?.input?.type, `${tool} must be http-type (not mcp)`).toBe('http');
+      expect(ext.bazaar?.info?.input?.bodyType, `${tool} must be json body`).toBe('json');
+      expect(ext.bazaar?.info?.input?.method, `${tool} must declare method POST (schema requires it)`).toBe('POST');
+      expect(ext.bazaar?.info?.input?.type).not.toBe('mcp');
+      expect(ext.bazaar?.schema, `${tool} must carry a discovery JSON Schema`).toBeDefined();
+    }
+  });
+
+  it('exposes the HTTP resource URL for each paid tool (the listed Bazaar URL)', () => {
+    for (const tool of Object.keys(BAZAAR_ROUTES)) {
+      expect(bazaarResourceUrl(tool)).toMatch(new RegExp(`/x402/${tool}$`));
     }
   });
 

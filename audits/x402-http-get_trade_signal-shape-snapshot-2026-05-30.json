@@ -1,0 +1,44 @@
+{
+  "endpoint": "POST /x402/get_trade_signal",
+  "resource_url": "https://api.algovault.com/x402/get_trade_signal",
+  "wave": "X402-BAZAAR-HTTP-REDECLARE-W1",
+  "date": "2026-05-30",
+  "transport": "HTTP x402 — mirrors MCP tool get_trade_signal (single source of truth: same core handler)",
+  "price_usd": 0.02,
+  "discovery_type": "http (DeclareBodyDiscoveryExtensionConfig, bodyType:json)",
+  "allowed_keys": [
+    "_algovault",
+    "call",
+    "coin",
+    "confidence",
+    "indicators",
+    "price",
+    "reasoning",
+    "regime",
+    "timeframe"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase e",
+    "phase-e",
+    "outcome wr",
+    "outcome win",
+    "internal-only"
+  ],
+  "error_contract": {
+    "400": "invalid_input / X402_HTTP_INVALID_INPUT — body failed BAZAAR_ROUTES[tool].inputSchema (ajv)",
+    "402": "Payment-Required envelope { x402Version, error, resource{url,description,mimeType}, accepts[], extensions.bazaar }, NO live tool result",
+    "500": "internal_error / X402_HTTP_HANDLER_ERROR"
+  },
+  "cache_contract": "no cache — live per-request via the shared core fn (HOLDs free; async settle post-response)",
+  "paywall": "x402 only (license.tier===x402); unpaid → 402; settles via CDP FacilitatorAdapter when X402_FACILITATOR=cdp",
+  "consumers": [
+    "CDP x402 Bazaar",
+    "Agentic.Market",
+    "AWS Bedrock AgentCore",
+    "autonomous x402 agents"
+  ],
+  "leak_guard": "assertNoBazaarLeak (declaration) + tests/x402-http-routes.test.ts (no top-level live result on 402; no outcome_return_pct anywhere)",
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/x402/get_trade_signal -H 'Content-Type: application/json' -H 'x-payment: <signed>' -d '{\"coin\":\"BTC\",\"timeframe\":\"4h\",\"exchange\":\"BINANCE\",\"includeReasoning\":true}' | jq 'keys'"
+}

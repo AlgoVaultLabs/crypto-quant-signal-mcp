@@ -29,6 +29,7 @@ import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb } from './lib/license.js';
 import { initX402, settleX402Async } from './lib/x402.js';
+import { mountX402HttpRoutes } from './lib/x402-http-routes.js';
 import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } from './lib/analytics.js';
 import { ensureProcessedStripeEventsSchema, tryClaimEvent } from './lib/stripe-events-store.js';
 import { upsertSignupEmail, markConfirmationSent, tryClaimSignupEmailEvent } from './lib/signup-emails-store.js';
@@ -2068,6 +2069,14 @@ async function startHttp() {
       }
     });
   });
+
+  // X402-BAZAAR-HTTP-REDECLARE-W1: mount the HTTP x402 resource routes (the CDP Bazaar
+  // discovery surface) — ONLY when X402_FACILITATOR=cdp AND BAZAAR_DISCOVERABLE=true.
+  // Defaults (legacy/false) → nothing mounted → /x402/* returns 404 (byte-identical prod).
+  const x402HttpRoutes = mountX402HttpRoutes(app);
+  if (x402HttpRoutes.length > 0) {
+    console.log(`x402 HTTP resource routes mounted (CDP Bazaar discovery): ${x402HttpRoutes.join(', ')}`);
+  }
 
   const httpServer = app.listen(port, () => {
     console.log(`crypto-quant-signal-mcp running on http://0.0.0.0:${port}/mcp`);

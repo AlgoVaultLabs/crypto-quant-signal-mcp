@@ -214,21 +214,55 @@ export function isDiscoverableTool(toolName: string): boolean {
 }
 
 /**
+ * Public base host for the HTTP x402 resource endpoints — the Bazaar-discoverable
+ * URLs. Overridable via env for Sepolia/staging; defaults to the live MCP host.
+ */
+export const X402_HTTP_BASE = process.env.X402_PUBLIC_BASE_URL || 'https://api.algovault.com';
+
+/** Canonical HTTP x402 resource URL for a paid tool — the route the Bazaar lists. */
+export function bazaarResourceUrl(toolName: string): string {
+  return `${X402_HTTP_BASE}/x402/${toolName}`;
+}
+
+/** Public, outcome-framed description for a tool's HTTP resource (used on the 402 + Bazaar). */
+export function bazaarRouteDescription(toolName: string): string | undefined {
+  return BAZAAR_ROUTES[toolName]?.description;
+}
+
+/**
  * Build the `extensions` object for a tool's payment requirements, declaring the
  * CDP Bazaar discovery metadata. Returns `{}` for non-discoverable tools.
  * Runs the leak guard over the full declared extension (fail-loud).
+ *
+ * X402-BAZAAR-HTTP-REDECLARE-W1: switched from MCP-type (`info.input.type:"mcp"`)
+ * to **HTTP body-discovery** (`DeclareBodyDiscoveryExtensionConfig`, `bodyType:"json"`).
+ * The CDP public Bazaar catalog is HTTP-type only (live-verified: 0 of 41,559 resources
+ * are `type:"mcp"`), so the MCP-typed declaration settled (`EXTENSION-RESPONSES:processing`)
+ * but never listed. Same outcome-framed descriptions/schemas/examples are reused; the
+ * resource identity is now the HTTP route URL (see `bazaarResourceUrl`). `method` is
+ * omitted at declaration (the server extension sets it from the live POST request);
+ * `description` rides on the 402 resource, not the discovery config.
  */
 export function declareBazaarRoute(toolName: string): Record<string, unknown> {
   const spec = BAZAAR_ROUTES[toolName];
   if (!spec) return {};
   assertNoBazaarLeak({ d: spec.description, e: spec.example, o: spec.output }, `route ${toolName}`);
   const ext = declareDiscoveryExtension({
-    toolName: spec.toolName,
-    description: spec.description,
+    bodyType: 'json',
+    input: spec.example,
     inputSchema: spec.inputSchema,
-    example: spec.example,
     output: spec.output,
   });
+  // The 3 x402 resource routes are POST. declareDiscoveryExtension strips `method`
+  // (the SDK expects `bazaarResourceServerExtension.enrichDeclaration` to set it from
+  // the live request inside the x402ResourceServer pipeline). Our Express 402 path
+  // bypasses that pipeline, so bake method=POST here: the declared schema ALREADY
+  // requires `method` (enum POST/PUT/PATCH) — without `info.input.method` the
+  // declaration is self-inconsistent and CDP returns EXTENSION-RESPONSES: rejected.
+  const bz = (ext as { bazaar?: { info?: { input?: { type?: string; method?: string } } } }).bazaar;
+  if (bz?.info?.input && bz.info.input.type === 'http') {
+    bz.info.input.method = 'POST';
+  }
   assertNoBazaarLeak(ext, `declared extension ${toolName}`);
   return ext;
 }

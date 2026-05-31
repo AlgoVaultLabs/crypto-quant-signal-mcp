@@ -276,10 +276,24 @@ export function settleX402Async(settlement: { paymentPayload: unknown; requireme
 /**
  * Generate a 402 Payment Required response body per x402 v2 spec.
  */
-export function generate402Response(toolName: string): {
+export function generate402Response(
+  toolName: string,
+  opts?: { resourceUrl?: string; description?: string; includeExtensions?: boolean },
+): {
   status: number;
   body: Record<string, unknown>;
 } {
+  const resourceUrl = opts?.resourceUrl ?? `/mcp`;
+  const description = opts?.description ?? `Payment for ${toolName} tool call`;
+  // X402-BAZAAR-HTTP-REDECLARE-W1: the HTTP x402 routes pass includeExtensions=true so
+  // the 402 carries resource.url (the listed HTTP route) + extensions.bazaar. The buyer's
+  // x402 client copies these into the payment payload; CDP reads them on /settle and
+  // catalogs the route — this is the channel that EARNS the Bazaar listing (MCP-type
+  // lacked it from the public catalog). Default (no opts) = byte-identical prior behavior.
+  const extensions = opts?.includeExtensions ? declareBazaarRoute(toolName) : {};
+  const extBlock = Object.keys(extensions).length > 0 ? { extensions } : {};
+  const resource = { url: resourceUrl, description, mimeType: 'application/json' };
+
   const reqs = toolRequirements.get(toolName);
 
   // If x402 is initialized and we have pre-built requirements, use them
@@ -289,12 +303,9 @@ export function generate402Response(toolName: string): {
       body: {
         x402Version: 2,
         error: 'Payment Required',
-        resource: {
-          url: `/mcp`,
-          description: `Payment for ${toolName} tool call`,
-          mimeType: 'application/json',
-        },
+        resource,
         accepts: reqs,
+        ...extBlock,
       },
     };
   }
@@ -309,11 +320,7 @@ export function generate402Response(toolName: string): {
     body: {
       x402Version: 2,
       error: 'Payment Required',
-      resource: {
-        url: `/mcp`,
-        description: `Payment for ${toolName} tool call`,
-        mimeType: 'application/json',
-      },
+      resource,
       accepts: [
         {
           scheme: 'exact',
@@ -325,6 +332,7 @@ export function generate402Response(toolName: string): {
           extra: { name: 'USDC', version: '2' },
         },
       ],
+      ...extBlock,
     },
   };
 }
