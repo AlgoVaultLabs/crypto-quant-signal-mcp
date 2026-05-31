@@ -319,14 +319,14 @@ function createServer(): McpServer {
     'get_trade_call',
     TRADE_CALL_DESCRIPTION,
     TRADE_CALL_SCHEMA,
-    { readOnlyHint: true, openWorldHint: true },
+    { title: 'Composite Trade Call', readOnlyHint: true, openWorldHint: true },
     makeTradeCallHandler('get_trade_call')
   );
   server.tool(
     'get_trade_signal',
     TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX,
     TRADE_CALL_SCHEMA,
-    { readOnlyHint: true, openWorldHint: true },
+    { title: 'Trade Signal', readOnlyHint: true, openWorldHint: true },
     makeTradeCallHandler('get_trade_signal')
   );
 
@@ -342,7 +342,7 @@ function createServer(): McpServer {
       minSpreadBps: z.number().min(0).max(10_000).default(5).describe(PARAM_DESC_FUNDING_MIN_SPREAD_BPS),
       limit: z.number().int().min(1).max(200).default(10).describe(PARAM_DESC_FUNDING_LIMIT),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { title: 'Funding Arbitrage Scanner', readOnlyHint: true, openWorldHint: true },
     async ({ minSpreadBps, limit }) => {
       const startMs = Date.now();
       try {
@@ -382,7 +382,7 @@ function createServer(): McpServer {
       timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe(PARAM_DESC_REGIME_TIMEFRAME),
       exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).default('HL').describe(PARAM_DESC_REGIME_EXCHANGE),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { title: 'Market Regime Classifier', readOnlyHint: true, openWorldHint: true },
     async ({ coin, timeframe, exchange }) => {
       const startMs = Date.now();
       try {
@@ -428,7 +428,7 @@ function createServer(): McpServer {
       query: z.string().min(3).max(500).describe('Natural-language search query (3-500 chars).'),
       limit: z.number().int().min(1).max(50).optional().describe('Max ranked results (1-50, default 10).'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { title: 'Knowledge Search', readOnlyHint: true, openWorldHint: true },
     async ({ query, limit }) => {
       const startMs = Date.now();
       try {
@@ -465,7 +465,7 @@ function createServer(): McpServer {
       question: z.string().min(5).max(500).describe('Natural-language question (5-500 chars).'),
       model: z.enum(['claude-haiku-4-5-20251001', 'claude-sonnet-4-6']).optional().describe('Optional model override (default claude-haiku-4-5-20251001).'),
     },
-    { readOnlyHint: true, openWorldHint: true },
+    { title: 'Knowledge Q&A', readOnlyHint: true, openWorldHint: true },
     async ({ question, model }) => {
       const startMs = Date.now();
       try {
