@@ -70,11 +70,11 @@ beforeEach(() => {
 // ── decide() — pure-logic branch coverage ───────────────────────────────
 
 describe('decide — branch coverage', () => {
-  it('PROMOTE: day-15+ AND sample-met AND WR≥0.80 → action=promoted', () => {
+  it('READY_FOR_PROMOTION: day-15+ AND sample-met AND WR≥0.80 → ready_for_promotion (C4: NOT auto-promoted)', () => {
     const venue = makeShadow();
     const decision = decide(venue, { pfe_wr: 0.85, buy_sell_count: 1500, days_since: 16 });
-    expect(decision.action).toBe('promoted');
-    if (decision.action === 'promoted') {
+    expect(decision.action).toBe('ready_for_promotion');
+    if (decision.action === 'ready_for_promotion') {
       expect(decision.pfe_wr).toBe(0.85);
       expect(decision.buy_sell_count).toBe(1500);
     }
@@ -137,14 +137,14 @@ describe('decide — branch coverage', () => {
     const venue = makeShadow({ min_buy_sell_sample: 1000, extension_count: 0 });
     // sample = 999 → insufficient → extend
     expect(decide(venue, { pfe_wr: 0.90, buy_sell_count: 999, days_since: 16 }).action).toBe('extended');
-    // sample = 1000 exact → meets gate → promote
-    expect(decide(venue, { pfe_wr: 0.90, buy_sell_count: 1000, days_since: 16 }).action).toBe('promoted');
+    // sample = 1000 exact → meets gate → ready_for_promotion (C4)
+    expect(decide(venue, { pfe_wr: 0.90, buy_sell_count: 1000, days_since: 16 }).action).toBe('ready_for_promotion');
   });
 
   it("EDGE: WR exactly at 0.80 threshold → promote (>=, not >)", () => {
     const venue = makeShadow({ extension_count: 0 });
     expect(decide(venue, { pfe_wr: 0.7999, buy_sell_count: 1500, days_since: 16 }).action).toBe('extended');
-    expect(decide(venue, { pfe_wr: 0.8000, buy_sell_count: 1500, days_since: 16 }).action).toBe('promoted');
+    expect(decide(venue, { pfe_wr: 0.8000, buy_sell_count: 1500, days_since: 16 }).action).toBe('ready_for_promotion');
   });
 });
 
@@ -285,7 +285,7 @@ describe('evaluateAllShadowVenues — orchestration', () => {
     expect(mockIncrement).not.toHaveBeenCalled();
   });
 
-  it("1 shadow venue triggers PROMOTE → setStatus('promoted') + Telegram", async () => {
+  it("C4: qualifying shadow venue → ready_for_promotion, NO auto setStatus, NO Telegram (operator-gated)", async () => {
     const shadow = makeShadow({ integrated_at: '2026-05-01T00:00:00Z' });
     mockList.mockResolvedValueOnce([] as VenueRecord[]); // promoted query
     mockList.mockResolvedValueOnce([shadow]); // shadow query
@@ -296,15 +296,10 @@ describe('evaluateAllShadowVenues — orchestration', () => {
     const summary = await evaluateAllShadowVenues(now);
 
     expect(summary.actions).toHaveLength(1);
-    expect(summary.actions[0].decision.action).toBe('promoted');
-    expect(mockRecord).toHaveBeenCalledWith('GATEIO', 0.85, 1500, now);
-    expect(mockSetStatus).toHaveBeenCalledWith('GATEIO', 'promoted', { promoted_at: now });
-    expect(mockTelegram).toHaveBeenCalledWith(expect.objectContaining({
-      venue: 'GATEIO',
-      action: 'promoted',
-      pfe_wr: 0.85,
-      buy_sell_count: 1500,
-    }));
+    expect(summary.actions[0].decision.action).toBe('ready_for_promotion');
+    expect(mockRecord).toHaveBeenCalledWith('GATEIO', 0.85, 1500, now); // eval still recorded
+    expect(mockSetStatus).not.toHaveBeenCalled();   // C4: NO auto status flip
+    expect(mockTelegram).not.toHaveBeenCalled();    // C4: readiness surfaced by the C5 daily report, not a TG
   });
 
   it("EXTEND branch fires incrementExtension + Telegram (NOT setStatus)", async () => {

@@ -44,7 +44,6 @@ import { dbQuery } from '../lib/performance-db.js';
 import {
   listVenues,
   recordEval,
-  setStatus,
   incrementExtension,
 } from '../lib/venue-store.js';
 import { sendVenueStatusChange } from '../lib/telegram.js';
@@ -56,7 +55,10 @@ const DAY_30_FLOOR = 30;
 const SECONDS_PER_DAY = 86400;
 
 export type EvalDecision =
-  | { action: 'promoted'; pfe_wr: number; buy_sell_count: number }
+  // OPS-SHADOW-PIPELINE-W1/C4: shadow auto-promote DISABLED — a qualifying shadow
+  // venue is flagged 'ready_for_promotion' (Mr.1 runs promote-venue.ts), never
+  // auto-flipped to 'promoted'. The daily readiness report (C5) surfaces it.
+  | { action: 'ready_for_promotion'; pfe_wr: number; buy_sell_count: number }
   | { action: 'extended'; pfe_wr: number | null; buy_sell_count: number }
   | { action: 'manual_required'; pfe_wr: number | null; buy_sell_count: number }
   | { action: 'no_op'; reason: string; pfe_wr: number | null; buy_sell_count: number; days_since: number };
@@ -143,14 +145,17 @@ export function decide(venue: VenueRecord, stats: EvalStats): EvalDecision {
     return { action: 'no_op', reason: 'no_pipeline_yet', pfe_wr, buy_sell_count, days_since };
   }
 
-  // Branch 1: PROMOTE — day-15 floor passed AND sample-met AND WR-met.
+  // Branch 1: READY FOR PROMOTION — day-15 floor passed AND sample-met AND WR-met.
+  // OPS-SHADOW-PIPELINE-W1/C4: does NOT auto-flip status. Mr.1 launches it live
+  // via promote-venue.ts (operator-gated); C5's daily report lists it in the
+  // READY-TO-LAUNCH block with the exact command.
   if (
     days_since >= DAY_15_FLOOR &&
     buy_sell_count >= venue.min_buy_sell_sample &&
     pfe_wr !== null &&
     pfe_wr >= PFE_WR_THRESHOLD
   ) {
-    return { action: 'promoted', pfe_wr, buy_sell_count };
+    return { action: 'ready_for_promotion', pfe_wr, buy_sell_count };
   }
 
   // Branch 2: AUTO-EXTEND — day-15 hit, never extended.
@@ -197,18 +202,11 @@ export async function evaluateAllShadowVenues(now: Date = new Date()): Promise<{
     const decision = decide(venue, stats);
     actions.push({ venue: venue.exchange_id, decision });
 
-    if (decision.action === 'promoted') {
-      await setStatus(venue.exchange_id, 'promoted', { promoted_at: now });
-      await sendVenueStatusChange({
-        venue: venue.exchange_id,
-        action: 'promoted',
-        pfe_wr: decision.pfe_wr,
-        buy_sell_count: decision.buy_sell_count,
-        min_buy_sell_sample: venue.min_buy_sell_sample,
-        days_since: stats.days_since,
-        extension_count: venue.extension_count,
-      });
-    } else if (decision.action === 'extended') {
+    // OPS-SHADOW-PIPELINE-W1/C4: 'ready_for_promotion' is intentionally a NO-OP
+    // here — shadow auto-promote is disabled. The venue is recorded in `actions`
+    // + logged; Mr.1 launches it via promote-venue.ts (surfaced by C5's report).
+    // No setStatus, no Telegram (the C5 digest is the readiness surface).
+    if (decision.action === 'extended') {
       await incrementExtension(venue.exchange_id);
       await sendVenueStatusChange({
         venue: venue.exchange_id,
@@ -249,7 +247,7 @@ async function main(): Promise<void> {
 
   try {
     const summary = await evaluateAllShadowVenues(startedAt);
-    const promoted = summary.actions.filter(a => a.decision.action === 'promoted').length;
+    const readyForPromotion = summary.actions.filter(a => a.decision.action === 'ready_for_promotion').length;
     const extended = summary.actions.filter(a => a.decision.action === 'extended').length;
     const manual = summary.actions.filter(a => a.decision.action === 'manual_required').length;
     const noop = summary.actions.filter(a => a.decision.action === 'no_op').length;
@@ -258,7 +256,7 @@ async function main(): Promise<void> {
     console.log(
       `[evaluate-venues] ${startedIso} promoted_initial=${summary.promoted_count_initial} ` +
       `shadow=${summary.shadow_count} actions=${summary.actions.length} ` +
-      `promoted=${promoted} extended=${extended} manual_required=${manual} no_op=${noop}`,
+      `ready_for_promotion=${readyForPromotion} extended=${extended} manual_required=${manual} no_op=${noop}`,
     );
 
     // Per-action detail line — helps post-mortem when a state transition fires.

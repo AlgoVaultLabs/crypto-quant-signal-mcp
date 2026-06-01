@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "wave": "OPS-SHADOW-PIPELINE-W1 / C4 (D2)",
+    "endpoint": "GET https://algovault.com/api/performance-public → .byExchange[<EXCHANGE>]",
+    "captured_at": "2026-06-01T08:00:00Z",
+    "purpose": "Public-response-shape SoT for the byExchange map. Promotion (promote-venue.ts) is ADD-ONLY: a newly-promoted venue appears as a new key with the SAME shape. PFE-WR-only — outcome_return_pct / Phase-E outcome WR must NEVER appear (Data Integrity LAW).",
+    "venue_status_filter": "byExchange exposes status='promoted' venues only; shadow venues are NEVER public"
+  },
+  "current_keys_promoted_venues": ["BINANCE", "BITGET", "BYBIT", "HL", "OKX"],
+  "per_venue_allowed_keys": ["exchange", "count", "evaluated", "pfeWinRate", "byTimeframe"],
+  "per_timeframe_allowed_keys": ["count", "evaluated", "pfeWinRate"],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "phaseEWinRate",
+    "outcome_win_rate",
+    "realized_return",
+    "pnl"
+  ],
+  "error_contract": "endpoint returns 200 with {} byExchange when no signals; never 4xx for a valid GET",
+  "cache_contract": "served from getPerformanceStats cache (column-projected); refresh on the existing perf-stats cadence",
+  "consumers": [
+    "landing track-record dashboard (data-tr-field hydration)",
+    "getPerformanceDashboardHtml /track-record",
+    "README What's-new SNAPSHOT-LINE injector (build-time)"
+  ],
+  "add_only_rule": "promotion adds a venue KEY; it NEVER removes a key or changes the per-venue shape. A KEY-value DECREASE or a forbidden_key appearing = Data Integrity violation → HALT.",
+  "drift_check_command": "curl -fsS https://algovault.com/api/performance-public | python3 -c \"import sys,json; d=json.load(sys.stdin); be=d.get('byExchange',{}); allowed={'exchange','count','evaluated','pfeWinRate','byTimeframe'}; forbid={'outcome_return_pct','outcome_price','phase_e_wr','phaseEWinRate','outcome_win_rate','realized_return','pnl'}; bad=[(v,k) for v,obj in be.items() for k in obj if k not in allowed]; leak=[(v,k) for v,obj in be.items() for k in obj if k in forbid]; print('UNEXPECTED_KEYS', bad); print('FORBIDDEN_LEAK', leak); assert not leak, 'DATA INTEGRITY VIOLATION'; print('byExchange shape OK; venues=', sorted(be.keys()))\""
+}
