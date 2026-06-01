@@ -30,11 +30,13 @@ describe('UNIVERSE_FETCHERS registry — exhaustiveness + dispatch', () => {
     }
   });
 
-  it('the 12 shadow venues are stubs that resolve to [] (C1 — real fetchers land in C2)', async () => {
+  it('the 12 shadow venue fetchers are fail-soft: HTTP error → [] (no throw) [C2]', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 503 } as Response);
     for (const id of SHADOW) {
       await expect(UNIVERSE_FETCHERS[id](30)).resolves.toEqual([]);
     }
+    fetchSpy.mockRestore();
     warn.mockRestore();
   });
 

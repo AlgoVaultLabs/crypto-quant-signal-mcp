@@ -496,6 +496,192 @@ async function fetchBitgetCoins(topN: number): Promise<string[]> {
   return limited.map(t => t.symbol.replace(/USDT$/, ''));
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// OPS-SHADOW-PIPELINE-W1 / C2 — 12 shadow-venue universe fetchers.
+// Each returns the top-N canonical coin symbols (UPPERCASE base) ranked by 24h
+// volume or open interest, using the venue's live instruments/ticker endpoint
+// (all verified 200 from the prod host in Plan-Mode Step-0). FAIL-SOFT: any
+// HTTP/parse error → [] + WARNING (the venue self-skips this cycle; never
+// throws, never starves the other venues — mirrors seedExchange's skip path).
+// The adapter's coin→venue-symbol mapper handles the reverse direction at seed
+// time, so these return canonical coins (e.g. "BTC", "ETH").
+// ════════════════════════════════════════════════════════════════════════
+
+async function fetchUniverseJson(url: string, venue: string): Promise<unknown | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[${ts()}] [${venue}] universe HTTP ${res.status} — skipping venue this cycle`);
+      return null;
+    }
+    return await res.json();
+  } catch (e) {
+    console.warn(`[${ts()}] [${venue}] universe fetch error: ${e instanceof Error ? e.message : e} — skipping venue this cycle`);
+    return null;
+  }
+}
+
+/** Rank {coin, score}[] desc by score, dedupe by coin (keep highest), take topN (topN<=0 = all). */
+function rankTopN(rows: { coin: string; score: number }[], topN: number): string[] {
+  const best = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.coin) continue;
+    const prev = best.get(r.coin);
+    if (prev === undefined || r.score > prev) best.set(r.coin, r.score);
+  }
+  const sorted = [...best.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  return topN > 0 ? sorted.slice(0, topN) : sorted;
+}
+
+// ASTER — Binance-fork USDT-M; /fapi/v1/ticker/24hr (quoteVolume). 1000-prefix overrides.
+export async function fetchAsterCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://fapi.asterdex.com/fapi/v1/ticker/24hr', 'ASTER');
+  if (!Array.isArray(data)) return [];
+  const rows = (data as Array<{ symbol?: string; quoteVolume?: string }>)
+    .filter(t => typeof t.symbol === 'string' && t.symbol.endsWith('USDT'))
+    .map(t => {
+      const raw = (t.symbol as string).replace(/USDT$/, '');
+      return { coin: BINANCE_OVERRIDES[raw] || raw, score: parseFloat(t.quoteVolume || '0') };
+    });
+  return rankTopN(rows, topN);
+}
+
+// GATE — /futures/usdt/tickers (volume_24h_quote); contract = "<COIN>_USDT".
+export async function fetchGateCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://api.gateio.ws/api/v4/futures/usdt/tickers', 'GATE');
+  if (!Array.isArray(data)) return [];
+  const rows = (data as Array<{ contract?: string; volume_24h_quote?: string }>)
+    .filter(t => typeof t.contract === 'string' && t.contract.endsWith('_USDT'))
+    .map(t => ({ coin: (t.contract as string).replace(/_USDT$/, ''), score: parseFloat(t.volume_24h_quote || '0') }));
+  return rankTopN(rows, topN);
+}
+
+// MEXC — /contract/ticker (amount24 = 24h quote vol); symbol = "<COIN>_USDT".
+export async function fetchMexcCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://contract.mexc.com/api/v1/contract/ticker', 'MEXC');
+  const arr = (data as { data?: Array<{ symbol?: string; amount24?: number }> })?.data;
+  if (!Array.isArray(arr)) return [];
+  const rows = arr
+    .filter(t => typeof t.symbol === 'string' && t.symbol.endsWith('_USDT'))
+    .map(t => ({ coin: (t.symbol as string).replace(/_USDT$/, ''), score: Number(t.amount24 || 0) }));
+  return rankTopN(rows, topN);
+}
+
+// KUCOIN — /contracts/active (turnoverOf24h); baseCurrency XBT→BTC; type FFWCSX = USDT perp.
+export async function fetchKucoinCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://api-futures.kucoin.com/api/v1/contracts/active', 'KUCOIN');
+  const arr = (data as { data?: Array<{ baseCurrency?: string; quoteCurrency?: string; type?: string; turnoverOf24h?: number }> })?.data;
+  if (!Array.isArray(arr)) return [];
+  const rows = arr
+    .filter(c => c.quoteCurrency === 'USDT' && c.type === 'FFWCSX' && typeof c.baseCurrency === 'string')
+    .map(c => ({ coin: c.baseCurrency === 'XBT' ? 'BTC' : (c.baseCurrency as string), score: Number(c.turnoverOf24h || 0) }));
+  return rankTopN(rows, topN);
+}
+
+// BINGX — /openApi/swap/v2/quote/ticker (quoteVolume); symbol = "<COIN>-USDT".
+export async function fetchBingxCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://open-api.bingx.com/openApi/swap/v2/quote/ticker', 'BINGX');
+  const arr = (data as { data?: Array<{ symbol?: string; quoteVolume?: string }> })?.data;
+  if (!Array.isArray(arr)) return [];
+  const rows = arr
+    .filter(t => typeof t.symbol === 'string' && t.symbol.endsWith('-USDT'))
+    .map(t => ({ coin: (t.symbol as string).replace(/-USDT$/, ''), score: parseFloat(t.quoteVolume || '0') }));
+  return rankTopN(rows, topN);
+}
+
+// HTX — /linear-swap-ex/market/detail/batch_merged (trade_turnover); contract_code "<COIN>-USDT" swap.
+export async function fetchHtxCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://api.hbdm.com/linear-swap-ex/market/detail/batch_merged', 'HTX');
+  const arr = (data as { ticks?: Array<{ contract_code?: string; trade_turnover?: string }> })?.ticks;
+  if (!Array.isArray(arr)) return [];
+  const rows = arr
+    .filter(t => typeof t.contract_code === 'string' && t.contract_code.endsWith('-USDT'))
+    .map(t => ({ coin: (t.contract_code as string).replace(/-USDT$/, ''), score: parseFloat(t.trade_turnover || '0') }));
+  return rankTopN(rows, topN);
+}
+
+// WEEX — /capi/v2/market/tickers (volume_24h); symbol = "cmt_<coin>usdt".
+export async function fetchWeexCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://api-contract.weex.com/capi/v2/market/tickers', 'WEEX');
+  if (!Array.isArray(data)) return [];
+  const rows = (data as Array<{ symbol?: string; volume_24h?: string }>)
+    .filter(t => typeof t.symbol === 'string' && /^cmt_.*usdt$/i.test(t.symbol))
+    .map(t => ({ coin: (t.symbol as string).replace(/^cmt_/i, '').replace(/usdt$/i, '').toUpperCase(), score: parseFloat(t.volume_24h || '0') }));
+  return rankTopN(rows, topN);
+}
+
+// BITMART — /contract/public/details (open_interest; vol_24h often null); product_type 1 = perp.
+export async function fetchBitmartCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://api-cloud-v2.bitmart.com/contract/public/details', 'BITMART');
+  const arr = (data as { data?: { symbols?: Array<{ base_currency?: string; quote_currency?: string; product_type?: number; open_interest?: string }> } })?.data?.symbols;
+  if (!Array.isArray(arr)) return [];
+  const rows = arr
+    .filter(s => s.product_type === 1 && s.quote_currency === 'USDT' && typeof s.base_currency === 'string')
+    .map(s => ({ coin: s.base_currency as string, score: parseFloat(s.open_interest || '0') }));
+  return rankTopN(rows, topN);
+}
+
+// WHITEBIT — /api/v4/public/futures (stock_volume); money_currency USDT; stock_currency = coin.
+export async function fetchWhitebitCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://whitebit.com/api/v4/public/futures', 'WHITEBIT');
+  const arr = (data as { result?: Array<{ stock_currency?: string; money_currency?: string; stock_volume?: string }> })?.result;
+  if (!Array.isArray(arr)) return [];
+  const rows = arr
+    .filter(m => m.money_currency === 'USDT' && typeof m.stock_currency === 'string')
+    .map(m => ({ coin: m.stock_currency as string, score: parseFloat(m.stock_volume || '0') }));
+  return rankTopN(rows, topN);
+}
+
+// XT — symbol/list (contractType PERPETUAL, state 0) ∩ agg-tickers (volume `a`).
+// Excludes dated quarterly futures. Fail-soft: unranked perp coins if tickers fail.
+export async function fetchXtCoins(topN: number): Promise<string[]> {
+  const listData = await fetchUniverseJson('https://fapi.xt.com/future/market/v1/public/symbol/list', 'XT');
+  const list = (listData as { result?: Array<{ symbol?: string; baseCoin?: string; contractType?: string; state?: number }> })?.result;
+  if (!Array.isArray(list)) return [];
+  const perp = new Map<string, string>(); // venue symbol -> canonical coin
+  for (const s of list) {
+    if (s.contractType === 'PERPETUAL' && s.state === 0 && typeof s.symbol === 'string') {
+      perp.set(s.symbol, (s.baseCoin || s.symbol.split('_')[0] || '').toUpperCase());
+    }
+  }
+  const tickData = await fetchUniverseJson('https://fapi.xt.com/future/market/v1/public/q/agg-tickers', 'XT');
+  const ticks = (tickData as { result?: Array<{ s?: string; a?: string }> })?.result;
+  if (Array.isArray(ticks)) {
+    const rows = ticks
+      .filter(t => typeof t.s === 'string' && perp.has(t.s))
+      .map(t => ({ coin: perp.get(t.s as string) as string, score: parseFloat(t.a || '0') }));
+    const ranked = rankTopN(rows, topN);
+    if (ranked.length > 0) return ranked;
+  }
+  const coins = [...new Set([...perp.values()].filter(Boolean))];
+  return topN > 0 ? coins.slice(0, topN) : coins;
+}
+
+// EDGEX — getMetaData.contractList; coin from contractName ("BTCUSD"→"BTC"). No bulk
+// ticker → unranked top-N (seedExchange's liquidity filter drops illiquid). Fail-soft.
+export async function fetchEdgexCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://pro.edgex.exchange/api/v1/public/meta/getMetaData', 'EDGEX');
+  const arr = (data as { data?: { contractList?: Array<{ contractName?: string }> } })?.data?.contractList;
+  if (!Array.isArray(arr)) return [];
+  const coins = [...new Set(arr
+    .map(c => (c.contractName || '').replace(/USDT$/, '').replace(/USD$/, '').toUpperCase())
+    .filter(Boolean))];
+  return topN > 0 ? coins.slice(0, topN) : coins;
+}
+
+// PHEMEX — products.perpProductsV2 filtered to USDT-quote Listed perps; coin=baseCurrency.
+// (perpProductsV2 also lists USDC-quote — must filter.) No reliable bulk ticker →
+// unranked top-N (liquidity filter handles the rest). Fail-soft.
+export async function fetchPhemexCoins(topN: number): Promise<string[]> {
+  const data = await fetchUniverseJson('https://api.phemex.com/public/products', 'PHEMEX');
+  const arr = (data as { data?: { perpProductsV2?: Array<{ baseCurrency?: string; quoteCurrency?: string; status?: string }> } })?.data?.perpProductsV2;
+  if (!Array.isArray(arr)) return [];
+  const coins = [...new Set(arr
+    .filter(p => p.quoteCurrency === 'USDT' && p.status === 'Listed' && typeof p.baseCurrency === 'string')
+    .map(p => p.baseCurrency as string))];
+  return topN > 0 ? coins.slice(0, topN) : coins;
+}
+
 /**
  * OPS-SHADOW-PIPELINE-W1 / C1 — venue-table-driven universe registry (the
  * generator fix). Maps each ExchangeId → a `(topN) => Promise<coin[]>` resolver.
@@ -507,11 +693,6 @@ async function fetchBitgetCoins(topN: number): Promise<string[]> {
  * C2 — they return [] (the loop skips them cleanly), so C1 ships safely and a
  * table-driven run seeds only the 5 promoted venues until C2 lands.
  */
-const shadowStub = (venue: ExchangeId) => async (): Promise<string[]> => {
-  console.warn(`[${ts()}] [${venue}] UNIVERSE_FETCHERS stub — not implemented until OPS-SHADOW-PIPELINE-W1/C2; venue skipped.`);
-  return [];
-};
-
 export const UNIVERSE_FETCHERS: Record<ExchangeId, (topN: number) => Promise<string[]>> = {
   HL: async (topN: number): Promise<string[]> => {
     // Byte-equivalent to the prior HL main() block: warm caches, fetch by OI,
@@ -529,19 +710,19 @@ export const UNIVERSE_FETCHERS: Record<ExchangeId, (topN: number) => Promise<str
   BYBIT:   fetchBybitCoins,
   OKX:     fetchOKXCoins,
   BITGET:  fetchBitgetCoins,
-  // ── 12 shadow venues — stubs until C2 fills each with a top-N-by-OI/vol fetcher ──
-  ASTER:    shadowStub('ASTER'),
-  EDGEX:    shadowStub('EDGEX'),
-  GATE:     shadowStub('GATE'),
-  MEXC:     shadowStub('MEXC'),
-  KUCOIN:   shadowStub('KUCOIN'),
-  PHEMEX:   shadowStub('PHEMEX'),
-  BINGX:    shadowStub('BINGX'),
-  HTX:      shadowStub('HTX'),
-  WEEX:     shadowStub('WEEX'),
-  BITMART:  shadowStub('BITMART'),
-  XT:       shadowStub('XT'),
-  WHITEBIT: shadowStub('WHITEBIT'),
+  // ── 12 shadow venues (C2) — top-N by 24h volume / OI; fail-soft ([] on error) ──
+  ASTER:    fetchAsterCoins,
+  EDGEX:    fetchEdgexCoins,
+  GATE:     fetchGateCoins,
+  MEXC:     fetchMexcCoins,
+  KUCOIN:   fetchKucoinCoins,
+  PHEMEX:   fetchPhemexCoins,
+  BINGX:    fetchBingxCoins,
+  HTX:      fetchHtxCoins,
+  WEEX:     fetchWeexCoins,
+  BITMART:  fetchBitmartCoins,
+  XT:       fetchXtCoins,
+  WHITEBIT: fetchWhitebitCoins,
 };
 
 async function seedExchange(
