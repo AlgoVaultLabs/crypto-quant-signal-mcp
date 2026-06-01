@@ -267,6 +267,28 @@ export async function incrementExtension(exchangeId: string): Promise<void> {
 }
 
 /**
+ * OPS-SHADOW-PIPELINE-W1 / C3 — stamp `seeding_started_at` the first time a
+ * shadow venue's seed run produces signals. Idempotent + shadow-only:
+ *   - `seeding_started_at IS NULL` → sets exactly once (re-runs are no-ops),
+ *   - `status = 'shadow'` → promoted venues are NEVER stamped (their
+ *     COALESCE(seeding_started_at, integrated_at) clock stays on integrated_at).
+ * Anchors the day-15/30 promotion clock (evaluate-venues) + the daily report's
+ * "days since seeding" to when data ACTUALLY started flowing — not table-insert.
+ * A venue whose endpoint is broken (0 signals) is never stamped, so its clock
+ * doesn't start on empty data. Uses awaited dbQuery (not fire-and-forget dbRun)
+ * so the stamp is guaranteed to persist before the seed process exits.
+ */
+export async function stampSeedingStarted(exchangeId: string, when: Date = new Date()): Promise<void> {
+  await initVenuesTable();
+  await dbQuery(
+    `UPDATE venues
+     SET seeding_started_at = ?
+     WHERE exchange_id = ? AND seeding_started_at IS NULL AND status = 'shadow'`,
+    [when, exchangeId]
+  );
+}
+
+/**
  * Insert a NEW venue (typically called from C5 pilot-onboarding flow).
  * `assetCount` is the venue's listed-perp count probed from the venue's
  * exchangeInfo at integration time (NOT the COUNT(DISTINCT coin) seeded

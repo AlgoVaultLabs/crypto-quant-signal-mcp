@@ -48,7 +48,7 @@ import { hasRecentSignalAsync, closeDb, bulkWarmFundingCache } from '../lib/perf
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import { getTicker24hrFullCoalesced } from '../lib/adapters/binance.js';
 import type { LicenseInfo, ExchangeId, VenueStatus } from '../types.js';
-import { listVenues } from '../lib/venue-store.js';
+import { listVenues, stampSeedingStarted } from '../lib/venue-store.js';
 
 // Internal license bypasses free-tier gating
 const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
@@ -767,6 +767,14 @@ async function seedExchange(
     }
 
     await sleep(delayMs);
+  }
+
+  // OPS-SHADOW-PIPELINE-W1/C3: stamp the shadow-venue clock anchor on the first
+  // run that produces signals (idempotent + shadow-only inside the helper).
+  // Best-effort: a stamp failure never fails the seed run.
+  if (seeded > 0) {
+    try { await stampSeedingStarted(exchangeId); }
+    catch (e) { console.debug(`[${ts()}] [${exchangeId}] seeding-stamp skipped: ${e instanceof Error ? e.message : e}`); }
   }
 
   return { seeded, skipped, errors };

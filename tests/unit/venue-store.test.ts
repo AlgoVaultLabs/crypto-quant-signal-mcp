@@ -25,6 +25,7 @@ import {
   setStatus,
   recordEval,
   incrementExtension,
+  stampSeedingStarted,
   insertVenue,
   refreshAssetCount,
   _resetInitForTest,
@@ -257,5 +258,21 @@ describe('refreshAssetCount', () => {
     expect(call[1]).toBe(500);
     expect(call[2]).toBe(5000);
     expect(call[3]).toBe('BINANCE');
+  });
+});
+
+describe('stampSeedingStarted (OPS-SHADOW-PIPELINE-W1/C3)', () => {
+  it('issues a shadow-only, NULL-guarded UPDATE via awaited dbQuery', async () => {
+    mockQuery.mockResolvedValue([]); // init seed + the UPDATE
+    const when = new Date('2026-06-01T08:00:00Z');
+    await stampSeedingStarted('WEEX', when);
+    // find the UPDATE call (not the init seed INSERT)
+    const updateCall = mockQuery.mock.calls.find(c => /UPDATE venues/.test(String(c[0])) && /seeding_started_at/.test(String(c[0])));
+    expect(updateCall).toBeDefined();
+    const sql = String(updateCall![0]);
+    expect(sql).toMatch(/seeding_started_at = \?/);
+    expect(sql).toMatch(/seeding_started_at IS NULL/);   // idempotent: stamps once
+    expect(sql).toMatch(/status = 'shadow'/);            // promoted venues never stamped
+    expect(updateCall![1]).toEqual([when, 'WEEX']);
   });
 });
