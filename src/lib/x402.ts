@@ -42,6 +42,18 @@ const USDC_ADDRESS: Record<string, string> = {
   'eip155:84532': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 };
 
+// USDC EIP-712 domain name differs by network (the on-chain `name()`): Base MAINNET
+// USDC = "USD Coin", Base SEPOLIA USDC = "USDC". The buyer signs the ERC-3009
+// transferWithAuthorization against this exact domain — a wrong name makes the on-chain
+// call REVERT at verify (CDP facilitator: "invalid_payload: execution reverted").
+// Verified on-chain 2026-06-01 (X402-BAZAAR-HTTP-REDECLARE-W1, caught during the mainnet
+// bootstrap; Sepolia proof passed only because Sepolia USDC is coincidentally "USDC").
+const USDC_EIP712_NAME: Record<string, string> = {
+  'eip155:8453': 'USD Coin',
+  'eip155:84532': 'USDC',
+};
+const usdcExtra = (caip2: string) => ({ name: USDC_EIP712_NAME[caip2] || 'USD Coin', version: '2' });
+
 // Tool pricing in USD (base price — timeframe-tiered pricing applied at request time)
 export const TOOL_PRICING: X402ToolPricing = {
   get_trade_signal: 0.02,
@@ -168,7 +180,7 @@ export async function initX402(): Promise<void> {
         network: caip2,
         payTo: WALLET_ADDRESS,
         price: `$${price}`,
-        extra: { name: 'USDC', version: '2' },
+        extra: usdcExtra(CAIP2_NETWORK),
       };
       // Attach CDP Bazaar discovery metadata so a real settle earns the listing.
       if (resolvedFacilitator.discoveryEnabled) {
@@ -329,7 +341,7 @@ export function generate402Response(
           amount: atomicAmount,
           payTo: WALLET_ADDRESS || 'not_configured',
           maxTimeoutSeconds: 300,
-          extra: { name: 'USDC', version: '2' },
+          extra: usdcExtra(CAIP2_NETWORK),
         },
       ],
       ...extBlock,

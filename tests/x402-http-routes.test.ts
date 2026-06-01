@@ -115,6 +115,10 @@ describe('x402 HTTP routes — paywall + listing channel (R2, R3, item K)', () =
     expect(body.x402Version).toBe(2);
     expect(body.resource?.url).toMatch(/\/x402\/get_trade_signal$/);
     expect(body.extensions?.bazaar?.info?.input?.type).toBe('http'); // listing channel present
+    // EIP-712 domain name MUST match the on-chain USDC name() per network (Base mainnet
+    // default = "USD Coin", NOT "USDC") — a wrong name reverts transferWithAuthorization
+    // at verify. Regression guard for the bug caught during the mainnet bootstrap.
+    expect((body.accepts as Array<{ extra?: { name?: string } }>)[0]?.extra?.name).toBe('USD Coin');
     // No free-data leak: the 402 is a payment-required envelope — NO top-level live
     // tool result (a computed signal would surface as top-level call/confidence/etc.).
     // (Static shape EXAMPLES inside extensions.bazaar.…output.example are public API
