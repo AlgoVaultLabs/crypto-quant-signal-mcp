@@ -1,0 +1,79 @@
+{
+  "generated_at": "2026-06-01T10:14:29.587Z",
+  "window": {
+    "from": "2026-05-18T10:14:28.578Z",
+    "to": "2026-06-01T10:14:28.578Z"
+  },
+  "sessions": {
+    "total": 13194,
+    "unique_ips": 204,
+    "new_in_window": 13194
+  },
+  "funnel": {
+    "install": 1521,
+    "first_call": 13194,
+    "second_call": 2698,
+    "fifth_plus_call": 68,
+    "paid_upgrade": 0,
+    "mcp_tools_list": 0,
+    "quota_hit_soft": 0,
+    "quota_hit_hard": 0,
+    "quota_hit_block": 0,
+    "upgrade_cta_clicked": 0,
+    "stripe_checkout_started": 0,
+    "tg_bot_start": 2,
+    "tg_bot_first_command": 0,
+    "tg_bot_watchlist_add": null,
+    "tg_bot_quota_hit": 0,
+    "tg_bot_upgrade_clicked": null
+  },
+  "conversion": {
+    "install_to_first_call": 8.674556213017752,
+    "first_to_second": 0.20448688797938458,
+    "second_to_fifth": 0.025203854707190512,
+    "fifth_to_paid": 0
+  },
+  "stage_retentions": {
+    "install_to_mcp_tools_list": 0,
+    "mcp_tools_list_to_first_call": null,
+    "first_call_to_quota_hit_soft": 0,
+    "quota_hit_soft_to_quota_hit_hard": null,
+    "quota_hit_hard_to_quota_hit_block": null,
+    "quota_hit_block_to_upgrade_cta_clicked": null,
+    "upgrade_cta_clicked_to_stripe_checkout_started": null,
+    "stripe_checkout_started_to_paid_upgrade": null,
+    "paid_upgrade_to_tg_bot_start": null,
+    "tg_bot_start_to_tg_bot_first_command": 0,
+    "tg_bot_first_command_to_tg_bot_watchlist_add": null,
+    "tg_bot_watchlist_add_to_tg_bot_quota_hit": null,
+    "tg_bot_quota_hit_to_tg_bot_upgrade_clicked": null
+  },
+  "weakest_stage_transition": {
+    "from": "install",
+    "to": "mcp_tools_list",
+    "retention": 0
+  },
+  "stick_rate": 0.20448688797938458,
+  "time_to_first_call_ms": {
+    "p50": 771,
+    "p90": 1564.3000000000002
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 103,
+    "get_market_regime": 145,
+    "scan_funding_arb": 48,
+    "other": 17694
+  },
+  "hold_rate_get_trade_signal": 0.970873786407767,
+  "tier_cohort_sizes": {
+    "free": 142,
+    "starter": 0,
+    "pro": 0,
+    "enterprise": 0,
+    "x402": 0
+  },
+  "warnings": [
+    "unknown license_tier 'internal' in request_log — ignored",
+    "bot SQLite watchlists count failed: Command failed: sqlite3 -readonly /var/lib/algovault-bot/state.db \"SELECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-05-18T10:14:28.578Z' AND created_at <= '2026-06-01T10:14:28.578Z';\"\nError: in prepare, no such column: created_at\n  ECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-05-18T10\n                                      error here ---^\n"
+  ]
+}
