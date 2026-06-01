@@ -1,0 +1,25 @@
+-- 004_add_seeding_started_at.sql — OPS-SHADOW-ALERT-HYGIENE-W1 (2026-06-01)
+--
+-- Adds a nullable clock-anchor column to `venues`. The shadow-venue promotion
+-- clock (and the BUY/SELL sample + PFE-WR evaluation window) derive from
+-- COALESCE(seeding_started_at, integrated_at) in evaluate-venues.ts.
+--
+-- WHY: the 12 shadow venues were inserted into `venues` on 2026-05-16…20 (which
+-- started their day-15 promotion clock) but the seed-loop that feeds them was
+-- deferred (OPS-SHADOW-PIPELINE-W1) and never built — so they accrued zero
+-- signals and tripped the day-15 auto-EXTEND alert on empty data. This column
+-- lets the clock measure from when seeding *actually* begins instead of from
+-- table-insert. OPS-SHADOW-PIPELINE-W1 (C3) stamps it with the first-signal
+-- timestamp per venue; until then it stays NULL and the clock harmlessly falls
+-- back to integrated_at (byte-identical to prior behaviour).
+--
+-- IDEMPOTENT: ADD COLUMN IF NOT EXISTS (Postgres ≥9.6). Safe to re-run.
+-- Pre-applied to prod (db signal_performance) via SSH BEFORE the code that
+-- reads it was pushed, per CLAUDE.md "pre-apply schema via SSH then deploy code
+-- with IF NOT EXISTS idempotency". The pushed code (initVenuesTable CREATE DDL)
+-- is a no-op against the already-prepared column.
+--
+-- ROLLBACK (column is nullable + harmless; drop only if explicitly required):
+--   ALTER TABLE venues DROP COLUMN IF EXISTS seeding_started_at;
+
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS seeding_started_at TIMESTAMPTZ;

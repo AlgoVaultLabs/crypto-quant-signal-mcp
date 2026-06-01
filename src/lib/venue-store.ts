@@ -36,6 +36,14 @@ const CREATE_VENUES_TABLE_SQL = `
     last_eval_at          TIMESTAMPTZ,
     last_eval_pfe_wr      REAL,
     last_eval_buy_sell_count INTEGER,
+    -- OPS-SHADOW-ALERT-HYGIENE-W1 (2026-06-01): nullable clock anchor. When a
+    -- venue's seed pipeline actually starts producing signals, OPS-SHADOW-
+    -- PIPELINE-W1 (C3) stamps this with the first-signal timestamp; the
+    -- promotion clock then derives from COALESCE(seeding_started_at,
+    -- integrated_at). NULL until then → clock harmlessly falls back to
+    -- integrated_at. Pre-applied to prod via
+    -- migrations/004_add_seeding_started_at.sql (ADD COLUMN IF NOT EXISTS).
+    seeding_started_at    TIMESTAMPTZ,
     notes                 TEXT
   );
 `;
@@ -137,6 +145,11 @@ function rowToRecord(row: Record<string, unknown>): VenueRecord {
     last_eval_buy_sell_count: row.last_eval_buy_sell_count === null || row.last_eval_buy_sell_count === undefined
       ? null
       : Number(row.last_eval_buy_sell_count),
+    // OPS-SHADOW-ALERT-HYGIENE-W1: nullable clock anchor (mirrors promoted_at
+    // serialization). NULL until OPS-SHADOW-PIPELINE-W1 C3 stamps first signal.
+    seeding_started_at: row.seeding_started_at
+      ? (row.seeding_started_at instanceof Date ? row.seeding_started_at.toISOString() : String(row.seeding_started_at))
+      : null,
     notes: row.notes === null || row.notes === undefined ? null : String(row.notes),
   };
 }

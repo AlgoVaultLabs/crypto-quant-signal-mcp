@@ -75,7 +75,17 @@ export async function computeVenueStats(
   venue: VenueRecord,
   now: Date = new Date(),
 ): Promise<EvalStats> {
-  const integratedAt = new Date(venue.integrated_at);
+  // OPS-SHADOW-ALERT-HYGIENE-W1 (2026-06-01): the promotion clock AND the
+  // sample/WR window both derive from COALESCE(seeding_started_at,
+  // integrated_at). `seeding_started_at` is stamped by OPS-SHADOW-PIPELINE-W1
+  // (C3) when a venue's seed pipeline actually begins producing signals; until
+  // then it is NULL and the clock falls back to `integrated_at` (byte-identical
+  // to prior behaviour). This stops a venue's day-15/30 deadline from elapsing
+  // before its data pipeline ever started. `integratedUnix` below now holds the
+  // *effective clock-start* epoch (kept as the binding name so the two queries
+  // are unchanged).
+  const effectiveStart = venue.seeding_started_at ?? venue.integrated_at;
+  const integratedAt = new Date(effectiveStart);
   const integratedUnix = Math.floor(integratedAt.getTime() / 1000);
   const daysSince = Math.floor((now.getTime() / 1000 - integratedUnix) / SECONDS_PER_DAY);
 
@@ -118,6 +128,20 @@ export async function computeVenueStats(
  */
 export function decide(venue: VenueRecord, stats: EvalStats): EvalDecision {
   const { pfe_wr, buy_sell_count, days_since } = stats;
+
+  // Branch 0 (OPS-SHADOW-ALERT-HYGIENE-W1, 2026-06-01): NO PIPELINE YET —
+  // silent recovery. A venue with zero BUY/SELL signals has no seed pipeline
+  // feeding it (the shadow seed-loop ships in OPS-SHADOW-PIPELINE-W1). It must
+  // NOT fire an operator Telegram alert and must NOT burn its extension budget
+  // on empty data. Classifying as no_op:'no_pipeline_yet' short-circuits the
+  // evaluate loop before sendVenueStatusChange()/incrementExtension() are ever
+  // reached (forensic stays in logs, not the alert channel — CLAUDE.md
+  // "recovery alerts are noise — default silent recovery"). Placed FIRST so it
+  // pre-empts the day-15 extend + day-30 manual_required branches for starved
+  // venues (e.g. ASTER/EDGEX and the 10 venues crossing day-15 on 06-03/06-04).
+  if (buy_sell_count === 0) {
+    return { action: 'no_op', reason: 'no_pipeline_yet', pfe_wr, buy_sell_count, days_since };
+  }
 
   // Branch 1: PROMOTE — day-15 floor passed AND sample-met AND WR-met.
   if (

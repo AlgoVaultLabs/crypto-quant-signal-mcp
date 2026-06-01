@@ -113,6 +113,10 @@ export interface VenueRecord {
   last_eval_at: string | null;
   last_eval_pfe_wr: number | null;
   last_eval_buy_sell_count: number | null;
+  // OPS-SHADOW-ALERT-HYGIENE-W1 (2026-06-01): nullable clock anchor. The
+  // promotion clock derives from COALESCE(seeding_started_at, integrated_at).
+  // NULL until OPS-SHADOW-PIPELINE-W1 (C3) stamps the first-signal timestamp.
+  seeding_started_at: string | null;  // ISO 8601 | null (Postgres TIMESTAMPTZ)
   notes: string | null;
 }
 

@@ -57,6 +57,7 @@ function makeShadow(overrides: Partial<VenueRecord> = {}): VenueRecord {
     last_eval_at: null,
     last_eval_pfe_wr: null,
     last_eval_buy_sell_count: null,
+    seeding_started_at: null,
     notes: null,
     ...overrides,
   };
@@ -147,6 +148,38 @@ describe('decide — branch coverage', () => {
   });
 });
 
+// ── decide() — A1 no_pipeline_yet gate (OPS-SHADOW-ALERT-HYGIENE-W1) ──────
+
+describe('decide — no_pipeline_yet gate (A1)', () => {
+  it("buy_sell_count===0 at day-16 ext=0 (would EXTEND) → no_op:no_pipeline_yet (pre-empts extend)", () => {
+    const venue = makeShadow({ extension_count: 0 });
+    const decision = decide(venue, { pfe_wr: null, buy_sell_count: 0, days_since: 16 });
+    expect(decision.action).toBe('no_op');
+    if (decision.action === 'no_op') expect(decision.reason).toBe('no_pipeline_yet');
+  });
+
+  it("buy_sell_count===0 at day-31 ext=1 (would MANUAL_REQUIRED) → no_op:no_pipeline_yet (pre-empts manual)", () => {
+    const venue = makeShadow({ extension_count: 1 });
+    const decision = decide(venue, { pfe_wr: null, buy_sell_count: 0, days_since: 31 });
+    expect(decision.action).toBe('no_op');
+    if (decision.action === 'no_op') expect(decision.reason).toBe('no_pipeline_yet');
+  });
+
+  it("buy_sell_count===0 within initial window → no_op:no_pipeline_yet (gate is FIRST, beats within_initial_window)", () => {
+    const venue = makeShadow();
+    const decision = decide(venue, { pfe_wr: null, buy_sell_count: 0, days_since: 7 });
+    expect(decision.action).toBe('no_op');
+    if (decision.action === 'no_op') expect(decision.reason).toBe('no_pipeline_yet');
+  });
+
+  it("buy_sell_count===1 (non-zero) does NOT trip the gate — normal branches resume", () => {
+    const venue = makeShadow({ extension_count: 0, min_buy_sell_sample: 1000 });
+    const decision = decide(venue, { pfe_wr: 0.9, buy_sell_count: 1, days_since: 16 });
+    // sample insufficient (1 < 1000) but day-15 hit + ext=0 → extend, NOT no_pipeline_yet
+    expect(decision.action).toBe('extended');
+  });
+});
+
 // ── computeVenueStats — SQL shape coverage ──────────────────────────────
 
 describe('computeVenueStats — SQL shape', () => {
@@ -171,6 +204,37 @@ describe('computeVenueStats — SQL shape', () => {
     expect(wrCall[0]).toMatch(/WHEN \(signal = 'BUY'  AND pfe_return_pct > 0\)/);
     expect(wrCall[0]).toMatch(/WHEN \(signal = 'SELL' AND pfe_return_pct < 0\)/);
     expect(wrCall[0]).toMatch(/pfe_return_pct IS NOT NULL/);
+  });
+
+  it("A2 clock: seeding_started_at set → days_since derives from it (NOT integrated_at)", async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ buy_sell_count: 50 }])
+      .mockResolvedValueOnce([{ pfe_wr: 0.5 }]);
+    // integrated_at 19 days ago, but seeding only started 4 days ago.
+    const venue = makeShadow({
+      integrated_at: '2026-05-01T00:00:00Z',
+      seeding_started_at: '2026-05-16T00:00:00Z',
+    });
+    const now = new Date('2026-05-20T00:00:00Z');
+    const stats = await computeVenueStats(venue, now);
+    expect(stats.days_since).toBe(4); // from seeding_started_at, not 19
+    // and the SQL window binds the effective-start epoch (seeding_started_at)
+    const countCall = mockQuery.mock.calls[0];
+    const seedingUnix = Math.floor(new Date('2026-05-16T00:00:00Z').getTime() / 1000);
+    expect(countCall[1]).toEqual(['GATEIO', seedingUnix]);
+  });
+
+  it("A2 clock: seeding_started_at NULL → falls back to integrated_at (zero-regression guard)", async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ buy_sell_count: 50 }])
+      .mockResolvedValueOnce([{ pfe_wr: 0.5 }]);
+    const venue = makeShadow({ integrated_at: '2026-05-01T00:00:00Z', seeding_started_at: null });
+    const now = new Date('2026-05-20T00:00:00Z');
+    const stats = await computeVenueStats(venue, now);
+    expect(stats.days_since).toBe(19); // unchanged: from integrated_at
+    const countCall = mockQuery.mock.calls[0];
+    const integratedUnix = Math.floor(new Date('2026-05-01T00:00:00Z').getTime() / 1000);
+    expect(countCall[1]).toEqual(['GATEIO', integratedUnix]);
   });
 
   it("pfe_wr=null when no Phase-E-evaluated signals exist yet", async () => {
@@ -279,6 +343,28 @@ describe('evaluateAllShadowVenues — orchestration', () => {
     expect(mockTelegram).toHaveBeenCalledWith(expect.objectContaining({
       action: 'manual_required',
     }));
+  });
+
+  it("A1: starved venue (buy_sell_count=0) past day-15 → recordEval but NO Telegram + NO extension burn", async () => {
+    // Mirrors ASTER/EDGEX: day-15+ but zero seeding. Pre-fix this fired an
+    // 'extended' alert + incrementExtension; post-fix it is silent.
+    const shadow = makeShadow({ integrated_at: '2026-05-01T00:00:00Z', extension_count: 0 });
+    mockList.mockResolvedValueOnce([] as VenueRecord[]);
+    mockList.mockResolvedValueOnce([shadow]);
+    mockQuery
+      .mockResolvedValueOnce([{ buy_sell_count: 0 }])   // ZERO signals
+      .mockResolvedValueOnce([{ pfe_wr: null }]);
+    const now = new Date('2026-05-20T00:00:00Z'); // 19 days since integration
+    const summary = await evaluateAllShadowVenues(now);
+
+    expect(summary.actions[0].decision.action).toBe('no_op');
+    if (summary.actions[0].decision.action === 'no_op') {
+      expect(summary.actions[0].decision.reason).toBe('no_pipeline_yet');
+    }
+    expect(mockRecord).toHaveBeenCalled();        // eval snapshot still recorded
+    expect(mockTelegram).not.toHaveBeenCalled();  // SILENT — no operator alert
+    expect(mockIncrement).not.toHaveBeenCalled(); // extension budget preserved
+    expect(mockSetStatus).not.toHaveBeenCalled();
   });
 
   it("NO-OP branch (pre-deadline) records eval but no Telegram + no state change", async () => {
