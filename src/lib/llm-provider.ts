@@ -401,6 +401,235 @@ export class PerplexityProvider implements LLMProvider {
   }
 }
 
+// ---------------------------------------------------------------------------
+// GEO-MEASUREMENT-W3 — ChatGPT (OpenAI Responses) + Gemini (Google grounding).
+// Both raw-fetch, mirroring PerplexityProvider. Provider `name`s are 'openai' /
+// 'gemini' (already in LLMProviderName since W1 — no enum change). Engine IDs
+// are 'chatgpt' / 'gemini' (GEO_ENGINES tokens). Shared retry helper below.
+// ---------------------------------------------------------------------------
+
+/** POST + parse JSON with the same retry policy as PerplexityProvider.call. */
+async function postJsonRetry(url: string, init: RequestInit, errCode: string): Promise<unknown> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (!res.ok) {
+        const isRetryable = res.status === 429 || res.status === 500 || res.status === 503;
+        const errText = await res.text().catch(() => '');
+        if (isRetryable && attempt < RETRY_DELAYS_MS.length) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          continue;
+        }
+        throw new LLMProviderError(errCode, `${errCode} ${res.status}: ${errText.slice(0, 200)}`);
+      }
+      return await res.json();
+    } catch (err: unknown) {
+      lastErr = err;
+      if (err instanceof LLMProviderError) throw err;
+      if (attempt >= RETRY_DELAYS_MS.length) break;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  const message = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new LLMProviderError(errCode, `${errCode} call failed: ${message}`);
+}
+
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+
+interface OpenAIResponse {
+  output?: unknown[];
+  usage?: { input_tokens?: number; output_tokens?: number };
+}
+
+/**
+ * GEO-MEASUREMENT-W3 (C1) — flatten an OpenAI Responses payload (verified live
+ * 2026-06-02: `output[]` = [web_search_call, message]; message.content[] has
+ * type 'output_text' + text + annotations[] of `url_citation`). Joins the
+ * output text + dedups `url_citation` annotations → Citation[]. Exported pure fn.
+ */
+export function flattenOpenAICitations(response: unknown): { text: string; citations: Citation[] } {
+  const r = (response ?? {}) as { output?: unknown };
+  const texts: string[] = [];
+  const byUrl = new Map<string, Citation>();
+  const output = Array.isArray(r.output) ? r.output : [];
+  for (const blk of output) {
+    const b = blk as { content?: unknown };
+    const content = Array.isArray(b.content) ? b.content : [];
+    for (const c of content) {
+      const cc = c as { text?: unknown; annotations?: unknown };
+      if (typeof cc.text === 'string') texts.push(cc.text);
+      const anns = Array.isArray(cc.annotations) ? cc.annotations : [];
+      for (const a of anns) {
+        const aa = a as { type?: string; url?: unknown; title?: unknown };
+        if (aa.type === 'url_citation' && typeof aa.url === 'string' && aa.url) {
+          const ex = byUrl.get(aa.url) ?? { url: aa.url };
+          if (typeof aa.title === 'string' && aa.title) ex.title = aa.title;
+          byUrl.set(aa.url, ex);
+        }
+      }
+    }
+  }
+  return { text: texts.join('').trim(), citations: [...byUrl.values()] };
+}
+
+/**
+ * GEO-MEASUREMENT-W3 (C1) — ChatGPT engine via the OpenAI Responses API +
+ * `web_search` GA tool (raw fetch). Model from `OPENAI_MODEL` (default
+ * `gpt-4.1-mini`). `name='openai'`.
+ */
+export class OpenAIProvider implements LLMProvider {
+  readonly name = 'openai' as const;
+  private readonly apiKey: string;
+  private readonly model: string;
+
+  constructor(apiKey: string, model?: string) {
+    if (!apiKey || typeof apiKey !== 'string') {
+      throw new LLMProviderError('MISSING_OPENAI_API_KEY', 'OpenAIProvider requires a non-empty apiKey');
+    }
+    this.apiKey = apiKey;
+    this.model = model || process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+  }
+
+  private async call(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<OpenAIResponse> {
+    const body = {
+      model: opts.model || this.model,
+      input: messages.map((m) => ({ role: m.role, content: m.content })),
+      ...(opts.systemPrompt ? { instructions: opts.systemPrompt } : {}),
+      tools: [{ type: 'web_search' }],
+      max_output_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+    };
+    return (await postJsonRetry(
+      OPENAI_RESPONSES_URL,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      'OPENAI_API_ERROR',
+    )) as OpenAIResponse;
+  }
+
+  private static usageOf(j: OpenAIResponse): LLMCompletion['usage'] {
+    return { promptTokens: j.usage?.input_tokens ?? 0, completionTokens: j.usage?.output_tokens ?? 0 };
+  }
+
+  async complete(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<LLMCompletion> {
+    const j = await this.call(messages, opts);
+    return { text: flattenOpenAICitations(j).text, usage: OpenAIProvider.usageOf(j) };
+  }
+
+  async completeWithCitations(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<RetrievalResult> {
+    const j = await this.call(messages, opts);
+    const { text, citations } = flattenOpenAICitations(j);
+    return { text, citations, usage: OpenAIProvider.usageOf(j) };
+  }
+}
+
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+interface GeminiResponse {
+  candidates?: unknown[];
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+}
+
+/**
+ * GEO-MEASUREMENT-W3 (C1) — flatten a Gemini generateContent payload with
+ * Google Search grounding: text from `candidates[].content.parts[].text`;
+ * citations from `candidates[].groundingMetadata.groundingChunks[].web{uri,title}`.
+ * Exported pure fn.
+ */
+export function flattenGeminiCitations(response: unknown): { text: string; citations: Citation[] } {
+  const r = (response ?? {}) as { candidates?: unknown };
+  const texts: string[] = [];
+  const byUrl = new Map<string, Citation>();
+  const candidates = Array.isArray(r.candidates) ? r.candidates : [];
+  for (const cand of candidates) {
+    const c = cand as {
+      content?: { parts?: unknown };
+      groundingMetadata?: { groundingChunks?: unknown };
+    };
+    const parts = c.content && Array.isArray(c.content.parts) ? c.content.parts : [];
+    for (const p of parts) {
+      const pp = p as { text?: unknown };
+      if (typeof pp.text === 'string') texts.push(pp.text);
+    }
+    const chunks =
+      c.groundingMetadata && Array.isArray(c.groundingMetadata.groundingChunks)
+        ? c.groundingMetadata.groundingChunks
+        : [];
+    for (const chunk of chunks) {
+      const w = (chunk as { web?: { uri?: unknown; title?: unknown } }).web;
+      if (w && typeof w.uri === 'string' && w.uri) {
+        const ex = byUrl.get(w.uri) ?? { url: w.uri };
+        if (typeof w.title === 'string' && w.title) ex.title = w.title;
+        byUrl.set(w.uri, ex);
+      }
+    }
+  }
+  return { text: texts.join('').trim(), citations: [...byUrl.values()] };
+}
+
+/**
+ * GEO-MEASUREMENT-W3 (C1) — Gemini engine via `generateContent` +
+ * `google_search` grounding (raw fetch; `x-goog-api-key` header, NOT `?key=`).
+ * Model from `GEMINI_MODEL` (default `gemini-2.5-flash`). `name='gemini'`.
+ */
+export class GeminiProvider implements LLMProvider {
+  readonly name = 'gemini' as const;
+  private readonly apiKey: string;
+  private readonly model: string;
+
+  constructor(apiKey: string, model?: string) {
+    if (!apiKey || typeof apiKey !== 'string') {
+      throw new LLMProviderError('MISSING_GEMINI_API_KEY', 'GeminiProvider requires a non-empty apiKey');
+    }
+    this.apiKey = apiKey;
+    this.model = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  }
+
+  private async call(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<GeminiResponse> {
+    const model = opts.model || this.model;
+    const body = {
+      contents: messages.map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      })),
+      ...(opts.systemPrompt ? { systemInstruction: { parts: [{ text: opts.systemPrompt }] } } : {}),
+      tools: [{ google_search: {} }],
+      generationConfig: { maxOutputTokens: opts.maxTokens, temperature: opts.temperature },
+    };
+    return (await postJsonRetry(
+      `${GEMINI_BASE_URL}/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      'GEMINI_API_ERROR',
+    )) as GeminiResponse;
+  }
+
+  private static usageOf(j: GeminiResponse): LLMCompletion['usage'] {
+    return {
+      promptTokens: j.usageMetadata?.promptTokenCount ?? 0,
+      completionTokens: j.usageMetadata?.candidatesTokenCount ?? 0,
+    };
+  }
+
+  async complete(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<LLMCompletion> {
+    const j = await this.call(messages, opts);
+    return { text: flattenGeminiCitations(j).text, usage: GeminiProvider.usageOf(j) };
+  }
+
+  async completeWithCitations(messages: LLMMessage[], opts: LLMCompletionOpts): Promise<RetrievalResult> {
+    const j = await this.call(messages, opts);
+    const { text, citations } = flattenGeminiCitations(j);
+    return { text, citations, usage: GeminiProvider.usageOf(j) };
+  }
+}
+
 const STUB_CITATIONS: Citation[] = [
   { url: 'https://algovault.com/faq', title: 'AlgoVault FAQ', cited_text: 'AlgoVault provides composite quant trade signals for AI agents via MCP.' },
   { url: 'https://github.com/polakowo/vectorbt', title: 'vectorbt', cited_text: 'vectorbt is a Python library for backtesting quantitative strategies.' },
@@ -474,6 +703,16 @@ function buildRetrievalEngine(engineId: string): RetrievalEngine | null {
       realKey = process.env.PERPLEXITY_API_KEY;
       model = process.env.PERPLEXITY_MODEL || 'sonar';
       makeProvider = (k) => new PerplexityProvider(k, model);
+      break;
+    case 'chatgpt':
+      realKey = process.env.OPENAI_API_KEY;
+      model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+      makeProvider = (k) => new OpenAIProvider(k, model);
+      break;
+    case 'gemini':
+      realKey = process.env.GEMINI_API_KEY;
+      model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      makeProvider = (k) => new GeminiProvider(k, model);
       break;
     default:
       console.warn(`[geo-retrieval] unknown engine '${engineId}' in GEO_ENGINES — skipped`);

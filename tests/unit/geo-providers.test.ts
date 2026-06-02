@@ -15,6 +15,10 @@ import {
   PerplexityProvider,
   StubRetrievalProvider,
   flattenAnthropicCitations,
+  flattenOpenAICitations,
+  flattenGeminiCitations,
+  OpenAIProvider,
+  GeminiProvider,
   getRetrievalEngines,
   AnthropicProvider,
   LLMProviderError,
@@ -135,6 +139,8 @@ describe('getRetrievalEngines() factory', () => {
     GEO_ENGINES: process.env.GEO_ENGINES,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     NODE_ENV: process.env.NODE_ENV,
     VITEST: process.env.VITEST,
   };
@@ -181,5 +187,134 @@ describe('getRetrievalEngines() factory', () => {
     process.env.PERPLEXITY_API_KEY = 'pk-fake';
     const engines = getRetrievalEngines();
     expect(engines.map((e) => e.engineId)).toEqual(['claude-web', 'perplexity']);
+  });
+
+  it('W3: builds OpenAIProvider/GeminiProvider for chatgpt/gemini when keyed', () => {
+    process.env.GEO_ENGINES = 'chatgpt,gemini';
+    process.env.OPENAI_API_KEY = 'sk-openai-fake';
+    process.env.GEMINI_API_KEY = 'gm-fake';
+    const engines = getRetrievalEngines();
+    expect(engines.map((e) => e.engineId)).toEqual(['chatgpt', 'gemini']);
+    expect(engines[0].provider).toBeInstanceOf(OpenAIProvider);
+    expect(engines[0].model).toBe('gpt-4.1-mini');
+    expect(engines[1].provider).toBeInstanceOf(GeminiProvider);
+    expect(engines[1].model).toBe('gemini-2.5-flash');
+  });
+
+  it('W3: chatgpt/gemini Stub when key-less in TEST, SKIP in prod', () => {
+    process.env.GEO_ENGINES = 'chatgpt,gemini';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    const inTest = getRetrievalEngines();
+    expect(inTest.map((e) => e.engineId)).toEqual(['chatgpt', 'gemini']);
+    expect(inTest.every((e) => e.provider instanceof StubRetrievalProvider)).toBe(true);
+    delete process.env.VITEST;
+    process.env.NODE_ENV = 'production';
+    expect(getRetrievalEngines()).toHaveLength(0);
+  });
+});
+
+describe('OpenAIProvider (Responses + web_search)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('constructor throws LLMProviderError on empty key', () => {
+    expect(() => new OpenAIProvider('')).toThrow(LLMProviderError);
+  });
+
+  it('completeWithCitations flattens output_text + url_citation annotations', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          output: [
+            { type: 'web_search_call' },
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: 'AlgoVault and vectorbt are options.',
+                  annotations: [
+                    { type: 'url_citation', url: 'https://algovault.com/faq', title: 'AlgoVault FAQ', start_index: 0, end_index: 9 },
+                    { type: 'url_citation', url: 'https://github.com/polakowo/vectorbt', title: 'vectorbt' },
+                    { type: 'url_citation', url: 'https://algovault.com/faq', title: 'dup' }, // dedup
+                  ],
+                },
+              ],
+            },
+          ],
+          usage: { input_tokens: 12, output_tokens: 8 },
+        }),
+      })),
+    );
+    const p = new OpenAIProvider('sk-test');
+    const out = await p.completeWithCitations([{ role: 'user', content: 'q' }], OPTS);
+    expect(out.text).toContain('AlgoVault and vectorbt');
+    expect(out.citations.filter((c) => c.url === 'https://algovault.com/faq')).toHaveLength(1); // deduped
+    expect(out.citations.some((c) => c.url.includes('vectorbt'))).toBe(true);
+    expect(out.usage?.promptTokens).toBe(12);
+  });
+
+  it('throws LLMProviderError on non-retryable HTTP error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401, text: async () => 'bad key' })));
+    await expect(new OpenAIProvider('sk-bad').complete([{ role: 'user', content: 'q' }], OPTS)).rejects.toThrow(
+      LLMProviderError,
+    );
+  });
+});
+
+describe('GeminiProvider (generateContent + google_search grounding)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('constructor throws LLMProviderError on empty key', () => {
+    expect(() => new GeminiProvider('')).toThrow(LLMProviderError);
+  });
+
+  it('completeWithCitations flattens parts text + groundingChunks web', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              content: { parts: [{ text: 'AlgoVault is a composite signal MCP server.' }] },
+              groundingMetadata: {
+                groundingChunks: [
+                  { web: { uri: 'https://algovault.com/faq', title: 'AlgoVault FAQ' } },
+                  { web: { uri: 'https://github.com/polakowo/vectorbt', title: 'vectorbt' } },
+                ],
+              },
+            },
+          ],
+          usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 7 },
+        }),
+      })),
+    );
+    const p = new GeminiProvider('gm-test');
+    const out = await p.completeWithCitations([{ role: 'user', content: 'q' }], OPTS);
+    expect(out.text).toContain('AlgoVault is a composite signal');
+    expect(out.citations).toHaveLength(2);
+    expect(out.citations[0]).toMatchObject({ url: 'https://algovault.com/faq', title: 'AlgoVault FAQ' });
+    expect(out.usage?.completionTokens).toBe(7);
+  });
+});
+
+describe('flattenOpenAICitations / flattenGeminiCitations (pure)', () => {
+  it('flattenOpenAICitations: empty/odd input -> empty citations', () => {
+    expect(flattenOpenAICitations({}).citations).toEqual([]);
+    expect(flattenOpenAICitations({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'hi' }] }] })).toEqual({
+      text: 'hi',
+      citations: [],
+    });
+  });
+
+  it('flattenGeminiCitations: empty/odd input -> empty citations', () => {
+    expect(flattenGeminiCitations({}).citations).toEqual([]);
+    expect(flattenGeminiCitations({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] })).toEqual({
+      text: 'hi',
+      citations: [],
+    });
   });
 });
