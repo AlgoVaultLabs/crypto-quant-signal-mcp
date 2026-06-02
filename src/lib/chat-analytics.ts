@@ -25,7 +25,7 @@
  * Mirrors AV-CHAT-MCP-W1's `ChatRateLimit.record()` shape. Never throws to
  * caller — analytics failure MUST NEVER break a chat call.
  */
-import crypto from 'node:crypto';
+import { hashQuestion } from './question-hash.js';
 import { dbExec, dbRun } from './performance-db.js';
 import { costUsdE6 } from './llm-pricing.js';
 import type { LLMProviderName } from './llm-provider.js';
@@ -58,11 +58,9 @@ export interface ChatAnalyticsEvent {
   errorCode?: string | null;
 }
 
-const QUESTION_HASH_BYTES = 16; // SHA256 truncated to 16 hex chars = 64 bits
-
-function hashQuestion(question: string): string {
-  return crypto.createHash('sha256').update(question).digest('hex').slice(0, QUESTION_HASH_BYTES);
-}
+// GEO-MEASUREMENT-W2 (C3, Q-3-B): hashQuestion extracted to ./question-hash.js
+// (shared verbatim with geo-demand-mining's read side). Byte-identical — locked
+// by tests/unit/question-hash.test.ts.
 
 /**
  * Idempotent DDL — called once at server boot (per repo convention; mirror
