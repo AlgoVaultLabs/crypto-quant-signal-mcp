@@ -1,33 +1,54 @@
 /**
- * GEO-MEASUREMENT-W1 (C3) — end-to-end integration test.
+ * GEO-MEASUREMENT-W2 (C5) — multi-engine end-to-end integration.
  *
- * Wires YAML loader → runWeeklyProbe (StubLLM) → extractor (StubLLM returns
- * canned JSON) → mocked storage → assert storage saw 15 (result, mentions)
- * pairs with valid shapes.
+ * Wires the REAL orchestrator → providers → extractor → mapSourceCitations
+ * across 2 engines × 1 sample over the 15-query SoT, with storage + gap-list
+ * mocked (captured). Asserts: row count scales by engines×samples; the
+ * retrieval ctx (retrieval/query_tier/sample_idx) reaches recordGeoRun; the
+ * engine's algovault citation becomes cited=true; and the classified
+ * source-citation map (algovault + competitor) reaches recordSourceCitations.
  *
- * Does NOT hit a real DB; storage layer is mocked. Live DB persistence is
- * verified post-deploy via the LIVE_GREEN probe.
+ * No real DB; live persistence is verified post-deploy by the LIVE gate.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'node:path';
-import type { LLMProvider, LLMCompletion } from '../../src/lib/llm-provider.js';
+import type {
+  LLMProvider,
+  LLMCompletion,
+  RetrievalResult,
+  RetrievalEngine,
+} from '../../src/lib/llm-provider.js';
 import type { GeoQueryResult } from '../../src/lib/geo-orchestrator.js';
-import type { GeoMentions } from '../../src/lib/geo-extractor.js';
+import type { GeoMentions, SourceCitation } from '../../src/lib/geo-extractor.js';
 
-const recordedRuns: Array<{ result: GeoQueryResult; mentions: GeoMentions }> = [];
+interface GeoRunContext {
+  retrieval?: boolean;
+  query_tier?: string | null;
+  sample_idx?: number;
+}
+const recordedRuns: Array<{ result: GeoQueryResult; mentions: GeoMentions; ctx: GeoRunContext }> = [];
+const recordedCitations: Array<{ meta: Record<string, unknown>; citations: SourceCitation[] }> = [];
 
 vi.mock('../../src/lib/geo-storage.js', () => ({
-  recordGeoRun: async (result: GeoQueryResult, mentions: GeoMentions) => {
-    recordedRuns.push({ result, mentions });
+  recordGeoRun: async (result: GeoQueryResult, mentions: GeoMentions, ctx: GeoRunContext = {}) => {
+    recordedRuns.push({ result, mentions, ctx });
+  },
+  recordSourceCitations: async (meta: Record<string, unknown>, citations: SourceCitation[]) => {
+    recordedCitations.push({ meta, citations });
   },
   ensureGeoSchema: () => {
-    /* no-op in tests */
+    /* no-op */
   },
+}));
+
+vi.mock('../../src/lib/geo-gap-list.js', () => ({
+  computeGapList: async () => [],
+  persistGapBriefs: async () => [],
 }));
 
 import { runWeeklyProbe } from '../../src/lib/geo-orchestrator.js';
 
-const YAML_PATH = path.resolve(__dirname, '..', '..', 'landing', 'Prompt', 'geo-queries.yaml');
+const YAML_PATH = path.resolve(process.cwd(), 'landing/Prompt/geo-queries.yaml');
 
 const CANNED_EXTRACTOR_JSON = JSON.stringify({
   mention_found: true,
@@ -36,21 +57,26 @@ const CANNED_EXTRACTOR_JSON = JSON.stringify({
   mention_context: 'AlgoVault is a good option…',
   competitors_mentioned: ['vectorbt'],
   sentiment_score: 0.6,
+  share_of_voice: 0.5,
 });
 
+/** Engine that returns citations on completeWithCitations + canned extractor JSON on complete. */
 class DualBehaviorProvider implements LLMProvider {
   readonly name = 'stub' as const;
-  private callCount = 0;
   async complete(_messages: unknown, opts: unknown): Promise<LLMCompletion> {
-    this.callCount++;
-    // Heuristic: extractor calls pass systemPromptCacheable:true; orchestrator
-    // calls pass systemPromptCacheable:undefined.
     const o = opts as { systemPromptCacheable?: boolean };
     if (o.systemPromptCacheable === true) {
       return { text: CANNED_EXTRACTOR_JSON, usage: { promptTokens: 1, completionTokens: 1 } };
     }
+    return { text: 'Top picks include vectorbt and AlgoVault.', usage: { promptTokens: 10, completionTokens: 30 } };
+  }
+  async completeWithCitations(_messages: unknown, _opts: unknown): Promise<RetrievalResult> {
     return {
-      text: `Top picks include vectorbt and AlgoVault for query #${this.callCount}.`,
+      text: 'Top picks include vectorbt and AlgoVault.',
+      citations: [
+        { url: 'https://algovault.com/faq', title: 'AlgoVault FAQ' },
+        { url: 'https://github.com/polakowo/vectorbt', title: 'vectorbt' },
+      ],
       usage: { promptTokens: 10, completionTokens: 30 },
     };
   }
@@ -58,35 +84,45 @@ class DualBehaviorProvider implements LLMProvider {
 
 beforeEach(() => {
   recordedRuns.length = 0;
+  recordedCitations.length = 0;
 });
 
-describe('GEO-MEASUREMENT-W1: end-to-end flow', () => {
-  it('processes all 15 queries through orchestrator → extractor → storage', async () => {
-    const provider = new DualBehaviorProvider();
-    const { runId, resultCount, errorCount } = await runWeeklyProbe({
-      provider,
-      model: 'claude-haiku-4-5-20251001',
+describe('GEO-MEASUREMENT-W2: multi-engine end-to-end flow', () => {
+  it('runs 2 engines × 1 sample over 15 queries; ctx + citations flow through', async () => {
+    const engines: RetrievalEngine[] = [
+      { engineId: 'claude-web', provider: new DualBehaviorProvider(), model: 'claude-haiku-4-5-20251001' },
+      { engineId: 'perplexity', provider: new DualBehaviorProvider(), model: 'sonar' },
+    ];
+
+    const { runId, resultCount, errorCount, engineIds } = await runWeeklyProbe({
+      engines,
+      samples: 1,
       yamlPath: YAML_PATH,
       interQueryDelayMs: 0,
     });
 
-    expect(resultCount).toBe(15);
+    expect(resultCount).toBe(30); // 15 × 2 × 1
     expect(errorCount).toBe(0);
-    expect(recordedRuns).toHaveLength(15);
+    expect(engineIds).toEqual(['claude-web', 'perplexity']);
+    expect(recordedRuns).toHaveLength(30);
+    expect(recordedCitations).toHaveLength(30); // one source-map per ok run
 
-    // Every recorded run has consistent run_id, valid result shape, valid mentions shape
-    for (const { result, mentions } of recordedRuns) {
+    for (const { result, mentions, ctx } of recordedRuns) {
       expect(result.run_id).toBe(runId);
-      expect(result.query_id.length).toBeGreaterThan(0);
-      expect(result.response_text).toContain('AlgoVault');
+      expect(['claude-haiku-4-5-20251001', 'sonar']).toContain(result.model);
       expect(mentions.mention_found).toBe(true);
-      expect(mentions.mention_position).toBe(2);
       expect(mentions.competitors_mentioned).toContain('vectorbt');
-      expect(mentions.sentiment_score).toBe(0.6);
+      expect(mentions.share_of_voice).toBe(0.5);
+      expect(mentions.cited).toBe(true); // algovault.com citation -> cited
+      expect(mentions.cited_url).toBe('https://algovault.com/faq');
+      expect(ctx.retrieval).toBe(true);
+      expect(ctx.sample_idx).toBe(0);
+      expect(typeof ctx.query_tier).toBe('string');
     }
 
-    // Run IDs are uniform across the run
-    const uniqueRunIds = new Set(recordedRuns.map((r) => r.result.run_id));
-    expect(uniqueRunIds.size).toBe(1);
+    // Source-citation attribution flowed through mapSourceCitations.
+    const allAttr = new Set(recordedCitations.flatMap((r) => r.citations.map((c) => c.attributed_to)));
+    expect(allAttr.has('algovault')).toBe(true);
+    expect(allAttr.has('competitor')).toBe(true); // queries with 'vectorbt' in competitor_terms
   });
 });

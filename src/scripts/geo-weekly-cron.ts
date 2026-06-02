@@ -10,12 +10,10 @@
  * invoking LLM / DB writes / Telegram.
  */
 import { runWeeklyProbe } from '../lib/geo-orchestrator.js';
-import { getLLMProvider } from '../lib/llm-provider.js';
 import { dbQuery } from '../lib/performance-db.js';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { WOW_DROP_SQL } from '../lib/geo-dashboard.js';
 
-const MODEL = 'claude-haiku-4-5-20251001';
 const DASHBOARD_URL = 'https://api.algovault.com/admin/geo-dashboard';
 
 interface SummaryRow {
@@ -36,6 +34,23 @@ interface WowRow {
 interface GapRow {
   query_id: string;
   mention_rate_pct: string | number | null;
+}
+
+interface EngineStatRow {
+  model: string;
+  mention_rate_pct: string | number | null;
+  cited_rate_pct: string | number | null;
+  avg_sov: string | number | null;
+}
+
+interface TopGapRow {
+  query_id: string;
+  query_tier: string | null;
+  model: string;
+  sov: string | number | null;
+  top_competitor: string | null;
+  top_competitor_domain: string | null;
+  recommended_action: string | null;
 }
 
 function num(v: string | number | null | undefined): number {
@@ -63,6 +78,28 @@ async function buildDigestLines(runId: string, resultCount: number, errorCount: 
      GROUP BY query_id
      ORDER BY mention_rate_pct ASC NULLS FIRST, query_id
      LIMIT 5`,
+    [],
+  );
+
+  // GEO-MEASUREMENT-W2: per-engine citation + share-of-voice (retrieval rows, this week).
+  const engineStats = await dbQuery<EngineStatRow>(
+    `SELECT model,
+            ROUND(100.0 * count(*) FILTER (WHERE mention_found) / NULLIF(count(*), 0), 1) AS mention_rate_pct,
+            ROUND(100.0 * count(*) FILTER (WHERE cited) / NULLIF(count(*), 0), 1) AS cited_rate_pct,
+            ROUND(AVG(share_of_voice)::numeric, 3) AS avg_sov
+     FROM geo_mentions
+     WHERE retrieval = true AND ran_at > now() - interval '1 week'
+     GROUP BY model
+     ORDER BY model`,
+    [],
+  );
+
+  // GEO-MEASUREMENT-W2: the single top content-gap brief (latest computed).
+  const topGap = await dbQuery<TopGapRow>(
+    `SELECT query_id, query_tier, model, sov, top_competitor, top_competitor_domain, recommended_action
+     FROM geo_content_gaps
+     ORDER BY computed_at DESC, rank_score DESC
+     LIMIT 1`,
     [],
   );
 
@@ -99,6 +136,25 @@ async function buildDigestLines(runId: string, resultCount: number, errorCount: 
     }
   }
 
+  if (engineStats.length > 0) {
+    lines.push('');
+    lines.push('*Per-engine citations + share-of-voice (retrieval, this week):*');
+    for (const e of engineStats) {
+      lines.push(
+        `· ${e.model}: cited ${e.cited_rate_pct == null ? '0.0' : num(e.cited_rate_pct).toFixed(1)}% · SoV ${
+          e.avg_sov == null ? '0.000' : num(e.avg_sov).toFixed(3)
+        } · mention ${e.mention_rate_pct == null ? '0.0' : num(e.mention_rate_pct).toFixed(1)}%`,
+      );
+    }
+  }
+
+  if (topGap.length > 0) {
+    const g = topGap[0];
+    lines.push('');
+    lines.push('*Top content gap (→ editorial-calendar via geo-gap injector):*');
+    lines.push(`· ${g.recommended_action ?? `${g.query_id} (${g.query_tier ?? 'niche'})`}`);
+  }
+
   lines.push('');
   lines.push(`👉 Dashboard: ${DASHBOARD_URL}?key=<admin-key>`);
 
@@ -118,13 +174,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log('[geo-cron] starting weekly probe');
-  const provider = getLLMProvider();
-  const { runId, resultCount, errorCount } = await runWeeklyProbe({
-    provider,
-    model: MODEL,
-  });
-  console.log(`[geo-cron] run ${runId} complete: ${resultCount} queries, ${errorCount} errors`);
+  console.log('[geo-cron] starting weekly multi-engine probe');
+  const { runId, resultCount, errorCount, engineIds } = await runWeeklyProbe();
+  console.log(
+    `[geo-cron] run ${runId} complete: engines=[${engineIds.join(',')}] rows=${resultCount} errors=${errorCount}`,
+  );
 
   const { lines, wowAlerts } = await buildDigestLines(runId, resultCount, errorCount);
 

@@ -54,12 +54,49 @@ interface LatestRunRow {
   error_count: string | number;
 }
 
+// GEO-MEASUREMENT-W2 (C5) — retrieval-engine dimensions.
+interface EngineRow {
+  model: string;
+  samples: string | number;
+  mention_rate_pct: string | number | null;
+  cited_rate_pct: string | number | null;
+  avg_sov: string | number | null;
+}
+interface SourceMapRow {
+  source_domain: string;
+  attributed_to: string;
+  competitor_name: string | null;
+  citation_count: string | number;
+  query_count: string | number;
+}
+interface TieredRow {
+  query_tier: string | null;
+  mention_rate_pct: string | number | null;
+  avg_sov: string | number | null;
+  samples: string | number;
+}
+interface GapBriefRow {
+  query_id: string;
+  query_tier: string | null;
+  model: string;
+  sov: string | number | null;
+  top_competitor: string | null;
+  top_competitor_domain: string | null;
+  recommended_action: string | null;
+  injected_at: string | null;
+}
+
 export interface GeoDashboardData {
   weekly: WeeklyRow[];
   perQuery: PerQueryRow[];
   competitors: CompetitorRow[];
   wowDrops: WowDropRow[];
   latestRun: LatestRunRow | null;
+  // GEO-MEASUREMENT-W2 (C5) — optional so W1 fixtures/tests stay valid.
+  engines?: EngineRow[];
+  sourceMap?: SourceMapRow[];
+  tiered?: TieredRow[];
+  gaps?: GapBriefRow[];
 }
 
 function n(v: string | number | null | undefined): number {
@@ -155,12 +192,61 @@ export async function getGeoDashboardData(opts: { lookbackWeeks: number }): Prom
     [],
   );
 
+  // GEO-MEASUREMENT-W2 (C5) — retrieval-engine sections (retrieval rows only,
+  // so W1 non-retrieval history doesn't dilute citation/SoV).
+  const engines = await dbQuery<EngineRow>(
+    `SELECT model, count(*) AS samples,
+            ROUND(100.0 * count(*) FILTER (WHERE mention_found) / NULLIF(count(*), 0), 1) AS mention_rate_pct,
+            ROUND(100.0 * count(*) FILTER (WHERE cited) / NULLIF(count(*), 0), 1) AS cited_rate_pct,
+            ROUND(AVG(share_of_voice)::numeric, 3) AS avg_sov
+     FROM geo_mentions
+     WHERE retrieval = true AND ran_at > now() - $1 * interval '1 week'
+     GROUP BY model
+     ORDER BY model`,
+    [opts.lookbackWeeks],
+  );
+
+  const sourceMap = await dbQuery<SourceMapRow>(
+    `SELECT source_domain, attributed_to, competitor_name,
+            sum(citation_count)::int AS citation_count,
+            sum(query_count)::int AS query_count
+     FROM geo_source_map_4w
+     GROUP BY source_domain, attributed_to, competitor_name
+     ORDER BY citation_count DESC
+     LIMIT 25`,
+    [],
+  );
+
+  const tiered = await dbQuery<TieredRow>(
+    `SELECT query_tier, count(*) AS samples,
+            ROUND(100.0 * count(*) FILTER (WHERE mention_found) / NULLIF(count(*), 0), 1) AS mention_rate_pct,
+            ROUND(AVG(share_of_voice)::numeric, 3) AS avg_sov
+     FROM geo_mentions
+     WHERE retrieval = true AND ran_at > now() - $1 * interval '1 week'
+     GROUP BY query_tier
+     ORDER BY query_tier NULLS LAST`,
+    [opts.lookbackWeeks],
+  );
+
+  const gaps = await dbQuery<GapBriefRow>(
+    `SELECT query_id, query_tier, model, sov, top_competitor, top_competitor_domain,
+            recommended_action, to_char(injected_at, 'YYYY-MM-DD HH24:MI') AS injected_at
+     FROM geo_content_gaps
+     ORDER BY computed_at DESC, rank_score DESC
+     LIMIT 10`,
+    [],
+  );
+
   return {
     weekly,
     perQuery,
     competitors,
     wowDrops,
     latestRun: latestRuns[0] ?? null,
+    engines,
+    sourceMap,
+    tiered,
+    gaps,
   };
 }
 
@@ -248,6 +334,62 @@ export function renderGeoDashboardHtml(data: GeoDashboardData): string {
       </table>`
     : '<p class="empty">No runs yet — first probe runs next Monday 08:00 UTC.</p>';
 
+  // GEO-MEASUREMENT-W2 (C5) — retrieval-engine sections.
+  const engineRows = (data.engines ?? [])
+    .map(
+      (e) =>
+        `<tr><td><code>${htmlEscape(e.model)}</code></td><td>${fmtInt(n(e.samples))}</td>` +
+        `<td>${e.mention_rate_pct == null ? '0.0' : n(e.mention_rate_pct).toFixed(1)}%</td>` +
+        `<td>${e.cited_rate_pct == null ? '0.0' : n(e.cited_rate_pct).toFixed(1)}%</td>` +
+        `<td>${e.avg_sov == null ? '0.000' : n(e.avg_sov).toFixed(3)}</td></tr>`,
+    )
+    .join('');
+  const enginesSection =
+    (data.engines ?? []).length === 0
+      ? '<p class="empty">No retrieval-engine data yet — first multi-engine probe runs next Monday 08:00 UTC.</p>'
+      : `<table><thead><tr><th>Engine (model)</th><th>Samples</th><th>Mention rate</th><th>Citation rate</th><th>Avg SoV</th></tr></thead><tbody>${engineRows}</tbody></table>`;
+
+  const tierRows = (data.tiered ?? [])
+    .map(
+      (t) =>
+        `<tr><td><code>${htmlEscape(t.query_tier ?? 'niche')}</code></td><td>${fmtInt(n(t.samples))}</td>` +
+        `<td>${t.mention_rate_pct == null ? '0.0' : n(t.mention_rate_pct).toFixed(1)}%</td>` +
+        `<td>${t.avg_sov == null ? '0.000' : n(t.avg_sov).toFixed(3)}</td></tr>`,
+    )
+    .join('');
+  const tieredSection =
+    (data.tiered ?? []).length === 0
+      ? '<p class="empty">No tiered data yet.</p>'
+      : `<table><thead><tr><th>Tier</th><th>Samples</th><th>Mention rate</th><th>Avg SoV</th></tr></thead><tbody>${tierRows}</tbody></table>`;
+
+  const sourceRows = (data.sourceMap ?? [])
+    .map(
+      (s) =>
+        `<tr class="${s.attributed_to === 'competitor' ? 'warn' : ''}"><td><code>${htmlEscape(s.source_domain)}</code></td>` +
+        `<td>${htmlEscape(s.attributed_to)}</td><td>${s.competitor_name ? htmlEscape(s.competitor_name) : '–'}</td>` +
+        `<td>${fmtInt(n(s.citation_count))}</td><td>${fmtInt(n(s.query_count))}</td></tr>`,
+    )
+    .join('');
+  const sourceMapSection =
+    (data.sourceMap ?? []).length === 0
+      ? '<p class="empty">No cited sources yet.</p>'
+      : `<table><thead><tr><th>Source domain</th><th>Attribution</th><th>Competitor</th><th>Citations (4w)</th><th>Queries</th></tr></thead><tbody>${sourceRows}</tbody></table>`;
+
+  const gapRows = (data.gaps ?? [])
+    .map(
+      (g) =>
+        `<tr><td><code>${htmlEscape(g.query_id)}</code></td><td>${htmlEscape(g.query_tier ?? 'niche')}</td>` +
+        `<td>${g.sov == null ? '0.000' : n(g.sov).toFixed(3)}</td>` +
+        `<td>${g.top_competitor ? htmlEscape(g.top_competitor) : '–'}${g.top_competitor_domain ? ` @ <code>${htmlEscape(g.top_competitor_domain)}</code>` : ''}</td>` +
+        `<td>${g.injected_at ? `✅ ${htmlEscape(g.injected_at)}` : 'pending'}</td>` +
+        `<td>${g.recommended_action ? htmlEscape(g.recommended_action) : ''}</td></tr>`,
+    )
+    .join('');
+  const gapsSection =
+    (data.gaps ?? []).length === 0
+      ? '<p class="empty">No content gaps computed yet.</p>'
+      : `<table><thead><tr><th>Query</th><th>Tier</th><th>SoV</th><th>Top competitor</th><th>Injected</th><th>Recommended action</th></tr></thead><tbody>${gapRows}</tbody></table>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -270,7 +412,7 @@ export function renderGeoDashboardHtml(data: GeoDashboardData): string {
 </head>
 <body>
 <h1>GEO Weekly Probe — AlgoVault Admin</h1>
-<p class="meta">Measures whether LLMs recommend AlgoVault when asked about crypto trading agents, signal APIs, and AI-native quant tooling. Probes fire every Monday 08:00 UTC. Cost ≈ $0.06/week with prompt caching. Multi-LLM expansion (OpenRouter) deferred to GEO-MEASUREMENT-W2.</p>
+<p class="meta">Measures whether LLMs recommend AlgoVault when asked about crypto trading agents, signal APIs, and AI-native quant tooling. Probes fire every Monday 08:00 UTC across retrieval engines (Claude web_search + Perplexity Sonar), N≥3 samples/query, denoised at read time. ChatGPT-search (W3) + Gemini-grounding (W4) drop in as adapters.</p>
 
 ${wowBanner}
 
@@ -286,7 +428,19 @@ ${competitorSection}
 <h2>4. Latest run</h2>
 ${runSection}
 
-<p class="meta">Edit the canonical 15-query SoT at <code>landing/Prompt/geo-queries.yaml</code> — orchestrator loads at runtime. Add queries without code change.</p>
+<h2>5. Per-engine mention + citation rate + SoV (retrieval engines)</h2>
+${enginesSection}
+
+<h2>6. Tiered breakdown (head / niche / branded)</h2>
+${tieredSection}
+
+<h2>7. Source-citation map — top cited domains (4w; competitor rows highlighted)</h2>
+${sourceMapSection}
+
+<h2>8. Content-gap list (→ editorial-calendar via geo-gap injector, veto-gated)</h2>
+${gapsSection}
+
+<p class="meta">Edit the canonical 15-query SoT at <code>landing/Prompt/geo-queries.yaml</code> — orchestrator loads at runtime. Add queries (with a <code>tier</code>) without code change. Engines via <code>GEO_ENGINES</code> (claude-web,perplexity); samples via <code>GEO_SAMPLES_PER_QUERY</code>.</p>
 </body>
 </html>`;
 }

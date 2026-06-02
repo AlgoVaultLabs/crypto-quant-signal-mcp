@@ -7,16 +7,25 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'node:path';
-import type { LLMProvider, LLMCompletion } from '../../src/lib/llm-provider.js';
+import type { LLMProvider, LLMCompletion, RetrievalEngine } from '../../src/lib/llm-provider.js';
 
 // Hoisted mock state — mutated per test
 const mockRecord = vi.fn();
+const mockRecordCites = vi.fn();
 const mockExtract = vi.fn();
 const mockEnsure = vi.fn();
+const mockComputeGap = vi.fn();
+const mockPersistGap = vi.fn();
 
 vi.mock('../../src/lib/geo-storage.js', () => ({
   recordGeoRun: (...args: unknown[]) => mockRecord(...args),
+  recordSourceCitations: (...args: unknown[]) => mockRecordCites(...args),
   ensureGeoSchema: (...args: unknown[]) => mockEnsure(...args),
+}));
+
+vi.mock('../../src/lib/geo-gap-list.js', () => ({
+  computeGapList: (...args: unknown[]) => mockComputeGap(...args),
+  persistGapBriefs: (...args: unknown[]) => mockPersistGap(...args),
 }));
 
 // Keep real SAFE_DEFAULTS (the orchestrator error-path spreads it as of W2 C2);
@@ -53,6 +62,7 @@ class StubProvider implements LLMProvider {
 
 beforeEach(() => {
   mockRecord.mockReset().mockResolvedValue(undefined);
+  mockRecordCites.mockReset().mockResolvedValue(undefined);
   mockExtract.mockReset().mockResolvedValue({
     mention_found: true,
     mention_count: 1,
@@ -60,9 +70,19 @@ beforeEach(() => {
     mention_context: '…AlgoVault…',
     competitors_mentioned: [],
     sentiment_score: 0.5,
+    cited: false,
+    cited_url: null,
+    share_of_voice: 0.25,
   });
   mockEnsure.mockReset();
+  mockComputeGap.mockReset().mockResolvedValue([]);
+  mockPersistGap.mockReset().mockResolvedValue([]);
 });
+
+/** A single stub retrieval engine for runWeeklyProbe tests. */
+function stubEngine(fn?: (msgs: unknown, opts: unknown) => LLMCompletion): RetrievalEngine {
+  return { engineId: 'stub', provider: new StubProvider(fn), model: 'stub-model' };
+}
 
 describe('geo-orchestrator: loadQueries', () => {
   it('returns 15 GeoQuery objects from canonical YAML', () => {
@@ -135,36 +155,64 @@ describe('geo-orchestrator: runGeoQuery', () => {
   });
 });
 
-describe('geo-orchestrator: runWeeklyProbe', () => {
-  it('iterates all 15 queries and writes one (result, mentions) pair per query', async () => {
-    const provider = new StubProvider();
-    const { runId, resultCount, errorCount } = await runWeeklyProbe({
-      provider,
-      model: 'claude-haiku-4-5-20251001',
+describe('geo-orchestrator: runWeeklyProbe (multi-engine × samples)', () => {
+  it('writes ≥samples rows per (query, engine) and computes the gap list', async () => {
+    const { runId, engineIds, resultCount, errorCount } = await runWeeklyProbe({
+      engines: [stubEngine()],
+      samples: 1,
       yamlPath: YAML_PATH,
       interQueryDelayMs: 0,
     });
-    expect(typeof runId).toBe('string');
     expect(runId.length).toBeGreaterThan(0);
-    expect(resultCount).toBe(15);
+    expect(engineIds).toEqual(['stub']);
+    expect(resultCount).toBe(15); // 15 queries × 1 engine × 1 sample
     expect(errorCount).toBe(0);
     expect(mockRecord).toHaveBeenCalledTimes(15);
     expect(mockExtract).toHaveBeenCalledTimes(15);
+    expect(mockRecordCites).toHaveBeenCalledTimes(15); // source-citation map per ok row
+    // closed loop: gap-list computed + persisted once at end
+    expect(mockComputeGap).toHaveBeenCalledTimes(1);
+    expect(mockPersistGap).toHaveBeenCalledTimes(1);
   });
 
-  it('skips extractor on error path; still records via storage with safe defaults', async () => {
-    const provider = new StubProvider(() => {
-      throw new Error('always fail');
+  it('scales rows by engines × samples', async () => {
+    const { resultCount } = await runWeeklyProbe({
+      engines: [stubEngine(), stubEngine()],
+      samples: 3,
+      yamlPath: YAML_PATH,
+      interQueryDelayMs: 0,
     });
+    expect(resultCount).toBe(15 * 2 * 3); // 90
+    expect(mockRecord).toHaveBeenCalledTimes(90);
+  });
+
+  it('records via storage with safe defaults on the error path; skips extractor + citations', async () => {
     const { resultCount, errorCount } = await runWeeklyProbe({
-      provider,
-      model: 'm',
+      engines: [
+        stubEngine(() => {
+          throw new Error('always fail');
+        }),
+      ],
+      samples: 1,
       yamlPath: YAML_PATH,
       interQueryDelayMs: 0,
     });
     expect(resultCount).toBe(15);
     expect(errorCount).toBe(15);
     expect(mockExtract).not.toHaveBeenCalled();
-    expect(mockRecord).toHaveBeenCalledTimes(15);
+    expect(mockRecordCites).not.toHaveBeenCalled();
+    expect(mockRecord).toHaveBeenCalledTimes(15); // still recorded with SAFE_DEFAULTS
+  });
+
+  it('no-ops cleanly when there are no runnable engines', async () => {
+    const { resultCount, engineIds } = await runWeeklyProbe({
+      engines: [],
+      samples: 3,
+      yamlPath: YAML_PATH,
+      interQueryDelayMs: 0,
+    });
+    expect(resultCount).toBe(0);
+    expect(engineIds).toEqual([]);
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 });
