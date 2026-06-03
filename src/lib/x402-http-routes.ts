@@ -24,7 +24,7 @@
  * Input validation: each body is validated against the SAME JSON Schema declared to the
  * Bazaar (`BAZAAR_ROUTES[tool].inputSchema`) via ajv (single source for input shape).
  */
-import express, { type Express, type Request, type Response } from 'express';
+import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import Ajv, { type ValidateFunction } from 'ajv';
 import { resolveLicense, requestContext } from './license.js';
 import { hashIp, logRequest } from './analytics.js';
@@ -37,6 +37,31 @@ import { getMarketRegime } from '../tools/get-market-regime.js';
 import type { ExchangeId, LicenseInfo, TradeCallResult } from '../types.js';
 
 const ajv = new Ajv({ useDefaults: true, coerceTypes: true, allErrors: true });
+
+/**
+ * Tolerant JSON body parser: never lets a malformed/empty body escape as a 400. The CDP
+ * Bazaar crawler probes the resource with `bazaar.info.input` (or an empty request) and
+ * requires a 402 — if the server returns ANY other status (e.g. express.json's 400 on a
+ * body it can't parse) the resource is NOT indexed (CDP support, 2026-06-03). So we
+ * swallow parse errors to `{}` and let the paywall return 402 (paid calls with a bad body
+ * still get a clean 400 from the ajv check downstream).
+ */
+function tolerantJson(req: Request, res: Response, next: NextFunction): void {
+  express.json()(req, res, (err?: unknown) => {
+    if (err) (req as Request & { body: unknown }).body = {};
+    next();
+  });
+}
+
+/** Log every /x402 request's method + final status + UA (so the Bazaar crawler's probe is observable). */
+function logCrawl(req: Request, res: Response, next: NextFunction): void {
+  res.on('finish', () => {
+    const ua = String(req.headers['user-agent'] || '').slice(0, 80);
+    const paid = req.headers['x-payment'] ? 'y' : 'n';
+    console.log(`[x402-route] ${req.method} ${req.path} status=${res.statusCode} xpayment=${paid} ua="${ua}"`);
+  });
+  next();
+}
 
 /** The paid, Bazaar-discoverable HTTP tools (must match BAZAAR_ROUTES / TOOL_PRICING). */
 export const HTTP_TOOLS = ['get_trade_signal', 'scan_funding_arb', 'get_market_regime'] as const;
@@ -107,7 +132,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
     // or the route is never indexed (live-verified: every listed Bazaar resource 402s/
     // 405s on GET; a POST-only route 404s on GET and stays unlisted forever despite the
     // settle returning `processing`). The actual paid invocation is the POST below.
-    app.get(routePath, (_req: Request, res: Response) => {
+    app.get(routePath, logCrawl, (_req: Request, res: Response) => {
       const r = generate402Response(tool, {
         resourceUrl: bazaarResourceUrl(tool),
         description: bazaarRouteDescription(tool),
@@ -116,7 +141,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
       res.status(r.status).json(r.body);
     });
 
-    app.post(routePath, express.json(), async (req: Request, res: Response) => {
+    app.post(routePath, logCrawl, tolerantJson, async (req: Request, res: Response) => {
       const startMs = Date.now();
       // 3-tier gate; x402 verification hits the CDP facilitator.
       const { license, pendingSettlement } = await resolveLicense(

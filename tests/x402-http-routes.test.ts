@@ -153,6 +153,16 @@ describe('x402 HTTP routes — paywall + listing channel (R2, R3, item K)', () =
       expect(body.extensions?.bazaar?.info?.input?.type).toBe('http');
     }
   });
+
+  it('unpaid POST with malformed/empty body → 402, never 400 (Bazaar crawler probe must see 402)', async () => {
+    await bootApp({ facilitator: 'cdp', bazaar: 'true' });
+    for (const body of ['notjson{', '', '{}']) {
+      const res = await fetch(`${baseUrl}/x402/scan_funding_arb`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+      });
+      expect(res.status, `body=${JSON.stringify(body)}`).toBe(402);
+    }
+  });
 });
 
 describe('x402 HTTP routes — handler parity (R1: same core fn + args as MCP)', () => {
