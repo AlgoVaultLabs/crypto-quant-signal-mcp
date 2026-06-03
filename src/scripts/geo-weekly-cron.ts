@@ -1,28 +1,29 @@
 /**
- * GEO-MEASUREMENT-W1 (C2, 2026-05-19) — weekly probe entry point.
+ * GEO-MEASUREMENT-W1 (C2) — weekly probe entry point.
+ * GEO-MEASUREMENT-W4 (2026-06-02): digest body extracted to the pure, testable
+ * `src/lib/geo-digest.ts` (`buildDigest`); this cron is now thin — fetch the
+ * read-only aggregates, build a `GeoDigestData`, `sendDigest(buildDigest(data))`.
  *
- * Cron: Mon 08:00 UTC (set via Hetzner crontab self-provision, see status.md).
- * Loads canonical query YAML, runs all 15 queries through Claude Haiku 4.5,
- * extracts mentions, persists, sends Telegram digest. WoW mention-rate drop
- * >20% fires an additional sendAlert(warning) on top of the digest.
+ * Cron: Mon 08:00 UTC. Sends a results-driving Telegram digest (momentum verdict
+ * + attribution loop + one move). The PRESERVED WoW >20% mention-rate drop fires
+ * the only additional `sendAlert(warning)` (operator-action). No other TG fire.
  *
- * `--dry-run` flag prints a digest body from existing DB state without
- * invoking LLM / DB writes / Telegram.
+ * `--dry-run` builds + prints the digest from existing DB state (no LLM / DB
+ * writes / Telegram).
  */
 import { runWeeklyProbe } from '../lib/geo-orchestrator.js';
 import { dbQuery } from '../lib/performance-db.js';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { WOW_DROP_SQL } from '../lib/geo-dashboard.js';
+import {
+  buildDigest,
+  shortEngine,
+  type GeoDigestData,
+  type AttributionGap,
+  type EnginePlacement,
+} from '../lib/geo-digest.js';
 
 const DASHBOARD_URL = 'https://api.algovault.com/admin/geo-dashboard';
-
-interface SummaryRow {
-  model: string;
-  query_count: string | number;
-  mention_count: string | number;
-  mention_rate_pct: string | number | null;
-  avg_position: string | number | null;
-}
 
 interface WowRow {
   model: string;
@@ -31,144 +32,207 @@ interface WowRow {
   drop_pct: string | number;
 }
 
-interface GapRow {
-  query_id: string;
-  mention_rate_pct: string | number | null;
-}
-
-interface EngineStatRow {
-  model: string;
-  mention_rate_pct: string | number | null;
-  cited_rate_pct: string | number | null;
-  avg_sov: string | number | null;
-}
-
-interface TopGapRow {
-  query_id: string;
-  query_tier: string | null;
-  model: string;
-  sov: string | number | null;
-  top_competitor: string | null;
-  top_competitor_domain: string | null;
-  recommended_action: string | null;
-}
-
 function num(v: string | number | null | undefined): number {
   if (v === null || v === undefined) return 0;
   const x = typeof v === 'string' ? Number(v) : v;
   return Number.isFinite(x) ? x : 0;
 }
 
-async function buildDigestLines(runId: string, resultCount: number, errorCount: number): Promise<{ lines: string[]; wowAlerts: WowRow[] }> {
-  const summary = await dbQuery<SummaryRow>(
-    `SELECT model, query_count, mention_count, mention_rate_pct, avg_position
-     FROM geo_weekly_summary
-     WHERE week_utc = date_trunc('week', now() AT TIME ZONE 'UTC')
-     ORDER BY model`,
-    [],
-  );
+/** "Mon 9 Jun" from now() (UTC) — supplied to the pure builder so it stays Date-free. */
+function dateLabel(): string {
+  return new Date().toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
 
+/**
+ * Fetch every read-only aggregate the digest needs (no writes) and assemble a
+ * GeoDigestData. Returns the data + the raw WoW rows (drive the preserved sendAlert).
+ */
+async function fetchDigestData(): Promise<{ data: GeoDigestData; wowAlerts: WowRow[] }> {
   const wowAlerts = await dbQuery<WowRow>(WOW_DROP_SQL, []);
 
-  const topGapQueries = await dbQuery<GapRow>(
-    `SELECT query_id,
-            ROUND(100.0 * count(*) FILTER (WHERE mention_found) / NULLIF(count(*), 0), 1) AS mention_rate_pct
-     FROM geo_mentions
-     WHERE ran_at > now() - interval '4 weeks'
-     GROUP BY query_id
-     ORDER BY mention_rate_pct ASC NULLS FIRST, query_id
-     LIMIT 5`,
+  // WoW deltas (retrieval rows, this week vs last) in one pass.
+  const deltaRows = await dbQuery<{
+    cit_this: string | number;
+    cit_last: string | number;
+    sov_this: string | number | null;
+    sov_last: string | number | null;
+    mention_this: string | number | null;
+    mention_last: string | number | null;
+  }>(
+    `SELECT
+       count(*) FILTER (WHERE cited AND ran_at > now() - interval '1 week') AS cit_this,
+       count(*) FILTER (WHERE cited AND ran_at <= now() - interval '1 week' AND ran_at > now() - interval '2 weeks') AS cit_last,
+       ROUND(AVG(share_of_voice) FILTER (WHERE ran_at > now() - interval '1 week')::numeric, 4) AS sov_this,
+       ROUND(AVG(share_of_voice) FILTER (WHERE ran_at <= now() - interval '1 week' AND ran_at > now() - interval '2 weeks')::numeric, 4) AS sov_last,
+       ROUND(100.0 * count(*) FILTER (WHERE mention_found AND ran_at > now() - interval '1 week')
+             / NULLIF(count(*) FILTER (WHERE ran_at > now() - interval '1 week'), 0), 1) AS mention_this,
+       ROUND(100.0 * count(*) FILTER (WHERE mention_found AND ran_at <= now() - interval '1 week' AND ran_at > now() - interval '2 weeks')
+             / NULLIF(count(*) FILTER (WHERE ran_at <= now() - interval '1 week' AND ran_at > now() - interval '2 weeks'), 0), 1) AS mention_last
+     FROM geo_mentions WHERE retrieval = true AND ran_at > now() - interval '2 weeks'`,
+    [],
+  );
+  const dr = deltaRows[0] ?? {};
+
+  // New trusted (algovault) domains this week not seen in the prior 4w.
+  const newDomainRows = await dbQuery<{ source_domain: string }>(
+    `SELECT DISTINCT source_domain FROM geo_source_citations
+      WHERE attributed_to = 'algovault' AND ran_at > now() - interval '1 week'
+        AND source_domain NOT IN (
+          SELECT source_domain FROM geo_source_citations
+           WHERE attributed_to = 'algovault'
+             AND ran_at <= now() - interval '1 week' AND ran_at > now() - interval '5 weeks')`,
     [],
   );
 
-  // GEO-MEASUREMENT-W2: per-engine citation + share-of-voice (retrieval rows, this week).
-  const engineStats = await dbQuery<EngineStatRow>(
+  const perEngine = await dbQuery<{
+    model: string;
+    mention_rate_pct: string | number | null;
+    cited_rate_pct: string | number | null;
+  }>(
     `SELECT model,
             ROUND(100.0 * count(*) FILTER (WHERE mention_found) / NULLIF(count(*), 0), 1) AS mention_rate_pct,
-            ROUND(100.0 * count(*) FILTER (WHERE cited) / NULLIF(count(*), 0), 1) AS cited_rate_pct,
-            ROUND(AVG(share_of_voice)::numeric, 3) AS avg_sov
-     FROM geo_mentions
-     WHERE retrieval = true AND ran_at > now() - interval '1 week'
-     GROUP BY model
-     ORDER BY model`,
+            ROUND(100.0 * count(*) FILTER (WHERE cited) / NULLIF(count(*), 0), 1) AS cited_rate_pct
+     FROM geo_mentions WHERE retrieval = true AND ran_at > now() - interval '1 week'
+     GROUP BY model ORDER BY model`,
     [],
   );
 
-  // GEO-MEASUREMENT-W2: the single top content-gap brief (latest computed).
-  const topGap = await dbQuery<TopGapRow>(
-    `SELECT query_id, query_tier, model, sov, top_competitor, top_competitor_domain, recommended_action
-     FROM geo_content_gaps
-     ORDER BY computed_at DESC, rank_score DESC
-     LIMIT 1`,
+  // Attribution: each injected gap >=7d old, before/after injected_at.
+  const attrRows = await dbQuery<{
+    query_id: string;
+    recommended_action: string | null;
+    injected_at: string;
+    days_since_injected: string | number;
+    post_data_days: string | number;
+    cited_before: string | number;
+    cited_after: string | number;
+    mention_before: string | number;
+    mention_after: string | number;
+  }>(
+    `SELECT g.query_id, g.recommended_action,
+            to_char(g.injected_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS injected_at,
+            EXTRACT(EPOCH FROM (now() - g.injected_at)) / 86400 AS days_since_injected,
+            COALESCE(EXTRACT(EPOCH FROM (mx.max_ran - g.injected_at)) / 86400, 0) AS post_data_days,
+            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.cited AND m.ran_at < g.injected_at) AS cited_before,
+            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.cited AND m.ran_at >= g.injected_at) AS cited_after,
+            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.mention_found AND m.ran_at < g.injected_at) AS mention_before,
+            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.mention_found AND m.ran_at >= g.injected_at) AS mention_after
+     FROM geo_content_gaps g
+     LEFT JOIN LATERAL (SELECT max(ran_at) AS max_ran FROM geo_mentions m WHERE m.query_id = g.query_id AND m.ran_at >= g.injected_at) mx ON true
+     WHERE g.injected_at IS NOT NULL AND g.injected_at < now() - interval '7 days'
+     ORDER BY g.injected_at DESC LIMIT 5`,
+    [],
+  );
+  const attributionGaps: AttributionGap[] = attrRows.map((r) => ({
+    query_id: r.query_id,
+    recommended_action: r.recommended_action,
+    injected_at: r.injected_at,
+    days_since_injected: num(r.days_since_injected),
+    post_data_days: num(r.post_data_days),
+    cited_before: num(r.cited_before),
+    cited_after: num(r.cited_after),
+    mention_before: num(r.mention_before),
+    mention_after: num(r.mention_after),
+  }));
+
+  // WHO'S WINNING — competitor placements + OPEN queries.
+  const compRows = await dbQuery<{ query_id: string; competitor_name: string | null; source_domain: string; cites: string | number }>(
+    `SELECT query_id, competitor_name, source_domain, count(*) AS cites
+     FROM geo_source_citations
+     WHERE attributed_to = 'competitor' AND ran_at > now() - interval '4 weeks'
+     GROUP BY query_id, competitor_name, source_domain
+     ORDER BY count(*) DESC`,
+    [],
+  );
+  const byQuery = new Map<string, { leaderCounts: Map<string, number>; domains: Map<string, number>; total: number }>();
+  for (const r of compRows) {
+    const q = byQuery.get(r.query_id) ?? { leaderCounts: new Map(), domains: new Map(), total: 0 };
+    const comp = r.competitor_name ?? 'a competitor';
+    q.leaderCounts.set(comp, (q.leaderCounts.get(comp) ?? 0) + num(r.cites));
+    q.domains.set(r.source_domain, (q.domains.get(r.source_domain) ?? 0) + num(r.cites));
+    q.total += num(r.cites);
+    byQuery.set(r.query_id, q);
+  }
+  const withLeader: EnginePlacement[] = [...byQuery.entries()]
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 2)
+    .map(([query_id, q]) => ({
+      query_id,
+      leader: [...q.leaderCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+      domains: [...q.domains.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d),
+      citations: q.total,
+    }));
+  const openRows = await dbQuery<{ query_id: string }>(
+    `SELECT DISTINCT query_id FROM geo_mentions
+      WHERE retrieval = true AND ran_at > now() - interval '4 weeks'
+        AND query_id NOT IN (
+          SELECT query_id FROM geo_source_citations
+           WHERE attributed_to IN ('algovault', 'competitor') AND ran_at > now() - interval '4 weeks')
+      ORDER BY query_id LIMIT 1`,
+    [],
+  );
+  const contested: EnginePlacement[] = [
+    ...withLeader,
+    ...openRows.map((r) => ({ query_id: r.query_id, leader: null, domains: [], citations: 0 })),
+  ].slice(0, 3);
+
+  // ONE MOVE — the single latest queued gap brief.
+  const topGapRows = await dbQuery<{
+    query_id: string;
+    query_tier: string | null;
+    recommended_action: string | null;
+    top_competitor: string | null;
+    top_competitor_domain: string | null;
+  }>(
+    `SELECT query_id, query_tier, recommended_action, top_competitor, top_competitor_domain
+     FROM geo_content_gaps ORDER BY computed_at DESC, rank_score DESC LIMIT 1`,
     [],
   );
 
-  const lines: string[] = [];
-  lines.push(`📊 *GEO Weekly Probe — Run ${runId.slice(0, 8)}*`);
-  lines.push(`Queries: ${resultCount} · Errors: ${errorCount}`);
-  lines.push('');
-  lines.push('*This week mention rate (per model):*');
-  if (summary.length === 0) {
-    lines.push('· (no data this week)');
-  } else {
-    for (const r of summary) {
-      lines.push(
-        `· ${r.model}: ${num(r.mention_rate_pct).toFixed(1)}% (${num(r.mention_count)}/${num(r.query_count)}) · avg pos ${
-          r.avg_position == null ? 'n/a' : num(r.avg_position).toFixed(1)
-        }`,
-      );
-    }
-  }
+  const wowDropSummary = wowAlerts
+    .map((a) => `${shortEngine(a.model)} -${num(a.drop_pct).toFixed(0)}%`)
+    .join(', ');
 
-  if (wowAlerts.length > 0) {
-    lines.push('');
-    lines.push('⚠️ *WoW drop >20% detected:*');
-    for (const a of wowAlerts) {
-      lines.push(`· ${a.model}: -${num(a.drop_pct).toFixed(1)}% (this: ${num(a.this_week)} / last: ${num(a.last_week)})`);
-    }
-  }
+  const data: GeoDigestData = {
+    dateLabel: dateLabel(),
+    dashboardUrl: DASHBOARD_URL,
+    momentumDeltas: {
+      citationsThisWeek: num(dr.cit_this),
+      citationsLastWeek: num(dr.cit_last),
+      newTrustedDomains: newDomainRows.map((r) => r.source_domain),
+      sovThisWeek: num(dr.sov_this),
+      sovLastWeek: num(dr.sov_last),
+      mentionRateThisWeek: num(dr.mention_this),
+      mentionRateLastWeek: num(dr.mention_last),
+      wowDropCount: wowAlerts.length,
+      wowDropSummary,
+    },
+    perEngineMention: perEngine.map((e) => ({
+      model: e.model,
+      mention_rate_pct: num(e.mention_rate_pct),
+      cited_rate_pct: num(e.cited_rate_pct),
+    })),
+    attributionGaps,
+    contested,
+    topGap: topGapRows[0] ?? null,
+  };
 
-  if (topGapQueries.length > 0) {
-    lines.push('');
-    lines.push('*Top 5 queries WITHOUT AlgoVault mention (last 4w):*');
-    for (const q of topGapQueries) {
-      lines.push(`· ${q.query_id} → ${q.mention_rate_pct == null ? '0.0' : num(q.mention_rate_pct).toFixed(1)}%`);
-    }
-  }
-
-  if (engineStats.length > 0) {
-    lines.push('');
-    lines.push('*Per-engine citations + share-of-voice (retrieval, this week):*');
-    for (const e of engineStats) {
-      lines.push(
-        `· ${e.model}: cited ${e.cited_rate_pct == null ? '0.0' : num(e.cited_rate_pct).toFixed(1)}% · SoV ${
-          e.avg_sov == null ? '0.000' : num(e.avg_sov).toFixed(3)
-        } · mention ${e.mention_rate_pct == null ? '0.0' : num(e.mention_rate_pct).toFixed(1)}%`,
-      );
-    }
-  }
-
-  if (topGap.length > 0) {
-    const g = topGap[0];
-    lines.push('');
-    lines.push('*Top content gap (→ editorial-calendar via geo-gap injector):*');
-    lines.push(`· ${g.recommended_action ?? `${g.query_id} (${g.query_tier ?? 'niche'})`}`);
-  }
-
-  lines.push('');
-  lines.push(`👉 Dashboard: ${DASHBOARD_URL}?key=<admin-key>`);
-
-  return { lines, wowAlerts };
+  return { data, wowAlerts };
 }
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
 
   if (dryRun) {
-    console.log('[geo-cron] DRY RUN — building digest body from existing DB state; no LLM calls, no DB writes, no Telegram');
-    const { lines, wowAlerts } = await buildDigestLines('dry-run-fake-uuid', 0, 0);
+    console.log('[geo-cron] DRY RUN — building digest from existing DB state; no LLM, no DB writes, no Telegram');
+    const { data, wowAlerts } = await fetchDigestData();
     console.log('---DIGEST BODY---');
-    console.log(lines.join('\n'));
+    console.log(buildDigest(data).join('\n'));
     console.log('---END---');
     console.log(`[geo-cron] DRY RUN complete · wow_alerts=${wowAlerts.length}`);
     return;
@@ -180,15 +244,15 @@ async function main(): Promise<void> {
     `[geo-cron] run ${runId} complete: engines=[${engineIds.join(',')}] rows=${resultCount} errors=${errorCount}`,
   );
 
-  const { lines, wowAlerts } = await buildDigestLines(runId, resultCount, errorCount);
+  const { data, wowAlerts } = await fetchDigestData();
+  const lines = buildDigest(data);
 
   await sendDigest(lines);
   console.log(`[geo-cron] digest sent · sections=${lines.length}`);
 
+  // PRESERVED WoW operator-action alert (the only additional TG fire).
   if (wowAlerts.length > 0) {
-    const summary = wowAlerts
-      .map((a) => `${a.model} -${num(a.drop_pct).toFixed(1)}%`)
-      .join(', ');
+    const summary = wowAlerts.map((a) => `${a.model} -${num(a.drop_pct).toFixed(1)}%`).join(', ');
     await sendAlert(
       `GEO weekly probe — WoW mention-rate drop >20% detected: ${summary} (see digest above for details)`,
       'warning',
@@ -200,7 +264,6 @@ async function main(): Promise<void> {
 main().catch((err) => {
   const msg = err instanceof Error ? err.message : String(err);
   console.error('[geo-cron] fatal:', msg);
-  // Fire-and-forget Telegram CRITICAL; ignore if Telegram itself fails
   sendAlert(`GEO weekly cron failed: ${msg}`, 'critical').catch(() => {});
   process.exit(1);
 });
