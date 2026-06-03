@@ -81,6 +81,8 @@ describe('x402 HTTP routes — two-flag firewall mount (R5)', () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     expect(res.status).toBe(404);
+    const resGet = await fetch(`${baseUrl}/x402/get_trade_signal`, { method: 'GET' });
+    expect(resGet.status).toBe(404);
   });
 
   it('unset flags → routes NOT mounted', async () => {
@@ -138,6 +140,17 @@ describe('x402 HTTP routes — paywall + listing channel (R2, R3, item K)', () =
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       });
       expect(res.status, t).toBe(402);
+    }
+  });
+
+  it('GET → 402 challenge (CDP Bazaar indexer crawls via GET — must NOT 404)', async () => {
+    await bootApp({ facilitator: 'cdp', bazaar: 'true' });
+    for (const t of ['get_trade_signal', 'scan_funding_arb', 'get_market_regime']) {
+      const res = await fetch(`${baseUrl}/x402/${t}`, { method: 'GET' });
+      expect(res.status, `${t} GET`).toBe(402);
+      const body = await res.json() as { resource?: { url?: string }; extensions?: { bazaar?: { info?: { input?: { type?: string } } } } };
+      expect(body.resource?.url).toMatch(new RegExp(`/x402/${t}$`));
+      expect(body.extensions?.bazaar?.info?.input?.type).toBe('http');
     }
   });
 });

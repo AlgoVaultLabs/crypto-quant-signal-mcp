@@ -102,6 +102,20 @@ export function mountX402HttpRoutes(app: Express): string[] {
     const validate: ValidateFunction = ajv.compile(spec.inputSchema);
     const routePath = `/x402/${tool}`;
 
+    // x402 discovery challenge (GET). The CDP Bazaar indexer crawls the resource URL
+    // with a GET — it MUST return a 402 (the x402 payment-required challenge), NOT 404,
+    // or the route is never indexed (live-verified: every listed Bazaar resource 402s/
+    // 405s on GET; a POST-only route 404s on GET and stays unlisted forever despite the
+    // settle returning `processing`). The actual paid invocation is the POST below.
+    app.get(routePath, (_req: Request, res: Response) => {
+      const r = generate402Response(tool, {
+        resourceUrl: bazaarResourceUrl(tool),
+        description: bazaarRouteDescription(tool),
+        includeExtensions: true,
+      });
+      res.status(r.status).json(r.body);
+    });
+
     app.post(routePath, express.json(), async (req: Request, res: Response) => {
       const startMs = Date.now();
       // 3-tier gate; x402 verification hits the CDP facilitator.
