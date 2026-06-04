@@ -1,0 +1,51 @@
+{
+  "endpoint": "MCP tool scan_trade_calls + Streamable-HTTP /mcp + POST /x402 (not listed — free tool)",
+  "wave": "SCAN-TRADE-CALLS-W1 C3",
+  "snapshot_date": "2026-06-04",
+  "naming_law": "Public fields use `call` / `confidence`, never `signal`. No `price_at_signal`.",
+  "allowed_keys": {
+    "top_level": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault"],
+    "calls_item": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
+    "_algovault": ["tool", "version", "quota", "compatible_with", "signal_performance", "session_id"],
+    "_algovault.quota": ["used", "total", "remaining"]
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "price_at_signal",
+    "reasoning",
+    "indicators",
+    "price"
+  ],
+  "forbidden_keys_note": "outcome_return_pct / outcome_price are INTERNAL-only (Data Integrity LAW). Scan items carry no price/indicators/reasoning v1 — agents deep-dive via get_trade_call.",
+  "error_contract": {
+    "quota_exhausted": {
+      "shape": ["error", "code", "message", "quota", "suggested_action", "_algovault"],
+      "error": "quota_exhausted",
+      "code": "tier_limit_reached",
+      "note": "Free tier over monthly quota → blocked at entry, no scan, no charge. x402/internal tiers never exhaust (Infinity)."
+    },
+    "tool_error": "Unhandled errors surface via toolErrorContent (isError:true, structured text)."
+  },
+  "quota_contract": {
+    "units_charged": "max(1, non-HOLD calls in returned calls[])",
+    "holds_free": true,
+    "note": "Extends the get_trade_call HOLDs-are-free law to batch shape via the C1 trackCall(license, units) seam. includeHolds rows never add to the charge."
+  },
+  "cache_contract": {
+    "SCAN_SNAPSHOT_TTL_SEC": 60,
+    "SCAN_UNIVERSE_TTL_SEC": 600,
+    "SCAN_CONCURRENCY": 6,
+    "SCAN_DEADLINE_MS": 30000,
+    "partial_semantics": "partial:true when the deadline elapses before every cell scores; calls[] holds whatever completed. Per-coin promise coalescing; smaller topN sliced from the snapshot, larger topN tops up only missing coins. Stale universe served on fetch error.",
+    "scan_cells_internal": "Cells score via getTradeSignal({internal:true}) — never touch the per-coin quota counter or the performance-db track record (preserves the on-chain ↔ dashboard equality canary)."
+  },
+  "consumers": [
+    "MCP clients (Claude Desktop / Code / Cursor / Cline via tools/list)",
+    "Streamable-HTTP /mcp",
+    "future TG /scan command (TG-SCAN-COMMAND-W1)",
+    "future x402 scan listing (X402-SCAN-LISTING-W1)",
+    "future landing screener"
+  ],
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"timeframe\":\"15m\"}}}' | jq -r '.result.content[0].text' | jq 'keys, (.calls[0]|keys), (._algovault|keys)' && echo '--- forbidden-key scan (expect empty) ---' && curl -s ... | grep -oE '\"(outcome_return_pct|outcome_price|price_at_signal)\"\\s*:' || echo 'OK: no forbidden keys'"
+}

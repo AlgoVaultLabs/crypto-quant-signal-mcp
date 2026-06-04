@@ -17,6 +17,7 @@ import type { ExchangeId } from './types.js';
 import { getTradeSignal } from './tools/get-trade-call.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
+import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION } from './tools/scan-trade-calls.js';
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
@@ -409,6 +410,47 @@ function createServer(): McpServer {
           upsertAgentSession({
             sessionId: sessionIdForCohort,
             tool: 'get_market_regime',
+            tier: license.tier,
+            ipHash: getRequestIpHash() ?? null,
+          }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));
+        }
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return toolErrorContent(err);
+      }
+    }
+  );
+
+  // ── Tool: scan_trade_calls (SCAN-TRADE-CALLS-W1) — cross-asset market scanner ──
+  // Thin handler: quota gate + envelope live in src/tools/scan-trade-calls.ts
+  // (runScanTradeCall); the scanner compute is src/lib/trade-call-scanner.ts.
+  server.tool(
+    'scan_trade_calls',
+    SCAN_TRADE_CALLS_DESCRIPTION,
+    SCAN_TRADE_CALLS_SCHEMA,
+    { title: 'Market Scanner', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
+    async ({ topN, timeframe, exchange, minConfidence, includeHolds, limit }) => {
+      const startMs = Date.now();
+      try {
+        const license = getRequestLicense();
+        const result = await runScanTradeCall(
+          { topN, timeframe, exchange, minConfidence, includeHolds, limit },
+          license,
+        );
+        logRequest({
+          sessionId: getRequestSessionId(),
+          toolName: 'scan_trade_calls',
+          timeframe,
+          licenseTier: license.tier,
+          responseTimeMs: Date.now() - startMs,
+          ipHash: getRequestIpHash(),
+          isBotInternal: license.tier === 'internal',
+        });
+        const sessionIdForCohort = getRequestSessionId() ?? null;
+        if (sessionIdForCohort !== null) {
+          upsertAgentSession({
+            sessionId: sessionIdForCohort,
+            tool: 'scan_trade_calls',
             tier: license.tier,
             ipHash: getRequestIpHash() ?? null,
           }).catch((e) => console.debug('upsertAgentSession failed:', e instanceof Error ? e.message : e));

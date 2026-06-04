@@ -53,6 +53,13 @@ export const SEARCH_KNOWLEDGE_DESCRIPTION =
 export const CHAT_KNOWLEDGE_DESCRIPTION =
   'Ask AlgoVault a natural-language question — get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost). Quota: Free 10/month, Starter 50/month, Pro 200/month, Enterprise 2000/month.';
 
+// SCAN-TRADE-CALLS-W1 (C3) — describe-text for the `scan_trade_calls` MCP tool.
+// Pre-approved verbatim (numerical-citation LAW: the only figures are the topN
+// parameter range "1-100", a capability bound, not a track-record claim).
+// Not part of the TOP_20_KEYWORDS canary set (like search/chat_knowledge).
+export const SCAN_TRADE_CALLS_DESCRIPTION =
+  'Cross-asset market scanner — composite verdict BUY SELL HOLD trade calls across the top 1-100 crypto perpetual futures by open interest on Binance Bybit OKX Bitget Hyperliquid. Returns ranked non-HOLD calls with confidence and market regime. One scan, whole-market coverage for AI trading agents. Use get_trade_call for per-coin depth and reasoning.';
+
 // Param describe() strings — ≤80 chars each.
 export const PARAM_DESC_TRADE_CALL_COIN =
   'Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol.';
@@ -72,6 +79,19 @@ export const PARAM_DESC_REGIME_TIMEFRAME =
   'Candle timeframe — 1h 4h 1d. Buy sell hold regime context for AI trading signal.';
 export const PARAM_DESC_REGIME_EXCHANGE =
   'Exchange BINANCE HL BYBIT OKX BITGET. Multi-exchange Claude trading agent.';
+// SCAN-TRADE-CALLS-W1 (C3) — scan_trade_calls param describe() strings (≤80 chars).
+export const PARAM_DESC_SCAN_TOP_N =
+  'Scan the top-N perps by open interest (1-100, default 20). Whole-market scan.';
+export const PARAM_DESC_SCAN_TIMEFRAME =
+  'Candle timeframe (1m to 1d) for the scan. Default 15m intraday.';
+export const PARAM_DESC_SCAN_EXCHANGE =
+  'Venue: BINANCE (default) HL BYBIT OKX BITGET — top perps by open interest.';
+export const PARAM_DESC_SCAN_MIN_CONFIDENCE =
+  'Optional min confidence (0-100) filter applied to non-HOLD trade calls.';
+export const PARAM_DESC_SCAN_INCLUDE_HOLDS =
+  'Include HOLD calls after non-HOLD (default false). HOLDs never cost quota.';
+export const PARAM_DESC_SCAN_LIMIT =
+  'Max ranked calls returned (1-100, default 10). Non-HOLD ranked first.';
 
 // Top-20 keyword phrases the canary asserts each tool's combined-text contains
 // ≥15 of (case-insensitive substring match). Sourced from observed AI-agent-
