@@ -5,6 +5,24 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-06-04
+
+### Added — scan_trade_calls market scanner
+- New MCP tool `scan_trade_calls`: scan the top-N perps (1–100, ranked by open interest) on a chosen venue in one call; returns actionable BUY/SELL verdicts with confidence and regime. HOLDs are free — quota counts only non-HOLD results.
+- Webhook subscriptions accept a dynamic `top:N` asset token (`assets: ["top:25"]`) that tracks the venue's top perps automatically.
+
+### Added — TradFi signal upgrades
+- Session awareness on `get_trade_call` + `get_market_regime`: new `underlying_session` + `session_note` fields; regime caveats while the underlying market is closed.
+- Cross-venue funding sentiment for TradFi symbols: new `metrics.funding_by_venue` (all 5 venues, 8h-normalized) on `get_market_regime`; `FIXED_PREIPO` funding state with explanatory notes for pre-IPO perps.
+- Structured `INSUFFICIENT_CANDLES` error with `suggested_timeframes` replaces the plain-string insufficient-history message.
+- Tool display titles in connector UIs (Composite Trade Call, Market Regime Classifier, …).
+
+### Fixed
+- Bitget: `volume_24h` and `oi_change_pct` now reflect the queried symbol.
+
+### Internal
+- Ops, monitoring, and infrastructure hardening. No breaking changes; existing tool parameter shapes unchanged.
+
 ## [1.19.1] - 2026-05-31
 
 ### Docs
