@@ -84,6 +84,17 @@ function parseStrArray(raw: unknown): string[] | null {
   return out.length > 0 ? out : null;
 }
 
+const ASSET_TOP_TOKEN_RE = /^top:([1-9][0-9]?|100)$/;
+/**
+ * SCAN-TRADE-CALLS-W1 C4: returns the first malformed `top:` asset token in
+ * `assets` (a `top:`-prefixed entry that isn't `top:N`, N in 1..100), or null
+ * when every entry is a plain coin symbol or a valid token. Exported for the
+ * C4 validation-matrix unit test.
+ */
+export function findMalformedAssetToken(assets: string[]): string | null {
+  return assets.find((a) => /^top:/i.test(a) && !ASSET_TOP_TOKEN_RE.test(a)) ?? null;
+}
+
 /** Public subscription view — never exposes owner_key; secret only on create. */
 function serializeSubscription(s: WebhookSubscription, opts: { includeSecret: boolean }): Record<string, unknown> {
   const out: Record<string, unknown> = {
@@ -129,10 +140,21 @@ export function registerWebhookRoutes(app: Express): void {
         minConfidence = n;
       }
 
+      // SCAN-TRADE-CALLS-W1 C4: assets[] entries may be a coin symbol OR a
+      // `top:N` token (N=1..100) that subscribes to "any of the venue's top-N
+      // perps by OI". Validate token shape here; coins pass through unchanged.
+      const assets = parseStrArray(body.assets);
+      if (assets) {
+        const badToken = findMalformedAssetToken(assets);
+        if (badToken) {
+          return res.status(400).json({ ok: false, code: 'invalid_asset_token', error: `asset token "${badToken}" is malformed`, suggested_action: 'Use a coin symbol (e.g. "BTC") or a top-N token "top:N" where N is 1-100 (e.g. "top:25").' });
+        }
+      }
+
       const sub = await createSubscription({
         url,
         events,
-        assets: parseStrArray(body.assets),
+        assets,
         timeframes: parseStrArray(body.timeframes),
         minConfidence,
         tier: license.tier,

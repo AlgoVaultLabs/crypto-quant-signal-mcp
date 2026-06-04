@@ -1,0 +1,37 @@
+{
+  "endpoint": "POST /api/webhooks (create subscription)",
+  "wave": "SCAN-TRADE-CALLS-W1 C4",
+  "snapshot_date": "2026-06-04",
+  "supersedes": "audits/api-webhooks-shape-snapshot-2026-05-29.json (additive — old file retained; only the assets[] token form is new)",
+  "naming_law": "Public event fields use price_at_call / call, never price_at_signal / signal. No outcome_* ever (Data Integrity).",
+  "request_keys": {
+    "url": "https public endpoint (SSRF-validated)",
+    "events": "non-empty subset of [trade_call, regime_shift]",
+    "assets": "OPTIONAL string[] — each entry is a coin symbol (e.g. \"BTC\") OR a `top:N` token where N is 1-100 (e.g. \"top:25\"). null/empty = all assets. Tokens + coins may be mixed; multiple tokens allowed; match = ANY entry hits. NEW in C4.",
+    "timeframes": "OPTIONAL string[] — null/empty = all timeframes",
+    "min_confidence": "OPTIONAL number in [0,100]"
+  },
+  "assets_token_contract": {
+    "token_regex": "^top:([1-9][0-9]?|100)$",
+    "semantics": "top:N subscribes to any coin in the event venue's current top-N-by-open-interest set, resolved per-event against the event's own exchange (getTopCoinSet). Only the 5 PROMOTED venues (HL/BINANCE/BYBIT/OKX/BITGET) resolve tokens; shadow-venue events never match a token (fail-quiet). A universe-fetch failure leaves the token non-matching — NO delivery storm, NO alert.",
+    "stored_as": "verbatim (no migration; assets already stored as a string array)",
+    "validation_error": {
+      "status": 400,
+      "code": "invalid_asset_token",
+      "shape": ["ok", "code", "error", "suggested_action"],
+      "examples_rejected": ["top:0", "top:101", "top:abc", "top:"],
+      "examples_accepted": ["top:1", "top:100", "top:25", "BTC", ["BTC", "top:10"]]
+    }
+  },
+  "quota_contract": {
+    "per_delivery": "Each DELIVERED event draws 1 unit via trackCallByKey (units defaults to 1 — byte-identical to pre-C4). The C1 units seam is unused on the webhook path.",
+    "note": "top:N can fan one event to a subscriber whose coin set is large, but each DELIVERED event still costs exactly 1 (delivery-count, not coin-count)."
+  },
+  "forbidden_keys": ["outcome_return_pct", "outcome_price", "price_at_signal", "pfe_", "mae_", "return_pct_", "price_after_"],
+  "consumers": [
+    "subscriber webhook URLs (outbound delivery)",
+    "GET /api/webhooks (serializeSubscription — assets echoed verbatim incl. tokens)",
+    "webhook delivery worker (rebuilds payload from allow-listed WebhookEventData)"
+  ],
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/api/webhooks -H 'Authorization: Bearer <key>' -H 'Content-Type: application/json' -d '{\"url\":\"https://example.com/h\",\"events\":[\"trade_call\"],\"assets\":[\"top:25\"]}' -w '%{http_code}\\n'  # expect 201; assets:[\"top:101\"] -> 400 invalid_asset_token"
+}

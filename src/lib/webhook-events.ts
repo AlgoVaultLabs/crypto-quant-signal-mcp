@@ -25,6 +25,7 @@ import {
   type WebhookEventType,
   type WebhookEventData,
 } from './webhooks-store.js';
+import { getTopCoinSet, type ScanExchangeId } from './trade-call-scanner.js';
 
 export interface SignalRecordedParams {
   coin: string;
@@ -38,7 +39,7 @@ export interface SignalRecordedParams {
   createdAt: number;     // epoch seconds
 }
 
-interface DetectedEvent {
+export interface DetectedEvent {
   type: WebhookEventType;
   eventId: string;
   data: WebhookEventData;
@@ -154,16 +155,80 @@ export async function detectEvents(p: SignalRecordedParams): Promise<DetectedEve
   return events;
 }
 
-/** Does a subscription want this event (type + asset/timeframe/min_confidence filters)? */
-export function subscriptionMatches(sub: WebhookSubscription, ev: DetectedEvent): boolean {
+// SCAN-TRADE-CALLS-W1 C4: a `top:N` asset token (N=1..100) matches any coin in
+// the event venue's current top-N-by-OI set. Canonical lowercase form, validated
+// at POST time (webhook-api.ts).
+const TOP_TOKEN_RE = /^top:([1-9][0-9]?|100)$/;
+const PROMOTED_VENUES: ReadonlySet<string> = new Set(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']);
+
+/**
+ * Does a subscription want this event (type + asset/timeframe/min_confidence)?
+ *
+ * `topSets` (pre-resolved once per event by onSignalRecorded — D1, keeps this a
+ * sync hot-path predicate, no await per subscription) maps each `top:N` token's
+ * N to the event venue's top-N coin set. A token matches when the event coin is
+ * in its set; an unresolved token (shadow-venue event, or a universe fetch that
+ * failed) never matches (fail-quiet). Plain coin entries keep exact-match
+ * semantics — with no tokens + no topSets this is byte-identical to before.
+ */
+export function subscriptionMatches(
+  sub: WebhookSubscription,
+  ev: DetectedEvent,
+  topSets?: ReadonlyMap<number, ReadonlySet<string>>,
+): boolean {
   if (!sub.events.includes(ev.type)) return false;
-  if (sub.assets && sub.assets.length > 0 && !sub.assets.includes(ev.data.coin)) return false;
+  if (sub.assets && sub.assets.length > 0) {
+    const assetMatch = sub.assets.some((entry) => {
+      const m = TOP_TOKEN_RE.exec(entry);
+      if (m) {
+        const set = topSets?.get(Number(m[1]));
+        return set ? set.has(ev.data.coin) : false;
+      }
+      return entry === ev.data.coin;
+    });
+    if (!assetMatch) return false;
+  }
   if (sub.timeframes && sub.timeframes.length > 0 && !sub.timeframes.includes(ev.data.timeframe)) return false;
   if (sub.min_confidence != null) {
     const conf = ev.data.confidence;
     if (conf == null || conf < sub.min_confidence) return false;
   }
   return true;
+}
+
+/**
+ * Pre-resolve every distinct `top:N` token referenced by the active
+ * subscriptions into the event venue's top-N coin set — ONCE per event, so the
+ * sync matcher needs no awaits. Shadow-venue events resolve nothing (no token
+ * ever matches them). A universe-fetch failure is swallowed (that token stays
+ * unresolved → non-matching; NO delivery storm, NO alert).
+ */
+async function resolveTopSetsForEvent(
+  ev: DetectedEvent,
+  subs: WebhookSubscription[],
+): Promise<Map<number, Set<string>>> {
+  const resolved = new Map<number, Set<string>>();
+  if (!PROMOTED_VENUES.has(ev.data.exchange)) return resolved; // shadow venue → tokens never match
+  const ns = new Set<number>();
+  for (const sub of subs) {
+    if (!sub.assets) continue;
+    for (const entry of sub.assets) {
+      const m = TOP_TOKEN_RE.exec(entry);
+      if (m) ns.add(Number(m[1]));
+    }
+  }
+  for (const n of ns) {
+    try {
+      const coins = await getTopCoinSet(ev.data.exchange as ScanExchangeId, n);
+      resolved.set(n, new Set(coins));
+    } catch (err) {
+      console.debug(
+        `[webhook-events] top:${n} resolve failed for ${ev.data.exchange}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return resolved;
 }
 
 /**
@@ -182,8 +247,10 @@ export async function onSignalRecorded(p: SignalRecordedParams): Promise<void> {
     if (subs.length === 0) return;
 
     for (const ev of events) {
+      // D1: resolve top:N sets once per event so the matcher stays sync.
+      const topSets = await resolveTopSetsForEvent(ev, subs);
       for (const sub of subs) {
-        if (!subscriptionMatches(sub, ev)) continue;
+        if (!subscriptionMatches(sub, ev, topSets)) continue;
         await enqueueDelivery({
           subscriptionId: sub.id,
           eventId: ev.eventId,
