@@ -372,6 +372,13 @@ export interface MarketRegimeResult {
      * closed (weekend/holiday), or pre-IPO.
      */
     session_note?: string;
+    /**
+     * OPS-TRADFI-XVENUE-FUNDING-W1: per-venue funding map (venue → raw rate,
+     * settlement interval, and 8h-equivalent). Populated for TradFi (5-venue
+     * aggregation) and crypto (HL predicted-fundings) paths; OMITTED for
+     * PREMARKET (fixed pre-IPO funding) and when no venue data is available.
+     */
+    funding_by_venue?: Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }>;
   };
   suggestion: string;
   timestamp: number;

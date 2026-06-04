@@ -20,13 +20,18 @@
     "cross_venue_funding_sentiment",
     "funding_divergence_note",
     "underlying_session",
-    "session_note"
+    "session_note",
+    "funding_by_venue"
   ],
   "new_in_this_wave": {
-    "metrics.underlying_session": "ALWAYS present. enum: OPEN_REGULAR | OPEN_EXTENDED | CLOSED_WEEKEND | CLOSED_HOLIDAY | ALWAYS_OPEN | PREIPO_INTERNAL | UNKNOWN",
-    "metrics.session_note": "OMITTED for ALWAYS_OPEN / OPEN_REGULAR / UNKNOWN; present for OPEN_EXTENDED / CLOSED_WEEKEND / CLOSED_HOLIDAY / PREIPO_INTERNAL",
-    "suggestion": "when underlying_session is CLOSED_WEEKEND/CLOSED_HOLIDAY, a provisional-regime caveat sentence is APPENDED (no field shape change)",
-    "metrics.funding_divergence_note": "for PREMARKET symbols, replaced with the fixed-pre-IPO-funding explanation instead of the cross-venue note"
+    "metrics.underlying_session": "ALWAYS present. enum: OPEN_REGULAR | OPEN_EXTENDED | CLOSED_WEEKEND | CLOSED_HOLIDAY | ALWAYS_OPEN | PREIPO_INTERNAL | UNKNOWN (TRADIFI-SIGNAL-HARDENING-W1)",
+    "metrics.session_note": "OMITTED for ALWAYS_OPEN / OPEN_REGULAR / UNKNOWN; present for OPEN_EXTENDED / CLOSED_WEEKEND / CLOSED_HOLIDAY / PREIPO_INTERNAL (TRADIFI-SIGNAL-HARDENING-W1)",
+    "suggestion": "when underlying_session is CLOSED_WEEKEND/CLOSED_HOLIDAY, a provisional-regime caveat sentence is APPENDED (no field shape change)"
+  },
+  "new_in_OPS-TRADFI-XVENUE-FUNDING-W1": {
+    "metrics.funding_by_venue": "OBJECT venue→{rate, interval_min, rate_8h_equiv}. Populated for TradFi (5-venue aggregation) AND crypto (HL predicted-fundings) paths. OMITTED for PREMARKET (fixed pre-IPO funding) and when no venue data is available. ADDITIVE.",
+    "metrics.cross_venue_funding_sentiment": "now POPULATED for TradFi symbols (was always 'Insufficient cross-venue data') — value change, same 3-value enum {BEARISH_BIAS, NEUTRAL, BULLISH_BIAS}",
+    "metrics.funding_divergence_note": "TradFi: cites ≥2 venues with 8h-normalized values + divergence verdict (band-calibrated). PREMARKET: 'Pre-IPO funding is fixed — cross-venue sentiment not applicable.' Crypto: unchanged."
   },
   "enums": {
     "underlying_session": ["OPEN_REGULAR", "OPEN_EXTENDED", "CLOSED_WEEKEND", "CLOSED_HOLIDAY", "ALWAYS_OPEN", "PREIPO_INTERNAL", "UNKNOWN"],

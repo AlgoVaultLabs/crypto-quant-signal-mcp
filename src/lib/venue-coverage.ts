@@ -38,7 +38,9 @@ const ALL_5: ExchangeId[] = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'];
 // stocks (AAPL/AMZN/COIN/GOOGL/HOOD/META/MSTR/NVDA/ORCL/PLTR/TSLA) that
 // KuCoin lists but the 5 promoted venues + Gate (C1) + MEXC (C2) don't.
 const HL_ONLY: Set<string> = new Set([
-  'ALUMINIUM', 'BX', 'CORN', 'DKNG', 'DXY', 'HYUNDAI',
+  'ALUMINIUM', 'BX', 'CORN', 'DKNG', 'DXY',
+  // HYUNDAI moved OUT to PARTIAL_COVERAGE — OPS-TRADFI-XVENUE-FUNDING-W1 drift
+  // probe (2026-06-04) found live BINANCE/BYBIT/BITGET listings (fingerprint PASS).
   'KIOXIA', 'KR200', 'PURRDAT', 'RIVN', 'SKHX', 'SMSN',
   'SOFTBANK', 'TTF', 'URANIUM', 'URNM', 'WHEAT', 'XYZ100',
   // PILOT-ADAPTERS-W3A / C1 (2026-05-20): SP500 moved OUT of HL_ONLY into
@@ -58,15 +60,16 @@ const HL_ONLY: Set<string> = new Set([
 const PARTIAL_COVERAGE: Record<string, ExchangeId[]> = {
   // Existing promoted-CEX rows extended with GATE where Plan-Mode probe found a listing
   AMD:       ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],
-  BABA:      ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],
+  BABA:      ['HL', 'BINANCE', 'BYBIT', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],   // +BYBIT: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04
   COPPER:    ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT'],   // W2 C1 Gate XCU + C2 MEXC + C3 KuCoin literal; W3A C1 Phemex COPPER direct; W3A C3 HTX COPPER direct
-  COST:      ['HL', 'BINANCE', 'BITGET', 'GATE', 'KUCOIN'],
-  CRWV:      ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],
-  GME:       ['HL', 'BINANCE', 'BITGET'],                  // not on Gate/MEXC/KuCoin
-  HIMS:      ['HL', 'BITGET', 'GATE', 'KUCOIN'],
-  LLY:       ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],
+  COST:      ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],   // +OKX: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04
+  CRWV:      ['HL', 'BINANCE', 'BYBIT', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],   // +BYBIT: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04
+  GME:       ['HL', 'BINANCE', 'BITGET', 'OKX'],                  // +OKX: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04 (not on Gate/MEXC/KuCoin)
+  HIMS:      ['HL', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],   // +OKX: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04
+  LLY:       ['HL', 'BINANCE', 'BYBIT', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],   // +BYBIT: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04
   NATGAS:    ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN', 'PHEMEX', 'HTX', 'WEEX', 'XT', 'WHITEBIT'],   // Gate NG (alias) + KuCoin direct + W3A C1 Phemex NG (alias); W3A C3 HTX NATGAS direct
-  NFLX:      ['HL', 'BINANCE', 'BITGET', 'GATE', 'KUCOIN'],
+  NFLX:      ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],   // +OKX: OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04
+  HYUNDAI:   ['HL', 'BINANCE', 'BYBIT', 'BITGET'],   // OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04 (moved out of HL_ONLY; OKX not listed)
   PALLADIUM: ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT'],   // W2 Gate/MEXC/KuCoin XPD + W3A C1 Phemex XPD; W3A C3 HTX XPD
   PLATINUM:  ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT'],   // W2 Gate/MEXC/KuCoin XPT + W3A C1 Phemex XPT; W3A C3 HTX XPT
   USAR:      ['HL', 'BINANCE', 'BITGET', 'OKX', 'GATE', 'KUCOIN'],
@@ -152,4 +155,4 @@ export function isVenueSupportedFor(coin: string, exchange: ExchangeId): boolean
  * Probe-date marker — useful for future "is this matrix stale?" audits.
  * Update in lockstep with re-running the alias coverage CSV.
  */
-export const COVERAGE_PROBED_AT = '2026-05-20';   // PILOT-ADAPTERS-W3B / C4 (2026-05-20) WAVE COMPLETE — WhiteBIT added to 11 TradFi rows (GOLD/SILVER/PLATINUM/PALLADIUM/USOIL/NATGAS/COPPER + AMZN/MSTR/NVDA/TSLA). WhiteBIT has BOTH XAU + XAUT — adapter prefers XAU spot. First W3-batch venue WITHOUT SPX listing (no memecoin trap on this venue). 100% USDT-settled (filter is no-op safety belt). Final W3B venue count: 4 emerging-tier (WEEX/BITMART/XT/WHITEBIT) joining 8 prior shadow + 5 promoted = 17 total.
+export const COVERAGE_PROBED_AT = '2026-06-04';   // OPS-TRADFI-XVENUE-FUNDING-W1 (2026-06-04) drift refresh — +10 promoted-venue (symbol,venue) pairs found live & fingerprint-verified: NFLX/COST/HIMS/GME +OKX, BABA/LLY/CRWV +BYBIT, HYUNDAI +BINANCE/BYBIT/BITGET (moved out of HL_ONLY). PRIOR: PILOT-ADAPTERS-W3B / C4 (2026-05-20) WAVE COMPLETE — WhiteBIT added to 11 TradFi rows (GOLD/SILVER/PLATINUM/PALLADIUM/USOIL/NATGAS/COPPER + AMZN/MSTR/NVDA/TSLA). WhiteBIT has BOTH XAU + XAUT — adapter prefers XAU spot. First W3-batch venue WITHOUT SPX listing (no memecoin trap on this venue). 100% USDT-settled (filter is no-op safety belt). Final W3B venue count: 4 emerging-tier (WEEX/BITMART/XT/WHITEBIT) joining 8 prior shadow + 5 promoted = 17 total.

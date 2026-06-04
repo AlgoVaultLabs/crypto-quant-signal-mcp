@@ -170,13 +170,13 @@ describe('getVenuesSupporting — venue-coverage matrix', () => {
     expect(venues).not.toContain('BYBIT');
   });
 
-  it('HIMS: partial coverage — Bitget only (per probe 2026-05-15)', () => {
+  it('HIMS: partial coverage — HL+BITGET+OKX (OKX added per OPS-TRADFI-XVENUE-FUNDING-W1 drift probe 2026-06-04)', () => {
     const venues = getVenuesSupporting('HIMS');
     expect(venues).toContain('HL');
     expect(venues).toContain('BITGET');
+    expect(venues).toContain('OKX');   // +OKX: live drift probe 2026-06-04 (fingerprint PASS)
     expect(venues).not.toContain('BINANCE');
     expect(venues).not.toContain('BYBIT');
-    expect(venues).not.toContain('OKX');
   });
 
   it('NATGAS: 4 venues (Bybit missing per probe)', () => {

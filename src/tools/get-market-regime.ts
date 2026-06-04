@@ -5,7 +5,7 @@ import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.j
 import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
-import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
+import { fetchTradFiFundingByVenue, normalizeTo8h, computeTradFiFundingSentiment, buildFundingByVenue } from '../lib/tradfi-funding.js';
 import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
@@ -128,8 +128,34 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     ? (adxSlope > ADX_SLOPE_RISING ? 'RISING' : adxSlope < ADX_SLOPE_FALLING ? 'FALLING' : 'FLAT')
     : 'FLAT';
 
-  // ── Cross-venue funding sentiment with ATR-adaptive threshold (Item 9) ──
-  const { sentiment, divergenceNote } = computeCrossVenueFundingSentiment(coin, allFundings, volatilityRatio);
+  // ── Cross-venue funding sentiment (OPS-TRADFI-XVENUE-FUNDING-W1) ──
+  // TradFi (EQUITY/KR_EQUITY/COMMODITY, or a known-TradFi symbol the resolver
+  // couldn't class) → 5-venue per-venue aggregation via tradfi-funding.ts.
+  // PREMARKET → excluded (fixed funding). Crypto → the existing HL-vs-CEX path.
+  const isTradFiAggregate =
+    assetClass === 'EQUITY' || assetClass === 'KR_EQUITY' || assetClass === 'COMMODITY' ||
+    (assetClass === 'UNKNOWN' && isKnownTradFi(coin));
+
+  let sentiment: CrossVenueFundingSentiment;
+  let divergenceNote: string;
+  let fundingByVenue: Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }> | undefined;
+
+  if (assetClass === 'PREMARKET') {
+    sentiment = 'NEUTRAL';
+    divergenceNote = 'Pre-IPO funding is fixed — cross-venue sentiment not applicable.';
+    // no funding_by_venue for pre-IPO (R4)
+  } else if (isTradFiAggregate) {
+    const venueFunding = await fetchTradFiFundingByVenue(coin);
+    const r = computeTradFiFundingSentiment(coin, venueFunding, isClosedState(session.state));
+    sentiment = r.sentiment;
+    divergenceNote = r.divergenceNote;
+    fundingByVenue = buildFundingByVenue(venueFunding);
+  } else {
+    const r = computeCrossVenueFundingSentiment(coin, allFundings, volatilityRatio);
+    sentiment = r.sentiment;
+    divergenceNote = r.divergenceNote;
+    fundingByVenue = buildFundingByVenueFromAllFundings(coin, allFundings);
+  }
 
   // ── Classify regime with ADX slope awareness (Item 6) ──
   let regime: RegimeType;
@@ -241,14 +267,6 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     suggestion += ' Underlying market closed — candles reflect capped synthetic pricing; treat regime as provisional until reopen.';
   }
 
-  // PREMARKET funding interpretation (R4): the regime tool surfaces only the
-  // cross-venue funding NOTE (no per-symbol funding_rate field). For pre-IPO
-  // perps, replace the "insufficient cross-venue data" note with the fixed-
-  // funding explanation so it is not read as a sentiment signal.
-  const fundingDivergenceNote = assetClass === 'PREMARKET'
-    ? (tradfiFundingAnnotation('PREMARKET').fundingNote ?? divergenceNote)
-    : divergenceNote;
-
   // Upgrade hint: only for free tier
   const upgradeHint = getUpgradeHint(license, { used: quota.used, total: quota.total });
 
@@ -288,9 +306,10 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       pivot_quality: pivotQuality,
       trend_strength: trendStrength,
       cross_venue_funding_sentiment: sentiment,
-      funding_divergence_note: fundingDivergenceNote,
+      funding_divergence_note: divergenceNote,
       underlying_session: session.state,
       ...(session.note !== '' ? { session_note: session.note } : {}),
+      ...(fundingByVenue ? { funding_by_venue: fundingByVenue } : {}),
     },
     suggestion,
     timestamp: Math.floor(Date.now() / 1000),
@@ -383,6 +402,30 @@ function computeCrossVenueFundingSentiment(
   }
 
   return { sentiment: 'NEUTRAL', divergenceNote: `Funding aligned across venues (divergence: ${diffNote})` };
+}
+
+/**
+ * Build `funding_by_venue` for the CRYPTO path from HL's predicted-fundings
+ * (HlPerp/BinPerp/BybitPerp), so the field is uniform across TradFi + crypto (R4).
+ */
+function buildFundingByVenueFromAllFundings(
+  coin: string,
+  allFundings: { coin: string; venues: { venue: string; fundingRate: number; nextFundingTime: number }[] }[],
+): Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }> | undefined {
+  const coinFunding = allFundings.find(f => f.coin === coin);
+  if (!coinFunding || coinFunding.venues.length === 0) return undefined;
+  const VENUE_MAP: Record<string, { venue: string; interval: number }> = {
+    HlPerp: { venue: 'HL', interval: 60 },
+    BinPerp: { venue: 'BINANCE', interval: 480 },
+    BybitPerp: { venue: 'BYBIT', interval: 480 },
+  };
+  const out: Record<string, { rate: number; interval_min: number; rate_8h_equiv: number }> = {};
+  for (const v of coinFunding.venues) {
+    const m = VENUE_MAP[v.venue];
+    if (!m || isNaN(v.fundingRate)) continue;
+    out[m.venue] = { rate: v.fundingRate, interval_min: m.interval, rate_8h_equiv: normalizeTo8h(v.fundingRate, m.interval) };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function generateSuggestion(
