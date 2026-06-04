@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parseOhlcvCsv,
+  parseOhlcvCsvRaw,
   DatabentoEquityBarsProvider,
   type EquityProviderError,
 } from '../../src/lib/equities/equity-bars-provider.js';
@@ -48,6 +49,40 @@ describe('parseOhlcvCsv', () => {
 
   it('throws DATABENTO_PARSE when required columns are missing', () => {
     expect(() => parseOhlcvCsv('foo,bar\n1,2')).toThrowError(/missing columns/);
+  });
+});
+
+describe('parseOhlcvCsvRaw (ALL_SYMBOLS map_symbols=false)', () => {
+  it('parses instrument_id-keyed rows (no symbol column)', () => {
+    const csv = [
+      'ts_event,rtype,publisher_id,instrument_id,open,high,low,close,volume',
+      '1780358400000000000,35,95,3974,5.795,5.83,5.56,5.63,297531',
+      '1780358400000000000,35,95,18112,34.49,34.84,34.46,34.84,240',
+    ].join('\n');
+    const raws = parseOhlcvCsvRaw(csv);
+    expect(raws).toEqual([
+      { instrument_id: '3974', close: 5.63, volume: 297531 },
+      { instrument_id: '18112', close: 34.84, volume: 240 },
+    ]);
+  });
+  it('throws when instrument_id/close/volume columns are missing', () => {
+    expect(() => parseOhlcvCsvRaw('a,b,c\n1,2,3')).toThrowError(/missing columns/);
+  });
+});
+
+describe('resolveSymbology', () => {
+  it('maps input symbols to resolved symbols (last interval wins)', async () => {
+    const body = JSON.stringify({
+      result: {
+        '38': [{ d0: '2026-06-02', d1: '2026-06-03', s: 'AAPL' }],
+        '15144': [{ d0: '2026-06-02', d1: '2026-06-03', s: 'SPY' }],
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => fakeRes(200, body)));
+    const p = new DatabentoEquityBarsProvider('db-XYZ', { baseDelayMs: 1, logger: () => {} });
+    const m = await p.resolveSymbology(['38', '15144'], 'instrument_id', 'raw_symbol', '2026-06-02', '2026-06-03');
+    expect(m.get('38')).toBe('AAPL');
+    expect(m.get('15144')).toBe('SPY');
   });
 });
 

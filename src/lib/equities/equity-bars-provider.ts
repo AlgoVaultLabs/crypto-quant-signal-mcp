@@ -28,6 +28,13 @@ export interface EquityBar {
   volume: number;
 }
 
+/** Daily bar keyed by instrument_id (map_symbols=false path, for ALL_SYMBOLS). */
+export interface RawBar {
+  instrument_id: string;
+  close: number;
+  volume: number;
+}
+
 export interface EquityProviderError extends Error {
   code:
     | 'DATABENTO_AUTH'          // 401/403 — key invalid or not entitled
@@ -173,6 +180,61 @@ export class DatabentoEquityBarsProvider {
     return boundary.toISOString().slice(0, 10);
   }
 
+  /**
+   * Daily bars for ALL_SYMBOLS (or a wide set) keyed by instrument_id.
+   * Databento forbids `map_symbols=true` with ALL_SYMBOLS, so the symbol is NOT
+   * resolved here — callers rank by instrument_id then call resolveSymbology()
+   * for the survivors. [start, end) end-exclusive ISO dates.
+   */
+  async getDailyBarsRaw(symbols: string[], start: string, end: string): Promise<RawBar[]> {
+    if (symbols.length === 0) return [];
+    const csv = await this.getText('timeseries.get_range', {
+      dataset: DATABENTO_DATASET,
+      schema: DATABENTO_SCHEMA,
+      stype_in: DATABENTO_STYPE_IN,
+      symbols: symbols.join(','),
+      start,
+      end,
+      encoding: 'csv',
+      pretty_px: 'true',
+      map_symbols: 'false',
+    });
+    return parseOhlcvCsvRaw(csv);
+  }
+
+  /**
+   * Resolve a symbology mapping (e.g. instrument_id -> raw_symbol). Returns a
+   * Map keyed by the input symbol, valued by the resolved symbol over the date
+   * range (last interval wins). Chunked to keep request width bounded.
+   */
+  async resolveSymbology(
+    symbols: string[], stypeIn: string, stypeOut: string, startDate: string, endDate: string
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const CHUNK = 500;
+    for (let i = 0; i < symbols.length; i += CHUNK) {
+      const slice = symbols.slice(i, i + CHUNK);
+      const json = await this.getText('symbology.resolve', {
+        dataset: DATABENTO_DATASET,
+        symbols: slice.join(','),
+        stype_in: stypeIn,
+        stype_out: stypeOut,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      let result: Record<string, Array<{ s: string }>>;
+      try { result = JSON.parse(json).result ?? {}; }
+      catch { throw provErr('DATABENTO_PARSE', `unparseable symbology.resolve: ${json.slice(0, 120)}`,
+        'Inspect symbology.resolve response shape.'); }
+      for (const [key, intervals] of Object.entries(result)) {
+        if (Array.isArray(intervals) && intervals.length > 0) {
+          out.set(key, intervals[intervals.length - 1].s);
+        }
+      }
+    }
+    return out;
+  }
+
   /** Estimated cost in USD for a pull (does NOT spend). symbols=[] => ALL_SYMBOLS. */
   async getCostUsd(symbols: string[] | 'ALL_SYMBOLS', start: string, end: string): Promise<number> {
     const sym = symbols === 'ALL_SYMBOLS' || symbols.length === 0 ? 'ALL_SYMBOLS' : symbols.join(',');
@@ -223,6 +285,35 @@ export function parseOhlcvCsv(csv: string): EquityBar[] {
     if (!symbol || !/^\d{4}-\d{2}-\d{2}$/.test(session_date)) continue;
     if (![open, high, low, close].every(Number.isFinite) || !Number.isFinite(volume)) continue;
     out.push({ symbol, session_date, open, high, low, close, volume });
+  }
+  return out;
+}
+
+/**
+ * Parse a map_symbols=false ohlcv-1d CSV (instrument_id-keyed; no symbol column).
+ * Used for the ALL_SYMBOLS universe pull. Exported for unit testing.
+ */
+export function parseOhlcvCsvRaw(csv: string): RawBar[] {
+  const lines = csv.split('\n').filter((l) => l.trim() !== '');
+  if (lines.length <= 1) return [];
+  const header = lines[0].split(',').map((h) => h.trim());
+  const iId = header.indexOf('instrument_id');
+  const iC = header.indexOf('close');
+  const iV = header.indexOf('volume');
+  if (iId < 0 || iC < 0 || iV < 0) {
+    const e = new Error(`raw ohlcv csv missing columns; header=${header.join(',')}`) as EquityProviderError;
+    e.code = 'DATABENTO_PARSE';
+    e.suggested_action = 'Ensure schema=ohlcv-1d and encoding=csv.';
+    throw e;
+  }
+  const out: RawBar[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split(',');
+    const instrument_id = (c[iId] || '').trim();
+    const close = parseFloat(c[iC]);
+    const volume = parseInt(c[iV], 10);
+    if (!instrument_id || !Number.isFinite(close) || !Number.isFinite(volume)) continue;
+    out.push({ instrument_id, close, volume });
   }
   return out;
 }
