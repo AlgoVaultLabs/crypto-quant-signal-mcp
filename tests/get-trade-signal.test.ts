@@ -14,6 +14,7 @@ vi.mock('../src/lib/performance-db.js', () => ({
 import { getTradeSignal } from '../src/tools/get-trade-call.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
+import { InsufficientCandlesError } from '../src/lib/errors.js';
 import type { ExchangeAdapter, Candle, AssetContext, FundingData } from '../src/types.js';
 
 const mockCandles = (count: number, basePrice: number = 3000, trend: 'up' | 'down' | 'flat' = 'flat'): Candle[] => {
@@ -137,14 +138,17 @@ describe('getTradeSignal', () => {
     expect(['BUY', 'SELL', 'HOLD']).toContain(result.call);
   });
 
-  it('throws on insufficient candle data', async () => {
+  it('throws the structured InsufficientCandlesError on insufficient candle data', async () => {
+    // TRADIFI-SIGNAL-HARDENING-W1 (R5): the legacy plain-string error was
+    // replaced with a structured InsufficientCandlesError carrying recovery
+    // hints. The message no longer contains "Insufficient" — assert the type.
     const adapter = createMockAdapter({
       getCandles: vi.fn().mockResolvedValue(mockCandles(5)),
     });
     vi.mocked(getAdapter).mockReturnValue(adapter);
 
     await expect(getTradeSignal({ coin: 'ETH' }))
-      .rejects.toThrow(/Insufficient/);
+      .rejects.toBeInstanceOf(InsufficientCandlesError);
   });
 
   it('detects bullish conditions with negative funding', async () => {

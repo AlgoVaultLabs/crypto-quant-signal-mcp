@@ -55,7 +55,7 @@ import {
   validateApiKey,
   summarizeCheckoutCompleted,
 } from './lib/stripe.js';
-import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError } from './lib/errors.js';
+import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, buildInsufficientCandlesPayload } from './lib/errors.js';
 import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
@@ -155,6 +155,10 @@ function toolErrorContent(err: unknown): { content: { type: 'text'; text: string
       suggested_upgrade_url: err.suggested_upgrade_url,
       retry_after_days: err.retry_after_days,
     };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
+  }
+  if (err instanceof InsufficientCandlesError) {
+    const payload = buildInsufficientCandlesPayload(err);
     return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
   }
   const message = err instanceof Error ? err.message : String(err);

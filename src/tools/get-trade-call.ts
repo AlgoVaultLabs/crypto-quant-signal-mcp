@@ -5,7 +5,11 @@ import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
-import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError } from '../lib/errors.js';
+import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
+import { resolveAssetClass } from '../lib/underlying-type.js';
+import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
+import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
+import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
 import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
@@ -165,9 +169,34 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     adapter.getAssetContext(coin, dex),
   ]);
 
-  if (candles.length < 30) {
-    throw new Error(`Insufficient candle data for ${coin} (got ${candles.length}, need >= 30)`);
+  const REQUIRED_CANDLES = 30;
+  if (candles.length < REQUIRED_CANDLES) {
+    const firstCandleTimeMs = candles.length > 0 ? candles[0].time : Date.now();
+    const suggestedTimeframes = computeSuggestedTimeframes({
+      firstCandleTimeMs,
+      nowMs: Date.now(),
+      requiredCandles: REQUIRED_CANDLES,
+      requestedTimeframe: timeframe,
+    });
+    throw new InsufficientCandlesError({
+      coin,
+      exchange,
+      timeframe,
+      candlesAvailable: candles.length,
+      candlesRequired: REQUIRED_CANDLES,
+      suggestedTimeframes,
+      suggestedAction: suggestedActionFor(suggestedTimeframes),
+    });
   }
+
+  // ── Underlying-market session + TradFi funding interpretation
+  //    (TRADIFI-SIGNAL-HARDENING-W1). Best-effort; resolveAssetClass never
+  //    throws and fails open to UNKNOWN (renders no caveat / no note). ──
+  const assetClass = await resolveAssetClass(coin, exchange);
+  const session = assetClass === 'UNKNOWN'
+    ? { state: 'UNKNOWN' as const, note: '' }
+    : classifyUnderlyingSession({ assetClass, at: new Date() });
+  const fundingAnnotation = tradfiFundingAnnotation(assetClass);
 
   const closes = candles.map(c => c.close);
   const highs = candles.map(c => c.high);
@@ -221,6 +250,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // Fetch Z-Score (async — may return null if < 20 data points)
   let fundingZScore: number | null = null;
   try { fundingZScore = await getFundingZScore(coin, fundingRate); } catch (e) { console.debug('getFundingZScore failed:', e instanceof Error ? e.message : e); }
+
+  // R4: pre-IPO funding is administratively FIXED, not a z-score-bucketed
+  // sentiment read — override the bucket for PREMARKET. EQUITY/COMMODITY keep
+  // their (structurally-small) z-score bucket but gain an interpretation note.
+  const fundingState = fundingAnnotation.fundingStateOverride ?? bucketFundingState(fundingZScore);
 
   // ── Detect regime FIRST (used for asymmetric thresholds) ──
   let regime: RegimeType = 'RANGING';
@@ -389,7 +423,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   let reasoning = '';
   if (includeReasoning) {
     const tp = bucketTrendPersistence(hurstVal);
-    const fs = bucketFundingState(fundingZScore);
+    const fs = fundingState;
     const bp = bucketBreakoutPending(squeezeActive);
     reasoning = [
       regimeProse(regime),
@@ -398,6 +432,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       trendProse(tp),
       convictionProse(signal, confidence),
     ].join(' ').replace(/\s+/g, ' ').trim();
+    // R3: when the underlying cash market is closed, candles reflect a capped
+    // synthetic index — append a provisional-regime caveat (no number, so it
+    // stays clean against the forbidden-regex reasoning blocklist).
+    if (isClosedState(session.state)) {
+      reasoning += ' Underlying market closed — candles reflect capped synthetic pricing; treat directional reads as provisional until reopen.';
+    }
   }
 
   // Increment quota counter only for non-HOLD (HOLDs are free).
@@ -454,11 +494,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     indicators: {
       funding_rate: fundingRate,
       funding_24h_avg: funding24hAvg,
-      funding_state: bucketFundingState(fundingZScore),
+      funding_state: fundingState,
       oi_change_pct: parseFloat((priceChange * 100).toFixed(1)),
       volume_24h: volume24h,
       trend_persistence: bucketTrendPersistence(hurstVal),
       breakout_pending: bucketBreakoutPending(squeezeActive),
+      underlying_session: session.state,
+      ...(fundingAnnotation.fundingNote ? { funding_note: fundingAnnotation.fundingNote } : {}),
     },
     regime,
     reasoning,

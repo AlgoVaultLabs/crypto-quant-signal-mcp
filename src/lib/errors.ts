@@ -111,6 +111,74 @@ export class TierLimitReachedError extends Error {
 }
 
 /**
+ * Thrown by `getTradeSignal` / `getMarketRegime` when a (usually newly-listed)
+ * symbol has fewer candles at the requested timeframe than the analysis guard
+ * requires (e.g. `get_market_regime ANTHROPIC BINANCE 4h` two days post-launch:
+ * 12 candles, 30 required). Replaces the legacy
+ * `throw new Error("Insufficient candle data ... (got 12, need >= 30)")` —
+ * a string agents could not self-recover from — with a structured envelope
+ * carrying `suggested_timeframes` (the FINER timeframes that already have
+ * enough candles) so an agent can immediately retry. Added in
+ * TRADIFI-SIGNAL-HARDENING-W1 (2026-06-04), mirroring the
+ * `TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE` structured-error precedent.
+ */
+export class InsufficientCandlesError extends Error {
+  readonly code = 'INSUFFICIENT_CANDLES' as const;
+  readonly coin: string;
+  readonly exchange: string;
+  readonly timeframe: string;
+  readonly candlesAvailable: number;
+  readonly candlesRequired: number;
+  readonly suggestedTimeframes: string[];
+  readonly suggestedAction: string;
+
+  constructor(args: {
+    coin: string;
+    exchange: string;
+    timeframe: string;
+    candlesAvailable: number;
+    candlesRequired: number;
+    suggestedTimeframes: string[];
+    suggestedAction: string;
+  }) {
+    super(`${args.coin} on ${args.exchange} ${args.timeframe} has ${args.candlesAvailable} candles; ${args.candlesRequired} required.`);
+    this.coin = args.coin;
+    this.exchange = args.exchange;
+    this.timeframe = args.timeframe;
+    this.candlesAvailable = args.candlesAvailable;
+    this.candlesRequired = args.candlesRequired;
+    this.suggestedTimeframes = args.suggestedTimeframes;
+    this.suggestedAction = args.suggestedAction;
+    Object.setPrototypeOf(this, InsufficientCandlesError.prototype);
+  }
+}
+
+/**
+ * Serialize an `InsufficientCandlesError` to its MCP tool-content payload.
+ * Exported (rather than inlined in the index.ts handler) so the wire shape is
+ * unit-testable without booting the MCP server.
+ */
+export function buildInsufficientCandlesPayload(err: InsufficientCandlesError): {
+  error: 'INSUFFICIENT_CANDLES';
+  error_code: 'INSUFFICIENT_CANDLES';
+  message: string;
+  candles_available: number;
+  candles_required: number;
+  suggested_timeframes: string[];
+  suggested_action: string;
+} {
+  return {
+    error: err.code,
+    error_code: err.code,
+    message: err.message,
+    candles_available: err.candlesAvailable,
+    candles_required: err.candlesRequired,
+    suggested_timeframes: err.suggestedTimeframes,
+    suggested_action: err.suggestedAction,
+  };
+}
+
+/**
  * Map of which exchanges to suggest as fallbacks when one is rate-limited.
  * Used by the MCP tool handler to populate the `suggestion` field of the
  * structured error response.

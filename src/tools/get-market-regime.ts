@@ -2,7 +2,11 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 import { adx, atr, detectPriceStructure } from '../lib/indicators.js';
 import { getDexForCoin, isKnownTradFi } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
-import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError } from '../lib/errors.js';
+import { TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError } from '../lib/errors.js';
+import { resolveAssetClass } from '../lib/underlying-type.js';
+import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
+import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
+import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
 import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
@@ -71,9 +75,36 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     hlAdapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
   ]);
 
-  if (candles.length < 30) {
-    throw new Error(`Insufficient candle data for ${coin} regime analysis (got ${candles.length}, need >= 30)`);
+  const REQUIRED_CANDLES = 30;
+  if (candles.length < REQUIRED_CANDLES) {
+    // Structured recovery hint: which finer timeframes already have enough
+    // candles for this (usually newly-listed) symbol. `candles[0].time` is the
+    // oldest candle in the fetched window ≈ the listing's first candle when the
+    // listing is younger than the window.
+    const firstCandleTimeMs = candles.length > 0 ? candles[0].time : Date.now();
+    const suggestedTimeframes = computeSuggestedTimeframes({
+      firstCandleTimeMs,
+      nowMs: Date.now(),
+      requiredCandles: REQUIRED_CANDLES,
+      requestedTimeframe: timeframe,
+    });
+    throw new InsufficientCandlesError({
+      coin,
+      exchange,
+      timeframe,
+      candlesAvailable: candles.length,
+      candlesRequired: REQUIRED_CANDLES,
+      suggestedTimeframes,
+      suggestedAction: suggestedActionFor(suggestedTimeframes),
+    });
   }
+
+  // ── Underlying-market session awareness (TRADIFI-SIGNAL-HARDENING-W1) ──
+  // Best-effort; resolveAssetClass never throws and fails open to UNKNOWN.
+  const assetClass = await resolveAssetClass(coin, exchange);
+  const session = assetClass === 'UNKNOWN'
+    ? { state: 'UNKNOWN' as const, note: '' }
+    : classifyUnderlyingSession({ assetClass, at: new Date() });
 
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
@@ -202,7 +233,21 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   else if (volatilityRatio > 0.03) volInterpretation = 'High';
   else if (volatilityRatio < 0.01) volInterpretation = 'Low';
 
-  const suggestion = generateSuggestion(regime, trendStrength, volatilityRatio, slopeCategory);
+  let suggestion = generateSuggestion(regime, trendStrength, volatilityRatio, slopeCategory);
+  // When the underlying cash market is closed, the candles reflect a capped
+  // synthetic index — flag the regime as provisional (label + caveat only; no
+  // signal suppression in v1).
+  if (isClosedState(session.state)) {
+    suggestion += ' Underlying market closed — candles reflect capped synthetic pricing; treat regime as provisional until reopen.';
+  }
+
+  // PREMARKET funding interpretation (R4): the regime tool surfaces only the
+  // cross-venue funding NOTE (no per-symbol funding_rate field). For pre-IPO
+  // perps, replace the "insufficient cross-venue data" note with the fixed-
+  // funding explanation so it is not read as a sentiment signal.
+  const fundingDivergenceNote = assetClass === 'PREMARKET'
+    ? (tradfiFundingAnnotation('PREMARKET').fundingNote ?? divergenceNote)
+    : divergenceNote;
 
   // Upgrade hint: only for free tier
   const upgradeHint = getUpgradeHint(license, { used: quota.used, total: quota.total });
@@ -243,7 +288,9 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       pivot_quality: pivotQuality,
       trend_strength: trendStrength,
       cross_venue_funding_sentiment: sentiment,
-      funding_divergence_note: divergenceNote,
+      funding_divergence_note: fundingDivergenceNote,
+      underlying_session: session.state,
+      ...(session.note !== '' ? { session_note: session.note } : {}),
     },
     suggestion,
     timestamp: Math.floor(Date.now() / 1000),

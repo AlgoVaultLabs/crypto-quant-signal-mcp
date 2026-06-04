@@ -258,6 +258,18 @@ export interface TradeCallResult {
     trend_persistence: import('./lib/indicator-buckets.js').TrendPersistence;
     /** v1.10.0 bucket: BB/Keltner squeeze → INACTIVE / IMMINENT (replaces boolean squeeze_active). */
     breakout_pending: import('./lib/indicator-buckets.js').BreakoutPending;
+    /**
+     * TRADIFI-SIGNAL-HARDENING-W1: underlying-market session state for the
+     * coin's asset class (ALWAYS_OPEN for crypto). Lets agents discount regime
+     * reads taken while the underlying cash market is closed.
+     */
+    underlying_session: import('./lib/market-sessions.js').UnderlyingSessionState;
+    /**
+     * TRADIFI-SIGNAL-HARDENING-W1: TradFi funding interpretation note. OMITTED
+     * for CRYPTO / UNKNOWN (no annotation). Present for EQUITY / KR_EQUITY /
+     * COMMODITY / PREMARKET.
+     */
+    funding_note?: string;
   };
   regime: RegimeType;
   reasoning: string;
@@ -349,6 +361,17 @@ export interface MarketRegimeResult {
     trend_strength: TrendStrength;
     cross_venue_funding_sentiment: CrossVenueFundingSentiment;
     funding_divergence_note: string;
+    /**
+     * TRADIFI-SIGNAL-HARDENING-W1: underlying-market session state for the
+     * coin's asset class (ALWAYS_OPEN for crypto).
+     */
+    underlying_session: import('./lib/market-sessions.js').UnderlyingSessionState;
+    /**
+     * TRADIFI-SIGNAL-HARDENING-W1: session context. OMITTED for ALWAYS_OPEN /
+     * OPEN_REGULAR / UNKNOWN; present when the underlying is in extended hours,
+     * closed (weekend/holiday), or pre-IPO.
+     */
+    session_note?: string;
   };
   suggestion: string;
   timestamp: number;

@@ -7,6 +7,7 @@ vi.mock('../src/lib/exchange-adapter.js', () => ({
 
 import { getMarketRegime } from '../src/tools/get-market-regime.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
+import { InsufficientCandlesError } from '../src/lib/errors.js';
 import type { ExchangeAdapter, Candle, FundingData } from '../src/types.js';
 
 const mockTrendingUpCandles = (count: number): Candle[] => {
@@ -118,11 +119,13 @@ describe('getMarketRegime', () => {
     expect(['STRONG', 'MODERATE', 'WEAK']).toContain(result.metrics.trend_strength);
   });
 
-  it('throws on insufficient data', async () => {
+  it('throws the structured InsufficientCandlesError on insufficient data', async () => {
+    // TRADIFI-SIGNAL-HARDENING-W1 (R5): structured error replaces the plain
+    // "Insufficient candle data ..." string; assert the type, not the message.
     vi.mocked(getAdapter).mockReturnValue(createMockAdapter(mockTrendingUpCandles(10)));
 
     await expect(getMarketRegime({ coin: 'BTC' }))
-      .rejects.toThrow(/Insufficient/);
+      .rejects.toBeInstanceOf(InsufficientCandlesError);
   });
 
   it('defaults to 4h timeframe', async () => {

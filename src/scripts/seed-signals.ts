@@ -44,6 +44,7 @@
  */
 
 import { getTradeSignal } from '../tools/get-trade-call.js';
+import { InsufficientCandlesError } from '../lib/errors.js';
 import { hasRecentSignalAsync, closeDb, bulkWarmFundingCache } from '../lib/performance-db.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import { getTicker24hrFullCoalesced } from '../lib/adapters/binance.js';
@@ -758,7 +759,11 @@ async function seedExchange(
       seeded++;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Insufficient candle') || msg.includes('insufficient liquidity') || msg.includes('not found')) {
+      // TRADIFI-SIGNAL-HARDENING-W1: the new-listing guard now throws the
+      // structured InsufficientCandlesError (message no longer contains the
+      // legacy "Insufficient candle" substring) — recognize it explicitly so
+      // unsupported/young coins keep self-skipping instead of counting as errors.
+      if (err instanceof InsufficientCandlesError || msg.includes('Insufficient candle') || msg.includes('insufficient liquidity') || msg.includes('not found')) {
         skipped++;
       } else {
         console.error(`[${ts()}] [${exchangeId}] ${coin} -> ERROR: ${msg}`);

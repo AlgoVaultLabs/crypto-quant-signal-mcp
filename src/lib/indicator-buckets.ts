@@ -14,8 +14,14 @@
 /** Trend-persistence bucket derived from Hurst exponent. Public-facing enum. */
 export type TrendPersistence = 'LOW' | 'MEDIUM' | 'HIGH';
 
-/** Funding-pressure bucket derived from |z| of cross-venue funding. Public-facing enum. */
-export type FundingState = 'NORMAL' | 'ELEVATED' | 'EXTREME';
+/**
+ * Funding-pressure bucket derived from |z| of cross-venue funding. Public-facing enum.
+ * `FIXED_PREIPO` (TRADIFI-SIGNAL-HARDENING-W1) is a TradFi override, NOT a z-score
+ * bucket: pre-IPO perp funding is administratively fixed (+0.005%/8h on Binance),
+ * so it is never produced by `bucketFundingState` — it is set explicitly by the
+ * tool when the underlying asset class is PREMARKET.
+ */
+export type FundingState = 'NORMAL' | 'ELEVATED' | 'EXTREME' | 'FIXED_PREIPO';
 
 /** Bollinger/Keltner squeeze enum. 'FIRING' reserved for future when an active-breakout signal lands. */
 export type BreakoutPending = 'INACTIVE' | 'IMMINENT';
@@ -99,9 +105,10 @@ export function regimeProse(regime: RegimeType): string {
 
 export function fundingProse(state: FundingState): string {
   switch (state) {
-    case 'NORMAL':   return 'Funding pressure mild.';
-    case 'ELEVATED': return 'Funding pressure elevated; one-sided crowd forming.';
-    case 'EXTREME':  return 'Funding pressure extreme; heavy one-sided crowd.';
+    case 'NORMAL':       return 'Funding pressure mild.';
+    case 'ELEVATED':     return 'Funding pressure elevated; one-sided crowd forming.';
+    case 'EXTREME':      return 'Funding pressure extreme; heavy one-sided crowd.';
+    case 'FIXED_PREIPO': return 'Funding is fixed pre-IPO; not a market-sentiment signal.';
   }
 }
 

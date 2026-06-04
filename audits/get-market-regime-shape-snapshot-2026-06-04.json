@@ -1,0 +1,59 @@
+{
+  "_meta": {
+    "wave": "TRADIFI-SIGNAL-HARDENING-W1",
+    "tool": "get_market_regime",
+    "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio. NOTE: get_market_regime is an x402-PAID tool (X402-CDP-BAZAAR-DISCOVERY-W1) — a live tools/call requires payment, so the canonical drift check is the vitest allow-list regression below.",
+    "captured_at": "2026-06-04",
+    "purpose": "Public-response-shape SoT for get_market_regime after the additive TradFi hardening fields. ADDITIVE-ONLY: metrics gains underlying_session (always) + session_note (closed/extended/pre-IPO only). NO existing field removed/renamed (Data Integrity). outcome_return_pct / Phase-E outcome WR must NEVER appear (Data Integrity LAW)."
+  },
+  "top_level_allowed_keys": ["regime", "confidence", "metrics", "suggestion", "timestamp", "coin", "timeframe", "_algovault"],
+  "metrics_allowed_keys": [
+    "adx",
+    "adx_interpretation",
+    "adx_slope",
+    "adx_slope_interpretation",
+    "volatility_ratio",
+    "volatility_interpretation",
+    "price_structure",
+    "pivot_quality",
+    "trend_strength",
+    "cross_venue_funding_sentiment",
+    "funding_divergence_note",
+    "underlying_session",
+    "session_note"
+  ],
+  "new_in_this_wave": {
+    "metrics.underlying_session": "ALWAYS present. enum: OPEN_REGULAR | OPEN_EXTENDED | CLOSED_WEEKEND | CLOSED_HOLIDAY | ALWAYS_OPEN | PREIPO_INTERNAL | UNKNOWN",
+    "metrics.session_note": "OMITTED for ALWAYS_OPEN / OPEN_REGULAR / UNKNOWN; present for OPEN_EXTENDED / CLOSED_WEEKEND / CLOSED_HOLIDAY / PREIPO_INTERNAL",
+    "suggestion": "when underlying_session is CLOSED_WEEKEND/CLOSED_HOLIDAY, a provisional-regime caveat sentence is APPENDED (no field shape change)",
+    "metrics.funding_divergence_note": "for PREMARKET symbols, replaced with the fixed-pre-IPO-funding explanation instead of the cross-venue note"
+  },
+  "enums": {
+    "underlying_session": ["OPEN_REGULAR", "OPEN_EXTENDED", "CLOSED_WEEKEND", "CLOSED_HOLIDAY", "ALWAYS_OPEN", "PREIPO_INTERNAL", "UNKNOWN"],
+    "regime": ["TRENDING_UP", "TRENDING_DOWN", "RANGING", "VOLATILE"],
+    "trend_strength": ["STRONG", "MODERATE", "WEAK"],
+    "price_structure": ["HIGHER_HIGHS", "LOWER_LOWS", "MIXED"],
+    "cross_venue_funding_sentiment": ["BEARISH_BIAS", "NEUTRAL", "BULLISH_BIAS"]
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "outcome_win_rate",
+    "realized_return",
+    "pnl"
+  ],
+  "error_contract": {
+    "INSUFFICIENT_CANDLES": "{error:'INSUFFICIENT_CANDLES', error_code:'INSUFFICIENT_CANDLES', message, candles_available, candles_required, suggested_timeframes:[], suggested_action} — isError:true (NEW this wave; replaces the legacy 'Insufficient candle data ...' plain string)",
+    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "{error_code, message, coin, requested_exchange, suggested_venues:[], probed_at} — isError:true (v1.11.1)",
+    "UPSTREAM_RATE_LIMIT": "{error_code, exchange, retry_after_seconds, suggestion} — isError:true (v1.10.2)",
+    "TIER_LIMIT_REACHED": "{code, error_code, message, current_usage, monthly_limit, tier, suggested_upgrade_url, retry_after_days} — isError:true"
+  },
+  "cache_contract": "no server-side response cache; computed per-call. underlyingType auto-detection cached 24h in-process (underlying-type.ts) with fail-open to static map.",
+  "consumers": [
+    "MCP agent callers (Claude/Cursor/etc.) via tools/call",
+    "x402 HTTP route POST /x402/get_market_regime (paid; same handler, two transports)"
+  ],
+  "additive_only_rule": "metrics may GAIN keys (underlying_session/session_note) but never LOSE the 11 pre-existing keys. A removed/renamed key or a forbidden_key appearing = Data Integrity violation → HALT.",
+  "drift_check_command": "cd /Users/tank/code/crypto-quant-signal-mcp && npx vitest run tests/get-market-regime.test.ts tests/integration/trade-call-tradfi-hardening.test.ts   # regime metrics keys + session wiring; full-suite allow-list coverage"
+}
