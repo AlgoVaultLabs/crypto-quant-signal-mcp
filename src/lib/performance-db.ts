@@ -53,6 +53,38 @@ class SqliteBackend implements DbBackend {
 
 // ── PostgreSQL Backend ──
 
+/**
+ * OPS-POSTGRES-MEM-RIGHTSIZE-W1 — hardened, env-tunable pg Pool config.
+ *
+ * `new Pool({ connectionString })` inherited the pg defaults, which left the
+ * pool exposed during the 2026-06-04 OOM incident: no TCP keepAlive (idle
+ * connections dropped by the server/NAT surface as "Connection terminated
+ * unexpectedly"), no statement_timeout (a query stuck against a recovering
+ * DB pins its connection and feeds the reconnect storm), and an implicit
+ * bound an operator couldn't tune. Pure + env-injectable so it is unit-
+ * testable without opening a real connection. All overrides default-deny:
+ * a non-finite / non-positive env value falls back to the safe default.
+ */
+export function buildPoolConfig(
+  connectionString: string,
+  env: NodeJS.ProcessEnv = process.env,
+): import('pg').PoolConfig {
+  const posInt = (raw: string | undefined, fallback: number): number => {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  return {
+    connectionString,
+    max: posInt(env.PG_POOL_MAX, 12),
+    connectionTimeoutMillis: posInt(env.PG_CONNECTION_TIMEOUT_MS, 10_000),
+    idleTimeoutMillis: posInt(env.PG_IDLE_TIMEOUT_MS, 30_000),
+    statement_timeout: posInt(env.PG_STATEMENT_TIMEOUT_MS, 120_000),
+    query_timeout: posInt(env.PG_QUERY_TIMEOUT_MS, 120_000),
+    keepAlive: true,
+    allowExitOnIdle: true,
+  };
+}
+
 class PgBackend implements DbBackend {
   private pool: import('pg').Pool;
 
@@ -60,7 +92,14 @@ class PgBackend implements DbBackend {
     // Dynamic import resolved at runtime
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Pool } = require('pg');
-    this.pool = new Pool({ connectionString });
+    this.pool = new Pool(buildPoolConfig(connectionString));
+    // Without an 'error' listener an idle-client error (server restart, network
+    // blip) is re-thrown as an uncaught exception and can crash the process.
+    // Log + swallow — the pool transparently replaces the dead client on the
+    // next checkout.
+    this.pool.on('error', (err: Error) => {
+      console.error('[pg-pool] idle client error (recovering):', err.message);
+    });
   }
 
   exec(sql: string): void {

@@ -8,6 +8,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { getPerformanceStatsAsync, dbQuery } from '../lib/performance-db.js';
+import { evaluatePfeWinRate } from './monitor-pfe.js';
 import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { UpstreamRateLimitError } from '../lib/errors.js';
 import { WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
@@ -356,16 +357,15 @@ async function checkBackfillQueue(): Promise<{ error: string | null; count: numb
 }
 
 async function checkPfeWinRate(): Promise<{ error: string | null; rate: number | null }> {
-  try {
-    const stats = await getPerformanceStatsAsync();
-    const rate = stats.overall.pfeWinRate;
-    if (rate !== null && rate < 0.85) {
-      return { error: `PFE win rate dropped to ${(rate * 100).toFixed(1)}% (< 85%)`, rate };
-    }
-    return { error: null, rate };
-  } catch (err) {
-    return { error: `PFE check failed: ${(err as Error).message}`, rate: null };
+  // OPS-POSTGRES-MEM-RIGHTSIZE-W1: read the server-side-cached public surface
+  // instead of recomputing the full ~6 s / 152k-row stats query in this short-
+  // lived cron process. Verdict logic lives in the pure, unit-tested
+  // evaluatePfeWinRate(); an outright outage is caught by server_health/database.
+  const { ok, status, data } = await fetchJson(`${API_BASE}/api/performance-public`);
+  if (!ok) {
+    return { error: `PFE check failed: /api/performance-public HTTP ${status}`, rate: null };
   }
+  return evaluatePfeWinRate(data);
 }
 
 async function runCritical(): Promise<void> {
