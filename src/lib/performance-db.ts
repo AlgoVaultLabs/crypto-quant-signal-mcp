@@ -85,8 +85,81 @@ export function buildPoolConfig(
   };
 }
 
+// ── OPS-SIGNAL-WRITE-RESILIENCE-W1 — resilient + loud fire-and-forget writes ──
+
+function safeJson(v: unknown): string {
+  try {
+    const s = JSON.stringify(v);
+    return s.length > 500 ? `${s.slice(0, 500)}…` : s;
+  } catch {
+    return String(v);
+  }
+}
+
+const TRANSIENT_DB_CODES = new Set([
+  'EAI_AGAIN', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH',
+]);
+const TRANSIENT_DB_PATTERN =
+  /EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|connection terminated|connection timeout|timeout expired|too many clients|server closed the connection|terminating connection|the database system is (starting up|in recovery|shutting down)/i;
+
+/**
+ * Is this DB error worth retrying? DNS hiccups (musl `getaddrinfo EAI_AGAIN
+ * postgres` under concurrent seed load / ENOTFOUND), connection drops &
+ * timeouts, and transient pool/PG overload are retryable; deterministic query
+ * errors (syntax, constraint violation) are NOT — retrying just fails again.
+ */
+export function isTransientDbError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === 'string' && TRANSIENT_DB_CODES.has(code)) return true;
+  const msg = (err as { message?: unknown }).message;
+  return typeof msg === 'string' && TRANSIENT_DB_PATTERN.test(msg);
+}
+
+/**
+ * Generic bounded retry with injectable sleep (for deterministic tests).
+ * Resolves with a discriminated result instead of throwing, so fire-and-forget
+ * callers can log loudly on exhaustion without producing an unhandled rejection.
+ * `attempts` in the result is the actual number of tries made.
+ */
+export async function retryAsync<T>(
+  fn: () => Promise<T>,
+  opts: {
+    attempts?: number;
+    backoffMs?: number[];
+    isRetryable?: (e: unknown) => boolean;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<{ ok: true; value: T; attempts: number } | { ok: false; error: unknown; attempts: number }> {
+  const maxAttempts = opts.attempts ?? 4;
+  const backoff = opts.backoffMs ?? [250, 750, 2_000];
+  const isRetryable = opts.isRetryable ?? (() => true);
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let lastError: unknown;
+  let tries = 0;
+  for (let i = 1; i <= maxAttempts; i++) {
+    tries = i;
+    try {
+      const value = await fn();
+      return { ok: true, value, attempts: i };
+    } catch (e) {
+      lastError = e;
+      if (i < maxAttempts && isRetryable(e)) {
+        await sleep(backoff[i - 1] ?? backoff[backoff.length - 1] ?? 1_000);
+        continue;
+      }
+      break;
+    }
+  }
+  return { ok: false, error: lastError, attempts: tries };
+}
+
 class PgBackend implements DbBackend {
   private pool: import('pg').Pool;
+  // In-flight (possibly retrying) fire-and-forget writes. close() drains these
+  // before ending the pool so a short-lived seed/backfill process can't exit
+  // mid-retry and lose the write.
+  private pending = new Set<Promise<void>>();
 
   constructor(connectionString: string) {
     // Dynamic import resolved at runtime
@@ -103,15 +176,38 @@ class PgBackend implements DbBackend {
   }
 
   exec(sql: string): void {
-    // Fire and forget — init schema
-    this.pool.query(sql).catch((err) => { console.error('PG exec error:', err.message); });
+    // Fire and forget — init schema. Resilient + loud (see trackedWrite).
+    this.trackedWrite('exec', () => this.pool.query(sql), sql, []);
   }
 
   run(sql: string, ...params: unknown[]): void {
     // Convert ? placeholders to $1, $2, etc. for pg
     let idx = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
-    this.pool.query(pgSql, params).catch((err) => { console.error('PG run error:', err.message); });
+    this.trackedWrite('run', () => this.pool.query(pgSql, params), pgSql, params);
+  }
+
+  /**
+   * Fire-and-forget write that (1) RETRIES transient failures — the musl
+   * `getaddrinfo EAI_AGAIN postgres` bursts that were silently dropping signals,
+   * plus connection drops/timeouts — and (2) on final failure logs LOUDLY with
+   * the full SQL + params, so a lost write is recoverable from logs and NEVER
+   * silent. Tracked in `pending` so close() drains it before ending the pool.
+   */
+  private trackedWrite(label: string, exec: () => Promise<unknown>, sql: string, params: unknown[]): void {
+    const p = retryAsync(exec, { isRetryable: isTransientDbError })
+      .then((r) => {
+        if (!r.ok) {
+          console.error(
+            `[pg-write] WRITE LOST after ${r.attempts} attempt(s) [${label}]: ` +
+            `${(r.error as Error)?.message ?? String(r.error)} :: SQL=${sql} PARAMS=${safeJson(params)}`,
+          );
+        } else if (r.attempts > 1) {
+          console.error(`[pg-write] ${label} recovered after ${r.attempts} attempt(s)`);
+        }
+      })
+      .finally(() => { this.pending.delete(p); });
+    this.pending.add(p);
   }
 
   all(sql: string, ...params: unknown[]): SignalRecord[] {
@@ -122,7 +218,9 @@ class PgBackend implements DbBackend {
   }
 
   close(): void {
-    this.pool.end().catch(() => {});
+    // Drain in-flight (possibly retrying) writes before ending the pool, so a
+    // short-lived seed/backfill process can't exit mid-write and lose the signal.
+    void Promise.allSettled([...this.pending]).then(() => this.pool.end().catch(() => {}));
   }
 
   async query(sql: string, params: unknown[] = []): Promise<SignalRecord[]> {
