@@ -28,6 +28,7 @@
  * SoftwareApplication with the data-algovault-jsonld="SoftwareApplication" marker.
  */
 import { readFile, writeFile, readdir } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,6 +39,32 @@ const TEMPLATE_DIR = path.join(LANDING_DIR, '_jsonld');
 
 const PERF_URL = 'https://api.algovault.com/api/performance-public';
 const MERKLE_URL = 'https://api.algovault.com/api/merkle-batches';
+
+// ENTITY-FOOTPRINT-W1: canonical schema.org Organization node identity + sameAs source.
+// The FULL Organization node is served on the homepage only; every other page carries a
+// bare {@id} reference (Google 2026-04-15: one full node, reference it elsewhere).
+const HOMEPAGE_FILE = 'index.html';
+export const ORG_ID = 'https://algovault.com/#organization';
+export const ENTITY_URLS_PATH = path.join(TEMPLATE_DIR, 'entity-urls.json');
+// Canonical render order for sameAs (github = strongest dev-tool profile first per Google
+// guidance; 4-7 strong entries beat long lists). Keys absent here (e.g. "_comment") are ignored.
+export const SAMEAS_KEY_ORDER = ['github', 'x', 'npm', 'crunchbase', 'g2', 'capterra', 'wikidata'];
+export const ORG_REF_NODE = { '@context': 'https://schema.org', '@id': ORG_ID };
+
+export async function loadEntityUrls(p = ENTITY_URLS_PATH) {
+  return JSON.parse(await readFile(p, 'utf-8'));
+}
+
+// Non-null, non-empty profile URLs in canonical order. null / absent / "" => excluded.
+// Adding a future profile is a config flip (null -> URL) + re-run; no code change.
+export function buildSameAs(entityUrls) {
+  const urls = [];
+  for (const key of SAMEAS_KEY_ORDER) {
+    const v = entityUrls?.[key];
+    if (typeof v === 'string' && v.trim().length > 0) urls.push(v.trim());
+  }
+  return urls;
+}
 
 const TEMPLATES = [
   { file: 'product.json.template', name: 'Product' },
@@ -90,9 +117,15 @@ function renderTemplate(text, data) {
   });
 }
 
-async function buildBlocks(data) {
+async function buildBlocks(data, { orgRef = false } = {}) {
   const blocks = [];
   for (const t of TEMPLATES) {
+    // ENTITY-FOOTPRINT-W1: on non-homepage pages the Organization block is a bare @id
+    // reference to the single canonical full node served on the homepage.
+    if (t.name === 'Organization' && orgRef) {
+      blocks.push({ name: t.name, json: JSON.stringify(ORG_REF_NODE, null, 2) });
+      continue;
+    }
     const tplPath = path.join(TEMPLATE_DIR, t.file);
     const raw = await readFile(tplPath, 'utf-8');
     const rendered = renderTemplate(raw, data).trimEnd();
@@ -145,7 +178,12 @@ async function processFile(filepath, blocks) {
 async function main() {
   const checkMode = process.argv.includes('--check');
   const data = await fetchLiveData();
-  const blocks = await buildBlocks(data);
+  // ENTITY-FOOTPRINT-W1: sameAs from the entity-urls config (null entries excluded).
+  const entityUrls = await loadEntityUrls();
+  data.sameas_json = JSON.stringify(buildSameAs(entityUrls));
+  // Full Organization node on the homepage; @id reference on every other page.
+  const homeBlocks = await buildBlocks(data, { orgRef: false });
+  const subBlocks = await buildBlocks(data, { orgRef: true });
 
   const allFiles = await readdir(LANDING_DIR);
   const htmlFiles = allFiles.filter(f => f.endsWith('.html') && !FILES_TO_SKIP.has(f)).sort();
@@ -154,6 +192,7 @@ async function main() {
   let changed = 0;
   for (const f of htmlFiles) {
     const filepath = path.join(LANDING_DIR, f);
+    const blocks = f === HOMEPAGE_FILE ? homeBlocks : subBlocks;
     const { before, after } = await processFile(filepath, blocks);
     if (before !== after) {
       if (checkMode) {
@@ -180,7 +219,19 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(`generate_jsonld FAILED: ${err.message}`);
-  process.exit(2);
-});
+// ENTITY-FOOTPRINT-W1: run main() only when executed directly (node scripts/generate_jsonld.mjs).
+// When imported by a unit test, the pure exports above are used without triggering a live fetch.
+function isDirectRun() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectRun()) {
+  main().catch(err => {
+    console.error(`generate_jsonld FAILED: ${err.message}`);
+    process.exit(2);
+  });
+}

@@ -4,6 +4,6 @@
   "name": "AlgoVault",
   "url": "https://algovault.com",
   "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. {{pfe_wr}}% PFE win rate across {{total_calls}} verified calls, Merkle-anchored on Base L2.",
-  "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "publisher": { "@id": "https://algovault.com/#organization" },
   "inLanguage": "en"
 }

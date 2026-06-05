@@ -1,0 +1,10 @@
+{
+  "_comment": "schema.org Organization sameAs source (ENTITY-FOOTPRINT-W1). null = profile not yet live -> EXCLUDED from sameAs output. To add a profile once it is live + claimed: flip its null to the public profile URL, then run `node scripts/generate_jsonld.mjs` and commit. Render order = key order below (github first = strongest dev-tool profile per Google's 2026-04-15 sameAs guidance; 4-7 strong entries beat long lists). Consumed keys: github, x, npm, crunchbase, g2, capterra, wikidata. wikidata gets a URL ONLY after the item exists and survives (see docs/WIKIDATA-DEFERRED.md).",
+  "github": "https://github.com/AlgoVaultLabs",
+  "x": "https://x.com/AlgoVaultLabs",
+  "npm": "https://www.npmjs.com/package/crypto-quant-signal-mcp",
+  "crunchbase": null,
+  "g2": null,
+  "capterra": null,
+  "wikidata": null
+}

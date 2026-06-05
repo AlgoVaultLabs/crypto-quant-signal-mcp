@@ -1,13 +1,11 @@
 {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": "https://algovault.com/#organization",
   "name": "AlgoVault Labs",
   "url": "https://algovault.com",
   "logo": "https://algovault.com/logo.png",
   "description": "Composite call-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
-  "sameAs": [
-    "https://github.com/AlgoVaultLabs",
-    "https://twitter.com/AlgoVaultLabs"
-  ],
+  "sameAs": {{sameas_json}},
   "foundingDate": "2026"
 }

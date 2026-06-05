@@ -181,19 +181,19 @@ tailwind.config = {
   ],
   "aggregateRating": {
     "@type": "AggregateRating",
-    "ratingValue": "90.5",
+    "ratingValue": "91.7",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "88665"
+    "ratingCount": "154473"
   },
   "additionalProperty": [
-    { "@type": "PropertyValue", "name": "PFE win rate", "value": "90.5%" },
-    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "88665" },
-    { "@type": "PropertyValue", "name": "Asset count", "value": "733" },
+    { "@type": "PropertyValue", "name": "PFE win rate", "value": "91.7%" },
+    { "@type": "PropertyValue", "name": "Verified trade calls", "value": "154473" },
+    { "@type": "PropertyValue", "name": "Asset count", "value": "776" },
     { "@type": "PropertyValue", "name": "Exchange count", "value": "5" },
     { "@type": "PropertyValue", "name": "Timeframe count (API)", "value": "11" },
-    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "35" },
-    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-05-15" }
+    { "@type": "PropertyValue", "name": "Merkle batches on Base L2", "value": "56" },
+    { "@type": "PropertyValue", "name": "Track-record window", "value": "2026-04-10 to 2026-06-05" }
   ]
 }
 </script>
@@ -203,7 +203,7 @@ tailwind.config = {
   "@type": "Service",
   "name": "AlgoVault Trade Call Intelligence",
   "serviceType": "Composite trade-call API for AI trading agents",
-  "provider": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "provider": { "@id": "https://algovault.com/#organization" },
   "url": "https://algovault.com",
   "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 5 crypto perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
   "areaServed": "Worldwide",
@@ -227,7 +227,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 733+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 776+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -235,29 +235,20 @@ tailwind.config = {
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
   ],
-  "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "author": { "@id": "https://algovault.com/#organization" },
   "aggregateRating": {
     "@type": "AggregateRating",
-    "ratingValue": "90.5",
+    "ratingValue": "91.7",
     "bestRating": "100",
     "worstRating": "0",
-    "ratingCount": "88665"
+    "ratingCount": "154473"
   }
 }
 </script>
 <script type="application/ld+json" data-algovault-jsonld="Organization">
 {
   "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "AlgoVault Labs",
-  "url": "https://algovault.com",
-  "logo": "https://algovault.com/logo.png",
-  "description": "Composite call-interpretation infrastructure for AI trading agents. TradingView is for human chart-readers, MT4 for human algo traders, AlgoVault for AI agents.",
-  "sameAs": [
-    "https://github.com/AlgoVaultLabs",
-    "https://twitter.com/AlgoVaultLabs"
-  ],
-  "foundingDate": "2026"
+  "@id": "https://algovault.com/#organization"
 }
 </script>
 <script type="application/ld+json" data-algovault-jsonld="WebSite">
@@ -266,8 +257,8 @@ tailwind.config = {
   "@type": "WebSite",
   "name": "AlgoVault",
   "url": "https://algovault.com",
-  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 90.5% PFE win rate across 88665 verified calls, Merkle-anchored on Base L2.",
-  "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
+  "description": "The Brain Layer for AI Trading Agents. Composite trade calls + market regime + cross-venue funding arbitrage via MCP. 91.7% PFE win rate across 154473 verified calls, Merkle-anchored on Base L2.",
+  "publisher": { "@id": "https://algovault.com/#organization" },
   "inLanguage": "en"
 }
 </script>

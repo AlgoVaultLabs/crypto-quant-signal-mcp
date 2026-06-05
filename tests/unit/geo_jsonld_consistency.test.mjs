@@ -68,6 +68,35 @@ test('every page also has Service + SoftwareApplication blocks (5 total managed)
   }
 });
 
+// ENTITY-FOOTPRINT-W1: canonical Organization @id node — full on the homepage, @id
+// reference on every other page (Google 2026-04-15 sameAs guidance). entity-urls.json
+// is the sameAs source; deferred (null) profiles must never leak into the rendered output.
+const ORG_ID = 'https://algovault.com/#organization';
+
+test('homepage index.html serves the FULL Organization node (@id + sameAs + name)', async () => {
+  const body = findManagedBlock(await readHtml('index.html'), 'Organization');
+  assert.ok(body, 'index.html missing Organization block');
+  const node = JSON.parse(body);
+  assert.equal(node['@id'], ORG_ID, 'homepage Organization @id mismatch');
+  assert.equal(node['@type'], 'Organization', 'homepage Organization must be a full node');
+  assert.ok(Array.isArray(node.sameAs) && node.sameAs.length >= 3, 'homepage Organization.sameAs must list >= 3 profiles');
+  assert.ok(node.name, 'homepage Organization.name missing');
+  assert.doesNotMatch(JSON.stringify(node.sameAs), /crunchbase|wikidata|capterra/i, 'a deferred (null) profile leaked into sameAs');
+});
+
+test('every non-homepage landing page references Organization by @id only (single canonical node)', async () => {
+  const files = (await listLandingHtml()).filter(f => f !== 'index.html');
+  assert.ok(files.length >= 4, `expected several non-homepage pages, got ${files.length}`);
+  for (const f of files) {
+    const body = findManagedBlock(await readHtml(f), 'Organization');
+    assert.ok(body, `${f} missing Organization block`);
+    const node = JSON.parse(body);
+    assert.equal(node['@id'], ORG_ID, `${f} Organization @id mismatch`);
+    assert.ok(!('name' in node), `${f} Organization must be an @id reference, not a full node`);
+    assert.ok(!('sameAs' in node), `${f} Organization must not re-declare sameAs`);
+  }
+});
+
 test('faq.html contains FAQPage block with >= 10 mainEntity Questions', async () => {
   const html = await readHtml('faq.html');
   const m = html.match(/<script type="application\/ld\+json" data-algovault-jsonld="FAQPage">\s*([\s\S]*?)\s*<\/script>/);
