@@ -118,9 +118,11 @@ const FAIL_THRESHOLDS: Record<string, number> = {
   exchanges: 3,
   backfill: 1,
   pfe_winrate: 1,
-  // OPS-SEED-ORCHESTRATOR-W1/CH2: ≥45-min seed staleness sustained 3×2-min
-  // cycles (~6 min) before paging — covers 5m/15m cadences with slack for HL
-  // weight-budget waits; resets silently on the next fresh signal.
+  // OPS-SEED-ORCHESTRATOR-W1/CH2: RESERVED for the seed-freshness check, which
+  // ships REPORT-ONLY (checkSeedFreshness returns null pending a calibrated /
+  // baseline-relative redesign — live data showed a fixed recency threshold
+  // false-positives on every venue). When alerting is re-enabled this 3-cycle
+  // (~6 min) consecutive gate applies; until then the check never reaches it.
   seed_freshness: 3,
 };
 
@@ -377,13 +379,19 @@ async function checkPfeWinRate(): Promise<{ error: string | null; rate: number |
 }
 
 async function checkSeedFreshness(): Promise<string | null> {
-  // OPS-SEED-ORCHESTRATOR-W1/CH2: independent detection that promoted venues are
-  // still producing signals — the 06-05 arc proved silent seed outages happen
-  // (EAI_AGAIN: "recorded" logs but zero rows; a 35-min HL gap). Venue-table-
-  // driven so freshly-promoted venues inherit the check for free. Verdict logic
-  // lives in the pure, unit-tested evaluateSeedFreshness(); a DB/server outage is
-  // already caught by the database/server_health checks. PG-targeted SQL (the
-  // monitor's production backend; mirrors checkBackfillQueue's dbQuery usage).
+  // OPS-SEED-ORCHESTRATOR-W1/CH2 — venue seed-freshness DETECTION, REPORT-ONLY.
+  //
+  // Live calibration (2026-06-05) on a HEALTHY system showed recorded-signal
+  // recency is too noisy for a fixed page threshold: over 48h the normal
+  // per-venue inter-signal gap reached HL 505min (HL is sparse — ~26 sig/24h),
+  // BINANCE 97min, BITGET 90min, OKX 54min, BYBIT 49min, because `signals` holds
+  // only BUY/SELL (the HOLD/confidence filter at get-trade-call.ts:547) so a
+  // quiet market legitimately lags MAX(created_at). A fixed 45-min threshold
+  // false-positives on EVERY venue. Until a calibrated / baseline-relative design
+  // is ratified, this check is REPORT-ONLY: it logs the per-venue verdict each
+  // cycle (forensics + a calibration corpus) and NEVER returns an error → never
+  // pages. The robust count-based coverage gate is the CH4 48h gate.
+  // PG-targeted SQL (the monitor's production backend; mirrors checkBackfillQueue).
   try {
     const venues = await listVenues('promoted');
     const promoted = venues.filter((v) => v.status !== 'retired').map((v) => v.exchange_id);
@@ -398,15 +406,13 @@ async function checkSeedFreshness(): Promise<string | null> {
       exchange: r.exchange,
       lastCreatedAtMs: r.last != null ? Number(r.last) * 1000 : null,
     }));
-    const stale = evaluateSeedFreshness(freshnessRows, Date.now()).filter((v) => v.stale);
-    if (stale.length > 0) {
-      const detail = stale.map((v) => `${v.venue} ${v.staleMin}min`).join(', ');
-      return `Seed freshness stale: ${detail} — promoted venue(s) with no new signal ≥45min`;
-    }
-    return null;
+    const verdicts = evaluateSeedFreshness(freshnessRows, Date.now());
+    const summary = verdicts.map((v) => `${v.venue}=${v.staleMin}m`).join(' ');
+    console.log(`[monitor] seed-freshness (report-only, no page): ${summary}`);
   } catch (err) {
-    return `Seed freshness check failed: ${(err as Error).message}`;
+    console.log(`[monitor] seed-freshness check error (report-only): ${(err as Error).message}`);
   }
+  return null; // REPORT-ONLY — never pages (alerting deferred to a calibrated redesign).
 }
 
 async function runCritical(): Promise<void> {
