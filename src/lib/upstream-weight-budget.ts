@@ -388,16 +388,24 @@ export class WeightBudget {
 // lives beside the budget and the deploy-smoke grep
 // `grep -c "algovault-hl-weight" dist/lib/upstream-weight-budget.js` (R6) has a
 // stable target. HL REST budget = 1200 weight/min/IP (official docs, re-verified
-// 2026-06-04). CEILING 1000 leaves 200 under for `Retry-After` header drift +
-// any not-yet-budgeted caller; 300 is reserved for interactive (user) traffic so
-// bulk seed/backfill load can never starve a live user. Constants frozen for one
-// week of telemetry. // TODO: revisit by 2026-06-18.
+// 2026-06-04).
+//
+// OPS-HL-BUDGET-TUNE-W1 (2026-06-05, data-justified, architect-approved): bumped
+// CEILING 1000→1150 + RESERVE 300→450 (both +150) after live telemetry showed
+// measured interactive HL demand ≈ 404 wt/min overflowing the old 300 reserve at
+// batch-peak boundary minutes (49-101 `throws`/window → HL→Binance fallbacks).
+// Batch cap stays CEILING−RESERVE = 700 (unchanged → seeds' lane untouched; post
+// OPS-HL-SEED-LOAD-W1 the batch is healthy at 700: waits low, skips 0). The extra
+// 150 of ceiling goes entirely to interactive (reserve 300→450) so the ~404
+// demand fits → interactive throttling eliminated. CEILING 1150 leaves 50 under
+// HL's 1200 for header drift (all HL callers are now budgeted post-W2, so the
+// "unbudgeted caller" cushion is no longer load-bearing).
 //
 // Binance / Bybit / OKX / Bitget become consumers #2+ by adding their own
 // configured `WeightBudget` here when their load grows; the shared helper is
 // extracted at the 3rd consumer per the CLAUDE.md threshold rule.
-export const HL_WEIGHT_CEILING = 1000;
-export const HL_INTERACTIVE_RESERVE = 300;
+export const HL_WEIGHT_CEILING = 1150;
+export const HL_INTERACTIVE_RESERVE = 450;
 
 const HL_VITEST = process.env.VITEST === 'true';
 // Per-worker ledger + effectively-unbounded ceiling under vitest so fetch-mocked
