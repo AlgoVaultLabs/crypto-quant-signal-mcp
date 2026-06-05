@@ -134,6 +134,10 @@ const EXCHANGE_LOGO_OVERRIDES: Record<string, { src: string; classes: string }> 
   okx: { src: '/assets/logos/okx.svg', classes: 'w-10 h-10 object-contain invert' },
   bybit: { src: '/assets/logos/bybit.png', classes: 'w-10 h-10 object-contain' },
   bitget: { src: '/assets/logos/bitget.png', classes: 'w-10 h-10 object-contain' },
+  // BROKER-PAIRING-CRYPTO-W1 logo backfill (2026-06-05) — venue brand marks
+  gemini: { src: '/assets/logos/gemini.png', classes: 'w-10 h-10 object-contain' },
+  kraken: { src: '/assets/logos/kraken.png', classes: 'w-10 h-10 object-contain' },
+  alpaca: { src: '/assets/logos/alpaca.png', classes: 'w-10 h-10 object-contain' },
 };
 
 const EXCHANGE_DEMO_URL: Record<string, string> = {
