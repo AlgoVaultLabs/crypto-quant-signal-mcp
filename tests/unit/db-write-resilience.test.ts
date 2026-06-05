@@ -21,6 +21,8 @@ describe('isTransientDbError', () => {
     expect(isTransientDbError(new Error('Connection terminated unexpectedly'))).toBe(true);
     expect(isTransientDbError(new Error('getaddrinfo EAI_AGAIN postgres'))).toBe(true);
     expect(isTransientDbError(new Error('sorry, too many clients already'))).toBe(true);
+    // pg pool connect-timeout (surfaced live as WRITE LOST on webhook-init CREATE TABLE)
+    expect(isTransientDbError(new Error('timeout exceeded when trying to connect'))).toBe(true);
   });
 
   it('does NOT retry deterministic query errors (would just fail again)', () => {

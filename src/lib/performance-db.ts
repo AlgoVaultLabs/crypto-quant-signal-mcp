@@ -105,7 +105,7 @@ const TRANSIENT_DB_CODES = new Set([
   'EAI_AGAIN', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH',
 ]);
 const TRANSIENT_DB_PATTERN =
-  /EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|connection terminated|connection timeout|timeout expired|too many clients|server closed the connection|terminating connection|the database system is (starting up|in recovery|shutting down)/i;
+  /EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|connection terminated|connection timeout|timeout expired|timeout exceeded when trying to connect|too many clients|server closed the connection|terminating connection|the database system is (starting up|in recovery|shutting down)/i;
 
 /**
  * Is this DB error worth retrying? DNS hiccups (musl `getaddrinfo EAI_AGAIN
