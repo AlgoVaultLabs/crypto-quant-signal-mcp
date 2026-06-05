@@ -99,3 +99,39 @@ No contradictory identifiers. Diff gate passes.
 - BYBIT `banStatuses` += **403**; BITMART/XT keep [418,429]. BYBIT 3600/1200, BITGET 3000/1000 ratified (50%-of-verified); HL 1150/450 + Binance 2000/800 frozen.
 
 **Status: APPROVED → proceeding to C1** (after rebase onto origin + baseline capture).
+
+---
+
+## §8 — AC1 FINAL WORDING + post-implementation verification (C4)
+
+**AC1 (as-built, supersedes the literal "zero adapters bypass" + the "3 sites" shorthand):**
+
+> **Zero direct venue fetches outside `_upstream-fetch` — EXCEPT the firewalled
+> `seed-signals.ts` direct-fetch sites, which are an explicit, documented residual
+> owned by the follow-up `OPS-SEED-UNIVERSE-FETCH-BUDGET-W1`.**
+
+**Factual residual enumeration** (FACTUALITY — re-counted live at C4; the §2/§6 "3
+sites" was an undercount that missed the shared helper):
+`seed-signals.ts` holds **4 raw `fetch(` call sites**, all firewalled (MUST NOT write):
+- L473 — Bybit `v5/market/tickers?category=linear` (promoted-venue universe pull)
+- L493 — OKX `v5/public/open-interest?instType=SWAP` (promoted-venue universe pull)
+- L508 — Bitget `v2/mix/market/tickers?productType=USDT-FUTURES` (promoted-venue pull)
+- L536 — the shared `fetchUniverseJson(url, venue)` helper, which fans out to **all 12
+  shadow-venue universe pulls** (13 call sites: ASTER/GATE/MEXC/KUCOIN/BINGX/HTX/WEEX/
+  BITMART/WHITEBIT/XT×2/EDGEX/PHEMEX).
+
+These bypass both the typed-418 transport and the cross-process budget. They are NOT
+in this wave's scope (the seed file is firewalled + owned by the active seed sessions).
+`OPS-SEED-UNIVERSE-FETCH-BUDGET-W1` routes them through `upstreamFetch` (a 1-line-per-site
+swap + `runAsBatch` on the helper), coordinated so it doesn't collide with a live seed fire.
+
+**Verification (C4, post-implementation):**
+- ✅ Every adapter routes through `_upstream-fetch`: `grep -rL "_upstream-fetch" src/lib/adapters/*.ts` (minus the helper/interface/.d.ts) is **empty**.
+- ✅ The 2 routable non-adapter callers are routed (Q1=A): `exchange-universe.ts` (Bybit/OKX/Bitget) + `underlying-type.ts` (Binance `exchangeInfo`) each reference `_upstream-fetch` once.
+- ✅ The 4 firewalled `seed-signals.ts` sites are the **only** remaining direct venue fetches — enumerated above, untouched, deferred to `OPS-SEED-UNIVERSE-FETCH-BUDGET-W1`.
+
+**Note (infra observation, orthogonal to this wave):** the deployed clone
+`~/code/crypto-quant-signal-mcp` has **no tracked `hooks/` dir** (`git ls-files hooks/`
+empty), so the AOE client-side `core.hooksPath=hooks` pre-push guard cannot be activated
+here. A normal fast-forward push to `main` does not require it (it guards force-push /
+branch-deletion). Flagged for a separate AOE-hook-restore wave; not fixed in-scope.
