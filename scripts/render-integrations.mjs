@@ -164,6 +164,20 @@ function stripSnapshotBlock(bodyHtml) {
   );
 }
 
+// OPS-INTEGRATION-COPY-HYGIENE (2026-06-05, Mr.1): internal strategy language
+// ("MOAT") is never public-facing. Strip any heading parenthetical that
+// contains "MOAT" (e.g. "Why AlgoVault? (closing — MOAT recap)") from the
+// rendered HTML as a generator-level guarantee — the source .md headings are
+// kept clean too, so this only fires if a future source reintroduces one.
+// Reader-facing hints like "(90s read)" / "(3-line hook)" are preserved
+// (no MOAT token, so they never match).
+function stripInternalHeadingAnnotations(bodyHtml) {
+  return bodyHtml.replace(
+    /(<h[1-6][^>]*>[^<]*?)\s*\([^)]*\bMOAT\b[^)]*\)/gi,
+    '$1',
+  );
+}
+
 // DESIGN-W10 / C3 / Q-W10-4 + Q-W10-6: wrap each top-level h2 section of markdown-
 // rendered HTML in a tier-stat-card VCard. Splits bodyHtml on `<h2>` boundaries.
 // First chunk (pre-first-h2) — the markdown H1 + intro paragraph + quotable-fact +
@@ -341,7 +355,7 @@ ${canonicalNavHtml(exchange)}
            wraps each h2 section + intro in a card; stripTLDRSection() removes the
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
-${wrapH2InTierStatCard(stripTLDRSection(stripSnapshotBlock(bodyHtml)))}
+${wrapH2InTierStatCard(stripInternalHeadingAnnotations(stripTLDRSection(stripSnapshotBlock(bodyHtml))))}
       </article>
     </div>
   </div>
