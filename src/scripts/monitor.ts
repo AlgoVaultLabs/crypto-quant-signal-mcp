@@ -9,6 +9,8 @@ import fs from 'node:fs';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { getPerformanceStatsAsync, dbQuery } from '../lib/performance-db.js';
 import { evaluatePfeWinRate, internalPerfPublicUrl } from './monitor-pfe.js';
+import { evaluateSeedFreshness } from './monitor-seed-freshness.js';
+import { listVenues } from '../lib/venue-store.js';
 import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { UpstreamRateLimitError } from '../lib/errors.js';
 import { WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
@@ -116,6 +118,10 @@ const FAIL_THRESHOLDS: Record<string, number> = {
   exchanges: 3,
   backfill: 1,
   pfe_winrate: 1,
+  // OPS-SEED-ORCHESTRATOR-W1/CH2: ≥45-min seed staleness sustained 3×2-min
+  // cycles (~6 min) before paging — covers 5m/15m cadences with slack for HL
+  // weight-budget waits; resets silently on the next fresh signal.
+  seed_freshness: 3,
 };
 
 function loadState(): AlertState {
@@ -370,6 +376,39 @@ async function checkPfeWinRate(): Promise<{ error: string | null; rate: number |
   return evaluatePfeWinRate(data);
 }
 
+async function checkSeedFreshness(): Promise<string | null> {
+  // OPS-SEED-ORCHESTRATOR-W1/CH2: independent detection that promoted venues are
+  // still producing signals — the 06-05 arc proved silent seed outages happen
+  // (EAI_AGAIN: "recorded" logs but zero rows; a 35-min HL gap). Venue-table-
+  // driven so freshly-promoted venues inherit the check for free. Verdict logic
+  // lives in the pure, unit-tested evaluateSeedFreshness(); a DB/server outage is
+  // already caught by the database/server_health checks. PG-targeted SQL (the
+  // monitor's production backend; mirrors checkBackfillQueue's dbQuery usage).
+  try {
+    const venues = await listVenues('promoted');
+    const promoted = venues.filter((v) => v.status !== 'retired').map((v) => v.exchange_id);
+    if (promoted.length === 0) return null;
+    const rows = await dbQuery<{ exchange: string; last: number | string | null }>(
+      'SELECT exchange, MAX(created_at) AS last FROM signals WHERE exchange = ANY($1) GROUP BY exchange',
+      [promoted],
+    );
+    // created_at is epoch SECONDS (recordSignal: Math.floor(Date.now()/1000)) →
+    // ×1000 for the ms-based pure evaluator.
+    const freshnessRows = rows.map((r) => ({
+      exchange: r.exchange,
+      lastCreatedAtMs: r.last != null ? Number(r.last) * 1000 : null,
+    }));
+    const stale = evaluateSeedFreshness(freshnessRows, Date.now()).filter((v) => v.stale);
+    if (stale.length > 0) {
+      const detail = stale.map((v) => `${v.venue} ${v.staleMin}min`).join(', ');
+      return `Seed freshness stale: ${detail} — promoted venue(s) with no new signal ≥45min`;
+    }
+    return null;
+  } catch (err) {
+    return `Seed freshness check failed: ${(err as Error).message}`;
+  }
+}
+
 async function runCritical(): Promise<void> {
   console.log(`[monitor] critical check at ${new Date().toISOString()}`);
   const state = loadState();
@@ -382,6 +421,7 @@ async function runCritical(): Promise<void> {
     ['exchanges', checkExchanges],
     ['backfill', async () => (await checkBackfillQueue()).error],
     ['pfe_winrate', async () => (await checkPfeWinRate()).error],
+    ['seed_freshness', checkSeedFreshness],
   ];
 
   let alertCount = 0;
