@@ -29,6 +29,7 @@ import {
   _setSnapshotForTest,
   _clearCache,
   _setScorerOverride,
+  GRID_SCORING_EXCHANGE,
 } from '../../src/lib/cross-asset-grid.js';
 import type { ExchangeAdapter, Candle, AssetContext, GridCell } from '../../src/types.js';
 
@@ -66,12 +67,12 @@ const makeAdapter = (): ExchangeAdapter => ({
 // 5 non-HOLD cells of varying confidence + a HOLD on the requested (BTC,1h):
 // top-3 by confidence: ETH/1h/BUY/80, SOL/15m/SELL/75, DOGE/5m/BUY/65.
 const snapshot = (): GridCell[] => [
-  { coin: 'BTC', timeframe: '1h', signal: 'HOLD', confidence: 50, exchange: 'HL', regime: 'RANGING' },
-  { coin: 'ETH', timeframe: '1h', signal: 'BUY',  confidence: 80, exchange: 'HL', regime: 'TRENDING_UP' },
-  { coin: 'SOL', timeframe: '15m', signal: 'SELL', confidence: 75, exchange: 'HL', regime: 'TRENDING_DOWN' },
-  { coin: 'DOGE', timeframe: '5m', signal: 'BUY', confidence: 65, exchange: 'HL', regime: 'TRENDING_UP' },
-  { coin: 'XRP', timeframe: '4h', signal: 'BUY', confidence: 60, exchange: 'HL', regime: 'TRENDING_UP' },
-  { coin: 'BNB', timeframe: '4h', signal: 'SELL', confidence: 55, exchange: 'HL', regime: 'TRENDING_DOWN' },
+  { coin: 'BTC', timeframe: '1h', signal: 'HOLD', confidence: 50, exchange: GRID_SCORING_EXCHANGE, regime: 'RANGING' },
+  { coin: 'ETH', timeframe: '1h', signal: 'BUY',  confidence: 80, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_UP' },
+  { coin: 'SOL', timeframe: '15m', signal: 'SELL', confidence: 75, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_DOWN' },
+  { coin: 'DOGE', timeframe: '5m', signal: 'BUY', confidence: 65, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_UP' },
+  { coin: 'XRP', timeframe: '4h', signal: 'BUY', confidence: 60, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_UP' },
+  { coin: 'BNB', timeframe: '4h', signal: 'SELL', confidence: 55, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_DOWN' },
 ];
 
 describe('also_see — trimmed cells + dual-emit invariant with try_next', () => {
@@ -117,9 +118,9 @@ describe('also_see — trimmed cells + dual-emit invariant with try_next', () =>
   it('also_see content matches top-3 by confidence (ETH/1h, SOL/15m, DOGE/5m)', async () => {
     const result = await getTradeSignal({ coin: 'BTC', timeframe: '1h' });
     expect(result.also_see).toEqual([
-      { coin: 'ETH', timeframe: '1h', confidence: 80, exchange: 'HL' },
-      { coin: 'SOL', timeframe: '15m', confidence: 75, exchange: 'HL' },
-      { coin: 'DOGE', timeframe: '5m', confidence: 65, exchange: 'HL' },
+      { coin: 'ETH', timeframe: '1h', confidence: 80, exchange: GRID_SCORING_EXCHANGE },
+      { coin: 'SOL', timeframe: '15m', confidence: 75, exchange: GRID_SCORING_EXCHANGE },
+      { coin: 'DOGE', timeframe: '5m', confidence: 65, exchange: GRID_SCORING_EXCHANGE },
     ]);
   });
 
@@ -138,6 +139,6 @@ describe('also_see — trimmed cells + dual-emit invariant with try_next', () =>
     expect((result.closest_tradeable as unknown as { signal?: unknown }).signal).toBeUndefined();
     expect((result.closest_tradeable as unknown as { regime?: unknown }).regime).toBeUndefined();
     // Top non-HOLD cell is ETH/1h BUY 80 on HL
-    expect(result.closest_tradeable).toEqual({ coin: 'ETH', timeframe: '1h', confidence: 80, exchange: 'HL' });
+    expect(result.closest_tradeable).toEqual({ coin: 'ETH', timeframe: '1h', confidence: 80, exchange: GRID_SCORING_EXCHANGE });
   });
 });

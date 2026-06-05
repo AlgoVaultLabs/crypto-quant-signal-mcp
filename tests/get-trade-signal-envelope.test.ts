@@ -31,6 +31,7 @@ import {
   _setSnapshotForTest,
   _clearCache,
   _setScorerOverride,
+  GRID_SCORING_EXCHANGE,
 } from '../src/lib/cross-asset-grid.js';
 import { PKG_VERSION } from '../src/lib/pkg-version.js';
 import type {
@@ -81,15 +82,15 @@ const makeAdapter = (overrides: Partial<ExchangeAdapter> = {}): ExchangeAdapter 
 // ETH/1h BUY 80 > SOL/15m SELL 75 > DOGE/5m BUY 65 > XRP/4h BUY 60 > BNB/4h SELL 55
 // Everything else HOLD so they get filtered out of try_next/closest_tradeable.
 const makeSyntheticSnapshot = (): GridCell[] => [
-  { coin: 'BTC', timeframe: '1h', signal: 'HOLD', confidence: 50, exchange: 'HL', regime: 'RANGING' },
-  { coin: 'BTC', timeframe: '15m', signal: 'HOLD', confidence: 45, exchange: 'HL', regime: 'RANGING' },
-  { coin: 'ETH', timeframe: '1h', signal: 'BUY',  confidence: 80, exchange: 'HL', regime: 'TRENDING_UP' },
-  { coin: 'ETH', timeframe: '4h', signal: 'HOLD', confidence: 40, exchange: 'HL', regime: 'RANGING' },
-  { coin: 'SOL', timeframe: '15m', signal: 'SELL', confidence: 75, exchange: 'HL', regime: 'TRENDING_DOWN' },
-  { coin: 'SOL', timeframe: '1h', signal: 'HOLD', confidence: 30, exchange: 'HL', regime: 'RANGING' },
-  { coin: 'DOGE', timeframe: '5m', signal: 'BUY', confidence: 65, exchange: 'HL', regime: 'TRENDING_UP' },
-  { coin: 'XRP', timeframe: '4h', signal: 'BUY', confidence: 60, exchange: 'HL', regime: 'TRENDING_UP' },
-  { coin: 'BNB', timeframe: '4h', signal: 'SELL', confidence: 55, exchange: 'HL', regime: 'TRENDING_DOWN' },
+  { coin: 'BTC', timeframe: '1h', signal: 'HOLD', confidence: 50, exchange: GRID_SCORING_EXCHANGE, regime: 'RANGING' },
+  { coin: 'BTC', timeframe: '15m', signal: 'HOLD', confidence: 45, exchange: GRID_SCORING_EXCHANGE, regime: 'RANGING' },
+  { coin: 'ETH', timeframe: '1h', signal: 'BUY',  confidence: 80, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_UP' },
+  { coin: 'ETH', timeframe: '4h', signal: 'HOLD', confidence: 40, exchange: GRID_SCORING_EXCHANGE, regime: 'RANGING' },
+  { coin: 'SOL', timeframe: '15m', signal: 'SELL', confidence: 75, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_DOWN' },
+  { coin: 'SOL', timeframe: '1h', signal: 'HOLD', confidence: 30, exchange: GRID_SCORING_EXCHANGE, regime: 'RANGING' },
+  { coin: 'DOGE', timeframe: '5m', signal: 'BUY', confidence: 65, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_UP' },
+  { coin: 'XRP', timeframe: '4h', signal: 'BUY', confidence: 60, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_UP' },
+  { coin: 'BNB', timeframe: '4h', signal: 'SELL', confidence: 55, exchange: GRID_SCORING_EXCHANGE, regime: 'TRENDING_DOWN' },
 ];
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ describe('get_trade_signal response envelope (v1.9.0)', () => {
     // bot's See Also surface (same-TF + same-exchange suggestion). Direction
     // (signal) and macro context (regime) remain stripped — those still
     // require a follow-up get_trade_call to act on.
-    expect(result.closest_tradeable).toEqual({ coin: 'ETH', timeframe: '1h', confidence: 80, exchange: 'HL' });
+    expect(result.closest_tradeable).toEqual({ coin: 'ETH', timeframe: '1h', confidence: 80, exchange: GRID_SCORING_EXCHANGE });
     expect((result.closest_tradeable as unknown as { signal?: unknown }).signal).toBeUndefined();
     expect((result.closest_tradeable as unknown as { regime?: unknown }).regime).toBeUndefined();
   });

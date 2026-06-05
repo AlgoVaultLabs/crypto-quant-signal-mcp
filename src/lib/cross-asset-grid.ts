@@ -26,12 +26,23 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pLimit from 'p-limit';
-import type { GridCell } from '../types.js';
+import type { GridCell, ExchangeId } from '../types.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
 import { UpstreamRateLimitError } from './errors.js';
 import { sendAlert } from './telegram.js';
 
 export const GRID_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE'] as const;
+
+/**
+ * OPS-GRID-EXCHANGE-TRUTH-W1 (2026-06-05): the venue the grid ACTUALLY scores on.
+ *
+ * Every cell is scored by `getTradeSignal({ exchange: GRID_SCORING_EXCHANGE, … })`,
+ * and the SAME symbol is stamped on each `GridCell.exchange` label + the backoff log
+ * string. Generator invariant: the scoring venue and the public provenance label are
+ * one constant, so they can NEVER drift (the prior bug: scored BINANCE, labelled 'HL').
+ * Per-cell venue routing later just routes this per cell and the labels follow for free.
+ */
+export const GRID_SCORING_EXCHANGE: ExchangeId = 'BINANCE';
 
 /**
  * SHADOW-SEED-W1: full grid (42 cells = 6 assets × 7 timeframes). Used when
@@ -94,12 +105,13 @@ let cachedAt: number = 0;
 let inflight: Promise<void> | null = null;
 
 // v1.10.2: upstream-rate-limit self-DoS guard.
-// OPS-BINANCE-RATELIMITER-W1 (2026-06-05) correction: grid cells actually score
-// via the get_trade_call DEFAULT exchange — **BINANCE** (get-trade-call.ts:116) —
-// NOT HL. The `exchange: 'HL'` label on each GridCell below is a PUBLIC-CONTRACT
-// field (surfaces in closest_tradeable/try_next; asserted in tests) and is a
-// known scoring-vs-label discrepancy flagged for a separate sign-off — NOT
-// changed here. When the upstream rate-limits us, the warmer's 50s tick keeps
+// OPS-GRID-EXCHANGE-TRUTH-W1 (2026-06-05) RESOLVED the prior scoring-vs-label
+// discrepancy flagged by OPS-BINANCE-RATELIMITER-W1: grid cells score via the
+// get_trade_call DEFAULT exchange — **BINANCE** — and each `GridCell.exchange`
+// label below (surfaces in closest_tradeable/also_see; asserted in tests) now
+// stamps that same `GRID_SCORING_EXCHANGE` symbol, so the public provenance can
+// never drift from the venue that actually scored. When the upstream rate-limits
+// us, the warmer's 50s tick keeps
 // hammering cells, prolonging the window. Backoff: when ≥50% of a refresh cycle's
 // cells fail with UpstreamRateLimitError, pause the warmer for an exponentially-
 // growing window (5min → 10 → 20 → 40 → cap 60min); first clean refresh resets it.
@@ -213,7 +225,7 @@ async function refreshGrid(): Promise<void> {
             // recordHoldCount persistence (so 24 cells/minute don't pollute
             // the per-agent quota counters or the performance-db track
             // record with duplicate synthetic signals).
-            const result = await getTradeSignal({ coin, timeframe, internal: true });
+            const result = await getTradeSignal({ coin, timeframe, exchange: GRID_SCORING_EXCHANGE, internal: true });
             return {
               coin,
               timeframe,
@@ -222,7 +234,7 @@ async function refreshGrid(): Promise<void> {
               // existing scoring/filtering helpers in this module.
               signal: result.call,
               confidence: result.confidence,
-              exchange: 'HL' as const,
+              exchange: GRID_SCORING_EXCHANGE,
               regime: result.regime,
             };
           } catch (err) {
@@ -287,7 +299,7 @@ async function refreshGrid(): Promise<void> {
       const backoffMs = Math.min(RATE_LIMIT_BACKOFF_BASE_MS * (1 << exp), RATE_LIMIT_BACKOFF_MAX_MS);
       rateLimitPausedUntil = Date.now() + backoffMs;
       console.warn(
-        `[cross-asset-grid] HL upstream rate-limited (${rateLimitFailures}/${totalCells} cells 429). ` +
+        `[cross-asset-grid] ${GRID_SCORING_EXCHANGE} upstream rate-limited (${rateLimitFailures}/${totalCells} cells 429). ` +
         `Pausing warmer for ${Math.round(backoffMs / 60_000)}min ` +
         `(consecutive-trip #${rateLimitConsecutiveTrips}). Use a different exchange via direct calls in the meantime.`
       );

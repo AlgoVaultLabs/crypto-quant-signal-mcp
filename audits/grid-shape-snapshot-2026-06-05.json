@@ -1,0 +1,29 @@
+{
+  "snapshot": "grid leaderboard cell (closest_tradeable / also_see)",
+  "wave": "OPS-GRID-EXCHANGE-TRUTH-W1",
+  "date": "2026-06-05",
+  "surface": "get_trade_call / get_trade_signal response — closest_tradeable (object) + also_see (array of cells)",
+  "producer": "src/lib/cross-asset-grid.ts (GridCell) -> src/lib/leaderboard-cell.ts trimToLeaderboardCell -> src/tools/get-trade-call.ts",
+  "change_class": "VALUE-ONLY (Mr.1-signed-off 2026-06-05). Keys byte-identical; the only diff is the `exchange` VALUE.",
+  "allowed_keys": ["coin", "timeframe", "confidence", "exchange"],
+  "forbidden_keys": ["signal", "regime", "outcome_return_pct", "outcome_price", "price_at_signal"],
+  "field_contract": {
+    "coin": "string (uppercase base symbol)",
+    "timeframe": "enum 1m..1d",
+    "confidence": "number 0-100 (unrounded)",
+    "exchange": "ExchangeId — the venue the grid ACTUALLY scores on (GRID_SCORING_EXCHANGE)"
+  },
+  "exchange_value": {
+    "before": "HL",
+    "after": "BINANCE",
+    "reason": "Grid scores via the get_trade_call DEFAULT exchange = BINANCE (root-caused OPS-BINANCE-RATELIMITER-W1). The prior 'HL' label was a false provenance statement. Now stamped from GRID_SCORING_EXCHANGE = the same symbol passed to the scorer, so label == scoring venue by construction."
+  },
+  "diff_gate": "keys(after) === keys(before) (exactly the 4 allowed_keys); ONLY closest_tradeable.exchange + also_see[].exchange values change 'HL' -> 'BINANCE'. Any key add/remove or forbidden-key appearance = FAIL.",
+  "consumers": [
+    "Telegram bot 'See Also' surface (same-TF + same-exchange suggestion) — BOT-ALERT-IMAGE-W1",
+    "MCP get_trade_call / get_trade_signal closest_tradeable + also_see",
+    "verify view (signal-row exchange is SEPARATE — not this surface)"
+  ],
+  "drift_check_command": "npx vitest run tests/get-trade-signal-envelope.test.ts tests/integration/trade-call-also-see.test.ts tests/unit/grid-scoring-exchange.test.ts && curl -s <mcp>/get_trade_call?coin=BTC | jq '.closest_tradeable.exchange, (.also_see[].exchange)'",
+  "live_probe_expectation": "closest_tradeable.exchange == 'BINANCE' AND every also_see[].exchange == 'BINANCE'"
+}
