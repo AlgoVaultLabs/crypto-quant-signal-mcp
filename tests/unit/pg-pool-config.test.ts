@@ -17,11 +17,11 @@ describe('buildPoolConfig', () => {
     expect(cfg.connectionString).toBe('postgres://u:p@h:5432/db');
   });
 
-  it('bounds the pool and enables keepAlive + allowExitOnIdle by default', () => {
+  it('bounds the pool + keepAlive but does NOT set allowExitOnIdle (it aborted in-flight fire-and-forget writes when a short-lived seed/backfill cron exited)', () => {
     const cfg = buildPoolConfig('postgres://x', {});
     expect(cfg.max).toBe(12);
     expect(cfg.keepAlive).toBe(true);
-    expect(cfg.allowExitOnIdle).toBe(true);
+    expect(cfg.allowExitOnIdle).toBeUndefined();
     expect(cfg.connectionTimeoutMillis).toBe(10_000);
     expect(cfg.idleTimeoutMillis).toBe(30_000);
     expect(cfg.statement_timeout).toBe(120_000);

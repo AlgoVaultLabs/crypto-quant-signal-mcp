@@ -81,7 +81,12 @@ export function buildPoolConfig(
     statement_timeout: posInt(env.PG_STATEMENT_TIMEOUT_MS, 120_000),
     query_timeout: posInt(env.PG_QUERY_TIMEOUT_MS, 120_000),
     keepAlive: true,
-    allowExitOnIdle: true,
+    // NB: allowExitOnIdle is deliberately NOT set. With it true, a short-lived
+    // seed/backfill process exits as soon as the pool is idle — aborting
+    // in-flight fire-and-forget INSERTs before they commit (it silently dropped
+    // ~90% of seed signals while it was live, 8504fd8→c656253). Leaving it unset
+    // (the pg default, false) lets the pool keep the process alive until the
+    // writes drain + close()/pool.end() runs.
   };
 }
 
