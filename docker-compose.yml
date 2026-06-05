@@ -10,6 +10,14 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     restart: unless-stopped
+    # OPS-DB-DNS-PIN-W1: resolve `postgres` via /etc/hosts (static dbnet IP),
+    # bypassing musl/Alpine embedded DNS which EAI_AGAIN'd under concurrent seed
+    # load. Defense-in-depth alongside the run()/exec() transient-retry.
+    extra_hosts:
+      - "postgres:172.19.0.10"
+    networks:
+      - default
+      - dbnet
     depends_on:
       postgres:
         condition: service_started
@@ -44,5 +52,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      default: {}
+      dbnet:
+        ipv4_address: 172.19.0.10
+networks:
+  dbnet:
+    ipam:
+      config:
+        - subnet: 172.19.0.0/24
 volumes:
   pgdata:
