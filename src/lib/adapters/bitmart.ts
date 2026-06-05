@@ -31,11 +31,10 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { UpstreamRateLimitError } from '../errors.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 
 const BASE_URL = 'https://api-cloud-v2.bitmart.com';
-const TIMEOUT_MS = 4000;
-const MAX_RETRIES = 1;
+const MAX_RETRIES = 1; // TIMEOUT_MS now lives in VENUE_FETCH_CONFIGS.BITMART (timeoutMs: 4000)
 
 // Bitmart kline `step` is MINUTES ENUM {1,3,5,15,30,60,120,240,720}.
 // Adapter maps canonical timeframes; falls back to nearest valid enum value.
@@ -71,39 +70,16 @@ export function fromBitmartSymbol(symbol: string): string {
 }
 
 async function bitmartGet<T>(path: string, params?: Record<string, string | number>, retries = MAX_RETRIES): Promise<T> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      const url = new URL(path, BASE_URL);
-      if (params) {
-        for (const [k, v] of Object.entries(params)) {
-          url.searchParams.set(k, String(v));
-        }
-      }
-      const res = await fetch(url.toString(), { signal: controller.signal });
-      clearTimeout(timer);
-      if (res.status === 429) {
-        const retryAfter = res.headers.get('Retry-After');
-        const seconds = retryAfter ? parseInt(retryAfter, 10) : null;
-        const waitMs = seconds ? seconds * 1000 : 1000;
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, waitMs));
-          continue;
-        }
-        throw new UpstreamRateLimitError('Bitmart', Number.isFinite(seconds) ? seconds : null);
-      }
-      if (!res.ok) {
-        throw new Error(`Bitmart API ${res.status}: ${res.statusText}`);
-      }
-      return (await res.json()) as T;
-    } catch (err) {
-      clearTimeout(timer);
-      if (attempt === retries) throw err;
-      await new Promise(r => setTimeout(r, 500));
+  // OPS-ADAPTER-RATELIMIT-UNIFY-W1: URL-build unchanged; fetch/retry/ban handling
+  // delegated to the shared upstreamFetch (BITMART's 429→418 escalation is now a
+  // typed, no-retry UpstreamRateLimitError — was generic + retried).
+  const url = new URL(path, BASE_URL);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, String(v));
     }
   }
-  throw new Error('Bitmart API: max retries exceeded');
+  return upstreamFetch<T>({ ...VENUE_FETCH_CONFIGS.BITMART, transientRetries: retries }, { url: url.toString() });
 }
 
 // ── Response shapes ──────────────────────────────────────────────────────
