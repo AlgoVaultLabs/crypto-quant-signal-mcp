@@ -383,69 +383,12 @@ export class WeightBudget {
   }
 }
 
-// ── Hyperliquid: consumer #1 (OPS-HL-RATELIMITER-W2) ──
-// Co-located here (engine + first consumer) so the canonical HL ledger path
-// lives beside the budget and the deploy-smoke grep
-// `grep -c "algovault-hl-weight" dist/lib/upstream-weight-budget.js` (R6) has a
-// stable target. HL REST budget = 1200 weight/min/IP (official docs, re-verified
-// 2026-06-04).
-//
-// OPS-HL-BUDGET-TUNE-W1 (2026-06-05, data-justified, architect-approved): bumped
-// CEILING 1000→1150 + RESERVE 300→450 (both +150) after live telemetry showed
-// measured interactive HL demand ≈ 404 wt/min overflowing the old 300 reserve at
-// batch-peak boundary minutes (49-101 `throws`/window → HL→Binance fallbacks).
-// Batch cap stays CEILING−RESERVE = 700 (unchanged → seeds' lane untouched; post
-// OPS-HL-SEED-LOAD-W1 the batch is healthy at 700: waits low, skips 0). The extra
-// 150 of ceiling goes entirely to interactive (reserve 300→450) so the ~404
-// demand fits → interactive throttling eliminated. CEILING 1150 leaves 50 under
-// HL's 1200 for header drift (all HL callers are now budgeted post-W2, so the
-// "unbudgeted caller" cushion is no longer load-bearing).
-//
-// Binance / Bybit / OKX / Bitget become consumers #2+ by adding their own
-// configured `WeightBudget` here when their load grows; the shared helper is
-// extracted at the 3rd consumer per the CLAUDE.md threshold rule.
-export const HL_WEIGHT_CEILING = 1150;
-export const HL_INTERACTIVE_RESERVE = 450;
-
-const HL_VITEST = process.env.VITEST === 'true';
-// Per-worker ledger + effectively-unbounded ceiling under vitest so fetch-mocked
-// adapter tests never throttle or contend on the shared production ledger.
-const hlLedgerSuffix = HL_VITEST ? `.test-${process.pid}` : '';
-
-export const hlWeightBudget = new WeightBudget({
-  venue: 'Hyperliquid',
-  ledgerPath: process.env.HL_WEIGHT_LEDGER ?? `/tmp/algovault-hl-weight${hlLedgerSuffix}.json`,
-  lockPath: process.env.HL_WEIGHT_LOCK ?? `/tmp/algovault-hl-weight${hlLedgerSuffix}.lock`,
-  ceilingPerMin: HL_VITEST ? 1_000_000_000 : HL_WEIGHT_CEILING,
-  interactiveReserve: HL_VITEST ? 0 : HL_INTERACTIVE_RESERVE,
-  log: HL_VITEST ? () => {} : undefined,
-});
-
-// ── Binance: consumer #2 (OPS-BINANCE-RATELIMITER-W1, 2026-06-05) ──
-// Same cross-process token-bucket as HL. Binance USD-M Futures (fapi) imposes a
-// **2400 weight/min per-IP** limit (the adapter already reads `X-MBX-USED-WEIGHT-1m`
-// and warns at >1800). The 42-cell cross-asset-grid warmer + default-exchange
-// `get_trade_call` + Binance seed crons all hit fapi from the one Hetzner IP;
-// during the 12-venue shadow ramp the AGGREGATE burst exceeded 2400 → HTTP 418
-// IP-ban → grid slow-grid breaker spam. This budget caps the aggregate at 2000
-// (400 under 2400 for header-rolling-window drift) and reserves 800 for
-// interactive (grid + live user calls) so seed/backfill batch load can't starve
-// them. // TODO: revisit constants with a week of telemetry (target 2026-06-19).
-// Third consumer (Bybit/OKX/Bitget) triggers extraction to a shared registry
-// per the CLAUDE.md threshold rule.
-export const BINANCE_WEIGHT_CEILING = 2000;
-export const BINANCE_INTERACTIVE_RESERVE = 800;
-
-const BINANCE_VITEST = process.env.VITEST === 'true';
-const binanceLedgerSuffix = BINANCE_VITEST ? `.test-${process.pid}` : '';
-
-export const binanceWeightBudget = new WeightBudget({
-  venue: 'Binance',
-  ledgerPath:
-    process.env.BINANCE_WEIGHT_LEDGER ?? `/tmp/algovault-binance-weight${binanceLedgerSuffix}.json`,
-  lockPath:
-    process.env.BINANCE_WEIGHT_LOCK ?? `/tmp/algovault-binance-weight${binanceLedgerSuffix}.lock`,
-  ceilingPerMin: BINANCE_VITEST ? 1_000_000_000 : BINANCE_WEIGHT_CEILING,
-  interactiveReserve: BINANCE_VITEST ? 0 : BINANCE_INTERACTIVE_RESERVE,
-  log: BINANCE_VITEST ? () => {} : undefined,
-});
+// ── Venue budget singletons live in `venue-budget-registry.ts` ──
+// OPS-ADAPTER-RATELIMIT-UNIFY-W1 C2: the HL (#1) + Binance (#2) `WeightBudget`
+// instances and their CEILING/RESERVE constants moved to
+// `./venue-budget-registry.ts` — the single SoT for *which* venues are budgeted —
+// so the 3rd+ consumers (BYBIT/OKX/BITGET, C3) are added there per the CLAUDE.md
+// "extract to a shared registry at the 3rd consumer" threshold. This module is now
+// purely the engine: the `WeightBudget` class above + the weight-class ALS
+// framework. The canonical HL ledger-path literal (the R6 deploy-smoke grep
+// target) moved with them to `dist/lib/venue-budget-registry.js`.
