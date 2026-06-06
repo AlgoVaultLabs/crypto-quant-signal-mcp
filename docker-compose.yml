@@ -39,6 +39,12 @@ services:
     restart: unless-stopped
   postgres:
     image: postgres:16-alpine
+    # CH3-PRE (OPS-SEED-ORCHESTRATOR-W1 V2-RESUME V3): bump /dev/shm from the
+    # Docker-default 64MB -> 256MB. Under high seed concurrency the parallel-query
+    # dynamic shared memory (parallel workers / hash joins) exhausted the default
+    # /dev/shm -> "could not resize shared memory segment ... No space left on
+    # device" (getFundingZScore). Latent ramp blocker; fixed independent of the cutover.
+    shm_size: '256m'
     # Loopback-only binding so the host-side activation-funnel cron
     # (algovault-funnel-snapshot.timer) can reach Postgres from
     # /etc/algovault/funnel-snapshot.env without exposing 5432 publicly.

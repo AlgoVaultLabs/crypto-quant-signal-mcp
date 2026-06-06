@@ -53,6 +53,7 @@ import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fetch.js';
 import type { LicenseInfo, ExchangeId, VenueStatus } from '../types.js';
 import { listVenues, stampSeedingStarted } from '../lib/venue-store.js';
+import { recordSeedHeartbeat } from '../lib/seed-heartbeats.js';
 
 // Internal license bypasses free-tier gating
 const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
@@ -911,6 +912,12 @@ export async function runVenueSeed(
 ): Promise<VenueSeedResult> {
   const { timeframe, top, idempotencyWindow, restrictedCoins } = opts;
   const startedAt = Date.now();
+  // OPS-SEED-ORCHESTRATOR-W1 V2-RESUME (CH3-PRE) — attempt-recency heartbeat: the
+  // cron fired + reached this venue+TF (regardless of HOLD/seeded outcome). The
+  // true seeding-health signal (immune to the HOLD filter); feeds the V5(ii)
+  // coverage gate + the future heartbeat pager. Best-effort: never fails the seed.
+  try { await recordSeedHeartbeat(venueId, timeframe); }
+  catch (e) { console.debug(`[seed-heartbeat] stamp skipped ${venueId}/${timeframe}: ${e instanceof Error ? e.message : e}`); }
   try {
     let coins: string[];
     if (restrictedCoins) {
