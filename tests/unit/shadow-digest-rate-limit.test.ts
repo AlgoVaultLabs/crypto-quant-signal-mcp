@@ -40,7 +40,10 @@ describe('buildDigest — rate-limit telemetry section', () => {
     expect(text).toContain('*Aster*: 4 throws (i:0/b:4)');
     expect(text).toContain('HL batch-wait p95: 30.0s');
     expect(text).toContain('OPS-SHADOW-BUDGET-W{NEXT}');
-    expect(text).toContain('OPS-HL-WEBSOCKET-W{NEXT}');
+    // OPS-RATELIMIT-TIDYUP-W1: HL action redirected (OPS-HL-WEBSOCKET cancelled) — the HL
+    // trigger still fires but now recommends attribution, not the cancelled structural wave.
+    expect(text).toContain('investigate the HL interactive driver');
+    expect(text).not.toContain('OPS-HL-WEBSOCKET');
     expect(text).not.toMatch(/-W\d/); // never a literal wave number
   });
 

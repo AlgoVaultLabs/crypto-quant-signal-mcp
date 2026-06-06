@@ -87,14 +87,19 @@ describe('evaluateRateLimitTriggers — both sides of every threshold', () => {
     expect(evaluateRateLimitTriggers([venue('Bybit', { throws: 99 })], 0).shadowBudget).toBe(false);
   });
 
-  it('HL interactive throws: 24 = silent, 25 = OPS-HL-WEBSOCKET trigger', () => {
+  it('HL interactive throws: 24 = silent, 25 = HL trigger (driver-agnostic action; OPS-HL-WEBSOCKET cancelled)', () => {
     expect(evaluateRateLimitTriggers([venue('Hyperliquid', { iThrows: 24, throws: 24 })], 0).hlWebsocket).toBe(false);
     const hit = evaluateRateLimitTriggers([venue('Hyperliquid', { iThrows: 25, throws: 25 })], 0);
     expect(hit.hlWebsocket).toBe(true);
-    expect(hit.lines.join('\n')).toContain('OPS-HL-WEBSOCKET-W{NEXT}');
+    // OPS-RATELIMIT-TIDYUP-W1: the action was redirected from `dispatch OPS-HL-WEBSOCKET-W{NEXT}`
+    // (cancelled — saturation was backfill-on-read, not live demand) to a driver-agnostic
+    // "attribute first" line. The trigger mechanism/threshold is unchanged.
+    const joined = hit.lines.join('\n');
+    expect(joined).toContain('investigate the HL interactive driver');
+    expect(joined).not.toContain('OPS-HL-WEBSOCKET');
   });
 
-  it('HL batch-wait p95: 19s = silent, 21s = OPS-HL-WEBSOCKET trigger (independent of throws)', () => {
+  it('HL batch-wait p95: 19s = silent, 21s = HL trigger (independent of throws)', () => {
     expect(evaluateRateLimitTriggers([venue('Hyperliquid')], 19_000).hlWebsocket).toBe(false);
     expect(evaluateRateLimitTriggers([venue('Hyperliquid')], 21_000).hlWebsocket).toBe(true);
   });

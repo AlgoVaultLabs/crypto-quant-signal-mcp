@@ -987,6 +987,11 @@ async function main() {
   // OPS-HL-RATELIMITER-W2: run the whole seed in `batch` weight class so every HL
   // call (universe discovery + per-coin candles/ctx) waits behind the shared
   // weight budget and yields the interactive reserve to live users.
+  // OPS-RATELIMIT-TIDYUP-W1: tag the seed's batch rate_limit_events rows with the
+  // per-timeframe caller `seed:<tf>` (closes the deferred attribution gap from
+  // OPS-RATELIMIT-CALLER-ATTRIBUTION-W1). parseArgs is pure for valid args (exits
+  // identically on invalid), so the second parse for the inner destructure is safe.
+  const seedTf = parseArgs().timeframe;
   return runAsBatch(async () => {
   const fireStartedAt = Date.now();
   const { timeframe, top, exchanges, restrictedUniverse, statusFilter, explicitExchanges, concurrency } = parseArgs();
@@ -1063,7 +1068,7 @@ async function main() {
     const cadenceS = TF_CADENCE_S[timeframe] ?? 0;
     console.warn(`[seed-orchestrator] WARN overrun tf=${timeframe} duration_s=${durationS.toFixed(1)} cadence_s=${cadenceS} threshold_s=${(0.8 * cadenceS).toFixed(0)} — fire exceeded 0.8× cadence; next idempotent fire self-heals.`);
   }
-  });
+  }, 'seed:' + seedTf);
 }
 
 // Auto-run only when invoked as a script (`node dist/scripts/seed-signals.js`),

@@ -160,7 +160,14 @@ export function evaluateRateLimitTriggers(
     lines.push(`⚠️ ${shadowHit!.venue}: ${shadowHit!.throws} throws/7d (≥${SHADOW_THROW_TRIGGER}) — Action: dispatch OPS-SHADOW-BUDGET-W{NEXT} via Cowork → Claude Code`);
   }
   if (hlWebsocket) {
-    lines.push(`⚠️ HL: ${hlInteractive} interactive throws/7d, batch-wait p95 ${(hlWaitP95Ms / 1000).toFixed(1)}s — Action: dispatch OPS-HL-WEBSOCKET-W{NEXT} via Cowork → Claude Code`);
+    // OPS-RATELIMIT-TIDYUP-W1: action REDIRECTED off the cancelled `OPS-HL-WEBSOCKET-W{NEXT}`
+    // wave (CANCELLED — OPS-HL-BACKFILL-BATCH-W1 proved the HL saturation was historical-candle
+    // backfill-on-read, not live demand; a websocket can't fetch post-signal candles) to a
+    // driver-agnostic line. Lesson encoded: never blind-recommend a structural fix — attribute
+    // via the per-caller breakdown first. Threshold/mechanism unchanged (the batch-wait p95>20s
+    // condition now false-positives on by-design batch waits → OPS-RATELIMIT-DIGEST-THRESHOLD-
+    // RECAL-W{NEXT}, NOT retuned in this tidy-up).
+    lines.push(`⚠️ HL: ${hlInteractive} interactive throws/7d, batch-wait p95 ${(hlWaitP95Ms / 1000).toFixed(1)}s — Action: investigate the HL interactive driver via the per-caller breakdown above (attribute first; do NOT prescribe a structural wave blind)`);
   }
   return { lines, shadowBudget, hlWebsocket };
 }
