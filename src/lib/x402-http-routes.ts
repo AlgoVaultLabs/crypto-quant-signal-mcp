@@ -34,6 +34,7 @@ import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
 import { scanFundingArb } from '../tools/scan-funding-arb.js';
 import { getMarketRegime } from '../tools/get-market-regime.js';
+import { runAsCaller } from './upstream-weight-budget.js';
 import type { ExchangeId, LicenseInfo, TradeCallResult } from '../types.js';
 
 const ajv = new Ajv({ useDefaults: true, coerceTypes: true, allErrors: true });
@@ -77,6 +78,10 @@ export async function callCoreHandler(
   input: Record<string, unknown>,
   license: LicenseInfo,
 ): Promise<unknown> {
+  // OPS-RATELIMIT-CALLER-ATTRIBUTION-W1: tag x402 HTTP traffic (the HTTP-twin of the MCP
+  // tools — same lib fns, separate handlers) so paid-HTTP demand is attributed distinctly
+  // from MCP demand. Weight class unchanged (interactive) — zero behavior change.
+  return runAsCaller(`x402:${tool}`, () => {
   switch (tool) {
     case 'get_trade_signal':
       return getTradeSignal({
@@ -100,6 +105,7 @@ export async function callCoreHandler(
         exchange: input.exchange as ExchangeId,
       });
   }
+  });
 }
 
 function clientIpHash(req: Request): string {

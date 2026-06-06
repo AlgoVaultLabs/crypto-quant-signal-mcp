@@ -1,5 +1,6 @@
 import { getPerformanceStatsAsync, getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes } from '../lib/performance-db.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
+import { runAsCaller } from '../lib/upstream-weight-budget.js';
 import type { Candle, ExchangeId, PerformanceStats, SignalRecord } from '../types.js';
 
 /** Timeframe → milliseconds per candle */
@@ -110,7 +111,13 @@ function computePFEMAE(
  * Backfill runs in the background — never blocks the response.
  */
 export async function getSignalPerformance(): Promise<PerformanceStats> {
-  // Fire-and-forget backfill — don't block the resource response
-  runBackfill().catch(() => {});
+  // Fire-and-forget backfill — don't block the resource response.
+  // OPS-RATELIMIT-CALLER-ATTRIBUTION-W1: tag the lazy outcome-backfill — the DOMINANT HL
+  // interactive driver (up to 50 candleSnapshot fetches/read, fired on every resource /
+  // dashboard / API / capabilities read of getSignalPerformance). Tagged WITHOUT changing
+  // its weight class (still interactive) — zero behavior change per spec. FINDING: this is
+  // the ONLY outcome-backfill path NOT in `batch` (the scheduled + cron + standalone copies
+  // all run `runAsBatch`); moving it to batch is the saturation fix this attribution scopes.
+  runAsCaller('signal_perf_backfill', () => runBackfill()).catch(() => {});
   return getPerformanceStatsAsync();
 }
