@@ -20,5 +20,12 @@
     "recentSignals_len": 20,
     "note": "anchor VALUES move with new signals each cache bucket; the KEY SET + forbidden_keys are the stable contract. The exact byte-identity is the CH2 live-probe gate (both paths on one snapshot); CH3 R3.2 compares canonical pre/post on a warmed bucket."
   },
-  "drift_check_command": "host curl http://127.0.0.1:3000/api/performance-public | jq 'keys' must equal allowed_top_keys; recentSignals[] must match none of forbidden_keys_recentSignals (PII LAW); byExchange/byAsset key counts must not DECREASE (no-data-loss gate)."
+  "drift_check_command": "host curl http://127.0.0.1:3000/api/performance-public | jq 'keys' must equal allowed_top_keys; recentSignals[] must match none of forbidden_keys_recentSignals (PII LAW); byExchange/byAsset key counts must not DECREASE (no-data-loss gate).",
+  "post_cutover_verified_2026-06-07": {
+    "flag": "PERF_STATS_SQL_PUSHDOWN=1 live (in .env + container env; recreated via docker compose up -d)",
+    "live_e2e_probe": "BYTE_EQUIVALENT=true — old.total=new.total=168341, CORE_EQUAL + RECENT_FIELDS_OK + RECENT_SORTED + RECENT_PII_CLEAN, overall.pfeWinRate identical 0.9162498273594706",
+    "public_surface_gate": "17 keys match; totalCalls 168368 >= pre 168045; byExchange 5 + byAsset 804 no-decrease; recentSignals PII-clean; route extras present",
+    "monitor_pfe": "evaluatePfeWinRate(live) = {error:null, rate:0.9162498273594706} → GREEN",
+    "latency_win": "cold-miss scan 4873ms → sql 542/553ms (~9x); DB-connection-hold ~4s → ~150ms; EXPLAIN ANALYZE groups query ~136ms"
+  }
 }
