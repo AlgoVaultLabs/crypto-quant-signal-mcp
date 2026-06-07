@@ -30,6 +30,7 @@ import { encodePaymentRequiredHeader } from '@x402/core/http';
 import { resolveLicense, requestContext } from './license.js';
 import { hashIp, logRequest } from './analytics.js';
 import { generate402Response, settleX402Async, paymentMatchesToolRoute } from './x402.js';
+import { tryClaimPayment, extractPaymentNonce } from './x402-idempotency-store.js';
 import { BAZAAR_ROUTES, bazaarResourceUrl, bazaarRouteDescription } from './x402-bazaar.js';
 import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
@@ -200,6 +201,29 @@ export function mountX402HttpRoutes(app: Express): string[] {
       if (!paymentMatchesToolRoute(pendingSettlement, tool, timeframe)) {
         console.warn(`[x402-route] payment-binding REJECT for /x402/${tool} (cross-tool or underpaid proof)`);
         send402(res, tool);
+        return;
+      }
+
+      // X402-02 — bounded single-use claim BEFORE serving, to close the pre-settle
+      // replay window (verify is stateless + settle is fire-and-forget, so the same
+      // proof replayed concurrently within the ~2s settle window would unlock N
+      // resources for ONE on-chain charge). Claim the ERC-3009 nonce; a replay
+      // (already-claimed nonce) → 402 without serving/settling. Fail-safe on DB error
+      // (tryClaimPayment returns false → reject) per default-deny on the paid path.
+      const settlementReq = (pendingSettlement.requirements ?? {}) as { amount?: unknown };
+      const paidAmount = typeof settlementReq.amount === 'string'
+        ? settlementReq.amount
+        : settlementReq.amount != null ? String(settlementReq.amount) : '';
+      const nonce = extractPaymentNonce(pendingSettlement.paymentPayload);
+      const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount);
+      if (!claimed) {
+        console.warn(`[x402-route] payment-replay REJECT for /x402/${tool} (nonce already claimed or unclaimable)`);
+        res.status(402).json({
+          x402Version: 2,
+          error: 'Payment Required',
+          code: 'X402_PAYMENT_REPLAY',
+          message: 'This payment proof has already been used; submit a fresh payment.',
+        });
         return;
       }
 
