@@ -248,7 +248,8 @@ curl -sS https://api.algovault.com/mcp \
   -d '{"jsonrpc":"2.0","method":"resources/read","id":1,"params":{"uri":"mcp://algovault/venues"}}' \
   | jq '.result.contents[0].text | fromjson | .venues[] | {exchange_id, status}'
 
-curl -sS https://api.algovault.com/api/performance-shadow | jq '.venues[].exchange_id'
+# /api/performance-shadow is auth-gated (OPS-AUDIT-REMEDIATION-MED-W1 / SV-01) — send an API key:
+curl -sS -H "Authorization: Bearer $ALGOVAULT_API_KEY" https://api.algovault.com/api/performance-shadow | jq '.venues[].exchange_id'
 ```
 
 Expected: new venue appears in all three views with `status='shadow'`.

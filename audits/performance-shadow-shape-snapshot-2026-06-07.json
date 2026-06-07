@@ -1,0 +1,32 @@
+{
+  "endpoint": "GET /api/performance-shadow",
+  "wave": "OPS-AUDIT-REMEDIATION-MED-W1 (SV-01)",
+  "snapshot_date": "2026-06-07",
+  "auth": "API key REQUIRED — Authorization: Bearer <key>; unauthed (no license.key) → 401 {ok:false, code:'auth_required'}",
+  "formatter": "src/lib/venue-public-formatter.ts :: formatShadowVenuePublic (exported, pure, allow-list by construction)",
+  "allowed_keys": [
+    "exchange_id",
+    "status",
+    "asset_count",
+    "integrated_at",
+    "days_since_integration",
+    "extension_count",
+    "current_buy_sell_count",
+    "current_pfe_wr",
+    "byTimeframe",
+    "byTier",
+    "byCallType"
+  ],
+  "envelope_keys": ["venues", "updated_at"],
+  "forbidden_keys": [
+    "min_buy_sell_sample",
+    "last_eval_at",
+    "last_eval_pfe_wr",
+    "last_eval_buy_sell_count",
+    "outcome_return_pct",
+    "outcome_price"
+  ],
+  "error_contract": "401 {ok:false, code:'auth_required', error, suggested_action} unauthed; 500 {error} on stats failure",
+  "consumers": ["authed API-key holders (operator runbook RUNBOOK-VENUE-SHADOW-ONBOARDING.md). NO public/landing consumer (Step-0 census: 0)."],
+  "drift_check_command": "curl -s -H \"Authorization: Bearer $ALGOVAULT_API_KEY\" https://api.algovault.com/api/performance-shadow | jq '.venues[0] | keys' && echo '--- forbidden must be absent ---' && curl -s -H \"Authorization: Bearer $ALGOVAULT_API_KEY\" https://api.algovault.com/api/performance-shadow | jq '[.venues[] | (.min_buy_sell_sample, .last_eval_at, .last_eval_pfe_wr, .last_eval_buy_sell_count)] | map(select(. != null)) | length'  # expect 0"
+}

@@ -1,0 +1,29 @@
+{
+  "resource": "mcp://algovault/venues",
+  "wave": "OPS-AUDIT-REMEDIATION-MED-W1 (SV-01)",
+  "snapshot_date": "2026-06-07",
+  "auth": "public (MCP resource, no auth) — but internal thresholds STRIPPED via the formatter",
+  "formatter": "src/lib/venue-public-formatter.ts :: formatVenueForResource (exported, pure, allow-list by construction)",
+  "allowed_keys": [
+    "exchange_id",
+    "status",
+    "asset_count",
+    "integrated_at",
+    "promoted_at",
+    "retired_at",
+    "extension_count",
+    "notes"
+  ],
+  "envelope_keys": ["_algovault", "venues"],
+  "forbidden_keys": [
+    "min_buy_sell_sample",
+    "last_eval_at",
+    "last_eval_pfe_wr",
+    "last_eval_buy_sell_count",
+    "outcome_return_pct",
+    "outcome_price"
+  ],
+  "error_contract": "n/a (MCP resource read; empty venues array if none)",
+  "consumers": ["MCP agents reading mcp://algovault/venues (public). Internal thresholds (min_buy_sell_sample/last_eval_*) MUST NOT appear."],
+  "drift_check_command": "node -e \"const {formatVenueForResource}=require('./dist/lib/venue-public-formatter.js'); const out=formatVenueForResource({exchange_id:'X',status:'shadow',asset_count:1,integrated_at:'',promoted_at:null,retired_at:null,extension_count:0,notes:null,min_buy_sell_sample:10,last_eval_at:'',last_eval_pfe_wr:0.9,last_eval_buy_sell_count:5}); const forbidden=['min_buy_sell_sample','last_eval_at','last_eval_pfe_wr','last_eval_buy_sell_count','outcome_return_pct']; const leaked=forbidden.filter(k=>k in out); console.log(leaked.length===0?'OK no leak':'LEAK '+leaked)\""
+}
