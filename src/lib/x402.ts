@@ -358,6 +358,56 @@ export function generate402Response(
   };
 }
 
+/**
+ * OPS-X402-MCP-PRICE-BINDING-W1: build the JSON-RPC `X402_PAYMENT_REQUIRED`
+ * tool-result-error the `/mcp` handler returns when a priced `tools/call` presented
+ * an x402 proof that was NOT honored (cross-tool / underpaid / replayed) AND the
+ * caller's free-tier quota is exhausted. The error carries the CALLED tool's payment
+ * requirements (`generate402Response(tool).accepts` → exact amount / asset / network
+ * / payTo) so the agent can resubmit a CORRECT payment — not the generic quota error.
+ *
+ * The shape matches what the MCP SDK emits for an error thrown inside a tool handler:
+ * a transport-level success carrying `{ result: { content:[text], isError:true } }`
+ * (the same in-band tool-result-error shape `toolErrorContent` produces, wrapped in
+ * the JSON-RPC envelope) so the model SEES the error and can self-correct, per the
+ * MCP spec. The handler emits this as a SHORT-CIRCUIT (it does NOT dispatch to the
+ * transport), so this returns the full JSON-RPC response object. Additive helper —
+ * does not change any existing exported behavior.
+ */
+export function buildX402PaymentRequiredResult(
+  tool: string,
+  reason: 'cross_tool' | 'insufficient' | 'replayed',
+  id: unknown,
+): {
+  jsonrpc: '2.0';
+  id: unknown;
+  result: { content: { type: 'text'; text: string }[]; isError: true };
+} {
+  const accepts = (generate402Response(tool).body as { accepts?: unknown }).accepts ?? [];
+  const suggested_action =
+    reason === 'replayed'
+      ? 'This payment proof was already used. Submit a fresh x402 payment for this tool (see paymentRequirements).'
+      : reason === 'cross_tool'
+        ? `The payment proof does not match ${tool}'s price/asset/recipient. Submit an x402 payment for this tool (see paymentRequirements).`
+        : `The payment proof underpays ${tool}'s price for this request. Submit an x402 payment meeting paymentRequirements.`;
+  const errorPayload = {
+    error: 'X402_PAYMENT_REQUIRED',
+    code: 'X402_PAYMENT_REQUIRED',
+    reason,
+    message: `Payment required for ${tool}: the x402 proof presented was not honored (${reason}) and the free-tier quota is exhausted.`,
+    paymentRequirements: accepts,
+    suggested_action,
+  };
+  return {
+    jsonrpc: '2.0',
+    id: id ?? null,
+    result: {
+      content: [{ type: 'text' as const, text: JSON.stringify(errorPayload) }],
+      isError: true,
+    },
+  };
+}
+
 // ── Helpers ──
 
 /**
@@ -483,6 +533,55 @@ export function paymentMatchesToolRoute(
   }
 
   return true;
+}
+
+/**
+ * OPS-X402-MCP-PRICE-BINDING-W1: classify WHY a settlement fails the per-tool
+ * route binding, so the MCP `tools/call` downgrade can carry a precise reason in
+ * the `X402_PAYMENT_REQUIRED` error. Pure read-over the same internals as
+ * `paymentMatchesToolRoute` (no behavior change to it; this is additive):
+ *
+ *   - `'ok'`          — identity (asset/network/payTo) matches THIS tool's
+ *                       requirement AND the paid amount covers its effective
+ *                       (timeframe-aware) price → bind passes.
+ *   - `'cross_tool'`  — identity does NOT match this tool's requirement (the
+ *                       matched requirement belongs to a different route — wrong
+ *                       asset/network/payTo). This is the cross-tool downgrade.
+ *   - `'insufficient'`— identity matches this tool's route but the amount underpays
+ *                       its effective price (e.g. base $0.02 on a premium 1m=$0.05).
+ *
+ * A missing/malformed settlement or unknown/unpriced tool → `'cross_tool'`
+ * (default-deny; treated as "not a payment for this route"). Mirrors the exact
+ * checks in `paymentMatchesToolRoute` so `classifyToolRouteMismatch(...) === 'ok'`
+ * iff `paymentMatchesToolRoute(...) === true`.
+ */
+export function classifyToolRouteMismatch(
+  settlement: { paymentPayload?: unknown; requirements?: unknown } | undefined | null,
+  toolName: string,
+  timeframe?: string,
+): 'ok' | 'cross_tool' | 'insufficient' {
+  if (!settlement || !settlement.requirements) return 'cross_tool';
+
+  const expected = toolRequirements.get(toolName);
+  if (!expected || expected.length === 0) return 'cross_tool'; // unknown / unpriced tool
+
+  const matchedRaw = settlement.requirements;
+  const matched = Array.isArray(matchedRaw) ? matchedRaw[0] : matchedRaw;
+  const exp = reqFields(expected[0]);
+  const got = reqFields(matched);
+
+  // Identity binding (asset/network/payTo) — a mismatch means the proof matched a
+  // DIFFERENT tool's route (or wrong chain/token/recipient): cross-tool.
+  if (got.asset !== exp.asset || got.network !== exp.network || got.payTo !== exp.payTo) {
+    return 'cross_tool';
+  }
+
+  // Identity matches but the amount underpays the effective price: insufficient.
+  if (!isPaymentSufficient(toolName, got.amount, timeframe)) {
+    return 'insufficient';
+  }
+
+  return 'ok';
 }
 
 /** Test seam: snapshot the pre-built per-tool requirements (read-only). */

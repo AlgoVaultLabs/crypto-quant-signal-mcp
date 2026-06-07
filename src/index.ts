@@ -28,9 +28,9 @@ import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb } from './lib/license.js';
-import { initX402, settleX402Async } from './lib/x402.js';
-import { mountX402HttpRoutes } from './lib/x402-http-routes.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota } from './lib/license.js';
+import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
+import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
 import { getEquityCall, getEquityRegime } from './lib/equities/equity-tool-formatters.js';
 import { getEquityPerformance } from './lib/equities/equity-performance.js';
@@ -2066,11 +2066,34 @@ async function startHttp() {
 
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
+    // OPS-X402-MCP-PRICE-BINDING-W1: for a priced `tools/call` POST, bind the x402
+    // grant/settle to the CALLED tool's effective price. Parse the tool name (+ its
+    // timeframe arg) so `resolveLicense` matches the proof against ONLY this tool's
+    // requirement, enforces the per-tool floor, and claims the nonce BEFORE settle.
+    // A cross-tool / underpaid / replayed proof → no x402 grant, no settle, and an
+    // `x402Downgrade.reason` we use below. Non-priced or non-tools/call requests pass
+    // no tool → the prior flattened behavior is unchanged.
+    const mcpBody = (req.method === 'POST' && req.body && typeof req.body === 'object')
+      ? (req.body as { method?: string; params?: { name?: string; arguments?: { timeframe?: unknown } } })
+      : undefined;
+    const callTool = (mcpBody?.method === 'tools/call' && typeof mcpBody.params?.name === 'string')
+      ? mcpBody.params.name
+      : undefined;
+    const isPricedTool = !!callTool && (HTTP_TOOLS as readonly string[]).includes(callTool);
+    const callTimeframe = typeof mcpBody?.params?.arguments?.timeframe === 'string'
+      ? (mcpBody.params.arguments.timeframe as string)
+      : undefined;
+
     // Resolve license per-request using 3-tier gate: x402 → API key → free
     // Async because x402 verification hits the Facilitator
-    const { license, pendingSettlement } = await resolveLicense(
-      req.headers as Record<string, string | undefined>,
-    );
+    const { license, pendingSettlement, x402Downgrade } = isPricedTool
+      ? await resolveLicense(
+          req.headers as Record<string, string | undefined>,
+          { tool: callTool, timeframe: callTimeframe },
+        )
+      : await resolveLicense(
+          req.headers as Record<string, string | undefined>,
+        );
 
     // Hash client IP for privacy-safe analytics
     const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
@@ -2136,6 +2159,34 @@ async function startHttp() {
     await requestContext.run({ license, sessionId, ipHash }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+        // OPS-X402-MCP-PRICE-BINDING-W1: an x402 proof was presented for a priced
+        // tool but was NOT honored (cross-tool / underpaid / replayed) → the license
+        // was downgraded to free/API-key with `pendingSettlement` cleared (no settle).
+        // Peek quota (read-only; inside ALS so the free-tier key uses the real ipHash;
+        // the quota_hit_block funnel event it fires on a free-block is CORRECT here and
+        // won't double-fire because we short-circuit before tool dispatch). If quota is
+        // EXHAUSTED, return a precise `X402_PAYMENT_REQUIRED` JSON-RPC tool-result-error
+        // built from the CALLED tool's payment requirements + the downgrade reason —
+        // instead of the generic quota error. If quota REMAINS, fall through and serve
+        // the call within the free/non-x402 quota (identical to a no-proof call).
+        if (x402Downgrade && callTool) {
+          const q = checkQuota(license);
+          if (!q.allowed) {
+            // Exhausted free quota + an unhonored proof → precise X402_PAYMENT_REQUIRED
+            // (built from the CALLED tool's requirements), as a short-circuit (do NOT
+            // dispatch to the transport). Shared builder so the envelope shape stays
+            // identical to what the test asserts (no drift).
+            res.json(buildX402PaymentRequiredResult(callTool, x402Downgrade.reason, (req.body as { id?: unknown })?.id));
+            return;
+          }
+          // Quota remains → serve free below (no x402 grant, no settle). Optional
+          // companion note: skipped — injecting `_algovault.x402_note` into the SDK's
+          // tool result would require intercepting the transport's serialized output
+          // (the result object is built inside the per-tool handler, downstream of this
+          // short-circuit), which is awkward + risks corrupting the JSON-RPC envelope.
+          // The downgrade is already observable via logs/analytics; left as a no-op.
+        }
 
         if (req.method === 'GET') {
           if (sessionId && transports.has(sessionId)) {

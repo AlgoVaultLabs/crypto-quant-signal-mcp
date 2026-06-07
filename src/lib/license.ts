@@ -7,7 +7,8 @@
  * 3. Free tier (no key, no payment)
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { verifyX402Payment, isX402Configured } from './x402.js';
+import { verifyX402Payment, isX402Configured, paymentMatchesToolRoute, classifyToolRouteMismatch } from './x402.js';
+import { extractPaymentNonce, tryClaimPayment } from './x402-idempotency-store.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import { dbExec, dbRun, dbQuery, recordFunnelEvent } from './performance-db.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
@@ -74,6 +75,38 @@ export interface PendingSettlement {
 }
 
 /**
+ * Why an x402 proof presented on a priced tool call was NOT honored as a payment
+ * for THAT tool (OPS-X402-MCP-PRICE-BINDING-W1). Carried back on `resolveLicense`'s
+ * result (alongside the downgraded free/API-key license, with `pendingSettlement`
+ * cleared) so the `/mcp` handler can build a precise `X402_PAYMENT_REQUIRED` error
+ * keyed on the CALLED tool's requirements — instead of silently charging the wrong
+ * (lower) price or replaying one proof across N calls.
+ *
+ *  - `cross_tool`  — the proof verified, but its matched requirement belongs to a
+ *                    DIFFERENT tool's route (e.g. a $0.01 scan_funding_arb proof on
+ *                    the $0.02 get_trade_signal call) → wrong asset/network/payTo
+ *                    OR amount below this tool's effective price.
+ *  - `insufficient`— the proof matched THIS tool's route identity but underpays its
+ *                    effective (timeframe-aware) price (e.g. a base $0.02 proof on a
+ *                    premium 1m=$0.05 call). (Surfaced as the default reason for any
+ *                    binding failure that isn't provably cross-tool.)
+ *  - `replayed`    — the proof's ERC-3009 nonce was already claimed (pre-settle
+ *                    replay) → `tryClaimPayment` returned false.
+ */
+export interface X402Downgrade {
+  reason: 'cross_tool' | 'insufficient' | 'replayed';
+}
+
+/** Optional binding context for `resolveLicense` — the priced MCP `tools/call` path
+ * passes the called tool (+ its timeframe arg) so the x402 grant/settle binds to
+ * THAT tool's price. Omitted (HTTP route, webhook authz, non-tools/call) → the
+ * pre-binding flattened behavior is preserved byte-for-byte. */
+export interface ResolveLicenseOpts {
+  tool?: string;
+  timeframe?: string;
+}
+
+/**
  * Internal-bypass check (BOT-W1 / D1-C, 2026-05-08).
  *
  * If BOT_INTERNAL_BYPASS_ENABLED=true AND the request carries
@@ -106,24 +139,67 @@ function checkInternalBypass(
  *
  * Async because x402 verification hits the Facilitator (~100ms).
  * If x402 is not configured (no wallet address), skips to API key / free.
+ *
+ * `opts.tool` (OPS-X402-MCP-PRICE-BINDING-W1) — when the caller names a PRICED
+ * tool (the `/mcp` `tools/call` path), the x402 grant is BOUND to that tool's
+ * effective price and the proof's nonce is CLAIMED before the grant:
+ *   - `verifyX402Payment(headers, tool)` matches the proof against ONLY this
+ *     tool's pre-built requirement (per-tool, not the flattened cross-tool pool);
+ *   - `paymentMatchesToolRoute(settlement, tool, timeframe)` re-asserts the
+ *     effective-price floor (incl. the timeframe premium) + asset/network/payTo;
+ *   - `tryClaimPayment(nonce, ...)` atomically claims the ERC-3009 nonce (single
+ *     point of arbitration against concurrent pre-settle replay).
+ * If ANY of those fail — cross-tool / underpay / replay / DB-error / empty nonce —
+ * the x402 UPGRADE is DENIED (default-deny): the caller falls through to their
+ * API-key/free tier, `pendingSettlement` is cleared (→ NO settle, no charge), and
+ * an `x402Downgrade.reason` is returned so the handler can build a precise
+ * `X402_PAYMENT_REQUIRED` error keyed on THIS tool. A correct exact/over-price
+ * proof for the called tool grants `tier:'x402'` + a claimed settlement (unchanged).
+ *
+ * When `opts.tool` is omitted (HTTP route — which keeps its OWN post-binding +
+ * claim — webhook authz, or any non-tools/call request) the behavior is the prior
+ * flattened verify: no per-tool bind, no claim, no downgrade field. This keeps the
+ * single chokepoint (`verifyX402Payment` is reached only here) while leaving the
+ * already-bound HTTP path untouched (it passes no tool → no double-claim).
  */
 export async function resolveLicense(
   headers: Record<string, string | undefined>,
-): Promise<{ license: LicenseInfo; pendingSettlement?: PendingSettlement }> {
+  opts?: ResolveLicenseOpts,
+): Promise<{ license: LicenseInfo; pendingSettlement?: PendingSettlement; x402Downgrade?: X402Downgrade }> {
   // Tier 0 (BOT-W1 / D1-C): internal bypass for AlgoVault Telegram bot
   const bypass = checkInternalBypass(headers);
   if (bypass) return { license: bypass };
 
   // Tier 1: x402 payment proof (only if configured)
   if (isX402Configured()) {
-    const x402Result = await verifyX402Payment(headers);
+    // Per-tool-bound path (priced MCP tools/call): verify against ONLY this tool's
+    // requirement so a cross-tool proof can't deep-equal a higher-priced route.
+    const x402Result = opts?.tool
+      ? await verifyX402Payment(headers, opts.tool)
+      : await verifyX402Payment(headers);
+
     if (x402Result.valid) {
-      return {
-        license: { tier: 'x402', key: null },
-        pendingSettlement: x402Result._settlement
-          ? { paymentPayload: x402Result._settlement.paymentPayload, requirements: x402Result._settlement.requirements }
-          : undefined,
-      };
+      const pendingSettlement = x402Result._settlement
+        ? { paymentPayload: x402Result._settlement.paymentPayload, requirements: x402Result._settlement.requirements }
+        : undefined;
+
+      // Unbound callers (HTTP route / webhook authz) keep the prior behavior: grant
+      // x402 here; the HTTP route then re-asserts binding + claims the nonce itself.
+      if (!opts?.tool) {
+        return { license: { tier: 'x402', key: null }, pendingSettlement };
+      }
+
+      // Bound caller: enforce the effective-price floor for THIS tool (+ timeframe
+      // premium) AND claim the nonce BEFORE granting. Any failure → downgrade.
+      const downgrade = await bindAndClaimX402(pendingSettlement, opts.tool, opts.timeframe);
+      if (!downgrade) {
+        return { license: { tier: 'x402', key: null }, pendingSettlement };
+      }
+      // Fall through to API-key/free with the reason; pendingSettlement cleared
+      // (no settle/charge) by NOT returning it below.
+      const authHeader = headers['authorization'] || headers['Authorization'];
+      const license = await resolveFromApiKeyAsync(authHeader);
+      return { license, x402Downgrade: downgrade };
     }
   }
 
@@ -131,6 +207,47 @@ export async function resolveLicense(
   const authHeader = headers['authorization'] || headers['Authorization'];
   const license = await resolveFromApiKeyAsync(authHeader);
   return { license };
+}
+
+/**
+ * Bind a verified settlement to `tool`'s effective price and claim its nonce.
+ * Returns `undefined` when the proof is a VALID, single-use payment for this tool
+ * (→ caller grants x402 + settles); returns an `X402Downgrade` when it must NOT be
+ * honored (cross-tool / underpay / replay / DB-error / empty nonce → caller
+ * downgrades to free, no settle). Claim happens AFTER the binding check passes and
+ * BEFORE the grant, so a replayed/wrong-tool proof never burns a claim it shouldn't.
+ */
+async function bindAndClaimX402(
+  pendingSettlement: PendingSettlement | undefined,
+  tool: string,
+  timeframe?: string,
+): Promise<X402Downgrade | undefined> {
+  // (1) Effective-price + identity floor for THIS tool (asset/network/payTo +
+  // amount ≥ effective(tool, timeframe)). Rejects the cross-tool downgrade and the
+  // premium-timeframe underpay. paymentMatchesToolRoute default-denies on a missing
+  // /malformed settlement or unknown tool; classifyToolRouteMismatch returns the
+  // matching reason (identity mismatch → cross_tool; amount underpay → insufficient)
+  // so the handler advertises the right `reason`. The two stay in lockstep
+  // (`classify === 'ok'` iff `paymentMatchesToolRoute === true`).
+  if (!paymentMatchesToolRoute(pendingSettlement, tool, timeframe)) {
+    const cls = classifyToolRouteMismatch(pendingSettlement, tool, timeframe);
+    return { reason: cls === 'insufficient' ? 'insufficient' : 'cross_tool' };
+  }
+
+  // (2) Single-use claim BEFORE the grant — close the pre-settle replay window.
+  // Fail-safe: empty nonce or DB error → tryClaimPayment returns false → downgrade
+  // (default-deny the upgrade; the buyer's on-chain nonce is unspent, costs a retry).
+  const requirements = (pendingSettlement?.requirements ?? {}) as { amount?: unknown };
+  const matchedReq = Array.isArray(requirements) ? requirements[0] : requirements;
+  const amtRaw = (matchedReq as { amount?: unknown })?.amount;
+  const amount = typeof amtRaw === 'string' ? amtRaw : amtRaw != null ? String(amtRaw) : '';
+  const nonce = extractPaymentNonce(pendingSettlement?.paymentPayload);
+  const claimed = await tryClaimPayment(nonce ?? '', tool, amount);
+  if (!claimed) {
+    return { reason: 'replayed' };
+  }
+
+  return undefined; // valid, single-use payment for this tool → grant + settle
 }
 
 /**
