@@ -92,8 +92,10 @@ describe('assertEgressAllowed (sync registration guard)', () => {
 });
 
 describe('resolveAndAssertEgress (async DNS-rebind guard)', () => {
-  it('allows a hostname resolving to a public IP', async () => {
-    await expect(resolveAndAssertEgress('https://hooks.example.com/x', { lookup: lookupTo('93.184.216.34') })).resolves.toBeUndefined();
+  it('allows a hostname resolving to a public IP and returns the pinned address', async () => {
+    // WH-01: returns the validated {address, family} to pin to the connection.
+    await expect(resolveAndAssertEgress('https://hooks.example.com/x', { lookup: lookupTo('93.184.216.34') }))
+      .resolves.toEqual({ address: '93.184.216.34', family: 4 });
   });
 
   it('blocks a hostname that resolves to a private IP (rebind)', async () => {
@@ -110,10 +112,11 @@ describe('resolveAndAssertEgress (async DNS-rebind guard)', () => {
     await expect(resolveAndAssertEgress('https://nope.invalid/x', { lookup: boom })).rejects.toBeInstanceOf(EgressBlockedError);
   });
 
-  it('literal public IP host passes without DNS', async () => {
+  it('literal public IP host passes without DNS and pins the literal IP', async () => {
     let called = false;
     const lk = async () => { called = true; return [{ address: '1.1.1.1', family: 4 }]; };
-    await expect(resolveAndAssertEgress('https://8.8.8.8/x', { lookup: lk })).resolves.toBeUndefined();
+    await expect(resolveAndAssertEgress('https://8.8.8.8/x', { lookup: lk }))
+      .resolves.toEqual({ address: '8.8.8.8', family: 4 }); // pins the literal, not the (unused) lookup result
     expect(called).toBe(false); // literal IP → no DNS
   });
 });

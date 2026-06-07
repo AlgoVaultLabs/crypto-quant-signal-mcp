@@ -10,7 +10,8 @@
  * Security: a subscription's `secret` is returned ONCE (on create) and NEVER on
  * list; `owner_key` (the API key) is never echoed in any response.
  */
-import express, { type Express, type Request, type Response } from 'express';
+import express, { type Express, type Request, type Response, type RequestHandler } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { resolveLicense, checkQuotaByKey, getUpgradeHint } from './license.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
 import {
@@ -114,7 +115,37 @@ function serializeSubscription(s: WebhookSubscription, opts: { includeSecret: bo
   return out;
 }
 
+/** Bearer/API-key keyer for the per-key limiter; falls back to IP (express-rate-limit default). */
+function apiKeyOf(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) return auth.slice(7).trim() || null;
+  return null;
+}
+
 export function registerWebhookRoutes(app: Express): void {
+  // WH-03 (OPS-WEBHOOK-RATELIMIT-PREFIX-FIX-W1): the limiter MUST govern
+  // `/api/webhooks*` — the prior mount on `/webhooks` (in index.ts) never matched
+  // these routes (Express prefix matching), leaving `:id/test` an unthrottled
+  // SSRF-probe / DoS amplifier. Mount it here, co-located with the routes it
+  // protects, so the prefix can never drift again. `standardHeaders:true` emits
+  // RateLimit-* headers on every governed response (their presence is the proof
+  // the limiter is applied).
+  const webhooksLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+  app.use('/api/webhooks', webhooksLimiter);
+
+  // A TIGHTER per-key limiter on :id/test specifically — it triggers real outbound
+  // delivery (egress amplification), so cap it hard (max 5/min/key). Keyed by API
+  // key when present (abuse is per-key, not per-shared-IP), else by IP.
+  const testLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Per-key when a Bearer key is present (abuse is per-key, not per-shared-IP);
+    // else fall back to the IPv6-safe IP keyer (ipKeyGenerator normalizes v6 /64).
+    keyGenerator: (req: Request, res: Response): string => apiKeyOf(req) ?? ipKeyGenerator(req.ip ?? 'unknown'),
+  });
+
   // POST /api/webhooks — create a subscription (returns secret ONCE).
   app.post('/api/webhooks', express.json({ limit: '4kb' }), async (req: Request, res: Response) => {
     try {
@@ -215,7 +246,9 @@ export function registerWebhookRoutes(app: Express): void {
   });
 
   // POST /api/webhooks/:id/test — send a sample signed event immediately.
-  app.post('/api/webhooks/:id/test', async (req: Request, res: Response) => {
+  // WH-03: the tight per-key limiter runs BEFORE the handler (it triggers real
+  // outbound delivery). The general /api/webhooks limiter above also applies.
+  app.post('/api/webhooks/:id/test', testLimiter as RequestHandler, async (req: Request, res: Response) => {
     try {
       const { ownerKey } = await resolveOwner(req);
       if (!ownerKey) return authRequired(res);

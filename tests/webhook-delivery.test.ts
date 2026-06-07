@@ -97,12 +97,13 @@ describe('buildPayload: allow-list + shape', () => {
   });
 });
 
-describe('signPayload: HMAC', () => {
-  it('produces an HMAC-SHA256 hex that verifies against a recomputed digest', () => {
+describe('signPayload: HMAC over timestamp + body (WH-04)', () => {
+  it('produces an HMAC-SHA256 hex over "{timestamp}.{body}" that verifies against a recomputed digest', () => {
     const body = JSON.stringify({ hello: 'world' });
     const secret = 'whsec_test';
-    const sig = delivery.signPayload(body, secret);
-    const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
+    const ts = 1_700_000_000;
+    const sig = delivery.signPayload(body, secret, ts);
+    const expected = crypto.createHmac('sha256', secret).update(`${ts}.${body}`).digest('hex');
     expect(sig).toBe(expected);
     expect(sig).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -126,12 +127,16 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
     expect(res.responseCode).toBe(200);
     expect(calls.length).toBe(1);
     expect(calls[0].url).toBe('https://sink.example.com/h');
-    // HMAC header must verify against the captured body + the subscription secret.
-    const recomputed = crypto.createHmac('sha256', sub.secret).update(calls[0].body).digest('hex');
+    // WH-04: HMAC header must verify against "{timestamp}.{body}" (the signed bytes),
+    // using the timestamp emitted in the X-AlgoVault-Timestamp header.
+    const ts = calls[0].headers['X-AlgoVault-Timestamp'];
+    expect(ts).toMatch(/^\d+$/);
+    const recomputed = crypto.createHmac('sha256', sub.secret).update(`${ts}.${calls[0].body}`).digest('hex');
     expect(calls[0].headers['X-AlgoVault-Signature']).toBe(recomputed);
+    // And the canonical verifier accepts it (fresh timestamp).
+    expect(delivery.verifyWebhookSignature(calls[0].body, calls[0].headers['X-AlgoVault-Signature'], Number(ts), sub.secret)).toBe(true);
     expect(calls[0].headers['X-AlgoVault-Event']).toBe('trade_call');
     expect(calls[0].headers['X-AlgoVault-Delivery']).toBe(String(d.id));
-    expect(calls[0].headers['X-AlgoVault-Timestamp']).toMatch(/^\d+$/);
 
     const after = await store.getSubscription(sub.id);
     expect(after?.consecutive_failures).toBe(0);
