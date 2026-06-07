@@ -1,0 +1,110 @@
+{
+  "_poc": "SECURITY-AUDIT-RECENT-FEATURES-W1 / R3 / EQ-AUDITOR / AC4 Data-Integrity live-leak proof",
+  "_captured_at": "2026-06-07T07:17:00Z .. 2026-06-07T07:19:51Z (UTC)",
+  "_server": "live AlgoVault MCP (mcp__d2074c47-...), package version 1.20.1, tools/list=9",
+  "_method": "Called get_equity_call + get_equity_regime live via MCP and captured the RAW tool envelopes verbatim. Assertion: NO outcome_return_pct / outcome_price / outcome_filled_at / pfe_pct / phase_e / any internal key present in ANY envelope.",
+  "_verdict": "PASS — zero internal keys leaked across BUY, HOLD, default-SPY, named-symbol, and SYMBOL_NOT_IN_UNIVERSE error envelopes. Allowed keyset is the exact union of the EquityCallOutput / EquityRegimeOutput / EquityErrorOutput interfaces in src/lib/equities/equity-tool-formatters.ts.",
+  "_forbidden_keys_asserted_absent": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_filled_at",
+    "pfe_pct",
+    "pfe_horizon_sessions (NOTE: present in PublicVerdictRow but NOT projected by either formatter — absent below, confirming the formatter strips it)",
+    "phase_e",
+    "engine_version (internal stamp — present in PublicVerdictRow but stripped by the formatter — absent below)"
+  ],
+  "captures": [
+    {
+      "call": "get_equity_call {symbol:'AAPL'}",
+      "envelope": {
+        "symbol": "AAPL",
+        "call": "BUY",
+        "confidence": 1,
+        "regime": "trending_up",
+        "factors": [
+          "technical:ema20_above_ema50",
+          "technical:price_above_ema20",
+          "technical:rsi_bullish",
+          "technical:adx_strong_bull",
+          "technical:structure_higher_highs",
+          "regime:trending_up",
+          "regime:trending_persistent"
+        ],
+        "as_of_session": "2026-06-05",
+        "universe_rank": 9,
+        "_algovault": { "tool": "get_equity_call", "version": "1.20.1", "source": "equity_verdicts", "ts": "2026-06-07T07:17:33.908Z" }
+      },
+      "keys": ["symbol","call","confidence","regime","factors","as_of_session","universe_rank","_algovault"],
+      "internal_keys_present": "NONE"
+    },
+    {
+      "call": "get_equity_call {symbol:'BRK-B'}  (symbol-normalization probe)",
+      "normalization_result": "BRK-B -> BRK.B  (PASS: dash class-separator mapped to dot)",
+      "envelope": {
+        "symbol": "BRK.B",
+        "call": "HOLD",
+        "confidence": 0.33,
+        "regime": "compression",
+        "factors": [
+          "technical:ema20_below_ema50",
+          "technical:price_above_ema20",
+          "technical:rsi_bullish",
+          "technical:adx_weak_bull",
+          "technical:structure_higher_highs",
+          "regime:compression",
+          "regime:trending_persistent",
+          "regime:volatility_squeeze"
+        ],
+        "as_of_session": "2026-06-05",
+        "universe_rank": 113,
+        "_algovault": { "tool": "get_equity_call", "version": "1.20.1", "source": "equity_verdicts", "ts": "2026-06-07T07:17:34.479Z" }
+      },
+      "keys": ["symbol","call","confidence","regime","factors","as_of_session","universe_rank","_algovault"],
+      "internal_keys_present": "NONE"
+    },
+    {
+      "call": "get_equity_regime {}  (default symbol -> SPY)",
+      "envelope": {
+        "symbol": "SPY",
+        "regime": "trending_down",
+        "confidence": 0.16,
+        "as_of_session": "2026-06-05",
+        "_algovault": { "tool": "get_equity_regime", "version": "1.20.1", "source": "equity_verdicts", "ts": "2026-06-07T07:19:49.477Z" }
+      },
+      "keys": ["symbol","regime","confidence","as_of_session","_algovault"],
+      "internal_keys_present": "NONE"
+    },
+    {
+      "call": "get_equity_regime {symbol:'TSLA'}",
+      "envelope": {
+        "symbol": "TSLA",
+        "regime": "ranging",
+        "confidence": 0.14,
+        "as_of_session": "2026-06-05",
+        "_algovault": { "tool": "get_equity_regime", "version": "1.20.1", "source": "equity_verdicts", "ts": "2026-06-07T07:19:50.565Z" }
+      },
+      "keys": ["symbol","regime","confidence","as_of_session","_algovault"],
+      "internal_keys_present": "NONE"
+    },
+    {
+      "call": "get_equity_call {symbol:'FAKE9'}  (SYMBOL_NOT_IN_UNIVERSE error envelope)",
+      "envelope": {
+        "error": true,
+        "code": "SYMBOL_NOT_IN_UNIVERSE",
+        "message": "FAKE9 is not in the AlgoVault equities universe (top US equities by dollar-volume + index/crypto-proxy ETFs).",
+        "suggested_symbols": ["FANG","FAST","F","FBTC","FCX"],
+        "universe_size": 501,
+        "_algovault": { "tool": "get_equity_call", "version": "1.20.1", "source": "equity_verdicts", "ts": "2026-06-07T07:19:50.321Z" }
+      },
+      "keys": ["error","code","message","suggested_symbols","universe_size","_algovault"],
+      "internal_keys_present": "NONE",
+      "info_note": "Error path returns only 5 nearest-prefix suggestions + an integer universe_size (501). It does NOT dump the full universe and does NOT include a stack trace. universe membership is public-knowledge (top US equities by $-volume), so this is controlled, non-secret disclosure. Side-effect: this path fires recordSymbolMiss() — see EQ-02 unbounded-insert finding.",
+      "side_effect": "this FAKE9 call wrote one row to equity_symbol_misses (fire-and-forget) — confirms EQ-02 DoS is live-reachable"
+    },
+    {
+      "call": "get_equity_call {symbol:\"ZZZZINVALID' OR 1=1--\"}  (SQLi probe)",
+      "result": "REJECTED at the MCP Zod boundary BEFORE any DB query: MCP error -32602 'String must contain at most 12 character(s)' (z.string().max(12)). The injection string never reached the SQL layer. (Even a <=12-char injection would be parameterized via $1 — see equity-store.ts.)",
+      "internal_keys_present": "N/A (rejected pre-handler)"
+    }
+  ]
+}

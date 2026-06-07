@@ -1,0 +1,44 @@
+SECURITY-AUDIT-RECENT-FEATURES-W1 / R3.2 — DATABENTO_API_KEY non-exposure proof
+Captured 2026-06-07 (UTC). EQ-AUDITOR. READ-ONLY (no mutation).
+
+=== 1. PROD: key PRESENT in container environ (mcp-server) ===
+$ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
+    'docker exec crypto-quant-signal-mcp-mcp-server-1 cat /proc/1/environ | tr "\0" "\n" | grep ^DATABENTO'
+DATABENTO_API_KEY=db-Q****REDACTED****        <-- present, `db-` prefix confirms Databento key format
+(value redacted in this artifact by the auditor; raw value never written to disk)
+
+=== 2. PROD: key + even the word "databento" ABSENT from container logs ===
+$ ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
+    'docker logs crypto-quant-signal-mcp-mcp-server-1 2>&1 | grep -iE "databento" | tail -15'
+<EMPTY>     <-- no log line mentions databento at all; key never logged
+
+=== 3. GIT HISTORY: no literal key ever committed (full history, all refs) ===
+$ git log -p -S 'DATABENTO_API_KEY' --all | grep -iE '^\+.*db-[0-9A-Za-z]{20,}'
+<EMPTY>
+$ git grep -nE 'db-[A-Za-z0-9]{16,}' HEAD -- .            (excluding node_modules)
+<EMPTY>
+Only history hit for the literal "DATABENTO_API_KEY" is a doc-comment verification command:
+  "+4. Verify: docker exec ... env | grep -c '^DATABENTO_API_KEY=db-' -> 1."   (not a secret)
+
+=== 4. .gitignore covers .env ===
+$ grep -nE '(^|/)\.env' .gitignore
+3:.env
+
+=== 5. deploy/*.json public half: zero databento references ===
+$ grep -rniE 'databento' deploy/
+<EMPTY>
+
+=== 6. CODE PATH: key flows env -> Basic auth HEADER, never the URL, never an error dump ===
+src/lib/equities/equity-bars-provider.ts:
+  - constructor receives apiKey from env (caller passes process.env.DATABENTO_API_KEY);
+    throws DATABENTO_AUTH "DATABENTO_API_KEY is empty" if missing (no value echoed).
+  - line 83: authHeader = 'Basic ' + base64(`${apiKey}:`)  -> key as HTTP Basic USERNAME,
+    placed in the `Authorization` HEADER (line 103), NOT in the URL query string.
+  - error paths (lines 108-123) capture res.text() (the RESPONSE BODY, truncated 300 chars) +
+    res.status — they NEVER interpolate `url`, the Authorization header, or the api key.
+    => no "httpx-INFO-leaks-bearer-via-URL"-class leak: the key is not in the URL and the
+       error/timeout/retry log lines (line 134) print only the error CODE + backoff ms.
+
+VERDICT R3.2: PASS. Key is env-only, never logged, never in the request URL or any error/timeout
+dump, untracked in git history, absent from deploy public half. Prod proof: present in
+/proc/1/environ, absent from logs.

@@ -1,0 +1,71 @@
+===== R5.2 FULL npm audit (summary) =====
+    resend  6.2.0-canary.0 - 6.12.2
+    Depends on vulnerable versions of svix
+    node_modules/resend
+
+vite  7.0.0 - 7.3.1
+Severity: high
+Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling - https://github.com/advisories/GHSA-4w7w-66w2-5vf9
+Vite: `server.fs.deny` bypassed with queries - https://github.com/advisories/GHSA-v2wj-q39q-566r
+Vite Vulnerable to Arbitrary File Read via Vite Dev Server WebSocket - https://github.com/advisories/GHSA-p9ff-h696-f583
+fix available via `npm audit fix`
+node_modules/vite
+
+vitest  <4.1.0
+Severity: critical
+When Vitest UI server is listening, arbitrary file can be read and executed - https://github.com/advisories/GHSA-5xrq-8626-4rwp
+fix available via `npm audit fix --force`
+Will install vitest@4.1.8, which is a breaking change
+node_modules/vitest
+
+ws  8.0.0 - 8.20.0
+Severity: moderate
+ws: Uninitialized memory disclosure - https://github.com/advisories/GHSA-58qx-3vcg-4xpx
+fix available via `npm audit fix`
+node_modules/ethers/node_modules/ws
+node_modules/webpack-bundle-analyzer/node_modules/ws
+node_modules/ws
+  ethers  >=6.0.0-beta.1
+  Depends on vulnerable versions of ws
+  node_modules/ethers
+  viem  <=0.0.0-wagmiv2-20230628182101 || 0.2.2 - 2.49.3
+  Depends on vulnerable versions of ws
+  node_modules/viem
+
+19 vulnerabilities (14 moderate, 4 high, 1 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+===== npm audit --json severity tally =====
+vuln tally: {"info":0,"low":0,"moderate":14,"high":4,"critical":1,"total":19}
+  HIGH  ajv-cli  via=fast-json-patch
+  HIGH  fast-json-patch  via=Starcounter-Jack JSON-Patch Prototype Pollution vulnerability
+  HIGH  fast-uri  via=fast-uri vulnerable to path traversal via percent-encoded dot segments,fast-uri vulnerable to host confusion via percent-encoded authority delimiters
+  HIGH  vite  via=Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling,Vite: `server.fs.deny` bypassed with queries,Vite Vulnerable to Arbitrary File Read via Vite Dev Server WebSocket
+  CRITICAL  vitest  via=When Vitest UI server is listening, arbitrary file can be read and executed
+
+===== onchain-publish blocklist transitive check (npm tree) =====
+  web3                   lock-hits=0
+  eth-account            lock-hits=0
+  eth-abi                lock-hits=0
+  hexbytes               lock-hits=0
+  py-solc-x              lock-hits=0
+  brownie                lock-hits=0
+  ape                    lock-hits=0
+  ipfshttpclient         lock-hits=0
+  ipfs-http-client       lock-hits=0
+  @web3-storage/w3up-client lock-hits=0
+-- what onchain-ish libs ARE present (expected: viem/ethers for x402 EIP-712 verify, NOT publish) --
+| `-- viem@2.47.12 deduped
+| | `-- viem@2.47.12 deduped
+| `-- viem@2.47.12 deduped
++-- @nomicfoundation/hardhat-viem@3.0.4
+| `-- viem@2.47.12 deduped
+| `-- viem@2.47.12 deduped
+| | `-- ethers@6.16.0
+| `-- viem@2.47.12 deduped
+`-- viem@2.47.12

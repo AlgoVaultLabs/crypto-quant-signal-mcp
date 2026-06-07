@@ -1,0 +1,28 @@
+
+[A] npm-audit gate (x402 family High+ · @coinbase/x402 >= 2.6.0)
+    ✓ @x402/svm NOT installed — GHSA-qr2g-p6q7-w82m forged-proof verifier absent from the tree (EVM-only).
+    ✓ no High/Critical advisory in the x402 payment-dep family.
+    (full tree: 1 critical / 4 high / 14 moderate — non-x402 High+ are reported, not gated)
+
+[B] PII / secret-leak gate
+    ✓ no outcome_return_pct/Phase-E value-binding or secret literal in 207 source files.
+
+[C] SSRF egress block-class matrix (webhook-ssrf guard)
+    ✖ NOT blocked by the sync guard:
+      - IPv4-mapped IPv6 → https://[::ffff:10.0.0.1]/
+    · hostname/alt-encoding handling (defer-to-resolve is acceptable IFF the resolved IP is pinned to the connection):
+      - defers-to-resolve: loopback hostname (localhost)
+      - sync-blocked: decimal IP (127.0.0.1)
+      - sync-blocked: hex IP
+      - sync-blocked: octal IP
+    · NOTE: this gate tests the block-CLASS completeness of the sync guard. The DNS-rebind/TOCTOU
+      class (resolve validates IP, then undici re-resolves at connect) is closed by IP-pinning in
+      OPS-WEBHOOK-SSRF-IP-PIN-W1 — add a connect-time assertion test once that lands.
+
+──────── security-canary summary ────────
+  ✓ PASS  audit  — clean
+  ✓ PASS  pii  — clean
+  ✖ FAIL  ssrf  — IPv4-mapped IPv6 → https://[::ffff:10.0.0.1]/
+
+✖ 1 gate(s) FAILED
+exit=1

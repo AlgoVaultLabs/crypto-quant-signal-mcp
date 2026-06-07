@@ -1,0 +1,56 @@
+SECURITY-AUDIT-RECENT-FEATURES-W1 / R3.3 — equity_symbol_misses unbounded-insert DoS (EQ-02)
+Captured 2026-06-07 (UTC). EQ-AUDITOR. CODE-PATH PROOF ONLY — the table was NOT flooded
+(read-only firewall + do-not-pollute-prod). A single incidental row was written by the
+benign R3.1 FAKE9 probe, which itself demonstrates reachability.
+
+=== THE INSERT (no cap / no dedup / no ON CONFLICT) ===
+src/lib/equities/equity-misses.ts:18
+  await pool.query('INSERT INTO equity_symbol_misses (symbol, raw_input) VALUES ($1, $2)', [stored, rawCol]);
+  -> ONE unconditional INSERT per out-of-universe request. No ON CONFLICT, no rate-limit,
+     no "already-seen" check, no upsert-with-counter.
+
+=== THE SCHEMA (no UNIQUE on symbol; append-only forever; two indexes per row) ===
+migrations/006_equity_misses.sql:7
+  CREATE TABLE IF NOT EXISTS equity_symbol_misses (
+    id BIGSERIAL PRIMARY KEY,        <-- only key is the surrogate id; symbol is NOT unique
+    symbol TEXT NOT NULL,
+    raw_input TEXT,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX ... ON equity_symbol_misses (symbol);          <-- 2 index writes
+  CREATE INDEX ... ON equity_symbol_misses (requested_at);    <-- per inserted row
+  => N requests for the SAME bogus symbol => N rows (no dedup). No retention/TTL/cap. Grows forever.
+
+=== REACHABILITY (every miss path on BOTH tools fires the write) ===
+src/lib/equities/equity-tool-formatters.ts — recordSymbolMiss is called fire-and-forget on:
+  - line 112: getEquityCall, empty/invalid symbol
+  - line 118: getEquityCall, symbol not in universe
+  - line 148: getEquityRegime, symbol not in universe
+The R3.1 live probe `get_equity_call {FAKE9}` returned SYMBOL_NOT_IN_UNIVERSE => wrote 1 row.
+=> Trivially reachable by any caller: pick any 6-char string not in the ~501-symbol universe.
+
+=== PARTIAL MITIGATION (caps per-IP, NOT in aggregate) ===
+recordSymbolMiss runs AFTER quotaGate() (equity-tool-formatters.ts:108 -> trackCall).
+Free-tier counter keys on `free:${getRequestIpHash() || 'anon'}` (license.ts:392) with
+getMonthlyQuota('free') = 100 (license.ts:331). So ONE IP-hash can write at most ~100
+miss-rows/month. BUT:
+  (a) NO dedup => 100 rows of identical garbage per IP/month still bloat the table;
+  (b) IP rotation / a distributed caller set => each gets its own fresh 100-row budget;
+  (c) the `'anon'` fallback bucket (no IP hash present) is a single shared budget but still
+      uncapped across the population;
+  (d) append-only with no retention => bloat is monotonic and permanent.
+=> Aggregate growth is unbounded; per-IP quota only rate-limits a single source. MEDIUM DoS.
+
+=== GENERATOR-LEVEL FIX (recommended; DEFERRED to follow-up wave — read-only audit) ===
+  1. Add UNIQUE(symbol) + rewrite the insert as an upsert-with-counter:
+       INSERT INTO equity_symbol_misses (symbol, raw_input, hit_count, requested_at)
+       VALUES ($1,$2,1,now())
+       ON CONFLICT (symbol) DO UPDATE SET hit_count = equity_symbol_misses.hit_count + 1,
+                                          last_requested_at = now();
+     -> O(distinct-symbols) rows instead of O(requests). Preserves the demand signal (count is
+        actually MORE useful than N duplicate rows). This is the data-quality root-cause fix.
+  2. Plus a monthly retention/VACUUM cron (CLAUDE.md append-only-table maintenance) as defense-in-depth.
+
+VERDICT R3.3: insert is UNBOUNDED (no cap/dedup/unique-constraint) => MEDIUM table-bloat DoS,
+partially mitigated per-IP by the 100-call free quota but unbounded in aggregate. SQLi: PASS
+(parameterized $1/$2 + normalizeSymbol whitelist + Zod max(12) at the boundary).
