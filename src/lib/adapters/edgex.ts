@@ -26,7 +26,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 
 const BASE_URL = 'https://pro.edgex.exchange';
 const MAX_RETRIES = 1;
@@ -182,14 +182,16 @@ export class EdgeXAdapter implements ExchangeAdapter {
       size: 200,
     });
 
-    return (raw.data?.dataList || []).map(c => ({
-      time: parseInt(c.klineTime, 10),
-      open: parseFloat(c.open),
-      high: parseFloat(c.high),
-      low: parseFloat(c.low),
-      close: parseFloat(c.close),
-      volume: parseFloat(c.size),
-    }));
+    // SV-04: default-deny — drop any candle with a non-finite OHLCV field.
+    return (raw.data?.dataList || []).flatMap(c => {
+      const open = safeUpstreamNum(c.open);
+      const high = safeUpstreamNum(c.high);
+      const low = safeUpstreamNum(c.low);
+      const close = safeUpstreamNum(c.close);
+      const volume = safeUpstreamNum(c.size);
+      if (open === null || high === null || low === null || close === null || volume === null) return [];
+      return [{ time: parseInt(c.klineTime, 10), open, high, low, close, volume }];
+    });
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
@@ -206,16 +208,20 @@ export class EdgeXAdapter implements ExchangeAdapter {
 
     // edgeX funding cadence: 4 hours per probe (nextFundingTime - fundingTime
     // = 14_400_000 ms). Annualized = rate × 2190 (4h periods per year).
-    const fundingRaw = parseFloat(t.fundingRate || '0');
+    // SV-04: default-deny — invalid markPrice throws (3-tier fallback fires);
+    // non-price fields fall back to a safe neutral 0 (never propagate garbage).
+    const fundingRaw = safeUpstreamNum(t.fundingRate) ?? 0;
+    const markPx = safeUpstreamNum(t.markPrice);
+    if (markPx === null) throw new Error('edgeX getAssetContext: invalid markPrice');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 2190,
-      openInterest: parseFloat(t.openInterest || '0'),
-      prevDayPx: parseFloat(t.open || '0'),
-      volume24h: parseFloat(t.value || '0'),
-      oraclePx: parseFloat(t.oraclePrice || t.markPrice || '0'),
-      markPx: parseFloat(t.markPrice || '0'),
+      openInterest: safeUpstreamNum(t.openInterest) ?? 0,
+      prevDayPx: safeUpstreamNum(t.open) ?? 0,
+      volume24h: safeUpstreamNum(t.value) ?? 0,
+      oraclePx: safeUpstreamNum(t.oraclePrice) ?? markPx,
+      markPx,
     };
   }
 

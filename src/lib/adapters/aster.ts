@@ -23,7 +23,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 
 const BASE_URL = 'https://fapi.asterdex.com';
 const MAX_RETRIES = 1;
@@ -91,14 +91,17 @@ export class AsterAdapter implements ExchangeAdapter {
       limit: 200,
     });
 
-    return raw.map(c => ({
-      open: parseFloat(String(c[1])),
-      high: parseFloat(String(c[2])),
-      low: parseFloat(String(c[3])),
-      close: parseFloat(String(c[4])),
-      volume: parseFloat(String(c[5])),
-      time: c[0] as number,
-    }));
+    // SV-04: default-deny — drop any candle with a non-finite OHLCV field
+    // rather than emit a NaN/wrong-but-finite price into the signal engine.
+    return raw.flatMap(c => {
+      const open = safeUpstreamNum(c[1]);
+      const high = safeUpstreamNum(c[2]);
+      const low = safeUpstreamNum(c[3]);
+      const close = safeUpstreamNum(c[4]);
+      const volume = safeUpstreamNum(c[5]);
+      if (open === null || high === null || low === null || close === null || volume === null) return [];
+      return [{ open, high, low, close, volume, time: c[0] as number }];
+    });
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
@@ -111,16 +114,20 @@ export class AsterAdapter implements ExchangeAdapter {
     ]);
 
     // Aster funding is per-8h period (Binance-compatible); annualize × 1095.
-    const fundingRaw = parseFloat(premiumIndex.lastFundingRate || '0');
+    // SV-04: default-deny — invalid markPrice throws (3-tier fallback fires);
+    // non-price fields fall back to a safe neutral 0 (never propagate garbage).
+    const fundingRaw = safeUpstreamNum(premiumIndex.lastFundingRate) ?? 0;
+    const markPx = safeUpstreamNum(premiumIndex.markPrice);
+    if (markPx === null) throw new Error('Aster getAssetContext: invalid markPrice');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(oi.openInterest || '0'),
-      prevDayPx: parseFloat(ticker.prevClosePrice || '0'),
-      volume24h: parseFloat(ticker.quoteVolume || '0'),
-      oraclePx: parseFloat(premiumIndex.markPrice || '0'),
-      markPx: parseFloat(premiumIndex.markPrice || '0'),
+      openInterest: safeUpstreamNum(oi.openInterest) ?? 0,
+      prevDayPx: safeUpstreamNum(ticker.prevClosePrice) ?? 0,
+      volume24h: safeUpstreamNum(ticker.quoteVolume) ?? 0,
+      oraclePx: markPx,
+      markPx,
     };
   }
 
@@ -132,7 +139,7 @@ export class AsterAdapter implements ExchangeAdapter {
         coin: fromAsterSymbol(entry.symbol),
         venues: [{
           venue: 'AsterPerp',
-          fundingRate: parseFloat(entry.lastFundingRate || '0'),
+          fundingRate: safeUpstreamNum(entry.lastFundingRate) ?? 0,
           nextFundingTime: entry.nextFundingTime || 0,
         }],
       }));
@@ -147,11 +154,8 @@ export class AsterAdapter implements ExchangeAdapter {
         limit: 1000,
       });
       return (raw || [])
-        .filter(r => r.fundingRate != null && !isNaN(parseFloat(r.fundingRate)))
-        .map(r => ({
-          time: r.fundingTime,
-          fundingRate: parseFloat(r.fundingRate),
-        }));
+        .map(r => ({ time: r.fundingTime, fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
     } catch {
       return [];
     }
@@ -161,7 +165,7 @@ export class AsterAdapter implements ExchangeAdapter {
     try {
       const symbol = toAsterSymbol(coin);
       const data = await asterGet<AsterPremiumIndex>('/fapi/v1/premiumIndex', { symbol });
-      return parseFloat(data.markPrice);
+      return safeUpstreamNum(data.markPrice);
     } catch {
       return null;
     }

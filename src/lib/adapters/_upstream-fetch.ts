@@ -69,6 +69,82 @@ function isBanBody(json: unknown, codes: Array<string | number>): boolean {
 }
 
 /**
+ * SV-03 (OPS-AUDIT-REMEDIATION-MED-W1, generator): cap untrusted upstream
+ * response size. A malicious/huge DEX response read blind via `.json()` could
+ * balloon the heap (audit PoC: 877 MB from one response → OOM on the 3.8 GB box).
+ * undici `fetch` has no native `maxResponseSize`, so cap manually: reject early on
+ * a too-large `content-length`, AND enforce during the stream read (the header can
+ * be absent or lie). Overflow → throw → the existing transient-retry/3-tier
+ * fallback treats it as an upstream failure (default-deny). ~8 MiB is far above the
+ * largest legitimate DEX payload (full kline/ticker lists are ≤~100 KB) and far
+ * below the DoS magnitude. Every venue inherits this via the shared transport.
+ */
+export const MAX_UPSTREAM_BYTES = 8 * 1024 * 1024;
+
+export async function readJsonCapped(res: Response, controller: AbortController, label: string): Promise<unknown> {
+  // content-length early reject (optional-chained — some Response shapes / test
+  // mocks omit `headers`; absent header just means we rely on the stream cap).
+  const cl = res.headers?.get?.('content-length');
+  if (cl) {
+    const declared = parseInt(cl, 10);
+    if (Number.isFinite(declared) && declared > MAX_UPSTREAM_BYTES) {
+      controller.abort();
+      throw new Error(`${label} response too large: content-length ${declared} > ${MAX_UPSTREAM_BYTES} bytes`);
+    }
+  }
+  // Real undici Response → streamed byte-counter (the prod path; enforces the cap
+  // even when content-length is absent or lies).
+  const body = res.body as ReadableStream<Uint8Array> | null | undefined;
+  if (body && typeof body.getReader === 'function') {
+    const reader = body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > MAX_UPSTREAM_BYTES) {
+          controller.abort();
+          try { await reader.cancel(); } catch { /* best-effort */ }
+          throw new Error(`${label} response too large: streamed ${total} bytes > ${MAX_UPSTREAM_BYTES}`);
+        }
+        chunks.push(Buffer.from(value));
+      }
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  }
+  // No readable stream (a non-stream Response or a test mock): cap by text length
+  // when `.text()` exists; else fall back to `.json()` (mock that only exposes it).
+  if (typeof res.text === 'function') {
+    const txt = await res.text();
+    if (Buffer.byteLength(txt, 'utf8') > MAX_UPSTREAM_BYTES) {
+      throw new Error(`${label} response too large: ${Buffer.byteLength(txt, 'utf8')} bytes > ${MAX_UPSTREAM_BYTES}`);
+    }
+    return JSON.parse(txt);
+  }
+  return (res as { json: () => Promise<unknown> }).json();
+}
+
+/**
+ * SV-04 (OPS-AUDIT-REMEDIATION-MED-W1, generator): default-deny numeric parse of
+ * untrusted upstream data. `parseFloat('0x1')→0` / `parseFloat('NaNx')→NaN` would
+ * silently propagate a wrong-but-finite or `NaN` price downstream. Returns `null`
+ * on anything not finite so the caller SKIPs/default-denies rather than emit a
+ * corrupt number. Adopted by the DEX adapters (aster/edgex + future).
+ */
+export function safeUpstreamNum(x: unknown): number | null {
+  if (typeof x === 'number') return Number.isFinite(x) ? x : null;
+  if (typeof x !== 'string') return null;
+  const s = x.trim();
+  // Strict decimal/scientific only — `parseFloat` would return 0 for '0x1',
+  // `Number` would hex-parse it to 1; both silently propagate a wrong price.
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) return null;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * The single venue transport. Returns parsed JSON `T`. Throws
  * `UpstreamRateLimitError` (rate-limit/ban, no-retry), `WeightBudgetSkipError`
  * (batch budget saturated), or a generic `Error` (non-rate-limit non-2xx /
@@ -100,7 +176,7 @@ export async function upstreamFetch<T>(cfg: VenueFetchConfig, req: UpstreamReque
       if (!res.ok) {
         throw new Error(`${cfg.apiErrorName ?? cfg.venueName} API ${res.status}: ${res.statusText}`);
       }
-      const json = (await res.json()) as T;
+      const json = (await readJsonCapped(res, controller, cfg.apiErrorName ?? cfg.venueName)) as T;
       if (cfg.banBodyCodes && isBanBody(json, cfg.banBodyCodes)) {
         const code = (json as { code?: unknown }).code;
         recordRateLimitEvent(cfg.venueName, 'throw', code != null ? String(code) : 'BODY_CODE', req.cls ?? currentWeightClass(), undefined, currentCaller());
