@@ -83,6 +83,7 @@
     "redis": "^4.7.1",
     "resend": "^6.12.2",
     "stripe": "^22.0.1",
+    "undici": "^6.24.1",
     "viem": "^2.47.12",
     "wink-bm25-text-search": "^3.1.2"
   },

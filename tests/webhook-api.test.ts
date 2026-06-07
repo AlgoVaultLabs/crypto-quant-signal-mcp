@@ -174,9 +174,12 @@ describe('/api/webhooks/:id/test: signed ping', () => {
     const hit = sinkHits[0];
     expect(hit.headers['x-algovault-event']).toBe('trade_call');
     expect(hit.headers['x-algovault-signature']).toMatch(/^[0-9a-f]{64}$/);
-    // HMAC verifies against the received body + the subscription secret.
+    // WH-04: HMAC verifies against "{timestamp}.{body}" using the received
+    // X-AlgoVault-Timestamp header (replay-resistant signature scheme).
     const crypto = await import('node:crypto');
-    const expected = crypto.createHmac('sha256', secret).update(hit.body).digest('hex');
+    const ts = String(hit.headers['x-algovault-timestamp']);
+    expect(ts).toMatch(/^\d+$/);
+    const expected = crypto.createHmac('sha256', secret).update(`${ts}.${hit.body}`).digest('hex');
     expect(hit.headers['x-algovault-signature']).toBe(expected);
     const payload = JSON.parse(hit.body);
     expect(payload.event).toBe('trade_call');

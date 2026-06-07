@@ -16,9 +16,10 @@
  * delivery.id / subscription_id only.
  */
 import crypto from 'crypto';
+import { Agent } from 'undici';
 import { PKG_VERSION } from './pkg-version.js';
 import { checkQuotaByKey, trackCallByKey } from './license.js';
-import { resolveAndAssertEgress, EgressBlockedError, type ResolveEgressOpts } from './webhook-ssrf.js';
+import { resolveAndAssertEgress, EgressBlockedError, type ResolveEgressOpts, type PinnedAddress } from './webhook-ssrf.js';
 import type { LicenseTier } from '../types.js';
 import {
   pendingDeliveries,
@@ -97,9 +98,42 @@ export function buildPayload(event: WebhookEventData, deliveryId: string | numbe
   };
 }
 
-/** HMAC-SHA256 hex of the raw JSON body under the subscription secret. */
-export function signPayload(body: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(body).digest('hex');
+/**
+ * HMAC-SHA256 hex over the signed string `"{timestamp}.{rawBody}"` under the
+ * subscription secret (Stripe-style). WH-04 (OPS-WEBHOOK-HMAC-TIMESTAMP-W1):
+ * folding the timestamp into the signed bytes binds the delivery to a moment in
+ * time so a captured (body, signature) pair cannot be replayed indefinitely — the
+ * subscriber rejects deliveries whose `X-AlgoVault-Timestamp` is outside a
+ * freshness window. The timestamp is epoch SECONDS (matches the header).
+ */
+export function signPayload(body: string, secret: string, timestamp: number): string {
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+}
+
+/**
+ * Canonical subscriber-side verifier (the documented WEBHOOKS.md recipe). Returns
+ * true iff `signature` is a valid HMAC over `"{timestamp}.{rawBody}"` AND the
+ * timestamp is within `toleranceSec` of now (replay-window enforcement). Uses
+ * crypto.timingSafeEqual for a constant-time compare; a length mismatch (or any
+ * malformed hex) returns false rather than throwing. Exported so the gate / tests
+ * exercise the exact recipe subscribers are told to use.
+ */
+export function verifyWebhookSignature(
+  body: string,
+  signature: string,
+  timestamp: number,
+  secret: string,
+  opts: { toleranceSec?: number; nowSec?: number } = {},
+): boolean {
+  const toleranceSec = opts.toleranceSec ?? 300; // 5 minutes default
+  const nowSec = opts.nowSec ?? Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestamp) || Math.abs(nowSec - timestamp) > toleranceSec) return false;
+  const expected = signPayload(body, secret, timestamp);
+  // timingSafeEqual throws on length mismatch → guard with a length check first.
+  const a = Buffer.from(signature, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export function buildHeaders(payload: WebhookPayload, signature: string, timestamp: number): Record<string, string> {
@@ -156,19 +190,47 @@ export interface DeliveryResult {
   suggested_action?: string;
 }
 
+/**
+ * Build an undici Agent that PINS every connection for this delivery to the
+ * already-validated egress address (WH-01). The dispatcher's connect.lookup
+ * ignores the hostname and returns ONLY the pinned address, so undici cannot
+ * re-resolve at connect time and rebind to an internal target. The request URL
+ * keeps the ORIGINAL hostname (so TLS SNI + certificate hostname verification stay
+ * correct) — only the IP the socket dials is frozen.
+ */
+function pinnedDispatcher(pin: PinnedAddress): Agent {
+  const pinnedLookup = (
+    _hostname: string,
+    opts: { all?: boolean } | undefined,
+    cb: (err: NodeJS.ErrnoException | null, address: string | { address: string; family: number }[], family?: number) => void,
+  ): void => {
+    if (opts?.all) {
+      cb(null, [{ address: pin.address, family: pin.family }]);
+    } else {
+      cb(null, pin.address, pin.family);
+    }
+  };
+  return new Agent({ connect: { lookup: pinnedLookup as never } });
+}
+
 async function postWithTimeout(
   fetchImpl: typeof fetch,
   url: string,
   headers: Record<string, string>,
   body: string,
   timeoutMs: number,
+  dispatcher?: Agent,
 ): Promise<{ ok: boolean; status: number }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    // WH-01: `dispatcher` pins the validated egress IP so undici cannot re-resolve
+    // the hostname at connect and rebind to an internal target. The URL keeps the
+    // hostname (TLS SNI / cert verification correct); only the dialed IP is frozen.
     // redirect:'error' — a 3xx to an internal target must NOT bypass the egress
-    // guard via fetch's default redirect-follow (WEBHOOK-HARDENING-W1 C2).
-    const res = await fetchImpl(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'error' });
+    // guard via fetch's default redirect-follow (WEBHOOK-HARDENING-W1 C2). No
+    // redirect-follow → no post-check rebind either.
+    const res = await fetchImpl(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'error', ...(dispatcher ? { dispatcher } : {}) } as RequestInit);
     return { ok: res.ok, status: res.status };
   } finally {
     clearTimeout(timer);
@@ -201,11 +263,13 @@ export async function deliverOne(
     };
   }
 
-  // SSRF egress guard (WEBHOOK-HARDENING-W1 C2): resolve sub.url and block any
-  // disallowed/internal target (DNS-rebind defense) BEFORE the retry loop. On
-  // block: mark the delivery dead — do NOT charge quota, do NOT burn retries.
+  // SSRF egress guard (WEBHOOK-HARDENING-W1 C2 + WH-01 IP-pin): resolve sub.url,
+  // block any disallowed/internal target (DNS-rebind defense), and CAPTURE the
+  // validated address to PIN to the connection BEFORE the retry loop. On block:
+  // mark the delivery dead — do NOT charge quota, do NOT burn retries.
+  let pin: PinnedAddress;
   try {
-    await resolveAndAssertEgress(sub.url, { lookup: deps.lookup });
+    pin = await resolveAndAssertEgress(sub.url, { lookup: deps.lookup });
   } catch (err) {
     if (err instanceof EgressBlockedError) {
       await markDelivery(delivery.id, 'dead', { attempts: delivery.attempts, responseCode: null });
@@ -250,16 +314,25 @@ export async function deliverOne(
 
   const payload = buildPayload(eventData, delivery.id);
   const body = JSON.stringify(payload);
-  const signature = signPayload(body, sub.secret);
+
+  // WH-01: a single dispatcher pins every attempt's connection to the validated
+  // egress IP captured above (defeats DNS-rebind at connect). Built once per
+  // delivery; reused across retries.
+  const dispatcher = pinnedDispatcher(pin);
 
   let attempts = 0;
   let lastCode: number | null = null;
 
   for (let i = 0; i < cfg.maxAttempts; i++) {
     attempts = i + 1;
-    const headers = buildHeaders(payload, signature, Math.floor(Date.now() / 1000));
+    // WH-04: sign per-attempt with the SAME timestamp emitted in the header, so the
+    // signature covers `"{timestamp}.{body}"` and the subscriber can enforce a
+    // freshness window. A retry gets a fresh timestamp+signature (still fresh).
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = signPayload(body, sub.secret, timestamp);
+    const headers = buildHeaders(payload, signature, timestamp);
     try {
-      const { ok, status } = await postWithTimeout(fetchImpl, sub.url, headers, body, cfg.timeoutMs);
+      const { ok, status } = await postWithTimeout(fetchImpl, sub.url, headers, body, cfg.timeoutMs, dispatcher);
       lastCode = status;
       if (ok) {
         await markDelivery(delivery.id, 'delivered', { attempts, responseCode: status });
