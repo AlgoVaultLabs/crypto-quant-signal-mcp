@@ -279,8 +279,6 @@ Live since 2026-06-05:
   - **Nautilus Trader** (Python) — Subclass of Nautilus's `Data` abstract base.
   - **3Commas** (TypeScript) — Signal Bot webhook via per-bot curry-pattern factory.
 
-> **Upgrading from v1.19.x or earlier?** The six original tools — `get_trade_call`, `get_trade_signal`, `scan_funding_arb`, `get_market_regime`, `search_knowledge`, `chat_knowledge` — keep their parameter shapes unchanged. v1.20.0 adds ONE new tool, `scan_trade_calls` (top-N market scanner), and additive output fields on the core tools (`underlying_session`, `session_note`, `metrics.funding_by_venue`) plus a structured `INSUFFICIENT_CANDLES` error — all backward-compatible. Because MCP clients (Claude Desktop, Cursor, Cline) cache `tools/list` at session start, reconnect (toggle the connector off/on) once to see `scan_trade_calls`; existing integrations keep working without changes.
-
 ---
 
 ## Privacy
