@@ -102,9 +102,11 @@ async function runStatic() {
   }
   const x402 = await import(path.join(REPO_ROOT, 'dist', 'lib', 'x402.js'));
   const routes = await import(path.join(REPO_ROOT, 'dist', 'lib', 'x402-http-routes.js'));
-  const { FEATURE_REGISTRY, allToolNames, getFeature, projectCapabilities } = reg;
+  const webhookApi = await import(path.join(REPO_ROOT, 'dist', 'lib', 'webhook-api.js'));
+  const { FEATURE_REGISTRY, allToolNames, getFeature, projectCapabilities, webhookEventTypes } = reg;
   const { TOOL_PRICING } = x402;
   const { HTTP_TOOLS } = routes;
+  const { VALID_EVENTS } = webhookApi;
 
   const drifts = [];
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -143,8 +145,20 @@ async function runStatic() {
     }
   }
 
+  // 5. webhook VALID_EVENTS == registry webhook-flagged webhookEvent set
+  //    (FEATURE-PARITY-CHANNELS-W1 CH5 — the webhook channel DERIVES its accepted
+  //    event set from the registry; a hand-edited 2nd list drifts here. /capabilities
+  //    omits webhookEvent (A1), so this parity lives in --check, which reads
+  //    VALID_EVENTS + the registry directly from dist.)
+  const regEvents = [...webhookEventTypes()].sort();
+  let liveEvents = [...VALID_EVENTS].sort();
+  if (simulateDrift) liveEvents = [...liveEvents, '__ghost_event__'].sort();
+  if (!eq(liveEvents, regEvents)) {
+    drifts.push(`webhook VALID_EVENTS=[${liveEvents}] != registry webhookEvent set=[${regEvents}]`);
+  }
+
   if (drifts.length === 0) {
-    log(`STATIC in-sync ✅ — ${toolNames.length} tools, ${regHttpX402.length} gated x402 routes, projection clean`);
+    log(`STATIC in-sync ✅ — ${toolNames.length} tools, ${regHttpX402.length} gated x402 routes, ${regEvents.length} webhook events, projection clean`);
     process.exit(0);
   }
   fail(`STATIC DRIFT (${drifts.length}):`);

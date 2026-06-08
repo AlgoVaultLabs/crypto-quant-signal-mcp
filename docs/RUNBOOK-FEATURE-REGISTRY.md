@@ -35,7 +35,9 @@ callable name; emits ZERO internal fields).
 | `GET /capabilities` | `projectCapabilities()` | `src/index.ts` (CH2) — the registry's LIVE projection |
 | x402 `TOOL_PRICING` | canonical + alias keys from the `x402` column | `src/lib/x402.ts` (CH3) |
 | x402 `effectivePrice()` | alias-resolved via `getFeature()` | `src/lib/x402.ts` (CH3) |
-| bot / webhook | (W2 — flips `channels.bot`/`channels.webhook` rows) | _future_ |
+| webhook `VALID_EVENTS` | webhook-flagged tools' `webhookEvent` via `webhookEventTypes()` | `src/lib/webhook-api.ts` (FEATURE-PARITY-CHANNELS-W1 CH1) |
+| webhook `scan_digest` | scheduled producer scans + delivers per cadence bucket | `src/lib/scan-digest-scheduler.ts` (CH2) |
+| TG bot surface | `channels.bot` set → bot-side `BOT_TOOL_SURFACE` map (alert types + `/scan`, `/scanwatch`) | `algovault-bot` `capabilities.py` (CH3/CH4) — A1: command names are bot-side, NOT in `/capabilities` |
 
 ### The `get_trade_call` / `get_trade_signal` nuance (READ BEFORE editing x402)
 
@@ -63,11 +65,11 @@ Two complementary modes (each checks what its execution context can reach):
 
 | Mode | Network | Asserts | Used by |
 |---|---|---|---|
-| `--check` | none (imports dist) | (1) projection names == `allToolNames()`; (2) `TOOL_PRICING` derives canonical+alias, unpriced absent; (3) `HTTP_TOOLS` alias-resolved == registry `httpX402`; (4) projection leaks no internal fields | CI pre-deploy gate (`deploy.yml`), `prepublishOnly`, `npm run registry:drift:check` |
+| `--check` | none (imports dist) | (1) projection names == `allToolNames()`; (2) `TOOL_PRICING` derives canonical+alias, unpriced absent; (3) `HTTP_TOOLS` alias-resolved == registry `httpX402`; (4) projection leaks no internal fields; (5) webhook `VALID_EVENTS` == registry webhook-flagged `webhookEvent` set (FEATURE-PARITY-CHANNELS-W1 CH5; `/capabilities` omits `webhookEvent` per A1, so the webhook-event parity lives in `--check`, not `--live`) | CI pre-deploy gate (`deploy.yml`), `prepublishOnly`, `npm run registry:drift:check` |
 | `--live <baseUrl>` | HTTP only (dist-free) | (A) live `tools/list` (3-step handshake) == `/capabilities` names; (B) each live `/x402/<tool>` 402 price == `/capabilities` x402 price (404 = priced-but-not-gated canonical, skipped) | weekly host cron, post-deploy verify |
 
 Flags: `--alert` (with `--live`) feeds the contract body to `send_telegram.sh` on confirmed drift;
-`--simulate-drift` injects a ghost tool to prove detection (non-destructive).
+`--simulate-drift` injects a ghost tool (`--live`) or a ghost webhook event (`--check`) to prove detection (non-destructive). The bot has its own by-construction parity test (`algovault-bot` `tests/test_capabilities_parity.py`): its registered command surface must cover the `/capabilities` bot-flagged set.
 
 **Exit codes:** `0` in-sync OR fail-open (unreachable); `1` drift; `2` fatal (bad usage / dist
 missing in `--check`).
