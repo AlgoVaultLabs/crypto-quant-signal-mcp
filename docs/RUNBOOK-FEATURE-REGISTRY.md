@@ -88,20 +88,25 @@ Runs on the Hetzner host (so it can reach `send_telegram.sh`). The `--live` mode
 it needs only node + network. Weekly, off-`:00`, non-colliding with website-drift (Mon 12:00) and
 pg-maint (1st 04:23):
 
+**✅ INSTALLED 2026-06-08** (root crontab on `204.168.185.24`; host node = `/usr/bin/node` v20.20.2)
+— targets the container's published loopback port `http://localhost:3000` (no TLS/DNS/CF dependency;
+the canary checks app-route parity — `tools/list` / `/capabilities` / `/x402` — not the Caddy edge):
+
 ```cron
-# Feature-registry LIVE drift canary — Mondays 05:37 UTC (off-:00, weekly)
-37 5 * * 1 cd /opt/crypto-quant-signal-mcp && /usr/bin/node scripts/check-feature-registry-drift.mjs --live https://api.algovault.com --alert >> /var/log/algovault-monitoring-feature-registry-drift.log 2>&1
+# FEATURE-REGISTRY-SOT-W1 CH4 — weekly registry<->channel drift canary
+37 5 * * 1 cd /opt/crypto-quant-signal-mcp && /usr/bin/node scripts/check-feature-registry-drift.mjs --live http://localhost:3000 --alert >> /var/log/algovault-monitoring-feature-registry-drift.log 2>&1
 ```
 
-If host node is unavailable, run the LIVE check via the container's node and pipe a drift to the
+(For an EXTERNAL-path variant that also exercises Caddy/CF, swap the target for
+`https://api.algovault.com` — but loopback is preferred for a parity canary, since a CF/TLS blip
+should not fail-open-silence a real registry drift.)
+
+If host node is ever removed, run the LIVE check via the container's node and pipe a drift to the
 host wrapper (the container cannot reach the host `send_telegram.sh` path itself):
 
 ```cron
 37 5 * * 1 docker exec crypto-quant-signal-mcp-mcp-server-1 node scripts/check-feature-registry-drift.mjs --live http://localhost:3000 >> /var/log/algovault-monitoring-feature-registry-drift.log 2>&1 || /opt/algovault-monitoring/send_telegram.sh FEATURE_REGISTRY_DRIFT CRITICAL_PERSISTENT - <<< "$(tail -20 /var/log/algovault-monitoring-feature-registry-drift.log)"
 ```
-
-(The host-node form is preferred — it builds the precise contract body. Confirm host node:
-`ssh root@204.168.185.24 'command -v node'`.)
 
 ---
 
