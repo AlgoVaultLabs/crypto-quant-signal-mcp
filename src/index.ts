@@ -9,7 +9,7 @@
 import crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate, type ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
@@ -81,7 +81,10 @@ import {
   PARAM_DESC_REGIME_COIN,
   PARAM_DESC_REGIME_TIMEFRAME,
   PARAM_DESC_REGIME_EXCHANGE,
+  GET_EQUITY_CALL_DESCRIPTION,
+  GET_EQUITY_REGIME_DESCRIPTION,
 } from './tool-descriptions.js';
+import { allToolNames, projectCapabilities } from './lib/feature-registry.js';
 import {
   getKnowledgeBundle,
   getKnowledgeIndex,
@@ -277,6 +280,25 @@ function createServer(): McpServer {
     version: PKG_VERSION,
   });
 
+  // FEATURE-REGISTRY-SOT-W1 CH2: tool registration is registry-DRIVEN. Each tool's
+  // existing handler + Zod schema are UNCHANGED — `register(...)` (same arg order as
+  // server.tool) collects them into `toolDefs`; the loop after the declarations
+  // registers exactly the set FEATURE_REGISTRY declares (canonical + aliases), and a
+  // bidirectional parity guard throws if the registry and the handler defs diverge.
+  type RegDef = { description: string; schema: z.ZodRawShape; annotations: Record<string, unknown>; handler: unknown };
+  const toolDefs: Record<string, RegDef> = {};
+  // Generic so the handler's args are inferred from the Zod schema EXACTLY as server.tool
+  // did (preserves each handler's existing typed destructuring; no `any` regression).
+  const register = <S extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    schema: S,
+    annotations: Record<string, unknown>,
+    handler: ToolCallback<S>,
+  ): void => {
+    toolDefs[name] = { description, schema, annotations, handler: handler as unknown };
+  };
+
   // ── Tool 1: get_trade_call (canonical, v1.10.0) + get_trade_signal (alias for back-compat) ──
   // The handler is identical; we register the same factory under two names so
   // existing agents calling `get_trade_signal` continue to work without changes.
@@ -326,14 +348,14 @@ function createServer(): McpServer {
       }
     };
   }
-  server.tool(
+  register(
     'get_trade_call',
     TRADE_CALL_DESCRIPTION,
     TRADE_CALL_SCHEMA,
     { title: 'Composite Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     makeTradeCallHandler('get_trade_call')
   );
-  server.tool(
+  register(
     'get_trade_signal',
     TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX,
     TRADE_CALL_SCHEMA,
@@ -342,7 +364,7 @@ function createServer(): McpServer {
   );
 
   // ── Tool 2: scan_funding_arb ──
-  server.tool(
+  register(
     'scan_funding_arb',
     SCAN_FUNDING_ARB_DESCRIPTION,
     {
@@ -385,7 +407,7 @@ function createServer(): McpServer {
   );
 
   // ── Tool 3: get_market_regime ──
-  server.tool(
+  register(
     'get_market_regime',
     GET_MARKET_REGIME_DESCRIPTION,
     {
@@ -430,17 +452,9 @@ function createServer(): McpServer {
   // US equities daily-bar verdict engine (Databento EQUS.MINI). Free-tier quota
   // wiring identical to the crypto free tools (handled inside getEquityCall via
   // trackCall). Verdicts are precomputed nightly; the handler is a DB read.
-  const GET_EQUITY_CALL_DESCRIPTION =
-    'Composite daily-bar trade call (BUY/SELL/HOLD) for a US equity or ETF, with confidence, ' +
-    'market regime, and the technical factors that drove it. Universe = top US equities by ' +
-    'dollar-volume plus index and crypto-proxy ETFs (SPY, QQQ, IBIT, …). Verdicts are computed ' +
-    'once per session from Databento EQUS.MINI daily bars. Out-of-universe tickers return a ' +
-    'structured SYMBOL_NOT_IN_UNIVERSE error with nearest-symbol suggestions. Accepts BRK-B or BRK.B.';
-  const GET_EQUITY_REGIME_DESCRIPTION =
-    'Market regime for a US equity or ETF (defaults to SPY): trending_up, trending_down, ' +
-    'compression, or ranging, with a confidence score. Derived from daily-bar trend strength ' +
-    '(ADX/DI), persistence (Hurst), and volatility compression.';
-  server.tool(
+  // GET_EQUITY_CALL_DESCRIPTION + GET_EQUITY_REGIME_DESCRIPTION are imported from
+  // tool-descriptions.ts (FEATURE-REGISTRY-SOT-W1 CH2 dedup; the registry references the same source).
+  register(
     'get_equity_call',
     GET_EQUITY_CALL_DESCRIPTION,
     { symbol: z.string().max(12).describe('US equity/ETF ticker, e.g. AAPL, SPY, BRK.B (BRK-B also accepted).') },
@@ -465,7 +479,7 @@ function createServer(): McpServer {
       }
     }
   );
-  server.tool(
+  register(
     'get_equity_regime',
     GET_EQUITY_REGIME_DESCRIPTION,
     { symbol: z.string().max(12).optional().describe('US equity/ETF ticker; defaults to SPY.') },
@@ -494,7 +508,7 @@ function createServer(): McpServer {
   // ── Tool: scan_trade_calls (SCAN-TRADE-CALLS-W1) — cross-asset market scanner ──
   // Thin handler: quota gate + envelope live in src/tools/scan-trade-calls.ts
   // (runScanTradeCall); the scanner compute is src/lib/trade-call-scanner.ts.
-  server.tool(
+  register(
     'scan_trade_calls',
     SCAN_TRADE_CALLS_DESCRIPTION,
     SCAN_TRADE_CALLS_SCHEMA,
@@ -538,7 +552,7 @@ function createServer(): McpServer {
   // LLM call, no quota cost. Bundle is rebuilt automatically on every release
   // via KNOWLEDGE-ARTIFACT-W1's `release-knowledge.yml` workflow; the
   // KnowledgeIndex fs.watchFile poll picks up changes within 30s.
-  server.tool(
+  register(
     'search_knowledge',
     SEARCH_KNOWLEDGE_DESCRIPTION,
     {
@@ -575,7 +589,7 @@ function createServer(): McpServer {
   // trading-tool quotas via ChatRateLimit (Free 10/mo, Starter 50/mo,
   // Pro 200/mo, Enterprise 2000/mo). Falls back to StubLLMProvider with
   // [STUB] response if ANTHROPIC_API_KEY is unset (server boots cleanly).
-  server.tool(
+  register(
     'chat_knowledge',
     CHAT_KNOWLEDGE_DESCRIPTION,
     {
@@ -649,6 +663,22 @@ function createServer(): McpServer {
       }
     }
   );
+
+  // FEATURE-REGISTRY-SOT-W1 CH2: registry-driven registration — register exactly the
+  // names FEATURE_REGISTRY declares (canonical + aliases), pulling each tool's verbatim
+  // handler/schema/annotations/description from toolDefs. Bidirectional parity guard:
+  // a registry name with no handler def — or a handler def absent from the registry —
+  // throws at boot (drift can't ship silently; the CH4 canary enforces the same live).
+  for (const name of allToolNames()) {
+    const d = toolDefs[name];
+    if (!d) throw new Error(`[feature-registry] "${name}" is in FEATURE_REGISTRY but has no handler def in createServer()`);
+    (server as { tool: (n: string, desc: string, s: z.ZodRawShape, a: Record<string, unknown>, h: unknown) => void }).tool(
+      name, d.description, d.schema, d.annotations, d.handler,
+    );
+  }
+  for (const defName of Object.keys(toolDefs)) {
+    if (!allToolNames().includes(defName)) throw new Error(`[feature-registry] handler def "${defName}" is not in FEATURE_REGISTRY (registration drift)`);
+  }
 
   // ── Signal performance: admin-only (via /dashboard and /analytics) ──
   // Removed from public MCP tools — track record will be re-exposed
@@ -958,6 +988,14 @@ async function startHttp() {
   // Health check
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', server: 'crypto-quant-signal-mcp', version: PKG_VERSION, stripe: isStripeConfigured() });
+  });
+
+  // FEATURE-REGISTRY-SOT-W1 CH2: machine-readable feature descriptor. Every channel
+  // (bot + webhook in W2) DERIVES its surface from this (the public-safe projection of
+  // FEATURE_REGISTRY) — no hand-maintained per-channel slice. No internal fields.
+  app.get('/capabilities', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    res.json({ server: 'crypto-quant-signal-mcp', version: PKG_VERSION, ...projectCapabilities() });
   });
 
   // ── Integration tutorial mirrors ──
