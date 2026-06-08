@@ -14,7 +14,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import type { ExchangeId } from './types.js';
-import { getTradeSignal } from './tools/get-trade-call.js';
+import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
 import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION } from './tools/scan-trade-calls.js';
@@ -34,7 +34,7 @@ import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, 
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
-import { getEquityCall, getEquityRegime } from './lib/equities/equity-tool-formatters.js';
+import { getEquityRegime } from './lib/equities/equity-tool-formatters.js';
 import { getEquityPerformance } from './lib/equities/equity-performance.js';
 import { getEquityPool } from './lib/equities/equity-store.js';
 import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } from './lib/analytics.js';
@@ -77,6 +77,7 @@ import {
   PARAM_DESC_TRADE_CALL_TIMEFRAME,
   PARAM_DESC_TRADE_CALL_INCLUDE_REASONING,
   PARAM_DESC_TRADE_CALL_EXCHANGE,
+  PARAM_DESC_TRADE_CALL_ASSET_CLASS,
   PARAM_DESC_FUNDING_MIN_SPREAD_BPS,
   PARAM_DESC_FUNDING_LIMIT,
   PARAM_DESC_REGIME_COIN,
@@ -358,30 +359,39 @@ function createServer(): McpServer {
   // (the canonical name). TRADE_CALL_DESCRIPTION + TRADE_CALL_ALIAS_SUFFIX +
   // param describe() constants are module-scope-exported above (see
   // TOOL-DESC-AUDIT-W1 block) so the keyword canary test can import them.
+  // TRADE-CALL-ROUTING-RESOLVER-W1: timeframe + exchange are optional (NO Zod
+  // .default) so the shared resolver can distinguish "the caller named a venue/TF"
+  // (→ perp) from "bare" (→ equity-universe routing). Omitting them still yields
+  // 15m / BINANCE — the defaults are applied by resolveMarketRoute — so existing
+  // callers are unaffected at runtime. `assetClass` forces the engine.
   const TRADE_CALL_SCHEMA = {
     coin: z.string().max(20).describe(PARAM_DESC_TRADE_CALL_COIN),
-    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).default('15m').describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
+    timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
     includeReasoning: z.boolean().default(true).describe(PARAM_DESC_TRADE_CALL_INCLUDE_REASONING),
-    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).default('BINANCE').describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
+    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
+    assetClass: z.enum(['perp', 'equity']).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
-    return async ({ coin, timeframe, includeReasoning, exchange }: { coin: string; timeframe: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange: ExchangeId }) => {
+    return async ({ coin, timeframe, includeReasoning, exchange, assetClass }: { coin: string; timeframe?: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange?: ExchangeId; assetClass?: 'perp' | 'equity' }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        const result = await runAsCaller(toolNameForAnalytics, () => getTradeSignal({ coin, timeframe, includeReasoning, exchange, license }));
-        // Verdict stored for x402 settlement skip (HOLDs don't settle)
-        setRequestVerdict(result.call);
-        // Quota tracking is handled inside getTradeSignal (HOLDs are free)
+        // Single-derivation: resolve the route once + dispatch to the perp or equity
+        // engine. The model picking get_trade_call or get_equity_call yields the same
+        // contract-correct engine. Quota is handled inside whichever engine runs.
+        const { route, result } = await runAsCaller(toolNameForAnalytics, () => routeTradeCall({ coin, timeframe, includeReasoning, exchange, assetClass, license }));
+        const verdict = (result as { call?: 'BUY' | 'SELL' | 'HOLD' }).call;
+        // Verdict stored for x402 settlement skip (HOLDs / error paths don't settle).
+        setRequestVerdict(verdict ?? 'HOLD');
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: toolNameForAnalytics,
           asset: coin,
-          timeframe,
+          timeframe: route.timeframe,
           licenseTier: license.tier,
           responseTimeMs: Date.now() - startMs,
-          verdict: result.call,
-          confidence: result.confidence,
+          verdict,
+          confidence: (result as { confidence?: number }).confidence,
           ipHash: getRequestIpHash(),
           isBotInternal: license.tier === 'internal',
         });
@@ -509,13 +519,23 @@ function createServer(): McpServer {
   register(
     'get_equity_call',
     GET_EQUITY_CALL_DESCRIPTION,
-    { symbol: z.string().max(12).describe('US equity/ETF ticker, e.g. AAPL, SPY, BRK.B (BRK-B also accepted).') },
+    {
+      symbol: z.string().max(12).describe('US equity/ETF ticker, e.g. AAPL, SPY, BRK.B (BRK-B also accepted).'),
+      // TRADE-CALL-ROUTING-RESOLVER-W1: additive optional routing params. Symbol-only
+      // callers behave exactly as today (daily-bar equity). Naming a crypto venue or a
+      // timeframe routes to the perpetual-futures engine via the shared resolver.
+      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
+      timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe('Optional candle timeframe — supplying one routes to the perp call.'),
+    },
     { title: 'Equity Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ symbol }) => {
+    async ({ symbol, exchange, timeframe }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        const result = await runAsCaller('get_equity_call', () => getEquityCall({ symbol, license }));
+        // Default to the equity read ONLY when bare (no venue, no timeframe). A supplied
+        // crypto venue/TF routes to perp — resolveMarketRoute is authoritative.
+        const assetClass = !exchange && !timeframe ? ('equity' as const) : undefined;
+        const { result } = await runAsCaller('get_equity_call', () => routeTradeCall({ coin: symbol, exchange, timeframe, assetClass, license }));
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'get_equity_call',

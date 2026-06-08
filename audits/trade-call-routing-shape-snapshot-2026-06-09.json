@@ -1,0 +1,43 @@
+{
+  "_comment": "TRADE-CALL-ROUTING-RESOLVER-W1 — public INPUT-shape snapshot for the MCP tools rewired through resolveMarketRoute. SANCTIONED NON-ADDITIVE EXCEPTION (architect A1, 2026-06-09): get_trade_call + its get_trade_signal alias DROP the Zod `default` on `timeframe` ('15m') and `exchange` ('BINANCE') so the shared resolver can distinguish a named venue/timeframe (-> perp) from a bare call (-> equity-universe routing). Runtime behavior is PRESERVED — omitting them still yields 15m / BINANCE, applied by resolveMarketRoute. These are the ONLY two non-additive key losses permitted this wave; every other input change is additive (new optional params). No tool added / removed / renamed; tools/list stays 9.",
+  "wave": "TRADE-CALL-ROUTING-RESOLVER-W1",
+  "date": "2026-06-09",
+  "tools_list_count": 9,
+  "no_add_remove_rename": true,
+  "tools": {
+    "get_trade_call": {
+      "aliases": ["get_trade_signal"],
+      "input_allowed_keys": ["coin", "timeframe", "includeReasoning", "exchange", "assetClass"],
+      "required_keys": ["coin"],
+      "additive_input_keys": ["assetClass"],
+      "sanctioned_default_removals": ["timeframe (was Zod default '15m')", "exchange (was Zod default 'BINANCE')"],
+      "effective_defaults_preserved_in": "src/lib/market-route.ts resolveMarketRoute (timeframe -> 15m, exchange -> BINANCE) — existing callers unaffected at runtime",
+      "x402": "UNCHANGED — get_trade_call free/un-gated (/x402/get_trade_call -> 404); the get_trade_signal alias stays gated at $0.02"
+    },
+    "get_equity_call": {
+      "aliases": [],
+      "input_allowed_keys": ["symbol", "exchange", "timeframe"],
+      "required_keys": ["symbol"],
+      "additive_input_keys": ["exchange", "timeframe"],
+      "sanctioned_default_removals": [],
+      "back_compat": "symbol-only callers behave exactly as before (daily-bar equity 1d); a supplied venue/timeframe routes to the perp engine via the resolver"
+    }
+  },
+  "regime_pair_status": "get_market_regime + get_equity_regime UNCHANGED this wave (R3 DEFERRED -> OPS-TRADE-CALL-ROUTING-REGIME-W{NEXT}); regime engines diverge materially (equity regime has no timeframe; crypto regime enum is only 1h/4h/1d)",
+  "forbidden_output_keys": ["outcome_return_pct", "outcome_price", "phase_e", "phase-e", "eligible_non_hold", "descriptionRef"],
+  "routing_contract": {
+    "engine": "'perp' | 'equity' — resolveMarketRoute (single-derivation; both get_trade_call and get_equity_call dispatch through it, so the model picking either yields the contract-correct engine)",
+    "rule": "assetClass forces the engine; else a named crypto venue OR a named timeframe -> perp; else bare -> equity if the ticker is in the Databento universe, else perp BINANCE 15m",
+    "default_perp_venue": "BINANCE for ALL symbols (venueDefault) — name an exchange to target a specific listing (e.g. BITGET for a tokenized stock)",
+    "miss_path": "an unlisted perp on the resolved venue -> the engine's standard not-found error (TradFiSymbolUnsupportedOnVenueError carrying suggestedVenues for known tokenized stocks)",
+    "membership_source": "the existing equity-universe check (getUniverseEntry) via a lazy TTL cache (isEquityUniverseSymbol); fail-open -> perp"
+  },
+  "additive_only_assertion": "Every input change is additive EXCEPT the 2 sanctioned get_trade_call default-key removals documented above. tools/list stays 9; no rename -> no client cache-refresh notice required.",
+  "consumers": [
+    "MCP tools/list (Claude + agent builders)",
+    "GET /capabilities projection (projectCapabilities)",
+    "x402 HTTP twin POST /x402/get_trade_signal (perp-only, schema UNCHANGED — does not share the Zod schema)"
+  ],
+  "cache_contract": "clients cache tools/list at session start — additive optional params + reworded descriptions need NO cache-refresh notice (no add/remove/rename)",
+  "drift_check_command": "curl -s https://api.algovault.com/capabilities | jq '.tools | length'   # must == 9. Then POST /mcp tools/list (3-step handshake) and assert get_trade_call.inputSchema.properties includes 'assetClass' with required==['coin'], and get_equity_call.inputSchema.properties includes 'exchange' + 'timeframe'."
+}

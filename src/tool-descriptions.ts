@@ -20,7 +20,7 @@
 // get_trade_call (canonical, v1.10.0) + get_trade_signal (alias) share
 // TRADE_CALL_DESCRIPTION; the alias appends TRADE_CALL_ALIAS_SUFFIX.
 export const TRADE_CALL_DESCRIPTION =
-  'Composite verdict BUY SELL HOLD trade call for crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid. Returns verdict, confidence, market regime, funding rate, reasoning. Verified track record, merkle anchor on Base — on-chain verified. MCP tool for trading. Cross-venue multi-exchange AI trading signal for Claude trading agents.';
+  'Composite verdict BUY SELL HOLD trade call. Name a crypto exchange (Binance Bybit OKX Bitget Hyperliquid — default Binance) or a timeframe (default 15m) for crypto or tokenized-stock perpetual futures; pass only a US stock or ETF ticker for a daily-bar stock read. Returns market regime. Verified track record, on-chain verified merkle anchor.';
 
 // KNOWLEDGE-ARTIFACT-W1 (Q-5, 2026-05-18): suffix literal updated to use the
 // [ALIAS] tag prefix pattern so future tool aliases follow the same shape.
@@ -64,11 +64,12 @@ export const SCAN_TRADE_CALLS_DESCRIPTION =
 // index.ts inline consts so the feature registry can reference them. index.ts imports
 // these + drops its inline copies in CH2 (single source for both tools/list + /capabilities).
 export const GET_EQUITY_CALL_DESCRIPTION =
-  'Composite daily-bar trade call (BUY/SELL/HOLD) for a US equity or ETF, with confidence, ' +
-  'market regime, and the technical factors that drove it. Universe = top US equities by ' +
-  'dollar-volume plus index and crypto-proxy ETFs (SPY, QQQ, IBIT, …). Verdicts are computed ' +
-  'once per session from Databento EQUS.MINI daily bars. Out-of-universe tickers return a ' +
-  'structured SYMBOL_NOT_IN_UNIVERSE error with nearest-symbol suggestions. Accepts BRK-B or BRK.B.';
+  'Daily-bar trade call (BUY/SELL/HOLD) for a US stock or ETF, from Databento EQUS.MINI daily bars, ' +
+  'with confidence, market regime, and the technical factors that drove it. Universe = top US equities ' +
+  'by dollar-volume plus index and crypto-proxy ETFs (SPY, QQQ, IBIT, …); out-of-universe tickers return ' +
+  'a structured SYMBOL_NOT_IN_UNIVERSE error with nearest-symbol suggestions (accepts BRK-B or BRK.B). ' +
+  'Defaults to the stock read; passing a crypto exchange or timeframe routes to the perpetual-futures ' +
+  'call instead. For crypto or tokenized-stock perps, prefer get_trade_call.';
 export const GET_EQUITY_REGIME_DESCRIPTION =
   'Market regime for a US equity or ETF (defaults to SPY): trending_up, trending_down, ' +
   'compression, or ranging, with a confidence score. Derived from daily-bar trend strength ' +
@@ -76,13 +77,15 @@ export const GET_EQUITY_REGIME_DESCRIPTION =
 
 // Param describe() strings — ≤80 chars each.
 export const PARAM_DESC_TRADE_CALL_COIN =
-  'Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol.';
+  'Ticker — crypto signal (BTC ETH SOL signal) or a US stock/ETF ticker.';
 export const PARAM_DESC_TRADE_CALL_TIMEFRAME =
   'Candle timeframe (1m to 1d) for crypto quant agents. Default 15m intraday.';
 export const PARAM_DESC_TRADE_CALL_INCLUDE_REASONING =
   'Include reasoning for the trade call verdict (regime, trend ranging signals).';
 export const PARAM_DESC_TRADE_CALL_EXCHANGE =
-  "Exchange — 'BINANCE' = Binance USDT-M Futures (default), HL/BYBIT/OKX/BITGET.";
+  'Crypto venue, default Binance — cross-venue multi-exchange perp routing.';
+export const PARAM_DESC_TRADE_CALL_ASSET_CLASS =
+  "Force engine: 'perp' or 'equity'. MCP tool for trading — AI trading signal.";
 export const PARAM_DESC_FUNDING_MIN_SPREAD_BPS =
   'Minimum funding rate spread (bps) for buy sell hold trade call cross-venue scan.';
 export const PARAM_DESC_FUNDING_LIMIT =

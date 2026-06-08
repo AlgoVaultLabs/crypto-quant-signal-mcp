@@ -2,9 +2,10 @@
  * CHANGE-DEFAULT-EXCHANGE-W1 canary suite.
  *
  * Locks the post-1.11.0 invariants:
- *   - Zod schema default for `exchange` in TRADE_CALL_SCHEMA = 'BINANCE'
- *     (covers BOTH get_trade_call and get_trade_signal tools, since they
- *     share the same TRADE_CALL_SCHEMA constant).
+ *   - Default perp venue = 'BINANCE'. Since TRADE-CALL-ROUTING-RESOLVER-W1 this
+ *     lives in resolveMarketRoute.venueDefault — the TRADE_CALL_SCHEMA exchange is
+ *     now optional with NO Zod default (so the resolver can tell a named venue
+ *     from a bare call); omitting the venue still resolves to BINANCE.
  *   - Handler fallback in src/tools/get-trade-call.ts uses 'BINANCE'.
  *   - No public-surface file ships the literal phrase "TradFi assets ...
  *     are HL-only" (empirically false per signal_performance.signals
@@ -27,25 +28,27 @@ function read(rel: string): string {
 }
 
 describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
-  it('TRADE_CALL_SCHEMA.exchange Zod default = BINANCE (covers get_trade_call AND get_trade_signal)', () => {
+  it('default perp venue = BINANCE via resolveMarketRoute; TRADE_CALL_SCHEMA exchange is optional with NO Zod default', () => {
+    // TRADE-CALL-ROUTING-RESOLVER-W1: the Zod .default('BINANCE') was removed so the
+    // shared resolver can distinguish a named venue (→ perp) from a bare call
+    // (→ equity-universe routing). The default-venue invariant MOVED to the resolver;
+    // omitting the venue still resolves to BINANCE — so the guard tracks it there now.
+    const route = read('src/lib/market-route.ts');
+    expect(route).toMatch(/function venueDefault[\s\S]*?return 'BINANCE';/);
     const src = read('src/index.ts');
-    // The TRADE_CALL_SCHEMA line is single-source for both tool registrations.
-    // Enum widened in PILOT-ADAPTERS-W1 (ASTER added for shadow); regex must
-    // accept any trailing additions after the original 5 promoted venues.
-    const re = /exchange:\s*z\.enum\(\['HL',\s*'BINANCE',\s*'BYBIT',\s*'OKX',\s*'BITGET'(?:,\s*'[A-Z]+')*\]\)\.default\('BINANCE'\)/;
-    const matches = src.match(new RegExp(re.source, 'g')) || [];
-    // Exactly one match expected — the TRADE_CALL_SCHEMA. The get_market_regime
-    // schema (separate registration) keeps its 'HL' default for this wave.
-    expect(matches.length).toBe(1);
+    // No stale BINANCE Zod default remains anywhere (the old mechanism is fully gone).
+    expect(src).not.toMatch(/\.default\('BINANCE'\)/);
+    // The trade-call exchange is now optional (single-source for get_trade_call AND
+    // its get_trade_signal alias — both share TRADE_CALL_SCHEMA).
+    expect(src).toMatch(/exchange:\s*z\.enum\(\['HL',\s*'BINANCE',\s*'BYBIT',\s*'OKX',\s*'BITGET'(?:,\s*'[A-Z]+')*\]\)\.optional\(\)/);
   });
 
-  it('TRADE_CALL_SCHEMA describe-text leads with "Binance USDT-M Futures (default)"', () => {
-    // TOOL-DESC-AUDIT-W1 (2026-05-16): describe constants refactored into
-    // src/tool-descriptions.ts (pure-data module). The canary substring now
-    // lives in PARAM_DESC_TRADE_CALL_EXCHANGE; assert it's reachable from
-    // src/index.ts's import + present in the descriptions module.
+  it('TRADE_CALL exchange describe conveys the Binance default venue', () => {
+    // TRADE-CALL-ROUTING-RESOLVER-W1 reworded PARAM_DESC_TRADE_CALL_EXCHANGE for the
+    // routing-disambiguation copy (the USDT-M phrasing was dropped), but the
+    // Binance-default signal stays so callers still know the default venue.
     const desc = read('src/tool-descriptions.ts');
-    expect(desc).toContain("'BINANCE' = Binance USDT-M Futures (default)");
+    expect(desc).toMatch(/PARAM_DESC_TRADE_CALL_EXCHANGE[\s\S]{0,120}default Binance/);
     const indexSrc = read('src/index.ts');
     expect(indexSrc).toContain('PARAM_DESC_TRADE_CALL_EXCHANGE');
     expect(indexSrc).toContain("from './tool-descriptions.js'");
