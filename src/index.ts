@@ -3511,6 +3511,13 @@ function getSignupPageHtml(): string {
       <a class="btn ent" href="/signup?plan=enterprise">Subscribe to Enterprise</a>
     </div>
   </div>
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px 28px;margin-top:20px;display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between">
+    <div style="flex:1;min-width:260px">
+      <h2 style="font-size:18px;margin-bottom:6px;color:#e1e4e8">No subscription? Pay-per-call with x402</h2>
+      <div style="color:#8b949e;font-size:14px;line-height:1.5">Agents can skip signup entirely &mdash; pay per call in USDC on Base. From $0.01/call &middot; $0.02 standard. No Stripe, no API key. HOLD trade calls free.</div>
+    </div>
+    <a class="btn" href="/docs.html#x402" style="background:#1f6feb;white-space:nowrap">Pay per call with x402 &rarr;</a>
+  </div>
 </div>
 </body>
 </html>`;

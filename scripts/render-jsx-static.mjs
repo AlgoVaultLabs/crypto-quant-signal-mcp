@@ -152,6 +152,9 @@ function applyTitleCase(html) {
     .replace(/>ENTERPRISE</g, '>Enterprise<');
 }
 
+// RETIRED by WEBSITE-X402-SURFACING-W1 (2026-06-08): the x402 5th card now SHIPS
+// (PRICING-X402-CARD-W1 deferral fulfilled — x402 LIVE + CDP-Bazaar-listed). No longer
+// called from the landing-rest chain; kept for history.
 function filterX402Tier(html) {
   // Q-W10: strip 5th-card X402 article entirely; non-greedy match across <article>...X402 PER CALL...</article>
   return html.replace(/<article[^>]*?>(?:(?!<\/article>)[\s\S])*?X402 PER CALL(?:(?!<\/article>)[\s\S])*?<\/article>/g, '');
@@ -271,6 +274,8 @@ function preserveQuickstartAnchor(html) {
   return html.replace(/id="try-it"/g, 'id="quickstart"');
 }
 
+// RETIRED by WEBSITE-X402-SURFACING-W1 (2026-06-08): grid stays 5-col now that the
+// x402 5th card ships. No longer called; kept for history.
 function adjustPricingGridCols(html) {
   // After X402 filter, desktop grid was 5-col → make 4-col
   return html.replace(/grid-template-columns:repeat\(5,\s*1fr\)/g, 'grid-template-columns:repeat(4, 1fr)');
@@ -2060,9 +2065,13 @@ async function main() {
       const uc = injectUseCasesLogos(stripUseCasesDate(renderToString(React.createElement(exports.UseCases, { mobile }))));
       const ltr = injectLiveDataLiveTrack(renderToString(React.createElement(exports.LiveTrackRecord, { mobile })));
       const tp = renderToString(React.createElement(exports.TamperProof, { mobile }));
-      const sp = adjustPricingGridCols(applyTitleCase(injectLiveDataPricingTagline(filterX402Tier(
+      // WEBSITE-X402-SURFACING-W1 (2026-06-08): restored the x402 5th pricing card —
+      // the PRICING-X402-CARD-W1 deferral is fulfilled (x402 is LIVE + CDP-Bazaar-listed).
+      // filterX402Tier + adjustPricingGridCols RETIRED from the chain so the 5th card
+      // ships and the grid stays 5-col (matches the JSX SoT's repeat(5, 1fr)).
+      const sp = applyTitleCase(injectLiveDataPricingTagline(
         renderToString(React.createElement(exports.SimplePricing, { mobile }))
-      ))));
+      ));
       const fd = applyFooterUrls(renderToString(React.createElement(exports.ForDevelopers, { mobile })));
       const fq = renderToString(React.createElement(exports.FAQ, { mobile })) + FAQ_ACCORDION_JS;
       const ft = applyFooterUrls(renderToString(React.createElement(exports.LandingFooter, { mobile })));

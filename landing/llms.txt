@@ -16,6 +16,7 @@ Live source of truth: https://algovault.com/api/performance-public
 - 5 exchanges analysed: Hyperliquid, Binance, Bybit, OKX, Bitget.  # SNAPSHOT-LINE
 - 11 timeframes supported (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d).  # SNAPSHOT-LINE
 - 4 pricing tiers: Free ($0), Starter ($9.99/mo), Pro ($49/mo), Enterprise ($299/mo). HOLD calls always free.
+- Pay-per-call: x402 micropayments (USDC on Base), from $0.01/call — no signup, no API key. HOLD trade calls free.
 
 ## Primary pages
 
