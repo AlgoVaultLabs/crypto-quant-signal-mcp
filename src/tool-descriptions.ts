@@ -60,6 +60,20 @@ export const CHAT_KNOWLEDGE_DESCRIPTION =
 export const SCAN_TRADE_CALLS_DESCRIPTION =
   'Cross-asset market scanner — composite verdict BUY SELL HOLD trade calls across the top 1-100 crypto perpetual futures by open interest on Binance Bybit OKX Bitget Hyperliquid. Returns ranked non-HOLD calls with confidence and market regime. One scan, whole-market coverage for AI trading agents. Use get_trade_call for per-coin depth and reasoning.';
 
+// FEATURE-REGISTRY-SOT-W1 CH1: equity descriptions relocated here (verbatim) from the
+// index.ts inline consts so the feature registry can reference them. index.ts imports
+// these + drops its inline copies in CH2 (single source for both tools/list + /capabilities).
+export const GET_EQUITY_CALL_DESCRIPTION =
+  'Composite daily-bar trade call (BUY/SELL/HOLD) for a US equity or ETF, with confidence, ' +
+  'market regime, and the technical factors that drove it. Universe = top US equities by ' +
+  'dollar-volume plus index and crypto-proxy ETFs (SPY, QQQ, IBIT, …). Verdicts are computed ' +
+  'once per session from Databento EQUS.MINI daily bars. Out-of-universe tickers return a ' +
+  'structured SYMBOL_NOT_IN_UNIVERSE error with nearest-symbol suggestions. Accepts BRK-B or BRK.B.';
+export const GET_EQUITY_REGIME_DESCRIPTION =
+  'Market regime for a US equity or ETF (defaults to SPY): trending_up, trending_down, ' +
+  'compression, or ranging, with a confidence score. Derived from daily-bar trend strength ' +
+  '(ADX/DI), persistence (Hurst), and volatility compression.';
+
 // Param describe() strings — ≤80 chars each.
 export const PARAM_DESC_TRADE_CALL_COIN =
   'Asset — BTC ETH SOL signal for crypto perpetual futures or TradFi symbol.';
