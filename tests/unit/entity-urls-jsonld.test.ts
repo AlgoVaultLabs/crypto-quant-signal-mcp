@@ -64,16 +64,21 @@ describe('ENTITY-FOOTPRINT-W1 — entity-urls -> Organization sameAs', () => {
     expect(buildSameAs({ _comment: 'docs', github: 'G' })).toEqual(['G']);
   });
 
-  it('the committed entity-urls.json yields exactly github/x/npm initially', async () => {
+  it('the committed entity-urls.json always includes github/x/npm and keeps Wikidata deferred', async () => {
     const cfg = await loadEntityUrls();
-    expect(buildSameAs(cfg)).toEqual([
+    const sameAs = buildSameAs(cfg);
+    for (const live of [
       'https://github.com/AlgoVaultLabs',
       'https://x.com/AlgoVaultLabs',
       'https://www.npmjs.com/package/crypto-quant-signal-mcp',
-    ]);
-    for (const deferred of ['crunchbase', 'g2', 'capterra', 'wikidata']) {
-      expect(cfg[deferred], `${deferred} must stay null until live`).toBeNull();
+    ]) {
+      expect(sameAs, `${live} must always be present`).toContain(live);
     }
+    // Wikidata stays null/excluded until the item exists + survives (docs/WIKIDATA-DEFERRED.md).
+    expect(cfg.wikidata, 'wikidata must stay null until the item survives').toBeNull();
+    expect(sameAs.join(' ')).not.toMatch(/wikidata\.org/i);
+    // every emitted entry is a non-null https profile URL (no nulls leak through).
+    for (const u of sameAs) expect(u).toMatch(/^https:\/\//);
   });
 
   it('ORG_REF_NODE is a bare @id reference (no @type/name/sameAs)', () => {
@@ -93,7 +98,10 @@ describe('ENTITY-FOOTPRINT-W1 — entity-urls -> Organization sameAs', () => {
     expect(Array.isArray(node.sameAs)).toBe(true);
     expect(node.sameAs.length).toBeGreaterThanOrEqual(3);
     expect(node.sameAs).toContain('https://x.com/AlgoVaultLabs');
-    expect(node.sameAs.join(' ')).not.toMatch(/crunchbase|wikidata|capterra|g2\.com/i);
+    // homepage sameAs must exactly mirror the entity-urls config (flip-robust).
+    expect(node.sameAs).toEqual(buildSameAs(await loadEntityUrls()));
+    // Wikidata stays deferred until its item exists + survives.
+    expect(node.sameAs.join(' ')).not.toMatch(/wikidata\.org/i);
   });
 
   it('every non-homepage page references the Organization by @id only', async () => {

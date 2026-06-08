@@ -81,7 +81,8 @@ test('homepage index.html serves the FULL Organization node (@id + sameAs + name
   assert.equal(node['@type'], 'Organization', 'homepage Organization must be a full node');
   assert.ok(Array.isArray(node.sameAs) && node.sameAs.length >= 3, 'homepage Organization.sameAs must list >= 3 profiles');
   assert.ok(node.name, 'homepage Organization.name missing');
-  assert.doesNotMatch(JSON.stringify(node.sameAs), /crunchbase|wikidata|capterra/i, 'a deferred (null) profile leaked into sameAs');
+  assert.ok(node.sameAs.includes('https://github.com/AlgoVaultLabs'), 'github (strongest profile) must be in sameAs');
+  assert.doesNotMatch(JSON.stringify(node.sameAs), /wikidata\.org/i, 'Wikidata stays excluded until the item exists (docs/WIKIDATA-DEFERRED.md)');
 });
 
 test('every non-homepage landing page references Organization by @id only (single canonical node)', async () => {
