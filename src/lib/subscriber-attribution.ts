@@ -362,3 +362,166 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
     console.error('[buildSubscriberProfile] failed (fail-open):', err instanceof Error ? err.message : err);
   }
 }
+
+// ── C3: operator admin tracker (read + aggregate + PII-free shell) ───────────
+
+export interface SubscriberProfileRow {
+  customer_id: string;
+  email: string | null;
+  name: string | null;
+  subscription_id: string | null;
+  tier: string | null;
+  status: string | null;
+  amount_usd: number | null;
+  currency: string | null;
+  channel: string | null;
+  country: string | null;
+  country_source: string | null;
+  client_reference_id: string | null;
+  signup_at: string | null;
+  converted_at: string | null;
+  latency_seconds: number | null;
+  cold_subscribe: boolean | null;
+  attribution_captured: boolean | null;
+  risk_level: string | null;
+  created_at?: string | null;
+}
+
+/** Admin read — newest conversions first. Clamped limit/offset (integers only). */
+export async function listSubscriberProfiles(opts: { limit?: number; offset?: number } = {}): Promise<SubscriberProfileRow[]> {
+  ensureSubscriberProfilesSchema();
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 200), 1), 500);
+  const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
+  return dbQuery<SubscriberProfileRow>(
+    `SELECT customer_id, email, name, subscription_id, tier, status, amount_usd, currency, channel,
+            country, country_source, client_reference_id, signup_at, converted_at, latency_seconds,
+            cold_subscribe, attribution_captured, risk_level, created_at
+     FROM subscriber_profiles
+     ORDER BY converted_at DESC NULLS LAST, created_at DESC
+     LIMIT ${limit} OFFSET ${offset}`,
+    [],
+  );
+}
+
+export interface ProfileAggregates {
+  total: number;
+  byChannel: Record<string, number>;
+  byCountry: Record<string, number>;
+  cold: number;
+  warm: number;
+  coldUnknown: number;
+}
+
+/** Pure aggregate for the admin header cards (counts by channel / country / cold-warm). */
+export function aggregateProfiles(
+  rows: Array<{ channel?: string | null; country?: string | null; cold_subscribe?: boolean | null }>,
+): ProfileAggregates {
+  const byChannel: Record<string, number> = {};
+  const byCountry: Record<string, number> = {};
+  let cold = 0, warm = 0, coldUnknown = 0;
+  for (const r of rows) {
+    const ch = r.channel || 'unknown';
+    byChannel[ch] = (byChannel[ch] ?? 0) + 1;
+    const co = r.country || 'unknown';
+    byCountry[co] = (byCountry[co] ?? 0) + 1;
+    if (r.cold_subscribe === true) cold++;
+    else if (r.cold_subscribe === false) warm++;
+    else coldUnknown++;
+  }
+  return { total: rows.length, byChannel, byCountry, cold, warm, coldUnknown };
+}
+
+/**
+ * Static operator shell for GET /admin/subscribers. Carries ZERO PII: the admin
+ * key is prompted client-side, kept in sessionStorage (NEVER the URL or a server
+ * log), and sent ONLY as a Bearer header on the XHR to the gated
+ * /api/admin/subscribers. PII flows exclusively through that authed XHR, never
+ * the server-rendered HTML. (No backticks / ${} inside the embedded JS — avoids
+ * template-literal collision per CLAUDE.md.)
+ */
+export function renderSubscribersAdminHtml(): string {
+  const css = [
+    ':root{color-scheme:dark}*{box-sizing:border-box}',
+    'body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0b0f14;color:#e6edf3}',
+    'header{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid #1c2430;background:#0e141b}',
+    'h1{font-size:18px;margin:0}.sub{color:#7d8590;font-size:12px}',
+    'header button{margin-left:auto;background:#1c2430;color:#e6edf3;border:1px solid #2d3748;border-radius:6px;padding:6px 12px;cursor:pointer}',
+    'header button+button{margin-left:8px}',
+    '#auth{max-width:520px;margin:48px auto;padding:24px;background:#0e141b;border:1px solid #1c2430;border-radius:10px}',
+    '#auth p{color:#9aa5b1}#key{width:100%;padding:10px;margin:8px 0;background:#0b0f14;border:1px solid #2d3748;border-radius:6px;color:#e6edf3}',
+    '#load,#auth button{background:#2563eb;color:#fff;border:0;border-radius:6px;padding:10px 18px;cursor:pointer;font-weight:600}',
+    '.err{color:#f87171;min-height:18px}',
+    '.cards{display:flex;flex-wrap:wrap;gap:12px;padding:20px 24px}',
+    '.card{background:#0e141b;border:1px solid #1c2430;border-radius:10px;padding:14px 18px;min-width:150px}',
+    '.card .n{font-size:24px;font-weight:700}.card .l{color:#7d8590;font-size:12px;text-transform:uppercase;letter-spacing:.04em}',
+    '.card .b{color:#9aa5b1;font-size:12px;margin-top:4px}',
+    'table{width:calc(100% - 48px);margin:0 24px 40px;border-collapse:collapse;background:#0e141b;border:1px solid #1c2430;border-radius:10px;overflow:hidden}',
+    'th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #161d27;font-variant-numeric:tabular-nums}',
+    'th{background:#111823;color:#7d8590;font-size:12px;text-transform:uppercase;letter-spacing:.04em}',
+    'tbody tr:hover{background:#111823}.cold{color:#60a5fa}.warm{color:#fbbf24}.muted{color:#7d8590}',
+  ].join('');
+
+  // Embedded client JS — string-concat only (no backticks, no ${}).
+  const js = [
+    "(function(){",
+    "var KN='av_admin_key';",
+    "function $(id){return document.getElementById(id);}",
+    "function esc(s){if(s==null)return '';return String(s).replace(/[&<>\"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'})[c];});}",
+    "function gk(){try{return sessionStorage.getItem(KN)||'';}catch(e){return '';}}",
+    "function sk(k){try{sessionStorage.setItem(KN,k);}catch(e){}}",
+    "function ck(){try{sessionStorage.removeItem(KN);}catch(e){}}",
+    "function showAuth(msg){$('auth').style.display='block';$('tbl').hidden=true;$('cards').innerHTML='';$('refresh').hidden=true;$('logout').hidden=true;$('err').textContent=msg||'';}",
+    "function dur(s){if(s==null)return '-';s=Number(s);if(s<60)return s+'s';if(s<3600)return Math.round(s/60)+'m';return Math.round(s/3600)+'h';}",
+    "function money(a,c){if(a==null)return '-';return '$'+Number(a).toFixed(2)+(c&&c!=='usd'?(' '+String(c).toUpperCase()):'');}",
+    "function coldCell(v){if(v===true)return '<span class=cold>cold</span>';if(v===false)return '<span class=warm>warm</span>';return '<span class=muted>?</span>';}",
+    "function kv(o){var out='';for(var k in o){out+=esc(k)+' '+o[k]+'  ';}return out||'-';}",
+    "function render(d){",
+    "  var a=d.aggregates||{};",
+    "  $('cards').innerHTML=",
+    "    card(d.count||0,'Subscribers','')+",
+    "    card(a.cold||0,'Cold',(a.warm||0)+' warm / '+(a.coldUnknown||0)+' n-a')+",
+    "    card(Object.keys(a.byChannel||{}).length,'Channels',kv(a.byChannel||{}))+",
+    "    card(Object.keys(a.byCountry||{}).length,'Countries',kv(a.byCountry||{}));",
+    "  var tb=$('tbl').querySelector('tbody');tb.innerHTML='';",
+    "  (d.subscribers||[]).forEach(function(s){",
+    "    var tr=document.createElement('tr');",
+    "    tr.innerHTML='<td>'+esc(s.name)+'</td><td>'+esc(s.email)+'</td><td>'+esc(s.channel)+'</td>'+",
+    "      '<td>'+esc(s.country)+'</td><td>'+esc(s.tier)+'</td><td>'+esc(s.status)+'</td>'+",
+    "      '<td>'+money(s.amount_usd,s.currency)+'</td><td>'+dur(s.latency_seconds)+'</td>'+",
+    "      '<td>'+coldCell(s.cold_subscribe)+'</td><td class=muted>'+esc(s.converted_at)+'</td>';",
+    "    tb.appendChild(tr);",
+    "  });",
+    "  $('auth').style.display='none';$('tbl').hidden=false;$('refresh').hidden=false;$('logout').hidden=false;",
+    "}",
+    "function card(n,l,b){return '<div class=card><div class=n>'+esc(n)+'</div><div class=l>'+esc(l)+'</div><div class=b>'+esc(b)+'</div></div>';}",
+    "function load(){",
+    "  var key=gk();if(!key){showAuth();return;}",
+    "  fetch('/api/admin/subscribers',{headers:{'Authorization':'Bearer '+key},cache:'no-store'})",
+    "   .then(function(r){if(r.status===401){ck();showAuth('Invalid or missing key.');throw new Error('401');}return r.json();})",
+    "   .then(render).catch(function(e){if(String(e.message)!=='401')showAuth('Load failed: '+esc(e.message));});",
+    "}",
+    "$('load').addEventListener('click',function(){var k=$('key').value.trim();if(!k){$('err').textContent='Enter a key.';return;}sk(k);$('key').value='';load();});",
+    "$('refresh').addEventListener('click',load);",
+    "$('logout').addEventListener('click',function(){ck();showAuth('Key forgotten.');});",
+    "if(gk())load();else showAuth();",
+    "})();",
+  ].join('\n');
+
+  return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    + '<meta name="robots" content="noindex,nofollow">'
+    + '<title>AlgoVault — Subscriber Tracker (admin)</title>'
+    + '<style>' + css + '</style></head><body>'
+    + '<header><h1>Subscriber Tracker</h1><span class="sub">attribution spine · operator-only</span>'
+    + '<button id="refresh" hidden>Refresh</button><button id="logout" hidden>Forget key</button></header>'
+    + '<div id="auth"><p>Paste the admin API key to load subscribers. The key is kept in this tab only '
+    + '(sessionStorage) and sent as a Bearer header — never placed in the URL or a server log.</p>'
+    + '<input id="key" type="password" placeholder="ADMIN_API_KEY" autocomplete="off">'
+    + '<button id="load">Load</button><p id="err" class="err"></p></div>'
+    + '<div id="cards" class="cards"></div>'
+    + '<table id="tbl" hidden><thead><tr>'
+    + '<th>Name</th><th>Email</th><th>Channel</th><th>Country</th><th>Tier</th><th>Status</th>'
+    + '<th>$</th><th>Latency</th><th>Cold/Warm</th><th>Converted</th>'
+    + '</tr></thead><tbody></tbody></table>'
+    + '<script>' + js + '</script></body></html>';
+}

@@ -13,6 +13,8 @@ import {
   recordSignupAttribution,
   assembleProfile,
   buildSubscriberProfile,
+  aggregateProfiles,
+  renderSubscribersAdminHtml,
 } from '../src/lib/subscriber-attribution.js';
 
 describe('deriveChannel', () => {
@@ -175,5 +177,47 @@ describe('buildSubscriberProfile (C2 — idempotent upsert + fail-open)', () => 
       query: async () => { throw new Error('query boom'); },
       run: () => { throw new Error('upsert boom'); },
     })).resolves.toBeUndefined();
+  });
+});
+
+describe('aggregateProfiles (C3 admin aggregate — pure)', () => {
+  const rows = [
+    { channel: 'direct', country: 'US', cold_subscribe: true },
+    { channel: 'direct', country: 'GB', cold_subscribe: false },
+    { channel: 'tg_bot', country: 'US', cold_subscribe: null },
+  ];
+  it('counts by channel, by country, and cold / warm / unknown', () => {
+    const a = aggregateProfiles(rows);
+    expect(a.total).toBe(3);
+    expect(a.byChannel.direct).toBe(2);
+    expect(a.byChannel.tg_bot).toBe(1);
+    expect(a.byCountry.US).toBe(2);
+    expect(a.byCountry.GB).toBe(1);
+    expect(a.cold).toBe(1);
+    expect(a.warm).toBe(1);
+    expect(a.coldUnknown).toBe(1);
+  });
+  it('handles an empty list', () => {
+    const a = aggregateProfiles([]);
+    expect(a.total).toBe(0);
+    expect(a.cold).toBe(0);
+    expect(Object.keys(a.byChannel)).toHaveLength(0);
+  });
+});
+
+describe('renderSubscribersAdminHtml (C3 shell — NO PII pre-auth)', () => {
+  it('returns an HTML shell that carries no PII and never puts the key in a URL', () => {
+    const html = renderSubscribersAdminHtml();
+    expect(html).toMatch(/<!DOCTYPE html>/i);
+    // shell fetches the gated JSON route with a Bearer header (not a query key)
+    expect(html).toContain('/api/admin/subscribers');
+    expect(html).toMatch(/Authorization/);
+    expect(html).toMatch(/sessionStorage/);
+    // the static shell embeds no subscriber PII
+    expect(html).not.toMatch(/lisandy/i);
+    expect(html).not.toMatch(/@gmail/i);
+    expect(html).not.toContain('cus_UepU');
+    // key must never be appended to a URL
+    expect(html).not.toMatch(/\?key=/);
   });
 });

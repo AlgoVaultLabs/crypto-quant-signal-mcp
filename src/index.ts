@@ -1493,6 +1493,41 @@ async function startHttp() {
         res.status(500).json({ error: 'Failed to fetch confidence bands' });
       }
     });
+
+    // SUBSCRIBER-ATTRIBUTION-SPINE-W1 (C3): operator subscriber tracker.
+    // JSON is ADMIN_API_KEY-gated (PII flows ONLY with a valid Bearer). The HTML
+    // shell below is PII-free + ungated; it prompts for the key client-side and
+    // sends it ONLY as a Bearer header on this XHR (never the URL / a server log).
+    app.get('/api/admin/subscribers', async (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '200'), 10) || 200, 1), 500);
+        const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+        const { listSubscriberProfiles, aggregateProfiles } = await import('./lib/subscriber-attribution.js');
+        const rows = await listSubscriberProfiles({ limit, offset });
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ aggregates: aggregateProfiles(rows), count: rows.length, subscribers: rows });
+      } catch (err) {
+        console.error(`[/api/admin/subscribers] internal error: ${err instanceof Error ? err.message : err}`);
+        res.status(500).json({ error: 'Failed to fetch subscribers' });
+      }
+    });
+
+    // PII-free HTML shell (ungated by design — auth happens client-side via the
+    // gated XHR above; the served HTML contains no subscriber data).
+    app.get('/admin/subscribers', async (_req, res) => {
+      try {
+        const { renderSubscribersAdminHtml } = await import('./lib/subscriber-attribution.js');
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderSubscribersAdminHtml());
+      } catch (err) {
+        console.error(`[/admin/subscribers] internal error: ${err instanceof Error ? err.message : err}`);
+        res.status(500).send('Internal error rendering subscriber tracker');
+      }
+    });
   }
 
   // ── Public track record (no auth) ──
