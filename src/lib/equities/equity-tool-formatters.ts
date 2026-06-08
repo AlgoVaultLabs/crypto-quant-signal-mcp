@@ -4,9 +4,12 @@
  * EXPORTED allow-list formatters: they construct ONLY the permitted public keys
  * — outcome_return_pct / outcome_price can never appear because they are never
  * read or written here (and getLatestVerdict doesn't even SELECT them). Quota
- * wiring is identical to the free crypto tools (trackCall → TierLimitReached).
+ * wiring mirrors the free crypto tools: get_equity_call is HOLD-free (charges
+ * only a non-HOLD verdict, like get_trade_call); get_equity_regime charges per
+ * call (like get_market_regime — regime has no HOLD). QUOTA-CONSISTENCY-COUNT-
+ * ALL-W1 (2026-06-08, Q2=B).
  */
-import { trackCall, daysUntilMonthReset } from '../license.js';
+import { trackCall, checkQuota, daysUntilMonthReset } from '../license.js';
 import { TierLimitReachedError } from '../errors.js';
 import { PKG_VERSION } from '../pkg-version.js';
 import type { LicenseInfo } from '../../types.js';
@@ -88,23 +91,42 @@ export function formatEquityRegime(v: PublicVerdictRow): EquityRegimeOutput {
   };
 }
 
+function tierLimitError(license: LicenseInfo, q: { used: number; total: number }): TierLimitReachedError {
+  return new TierLimitReachedError({
+    currentUsage: q.used,
+    monthlyLimit: q.total,
+    tier: license.tier,
+    suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
+    retryAfterDays: daysUntilMonthReset(license),
+  });
+}
+
+/**
+ * Charge one unit, then throw if that pushed over quota — mirrors get_market_regime
+ * (regime has no HOLD, so every call is billable). Used by get_equity_regime.
+ */
 function quotaGate(license: LicenseInfo): void {
   const q = trackCall(license);
-  if (!q.allowed) {
-    throw new TierLimitReachedError({
-      currentUsage: q.used,
-      monthlyLimit: q.total,
-      tier: license.tier,
-      suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
-      retryAfterDays: daysUntilMonthReset(license),
-    });
-  }
+  if (!q.allowed) throw tierLimitError(license, q);
+}
+
+/**
+ * Read-only exhaustion gate — throws if quota is ALREADY exhausted, WITHOUT charging.
+ * Mirrors get_trade_call (checkQuota at entry; the charge happens after the verdict,
+ * so HOLD verdicts and error paths stay free). Used by get_equity_call.
+ */
+function assertQuotaAvailable(license: LicenseInfo): void {
+  const q = checkQuota(license);
+  if (!q.allowed) throw tierLimitError(license, q);
 }
 
 /** get_equity_call orchestrator: quota → normalize → universe → latest verdict → format. */
 export async function getEquityCall(input: { symbol: string; license?: LicenseInfo }): Promise<EquityCallOutput | EquityErrorOutput> {
   const license = input.license || { tier: 'free' as const, key: null };
-  quotaGate(license);
+  // QUOTA-CONSISTENCY-COUNT-ALL-W1 (Q2=B): read-only gate here; the charge happens
+  // AFTER the verdict and only for non-HOLD — HOLD equity calls are free, mirroring
+  // get_trade_call. (get_equity_regime still charges per call via quotaGate.)
+  assertQuotaAvailable(license);
   const pool = getEquityPool();
   const symbol = normalizeSymbol(input.symbol);
   if (!symbol) {
@@ -133,6 +155,9 @@ export async function getEquityCall(input: { symbol: string; license?: LicenseIn
       _algovault: meta('get_equity_call'),
     };
   }
+  // Charge only for an actionable (non-HOLD) verdict — HOLDs are free (parity with
+  // get_trade_call). Error paths above return before this, so they never charge.
+  if (v.call !== 'HOLD') trackCall(license);
   return formatEquityCall(v, entry.rank_adv);
 }
 
