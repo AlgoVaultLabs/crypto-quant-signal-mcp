@@ -43,6 +43,29 @@ describe('venue-readiness-report buildReport (C5)', () => {
   });
 });
 
+describe('venueVerdict — WR on in-window + seeding lines (OPS-SHADOW-WINDOW-RESET-AND-WR-DISPLAY-W1)', () => {
+  it('in-window venue with a non-null pfe_wr renders WR <pct>', () => {
+    const line = venueVerdict(v('C', 'shadow'), { pfe_wr: 0.75, buy_sell_count: 50, days_since: 3 }).line;
+    expect(line).toContain('within initial window (day 3/15)');
+    expect(line).toContain('WR 75.0%');
+  });
+
+  it('in-window venue with null pfe_wr renders WR n/a', () => {
+    const line = venueVerdict(v('C2', 'shadow'), { pfe_wr: null, buy_sell_count: 50, days_since: 3 }).line;
+    expect(line).toContain('within initial window');
+    expect(line).toContain('WR n/a (no Phase-E outcomes yet)');
+  });
+
+  it('seeding line shows WR n/a (HOLDs only — no BUY/SELL yet)', () => {
+    const line = venueVerdict(
+      v('B2', 'shadow', 500, { seeding_started_at: '2026-06-01T08:45:00Z' }),
+      { pfe_wr: null, buy_sell_count: 0, days_since: 0 },
+    ).line;
+    expect(line).toContain('seeding, sample 0/500');
+    expect(line).toContain('WR n/a');
+  });
+});
+
 describe('venueVerdict — per-state glyphs (C5)', () => {
   it('classifies every readiness state', () => {
     expect(venueVerdict(v('A', 'promoted'), { pfe_wr: null, buy_sell_count: 0, days_since: 0 }).line).toContain('already live');

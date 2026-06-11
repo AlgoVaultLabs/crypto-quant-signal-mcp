@@ -42,10 +42,10 @@ export function venueVerdict(v: VenueRecord, s: Stats): Verdict {
     // Distinguish truly-unseeded (seeding_started_at NULL) from actively-seeding
     // venues that have produced only HOLDs so far (BUY/SELL not yet accrued).
     return v.seeding_started_at
-      ? { glyph: '🌱', line: `🌱 ${v.exchange_id} — seeding, sample 0/${target} (HOLDs only so far)`, qualified: false }
+      ? { glyph: '🌱', line: `🌱 ${v.exchange_id} — seeding, sample 0/${target} (HOLDs only so far), WR n/a`, qualified: false }
       : { glyph: '🔌', line: `🔌 ${v.exchange_id} — no pipeline yet`, qualified: false };
   }
-  if (s.days_since < DAY_15_FLOOR) return { glyph: '⏱', line: `⏱ ${v.exchange_id} — within initial window (day ${s.days_since}/15), ${smp}`, qualified: false };
+  if (s.days_since < DAY_15_FLOOR) return { glyph: '⏱', line: `⏱ ${v.exchange_id} — within initial window (day ${s.days_since}/15), ${smp}, WR ${s.pfe_wr === null ? 'n/a (no Phase-E outcomes yet)' : wrPct(s.pfe_wr)}`, qualified: false };
   if (s.pfe_wr === null) return { glyph: '⏳', line: `⏳ ${v.exchange_id} — ${smp}, WR n/a (no Phase-E outcomes yet)`, qualified: false };
   if (s.buy_sell_count < target) return { glyph: '⏳', line: `⏳ ${v.exchange_id} — ${smp} (need ${target - s.buy_sell_count} more), WR ${wrPct(s.pfe_wr)}`, qualified: false };
   if (s.pfe_wr < PFE_WR_THRESHOLD) return { glyph: '⚠️', line: `⚠️ ${v.exchange_id} — WR ${wrPct(s.pfe_wr)} < 80% (${smp})`, qualified: false };
