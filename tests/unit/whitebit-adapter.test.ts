@@ -53,6 +53,9 @@ function buildFetchMock(): typeof fetch {
 beforeEach(() => {
   mockResponses = new Map();
   fetchCalls = [];
+  // getAssetContext now derives the 24h-open from the v1 kline; default to an empty
+  // kline so tests not asserting prevDayPx don't hit an unmocked URL.
+  setMock('/api/v1/public/kline', { status: 200, body: { success: true, message: null, result: [] } });
   originalFetch = globalThis.fetch;
   globalThis.fetch = buildFetchMock();
 });
@@ -180,6 +183,32 @@ describe('WhitebitAdapter.getAssetContext (single /api/v4/public/futures all-in-
     expect(ctx.markPx).toBeCloseTo(77400.5);    // last_price proxy
     expect(ctx.oraclePx).toBeCloseTo(77398.2);
     expect(ctx.volume24h).toBeCloseTo(387000000);
+  });
+
+  it('prevDayPx = 24h-open from kline (/futures has no open/change field), NOT 24h-low [PREVDAYPX-FIX]', async () => {
+    // /api/v4/public/futures exposes only last/high/low (no 24h-open or change;
+    // verified live 2026-06-11). Derive the 24h-prior price from the v1 kline
+    // (open of earliest candle = 95); low (90) was the bug → priceChange always +.
+    setMock('/api/v4/public/futures', {
+      status: 200,
+      body: { message: null, success: true, result: [
+        { ticker_id: 'BTC_PERP', stock_currency: 'BTC', money_currency: 'USDT',
+          last_price: '100', stock_volume: '1', money_volume: '1', bid: '100', ask: '100',
+          high: '110', low: '90', product_type: 'Perpetual', open_interest: '0',
+          index_price: '100', index_name: 'x', index_currency: 'BTC',
+          funding_rate: '0', next_funding_rate_timestamp: '0' },
+      ] },
+    });
+    // WhiteBIT v1 kline row order: [ts_sec, open, close, high, low, base_vol, quote_vol].
+    setMock('/api/v1/public/kline', {
+      status: 200,
+      body: { success: true, message: null, result: [
+        [Math.floor(Date.now() / 1000) - 3600, '95', '100', '110', '90', '1', '1'],
+      ] },
+    });
+    const ctx = await new WhitebitAdapter().getAssetContext('BTC');
+    expect(ctx.prevDayPx).toBeCloseTo(95, 1);      // kline 24h-open
+    expect(ctx.prevDayPx).not.toBeCloseTo(90, 1);  // NOT low (the bug)
   });
 
   it('routes GOLD via TRADFI_ALIASES → XAU_PERP', async () => {

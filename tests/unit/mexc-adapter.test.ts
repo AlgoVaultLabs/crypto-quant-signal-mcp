@@ -214,6 +214,27 @@ describe('MEXCAdapter.getAssetContext', () => {
     expect(ctx.volume24h).toBeCloseTo(5529327475.27553);
   });
 
+  it('prevDayPx = 24h-open reconstructed from riseFallRate (FRACTION), NOT 24h-low/last [PREVDAYPX-FIX]', async () => {
+    // riseFallRate is present in the LIVE /contract/ticker payload (a FRACTION,
+    // -0.0074 = -0.74%; verified live 2026-06-11) though absent from the prior interface.
+    // Scenario: open=95, last=100, lower24Price=90, high24Price=110.
+    setMock('/api/v1/contract/ticker', {
+      status: 200,
+      body: {
+        success: true, code: 0,
+        data: {
+          symbol: 'BTC_USDT', lastPrice: 100, indexPrice: 100, fairPrice: 100,
+          holdVol: 0, fundingRate: 0, volume24: 0, amount24: 0,
+          high24Price: 110, lower24Price: 90, riseFallRate: 0.0526316,
+        },
+      },
+    });
+    const ctx = await new MEXCAdapter().getAssetContext('BTC');
+    expect(ctx.prevDayPx).toBeCloseTo(95, 1);       // lastPrice / (1 + riseFallRate)
+    expect(ctx.prevDayPx).not.toBeCloseTo(90, 1);   // NOT lower24Price (the bug)
+    expect(ctx.prevDayPx).not.toBeCloseTo(100, 1);  // NOT last
+  });
+
   it('routes GOLD via TRADFI_ALIASES → XAUT_USDT (Tether Gold, NOT XAU)', async () => {
     setMock('/api/v1/contract/ticker', {
       status: 200,

@@ -37,6 +37,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { reconstructPrevDayOpen } from './_prev-day-open.js';
 
 const BASE_URL = 'https://whitebit.com';
 const MAX_RETRIES = 1;
@@ -170,13 +171,28 @@ export class WhitebitAdapter implements ExchangeAdapter {
     }
 
     const fundingRaw = parseFloat(row.funding_rate || '0');
+    const last = parseFloat(row.last_price || '0');
+    // /api/v4/public/futures exposes no 24h-open or change field (verified live
+    // 2026-06-11) — derive the 24h-prior price from the v1 kline (open of the
+    // earliest candle in a trailing-24h window); fall back to the hi/lo midpoint,
+    // never low (which biased priceChange almost-always positive). OPS-TRADE-CALL-CLUSTER-W1 class.
+    let prevDayPx: number;
+    try {
+      const candles = await this.getCandles(coin, '1h', Date.now() - 24 * 60 * 60 * 1000);
+      prevDayPx = candles.length > 0 ? candles[0].open : NaN;
+    } catch {
+      prevDayPx = NaN;
+    }
+    if (!Number.isFinite(prevDayPx) || prevDayPx <= 0) {
+      prevDayPx = reconstructPrevDayOpen(last, NaN, parseFloat(row.high || ''), parseFloat(row.low || ''));
+    }
     // WhiteBIT funding cadence 8h × 1095 annualization (standard).
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
       openInterest: parseFloat(row.open_interest || '0'),
-      prevDayPx: parseFloat(row.low || row.last_price || '0'),    // approximate; WhiteBIT futures endpoint doesn't expose explicit 24h-open
+      prevDayPx,
       volume24h: parseFloat(row.money_volume || '0'),
       oraclePx: parseFloat(row.index_price || row.last_price || '0'),
       markPx: parseFloat(row.last_price || row.index_price || '0'),    // WhiteBIT doesn't expose explicit mark_price — use last_price

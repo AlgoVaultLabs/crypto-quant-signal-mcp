@@ -23,6 +23,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { reconstructPrevDayOpen } from './_prev-day-open.js';
 
 const BASE_URL = 'https://api-contract.weex.com';
 const MAX_RETRIES = 1;
@@ -111,12 +112,21 @@ export class WeexAdapter implements ExchangeAdapter {
     // WEEX 4h funding cadence × 2190 annualization (first non-8h venue).
     // Funding rate NOT exposed publicly — adapter returns 0 per W3B Q-3 fail-soft.
     const fundingRaw = 0;
+    const last = parseFloat(t.last || '0');
+    // WEEX priceChangePercent is a 24h change FRACTION (0.0055 = 0.55%; verified
+    // live 2026-06-11) — NOT a percent-number, so do NOT divide by 100.
+    const prevDayPx = reconstructPrevDayOpen(
+      last,
+      parseFloat(t.priceChangePercent || ''),
+      parseFloat(t.high_24h || ''),
+      parseFloat(t.low_24h || ''),
+    );
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 2190,
       openInterest: 0,
-      prevDayPx: parseFloat(t.low_24h || '0'),
+      prevDayPx,
       volume24h: parseFloat(t.volume_24h || '0'),
       oraclePx: parseFloat(t.indexPrice || t.markPrice || '0'),
       markPx: parseFloat(t.markPrice || '0'),

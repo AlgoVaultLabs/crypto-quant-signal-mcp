@@ -30,6 +30,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { reconstructPrevDayOpen } from './_prev-day-open.js';
 
 const BASE_URL = 'https://api-futures.kucoin.com';
 const MAX_RETRIES = 1;
@@ -110,6 +111,7 @@ interface KucoinContract {
   volumeOf24h?: number;
   highPrice?: number;
   lowPrice?: number;
+  priceChgPct?: number | null;   // 24h change as a FRACTION (0.0055 = 0.55%); present live, absent from older docs
 }
 
 interface KucoinKlineEnvelope {
@@ -172,12 +174,21 @@ export class KuCoinAdapter implements ExchangeAdapter {
     const oiContracts = parseFloat(c.openInterest || '0');
     const oiBase = oiContracts * (c.multiplier || 1);
 
+    // KuCoin's live /contracts/{symbol} payload includes priceChgPct (24h change as
+    // a FRACTION, 0.0055 = 0.55%; verified live 2026-06-11) — reconstruct the 24h-open
+    // from it instead of lowPrice, which biased priceChange almost-always positive.
+    const prevDayPx = reconstructPrevDayOpen(
+      Number(c.lastTradePrice),
+      c.priceChgPct ?? NaN,
+      Number(c.highPrice),
+      Number(c.lowPrice),
+    );
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
       openInterest: oiBase,
-      prevDayPx: Number(c.lowPrice) || 0,    // approximate
+      prevDayPx,
       volume24h: Number(c.turnoverOf24h) || 0,
       oraclePx: Number(c.indexPrice) || Number(c.markPrice) || 0,
       markPx: Number(c.markPrice) || 0,

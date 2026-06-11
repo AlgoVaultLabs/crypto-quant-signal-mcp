@@ -178,6 +178,25 @@ describe('WeexAdapter.getAssetContext (4h cadence × 2190 annualization; funding
     expect(ctx.volume24h).toBeCloseTo(2418166907.98);
   });
 
+  it('prevDayPx = 24h-open reconstructed from priceChangePercent (FRACTION), NOT 24h-low/last [PREVDAYPX-FIX]', async () => {
+    // Scenario: price rose +5.263% over 24h → open=95, last=100; low=90, high=110.
+    // WEEX priceChangePercent is a FRACTION (0.0055 = 0.55%) — verified live 2026-06-11;
+    // do NOT divide by 100 (that is Gate's percent-number convention).
+    setMock('/capi/v2/market/ticker', {
+      status: 200,
+      body: {
+        symbol: 'cmt_btcusdt', last: '100', best_ask: '100', best_bid: '100',
+        high_24h: '110', low_24h: '90', volume_24h: '1', timestamp: '0',
+        priceChangePercent: '0.0526316', base_volume: '1',
+        markPrice: '100', indexPrice: '100',
+      },
+    });
+    const ctx = await new WeexAdapter().getAssetContext('BTC');
+    expect(ctx.prevDayPx).toBeCloseTo(95, 1);       // last / (1 + 0.0526316)
+    expect(ctx.prevDayPx).not.toBeCloseTo(90, 1);   // NOT the 24h-low (the bug)
+    expect(ctx.prevDayPx).not.toBeCloseTo(100, 1);  // NOT the current/last price
+  });
+
   it('4h cadence × 2190 annualization is unique to WEEX (first non-8h venue in adapter fleet)', () => {
     // Documentation-style test: confirms the magic number 2190 (4h × 2190 = 8760 = 1 year).
     const fundingRaw = 0.0001;  // hypothetical funding rate

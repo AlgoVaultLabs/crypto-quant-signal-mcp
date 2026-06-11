@@ -207,6 +207,28 @@ describe('KuCoinAdapter.getAssetContext', () => {
     expect(ctx.oraclePx).toBeCloseTo(77000);
   });
 
+  it('prevDayPx = 24h-open reconstructed from priceChgPct (FRACTION), NOT 24h-low/last [PREVDAYPX-FIX]', async () => {
+    // priceChgPct is present in the LIVE /contracts/{symbol} payload (a FRACTION,
+    // 0.0055 = 0.55%; verified live 2026-06-11) though absent from older docs.
+    // Scenario: open=95, last=100, low=90, high=110.
+    setMock('/api/v1/contracts/XBTUSDTM', {
+      status: 200,
+      body: {
+        code: '200000',
+        data: {
+          symbol: 'XBTUSDTM', baseCurrency: 'XBT', quoteCurrency: 'USDT', settleCurrency: 'USDT',
+          type: 'FFWCSX', fundingFeeRate: 0, nextFundingRateTime: 0,
+          openInterest: '0', markPrice: 100, indexPrice: 100, lastTradePrice: 100,
+          multiplier: 1, highPrice: 110, lowPrice: 90, priceChgPct: 0.0526316,
+        },
+      },
+    });
+    const ctx = await new KuCoinAdapter().getAssetContext('BTC');
+    expect(ctx.prevDayPx).toBeCloseTo(95, 1);       // lastTradePrice / (1 + priceChgPct)
+    expect(ctx.prevDayPx).not.toBeCloseTo(90, 1);   // NOT lowPrice (the bug)
+    expect(ctx.prevDayPx).not.toBeCloseTo(100, 1);  // NOT last
+  });
+
   it('routes GOLD via TRADFI_ALIASES → XAUTUSDTM', async () => {
     setMock('/api/v1/contracts/XAUTUSDTM', {
       status: 200,

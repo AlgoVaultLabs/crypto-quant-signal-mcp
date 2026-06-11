@@ -36,6 +36,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { reconstructPrevDayOpen } from './_prev-day-open.js';
 
 const BASE_URL = 'https://contract.mexc.com';
 const MAX_RETRIES = 1;
@@ -127,6 +128,7 @@ interface MexcTicker {
     amount24: number;        // quote volume
     high24Price: number;
     lower24Price: number;
+    riseFallRate?: number;   // 24h change as a FRACTION (-0.0074 = -0.74%); present live, absent from prior interface
   };
 }
 
@@ -197,12 +199,21 @@ export class MEXCAdapter implements ExchangeAdapter {
     // MEXC funding is per-8h period (verified via Plan-Mode probe:
     // collectCycle=8); annualized = rate × 1095 (8h periods per year).
     const fundingRaw = Number(t.fundingRate) || 0;
+    // MEXC's live /contract/ticker includes riseFallRate (24h change as a FRACTION,
+    // -0.0074 = -0.74%; verified live 2026-06-11) — reconstruct the 24h-open from it
+    // instead of lower24Price, which biased priceChange almost-always positive.
+    const prevDayPx = reconstructPrevDayOpen(
+      Number(t.lastPrice),
+      t.riseFallRate ?? NaN,
+      Number(t.high24Price),
+      Number(t.lower24Price),
+    );
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
       openInterest: Number(t.holdVol) || 0,
-      prevDayPx: Number(t.lower24Price) || 0,    // approximate; MEXC ticker doesn't expose explicit prevClose
+      prevDayPx,
       volume24h: Number(t.amount24) || 0,
       oraclePx: Number(t.indexPrice) || Number(t.fairPrice) || 0,
       markPx: Number(t.fairPrice) || 0,

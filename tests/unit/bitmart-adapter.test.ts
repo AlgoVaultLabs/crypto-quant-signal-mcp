@@ -53,6 +53,10 @@ function buildFetchMock(): typeof fetch {
 beforeEach(() => {
   mockResponses = new Map();
   fetchCalls = [];
+  // getAssetContext now derives the 24h-open from the kline; default to an empty
+  // kline so tests not asserting prevDayPx don't hit an unmocked URL (the fix then
+  // falls back to hi/lo-midpoint / last). prevDayPx tests override this mock.
+  setMock('/contract/public/kline', { status: 200, body: { code: 1000, message: '', data: [] } });
   originalFetch = globalThis.fetch;
   globalThis.fetch = buildFetchMock();
 });
@@ -159,6 +163,30 @@ describe('BitmartAdapter.getAssetContext (single /contract/public/details call)'
     expect(ctx.markPx).toBeCloseTo(77500);
     expect(ctx.oraclePx).toBeCloseTo(77504.98);
     expect(ctx.volume24h).toBeCloseTo(5000);
+  });
+
+  it('prevDayPx = 24h-open from kline (/details has no open/change field), NOT last_price [PREVDAYPX-FIX]', async () => {
+    // /contract/public/details exposes only last/index/mark + high_24h/low_24h —
+    // no 24h-open or change field (verified live 2026-06-11). Derive the 24h-prior
+    // price from the hourly kline (open of the earliest candle in the window = 95);
+    // last_price (100) was the bug → priceChange ≈ 0 always.
+    setMock('/contract/public/details', {
+      status: 200,
+      body: { data: { symbols: [
+        { symbol: 'BTCUSDT', base_currency: 'BTC', quote_currency: 'USDT', product_type: 1,
+          last_price: '100', mark_price: '100', index_price: '100', funding_rate: '0',
+          open_interest: '0', contract_size: '0.001', vol_24h: '1', high_24h: '110', low_24h: '90' },
+      ] } },
+    });
+    setMock('/contract/public/kline', {
+      status: 200,
+      body: { code: 1000, message: '', data: [
+        { open_price: '95', high_price: '96', low_price: '94', close_price: '100', volume: '1', timestamp: Math.floor(Date.now() / 1000) - 86400 },
+      ] },
+    });
+    const ctx = await new BitmartAdapter().getAssetContext('BTC');
+    expect(ctx.prevDayPx).toBeCloseTo(95, 1);       // kline 24h-open
+    expect(ctx.prevDayPx).not.toBeCloseTo(100, 1);  // NOT last_price (the bug)
   });
 
   it('falls back through mark_price → index_price → last_price (when mark_price null)', async () => {
