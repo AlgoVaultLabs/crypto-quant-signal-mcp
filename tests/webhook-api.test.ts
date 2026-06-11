@@ -4,7 +4,9 @@
  * Boots a minimal Express app with registerWebhookRoutes() on an ephemeral port
  * and drives it with real fetch() (create→list→delete→test). A second ephemeral
  * http server is the delivery sink for the /test ping. SQLite temp-HOME harness;
- * no Stripe/x402 → keys resolve via prefix (av_starter_* → starter, else pro).
+ * no Stripe/x402 + ALLOW_DEV_KEY_PREFIX=true (dev escape hatch, SECURITY-FIX-TIER-ESCALATION-W1)
+ * → keys resolve via prefix (av_starter_* → starter, else pro). Without the flag a
+ * Stripe-invalid key now default-denies to free (the fix), so the dev flag is required here.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -13,7 +15,7 @@ import * as path from 'node:path';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-const ORIGINAL = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL, CQS_API_KEY: process.env.CQS_API_KEY, SSRF: process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK };
+const ORIGINAL = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL, CQS_API_KEY: process.env.CQS_API_KEY, SSRF: process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK, PREFIX: process.env.ALLOW_DEV_KEY_PREFIX };
 
 let tempHome: string;
 let perfDb: typeof import('../src/lib/performance-db.js');
@@ -33,6 +35,7 @@ function authHeaders(key?: string): Record<string, string> {
 beforeEach(async () => {
   delete process.env.DATABASE_URL;
   delete process.env.CQS_API_KEY; // ensure the Bearer header (not env) drives auth
+  process.env.ALLOW_DEV_KEY_PREFIX = 'true'; // dev escape hatch so prefix keys tier (SECURITY-FIX-TIER-ESCALATION-W1; a Stripe-invalid key otherwise default-denies to free)
   delete process.env.WEBHOOK_DELIVERY_ENABLED;
   process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK = '1'; // local http://127.0.0.1 sink (W1 test seam)
   tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-webhook-api-'));
@@ -78,6 +81,7 @@ afterEach(async () => {
   if (ORIGINAL.DATABASE_URL !== undefined) process.env.DATABASE_URL = ORIGINAL.DATABASE_URL;
   if (ORIGINAL.CQS_API_KEY !== undefined) process.env.CQS_API_KEY = ORIGINAL.CQS_API_KEY;
   if (ORIGINAL.SSRF !== undefined) process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK = ORIGINAL.SSRF; else delete process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK;
+  if (ORIGINAL.PREFIX !== undefined) process.env.ALLOW_DEV_KEY_PREFIX = ORIGINAL.PREFIX; else delete process.env.ALLOW_DEV_KEY_PREFIX;
 });
 
 async function createSub(key: string, overrides: Record<string, unknown> = {}) {

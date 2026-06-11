@@ -260,9 +260,16 @@ export function resolveLicenseSync(headers: Record<string, string | undefined>):
   return resolveFromApiKey(authHeader);
 }
 
+// SECURITY-FIX-TIER-ESCALATION-W1: once-per-process warn guard for the dev-only
+// ALLOW_DEV_KEY_PREFIX escape hatch used below.
+let devKeyPrefixWarned = false;
+
 /**
- * Async license resolution — validates API key against Stripe.
- * Falls back to prefix-based check if Stripe is not configured.
+ * Async license resolution — validates an API key against Stripe (HTTP path).
+ * SECURITY-FIX-TIER-ESCALATION-W1: a Stripe-INVALID key DEFAULT-DENIES to `free`;
+ * the prefix shortcut survives only as a dev-only opt-in (ALLOW_DEV_KEY_PREFIX,
+ * default OFF). The stdio path (resolveLicenseSync → resolveFromApiKey) is
+ * intentionally UNCHANGED — operators tier their own local CQS_API_KEY.
  */
 async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo> {
   const key = extractApiKey(authHeader);
@@ -274,8 +281,19 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
     return { tier: stripeResult.tier, key };
   }
 
-  // Fallback: prefix-based (for local dev / backward compat)
-  return resolveFromApiKey(authHeader);
+  // SECURITY-FIX-TIER-ESCALATION-W1 — DEFAULT-DENY: a Stripe-invalid key resolves to
+  // least privilege (free), never an escalated prefix tier. The prefix shortcut is an
+  // explicit dev-only opt-in (ALLOW_DEV_KEY_PREFIX, default OFF; mirrors the
+  // BOT_INTERNAL_BYPASS_ENABLED two-flag pattern). The stdio path (resolveFromApiKey
+  // via resolveLicenseSync) is intentionally NOT gated — operators tier their own key.
+  if (process.env.ALLOW_DEV_KEY_PREFIX === 'true') {
+    if (!devKeyPrefixWarned) {
+      devKeyPrefixWarned = true;
+      console.warn('[SECURITY] ALLOW_DEV_KEY_PREFIX=true — Stripe-invalid API keys resolve to prefix-based tiers (dev-only). Unset in production.');
+    }
+    return resolveFromApiKey(authHeader);
+  }
+  return { tier: 'free', key: null };
 }
 
 /**
