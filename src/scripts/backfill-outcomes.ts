@@ -76,8 +76,10 @@ function computePFEMAE(
 ): PFEMAEResult | null {
   if (candles.length === 0) return null;
 
-  // Take only the evaluation window's worth of candles
-  const window = candles.slice(0, evalCount);
+  // Take only the evaluation window's worth of candles. Sort a copy
+  // oldest-first before slicing — slice(0, N) on a newest-first venue payload
+  // would evaluate the wrong end of the window (EdgeX kline-order class).
+  const window = [...candles].sort((a, b) => a.time - b.time).slice(0, evalCount);
   if (window.length === 0) return null;
 
   const entryPrice = signal.price_at_signal;

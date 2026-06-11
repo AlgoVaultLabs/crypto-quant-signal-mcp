@@ -68,6 +68,19 @@ describe('getMarketRegime', () => {
     vi.clearAllMocks();
   });
 
+  it('is input-order invariant — venue-descending candles yield the identical regime (EdgeX kline-order class)', async () => {
+    const asc = mockTrendingUpCandles(168);
+    vi.mocked(getAdapter).mockReturnValue(createMockAdapter(asc));
+    const fromAsc = await getMarketRegime({ coin: 'BTC', timeframe: '1h' });
+
+    vi.mocked(getAdapter).mockReturnValue(createMockAdapter([...asc].reverse()));
+    const fromDesc = await getMarketRegime({ coin: 'BTC', timeframe: '1h' });
+
+    expect(fromDesc.regime).toBe(fromAsc.regime);
+    expect(fromDesc.confidence).toBe(fromAsc.confidence);
+    expect(fromDesc.metrics).toEqual(fromAsc.metrics);
+  });
+
   it('returns valid regime for trending data', async () => {
     vi.mocked(getAdapter).mockReturnValue(createMockAdapter());
 

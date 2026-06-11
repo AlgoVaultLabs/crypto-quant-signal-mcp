@@ -168,6 +168,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     adapter.getCandles(coin, timeframe, startTime, dex),
     adapter.getAssetContext(coin, dex),
   ]);
+  // Everything below assumes oldest-first candles (closes[length-1] = current
+  // price, indicators walk forward); a newest-first venue payload would price
+  // the signal at the stalest close. No-op for ascending venues.
+  candles.sort((a, b) => a.time - b.time);
 
   const REQUIRED_CANDLES = 30;
   if (candles.length < REQUIRED_CANDLES) {

@@ -141,7 +141,11 @@ describe('EdgeXAdapter.getCandles', () => {
     });
     const candles = await new EdgeXAdapter().getCandles('BTC', '1h', 1778900000000);
     expect(candles).toHaveLength(2);
-    expect(candles[0]).toEqual({
+    // Paired-flip (FIX-ADAPTER-EDGEX-KLINE-ORDER-W1): the venue fixture is
+    // newest-first; post-normalization the newest candle is LAST (oldest-first
+    // contract). The original assertion pinned the raw pass-through order.
+    expect(candles.map(c => c.time)).toEqual([1778904000000, 1778907600000]);
+    expect(candles[1]).toEqual({
       time: 1778907600000,
       open: 78999.3,
       high: 79001.6,
@@ -176,6 +180,44 @@ describe('EdgeXAdapter.getCandles', () => {
     setMock('/api/v1/public/meta/getMetaData', { status: 200, body: META_FIXTURE });
     const candles = await new EdgeXAdapter().getCandles('UNKNOWN', '1h', 0);
     expect(candles).toEqual([]);
+  });
+});
+
+// ── getCandles — kline normalization (FIX-ADAPTER-EDGEX-KLINE-ORDER-W1) ──
+// edgeX getKline returns rows NEWEST-FIRST and to-anchored (fills `size`
+// backwards past `from`) — live-probed 2026-06-11: a 100-bar request returned
+// 200 bars spanning 16.7h, descending. Consumers assume oldest-first +
+// window-honored (`closes[length-1]` = "current" price), so the raw payload
+// priced EDGEX signals ~200×timeframe stale (WR 25.2%, INVESTIGATE-EDGEX-WR-W1).
+
+describe('EdgeXAdapter.getCandles — kline normalization (FIX-ADAPTER-EDGEX-KLINE-ORDER-W1)', () => {
+  const k = (timeMs: number, px: number) => ({
+    klineId: `k${timeMs}`, klineTime: String(timeMs), open: String(px),
+    high: String(px + 10), low: String(px - 10), close: String(px + 5),
+    size: '1', value: '1', trades: '1',
+  });
+
+  it('sorts venue-descending klines oldest-first and drops rows before `from`', async () => {
+    setMock('/api/v1/public/meta/getMetaData', { status: 200, body: META_FIXTURE });
+    setMock('/api/v1/public/quote/getKline', {
+      status: 200,
+      body: { code: 'SUCCESS', data: { dataList: [
+        k(1778907600000, 80000), // newest — venue returns it FIRST
+        k(1778904000000, 79000),
+        k(1778896800000, 78000), // BEFORE `from` — to-anchored overshoot, must drop
+      ] } },
+    });
+    const candles = await new EdgeXAdapter().getCandles('BTC', '1h', 1778900000000);
+    expect(candles.map(c => c.time)).toEqual([1778904000000, 1778907600000]); // ascending + window-filtered
+    expect(candles[candles.length - 1].close).toBe(80005); // newest close = the "current" price consumers read
+  });
+
+  it('honors the optional endTime param as the kline `to` bound', async () => {
+    setMock('/api/v1/public/meta/getMetaData', { status: 200, body: META_FIXTURE });
+    setMock('/api/v1/public/quote/getKline', { status: 200, body: { code: 'SUCCESS', data: { dataList: [] } } });
+    await new EdgeXAdapter().getCandles('BTC', '1h', 1778900000000, undefined, 1778910000000);
+    const klineCall = fetchCalls.find(c => c.url.includes('getKline'));
+    expect(klineCall?.url).toContain('to=1778910000000');
   });
 });
 

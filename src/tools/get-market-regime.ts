@@ -74,6 +74,10 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     adapter.getCandles(coin, timeframe, startTime, dex),
     hlAdapter.getPredictedFundings().catch(() => [] as Awaited<ReturnType<typeof adapter.getPredictedFundings>>),
   ]);
+  // Everything below assumes oldest-first candles (closes[length-1] = current
+  // price, structure/EMA walk forward); a newest-first venue payload would
+  // invert the regime. No-op for ascending venues.
+  candles.sort((a, b) => a.time - b.time);
 
   const REQUIRED_CANDLES = 30;
   if (candles.length < REQUIRED_CANDLES) {

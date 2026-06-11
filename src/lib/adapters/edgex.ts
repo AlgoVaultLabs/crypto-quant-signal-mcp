@@ -162,16 +162,17 @@ export class EdgeXAdapter implements ExchangeAdapter {
     return 'edgeX';
   }
 
-  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
+  async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType, endTime?: number): Promise<Candle[]> {
     const contractId = await toEdgeXContractId(coin);
     if (!contractId) return [];
     const klineType = INTERVAL_MAP[interval] || 'HOUR_1';
     const barMs = BAR_MS[interval] || 3_600_000;
 
     // edgeX getKline requires explicit from + to (ms). startTime is the
-    // floor of the window; cap `to` at now to avoid future-bar empty.
+    // floor of the window; cap `to` at now (or the caller's endTime bound,
+    // e.g. backfill's eval-window cap) to avoid future-bar empty.
     const from = startTime;
-    const to = Math.max(from + barMs, Date.now());
+    const to = endTime ?? Math.max(from + barMs, Date.now());
 
     const raw = await edgexGet<EdgeXEnvelope<{ dataList: EdgeXKline[] }>>('/api/v1/public/quote/getKline', {
       contractId,
@@ -183,6 +184,11 @@ export class EdgeXAdapter implements ExchangeAdapter {
     });
 
     // SV-04: default-deny — drop any candle with a non-finite OHLCV field.
+    // FIX-ADAPTER-EDGEX-KLINE-ORDER-W1: edgeX returns rows NEWEST-FIRST and
+    // to-anchored (fills `size` backwards past `from`) — consumers assume
+    // oldest-first + window-honored, so filter to >= from and sort ascending
+    // (the phemex/htx idiom). Raw pass-through priced signals at the OLDEST
+    // close (~200×timeframe stale).
     return (raw.data?.dataList || []).flatMap(c => {
       const open = safeUpstreamNum(c.open);
       const high = safeUpstreamNum(c.high);
@@ -191,7 +197,9 @@ export class EdgeXAdapter implements ExchangeAdapter {
       const volume = safeUpstreamNum(c.size);
       if (open === null || high === null || low === null || close === null || volume === null) return [];
       return [{ time: parseInt(c.klineTime, 10), open, high, low, close, volume }];
-    });
+    })
+      .filter(c => c.time >= from)
+      .sort((a, b) => a.time - b.time);
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {

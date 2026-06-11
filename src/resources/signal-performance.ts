@@ -66,7 +66,10 @@ function computePFEMAE(
   candles: Candle[],
   evalCount: number
 ): { outcome_price: number; outcome_return_pct: number; return_1candle: number; pfe_price: number; pfe_return_pct: number; mae_price: number; mae_return_pct: number; pfe_candles: number } | null {
-  const window = candles.slice(0, evalCount);
+  // Sort a copy oldest-first before slicing — slice(0, N) on a newest-first
+  // venue payload would evaluate the wrong end of the window (EdgeX kline-
+  // order class).
+  const window = [...candles].sort((a, b) => a.time - b.time).slice(0, evalCount);
   if (window.length === 0) return null;
 
   const entry = signal.price_at_signal;
