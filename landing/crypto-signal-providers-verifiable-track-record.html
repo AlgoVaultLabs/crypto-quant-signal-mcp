@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto signal providers with verifiable track records | AlgoVault Labs</title>
+<meta name="description" content="Crypto signal providers vary in proof. AlgoVault publishes every trade call on-chain: recompute the hash, check the Merkle root on Base L2, and verify the win rate yourself.">
+<meta name="last-updated" content="2026-06-15">
+<link rel="canonical" href="https://algovault.com/crypto-signal-providers-verifiable-track-record">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="Crypto signal providers with verifiable track records">
+<meta property="og:description" content="AlgoVault publishes every trade call on-chain. Recompute the hash, check the Merkle root, verify the win rate yourself.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/crypto-signal-providers-verifiable-track-record">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta property="og:site_name" content="AlgoVault Labs">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="twitter:title" content="Crypto signal providers with verifiable track records">
+<meta name="twitter:description" content="A track record you check on-chain, not a screenshot: recompute the hash, check the Merkle root on Base L2.">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<script defer src="/js/track-record-proxy.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+  mint: { 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)' },
+  steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+} } } }
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+  h1, h2, h3 { font-family: 'Inter Tight', 'Inter', system-ui, sans-serif; color: #eef2f7; }
+  a { color: #5BEEB3; text-decoration: none; } a:hover { text-decoration: underline; }
+  .prose p { margin: 0 0 18px; max-width: 70ch; }
+  .prose h2 { margin: 40px 0 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .prose h3 { margin: 26px 0 8px; font-size: 18px; font-weight: 600; }
+  .prose ul { margin: 0 0 18px; padding-left: 22px; } .prose li { margin: 6px 0; }
+  pre { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+  code { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 13.5px; color: #aeeedb; }
+  p code, li code, td code { background: #0f1526; padding: 1px 6px; border-radius: 5px; color: #aeeedb; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 22px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid #1c2536; vertical-align: top; }
+  th { color: #8b9bb5; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .lede { font-size: 19px; color: #dfe6ef; margin: 0 0 8px; max-width: 68ch; }
+  .stat { color: #eef2f7; font-weight: 600; }
+  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #5BEEB3; letter-spacing: 0.12em; text-transform: uppercase; }
+  .card { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 12px; padding: 20px 22px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px; font-size: 15px; font-weight: 600; background: #5BEEB3; color: #0a1813; }
+  .btn:hover { text-decoration: none; filter: brightness(1.05); }
+  .btn-ghost { background: transparent; color: #eef2f7; border: 1px solid #2a3650; }
+  nav a { color: #cdd5e0; font-size: 14px; } nav a:hover { color: #5BEEB3; text-decoration: none; }
+  footer a { color: #8b9bb5; font-size: 13px; }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Are there crypto signal providers with on-chain verifiable track records?",
+  "url": "https://algovault.com/crypto-signal-providers-verifiable-track-record",
+  "datePublished": "2026-06-15T00:00:00+00:00",
+  "dateModified": "2026-06-15T00:00:00+00:00",
+  "author": { "@id": "https://algovault.com/#organization" },
+  "publisher": { "@id": "https://algovault.com/#organization" },
+  "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
+  "description": "How to find a crypto trade-call provider with a track record you can verify on-chain: AlgoVault hashes every call and anchors it to a Merkle root on Base L2 before the market answers.",
+  "proficiencyLevel": "Beginner|Intermediate",
+  "about": { "@type": "Thing", "name": "Verifiable crypto trade-call track records" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "How do you verify a track record without trusting the provider?", "acceptedAnswer": { "@type": "Answer", "text": "Every call is hashed and published to a Merkle root on Base L2 before the market answers. Recompute any call's hash and check it against the on-chain root at algovault.com/verify. The history cannot be edited after the fact." } },
+    { "@type": "Question", "name": "What does Merkle-anchored on Base L2 mean?", "acceptedAnswer": { "@type": "Answer", "text": "Each day's calls are hashed into a Merkle tree and the root is written to Base, an Ethereum L2. Any single call can be proven to belong to that root without revealing the whole set, and the root cannot be changed later." } },
+    { "@type": "Question", "name": "What should you check in a verifiable track record?", "acceptedAnswer": { "@type": "Answer", "text": "That calls were fixed before their result, that nothing was filtered out after the fact, and that verification runs independently of the provider's own dashboard. AlgoVault meets all three on Base L2." } },
+    { "@type": "Question", "name": "Does AlgoVault show its win rate live?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The public PFE (Peak Favourable Excursion) win rate over all verified calls is shown live at algovault.com/track-record and hydrated from a public endpoint." } },
+    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported." } }
+  ]
+}
+</script>
+</head>
+<body>
+<nav style="position:sticky;top:0;z-index:20;background:rgba(6,10,20,0.85);backdrop-filter:blur(10px);border-bottom:1px solid #141c2e">
+  <div style="max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between">
+    <a href="https://algovault.com/" style="display:flex;align-items:center;gap:9px;color:#eef2f7;font-weight:700;font-family:'Inter Tight',sans-serif"><img src="/logo.png" alt="AlgoVault Labs" width="26" height="26" style="border-radius:6px">AlgoVault</a>
+    <div style="display:flex;align-items:center;gap:22px">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://algovault.com/#pricing" class="btn" style="height:38px;padding:0 16px;font-size:13.5px">Try Free</a>
+    </div>
+  </div>
+</nav>
+
+<main style="max-width:760px;margin:0 auto;padding:48px 22px 24px">
+  <article class="prose">
+    <div class="eyebrow">Verifiable track record</div>
+    <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">Are there crypto signal providers with on-chain verifiable <span style="color:#5BEEB3">track records</span>?</h1>
+
+    <p class="lede">Most crypto signal providers show screenshots; AlgoVault publishes a record you can check on-chain. Every trade call is hashed and anchored to a Merkle root on Base L2 before the market answers. The public PFE win rate is <span class="stat" data-tr-field="pfe_wr">91.6%</span> over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each checkable at /verify. You verify the history yourself; you don't trust a dashboard.</p>
+
+    <h2>How do you verify a record without trusting the provider?</h2>
+    <p>Trust is the wrong primitive. AlgoVault hashes each call and writes the day's Merkle root to Base, an Ethereum L2, before the market answers. Recompute any call's hash, then check it against the published root. The set cannot be edited after the fact, so the win rate is derived from calls that were fixed in advance.</p>
+
+    <h2>What should you check in a verifiable track record?</h2>
+    <p>Four things separate a checkable record from a marketing claim:</p>
+    <table>
+      <thead><tr><th>What a provider claims</th><th>How to verify it yourself</th></tr></thead>
+      <tbody>
+        <tr><td>A published win rate</td><td>Recompute each call's hash and check it against the on-chain Merkle root. The rate is derived from calls fixed before their result.</td></tr>
+        <tr><td>No cherry-picking</td><td>Every call is anchored, HOLDs included. The set cannot be filtered after the fact.</td></tr>
+        <tr><td>Calls fixed before the result</td><td>Each call is hashed and anchored on Base L2 before the market moves; the timestamp is on-chain.</td></tr>
+        <tr><td>Independent of the provider</td><td>Verification runs against Base L2 at <a href="https://algovault.com/verify">/verify</a>, not an AlgoVault dashboard.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Where does AlgoVault fit?</h2>
+    <p>AlgoVault is the verifiable provider of crypto trade calls. It returns one composite verdict per call, then publishes that call on-chain. The public number is the PFE win rate over every verified call; you read it live and confirm it against the root yourself.</p>
+
+    <h2>What you call</h2>
+    <p>Get a call, then verify the published record:</p>
+    <pre><code># every call is hashed and anchored on-chain
+get_trade_call(coin="BTC", timeframe="1h")
+-> { "call": "BUY", "confidence": 72, "regime": "TRENDING_UP", ... }
+
+# the published PFE win rate (read-only)
+performance://signal-performance   # or GET https://api.algovault.com/api/performance-public</code></pre>
+    <p>Verify any call on-chain against <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base</a> at <a href="https://algovault.com/verify">/verify</a>, or read the <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a> spec for client setup.</p>
+
+    <h2>FAQ</h2>
+    <h3>How do you verify a track record without trusting the provider?</h3>
+    <p>Every call is hashed and published to a Merkle root on Base L2 before the market answers. Recompute any call's hash and check it at <a href="https://algovault.com/verify">/verify</a>. The history cannot be edited after the fact.</p>
+    <h3>What does Merkle-anchored on Base L2 mean?</h3>
+    <p>Each day's calls are hashed into a Merkle tree and the root is written to Base, an Ethereum L2. Any one call can be proven to belong to that root, and the root cannot be changed later.</p>
+    <h3>What should you check in a verifiable track record?</h3>
+    <p>That calls were fixed before their result, that nothing was filtered out afterward, and that verification runs independently of the provider's dashboard.</p>
+    <h3>Does AlgoVault show its win rate live?</h3>
+    <p>Yes. The public PFE win rate over all verified calls is shown live at <a href="https://algovault.com/track-record">/track-record</a>.</p>
+    <h3>Is it free to try?</h3>
+    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+
+    <div class="card" style="margin:32px 0 28px">
+      <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>
+      <p style="margin:0">See the <a href="https://algovault.com/track-record">live track record</a>, verify any call on-chain at <a href="https://algovault.com/verify">/verify</a>, or read <a href="https://algovault.com/how-it-works">how it works</a>. Built by <a href="https://algovault.com/">AlgoVault Labs</a>.</p>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 8px">
+      <a href="https://algovault.com/verify" class="btn">Verify a call on-chain →</a>
+      <a href="https://algovault.com/track-record" class="btn btn-ghost">See the live track record →</a>
+    </div>
+    <p style="font-size:13px;color:#5e6d82;margin-top:18px">This is call interpretation, not investment advice; agents decide execution.</p>
+  </article>
+</main>
+
+<footer style="border-top:1px solid #141c2e;margin-top:40px">
+  <div style="max-width:1100px;margin:0 auto;padding:26px 22px;display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center">
+    <div style="color:#5e6d82;font-size:13px">Built by AlgoVault Labs — algovault.com</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://github.com/AlgoVaultLabs" rel="noopener noreferrer" target="_blank">GitHub</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
