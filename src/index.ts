@@ -2737,6 +2737,7 @@ function getPerformanceDashboardHtml(opts?: { isPublic?: boolean }): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Track Record — AlgoVault Labs</title>
 <meta name="description" content="AlgoVault's live trade-call track record. Every signal is Merkle-anchored on Base L2 for independent on-chain verification. Don't trust; verify.">
+<link rel="canonical" href="https://algovault.com/track-record">
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W3 / C4, cross-origin) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
