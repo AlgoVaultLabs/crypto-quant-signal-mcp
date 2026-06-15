@@ -68,7 +68,7 @@ jobs:
       # numerical refresh seam (developer runs `node scripts/generate_jsonld.mjs`
       # locally + commits). Unit tests catch structural regressions.
       - name: JSON-LD structural integrity (unit tests)
-        run: node --test tests/unit/geo_jsonld_consistency.test.mjs
+        run: node --test tests/unit/geo_jsonld_consistency.test.mjs tests/unit/geo_answer_page_invariants.test.mjs
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
