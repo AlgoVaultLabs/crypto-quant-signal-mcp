@@ -5,7 +5,7 @@
 
 ## TL;DR
 
-The **live site is healthy and crawlable** (apex 200, real content, clean robots, valid 34-URL sitemap, www→apex 301). The gap is exactly what the prompt predicted: **Google's index holds a STALE parked-domain snapshot** of `www.algovault.com`, and **no GSC property is verified**, so Google has never been told to recrawl. Index presence is the binary gate for Gemini/AIO citation.
+The **live site is healthy and crawlable** (apex 200, real content, clean robots, valid 34-URL sitemap, www→apex 301). The gap is exactly what the prompt predicted: **Google's index holds a STALE parked-domain snapshot** of `www.algovault.com`, and Google hasn't recrawled to flush it. *(Correction 2026-06-15, operator-flagged: Code cannot check GSC/Bing console verified-state. Prior waves — AI-CRAWLER-ACCESS-W1 assigned the verify step to the operator on 2026-06-03; W2's "Bing-flagged meta cleanup" acted on Bing Webmaster's flagged SEO issues, which require a verified property — indicate GSC+Bing were LIKELY already verified in early June. The real lever is URL-Inspection Request-Indexing, not re-verification.)* Index presence is the binary gate for Gemini/AIO citation.
 
 Two surprises that **reduce scope** vs the prompt:
 1. **IndexNow is already fully shipped** (prior wave AI-CRAWLER-ACCESS-W2) — key file live, ping script wired into every deploy. → Verify + trigger, do not rebuild.
