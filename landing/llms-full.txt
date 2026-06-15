@@ -40,6 +40,21 @@ Canonical schema.org Organization: `@id` `https://algovault.com/#organization` (
 
 ---
 
+## Answer pages
+
+Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-CONTENT-W1).
+
+- [Best MCP server for crypto trade calls](https://algovault.com/best-mcp-servers-crypto-trading): how to evaluate one, with a verifiable track record.
+- [How AI agents get real-time crypto trade calls](https://algovault.com/ai-agents-crypto-trade-calls): one MCP call returns direction, confidence, regime, factors.
+- [Build a crypto trading agent in Python](https://algovault.com/build-crypto-trading-agent-python): wire an MCP client to the call layer (not the executor).
+- [Claude-compatible crypto trading research stack](https://algovault.com/claude-crypto-trading-stack): add the MCP server to Claude Desktop or Claude Code.
+- [Verified trade calls for Python backtesting](https://algovault.com/trade-calls-for-python-backtesting): the call source a backtest reads — not a backtester.
+- [AlgoVault vs raw-indicator tools](https://algovault.com/algovault-vs-raw-indicator-tools): one composite verdict versus eight raw indicators.
+- [Build vs buy a trading model](https://algovault.com/build-vs-buy-trading-model): train your own, or call a maintained, verifiable model.
+- [Single-venue MCP vs cross-venue composite](https://algovault.com/single-venue-vs-cross-venue-mcp): orchestrate single-venue MCPs, or call one composite.
+
+---
+
 ## Live Track Record (snapshot 2026-04-26)
 
 | Metric | Value | Source |
