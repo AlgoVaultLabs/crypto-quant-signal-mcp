@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verified trade calls for Python backtesting | AlgoVault Labs</title>
+<meta name="description" content="AlgoVault is the verified trade-call source your Python backtest reads — not a backtester. Feed the on-chain-verifiable call series into Backtrader or vectorbt.">
+<meta name="last-updated" content="2026-06-15">
+<link rel="canonical" href="https://algovault.com/trade-calls-for-python-backtesting">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="Verified trade calls for Python backtesting">
+<meta property="og:description" content="AlgoVault is the verified trade-call source your backtest reads — not a backtester. Pair it with Backtrader or vectorbt.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/trade-calls-for-python-backtesting">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta property="og:site_name" content="AlgoVault Labs">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="twitter:title" content="Verified trade calls for Python backtesting">
+<meta name="twitter:description" content="The verified call source your backtest reads — not a backtester.">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<script defer src="/js/track-record-proxy.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+  mint: { 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)' },
+  steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+} } } }
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+  h1, h2, h3 { font-family: 'Inter Tight', 'Inter', system-ui, sans-serif; color: #eef2f7; }
+  a { color: #5BEEB3; text-decoration: none; } a:hover { text-decoration: underline; }
+  .prose p { margin: 0 0 18px; max-width: 70ch; }
+  .prose h2 { margin: 40px 0 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .prose h3 { margin: 26px 0 8px; font-size: 18px; font-weight: 600; }
+  .prose ul { margin: 0 0 18px; padding-left: 22px; } .prose li { margin: 6px 0; }
+  pre { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+  code { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 13.5px; color: #aeeedb; }
+  p code, li code, td code { background: #0f1526; padding: 1px 6px; border-radius: 5px; color: #aeeedb; }
+  .lede { font-size: 19px; color: #dfe6ef; margin: 0 0 8px; max-width: 68ch; }
+  .stat { color: #eef2f7; font-weight: 600; }
+  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #5BEEB3; letter-spacing: 0.12em; text-transform: uppercase; }
+  .card { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 12px; padding: 20px 22px; }
+  .note { background: rgba(91,238,179,0.06); border: 1px solid rgba(91,238,179,0.22); border-radius: 10px; padding: 14px 18px; margin: 0 0 18px; color: #dfe6ef; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px; font-size: 15px; font-weight: 600; background: #5BEEB3; color: #0a1813; }
+  .btn:hover { text-decoration: none; filter: brightness(1.05); }
+  .btn-ghost { background: transparent; color: #eef2f7; border: 1px solid #2a3650; }
+  nav a { color: #cdd5e0; font-size: 14px; } nav a:hover { color: #5BEEB3; text-decoration: none; }
+  footer a { color: #8b9bb5; font-size: 13px; }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Where do verified trade calls fit in a Python backtest?",
+  "url": "https://algovault.com/trade-calls-for-python-backtesting",
+  "datePublished": "2026-06-15T00:00:00+00:00",
+  "dateModified": "2026-06-15T00:00:00+00:00",
+  "author": { "@id": "https://algovault.com/#organization" },
+  "publisher": { "@id": "https://algovault.com/#organization" },
+  "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
+  "description": "AlgoVault is the verified trade-call source a Python backtest reads, not a backtester. How to feed the on-chain-verifiable call series into Backtrader or vectorbt.",
+  "proficiencyLevel": "Intermediate",
+  "about": { "@type": "Thing", "name": "Verified trade calls for Python backtesting" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Is AlgoVault a backtester?", "acceptedAnswer": { "@type": "Answer", "text": "No. AlgoVault is not a backtester. It is the verified trade-call source your backtest reads. Your Python library (Backtrader, vectorbt, or your own loop) runs the test; AlgoVault supplies the composite verdicts and the on-chain-verifiable record." } },
+    { "@type": "Question", "name": "How do I get a verified call series to test against?", "acceptedAnswer": { "@type": "Answer", "text": "Call get_trade_call for live verdicts, or read the published track record for the historical series. Every call is Merkle-anchored on Base L2, so the series you test against is the same one anyone can verify on-chain at algovault.com/verify." } },
+    { "@type": "Question", "name": "How are the calls verified, so the backtest is honest?", "acceptedAnswer": { "@type": "Answer", "text": "Each call is hashed and published on-chain before its outcome is known. That removes hindsight: you cannot tune a backtest against calls that were edited after the market moved, because they were fixed before. Recompute any hash at algovault.com/verify." } },
+    { "@type": "Question", "name": "Which backtesting libraries does it pair with?", "acceptedAnswer": { "@type": "Answer", "text": "Any Python backtesting library. Map the verdict to an entry or exit in Backtrader, vectorbt, or a custom loop. AlgoVault returns the verdict; the library handles fills, slippage, and metrics." } }
+  ]
+}
+</script>
+</head>
+<body>
+<nav style="position:sticky;top:0;z-index:20;background:rgba(6,10,20,0.85);backdrop-filter:blur(10px);border-bottom:1px solid #141c2e">
+  <div style="max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between">
+    <a href="https://algovault.com/" style="display:flex;align-items:center;gap:9px;color:#eef2f7;font-weight:700;font-family:'Inter Tight',sans-serif"><img src="/logo.png" alt="AlgoVault Labs" width="26" height="26" style="border-radius:6px">AlgoVault</a>
+    <div style="display:flex;align-items:center;gap:22px">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://algovault.com/#pricing" class="btn" style="height:38px;padding:0 16px;font-size:13.5px">Try Free</a>
+    </div>
+  </div>
+</nav>
+
+<main style="max-width:760px;margin:0 auto;padding:48px 22px 24px">
+  <article class="prose">
+    <div class="eyebrow">Backtesting + verified calls</div>
+    <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">Where do verified trade calls fit in a Python <span style="color:#5BEEB3">backtest</span>?</h1>
+
+    <p class="lede">AlgoVault is the verified trade-call source your Python backtest reads, not a backtester. It returns one composite verdict per call — direction, confidence, regime — with a <span class="stat" data-tr-field="pfe_wr">91.6%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> calls, each Merkle-anchored on Base L2. Your library runs the test against that series.</p>
+
+    <div class="note"><strong>Scope:</strong> AlgoVault is <strong>not a backtester</strong>. Point your Backtrader or vectorbt loop at the on-chain-verifiable call series; AlgoVault never runs the backtest or places trades.</div>
+
+    <h2>Is AlgoVault a backtester?</h2>
+    <p>No. AlgoVault is not a backtester and never claims to be. It returns interpreted verdicts; your Python backtesting library runs the simulation. The clean split is the point: you stop maintaining a factor engine and a track-record ledger, and you test against a series anyone can verify on-chain.</p>
+
+    <h2>How do you get a verified call series?</h2>
+    <p>Call <code>get_trade_call</code> for live verdicts, or read the published <a href="https://algovault.com/track-record">track record</a> for the historical series. Map each verdict to an entry or exit in your loop:</p>
+    <pre><code># AlgoVault returns the verdict; your library runs the backtest.
+verdict = call_tool("get_trade_call", {"coin": "BTC", "timeframe": "1h"})
+# -> {"call": "BUY", "confidence": 72, "regime": "TRENDING_UP", ...}
+
+if verdict["call"] == "BUY" and verdict["confidence"] >= 60:
+    strategy.buy()        # Backtrader / vectorbt / your own loop</code></pre>
+
+    <h2>How are the calls verified, so the backtest is honest?</h2>
+    <p>Each call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. That removes hindsight: you cannot tune a strategy against verdicts that were edited after the market moved, because they were fixed beforehand. Recompute any hash at <a href="https://algovault.com/verify">/verify</a> across <span data-tr-field="exchange_count">5</span> venues.</p>
+
+    <h2>Which backtesting libraries pair with it?</h2>
+    <p>Any Python library — <a href="https://github.com/mementum/backtrader" rel="noopener noreferrer" target="_blank">Backtrader</a>, vectorbt, or a custom loop. AlgoVault returns the verdict; the library handles fills, slippage, and metrics. See the <a href="https://algovault.com/docs.html">docs</a> for the response shape.</p>
+
+    <h2>FAQ</h2>
+    <h3>Is AlgoVault a backtester?</h3>
+    <p>No — it is not a backtester. It is the verified trade-call source your backtest reads; your library runs the test.</p>
+    <h3>How do I get a verified call series to test against?</h3>
+    <p>Use <code>get_trade_call</code> for live verdicts or the <a href="https://algovault.com/track-record">track record</a> for history. Both are Merkle-anchored.</p>
+    <h3>How are the calls verified, so the backtest is honest?</h3>
+    <p>Each call is hashed on-chain before its outcome is known — no hindsight tuning. Check any hash at <a href="https://algovault.com/verify">/verify</a>.</p>
+    <h3>Which backtesting libraries does it pair with?</h3>
+    <p>Any Python library. Map the verdict to an entry or exit; the library handles fills and metrics.</p>
+
+    <div class="card" style="margin:32px 0 28px">
+      <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>
+      <p style="margin:0">See the <a href="https://algovault.com/track-record">live track record</a>, verify any call on-chain at <a href="https://algovault.com/verify">/verify</a>, or read <a href="https://algovault.com/how-it-works">how it works</a>. Built by <a href="https://algovault.com/">AlgoVault Labs</a>.</p>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 8px">
+      <a href="https://algovault.com/#pricing" class="btn">Pull a verified call free — 100 calls/month →</a>
+      <a href="https://algovault.com/track-record" class="btn btn-ghost">See the verifiable series →</a>
+    </div>
+    <p style="font-size:13px;color:#5e6d82;margin-top:18px">This is call interpretation, not investment advice; agents decide execution.</p>
+  </article>
+</main>
+
+<footer style="border-top:1px solid #141c2e;margin-top:40px">
+  <div style="max-width:1100px;margin:0 auto;padding:26px 22px;display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center">
+    <div style="color:#5e6d82;font-size:13px">Built by AlgoVault Labs — algovault.com</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://github.com/AlgoVaultLabs" rel="noopener noreferrer" target="_blank">GitHub</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

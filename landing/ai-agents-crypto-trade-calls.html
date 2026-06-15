@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How AI agents get real-time crypto trade calls | AlgoVault Labs</title>
+<meta name="description" content="AI agents get real-time crypto trade calls from an MCP server: one call returns direction, confidence, regime, and factors, with an on-chain-verifiable track record.">
+<meta name="last-updated" content="2026-06-15">
+<link rel="canonical" href="https://algovault.com/ai-agents-crypto-trade-calls">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="How AI agents get real-time crypto trade calls">
+<meta property="og:description" content="One MCP call returns a composite verdict — direction, confidence, regime, factors — that an agent can act on and verify on-chain.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/ai-agents-crypto-trade-calls">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta property="og:site_name" content="AlgoVault Labs">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="twitter:title" content="How AI agents get real-time crypto trade calls">
+<meta name="twitter:description" content="One MCP call returns a verdict an agent can act on and verify.">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<script defer src="/js/track-record-proxy.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+  mint: { 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)' },
+  steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+} } } }
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+  h1, h2, h3 { font-family: 'Inter Tight', 'Inter', system-ui, sans-serif; color: #eef2f7; }
+  a { color: #5BEEB3; text-decoration: none; } a:hover { text-decoration: underline; }
+  .prose p { margin: 0 0 18px; max-width: 70ch; }
+  .prose h2 { margin: 40px 0 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .prose h3 { margin: 26px 0 8px; font-size: 18px; font-weight: 600; }
+  .prose ul { margin: 0 0 18px; padding-left: 22px; } .prose li { margin: 6px 0; }
+  pre { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+  code { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 13.5px; color: #aeeedb; }
+  p code, li code, td code { background: #0f1526; padding: 1px 6px; border-radius: 5px; color: #aeeedb; }
+  .lede { font-size: 19px; color: #dfe6ef; margin: 0 0 8px; max-width: 68ch; }
+  .stat { color: #eef2f7; font-weight: 600; }
+  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #5BEEB3; letter-spacing: 0.12em; text-transform: uppercase; }
+  .card { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 12px; padding: 20px 22px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px; font-size: 15px; font-weight: 600; background: #5BEEB3; color: #0a1813; }
+  .btn:hover { text-decoration: none; filter: brightness(1.05); }
+  .btn-ghost { background: transparent; color: #eef2f7; border: 1px solid #2a3650; }
+  nav a { color: #cdd5e0; font-size: 14px; } nav a:hover { color: #5BEEB3; text-decoration: none; }
+  footer a { color: #8b9bb5; font-size: 13px; }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How do AI agents get real-time crypto trade calls?",
+  "url": "https://algovault.com/ai-agents-crypto-trade-calls",
+  "datePublished": "2026-06-15T00:00:00+00:00",
+  "dateModified": "2026-06-15T00:00:00+00:00",
+  "author": { "@id": "https://algovault.com/#organization" },
+  "publisher": { "@id": "https://algovault.com/#organization" },
+  "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
+  "description": "How an AI agent requests a real-time crypto trade call over MCP and what the response contains: direction, confidence, market regime, and factors.",
+  "proficiencyLevel": "Beginner|Intermediate",
+  "about": { "@type": "Thing", "name": "Real-time crypto trade calls for AI agents" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "How does an agent request a call?", "acceptedAnswer": { "@type": "Answer", "text": "The agent calls one MCP tool, get_trade_call, with a coin, timeframe, and venue. It connects over remote HTTPS, a local stdio process, or an MCP registry. No chart, no manual interpretation." } },
+    { "@type": "Question", "name": "What's in the response?", "acceptedAnswer": { "@type": "Answer", "text": "A composite verdict: direction (BUY, SELL, or HOLD), a confidence score, the current market regime, and the underlying factors (funding, open interest, trend persistence, breakout state). The agent decides whether to act." } },
+    { "@type": "Question", "name": "What cadence are calls fired at?", "acceptedAnswer": { "@type": "Answer", "text": "Calls are evaluated on a five-minute-or-slower decision cadence; the agent can request a fresh verdict on demand at any supported timeframe. Sub-five-minute execution is a downstream concern handled by the agent." } },
+    { "@type": "Question", "name": "Can the agent verify the record itself?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every call is hashed and published to a Merkle root on Base L2 before its outcome is known. The agent can recompute a call's hash and check it against the on-chain root at algovault.com/verify. The live win rate is at algovault.com/track-record." } }
+  ]
+}
+</script>
+</head>
+<body>
+<nav style="position:sticky;top:0;z-index:20;background:rgba(6,10,20,0.85);backdrop-filter:blur(10px);border-bottom:1px solid #141c2e">
+  <div style="max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between">
+    <a href="https://algovault.com/" style="display:flex;align-items:center;gap:9px;color:#eef2f7;font-weight:700;font-family:'Inter Tight',sans-serif"><img src="/logo.png" alt="AlgoVault Labs" width="26" height="26" style="border-radius:6px">AlgoVault</a>
+    <div style="display:flex;align-items:center;gap:22px">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://algovault.com/#pricing" class="btn" style="height:38px;padding:0 16px;font-size:13.5px">Try Free</a>
+    </div>
+  </div>
+</nav>
+
+<main style="max-width:760px;margin:0 auto;padding:48px 22px 24px">
+  <article class="prose">
+    <div class="eyebrow">MCP for AI trading agents</div>
+    <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">How do AI agents get real-time crypto <span style="color:#5BEEB3">trade calls</span>?</h1>
+
+    <p class="lede">AI agents get crypto trade calls by calling an MCP server. AlgoVault returns one composite verdict per call: direction, confidence, and market regime, across five perpetual-futures venues. It posts a <span class="stat" data-tr-field="pfe_wr">91.6%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. The agent reads the verdict and decides execution.</p>
+
+    <h2>How does an agent request a call?</h2>
+    <p>The agent calls one tool over the <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a>. No chart, no adapter glue. Connect over remote HTTPS, a local stdio process, or an MCP registry, then call <code>get_trade_call</code> with a coin, timeframe, and venue.</p>
+    <pre><code>POST https://api.algovault.com/mcp        # tool: get_trade_call
+{ "coin": "ETH", "timeframe": "15m", "exchange": "HL" }
+
+-> { "call": "SELL", "confidence": 64, "regime": "TRENDING_DOWN",
+     "factors": { "funding": "ELEVATED", "trend_persistence": "MEDIUM",
+                  "breakout_pending": "INACTIVE" } }</code></pre>
+
+    <h2>What's in the response?</h2>
+    <p>One verdict the agent can act on, not raw series to interpret:</p>
+    <ul>
+      <li><strong>call</strong> — BUY, SELL, or HOLD.</li>
+      <li><strong>confidence</strong> — a score the agent can threshold on.</li>
+      <li><strong>regime</strong> — TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</li>
+      <li><strong>factors</strong> — funding state, open-interest momentum, trend persistence, breakout state.</li>
+    </ul>
+    <p>HOLD calls are always free, so an agent can poll continuously across <span data-tr-field="exchange_count">5</span> venues without burning quota on no-trade reads.</p>
+
+    <h2>How fresh are the calls?</h2>
+    <p>An agent requests a fresh verdict on demand at any supported timeframe. The track record is built on a five-minute-or-slower decision cadence; faster execution is the agent's downstream job. Coverage spans a broad asset set; the live counts are on the <a href="https://algovault.com/track-record">track record</a>.</p>
+
+    <h2>How does the agent verify the record?</h2>
+    <p>Every call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. The agent can recompute any call's hash and check it against the on-chain Merkle root at <a href="https://algovault.com/verify">/verify</a>. The record is audited, not trusted.</p>
+
+    <h2>FAQ</h2>
+    <h3>How does an agent request a call?</h3>
+    <p>One MCP call to <code>get_trade_call</code> with a coin, timeframe, and venue, over remote HTTPS, stdio, or a registry.</p>
+    <h3>What's in the response?</h3>
+    <p>Direction, confidence, market regime, and the underlying factors. The agent decides whether to act.</p>
+    <h3>What cadence are calls fired at?</h3>
+    <p>A five-minute-or-slower decision cadence; the agent can pull a fresh verdict on demand.</p>
+    <h3>Can the agent verify the record itself?</h3>
+    <p>Yes — recompute a call's hash and check it on-chain at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>.</p>
+
+    <div class="card" style="margin:32px 0 28px">
+      <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>
+      <p style="margin:0">See the <a href="https://algovault.com/track-record">live track record</a>, verify any call on-chain at <a href="https://algovault.com/verify">/verify</a>, or read <a href="https://algovault.com/how-it-works">how it works</a>. Built by <a href="https://algovault.com/">AlgoVault Labs</a>.</p>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 8px">
+      <a href="https://algovault.com/#pricing" class="btn">Run get_trade_call free — 100 calls/month →</a>
+      <a href="https://algovault.com/track-record" class="btn btn-ghost">See the live track record →</a>
+    </div>
+    <p style="font-size:13px;color:#5e6d82;margin-top:18px">This is call interpretation, not investment advice; agents decide execution.</p>
+  </article>
+</main>
+
+<footer style="border-top:1px solid #141c2e;margin-top:40px">
+  <div style="max-width:1100px;margin:0 auto;padding:26px 22px;display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center">
+    <div style="color:#5e6d82;font-size:13px">Built by AlgoVault Labs — algovault.com</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://github.com/AlgoVaultLabs" rel="noopener noreferrer" target="_blank">GitHub</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

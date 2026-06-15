@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude-compatible crypto trading research stack | AlgoVault Labs</title>
+<meta name="description" content="A Claude-compatible crypto trading research stack pairs Claude Desktop or Claude Code with AlgoVault's MCP server for verified composite trade calls.">
+<meta name="last-updated" content="2026-06-15">
+<link rel="canonical" href="https://algovault.com/claude-crypto-trading-stack">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="Claude-compatible crypto trading research stack">
+<meta property="og:description" content="Pair Claude with AlgoVault's MCP for verified composite trade calls — one call returns direction, confidence, regime.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/claude-crypto-trading-stack">
+<meta property="og:image" content="https://algovault.com/logo.png">
+<meta property="og:site_name" content="AlgoVault Labs">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@AlgoVaultLabs">
+<meta name="twitter:title" content="Claude-compatible crypto trading research stack">
+<meta name="twitter:description" content="Claude + AlgoVault MCP: one verified composite trade call per query.">
+<meta name="twitter:image" content="https://algovault.com/logo.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<script defer src="/js/track-record-proxy.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+  mint: { 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)' },
+  steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+} } } }
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #060a14; color: #cdd5e0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+  h1, h2, h3 { font-family: 'Inter Tight', 'Inter', system-ui, sans-serif; color: #eef2f7; }
+  a { color: #5BEEB3; text-decoration: none; } a:hover { text-decoration: underline; }
+  .prose p { margin: 0 0 18px; max-width: 70ch; }
+  .prose h2 { margin: 40px 0 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .prose h3 { margin: 26px 0 8px; font-size: 18px; font-weight: 600; }
+  .prose ul { margin: 0 0 18px; padding-left: 22px; } .prose li { margin: 6px 0; }
+  pre { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+  code { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 13.5px; color: #aeeedb; }
+  p code, li code, td code { background: #0f1526; padding: 1px 6px; border-radius: 5px; color: #aeeedb; }
+  .lede { font-size: 19px; color: #dfe6ef; margin: 0 0 8px; max-width: 68ch; }
+  .stat { color: #eef2f7; font-weight: 600; }
+  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #5BEEB3; letter-spacing: 0.12em; text-transform: uppercase; }
+  .card { background: #0a0e1a; border: 1px solid #1c2536; border-radius: 12px; padding: 20px 22px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px; font-size: 15px; font-weight: 600; background: #5BEEB3; color: #0a1813; }
+  .btn:hover { text-decoration: none; filter: brightness(1.05); }
+  .btn-ghost { background: transparent; color: #eef2f7; border: 1px solid #2a3650; }
+  nav a { color: #cdd5e0; font-size: 14px; } nav a:hover { color: #5BEEB3; text-decoration: none; }
+  footer a { color: #8b9bb5; font-size: 13px; }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "What's a Claude-compatible crypto trading research stack?",
+  "url": "https://algovault.com/claude-crypto-trading-stack",
+  "datePublished": "2026-06-15T00:00:00+00:00",
+  "dateModified": "2026-06-15T00:00:00+00:00",
+  "author": { "@id": "https://algovault.com/#organization" },
+  "publisher": { "@id": "https://algovault.com/#organization" },
+  "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
+  "description": "Pair Claude Desktop or Claude Code with AlgoVault's MCP server for verified composite crypto trade calls and on-chain verification.",
+  "proficiencyLevel": "Beginner|Intermediate",
+  "about": { "@type": "Thing", "name": "Claude-compatible crypto trading research stack" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "How do I add AlgoVault to Claude Desktop or Claude Code?", "acceptedAnswer": { "@type": "Answer", "text": "Add the AlgoVault MCP server to your client config (a remote Streamable HTTP URL, or a local stdio command). Then ask Claude for a trade call and it invokes the get_trade_call tool. Step-by-step guides are linked on the page." } },
+    { "@type": "Question", "name": "What can Claude do with the calls?", "acceptedAnswer": { "@type": "Answer", "text": "Claude can request a composite verdict for any supported coin and timeframe, compare venues, classify market regime, and cite the on-chain-verifiable track record. It reads the verdict; you decide execution." } },
+    { "@type": "Question", "name": "Does it work with other MCP clients?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The same Model Context Protocol server works with Cursor, Cline, and custom agents over Streamable HTTP or stdio. Nothing is Claude-specific." } },
+    { "@type": "Question", "name": "How do I verify the numbers Claude cites?", "acceptedAnswer": { "@type": "Answer", "text": "Every call is hashed on Base L2 before its outcome is known. Recompute a call's hash and check it on-chain at algovault.com/verify; the live win rate is at algovault.com/track-record. Claude's citations trace to the same public source." } }
+  ]
+}
+</script>
+</head>
+<body>
+<nav style="position:sticky;top:0;z-index:20;background:rgba(6,10,20,0.85);backdrop-filter:blur(10px);border-bottom:1px solid #141c2e">
+  <div style="max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between">
+    <a href="https://algovault.com/" style="display:flex;align-items:center;gap:9px;color:#eef2f7;font-weight:700;font-family:'Inter Tight',sans-serif"><img src="/logo.png" alt="AlgoVault Labs" width="26" height="26" style="border-radius:6px">AlgoVault</a>
+    <div style="display:flex;align-items:center;gap:22px">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://algovault.com/#pricing" class="btn" style="height:38px;padding:0 16px;font-size:13.5px">Try Free</a>
+    </div>
+  </div>
+</nav>
+
+<main style="max-width:760px;margin:0 auto;padding:48px 22px 24px">
+  <article class="prose">
+    <div class="eyebrow">Claude + MCP</div>
+    <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">What's a Claude-compatible crypto trading <span style="color:#5BEEB3">research stack</span>?</h1>
+
+    <p class="lede">A Claude-compatible stack pairs Claude with AlgoVault's MCP server for trade calls. Claude reasons; AlgoVault returns one composite verdict per call — direction, confidence, regime — with a <span class="stat" data-tr-field="pfe_wr">91.6%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> Merkle-anchored calls. You verify every number on-chain.</p>
+
+    <h2>How do I add it to Claude Desktop or Claude Code?</h2>
+    <p>Add the AlgoVault MCP server to your client config, then ask Claude for a call. Remote config:</p>
+    <pre><code>// claude_desktop_config.json
+{ "mcpServers": {
+    "algovault": { "url": "https://api.algovault.com/mcp" }
+} }</code></pre>
+    <p>Or run it locally with <code>npx crypto-quant-signal-mcp</code>. Full guides: <a href="https://algovault.com/integrations/claude-code">Claude Code</a> and <a href="https://algovault.com/integrations/claude-desktop">Claude Desktop</a>.</p>
+
+    <h2>What can Claude do with the calls?</h2>
+    <p>Claude becomes a research surface over a verified trading model — the Trading Model API behind your agent:</p>
+    <ul>
+      <li>Request a verdict for any coin and timeframe across <span data-tr-field="exchange_count">5</span> venues.</li>
+      <li>Classify the current market regime before sizing a position.</li>
+      <li>Compare cross-venue funding and cite the on-chain track record.</li>
+    </ul>
+    <p>Claude reads the interpreted verdict; you decide execution.</p>
+
+    <h2>Does it work with other MCP clients?</h2>
+    <p>Yes. The same <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a> server works with Cursor, Cline, and custom agents over Streamable HTTP or stdio. Nothing is Claude-specific.</p>
+
+    <h2>How do you verify the numbers Claude cites?</h2>
+    <p>Every call is hashed and published on <a href="https://www.base.org/" rel="noopener noreferrer" target="_blank">Base L2</a> before its outcome is known. Recompute any call's hash and check it at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>. Claude's citations trace to the same public source.</p>
+
+    <h2>FAQ</h2>
+    <h3>How do I add AlgoVault to Claude Desktop or Claude Code?</h3>
+    <p>Add the MCP server to your client config (remote URL or local stdio), then ask Claude for a call. See <a href="https://algovault.com/integrations/claude-desktop">the guide</a>.</p>
+    <h3>What can Claude do with the calls?</h3>
+    <p>Request verdicts, classify regime, compare venues, and cite the on-chain track record. You decide execution.</p>
+    <h3>Does it work with other MCP clients?</h3>
+    <p>Yes — Cursor, Cline, and custom agents over Streamable HTTP or stdio.</p>
+    <h3>How do I verify the numbers Claude cites?</h3>
+    <p>Check any call on-chain at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>.</p>
+
+    <div class="card" style="margin:32px 0 28px">
+      <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>
+      <p style="margin:0">See the <a href="https://algovault.com/track-record">live track record</a>, verify any call on-chain at <a href="https://algovault.com/verify">/verify</a>, or read <a href="https://algovault.com/how-it-works">how it works</a>. Built by <a href="https://algovault.com/">AlgoVault Labs</a>.</p>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 8px">
+      <a href="https://algovault.com/#pricing" class="btn">Try Free in Claude — 100 calls/month →</a>
+      <a href="https://algovault.com/integrations/claude-desktop" class="btn btn-ghost">Read the Claude setup →</a>
+    </div>
+    <p style="font-size:13px;color:#5e6d82;margin-top:18px">This is call interpretation, not investment advice; agents decide execution.</p>
+  </article>
+</main>
+
+<footer style="border-top:1px solid #141c2e;margin-top:40px">
+  <div style="max-width:1100px;margin:0 auto;padding:26px 22px;display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center">
+    <div style="color:#5e6d82;font-size:13px">Built by AlgoVault Labs — algovault.com</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <a href="https://algovault.com/track-record">Track Record</a>
+      <a href="https://algovault.com/verify">Verify</a>
+      <a href="https://algovault.com/docs.html">Docs</a>
+      <a href="https://github.com/AlgoVaultLabs" rel="noopener noreferrer" target="_blank">GitHub</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
