@@ -7,7 +7,7 @@
 <h1 align="center">crypto-quant-signal-mcp</h1>
 
 <p align="center">
-  <strong>AlgoVault is the brain layer for AI trading agents — one MCP call returns verdict, confidence, and regime across 5 perp venues.</strong>
+  <strong>AlgoVault is the brain layer for AI trading agents — one MCP call returns verdict, confidence, and regime across major crypto perpetual venues.</strong>
 </p>
 
 <p align="center">
@@ -169,7 +169,7 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 
 ## Tools & resources
 
-The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across all 11 timeframes (`1m` → `1d`) on 5 perp venues.
+The MCP tools live at `https://api.algovault.com/mcp`. Every asset works across the full supported timeframe range, on major crypto perpetual venues.
 
 - **`get_trade_call`** <sub>(alias `get_trade_signal`)</sub> — composite BUY/SELL/HOLD verdict with confidence + regime, any asset, any timeframe.
 - **`scan_trade_calls`** — scans the top-N perps by open interest on a venue; returns every actionable call in one shot.
