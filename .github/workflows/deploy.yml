@@ -11,6 +11,11 @@ on:
       # /opt/algovault-monitoring/ via SSH, NOT shipped in the container image) —
       # editing them must not trigger a prod image rebuild/restart.
       - 'ops/monitoring/**'
+      # GEO-REGISTRY-RANK-P1-W1: registry-discovery metadata at repo root.
+      # Neither is COPYed by the Dockerfile (not runtime); LICENSE still ships
+      # in the npm tarball. Editing them must not rebuild/restart prod.
+      - 'LICENSE'
+      - 'glama.json'
 
 jobs:
   deploy:
