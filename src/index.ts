@@ -47,6 +47,7 @@ import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import { generateFunnelSnapshot } from './lib/funnel-snapshot.js';
 import { recordFunnelEvent } from './lib/performance-db.js';
+import { recordFirstNonHoldVerdict } from './lib/aha-event.js';
 import {
   captureArgvTrackToken,
   resolveTrackTokenForRequest,
@@ -395,6 +396,18 @@ function createServer(): McpServer {
           confidence: (result as { confidence?: number }).confidence,
           ipHash: getRequestIpHash(),
           isBotInternal: license.tier === 'internal',
+        });
+        // CONVERSION-MEASUREMENT-W1 C1: aha event — the first BUY/SELL a FREE
+        // session receives (the activation leading indicator). Emits a NEW
+        // `first_non_hold_verdict` event_type ONLY; the deployed quota/CTA
+        // captures and the /api/admin/funnel-snapshot endpoint are untouched.
+        // Deduped per session (bounded LRU) + read-side DISTINCT; fail-open.
+        recordFirstNonHoldVerdict({
+          verdict,
+          tier: license.tier,
+          sessionId: getRequestSessionId(),
+          tool: toolNameForAnalytics,
+          asset: coin,
         });
         const sessionIdForCohort = getRequestSessionId() ?? null;
         if (sessionIdForCohort !== null) {

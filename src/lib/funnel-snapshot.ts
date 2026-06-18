@@ -68,6 +68,13 @@ export interface FunnelSnapshot {
     first_call: number | null;
     second_call: number | null;
     fifth_plus_call: number | null;
+    // QUALITY SIGNAL (CONVERSION-MEASUREMENT-W1 C1) — NOT a CANONICAL_STAGE_ORDER
+    // stage: COUNT(DISTINCT session_id) of FREE sessions that received their
+    // first BUY/SELL trade verdict (the activation "aha"). Sits in `funnel`
+    // alongside the other non-stage quality signals (second_call/fifth_plus_call);
+    // excluded from stage_retentions + weakest_stage_transition so the 14-stage
+    // funnel history stays byte-stable.
+    first_non_hold_verdict: number | null;
     paid_upgrade: number | null;
     // NEW 11 (ACTIVATION-FUNNEL-AUDIT-W1, 2026-05-28):
     mcp_tools_list: number | null;          // stage 2: distinct session_id from request_log WHERE tool_name='tools/list'
@@ -701,11 +708,14 @@ export async function generateFunnelSnapshot(
   let quotaHitHard: number | null = null;
   let quotaHitBlock: number | null = null;
   let upgradeCtaClicked: number | null = null;
+  // CONVERSION-MEASUREMENT-W1 C1: activation "aha" quality signal (not a stage).
+  let firstNonHoldVerdict: number | null = null;
   try {
     quotaHitSoft = await getFunnelEventCount('quota_hit_soft', windowFromIso, windowToIso);
     quotaHitHard = await getFunnelEventCount('quota_hit_hard', windowFromIso, windowToIso);
     quotaHitBlock = await getFunnelEventCount('quota_hit_block', windowFromIso, windowToIso);
     upgradeCtaClicked = await getFunnelEventCount('upgrade_cta_clicked', windowFromIso, windowToIso);
+    firstNonHoldVerdict = await getFunnelEventCount('first_non_hold_verdict', windowFromIso, windowToIso);
   } catch (err) {
     warnings.push(`funnel_events query failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -788,6 +798,9 @@ export async function generateFunnelSnapshot(
       first_call: firstCall,
       second_call: secondCall,
       fifth_plus_call: fifthPlusCall,
+      // QUALITY SIGNAL (CONVERSION-MEASUREMENT-W1 C1) — first BUY/SELL per FREE
+      // session; NOT a stage (absent from CANONICAL_STAGE_ORDER/stage_retentions).
+      first_non_hold_verdict: firstNonHoldVerdict,
       paid_upgrade: paidUpgrade,
       // NEW 11 (ACTIVATION-FUNNEL-AUDIT-W1, 2026-05-28):
       mcp_tools_list: mcpToolsList,

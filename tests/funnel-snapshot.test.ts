@@ -47,9 +47,10 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
 
   it('produces snapshot with all 14 funnel stages + 13 stage_retentions + canonical key set', async () => {
     const snap = await generateFunnelSnapshot({ days: 7 });
-    // Funnel object has exactly 16 keys (5 legacy + 11 new).
+    // Funnel object has exactly 17 keys (5 legacy + 11 ACTIVATION-FUNNEL-AUDIT-W1
+    // + 1 CONVERSION-MEASUREMENT-W1 aha quality signal).
     const funnelKeys = Object.keys(snap.funnel).sort();
-    expect(funnelKeys.length).toBe(16);
+    expect(funnelKeys.length).toBe(17);
     expect(funnelKeys).toContain('install');
     expect(funnelKeys).toContain('first_call');
     expect(funnelKeys).toContain('paid_upgrade');
@@ -64,7 +65,9 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
     expect(funnelKeys).toContain('tg_bot_watchlist_add');
     expect(funnelKeys).toContain('tg_bot_quota_hit');
     expect(funnelKeys).toContain('tg_bot_upgrade_clicked');
-    // stage_retentions has exactly 13 transitions across 14 stages.
+    expect(funnelKeys).toContain('first_non_hold_verdict');
+    // stage_retentions has exactly 13 transitions across 14 stages (the aha
+    // quality signal is intentionally NOT a stage).
     const retentionKeys = Object.keys(snap.stage_retentions);
     expect(retentionKeys.length).toBe(13);
     // weakest_stage_transition has the expected shape.
@@ -114,6 +117,32 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
     //   quota_hit_hard → quota_hit_block = 1/2 = 0.5
     expect(snap.stage_retentions['quota_hit_soft_to_quota_hit_hard']).toBeCloseTo(2 / 3, 4);
     expect(snap.stage_retentions['quota_hit_hard_to_quota_hit_block']).toBeCloseTo(0.5, 4);
+  });
+
+  it('first_non_hold_verdict (aha) — COUNT DISTINCT session_id, NOT a funnel stage', async () => {
+    // 2 distinct free sessions reach their first BUY/SELL; session 1 fires a
+    // second time (a later SELL) — the snapshot's DISTINCT(session_id) collapses
+    // it, so the aha count is 2 (not 3).
+    for (const i of [1, 2]) {
+      recordFunnelEvent({
+        eventType: 'first_non_hold_verdict',
+        sessionId: `${SENTINEL_PREFIX}${i}`,
+        licenseTier: 'free',
+        meta: { verdict: 'BUY', tool: 'get_trade_call' },
+      });
+    }
+    recordFunnelEvent({
+      eventType: 'first_non_hold_verdict',
+      sessionId: `${SENTINEL_PREFIX}1`,
+      licenseTier: 'free',
+      meta: { verdict: 'SELL', tool: 'get_trade_signal' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const snap = await generateFunnelSnapshot({ days: 1 });
+    expect(snap.funnel.first_non_hold_verdict).toBe(2);
+    // The aha is a quality signal — it must NOT add a 15th stage / 14th transition.
+    expect(Object.keys(snap.stage_retentions).length).toBe(13);
+    expect(snap.stage_retentions).not.toHaveProperty('first_non_hold_verdict_to_paid_upgrade');
   });
 
   it('empty-state handling — fresh window with no events yields null/0 retentions + emits warnings', async () => {

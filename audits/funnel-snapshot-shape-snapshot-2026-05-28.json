@@ -2,6 +2,9 @@
   "endpoint": "/api/admin/funnel-snapshot",
   "wave": "ACTIVATION-FUNNEL-AUDIT-W1",
   "snapshot_date": "2026-05-28",
+  "modifications": [
+    { "wave": "CONVERSION-MEASUREMENT-W1", "date": "2026-06-18", "change": "ADDITIVE: + funnel.first_non_hold_verdict (activation 'aha' quality signal — COUNT DISTINCT session_id of free sessions reaching their first BUY/SELL). NOT a CANONICAL_STAGE_ORDER stage; stage_retentions stays 13 transitions; no key removed (Data-Integrity additive-only)." }
+  ],
   "shape_pinned_at_commit": "<post-deploy SHA filled by RELEASE-cadence step>",
   "auth": "Bearer token via Authorization header OR ?key= query param OR admin session cookie; matches existing isAdminAuthorized() pattern in src/index.ts:1109",
 
@@ -20,6 +23,7 @@
     "funnel.first_call",
     "funnel.second_call",
     "funnel.fifth_plus_call",
+    "funnel.first_non_hold_verdict",
     "funnel.paid_upgrade",
     "funnel.mcp_tools_list",
     "funnel.quota_hit_soft",
