@@ -16,6 +16,7 @@
  * the payment, or the entitlement grant.
  */
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
+import { getMonthlyQuota } from './license.js';
 
 const PG = !!process.env.DATABASE_URL;
 const TS = PG ? 'TIMESTAMPTZ' : 'TIMESTAMP';
@@ -263,6 +264,208 @@ export function assembleProfile(session: any, signals: ProfileSignals): Subscrib
   };
 }
 
+// ── CONVERSION-MEASUREMENT-W1 C2: best-effort pre-conversion bridge ──────────
+//
+// Links a paid conversion back to the customer's PRE-conversion FREE usage, as
+// far as is structurally possible, with an HONEST confidence per match path
+// (Factuality LAW — never fabricate a bridge):
+//   deterministic — track-token (the analytics session_id derives from it under
+//                   the stateless transport) OR a known free-tier email opt-in
+//                   (signup_emails).
+//   probabilistic — ip_hash only (the /signup click IP; NAT-shared → inferred).
+//   none          — no link found (e.g. a COLD /signup with no opt-in + no
+//                   attribution row — the honest answer for the lone existing
+//                   subscriber).
+// All metrics are best-effort from the strongest available usage key and null
+// when unresolvable. NO PII stored — counts / pct / a confidence label only.
+
+const TRACK_TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+// Bridge columns added to subscriber_profiles (migration 013). PG ADD COLUMN IF
+// NOT EXISTS is natively idempotent; SQLite has none, so it needs a
+// PRAGMA table_info() pre-check (CLAUDE.md DB/migrations rule).
+const SUBSCRIBER_BRIDGE_COLUMNS: { column: string; pgType: string; sqliteType: string }[] = [
+  { column: 'pre_conversion_calls', pgType: 'INTEGER', sqliteType: 'INTEGER' },
+  { column: 'pre_conversion_sessions', pgType: 'INTEGER', sqliteType: 'INTEGER' },
+  { column: 'time_to_first_call_s', pgType: 'INTEGER', sqliteType: 'INTEGER' },
+  { column: 'peak_quota_pct', pgType: 'NUMERIC(6,2)', sqliteType: 'REAL' },
+  { column: 'bridge_confidence', pgType: 'TEXT', sqliteType: 'TEXT' },
+];
+
+let _bridgeColumnsInit = false;
+/**
+ * Idempotently add the 5 bridge columns. PROD pre-applies migration 013 via SSH
+ * BEFORE the deploy, so this is a no-op there (pre-check finds them present);
+ * tests (SQLite) add them on first call. Safe to call repeatedly.
+ */
+export async function ensureSubscriberBridgeColumns(): Promise<void> {
+  if (_bridgeColumnsInit) return;
+  ensureSubscriberProfilesSchema();
+  if (PG) {
+    // PG: ADD COLUMN IF NOT EXISTS is natively idempotent — bundle one call.
+    dbExec(
+      SUBSCRIBER_BRIDGE_COLUMNS
+        .map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN IF NOT EXISTS ${c.column} ${c.pgType};`)
+        .join('\n'),
+    );
+  } else {
+    // SQLite: no IF NOT EXISTS — PRAGMA pre-check, add only missing columns.
+    const rows = await dbQuery<{ name: string }>(`PRAGMA table_info(subscriber_profiles)`, []);
+    const existing = new Set(rows.map((r) => r.name));
+    const missing = SUBSCRIBER_BRIDGE_COLUMNS.filter((c) => !existing.has(c.column));
+    if (missing.length > 0) {
+      dbExec(missing.map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN ${c.column} ${c.sqliteType};`).join('\n'));
+    }
+  }
+  _bridgeColumnsInit = true;
+}
+
+/** Reset the column-init latch — tests only. */
+export function _resetBridgeColumnsInitForTest(): void {
+  _bridgeColumnsInit = false;
+}
+
+export type BridgeConfidence = 'deterministic' | 'probabilistic' | 'none';
+
+export interface BridgeResult {
+  preConversionCalls: number | null;
+  preConversionSessions: number | null;
+  /** Seconds from the first pre-conversion call to conversion (free tenure). */
+  timeToFirstCallS: number | null;
+  /** max(call_count)/free_monthly_quota*100 over the linked ip_hash(es). */
+  peakQuotaPct: number | null;
+  bridgeConfidence: BridgeConfidence;
+}
+
+export interface BridgeInput {
+  email: string | null;
+  clientReferenceId: string | null;
+  trackToken: string | null;
+  convertedAtEpoch: number;
+}
+
+export interface BridgeDeps {
+  query: <T = Record<string, unknown>>(sql: string, params: unknown[]) => Promise<T[]>;
+  freeMonthlyQuota: number;
+}
+
+const makeDefaultBridgeDeps = (): BridgeDeps => ({ query: dbQuery, freeMonthlyQuota: getMonthlyQuota('free') });
+
+function bridgeSafeInt(v: unknown): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.trunc(v) : 0;
+  if (typeof v === 'bigint') return Number(v);
+  if (typeof v === 'string') { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; }
+  return 0;
+}
+
+function bridgeToEpochSeconds(ts: unknown): number | null {
+  if (typeof ts !== 'string' || ts.length === 0) return null;
+  const ms = new Date(ts).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+/**
+ * Resolve the best-effort pre-conversion usage bridge for a conversion. I/O is
+ * injected via `deps.query` (unit-testable with a table-routing mock). NEVER
+ * throws — any error yields an all-null / 'none' result (fail-open; the webhook
+ * must still ACK and the entitlement grant is unaffected).
+ */
+export async function resolvePreConversionBridge(
+  input: BridgeInput,
+  deps: BridgeDeps = makeDefaultBridgeDeps(),
+): Promise<BridgeResult> {
+  const EMPTY: BridgeResult = {
+    preConversionCalls: null, preConversionSessions: null, timeToFirstCallS: null,
+    peakQuotaPct: null, bridgeConfidence: 'none',
+  };
+  try {
+    const convIso = new Date(input.convertedAtEpoch * 1000).toISOString();
+    const token = typeof input.trackToken === 'string' && TRACK_TOKEN_RE.test(input.trackToken) ? input.trackToken : null;
+
+    // (1) email opt-in → deterministic identity.
+    let emailOptin = false;
+    if (input.email) {
+      const r = await deps.query<{ one: number }>(
+        `SELECT 1 AS one FROM signup_emails WHERE lower(email) = lower(?) LIMIT 1`, [input.email]);
+      emailOptin = r.length > 0;
+    }
+
+    // (2) ip_hash from the /signup click → probabilistic linkage.
+    let attrIpHash: string | null = null;
+    if (input.clientReferenceId) {
+      const r = await deps.query<{ ip_hash: string | null }>(
+        `SELECT ip_hash FROM signup_attribution WHERE client_reference_id = ? LIMIT 1`, [input.clientReferenceId]);
+      attrIpHash = (r[0]?.ip_hash as string | null) ?? null;
+    }
+
+    // (3) usage via the track-token session (session_id derives from the token).
+    let tokenCalls = 0; let tokenFirstCall: string | null = null; let tokenIpHash: string | null = null;
+    if (token) {
+      const r = await deps.query<{ calls: number | string; first_call: string | null; ip_hash: string | null }>(
+        `SELECT COUNT(*) AS calls, MIN(timestamp) AS first_call, MIN(ip_hash) AS ip_hash
+           FROM request_log
+          WHERE session_id = ? AND is_bot_internal = false AND timestamp < ?`,
+        [token, convIso]);
+      tokenCalls = bridgeSafeInt(r[0]?.calls);
+      tokenFirstCall = (r[0]?.first_call as string | null) ?? null;
+      tokenIpHash = (r[0]?.ip_hash as string | null) ?? null;
+    }
+
+    // (4) usage via the click ip_hash.
+    let ipCalls = 0; let ipSessions = 0; let ipFirstCall: string | null = null;
+    if (attrIpHash) {
+      const r = await deps.query<{ calls: number | string; sessions: number | string; first_call: string | null }>(
+        `SELECT COUNT(*) AS calls, COUNT(DISTINCT session_id) AS sessions, MIN(timestamp) AS first_call
+           FROM request_log
+          WHERE ip_hash = ? AND is_bot_internal = false AND timestamp < ?`,
+        [attrIpHash, convIso]);
+      ipCalls = bridgeSafeInt(r[0]?.calls);
+      ipSessions = bridgeSafeInt(r[0]?.sessions);
+      ipFirstCall = (r[0]?.first_call as string | null) ?? null;
+    }
+
+    // (5) peak_quota_pct from quota_usage (keyed free:<ipHash>) over any candidate ip.
+    const ipCandidates = Array.from(new Set([attrIpHash, tokenIpHash].filter((h): h is string => !!h)));
+    let peakQuotaPct: number | null = null;
+    if (ipCandidates.length > 0 && deps.freeMonthlyQuota > 0) {
+      const keys = ipCandidates.map((h) => `free:${h}`);
+      const placeholders = keys.map(() => '?').join(',');
+      const r = await deps.query<{ max_calls: number | string | null }>(
+        `SELECT MAX(call_count) AS max_calls FROM quota_usage WHERE tracker_key IN (${placeholders})`, keys);
+      const maxCalls = r[0]?.max_calls;
+      if (maxCalls != null) peakQuotaPct = Math.round((bridgeSafeInt(maxCalls) / deps.freeMonthlyQuota) * 10000) / 100;
+    }
+
+    // (6) decide confidence + project metrics from the strongest available link.
+    let confidence: BridgeConfidence;
+    let calls: number | null = null; let sessions: number | null = null; let firstCall: string | null = null;
+    if (token && tokenCalls > 0) {
+      confidence = 'deterministic'; calls = tokenCalls; sessions = 1; firstCall = tokenFirstCall;
+    } else if (emailOptin) {
+      confidence = 'deterministic';
+      if (attrIpHash && ipCalls > 0) { calls = ipCalls; sessions = ipSessions; firstCall = ipFirstCall; }
+    } else if (attrIpHash && (ipCalls > 0 || peakQuotaPct != null)) {
+      confidence = 'probabilistic'; calls = ipCalls; sessions = ipSessions; firstCall = ipFirstCall;
+    } else {
+      return { ...EMPTY, peakQuotaPct };
+    }
+
+    const firstCallEpoch = bridgeToEpochSeconds(firstCall);
+    const timeToFirstCallS = firstCallEpoch == null ? null : Math.max(0, Math.floor(input.convertedAtEpoch - firstCallEpoch));
+
+    return {
+      preConversionCalls: calls,
+      preConversionSessions: sessions,
+      timeToFirstCallS,
+      peakQuotaPct,
+      bridgeConfidence: confidence,
+    };
+  } catch (err) {
+    console.warn('[resolvePreConversionBridge] failed (fail-open):', err instanceof Error ? err.message : err);
+    return EMPTY;
+  }
+}
+
 export interface ProfileDeps {
   ensure: () => void;
   query: <T = Record<string, unknown>>(sql: string, params: unknown[]) => Promise<T[]>;
@@ -271,11 +474,18 @@ export interface ProfileDeps {
   resolveCardGeo?: (customerId: string) => Promise<{ country: string | null; riskLevel: string | null } | null>;
   /** Conversion epoch override (sec) — for deterministic tests/backfill. */
   nowEpoch?: number;
+  /**
+   * Optional async hook that idempotently ensures the C2 bridge columns exist.
+   * Present on the default deps (prod); tests that inject a full deps object
+   * omit it (the columns are pre-applied or irrelevant to the assertion).
+   */
+  ensureBridge?: () => Promise<void>;
 }
 const defaultProfileDeps: ProfileDeps = {
   ensure: () => { ensureSubscriberProfilesSchema(); ensureSignupAttributionSchema(); },
   query: dbQuery,
   run: dbRun,
+  ensureBridge: ensureSubscriberBridgeColumns,
 };
 
 /**
@@ -297,6 +507,7 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
       return;
     }
     deps.ensure();
+    if (deps.ensureBridge) await deps.ensureBridge();
 
     const clientReferenceId = asString(session?.client_reference_id);
     const email = asString(session?.customer_details?.email) ?? asString(session?.customer_email);
@@ -340,11 +551,21 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
     const nowEpoch = deps.nowEpoch ?? Math.floor(Date.now() / 1000);
     const p = assembleProfile(session, { attribution, hasOptin, hasUpgradeCta, cardCountry, riskLevel, convertedAtEpoch: nowEpoch });
 
+    // CONVERSION-MEASUREMENT-W1 C2: best-effort pre-conversion usage bridge via
+    // the SAME injected query seam. The track-token (when present) rides Stripe
+    // session metadata. Honest confidence; resolver is fail-open (never throws).
+    const trackToken = asString(session?.metadata?.track_token);
+    const bridge = await resolvePreConversionBridge(
+      { email, clientReferenceId, trackToken, convertedAtEpoch: nowEpoch },
+      { query: deps.query, freeMonthlyQuota: getMonthlyQuota('free') },
+    );
+
     deps.run(
       `INSERT INTO subscriber_profiles
         (customer_id, email, name, subscription_id, tier, status, amount_usd, currency, channel, country, country_source,
-         client_reference_id, signup_at, converted_at, latency_seconds, cold_subscribe, attribution_captured, risk_level)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         client_reference_id, signup_at, converted_at, latency_seconds, cold_subscribe, attribution_captured, risk_level,
+         pre_conversion_calls, pre_conversion_sessions, time_to_first_call_s, peak_quota_pct, bridge_confidence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (customer_id) DO UPDATE SET
          email = EXCLUDED.email, name = EXCLUDED.name, subscription_id = EXCLUDED.subscription_id,
          tier = EXCLUDED.tier, status = EXCLUDED.status, amount_usd = EXCLUDED.amount_usd, currency = EXCLUDED.currency,
@@ -352,15 +573,63 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
          client_reference_id = EXCLUDED.client_reference_id, signup_at = EXCLUDED.signup_at,
          converted_at = EXCLUDED.converted_at, latency_seconds = EXCLUDED.latency_seconds,
          cold_subscribe = EXCLUDED.cold_subscribe, attribution_captured = EXCLUDED.attribution_captured,
-         risk_level = EXCLUDED.risk_level`,
+         risk_level = EXCLUDED.risk_level,
+         pre_conversion_calls = EXCLUDED.pre_conversion_calls,
+         pre_conversion_sessions = EXCLUDED.pre_conversion_sessions,
+         time_to_first_call_s = EXCLUDED.time_to_first_call_s,
+         peak_quota_pct = EXCLUDED.peak_quota_pct,
+         bridge_confidence = EXCLUDED.bridge_confidence`,
       p.customerId, p.email, p.name, p.subscriptionId, p.tier, p.status, p.amountUsd, p.currency, p.channel,
       p.country, p.countrySource, p.clientReferenceId, p.signupAt, p.convertedAt, p.latencySeconds,
       p.coldSubscribe, p.attributionCaptured, p.riskLevel,
+      bridge.preConversionCalls, bridge.preConversionSessions, bridge.timeToFirstCallS, bridge.peakQuotaPct, bridge.bridgeConfidence,
     );
-    console.log(`[buildSubscriberProfile] profiled ${p.customerId} channel=${p.channel} country=${p.country ?? '?'}/${p.countrySource ?? '-'} cold=${p.coldSubscribe} captured=${p.attributionCaptured}`);
+    console.log(`[buildSubscriberProfile] profiled ${p.customerId} channel=${p.channel} country=${p.country ?? '?'}/${p.countrySource ?? '-'} cold=${p.coldSubscribe} captured=${p.attributionCaptured} bridge=${bridge.bridgeConfidence} calls=${bridge.preConversionCalls ?? '-'}`);
   } catch (err) {
     console.error('[buildSubscriberProfile] failed (fail-open):', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * CONVERSION-MEASUREMENT-W1 C2: one-shot backfill of the bridge columns for
+ * existing subscribers (those with a NULL bridge_confidence). Re-resolves the
+ * pre-conversion bridge from each row's stored email / client_reference_id /
+ * converted_at and UPDATEs the 5 columns. Idempotent (only touches still-NULL
+ * rows); fail-open per row. Returns the count of rows updated.
+ *
+ * Host post-deploy:
+ *   docker exec <ctr> node dist/scripts/backfill-subscriber-bridges.js
+ */
+export async function backfillSubscriberBridges(deps: ProfileDeps = defaultProfileDeps): Promise<number> {
+  if (deps.ensureBridge) await deps.ensureBridge();
+  const rows = await deps.query<{ customer_id: string; email: string | null; client_reference_id: string | null; converted_at: string | null }>(
+    `SELECT customer_id, email, client_reference_id, converted_at
+       FROM subscriber_profiles
+      WHERE bridge_confidence IS NULL`, []);
+  let updated = 0;
+  for (const row of rows) {
+    try {
+      const raw = row.converted_at ? Math.floor(new Date(row.converted_at).getTime() / 1000) : NaN;
+      const convertedEpoch = Number.isFinite(raw) ? raw : Math.floor(Date.now() / 1000);
+      const bridge = await resolvePreConversionBridge(
+        { email: row.email, clientReferenceId: row.client_reference_id, trackToken: null, convertedAtEpoch: convertedEpoch },
+        { query: deps.query, freeMonthlyQuota: getMonthlyQuota('free') },
+      );
+      deps.run(
+        `UPDATE subscriber_profiles
+            SET pre_conversion_calls = ?, pre_conversion_sessions = ?, time_to_first_call_s = ?,
+                peak_quota_pct = ?, bridge_confidence = ?
+          WHERE customer_id = ?`,
+        bridge.preConversionCalls, bridge.preConversionSessions, bridge.timeToFirstCallS,
+        bridge.peakQuotaPct, bridge.bridgeConfidence, row.customer_id,
+      );
+      updated += 1;
+      console.log(`[backfillSubscriberBridges] ${row.customer_id} → bridge=${bridge.bridgeConfidence} calls=${bridge.preConversionCalls ?? '-'} peak=${bridge.peakQuotaPct ?? '-'}`);
+    } catch (err) {
+      console.warn(`[backfillSubscriberBridges] ${row.customer_id} failed (fail-open):`, err instanceof Error ? err.message : err);
+    }
+  }
+  return updated;
 }
 
 // ── C3: operator admin tracker (read + aggregate + PII-free shell) ───────────
@@ -384,18 +653,27 @@ export interface SubscriberProfileRow {
   cold_subscribe: boolean | null;
   attribution_captured: boolean | null;
   risk_level: string | null;
+  // CONVERSION-MEASUREMENT-W1 C2 bridge columns (additive; non-PII).
+  pre_conversion_calls: number | null;
+  pre_conversion_sessions: number | null;
+  time_to_first_call_s: number | null;
+  peak_quota_pct: number | null;
+  bridge_confidence: string | null;
   created_at?: string | null;
 }
 
 /** Admin read — newest conversions first. Clamped limit/offset (integers only). */
 export async function listSubscriberProfiles(opts: { limit?: number; offset?: number } = {}): Promise<SubscriberProfileRow[]> {
   ensureSubscriberProfilesSchema();
+  await ensureSubscriberBridgeColumns();
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 200), 1), 500);
   const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
   return dbQuery<SubscriberProfileRow>(
     `SELECT customer_id, email, name, subscription_id, tier, status, amount_usd, currency, channel,
             country, country_source, client_reference_id, signup_at, converted_at, latency_seconds,
-            cold_subscribe, attribution_captured, risk_level, created_at
+            cold_subscribe, attribution_captured, risk_level,
+            pre_conversion_calls, pre_conversion_sessions, time_to_first_call_s, peak_quota_pct, bridge_confidence,
+            created_at
      FROM subscriber_profiles
      ORDER BY converted_at DESC NULLS LAST, created_at DESC
      LIMIT ${limit} OFFSET ${offset}`,
