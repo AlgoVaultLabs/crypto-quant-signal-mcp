@@ -2055,7 +2055,7 @@ async function main() {
         path.join(VAULT_DESIGN, 'v1-landing-rest.jsx'),
         [
           'AlgoVaultLandingRest', 'TryIn30', 'TradFiCallout', 'ThreeTools', 'UseCases',
-          'LiveTrackRecord', 'TamperProof', 'SimplePricing', 'ForDevelopers', 'FAQ', 'LandingFooter',
+          'LiveTrackRecord', 'TamperProof', 'TrustBand', 'SimplePricing', 'ForDevelopers', 'FAQ', 'LandingFooter',
           'LRBlock', 'LREyebrow', 'LRH2', 'LRLead', 'Pill', 'Check', 'Bullet', 'FAQItem',
         ]
       );
@@ -2065,6 +2065,8 @@ async function main() {
       const uc = injectUseCasesLogos(stripUseCasesDate(renderToString(React.createElement(exports.UseCases, { mobile }))));
       const ltr = injectLiveDataLiveTrack(renderToString(React.createElement(exports.LiveTrackRecord, { mobile })));
       const tp = renderToString(React.createElement(exports.TamperProof, { mobile }));
+      // LANDING-CONVERSION-TRUST-W1: additive trust band between TamperProof and pricing.
+      const tb = renderToString(React.createElement(exports.TrustBand, { mobile }));
       // WEBSITE-X402-SURFACING-W1 (2026-06-08): restored the x402 5th pricing card —
       // the PRICING-X402-CARD-W1 deferral is fulfilled (x402 is LIVE + CDP-Bazaar-listed).
       // filterX402Tier + adjustPricingGridCols RETIRED from the chain so the 5th card
@@ -2076,7 +2078,7 @@ async function main() {
       const fq = renderToString(React.createElement(exports.FAQ, { mobile })) + FAQ_ACCORDION_JS;
       const ft = applyFooterUrls(renderToString(React.createElement(exports.LandingFooter, { mobile })));
       // Final pass: wrap "5 exchanges" / "11 timeframes" prose literals with proxy spans (copy-consistency canary).
-      html = wrapCounterLiteralsInProse(try30 + tt + uc + ltr + tp + sp + fd + fq + ft);
+      html = wrapCounterLiteralsInProse(try30 + tt + uc + ltr + tp + tb + sp + fd + fq + ft);
     } else if (target === 'hero') {
       // DESIGN-W7 hero render — V1Hero from v1-minimal.jsx with `count=32, diagram='flow'`
       // (matches canonical AlgoVault Landing.html bootstrap line 59).

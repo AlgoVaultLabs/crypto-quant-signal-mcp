@@ -47,6 +47,7 @@ import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import { generateFunnelSnapshot } from './lib/funnel-snapshot.js';
 import { recordFunnelEvent } from './lib/performance-db.js';
+import { classifyCtaEventType } from './lib/cta-attribution.js';
 import { recordFirstNonHoldVerdict } from './lib/aha-event.js';
 // ACTIVATION-NUDGE-W1 (2026-06-18): the one-time aha upgrade_hint render reuses
 // C1's single first-non-HOLD detection; the warmer keeps the track-record SoT
@@ -1307,42 +1308,46 @@ async function startHttp() {
   // round-trips into `request_log`.
   app.get('/signup', async (req, res) => {
     const plan = req.query.plan as string;
+    const utmSource = typeof req.query.utm_source === 'string' ? req.query.utm_source : undefined;
+    const utmCampaign = typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : undefined;
+    const upgradeFrom = typeof req.query.upgrade_from === 'string' ? req.query.upgrade_from : undefined;
+    // Derive a session-unique client_reference_id for downstream attribution
+    // join even when UTM tags are absent (e.g. direct /signup typing).
+    const clientReferenceId = `${utmSource ?? 'direct'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28) + LANDING-CONVERSION-TRUST-W1 (2026-06-19):
+    // capture the CTA click BEFORE the plan-gate so keyless / plan-less landing clicks are
+    // measured too (the early-return on an absent/invalid plan previously skipped them).
+    // Recorded before the Stripe redirect so clicks that never complete checkout still count
+    // (funnel diff stage 7 → 8). Landing-sourced clicks (`upgrade_from=landing_*`) get a
+    // DISTINCT `landing_cta_clicked` event so cold-acquisition does NOT inflate the
+    // `upgrade_cta_clicked` nudge-conversion stage (CANONICAL_STAGE_ORDER stage 7).
+    // Lazy-import + fail-open.
+    if (upgradeFrom && upgradeFrom.length > 0 && upgradeFrom.length <= 40) {
+      try {
+        const { recordFunnelEvent } = await import('./lib/performance-db.js');
+        recordFunnelEvent({
+          eventType: classifyCtaEventType(upgradeFrom),
+          sessionId: clientReferenceId,
+          licenseTier: 'free',
+          meta: {
+            plan: plan ?? null,
+            upgrade_from: upgradeFrom,
+            utm_source: utmSource ?? null,
+            utm_campaign: utmCampaign ?? null,
+          },
+        });
+      } catch (err) {
+        // Fail-open per CLAUDE.md `## Automation-first recovery → fail-open`.
+        console.warn('[cta_clicked] recordFunnelEvent failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
     if (plan !== 'starter' && plan !== 'pro' && plan !== 'enterprise') {
       return res.status(400).send(getSignupPageHtml());
     }
 
     try {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const utmSource = typeof req.query.utm_source === 'string' ? req.query.utm_source : undefined;
-      const utmCampaign = typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : undefined;
-      const upgradeFrom = typeof req.query.upgrade_from === 'string' ? req.query.upgrade_from : undefined;
-      // Derive a session-unique client_reference_id for downstream attribution
-      // join even when UTM tags are absent (e.g. direct /signup typing).
-      const clientReferenceId = `${utmSource ?? 'direct'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-      // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): captures `upgrade_cta_clicked`
-      // (stage 7) when traffic carries `?upgrade_from=quota` attribution from
-      // tier-warning CTAs / quota-block error envelopes. Recorded BEFORE Stripe
-      // redirect so we capture clicks that never complete checkout (funnel
-      // diff stage 7 → 8). Lazy-import + fail-open.
-      if (upgradeFrom && upgradeFrom.length > 0) {
-        try {
-          const { recordFunnelEvent } = await import('./lib/performance-db.js');
-          recordFunnelEvent({
-            eventType: 'upgrade_cta_clicked',
-            sessionId: clientReferenceId,
-            licenseTier: 'free',
-            meta: {
-              plan,
-              upgrade_from: upgradeFrom,
-              utm_source: utmSource ?? null,
-              utm_campaign: utmCampaign ?? null,
-            },
-          });
-        } catch (err) {
-          // Fail-open per CLAUDE.md `## Automation-first recovery → fail-open`.
-          console.warn('[upgrade_cta_clicked] recordFunnelEvent failed:', err instanceof Error ? err.message : err);
-        }
-      }
       const url = await createCheckoutSession(plan, baseUrl, {
         utmSource,
         utmCampaign,
@@ -1820,7 +1825,24 @@ async function startHttp() {
     }
   });
 
-  app.get('/track-record', (_req, res) => {
+  app.get('/track-record', (req, res) => {
+    // LANDING-CONVERSION-TRUST-W1: instrument the landing/pricing → track-record click
+    // as a NON-stage funnel quality signal (reuses C1 recordFunnelEvent; does NOT alter
+    // CANONICAL_STAGE_ORDER=14). Fires only when a `?from=` source is present;
+    // fire-and-forget + fail-open (a capture error never affects the page render).
+    const from = typeof req.query.from === 'string' ? req.query.from : undefined;
+    if (from && from.length > 0 && from.length <= 40) {
+      try {
+        recordFunnelEvent({
+          eventType: 'track_record_viewed',
+          sessionId: `${from}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+          licenseTier: 'free',
+          meta: { from },
+        });
+      } catch (err) {
+        console.warn('[track_record_viewed] recordFunnelEvent failed:', err instanceof Error ? err.message : err);
+      }
+    }
     res.send(getPerformanceDashboardHtml({ isPublic: true }));
   });
 

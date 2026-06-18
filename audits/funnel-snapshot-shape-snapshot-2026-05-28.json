@@ -4,7 +4,8 @@
   "snapshot_date": "2026-05-28",
   "modifications": [
     { "wave": "CONVERSION-MEASUREMENT-W1", "date": "2026-06-18", "change": "ADDITIVE: + funnel.first_non_hold_verdict (activation 'aha' quality signal — COUNT DISTINCT session_id of free sessions reaching their first BUY/SELL). NOT a CANONICAL_STAGE_ORDER stage; stage_retentions stays 13 transitions; no key removed (Data-Integrity additive-only)." },
-    { "wave": "CONVERSION-MEASUREMENT-W1", "date": "2026-06-18", "change": "ADDITIVE: + pql_cohort (C3 scored PQL cohort; env-thresholded PQL_* with default-deny on NaN; fail-open → empty cohort, never 500s). candidate_ref is an 8-char ip_hash PREFIX only — the raw ip_hash is NEVER exposed (it stays a forbidden key)." }
+    { "wave": "CONVERSION-MEASUREMENT-W1", "date": "2026-06-18", "change": "ADDITIVE: + pql_cohort (C3 scored PQL cohort; env-thresholded PQL_* with default-deny on NaN; fail-open → empty cohort, never 500s). candidate_ref is an 8-char ip_hash PREFIX only — the raw ip_hash is NEVER exposed (it stays a forbidden key)." },
+    { "wave": "LANDING-CONVERSION-TRUST-W1", "date": "2026-06-19", "change": "ADDITIVE: + funnel.track_record_viewed + funnel.landing_cta_clicked (landing→track-record + landing→signup CTA-click quality signals; NOT CANONICAL_STAGE_ORDER stages, so stage_retentions stays 13; landing_cta_clicked is DISTINCT from upgrade_cta_clicked so cold landing traffic never inflates the nudge stage). funnel object key count → 19; drift_check funnel-key assertion updated 16→19 (also corrects the pre-existing stale 16 that CONVERSION-MEASUREMENT-W1's +first_non_hold_verdict should have bumped to 17)." }
   ],
   "shape_pinned_at_commit": "<post-deploy SHA filled by RELEASE-cadence step>",
   "auth": "Bearer token via Authorization header OR ?key= query param OR admin session cookie; matches existing isAdminAuthorized() pattern in src/index.ts:1109",
@@ -25,6 +26,8 @@
     "funnel.second_call",
     "funnel.fifth_plus_call",
     "funnel.first_non_hold_verdict",
+    "funnel.track_record_viewed",
+    "funnel.landing_cta_clicked",
     "funnel.paid_upgrade",
     "funnel.mcp_tools_list",
     "funnel.quota_hit_soft",
@@ -151,9 +154,9 @@
     }
   ],
 
-  "drift_check_command": "curl -fsS -H \"Authorization: Bearer $ADMIN_API_KEY\" 'https://api.algovault.com/api/admin/funnel-snapshot?window=7d' | jq -r '\"DRIFT_CHECK_OK\" as $ok | (.funnel | keys | length) as $fk | (.stage_retentions | keys | length) as $sr | if $fk == 16 and $sr == 13 and (.window_label == \"7d\") and (.weakest_stage_transition != null or (.warnings | length > 0)) then $ok else (\"DRIFT_CHECK_FAIL: funnel keys=\\($fk) (expected 16); stage_retentions keys=\\($sr) (expected 13); window_label=\\(.window_label) (expected 7d)\") end'",
+  "drift_check_command": "curl -fsS -H \"Authorization: Bearer $ADMIN_API_KEY\" 'https://api.algovault.com/api/admin/funnel-snapshot?window=7d' | jq -r '\"DRIFT_CHECK_OK\" as $ok | (.funnel | keys | length) as $fk | (.stage_retentions | keys | length) as $sr | if $fk == 19 and $sr == 13 and (.window_label == \"7d\") and (.weakest_stage_transition != null or (.warnings | length > 0)) then $ok else (\"DRIFT_CHECK_FAIL: funnel keys=\\($fk) (expected 19); stage_retentions keys=\\($sr) (expected 13); window_label=\\(.window_label) (expected 7d)\") end'",
 
   "drift_check_expected_output": "DRIFT_CHECK_OK",
 
-  "drift_check_notes": "Run monthly OR after any wave touching scripts/funnel-snapshot.ts / src/lib/funnel-snapshot.ts / src/index.ts /api/admin/funnel-snapshot handler. Asserts: funnel object has exactly 16 keys (5 legacy + 11 new), stage_retentions has exactly 13 transitions, window_label echoes correctly, weakest_stage_transition is present OR warnings array has at least one entry (the latter handles fresh-DB cases where all stages are null/0 and no transition can be picked)."
+  "drift_check_notes": "Run monthly OR after any wave touching scripts/funnel-snapshot.ts / src/lib/funnel-snapshot.ts / src/index.ts /api/admin/funnel-snapshot handler. Asserts: funnel object has exactly 19 keys (5 legacy + 11 ACTIVATION-FUNNEL-AUDIT-W1 + first_non_hold_verdict + track_record_viewed + landing_cta_clicked), stage_retentions has exactly 13 transitions, window_label echoes correctly, weakest_stage_transition is present OR warnings array has at least one entry (the latter handles fresh-DB cases where all stages are null/0 and no transition can be picked)."
 }

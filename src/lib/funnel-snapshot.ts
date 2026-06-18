@@ -75,6 +75,12 @@ export interface FunnelSnapshot {
     // excluded from stage_retentions + weakest_stage_transition so the 14-stage
     // funnel history stays byte-stable.
     first_non_hold_verdict: number | null;
+    // QUALITY SIGNALS (LANDING-CONVERSION-TRUST-W1) — landing→track-record + landing→signup
+    // CTA clicks; NOT stages (absent from CANONICAL_STAGE_ORDER/stage_retentions, so the
+    // 14-stage funnel history stays byte-stable). landing_cta_clicked is intentionally
+    // DISTINCT from upgrade_cta_clicked so cold landing traffic never inflates the nudge stage.
+    track_record_viewed: number | null;
+    landing_cta_clicked: number | null;
     paid_upgrade: number | null;
     // NEW 11 (ACTIVATION-FUNNEL-AUDIT-W1, 2026-05-28):
     mcp_tools_list: number | null;          // stage 2: distinct session_id from request_log WHERE tool_name='tools/list'
@@ -710,12 +716,17 @@ export async function generateFunnelSnapshot(
   let upgradeCtaClicked: number | null = null;
   // CONVERSION-MEASUREMENT-W1 C1: activation "aha" quality signal (not a stage).
   let firstNonHoldVerdict: number | null = null;
+  // LANDING-CONVERSION-TRUST-W1: landing CTA quality signals (NOT stages).
+  let trackRecordViewed: number | null = null;
+  let landingCtaClicked: number | null = null;
   try {
     quotaHitSoft = await getFunnelEventCount('quota_hit_soft', windowFromIso, windowToIso);
     quotaHitHard = await getFunnelEventCount('quota_hit_hard', windowFromIso, windowToIso);
     quotaHitBlock = await getFunnelEventCount('quota_hit_block', windowFromIso, windowToIso);
     upgradeCtaClicked = await getFunnelEventCount('upgrade_cta_clicked', windowFromIso, windowToIso);
     firstNonHoldVerdict = await getFunnelEventCount('first_non_hold_verdict', windowFromIso, windowToIso);
+    trackRecordViewed = await getFunnelEventCount('track_record_viewed', windowFromIso, windowToIso);
+    landingCtaClicked = await getFunnelEventCount('landing_cta_clicked', windowFromIso, windowToIso);
   } catch (err) {
     warnings.push(`funnel_events query failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -801,6 +812,9 @@ export async function generateFunnelSnapshot(
       // QUALITY SIGNAL (CONVERSION-MEASUREMENT-W1 C1) — first BUY/SELL per FREE
       // session; NOT a stage (absent from CANONICAL_STAGE_ORDER/stage_retentions).
       first_non_hold_verdict: firstNonHoldVerdict,
+      // QUALITY SIGNALS (LANDING-CONVERSION-TRUST-W1) — landing→track-record + landing→signup.
+      track_record_viewed: trackRecordViewed,
+      landing_cta_clicked: landingCtaClicked,
       paid_upgrade: paidUpgrade,
       // NEW 11 (ACTIVATION-FUNNEL-AUDIT-W1, 2026-05-28):
       mcp_tools_list: mcpToolsList,

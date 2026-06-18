@@ -47,10 +47,11 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
 
   it('produces snapshot with all 14 funnel stages + 13 stage_retentions + canonical key set', async () => {
     const snap = await generateFunnelSnapshot({ days: 7 });
-    // Funnel object has exactly 17 keys (5 legacy + 11 ACTIVATION-FUNNEL-AUDIT-W1
-    // + 1 CONVERSION-MEASUREMENT-W1 aha quality signal).
+    // Funnel object has exactly 19 keys (5 legacy + 11 ACTIVATION-FUNNEL-AUDIT-W1
+    // + 1 CONVERSION-MEASUREMENT-W1 aha quality signal + 2 LANDING-CONVERSION-TRUST-W1
+    // landing CTA quality signals).
     const funnelKeys = Object.keys(snap.funnel).sort();
-    expect(funnelKeys.length).toBe(17);
+    expect(funnelKeys.length).toBe(19);
     expect(funnelKeys).toContain('install');
     expect(funnelKeys).toContain('first_call');
     expect(funnelKeys).toContain('paid_upgrade');
@@ -66,8 +67,10 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
     expect(funnelKeys).toContain('tg_bot_quota_hit');
     expect(funnelKeys).toContain('tg_bot_upgrade_clicked');
     expect(funnelKeys).toContain('first_non_hold_verdict');
-    // stage_retentions has exactly 13 transitions across 14 stages (the aha
-    // quality signal is intentionally NOT a stage).
+    expect(funnelKeys).toContain('track_record_viewed');
+    expect(funnelKeys).toContain('landing_cta_clicked');
+    // stage_retentions has exactly 13 transitions across 14 stages (the aha + 2
+    // landing CTA quality signals are intentionally NOT stages).
     const retentionKeys = Object.keys(snap.stage_retentions);
     expect(retentionKeys.length).toBe(13);
     // weakest_stage_transition has the expected shape.
