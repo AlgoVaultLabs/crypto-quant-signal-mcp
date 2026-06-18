@@ -228,25 +228,31 @@ describe('Copy consistency — free-tier unlock + 11-timeframe canonical claim',
   });
 
   describe('"9 timeframes" only appears with track-record disambiguation context', () => {
-    for (const f of LANDING_FILES) {
-      const txt = read(f);
-      if (txt === null) continue;
-      if (!/9\s*(?:of\s*11\s*)?timeframes?/.test(txt)) continue;  // skip files with no "9 timeframes" mention
-      it(`${f}: every "9 timeframes" reference sits within ±200 chars of track-record context`, () => {
-        // Find every "9 timeframes" occurrence and check 200-char window for context.
+    // ONE internal-loop test so the suite is never empty — vitest reports a
+    // describe with zero registered `it`s as a file-level error ("No test found
+    // in suite"). The previous per-file dynamic `it` registered nothing once
+    // forward-stabilization removed every "9 timeframes" mention from landing
+    // copy, failing the whole file despite 0 real defects. The invariant is
+    // unchanged: every "9 timeframes" occurrence (if reintroduced) MUST sit
+    // within ±200 chars of track-record / "of 11" disambiguation context;
+    // vacuously satisfied when no surface mentions it.
+    it('every "9 timeframes" reference across landing surfaces sits within ±200 chars of track-record context', () => {
+      for (const f of LANDING_FILES) {
+        const txt = read(f);
+        if (txt === null) continue;
         const re = /9\s*(?:of\s*11\s*)?timeframes?/gi;
         let m: RegExpExecArray | null;
-        while ((m = re.exec(txt!)) !== null) {
+        while ((m = re.exec(txt)) !== null) {
           const start = Math.max(0, m.index - 200);
-          const end = Math.min(txt!.length, m.index + m[0].length + 200);
-          const window = txt!.slice(start, end);
+          const end = Math.min(txt.length, m.index + m[0].length + 200);
+          const window = txt.slice(start, end);
           const hasContext = /track[\s-]record|cron[\s-]seeded|public history|seeded for public|dashboard|of 11/i.test(window);
           expect(
             hasContext,
             `"${m[0]}" at offset ${m.index} in ${f} lacks track-record/seeded/dashboard/of-11 context within ±200 chars. Window:\n${window}`
           ).toBe(true);
         }
-      });
-    }
+      }
+    });
   });
 });
