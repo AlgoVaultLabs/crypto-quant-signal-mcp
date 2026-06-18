@@ -615,14 +615,25 @@ export async function backfillSubscriberBridges(deps: ProfileDeps = defaultProfi
         { email: row.email, clientReferenceId: row.client_reference_id, trackToken: null, convertedAtEpoch: convertedEpoch },
         { query: deps.query, freeMonthlyQuota: getMonthlyQuota('free') },
       );
-      deps.run(
+      const updateSql =
         `UPDATE subscriber_profiles
             SET pre_conversion_calls = ?, pre_conversion_sessions = ?, time_to_first_call_s = ?,
                 peak_quota_pct = ?, bridge_confidence = ?
-          WHERE customer_id = ?`,
+          WHERE customer_id = ?`;
+      const updateParams = [
         bridge.preConversionCalls, bridge.preConversionSessions, bridge.timeToFirstCallS,
         bridge.peakQuotaPct, bridge.bridgeConfidence, row.customer_id,
-      );
+      ];
+      // PG `dbRun` is FIRE-AND-FORGET; this one-shot backfill runs in a
+      // SHORT-LIVED process that exits before such a write flushes (the live
+      // webhook path is fine — its server process is long-lived). So on PG AWAIT
+      // a durable write (dbQuery → awaited pool.query). SQLite dbRun is sync +
+      // durable; tests inject deps.run and exercise this branch.
+      if (PG) {
+        await deps.query(updateSql, updateParams);
+      } else {
+        deps.run(updateSql, ...updateParams);
+      }
       updated += 1;
       console.log(`[backfillSubscriberBridges] ${row.customer_id} → bridge=${bridge.bridgeConfidence} calls=${bridge.preConversionCalls ?? '-'} peak=${bridge.peakQuotaPct ?? '-'}`);
     } catch (err) {
