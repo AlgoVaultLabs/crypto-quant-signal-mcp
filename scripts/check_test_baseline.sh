@@ -29,6 +29,18 @@ set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT" || { echo "[test-gate] cannot cd to repo root; failing OPEN" >&2; exit 0; }
 
+# CRITICAL: when invoked from a git hook (pre-push), git exports GIT_DIR /
+# GIT_INDEX_FILE / GIT_WORK_TREE / GIT_PREFIX / GIT_COMMON_DIR / GIT_QUARANTINE_PATH
+# into the environment. Tests that spawn `git` subprocesses (e.g.
+# tests/unit/check-system-map.test.ts, which inits temp git repos and runs
+# `git -C <tmpdir> commit`) would inherit them and operate on the WRONG repo —
+# the env GIT_DIR overrides even `git -C` → the temp-repo setup fails → false
+# regressions that would block EVERY push. Scrub them so the suite runs in a
+# clean git env (REPO_ROOT was already resolved above, before this point).
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR \
+      GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_QUARANTINE_PATH \
+      GIT_NAMESPACE GIT_REFLOG_ACTION 2>/dev/null || true
+
 BASELINE_FILE="audits/test-baseline-known-failures.txt"
 MODE="${ALGOVAULT_TEST_GATE:-block}"
 TMP="${TMPDIR:-/tmp}"
