@@ -18,6 +18,9 @@ import type { LicenseInfo, LicenseTier } from '../types.js';
 import { SOFT_THRESHOLD } from './activation-thresholds.js';
 import { getTrackRecord } from './track-record-snapshot.js';
 import { buildSoftNudge, buildLimitMessage } from './nudge-copy.js';
+// REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
+import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
+import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
 
 // v1.10.3 FREE-UNLOCK-W1: free tier now grants ALL coins + ALL timeframes —
 // the 100-calls/month cap is the primary upsell trigger; funding-arb top-5
@@ -281,6 +284,14 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
   const key = extractApiKey(authHeader);
   if (!key) return { tier: 'free', key: null };
 
+  // REFERRAL-LIGHT-W1 (C2): av_free_ keys resolve via the free-keys store, NEVER
+  // Stripe. A KNOWN free key tracks BY KEY (durable identity for the +500 bonus);
+  // an UNKNOWN av_free_ key default-denies to keyless free.
+  if (key.startsWith(FREE_KEY_PREFIX)) {
+    const fk = await lookupFreeKey(key);
+    return fk ? { tier: 'free', key } : { tier: 'free', key: null };
+  }
+
   // Try Stripe validation (cached, 5-min TTL)
   const stripeResult = await stripeValidateApiKey(key);
   if (stripeResult.valid && stripeResult.tier) {
@@ -309,6 +320,14 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
 function resolveFromApiKey(authHeader?: string): LicenseInfo {
   const key = extractApiKey(authHeader);
   if (!key) return { tier: 'free', key: null };
+
+  // REFERRAL-LIGHT-W1 (C2): av_free_ keys are free tier — NEVER the prefix-based
+  // pro/enterprise escalation below. The sync (stdio) path is cache-only; a cache
+  // miss → keyless free (the durable lookup is the async HTTP path that warms it).
+  if (key.startsWith(FREE_KEY_PREFIX)) {
+    const fk = lookupFreeKeyCached(key);
+    return fk ? { tier: 'free', key } : { tier: 'free', key: null };
+  }
 
   // Prefix-based tier detection (backward compat)
   const tier: LicenseTier = key.startsWith('ent_') ? 'enterprise' : key.startsWith('av_starter_') ? 'starter' : 'pro';
@@ -398,6 +417,84 @@ const callTrackers = new Map<string, CallTracker>();
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 let quotaDbInitialized = false;
 
+// ── REFERRAL-LIGHT-W1 (C2): referee bonus-calls meter ──
+// In-memory map mirrors the quota_usage pattern — seeded from referral_bonus at
+// initQuotaDb, kept current by write-through persist on consume + the
+// grantReferralBonus wrapper. Free-tier units exceeding the monthly allowance
+// draw from this (atomic, all-or-nothing). The value is INTERNAL: portal-only,
+// never surfaced in the _algovault envelope (strict shape snapshot).
+const bonusRemaining = new Map<string, number>();
+let bonusLoaded = false;
+
+/**
+ * Tracker-key derivation (single source). Free-WITH-key (av_free_ referral key)
+ * tracks BY KEY → its durable bonus bucket; keyless free by ip-hash; paid by key.
+ * Replaces the three inline `free:${ipHash}` derivations (keyless-free + paid
+ * behavior byte-identical; only keyed-free is new — zero av_free_ keys today).
+ */
+function deriveTrackerKey(license: LicenseInfo): string {
+  if (license.tier === 'free') {
+    return license.key || `free:${getRequestIpHash() || 'anon'}`;
+  }
+  return license.key || 'unknown';
+}
+
+/** In-memory referral bonus for a tracker key (0 if none). Portal/test reader. */
+export function getBonusForKey(trackerKey: string): number {
+  return bonusRemaining.get(trackerKey) ?? 0;
+}
+
+/** Atomic all-or-nothing consume of `needed` bonus units + write-through persist. */
+function consumeBonusUnits(trackerKey: string, needed: number): boolean {
+  if (needed <= 0) return true;
+  const have = bonusRemaining.get(trackerKey) ?? 0;
+  if (have < needed) return false;
+  const next = have - needed;
+  bonusRemaining.set(trackerKey, next);
+  persistBonusRemaining(trackerKey, next);
+  return true;
+}
+
+/**
+ * Grant referral bonus calls (C3 free-signup + paid-conversion). Updates the
+ * in-memory meter AND persists via referral_store.grantBonus so a fresh grant is
+ * visible to the very next call in this process. Returns the new total.
+ */
+export async function grantReferralBonus(trackerKey: string, calls: number, sourceCode?: string | null): Promise<number> {
+  const total = await grantBonus(trackerKey, calls, sourceCode);
+  bonusRemaining.set(trackerKey, total);
+  return total;
+}
+
+/**
+ * Charge a FREE-tier request against the monthly allowance, then the referral
+ * bonus for any overflow (atomic). When bonus covers the overflow the monthly
+ * counter caps at quota; otherwise the attempt is counted (overage visible) and
+ * the call is blocked. Used by both trackCall and trackCallByKey (free path).
+ */
+function freeMeterCharge(trackerKey: string, tracker: CallTracker, quota: number, units: number): TrackCallResult {
+  const before = tracker.count;
+  const monthlyRemaining = Math.max(0, quota - before);
+  const monthlyConsume = Math.min(units, monthlyRemaining);
+  const overflow = units - monthlyConsume;
+  let allowed = true;
+  if (overflow === 0) {
+    tracker.count = before + units;
+  } else if (consumeBonusUnits(trackerKey, overflow)) {
+    tracker.count = before + monthlyConsume; // monthly capped; overflow drawn from bonus
+  } else {
+    tracker.count = before + units; // count the attempt so overage is visible
+    allowed = false;
+  }
+  persistTracker(trackerKey, tracker);
+  const remaining = Math.max(0, quota - tracker.count);
+  const overage = Math.max(0, tracker.count - quota);
+  const result: TrackCallResult = { allowed, remaining, overage, used: tracker.count, total: quota };
+  const bonus = bonusRemaining.get(trackerKey);
+  if (bonus !== undefined) result.bonus_remaining = bonus;
+  return result;
+}
+
 /** Initialize quota_usage table and load persisted counts into memory. */
 export function initQuotaDb(): void {
   if (quotaDbInitialized) return;
@@ -412,6 +509,14 @@ export function initQuotaDb(): void {
     dbQuery<{ tracker_key: string; call_count: string; period_start: string }>(
       'SELECT tracker_key, call_count, period_start FROM quota_usage'
     ).then(r => loadQuotaRows(r, now)).catch(() => {});
+    // REFERRAL-LIGHT-W1 (C2): warm the referral bonus meter from referral_bonus
+    // (fire-and-forget, mirrors the quota_usage warm). Grants/consumes during the
+    // process keep the map current via grantReferralBonus + write-through persist.
+    if (!bonusLoaded) {
+      loadAllBonuses()
+        .then(rows => { for (const r of rows) bonusRemaining.set(r.tracker_key, r.bonus_remaining); bonusLoaded = true; })
+        .catch(() => {});
+    }
     quotaDbInitialized = true;
   } catch {
     // DB not ready yet — will retry on next call
@@ -479,6 +584,12 @@ export interface TrackCallResult {
   overage: number;
   used: number;
   total: number;
+  /**
+   * REFERRAL-LIGHT-W1 (C2): referee bonus calls remaining after this charge.
+   * INTERNAL — consumed by the /account portal only; NEVER surfaced in the
+   * `_algovault` envelope (the scan/trade shape snapshots are a strict allow-list).
+   */
+  bonus_remaining?: number;
 }
 
 /**
@@ -491,7 +602,7 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
     return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
   }
 
-  const key = license.tier === 'free' ? `free:${getRequestIpHash() || 'anon'}` : (license.key || 'unknown');
+  const key = deriveTrackerKey(license);
   const tracker = getCallTracker(key);
   const quota = getMonthlyQuota(license.tier);
 
@@ -499,6 +610,13 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
   const overage = Math.max(0, tracker.count - quota);
 
   if (license.tier === 'free' && tracker.count >= quota) {
+    // REFERRAL-LIGHT-W1 (C2): if the referee still has bonus calls, the request
+    // is NOT blocked (the actual consume happens in trackCall) — and it is NOT a
+    // quota_hit_block (the user hasn't hit a wall).
+    const bonus = bonusRemaining.get(key) ?? 0;
+    if (bonus > 0) {
+      return { allowed: true, remaining, overage, used: tracker.count, total: quota, bonus_remaining: bonus };
+    }
     // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): stage 6 quota_hit_block. Fires
     // on EVERY blocked call (snapshot reader's COUNT(DISTINCT session_id)
     // collapses to 1-per-session). Fail-open per recordFunnelEvent contract.
@@ -530,20 +648,20 @@ export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
     return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
   }
 
-  const key = license.tier === 'free' ? `free:${getRequestIpHash() || 'anon'}` : (license.key || 'unknown');
+  const key = deriveTrackerKey(license);
   const tracker = getCallTracker(key);
   const quota = getMonthlyQuota(license.tier);
+
+  // REFERRAL-LIGHT-W1 (C2): free tier draws monthly-then-bonus (atomic overflow).
+  if (license.tier === 'free') {
+    return freeMeterCharge(key, tracker, quota, clampUnits(units));
+  }
 
   tracker.count += clampUnits(units);
   persistTracker(key, tracker);
 
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);
-
-  // Free tier: block when quota exhausted
-  if (license.tier === 'free' && tracker.count > quota) {
-    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
-  }
 
   return { allowed: true, remaining, overage, used: tracker.count, total: quota };
 }
@@ -568,6 +686,11 @@ export function checkQuotaByKey(trackerKey: string, tier: LicenseTier): TrackCal
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);
   if (tracker.count >= quota) {
+    // REFERRAL-LIGHT-W1 (C2): a free owner with bonus left is not blocked here
+    // (consume happens in trackCallByKey).
+    if (tier === 'free' && (bonusRemaining.get(trackerKey) ?? 0) > 0) {
+      return { allowed: true, remaining, overage, used: tracker.count, total: quota, bonus_remaining: bonusRemaining.get(trackerKey) };
+    }
     return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
   }
   return { allowed: true, remaining, overage, used: tracker.count, total: quota };
@@ -580,6 +703,10 @@ export function trackCallByKey(trackerKey: string, tier: LicenseTier, units = 1)
   }
   const tracker = getCallTracker(trackerKey);
   const quota = getMonthlyQuota(tier);
+  // REFERRAL-LIGHT-W1 (C2): free tier draws monthly-then-bonus (atomic overflow).
+  if (tier === 'free') {
+    return freeMeterCharge(trackerKey, tracker, quota, clampUnits(units));
+  }
   tracker.count += clampUnits(units);
   persistTracker(trackerKey, tracker);
   const remaining = Math.max(0, quota - tracker.count);
@@ -639,7 +766,7 @@ export function getQuotaExhaustedMessage(used: number, total: number): string {
  * the structured-error `retry_after_days` field.
  */
 export function daysUntilMonthReset(license: LicenseInfo): number {
-  const key = license.tier === 'free' ? `free:${getRequestIpHash() || 'anon'}` : (license.key || 'unknown');
+  const key = deriveTrackerKey(license);
   const tracker = callTrackers.get(key);
   if (!tracker) return 30;
   const msUntilReset = (tracker.periodStart + MONTH_MS) - Date.now();
