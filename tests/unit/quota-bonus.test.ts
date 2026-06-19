@@ -6,6 +6,17 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+// Per-file SQLite isolation (unique temp HOME before imports) — see free-keys.test.ts.
+vi.hoisted(() => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-ref-quota-'));
+  process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
+  delete process.env.DATABASE_URL;
+});
+
 // Spy on Stripe validateApiKey to PROVE av_free_ resolution never calls Stripe.
 // vi.hoisted so the spy exists when the (hoisted) vi.mock factory runs.
 const { validateSpy } = vi.hoisted(() => ({
@@ -25,6 +36,7 @@ import {
   getMonthlyQuota,
   getBonusForKey,
   grantReferralBonus,
+  initQuotaDb,
 } from '../../src/lib/license.js';
 import { ensureReferralSchema, getBonusRemaining } from '../../src/lib/referral-store.js';
 import { mintFreeKey, ensureFreeKeysSchema, _resetFreeKeyCacheForTest } from '../../src/lib/free-keys-store.js';
@@ -32,6 +44,7 @@ import { dbRun } from '../../src/lib/performance-db.js';
 import type { LicenseInfo } from '../../src/types.js';
 
 beforeEach(() => {
+  initQuotaDb(); // creates quota_usage in the fresh per-file DB before the DELETE
   ensureReferralSchema();
   ensureFreeKeysSchema();
   for (const t of ['referral_bonus', 'free_keys', 'quota_usage']) dbRun(`DELETE FROM ${t}`);

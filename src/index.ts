@@ -1039,6 +1039,11 @@ async function startHttp() {
   // Single multi-statement dbExec per CLAUDE.md "Postgres DDL bundling" rule.
   ensureProcessedStripeEventsSchema();
 
+  // REFERRAL-LIGHT-W1 (C3): ensure the live Stripe webhook is subscribed to
+  // invoice.paid + charge.refunded (read→union→write, *=no-op, fail-open + runbook).
+  // Fire-and-forget so a Stripe API hiccup never delays server boot.
+  void import('./lib/referral-accrual.js').then((m) => m.ensureReferralWebhookEvents()).catch(() => {});
+
   const { default: express } = await import('express');
   const { default: rateLimit } = await import('express-rate-limit');
 
@@ -1223,9 +1228,22 @@ async function startHttp() {
       if (!event) return res.status(400).json({ error: 'Stripe not configured' });
 
       switch (event.type) {
-        case 'customer.subscription.created':
-          await handleSubscriptionCreated(event);
+        case 'customer.subscription.created': {
+          const conv = await handleSubscriptionCreated(event);
+          // REFERRAL-LIGHT-W1 (C3): if this paid signup carried a ref code (stamped
+          // on the subscription by createCheckoutSession), attribute the conversion +
+          // grant the referee bonus with the freshly-minted key. Fail-open; the
+          // entitlement (key + welcome email) already happened inside the handler.
+          if (conv?.refCode) {
+            try {
+              const { onPaidConversion } = await import('./lib/referral-accrual.js');
+              await onPaidConversion({ customerId: conv.customerId, apiKey: conv.apiKey, refCode: conv.refCode, email: conv.email });
+            } catch (err) {
+              console.error('Stripe webhook: referral paid-conversion hook failed (fail-open):', err instanceof Error ? err.message : err);
+            }
+          }
           break;
+        }
         case 'customer.subscription.deleted':
           await handleSubscriptionDeleted(event);
           break;
@@ -1292,6 +1310,19 @@ async function startHttp() {
           }
           break;
         }
+        case 'invoice.paid': {
+          // REFERRAL-LIGHT-W1 (C3): accrue 30% referral commission (idempotent on
+          // the event id; auto Stripe-credit or usdc_pending). Fail-open internally.
+          const { processInvoicePaid } = await import('./lib/referral-accrual.js');
+          await processInvoicePaid(event);
+          break;
+        }
+        case 'charge.refunded': {
+          // REFERRAL-LIGHT-W1 (C3): claw back any commission accrued on the refund.
+          const { processChargeRefunded } = await import('./lib/referral-accrual.js');
+          await processChargeRefunded(event);
+          break;
+        }
         default:
           console.log(`Stripe webhook: unhandled event ${event.type}`);
       }
@@ -1343,6 +1374,25 @@ async function startHttp() {
       }
     }
 
+    // REFERRAL-LIGHT-W1 (C3): capture ?ref= — validate (invalid → ignore, NEVER
+    // block checkout) + record a ref-click funnel signal. Carried into Stripe
+    // checkout metadata for the paid path; the free path uses /api/signup-email.
+    let refCode: string | undefined;
+    const ref = typeof req.query.ref === 'string' ? req.query.ref : undefined;
+    if (ref) {
+      try {
+        const { resolveCode } = await import('./lib/referral-store.js');
+        const code = await resolveCode(ref);
+        if (code) {
+          refCode = code.code;
+          const { recordFunnelEvent } = await import('./lib/performance-db.js');
+          recordFunnelEvent({ eventType: 'referral_click', sessionId: clientReferenceId, licenseTier: 'free', meta: { code: code.code, plan: plan ?? null } });
+        }
+      } catch (err) {
+        console.warn('[/signup referral] capture failed (fail-open):', err instanceof Error ? err.message : err);
+      }
+    }
+
     if (plan !== 'starter' && plan !== 'pro' && plan !== 'enterprise') {
       return res.status(400).send(getSignupPageHtml());
     }
@@ -1353,6 +1403,7 @@ async function startHttp() {
         utmSource,
         utmCampaign,
         clientReferenceId,
+        refCode,
       });
       if (!url) return res.status(500).send('Stripe not configured or missing price IDs');
       // SUBSCRIBER-ATTRIBUTION-SPINE-W1 (C1): persist the click attribution so
@@ -2124,9 +2175,17 @@ async function startHttp() {
   // flag is on).
   registerWebhookRoutes(app);
 
-  app.post('/api/signup-email', express.json({ limit: '2kb' }), async (req, res) => {
+  // REFERRAL-LIGHT-W1 (C3): per-IP limiter on the public opt-in (mirrors recoverKeyLimiter).
+  const signupEmailLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many signup requests. Try again in an hour.',
+  });
+  app.post('/api/signup-email', signupEmailLimiter, express.json({ limit: '2kb' }), async (req, res) => {
     try {
-      const body = (req.body ?? {}) as { email?: unknown; source?: unknown; optin_consent?: unknown };
+      const body = (req.body ?? {}) as { email?: unknown; source?: unknown; optin_consent?: unknown; ref?: unknown };
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
       const source = typeof body.source === 'string' ? body.source : 'welcome-paywall';
       const optinConsent = body.optin_consent === true;
@@ -2148,6 +2207,21 @@ async function startHttp() {
       });
       const optinAt = new Date().toISOString();
 
+      // REFERRAL-LIGHT-W1 (C3): a valid, non-self ref on a fresh opt-in mints an
+      // av_free_ key + grants the +500 referee bonus (one grant per human). Invalid
+      // / absent / self ref → plain opt-in. Fail-open; never blocks the 200.
+      const ref = typeof body.ref === 'string' ? body.ref : undefined;
+      let referral: { applied: boolean; freeKey: string | null; bonusCalls: number } = { applied: false, freeKey: null, bonusCalls: 0 };
+      if (ref) {
+        try {
+          const { processFreeReferralSignup } = await import('./lib/referral-accrual.js');
+          const r = await processFreeReferralSignup(email, ref);
+          referral = { applied: r.applied, freeKey: r.freeKey, bonusCalls: r.bonusCalls };
+        } catch (err) {
+          console.error(`[/api/signup-email] referral processing failed (fail-open): ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
       // Fire-and-forget confirmation email. Only send on a fresh claim — if a
       // retry hits within the same second, the claim returns false and we skip
       // re-sending (caller protection). Resend outage logs but does not 500.
@@ -2168,6 +2242,10 @@ async function startHttp() {
         ok: true,
         optin_at: optinAt,
         inserted: result.inserted,
+        // REFERRAL-LIGHT-W1 (C3): additive — present ONLY when a referral applied.
+        // `key` is the caller's own newly-minted free key (returned over their own
+        // request; never logged). C4 also delivers key + bonus via the email.
+        ...(referral.applied ? { referral_applied: true, bonus_calls: referral.bonusCalls, key: referral.freeKey } : {}),
       });
     } catch (err) {
       console.error(`[/api/signup-email] internal error: ${err instanceof Error ? err.message : err}`);

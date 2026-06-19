@@ -3,7 +3,22 @@
  * av_free_ shape, idempotent-on-email mint, async lookup (cache → DB), and the
  * sync cache-only lookup (stdio path). No Stripe import (gate-asserted separately).
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Isolate this file's SQLite DB: set a unique temp HOME BEFORE the store imports
+// load (vi.hoisted runs ahead of imports) so performance-db computes DB_DIR
+// (~/.crypto-quant-signal/performance.db) against it. Eliminates cross-file DELETE
+// collisions on the shared referral tables in the full parallel suite.
+vi.hoisted(() => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-ref-freekeys-'));
+  process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
+  delete process.env.DATABASE_URL;
+});
+
 import {
   ensureFreeKeysSchema,
   mintFreeKey,
@@ -12,11 +27,9 @@ import {
   FREE_KEY_PREFIX,
   _resetFreeKeyCacheForTest,
 } from '../../src/lib/free-keys-store.js';
-import { dbRun } from '../../src/lib/performance-db.js';
 
 beforeEach(() => {
   ensureFreeKeysSchema();
-  dbRun('DELETE FROM free_keys');
   _resetFreeKeyCacheForTest();
 });
 

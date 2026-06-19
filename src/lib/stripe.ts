@@ -44,6 +44,13 @@ export function generateApiKey(): string {
   return `av_live_${hex}`;
 }
 
+// REFERRAL-LIGHT-W1 (C3): expose the configured Stripe client for referral
+// commission credits + webhook-event config (referral-accrual.ts). Null when Stripe
+// is unconfigured; callers null-check. Keeps the singleton encapsulated otherwise.
+export function getStripeClient(): InstanceType<typeof DefaultStripe> | null {
+  return stripe;
+}
+
 // ── Cache (5-minute TTL) ──
 
 interface CacheEntry {
@@ -137,6 +144,13 @@ export interface CheckoutSessionOptions {
   /** Optional UTM tags — persisted in `metadata.utm_source` / `metadata.utm_campaign`. */
   utmSource?: string;
   utmCampaign?: string;
+  /**
+   * REFERRAL-LIGHT-W1 (C3): referral code. Stamped on BOTH session
+   * `metadata.ref_code` (for checkout.session.completed) AND
+   * `subscription_data.metadata.ref_code` so handleSubscriptionCreated reads it in
+   * the same event it mints the api key (no cross-event race).
+   */
+  refCode?: string;
 }
 
 export async function createCheckoutSession(
@@ -155,6 +169,8 @@ export async function createCheckoutSession(
   const metadata: Record<string, string> = { tier: plan };
   if (opts.utmSource) metadata.utm_source = opts.utmSource.slice(0, 64);
   if (opts.utmCampaign) metadata.utm_campaign = opts.utmCampaign.slice(0, 64);
+  // REFERRAL-LIGHT-W1 (C3): ref_code on the session (read in checkout.session.completed).
+  if (opts.refCode) metadata.ref_code = opts.refCode.slice(0, 16);
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -162,6 +178,9 @@ export async function createCheckoutSession(
     success_url: `${baseUrl}/welcome?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/signup?cancelled=true`,
     metadata,
+    // REFERRAL-LIGHT-W1 (C3): also stamp ref_code on the SUBSCRIPTION object so
+    // handleSubscriptionCreated (where the api key is minted) reads it in one event.
+    ...(opts.refCode ? { subscription_data: { metadata: { ref_code: opts.refCode.slice(0, 16) } } } : {}),
     // client_reference_id is bounded to 200 chars per Stripe; we cap at 128
     // to leave headroom + sanitize down to safe URL-ish chars.
     ...(opts.clientReferenceId
@@ -215,8 +234,10 @@ export function constructWebhookEvent(body: Buffer, signature: string): any {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function handleSubscriptionCreated(event: any): Promise<void> {
-  if (!stripe) return;
+export async function handleSubscriptionCreated(
+  event: any,
+): Promise<{ customerId: string; apiKey: string; tier: string; refCode: string | null; email: string | null } | null> {
+  if (!stripe) return null;
 
   const subscription = event.data.object;
   const customerId = typeof subscription.customer === 'string'
@@ -255,6 +276,12 @@ export async function handleSubscriptionCreated(event: any): Promise<void> {
   } else {
     console.warn(`Stripe: customer ${customerId} has no email — welcome email skipped`);
   }
+
+  // REFERRAL-LIGHT-W1 (C3): surface the conversion + any ref_code (carried on the
+  // subscription metadata by createCheckoutSession) so the webhook case can attribute
+  // the paid conversion + grant the referee bonus with the freshly-minted key.
+  const refCode = (subscription.metadata?.ref_code as string | undefined) || null;
+  return { customerId, apiKey, tier, refCode, email: email ?? null };
 }
 
 // ── Account Portal Helpers ──

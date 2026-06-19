@@ -9,7 +9,19 @@
  * beforeEach gives clean isolation with zero cross-file collision (the shared
  * SQLite file is only touched on these tables by this suite).
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Per-file SQLite isolation (unique temp HOME before imports) — see free-keys.test.ts.
+vi.hoisted(() => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-ref-store-'));
+  process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
+  delete process.env.DATABASE_URL;
+});
+
 import {
   ensureReferralSchema,
   deriveUserCode,
