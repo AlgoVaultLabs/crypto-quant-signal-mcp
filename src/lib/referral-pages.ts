@@ -148,14 +148,20 @@ export function renderReferralTermsPage(): string {
  * the SoT label fns (zero hardcoded literals — the chapter grep gate enforces it).
  * PFE-only; no outcome_*. Indexable (a discovery surface, unlike the noindex terms
  * page). LANDING-REFERRAL-PAGE-W1.
+ *
+ * LINK ORIGINS (this page is served on the APEX algovault.com/referral via the Caddy
+ * reverse_proxy, so a relative href resolves to the APEX): /account is api-canonical
+ * (NOT on the apex — Stripe success_url is built from the request host) → ABSOLUTE
+ * https://api.algovault.com/account; /referral-terms IS proxied onto the apex (Caddy
+ * `handle /referral-terms`) → relative is fine; start-free → absolute apex #quickstart.
  */
 export function renderReferralLandingPage(): string {
   const body = `
     <h1>Refer a friend — both win.</h1>
     <p class="sub">Your friend gets ${bonusCallsLabel()} bonus calls. You earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()} — paid automatically.</p>
     <div class="card" style="text-align:center;padding:24px 20px">
-      <a class="link" style="display:inline-block;font-weight:700;font-size:16px;color:var(--bg);background:var(--mint);padding:12px 24px;border-radius:10px;text-decoration:none" href="/account">Get your referral link &rarr;</a>
-      <p class="muted" style="margin:14px 0 0">Every account has one automatically — paste your key on <a href="/account">your account</a> to grab your link and stats.</p>
+      <a class="link" style="display:inline-block;font-weight:700;font-size:16px;color:var(--bg);background:var(--mint);padding:12px 24px;border-radius:10px;text-decoration:none" href="https://api.algovault.com/account">Get your referral link &rarr;</a>
+      <p class="muted" style="margin:14px 0 0">Every account has one automatically — paste your key on <a href="https://api.algovault.com/account">your account</a> to grab your link and stats.</p>
     </div>
 
     <h2>How it works</h2>
@@ -175,7 +181,7 @@ export function renderReferralLandingPage(): string {
       <p style="margin-bottom:0"><strong>Full terms?</strong> Read the <a href="/referral-terms">referral terms</a> — including the required FTC disclosure when you promote your link.</p>
     </div>
 
-    <p class="muted">Already using AlgoVault? Your link is in your <a href="/account">account</a>. New here? <a href="https://algovault.com/#quickstart">Start free</a>, then share.</p>
+    <p class="muted">Already using AlgoVault? Your link is in your <a href="https://api.algovault.com/account">account</a>. New here? <a href="https://algovault.com/#quickstart">Start free</a>, then share.</p>
   `;
   return shell('AlgoVault — Refer a friend, both win', body, {
     index: true,

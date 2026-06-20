@@ -118,10 +118,13 @@ describe('renderReferralLandingPage — LANDING-REFERRAL-PAGE-W1', () => {
     expect(page).toMatch(/<meta name="description" content="[^"]+">/);
   });
 
-  it('hands the path (no join form): CTA → /account, links terms + the keyless start-free path', () => {
+  it('hands the path (no join form): CTA → api /account, links terms + the keyless start-free path', () => {
     expect(page).not.toMatch(/<form/i);                          // no gate
-    expect(page).toContain('href="/account"');                   // get-your-link CTA target
-    expect(page).toContain('href="/referral-terms"');            // full terms
+    // /account is api-canonical (Stripe success_url from request host) — the page is
+    // served on the APEX, so the link MUST be absolute api or it 404s on algovault.com.
+    expect(page).toContain('href="https://api.algovault.com/account"'); // get-your-link CTA
+    expect(page).not.toContain('href="/account"');               // never apex-relative (would 404)
+    expect(page).toContain('href="/referral-terms"');            // proxied onto the apex → relative OK
     expect(page).toContain('href="https://algovault.com/#quickstart"'); // anon "start free"
   });
 

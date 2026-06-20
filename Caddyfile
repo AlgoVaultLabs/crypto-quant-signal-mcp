@@ -37,6 +37,13 @@ algovault.com {
     handle /referral {
         reverse_proxy localhost:3000
     }
+    # LANDING-REFERRAL-PAGE-W1 (fix) — the public referral-terms page is function-
+    # rendered (api-only by default); proxy it onto the apex too so the /referral
+    # page's relative "referral terms" link + any externally-shared algovault.com/
+    # referral-terms URL resolve (was a 404 on the apex). Content/legal page → apex.
+    handle /referral-terms {
+        reverse_proxy localhost:3000
+    }
     handle /api/performance-public {
         reverse_proxy localhost:3000
     }

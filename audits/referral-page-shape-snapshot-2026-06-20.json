@@ -17,12 +17,14 @@
       "index_contract": "<meta name=\"robots\" content=\"index,follow\"> (a discovery/share surface, UNLIKE the noindex /referral-terms page); apex robots.txt is `Allow: /` (only /dashboard + /.well-known disallowed) so the apex URL is crawlable",
       "must_contain": [
         "Refer a friend",
-        "href=\"/account\"",
+        "href=\"https://api.algovault.com/account\"",
         "href=\"/referral-terms\"",
         "href=\"https://algovault.com/#quickstart\"",
         "content=\"index,follow\"",
         "<meta name=\"description\" content=\""
       ],
+      "link_origin_contract": "served on the APEX (algovault.com/referral) so relative hrefs resolve to the apex: /account is api-canonical (Stripe success_url from request host; NOT apex-served) -> ABSOLUTE https://api.algovault.com/account; /referral-terms is proxied onto the apex (Caddy handle /referral-terms) -> relative OK; start-free -> absolute apex #quickstart. Regression guard: NO bare href=\"/account\" (would 404 on the apex).",
+      "forbidden_substrings_extra": "href=\"/account\" (apex-relative app link would 404 — must be absolute api)",
       "must_contain_sot_interpolated": {
         "note": "present-but-DRIFT-TOLERANT — these render from referral-constants label fns; value correctness is asserted in the unit test, NOT pinned here, so a legitimate SoT change (e.g. commission 30%→35%) does not false-fail this snapshot",
         "bonusCallsLabel()": "500",
