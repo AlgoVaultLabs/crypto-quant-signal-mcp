@@ -30,7 +30,7 @@ import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass } from './lib/license.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
@@ -1489,6 +1489,52 @@ async function startHttp() {
     const { renderReferralTermsPage } = await import('./lib/referral-pages.js');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(renderReferralTermsPage());
+  });
+
+  // TG-REFERRAL-W1 (C1): internal JSON API for the Telegram bot (algovault-bot),
+  // which calls these over loopback with the internal-bypass key. They resolve/mint
+  // a TG user's referral code and record a TG referral attribution, reusing the
+  // referral engine as the single SoT. Bot-only: 401 unless checkInternalBypass
+  // passes (two-flag BOT_INTERNAL_BYPASS_ENABLED + X-AlgoVault-Internal-Key).
+  app.get('/api/referral/code', async (req, res) => {
+    if (!checkInternalBypass(req.headers as Record<string, string | undefined>)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
+    }
+    try {
+      const tg = req.query.tg;
+      const chatId = typeof tg === 'string' ? tg.trim() : '';
+      if (!chatId || !/^-?\d{1,20}$/.test(chatId)) {
+        return res.status(400).json({ ok: false, error: 'invalid_tg' });
+      }
+      const { resolveTgReferralCode } = await import('./lib/referral-api.js');
+      const result = await resolveTgReferralCode(chatId);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('[/api/referral/code] error:', err instanceof Error ? err.message : err);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  app.post('/api/referral/attribute', express.json({ limit: '2kb' }), async (req, res) => {
+    if (!checkInternalBypass(req.headers as Record<string, string | undefined>)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
+    }
+    try {
+      const body = (req.body ?? {}) as { ref_code?: unknown; tg_chat_id?: unknown };
+      const refCode = typeof body.ref_code === 'string' ? body.ref_code : '';
+      const raw = body.tg_chat_id;
+      const chatId = typeof raw === 'string' || typeof raw === 'number' ? String(raw).trim() : '';
+      if (!refCode || !chatId || !/^-?\d{1,20}$/.test(chatId)) {
+        return res.status(400).json({ ok: false, error: 'ref_code_and_tg_chat_id_required' });
+      }
+      const { attributeTgReferral } = await import('./lib/referral-api.js');
+      const result = await attributeTgReferral(refCode, chatId);
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('[/api/referral/attribute] error:', err instanceof Error ? err.message : err);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
   });
 
   // Admin analytics (only if ADMIN_API_KEY is set)

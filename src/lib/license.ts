@@ -129,7 +129,7 @@ export interface ResolveLicenseOpts {
  * Two-flag firewall per CLAUDE.md `## Build rules > Cross-repo wire-up`:
  * outer `BOT_INTERNAL_BYPASS_ENABLED` (default false) + inner key match.
  */
-function checkInternalBypass(
+export function checkInternalBypass(
   headers: Record<string, string | undefined>,
 ): LicenseInfo | null {
   if (process.env.BOT_INTERNAL_BYPASS_ENABLED !== 'true') return null;

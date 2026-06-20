@@ -1,0 +1,37 @@
+{
+  "wave": "TG-REFERRAL-W1",
+  "chapter": "C1",
+  "snapshot_date": "2026-06-20",
+  "naming_law": "program facts (bonus_calls/commission_pct/commission_months) project from src/lib/referral-constants.ts REFERRAL_TERMS via referralTerms(); never hardcoded in the API or the bot",
+  "surfaces": [
+    {
+      "endpoint": "GET /api/referral/code?tg=<chat_id>",
+      "shape": "json",
+      "auth": "internal-bypass key (checkInternalBypass: BOT_INTERNAL_BYPASS_ENABLED=true + X-AlgoVault-Internal-Key == ALGOVAULT_INTERNAL_BYPASS_KEY); 401 otherwise. Bot-only (loopback).",
+      "allowed_keys": ["ok", "code", "share_url", "deep_link", "terms", "stats", "error"],
+      "terms_keys": ["bonus_calls", "commission_pct", "commission_months"],
+      "stats_keys": ["signups", "conversions", "accrued_usd_e2", "credited_usd_e2", "usdc_pending_usd_e2"],
+      "forbidden_keys": ["outcome_return_pct", "outcome_price", "owner_key", "referee_email", "raw chat_id"],
+      "error_contract": "401 {ok:false,error:'unauthorized'} · 400 {ok:false,error:'invalid_tg'} · 500 {ok:false,error:'internal_error'}",
+      "cache_contract": "Cache-Control: no-store",
+      "consumers": ["algovault-bot /referral command (C2)", "algovault-bot ref-join greet + compounding prompt (C2/C3)"],
+      "drift_check_command": "curl -s 'http://127.0.0.1:3000/api/referral/code?tg=1793689937' -H \"X-AlgoVault-Internal-Key: $KEY\" | jq 'keys'"
+    },
+    {
+      "endpoint": "POST /api/referral/attribute {ref_code, tg_chat_id}",
+      "shape": "json",
+      "auth": "internal-bypass key; 401 otherwise. Bot-only (loopback).",
+      "allowed_keys": ["ok", "recorded", "bonus_calls", "reason", "error"],
+      "reason_enum": ["invalid_code", "unknown_code", "self_referral", "already_attributed"],
+      "idempotency": "one grant per TG referee (referee_email = tgIdentity(chat_id), UNIQUE) → duplicate returns {recorded:false, reason:'already_attributed', bonus_calls:0}",
+      "self_referral": "code owner_key == tgIdentity(referee chat_id) → {recorded:false, reason:'self_referral'}",
+      "forbidden_keys": ["outcome_return_pct", "outcome_price"],
+      "error_contract": "401 unauthorized · 400 ref_code_and_tg_chat_id_required · 500 internal_error",
+      "consumers": ["algovault-bot /start ref_<CODE> capture (C2)"],
+      "drift_check_command": "curl -s -XPOST http://127.0.0.1:3000/api/referral/attribute -H \"X-AlgoVault-Internal-Key: $KEY\" -H 'content-type: application/json' -d '{\"ref_code\":\"<code>\",\"tg_chat_id\":\"999000111\"}' | jq 'keys'"
+    }
+  ],
+  "channel_migration": "migrations/016_referral_channel_tg.sql widens referral_attributions.channel CHECK to add 'tg' (additive; pre-applied to prod PG via SSH; in-code DDL mirrors for fresh/test DBs)",
+  "data_integrity": "no outcome_* exposed; raw chat_ids never persisted (opaque tg:<hash> identity lane); reuses the REFERRAL-LIGHT-W1 engine — no new tables, no Stripe/accrual change",
+  "tools_list_impact": "NONE — HTTP routes only; no MCP tool added (tools/list stays 9, byte-identical)"
+}

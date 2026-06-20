@@ -42,7 +42,7 @@ const REFERRAL_DDL = `
     code TEXT NOT NULL,
     referee_email TEXT UNIQUE,
     referee_key TEXT,
-    channel TEXT NOT NULL CHECK (channel IN ('paid_checkout', 'free_signup')),
+    channel TEXT NOT NULL CHECK (channel IN ('paid_checkout', 'free_signup', 'tg')),
     stripe_customer_id TEXT,
     window_ends_at ${TS},
     created_at ${TS} NOT NULL DEFAULT ${NOW}
@@ -84,7 +84,7 @@ export function _resetReferralSchemaInitForTest(): void {
 
 // ── Types ──
 export type ReferralKind = 'user' | 'partner';
-export type ReferralChannel = 'paid_checkout' | 'free_signup';
+export type ReferralChannel = 'paid_checkout' | 'free_signup' | 'tg';
 export type LedgerStatus = 'credited' | 'usdc_pending' | 'usdc_paid' | 'clawed_back';
 
 export interface ReferralCodeRow {
