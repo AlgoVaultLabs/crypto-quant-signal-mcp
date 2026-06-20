@@ -1,0 +1,51 @@
+{
+  "wave": "LANDING-REFERRAL-PAGE-W1",
+  "snapshot_date": "2026-06-20",
+  "naming_law": "public copy says 'calls'; every referral program fact interpolates from src/lib/referral-constants.ts REFERRAL_TERMS label fns — zero hardcoded literals (renderer source grep-gated by tests/unit/referral-pages.test.ts)",
+  "surfaces": [
+    {
+      "endpoint": "GET /referral",
+      "renderer": "src/lib/referral-pages.ts renderReferralLandingPage()",
+      "route": "src/index.ts app.get('/referral', …) — mirrors /referral-terms",
+      "shape": "html",
+      "content_type": "text/html; charset=utf-8",
+      "served_on": [
+        "https://algovault.com/referral — apex, via Caddyfile `handle /referral { reverse_proxy localhost:3000 }` (same mechanism as /track-record); the canonical, on-brand, indexable surface the footer + other channels link to",
+        "https://api.algovault.com/referral — api origin, direct (Express); same bytes"
+      ],
+      "indexable": true,
+      "index_contract": "<meta name=\"robots\" content=\"index,follow\"> (a discovery/share surface, UNLIKE the noindex /referral-terms page); apex robots.txt is `Allow: /` (only /dashboard + /.well-known disallowed) so the apex URL is crawlable",
+      "must_contain": [
+        "Refer a friend",
+        "href=\"/account\"",
+        "href=\"/referral-terms\"",
+        "href=\"https://algovault.com/#quickstart\"",
+        "content=\"index,follow\"",
+        "<meta name=\"description\" content=\""
+      ],
+      "must_contain_sot_interpolated": {
+        "note": "present-but-DRIFT-TOLERANT — these render from referral-constants label fns; value correctness is asserted in the unit test, NOT pinned here, so a legitimate SoT change (e.g. commission 30%→35%) does not false-fail this snapshot",
+        "bonusCallsLabel()": "500",
+        "commissionPct()": "30%",
+        "commissionMonthsLabel()": "12 months",
+        "usdcMinPayoutLabel()": "$50"
+      },
+      "forbidden_substrings": [
+        "outcome_return_pct",
+        "outcome_price",
+        "price_at_signal",
+        "content=\"noindex\" (this page MUST stay indexable)",
+        "<form (anonymous visitors are handed the path to /account — NO join form / gate)"
+      ],
+      "error_contract": "renderReferralLandingPage() is a pure HTML-string renderer with no DB/Stripe/HTTP — the route effectively always returns 200 text/html; an unexpected throw falls through to Express' default 500",
+      "cache_contract": "no explicit Cache-Control on the Express route (apex /referral is proxied, so it does NOT inherit the static catch-all's max-age=60); content is static per deploy",
+      "consumers": [
+        "landing/index.html footer link 'Refer & Earn' → /referral (apex, relative)",
+        "TG-REFERRAL-W1 bot share target",
+        "the future REFERRAL-INPRODUCT-NUDGE-W1 value-moment nudge",
+        "the welcome / referred-free emails"
+      ],
+      "drift_check_command": "curl -s https://algovault.com/referral | grep -qE 'Refer a friend' && curl -s https://algovault.com/referral | grep -q 'content=\"index,follow\"' && ! curl -s https://algovault.com/referral | grep -qE 'outcome_(return_pct|price)|content=\"noindex\"|<form'"
+    }
+  ]
+}

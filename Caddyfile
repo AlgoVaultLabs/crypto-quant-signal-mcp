@@ -30,6 +30,13 @@ algovault.com {
     handle /track-record {
         reverse_proxy localhost:3000
     }
+    # LANDING-REFERRAL-PAGE-W1 — apex /referral explainer + share page is
+    # function-rendered by Express (renderReferralLandingPage). Placed BEFORE the
+    # static catch-all so algovault.com/referral hits Express, not file_server
+    # (same mechanism as /track-record above). Indexable; apex robots.txt allows /.
+    handle /referral {
+        reverse_proxy localhost:3000
+    }
     handle /api/performance-public {
         reverse_proxy localhost:3000
     }

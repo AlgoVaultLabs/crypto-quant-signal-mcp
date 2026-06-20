@@ -25,10 +25,17 @@ function esc(s: string): string {
 
 // Minimal self-contained dark shell (mint accent) — matches the AlgoVault brand
 // without depending on the account-page chrome, so this stays a pure renderer.
-function shell(title: string, body: string): string {
+// `opts` is an optional TRAILING param so every existing caller (terms/stats/admin)
+// stays byte-identical (default = noindex, no description). Only the public, indexable
+// /referral landing page opts into index + a meta description (LANDING-REFERRAL-PAGE-W1).
+function shell(title: string, body: string, opts?: { index?: boolean; description?: string }): string {
+  const robots = opts?.index
+    ? '<meta name="robots" content="index,follow">'
+    : '<meta name="robots" content="noindex">';
+  const desc = opts?.description ? `\n<meta name="description" content="${esc(opts.description)}">` : '';
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
+${robots}${desc}
 <title>${esc(title)}</title>
 <style>
   :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--fg-3:#8b949e;--mint:#3fb950}
@@ -130,6 +137,50 @@ export function renderReferralTermsPage(): string {
     <p class="muted">Questions? <a href="mailto:support@algovault.com">support@algovault.com</a></p>
   `;
   return shell('AlgoVault — Referral terms', body);
+}
+
+/**
+ * GET /referral — the public, indexable referral explainer + share destination.
+ * The canonical landing surface every other referral channel (the TG bot, the
+ * future in-product nudge, the welcome email) points to. Incentive-first; hands
+ * the visitor the path to their link (NO join form — anonymous visitors route to
+ * /account, which mints/exposes the code). Every program number interpolates from
+ * the SoT label fns (zero hardcoded literals — the chapter grep gate enforces it).
+ * PFE-only; no outcome_*. Indexable (a discovery surface, unlike the noindex terms
+ * page). LANDING-REFERRAL-PAGE-W1.
+ */
+export function renderReferralLandingPage(): string {
+  const body = `
+    <h1>Refer a friend — both win.</h1>
+    <p class="sub">Your friend gets ${bonusCallsLabel()} bonus calls. You earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()} — paid automatically.</p>
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <a class="link" style="display:inline-block;font-weight:700;font-size:16px;color:var(--bg);background:var(--mint);padding:12px 24px;border-radius:10px;text-decoration:none" href="/account">Get your referral link &rarr;</a>
+      <p class="muted" style="margin:14px 0 0">Every account has one automatically — paste your key on <a href="/account">your account</a> to grab your link and stats.</p>
+    </div>
+
+    <h2>How it works</h2>
+    <div class="card">
+      <ol style="margin:0;padding-left:20px;line-height:1.9">
+        <li><strong>Grab your link.</strong> Every account gets one automatically — find it in your account.</li>
+        <li><strong>Share it.</strong> Your friend gets ${bonusCallsLabel()} bonus calls the moment they join.</li>
+        <li><strong>Earn.</strong> Get ${commissionPct()} of their subscription every month for ${commissionMonthsLabel()} — auto-credited.</li>
+      </ol>
+    </div>
+
+    <h2>FAQ</h2>
+    <div class="card">
+      <p><strong>Who can refer?</strong> Every account — your referral code is generated automatically, no sign-up step.</p>
+      <p><strong>What counts?</strong> A friend who signs up or subscribes through your link.</p>
+      <p><strong>How am I paid?</strong> Commission is credited automatically to your next AlgoVault invoice. No active subscription? It accrues and is payable in USDC on Base once your balance reaches ${usdcMinPayoutLabel()}.</p>
+      <p style="margin-bottom:0"><strong>Full terms?</strong> Read the <a href="/referral-terms">referral terms</a> — including the required FTC disclosure when you promote your link.</p>
+    </div>
+
+    <p class="muted">Already using AlgoVault? Your link is in your <a href="/account">account</a>. New here? <a href="https://algovault.com/#quickstart">Start free</a>, then share.</p>
+  `;
+  return shell('AlgoVault — Refer a friend, both win', body, {
+    index: true,
+    description: `Refer a friend to AlgoVault and you both win: they get ${bonusCallsLabel()} bonus calls, you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}, paid automatically.`,
+  });
 }
 
 export interface AdminOverviewView {

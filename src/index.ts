@@ -1514,6 +1514,15 @@ async function startHttp() {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(renderReferralTermsPage());
   });
+  // LANDING-REFERRAL-PAGE-W1: public, indexable /referral explainer + share
+  // destination (incentive-first; CTA routes anon visitors to /account). Served
+  // on the apex via the Caddyfile `handle /referral` reverse_proxy (same path as
+  // /track-record) so algovault.com/referral resolves; mirrors /referral-terms.
+  app.get('/referral', async (_req, res) => {
+    const { renderReferralLandingPage } = await import('./lib/referral-pages.js');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderReferralLandingPage());
+  });
 
   // TG-REFERRAL-W1 (C1): internal JSON API for the Telegram bot (algovault-bot),
   // which calls these over loopback with the internal-bypass key. They resolve/mint

@@ -219,6 +219,11 @@ function applyFooterUrls(html) {
     // /welcome + /account are not in the apex Caddy allowlist, and Stripe success_url is built
     // from the request host) — so this link MUST be absolute or it 404s on algovault.com.
     .replace(/href="#Signup"/g, 'href="https://api.algovault.com/signup"')
+    // LANDING-REFERRAL-PAGE-W1: footer "Refer & Earn" → the apex /referral page.
+    // RELATIVE (unlike #Signup) because /referral rides the apex Caddy reverse_proxy
+    // (handle /referral, same as /track-record), so algovault.com/referral resolves.
+    // The "&" in the label serializes to "&amp;" in the rendered href placeholder.
+    .replace(/href="#Refer &amp; Earn"/g, 'href="/referral"')
     .replace(/href="#Privacy"/g, 'href="/privacy"')
     .replace(/href="#npm"/g, 'href="https://www.npmjs.com/package/crypto-quant-signal-mcp" target="_blank" rel="noopener"')
     .replace(/href="#MCP Registry"/g, 'href="https://registry.modelcontextprotocol.io/v0/servers?search=algovault" target="_blank" rel="noopener"')
