@@ -401,24 +401,59 @@ export function renderAdminReferralsPage(v: AdminOverviewView): string {
 }
 
 export interface AdminPayoutsView {
-  pending: Array<{ code: string; ownerEmail: string | null; pendingUsdE2: number; rowCount: number; ledgerIds: number[] }>;
+  pending: Array<{ code: string; ownerEmail: string | null; payoutAddress: string | null; pendingUsdE2: number; rowCount: number; ledgerIds: number[] }>;
+  // REFERRAL-PAYOUT-OPS-W1 / C2 — batch total + the Approve-all form key + a post-run flash.
+  batchTotalUsdE2?: number;
+  adminKey?: string;
+  result?: {
+    senderKind: string;
+    paidCount: number;
+    totalPaidUsdE2: number;
+    skippedNoAddress: string[];
+    failed: Array<{ code: string; reason: string }>;
+  };
 }
 
-/** GET /admin/referrals/payouts — USDC-pending queue ≥ the min payout. */
+/** GET /admin/referrals/payouts — USDC-pending queue ≥ the min payout + Approve-all. */
 export function renderAdminPayoutsPage(v: AdminPayoutsView): string {
+  const total = v.batchTotalUsdE2 ?? v.pending.reduce((s, p) => s + p.pendingUsdE2, 0);
+  const shortAddr = (a: string) => (a.length >= 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
   const rows = v.pending.length
     ? v.pending.map((p) => `<tr>
         <td class="mono">${esc(p.code)}</td>
         <td>${p.ownerEmail ? esc(maskEmail(p.ownerEmail)) : '<span class="muted">—</span>'}</td>
+        <td>${p.payoutAddress ? `<span class="mono">${esc(shortAddr(p.payoutAddress))}</span>` : '<span class="pill" style="color:#d29922">no address</span>'}</td>
         <td>${formatUsdE2(p.pendingUsdE2)}</td>
         <td>${p.rowCount}</td>
         <td class="mono muted">${p.ledgerIds.join(', ')}</td>
       </tr>`).join('')
-    : `<tr><td colspan="5" class="muted">No payouts pending ≥ ${esc(usdcMinPayoutLabel())}.</td></tr>`;
+    : `<tr><td colspan="6" class="muted">No payouts pending ≥ ${esc(usdcMinPayoutLabel())}.</td></tr>`;
+
+  let resultBlock = '';
+  if (v.result) {
+    const r = v.result;
+    const stub = r.senderKind === 'stub';
+    const headline = stub
+      ? '⚠ CDP wallet not configured — no USDC sent.'
+      : `✓ Sent ${r.paidCount} payout(s) — ${formatUsdE2(r.totalPaidUsdE2)} total.`;
+    const stubNote = stub ? '<p class="muted" style="margin:8px 0 0">Set <span class="mono">CDP_WALLET_SECRET</span> + fund the payout wallet, then Approve all again — or mark rows paid manually below.</p>' : '';
+    const skipped = r.skippedNoAddress.length ? `<p class="muted" style="margin:8px 0 0">Skipped (no address): ${esc(r.skippedNoAddress.join(', '))}</p>` : '';
+    const failed = r.failed.length ? `<p style="margin:8px 0 0;color:#f85149">Failed: ${esc(r.failed.map((f) => `${f.code} (${f.reason})`).join(', '))}</p>` : '';
+    resultBlock = `<div class="card" style="border-color:${stub ? '#d29922' : 'var(--mint)'}"><strong>${headline}</strong>${stubNote}${skipped}${failed}</div>`;
+  }
+
+  const approveAll = (v.pending.length && v.adminKey)
+    ? `<form method="post" action="/admin/referrals/payouts/approve-all?key=${encodeURIComponent(v.adminKey)}" onsubmit="return confirm('Send USDC on Base to all ${v.pending.length} referrer(s) with an address (${formatUsdE2(total)} total)? This is irreversible.')" style="margin:16px 0">
+        <button type="submit" style="font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px;border:1px solid var(--mint);background:var(--mint);color:var(--bg);cursor:pointer">Approve all &amp; send (${formatUsdE2(total)}) &rarr;</button>
+      </form>`
+    : '';
+
   const body = `
     <h1>USDC payout queue</h1>
-    <p class="sub">Referrers with ≥ ${usdcMinPayoutLabel()} pending (no active subscription to auto-credit). Mark a ledger row paid via <span class="mono">POST /admin/referrals/payouts/:id/paid</span> with <span class="mono">{tx_ref}</span>.</p>
-    <div class="card"><table><thead><tr><th>Code</th><th>Owner</th><th>Pending</th><th>Rows</th><th>Ledger IDs</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="sub">Referrers with ≥ ${usdcMinPayoutLabel()} pending (no active subscription to auto-credit). Batch total: <strong>${formatUsdE2(total)}</strong>. <strong>Approve all</strong> sends USDC on Base to each address (${payoutScheduleLabel()}); rows without an address are skipped until the referrer adds one. Manual fallback: <span class="mono">POST /admin/referrals/payouts/:id/paid</span> with <span class="mono">{tx_ref}</span>.</p>
+    ${resultBlock}
+    ${approveAll}
+    <div class="card"><table><thead><tr><th>Code</th><th>Owner</th><th>Address</th><th>Pending</th><th>Rows</th><th>Ledger IDs</th></tr></thead><tbody>${rows}</tbody></table></div>
   `;
   return shell('AlgoVault — USDC payouts', body);
 }

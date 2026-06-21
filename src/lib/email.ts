@@ -13,7 +13,7 @@ import { Resend } from 'resend';
 // Program numbers interpolate from REFERRAL_TERMS renderers (never hardcoded —
 // chapter gate). deriveUserCode is the pure code derivation (no DB).
 import { deriveUserCode } from './referral-store.js';
-import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink } from './referral-constants.js';
+import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2 } from './referral-constants.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
 const ACCOUNT_URL = 'https://api.algovault.com/account';
@@ -290,6 +290,54 @@ Add it as: Authorization: Bearer ${freeKey}
 Against: https://api.algovault.com/mcp
 
 Manage your key + referral stats: ${ACCOUNT_URL}
+Questions? support@algovault.com
+
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
+// REFERRAL-PAYOUT-OPS-W1 / C2 — transactional "you've been paid" email, sent on each
+// confirmed USDC-on-Base payout. amountUsdE2 = integer cents; txRef = the on-chain tx
+// hash (links to Basescan) or a manual ref. Mirrors the free-key email's table layout.
+export async function sendPayoutPaidEmail(to: string, amountUsdE2: number, txRef: string): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const amount = formatUsdE2(amountUsdE2);
+  const subject = `Your AlgoVault referral payout — ${amount} USDC`;
+  const isTxHash = /^0x[0-9a-fA-F]{64}$/.test(txRef);
+  const basescan = isTxHash ? `https://basescan.org/tx/${txRef}` : null;
+  const txHtml = basescan
+    ? `<a href="${basescan}" style="color:#0969da;text-decoration:none;font-family:ui-monospace,Menlo,monospace;word-break:break-all">${txRef}</a> <span style="color:#656d76">(view on Basescan)</span>`
+    : `<span style="font-family:ui-monospace,Menlo,monospace;word-break:break-all">${txRef}</span>`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f8fa;padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #d0d7de;border-radius:12px;overflow:hidden">
+<tr><td style="padding:24px 28px;border-bottom:1px solid #d0d7de"><div style="font-size:18px;font-weight:700">AlgoVault Labs</div><div style="font-size:12px;color:#656d76;margin-top:2px">Referral payout</div></td></tr>
+<tr><td style="padding:28px">
+  <h1 style="font-size:22px;font-weight:700;margin:0 0 12px">You've been paid ${amount} 🎉</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 20px">We've sent your referral commission in <strong>USDC on Base</strong> to the payout address on your account.</p>
+  <div style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:16px;margin:0 0 20px">
+    <div style="font-size:11px;color:#656d76;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Amount</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:12px">${amount} USDC</div>
+    <div style="font-size:11px;color:#656d76;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Transaction</div>
+    <div style="font-size:13px">${txHtml}</div>
+  </div>
+  <p style="font-size:13px;line-height:1.5;margin:0 0 12px">See your full referral history at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+</td></tr>
+<tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
+</table></td></tr></table></body></html>`;
+  const text = `You've been paid ${amount}
+
+We've sent your referral commission in USDC on Base to the payout address on your account.
+
+Amount: ${amount} USDC
+Transaction: ${txRef}${basescan ? `\nView on Basescan: ${basescan}` : ''}
+
+See your full referral history: ${ACCOUNT_URL}
 Questions? support@algovault.com
 
 — AlgoVault Labs`;

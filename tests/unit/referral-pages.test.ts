@@ -110,7 +110,7 @@ describe('renderReferralStatsPage — payout address card', () => {
 describe('renderAdminPayoutsPage — maskEmail (no PII leak)', () => {
   it('masks the owner email; the full address never appears', () => {
     const page = renderAdminPayoutsPage({
-      pending: [{ code: 'PARTNERX', ownerEmail: 'creator@example.com', pendingUsdE2: 6000, rowCount: 1, ledgerIds: [42] }],
+      pending: [{ code: 'PARTNERX', ownerEmail: 'creator@example.com', payoutAddress: null, pendingUsdE2: 6000, rowCount: 1, ledgerIds: [42] }],
     });
     expect(page).not.toContain('creator@example.com');
     expect(page).toContain('c***@example.com');
@@ -119,6 +119,43 @@ describe('renderAdminPayoutsPage — maskEmail (no PII leak)', () => {
   });
   it('shows the min-payout threshold on an empty queue', () => {
     expect(renderAdminPayoutsPage({ pending: [] })).toContain(usdcMinPayoutLabel());
+  });
+});
+
+// REFERRAL-PAYOUT-OPS-W1 / C2 — admin batch view + Approve-all.
+describe('renderAdminPayoutsPage — batch view + Approve-all', () => {
+  const ADDR = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+  it('shows the shortened address, or a "no address" pill, + the batch total', () => {
+    const page = renderAdminPayoutsPage({
+      pending: [
+        { code: 'HASADDR', ownerEmail: 'a@x.com', payoutAddress: ADDR, pendingUsdE2: 6000, rowCount: 1, ledgerIds: [1] },
+        { code: 'NOADDR', ownerEmail: 'b@x.com', payoutAddress: null, pendingUsdE2: 7000, rowCount: 1, ledgerIds: [2] },
+      ],
+      batchTotalUsdE2: 13000,
+      adminKey: 'SECRET',
+    });
+    expect(page).toContain('0x5aAe…');         // shortened (prefix + ellipsis)
+    expect(page).not.toContain(ADDR);          // full address not shown
+    expect(page).toContain('no address');
+    expect(page).toContain('$130.00');         // batch total
+  });
+  it('renders the Approve-all form carrying the admin key (only when there are rows + key)', () => {
+    const withKey = renderAdminPayoutsPage({
+      pending: [{ code: 'HASADDR', ownerEmail: null, payoutAddress: ADDR, pendingUsdE2: 6000, rowCount: 1, ledgerIds: [1] }],
+      adminKey: 'SECRET',
+    });
+    expect(withKey).toContain('action="/admin/referrals/payouts/approve-all?key=SECRET"');
+    expect(withKey).toContain('Approve all');
+    // no key → no form (can't authorize the POST)
+    expect(renderAdminPayoutsPage({ pending: [{ code: 'X', ownerEmail: null, payoutAddress: ADDR, pendingUsdE2: 6000, rowCount: 1, ledgerIds: [1] }] })).not.toContain('approve-all');
+  });
+  it('flashes a stub (not-configured) result vs a real send result', () => {
+    const stub = renderAdminPayoutsPage({ pending: [], result: { senderKind: 'stub', paidCount: 0, totalPaidUsdE2: 0, skippedNoAddress: [], failed: [] } });
+    expect(stub).toMatch(/CDP wallet not configured/i);
+    const real = renderAdminPayoutsPage({ pending: [], result: { senderKind: 'cdp', paidCount: 2, totalPaidUsdE2: 13000, skippedNoAddress: ['NOADDR'], failed: [] } });
+    expect(real).toMatch(/Sent 2 payout/i);
+    expect(real).toContain('$130.00');
+    expect(real).toContain('NOADDR');
   });
 });
 

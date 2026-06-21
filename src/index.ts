@@ -1868,11 +1868,48 @@ async function startHttp() {
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderAdminPayoutsPage({
-          pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
+          pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, payoutAddress: p.payout_address, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
+          batchTotalUsdE2: pending.reduce((s, p) => s + p.pending_usd_e2, 0),
+          adminKey: typeof req.query.key === 'string' ? req.query.key : undefined,
         }));
       } catch (err) {
         console.error('[/admin/referrals/payouts] error:', err instanceof Error ? err.message : err);
         res.status(500).send('Internal error rendering payouts');
+      }
+    });
+
+    // REFERRAL-PAYOUT-OPS-W1 (C2): Approve-all — execute the ≥ min batch via the
+    // PayoutSender (C2 = Stub → reports not-configured; C3 = CDP server-wallet send),
+    // then re-render the (reduced) queue with a result flash. Operator-triggered only.
+    app.post('/admin/referrals/payouts/approve-all', async (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+      }
+      try {
+        const { pendingPayouts } = await import('./lib/referral-store.js');
+        const { renderAdminPayoutsPage } = await import('./lib/referral-pages.js');
+        const { REFERRAL_TERMS } = await import('./lib/referral-constants.js');
+        const { executeApproveAllBatch, getPayoutSender } = await import('./lib/referral-payout.js');
+        const result = await executeApproveAllBatch(getPayoutSender());
+        console.log(`[/admin/referrals/payouts/approve-all] sender=${result.senderKind} paid=${result.paid.length} total=${result.totalPaidUsdE2}e2 skippedNoAddr=${result.skippedNoAddress.length} failed=${result.failed.length}`);
+        const pending = await pendingPayouts(REFERRAL_TERMS.USDC_MIN_PAYOUT_USD);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderAdminPayoutsPage({
+          pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, payoutAddress: p.payout_address, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
+          batchTotalUsdE2: pending.reduce((s, p) => s + p.pending_usd_e2, 0),
+          adminKey: typeof req.query.key === 'string' ? req.query.key : undefined,
+          result: {
+            senderKind: result.senderKind,
+            paidCount: result.paid.length,
+            totalPaidUsdE2: result.totalPaidUsdE2,
+            skippedNoAddress: result.skippedNoAddress,
+            failed: result.failed,
+          },
+        }));
+      } catch (err) {
+        console.error('[/admin/referrals/payouts/approve-all] error:', err instanceof Error ? err.message : err);
+        res.status(500).send('Internal error executing payout batch');
       }
     });
 
