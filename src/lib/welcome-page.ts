@@ -55,14 +55,14 @@ export function getWelcomePageHtml(
          <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
          <div id="signup-email-block">
            <form id="signup-email-form" class="signup-email-form" novalidate>
-             <label for="signup-email-input" class="signup-email-label">Want product updates? (Optional — ~1 email/month, no spam)</label>
+             <label for="signup-email-input" class="signup-email-label">Get a free account — your API key + referral link, no card.</label>
              <div class="signup-email-row">
                <input type="email" id="signup-email-input" name="email" placeholder="you@example.com" autocomplete="email" required>
-               <button type="submit" class="signup-email-btn">Subscribe</button>
+               <button type="submit" class="signup-email-btn">Get my free key</button>
              </div>
              <label class="signup-email-consent">
-               <input type="checkbox" id="signup-email-consent" name="optin_consent" required>
-               <span>I agree to receive ~1 email/month from AlgoVault.</span>
+               <input type="checkbox" id="signup-email-consent" name="optin_consent">
+               <span>Also email me product updates (~1/month, optional).</span>
              </label>
              <div id="signup-email-error" class="signup-email-error" aria-live="polite"></div>
            </form>
@@ -176,35 +176,32 @@ export function getWelcomePageHtml(
         errEl.textContent = 'Please enter a valid email.';
         return;
       }
-      if (!consentEl.checked) {
-        errEl.textContent = 'Please check the consent box to subscribe.';
-        return;
-      }
       btn.disabled = true;
-      btn.textContent = 'Subscribing…';
+      btn.textContent = 'Creating…';
       fetch('/api/signup-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, source: 'welcome-paywall', optin_consent: true })
+        body: JSON.stringify({ email: email, source: 'welcome-paywall', optin_consent: consentEl.checked })
       })
         .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'parse_error' }; }); })
         .then(function (data) {
           if (data && data.ok === true) {
-            block.innerHTML = '<p class="signup-email-success">✓ Subscribed. Confirmation email sent to ' + email.replace(/</g, '&lt;') + '.</p>';
+            block.innerHTML = '<p class="signup-email-success">✓ Your free account is ready — we emailed your API key + referral link to ' + email.replace(/</g, '&lt;') + '.</p>';
           } else {
             var code = (data && data.error) || 'send_failed';
             var msg = code === 'invalid_email' ? 'Please enter a valid email.'
-                    : code === 'consent_required' ? 'Please check the consent box to subscribe.'
-                    : 'Subscription failed. Try again or email support@algovault.com.';
+                    : code === 'disposable_email' ? 'Please use a non-disposable email address.'
+                    : code === 'no_mx' ? 'That email domain cannot receive mail — please check it.'
+                    : 'Could not create your account. Try again or email support@algovault.com.';
             errEl.textContent = msg;
             btn.disabled = false;
-            btn.textContent = 'Subscribe';
+            btn.textContent = 'Get my free key';
           }
         })
         .catch(function () {
           errEl.textContent = 'Network error. Try again.';
           btn.disabled = false;
-          btn.textContent = 'Subscribe';
+          btn.textContent = 'Get my free key';
         });
     });
   })();
