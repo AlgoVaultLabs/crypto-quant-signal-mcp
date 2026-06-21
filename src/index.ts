@@ -3389,7 +3389,7 @@ tailwind.config = {
        /api/performance-public payload (cachedData.byExchange / byAsset /
        byTimeframe / byTier) via renderLeaderboard(), re-rendered on the existing
        30s load() loop — NO new setInterval. PFE WR + n (count) ONLY (allow-list;
-       never outcome_return_pct / P&L). Controls: dimension pills (Q-P1-3 default
+       never the internal return / P&L fields). Controls: dimension pills (Q-P1-3 default
        Venue), sort (WR / n) + direction toggle (worst-first in one tap), and a
        min-sample FILTER (Q-P1-4: hides below the floor; n >= 0 restores
        everything; default n >= 30) with a muted "small sample" tag on shown
@@ -3655,7 +3655,7 @@ function setTierFilter(mode) {
 // Renders ONE sortable/filterable table from the already-fetched payload
 // (cachedData.byExchange / byAsset / byTimeframe / byTier). Re-rendered by
 // renderAll() on the existing 30s load() loop — adds NO setInterval. PFE WR +
-// n (count) ONLY (allow-list; never outcome_return_pct / P&L). Replaces the 3
+// n (count) ONLY (allow-list; never internal return / P&L fields). Replaces the 3
 // fixed per-segment hydration blocks (tier-stat-card / exchange-stat-card /
 // tf-bar-chart) removed from renderAll().
 var LB_DIM = 'exchange';      // Q-P1-3 default dimension: Venue
