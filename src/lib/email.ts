@@ -242,6 +242,62 @@ Questions? support@algovault.com
   return id ? { id } : null;
 }
 
+/**
+ * REFERRAL-FREE-KEY-SIGNUP-W1 — transactional key email for a NON-referred free
+ * registration. Framed as "your free account + referral link" — deliberately NOT
+ * bonus/quota-bump framed (no +500; av_free_ is the same 100/mo keyed allowance),
+ * so it reads coherently even for a welcome-paywall (at-limit) capture where the
+ * primary CTA stays UPGRADE. The +500 bonus variant is sendReferredFreeKeyEmail.
+ */
+export async function sendFreeKeyEmail(to: string, freeKey: string, referralLink?: string | null): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const subject = 'Your AlgoVault free account + API key';
+  const refBlockHtml = referralLink
+    ? `<div style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:16px;margin:0 0 20px">
+    <div style="font-size:11px;color:#656d76;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Your referral link</div>
+    <div style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#0969da;word-break:break-all">${referralLink}</div>
+    <div style="font-size:12px;color:#656d76;margin-top:8px">Friends get ${bonusCallsLabel()} bonus calls; you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}.</div>
+  </div>`
+    : '';
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f8fa;padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #d0d7de;border-radius:12px;overflow:hidden">
+<tr><td style="padding:24px 28px;border-bottom:1px solid #d0d7de"><div style="font-size:18px;font-weight:700">AlgoVault Labs</div><div style="font-size:12px;color:#656d76;margin-top:2px">Free account</div></td></tr>
+<tr><td style="padding:28px">
+  <h1 style="font-size:22px;font-weight:700;margin:0 0 12px">Your free AlgoVault account is ready</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 20px">Use the API key below from any MCP client, and share your referral link. No card required — the free tier stays 100 calls/month.</p>
+  <div style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:16px;margin:0 0 20px">
+    <div style="font-size:11px;color:#656d76;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Your free API key</div>
+    <div style="font-family:ui-monospace,Menlo,monospace;font-size:14px;color:#0969da;word-break:break-all">${freeKey}</div>
+  </div>
+  ${refBlockHtml}
+  <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Add it as <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">Authorization: Bearer ${freeKey}</code> against <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">https://api.algovault.com/mcp</code>.</p>
+  <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Manage your key + referral stats at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+</td></tr>
+<tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
+</table></td></tr></table></body></html>`;
+  const text = `Your free AlgoVault account is ready
+
+Use the API key below from any MCP client, and share your referral link. No card required — the free tier stays 100 calls/month.
+
+Your free API key:
+${freeKey}
+${referralLink ? `\nYour referral link:\n${referralLink}\nFriends get ${bonusCallsLabel()} bonus calls; you earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()}.\n` : ''}
+Add it as: Authorization: Bearer ${freeKey}
+Against: https://api.algovault.com/mcp
+
+Manage your key + referral stats: ${ACCOUNT_URL}
+Questions? support@algovault.com
+
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
 function renderOptinHtml({ pfeWr, totalSignals }: { pfeWr: string; totalSignals: string }): string {
   return `<!DOCTYPE html>
 <html>

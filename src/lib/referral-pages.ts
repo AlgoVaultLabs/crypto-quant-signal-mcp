@@ -139,30 +139,89 @@ export function renderReferralTermsPage(): string {
   return shell('AlgoVault — Referral terms', body);
 }
 
+// REFERRAL-FREE-KEY-SIGNUP-W1 — client JS for the free-account form. Plain string
+// (NO backticks / ${} inside — template-literal-collision-safe). POSTs same-origin
+// to /api/signup-email (the apex proxies it), renders the link inline, fail-soft.
+const REFERRAL_SIGNUP_FORM_JS = `
+(function(){
+  var f=document.getElementById("av-ref-form"); if(!f) return;
+  var out=document.getElementById("av-ref-result"), btn=document.getElementById("av-ref-submit");
+  function errMsg(c){
+    if(c==="disposable_email") return "Please use a non-disposable email address.";
+    if(c==="no_mx") return "That email domain cannot receive mail - please check it.";
+    if(c==="invalid_email") return "Please enter a valid email address.";
+    return "Something went wrong - please try again.";
+  }
+  function fail(m){ out.innerHTML=""; var p=document.createElement("p"); p.className="muted"; p.style.color="#f85149"; p.textContent=m; out.appendChild(p); }
+  function success(link){
+    f.style.display="none"; out.innerHTML="";
+    var lbl=document.createElement("div"); lbl.className="l muted"; lbl.style.cssText="font-size:12px;color:var(--fg-3);text-transform:uppercase;letter-spacing:.5px"; lbl.textContent="You are in - your referral link"; out.appendChild(lbl);
+    var a=document.createElement("a"); a.className="link mono"; a.href=link; a.textContent=link; a.style.cssText="display:block;margin:6px 0 10px"; out.appendChild(a);
+    var p=document.createElement("p"); p.className="muted"; p.style.margin="0"; p.textContent="Share it. We emailed your free API key for next time."; out.appendChild(p);
+  }
+  f.addEventListener("submit",function(e){
+    e.preventDefault();
+    var email=(document.getElementById("av-ref-email").value||"").trim();
+    var consent=document.getElementById("av-ref-consent").checked;
+    btn.disabled=true; btn.textContent="Creating..."; out.textContent="";
+    fetch("/api/signup-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,optin_consent:consent,source:"referral-page"})})
+      .then(function(r){return r.json().then(function(j){return {s:r.status,j:j};});})
+      .then(function(res){
+        btn.disabled=false; btn.textContent="Create my link \\u2192";
+        if(res.s===200 && res.j && res.j.referral_link){ success(res.j.referral_link); }
+        else { fail(errMsg((res.j&&res.j.error)||"error")); }
+      })
+      .catch(function(){ btn.disabled=false; btn.textContent="Create my link \\u2192"; fail("Something went wrong - please try again."); });
+  });
+})();
+`;
+
 /**
- * GET /referral — the public, indexable referral explainer + share destination.
- * The canonical landing surface every other referral channel (the TG bot, the
- * future in-product nudge, the welcome email) points to. Incentive-first; hands
- * the visitor the path to their link (NO join form — anonymous visitors route to
- * /account, which mints/exposes the code). Every program number interpolates from
- * the SoT label fns (zero hardcoded literals — the chapter grep gate enforces it).
- * PFE-only; no outcome_*. Indexable (a discovery surface, unlike the noindex terms
- * page). LANDING-REFERRAL-PAGE-W1.
+ * REFERRAL-FREE-KEY-SIGNUP-W1 — the reusable free-account email form (D1/D2): enter
+ * email → mint an av_free_ key → render the referral link INLINE (+ key emailed).
+ * Pure HTML + a self-contained inline script; reused by /referral now, /account /
+ * /register later. The form POSTs same-origin to /api/signup-email (apex-proxied).
+ * Program facts from the SoT label fns. `inputId` salt keeps multiple instances
+ * unique if ever embedded twice on one page.
+ */
+export function renderReferralSignupForm(): string {
+  return `
+    <div class="card">
+      <h2 style="margin-top:0;text-transform:none;letter-spacing:0;font-size:20px;color:var(--fg)">Get your referral link — free, no card.</h2>
+      <form id="av-ref-form" style="margin:0">
+        <input type="email" id="av-ref-email" required autocomplete="email" placeholder="you@example.com"
+          style="width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:15px;margin:0 0 10px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg-3);margin:0 0 14px">
+          <input type="checkbox" id="av-ref-consent"> Email me product updates
+        </label>
+        <button type="submit" id="av-ref-submit"
+          style="width:100%;font-weight:700;font-size:16px;color:var(--bg);background:var(--mint);border:none;padding:12px 24px;border-radius:10px;cursor:pointer">Create my link &rarr;</button>
+      </form>
+      <div id="av-ref-result" style="margin-top:14px"></div>
+      <p class="muted" style="margin:14px 0 0">Already have an account? <a href="https://api.algovault.com/account">Paste your key &rarr;</a></p>
+    </div>
+    <script>${REFERRAL_SIGNUP_FORM_JS}</script>`;
+}
+
+/**
+ * GET /referral — the public, indexable referral explainer + share destination, with
+ * the free-account email form as the primary entry (REFERRAL-FREE-KEY-SIGNUP-W1: anyone
+ * gets a link, no card). The canonical landing surface every other referral channel
+ * (the TG bot, the in-product nudge, the welcome email) points to. Every program number
+ * interpolates from the SoT label fns (zero hardcoded literals — grep-gated). PFE-only;
+ * no outcome_*. Indexable (a discovery surface, unlike the noindex terms page).
  *
- * LINK ORIGINS (this page is served on the APEX algovault.com/referral via the Caddy
- * reverse_proxy, so a relative href resolves to the APEX): /account is api-canonical
- * (NOT on the apex — Stripe success_url is built from the request host) → ABSOLUTE
- * https://api.algovault.com/account; /referral-terms IS proxied onto the apex (Caddy
- * `handle /referral-terms`) → relative is fine; start-free → absolute apex #quickstart.
+ * LINK ORIGINS (served on the APEX via Caddy reverse_proxy, so a relative href resolves
+ * to the APEX): /account is api-canonical (Stripe success_url from request host) → ABSOLUTE
+ * https://api.algovault.com/account; /referral-terms IS apex-proxied → relative OK;
+ * start-free → absolute apex #quickstart; the form POSTs same-origin /api/signup-email
+ * (apex-proxied this wave).
  */
 export function renderReferralLandingPage(): string {
   const body = `
     <h1>Refer a friend — both win.</h1>
     <p class="sub">Your friend gets ${bonusCallsLabel()} bonus calls. You earn ${commissionPct()} of their subscription for ${commissionMonthsLabel()} — paid automatically.</p>
-    <div class="card" style="text-align:center;padding:24px 20px">
-      <a class="link" style="display:inline-block;font-weight:700;font-size:16px;color:var(--bg);background:var(--mint);padding:12px 24px;border-radius:10px;text-decoration:none" href="https://api.algovault.com/account">Get your referral link &rarr;</a>
-      <p class="muted" style="margin:14px 0 0">Every account has one automatically — paste your key on <a href="https://api.algovault.com/account">your account</a> to grab your link and stats.</p>
-    </div>
+    ${renderReferralSignupForm()}
 
     <h2>How it works</h2>
     <div class="card">
@@ -175,13 +234,13 @@ export function renderReferralLandingPage(): string {
 
     <h2>FAQ</h2>
     <div class="card">
-      <p><strong>Who can refer?</strong> Every account — your referral code is generated automatically, no sign-up step.</p>
+      <p><strong>Who can refer?</strong> Anyone — paid or free. No key yet? Create a free account above (just an email, no card) and your link is generated automatically.</p>
       <p><strong>What counts?</strong> A friend who signs up or subscribes through your link.</p>
       <p><strong>How am I paid?</strong> Commission is credited automatically to your next AlgoVault invoice. No active subscription? It accrues and is payable in USDC on Base once your balance reaches ${usdcMinPayoutLabel()}.</p>
       <p style="margin-bottom:0"><strong>Full terms?</strong> Read the <a href="/referral-terms">referral terms</a> — including the required FTC disclosure when you promote your link.</p>
     </div>
 
-    <p class="muted">Already using AlgoVault? Your link is in your <a href="https://api.algovault.com/account">account</a>. New here? <a href="https://algovault.com/#quickstart">Start free</a>, then share.</p>
+    <p class="muted">Just want to use AlgoVault? No signup needed — <a href="https://algovault.com/#quickstart">start free in 30s</a>.</p>
   `;
   return shell('AlgoVault — Refer a friend, both win', body, {
     index: true,

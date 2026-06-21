@@ -26,7 +26,8 @@ import { dbRun, dbQuery } from './performance-db.js';
 
 export interface SignupEmailRow {
   email: string;
-  source: 'welcome-paywall' | 'outreach-reply' | 'manual';
+  // REFERRAL-FREE-KEY-SIGNUP-W1: 'referral-page' = the /referral free-account form.
+  source: 'welcome-paywall' | 'outreach-reply' | 'manual' | 'referral-page';
   optin_consent: boolean;
 }
 

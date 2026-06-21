@@ -17,12 +17,16 @@
       "index_contract": "<meta name=\"robots\" content=\"index,follow\"> (a discovery/share surface, UNLIKE the noindex /referral-terms page); apex robots.txt is `Allow: /` (only /dashboard + /.well-known disallowed) so the apex URL is crawlable",
       "must_contain": [
         "Refer a friend",
+        "<form id=\"av-ref-form\"",
+        "/api/signup-email",
+        "source:\"referral-page\"",
         "href=\"https://api.algovault.com/account\"",
         "href=\"/referral-terms\"",
         "href=\"https://algovault.com/#quickstart\"",
         "content=\"index,follow\"",
         "<meta name=\"description\" content=\""
       ],
+      "wave_update": "REFERRAL-FREE-KEY-SIGNUP-W1 (2026-06-21): the inline free-account email form is now the PRIMARY entry (POSTs same-origin /api/signup-email, apex-proxied) → instant referral link + emailed key; the absolute-api /account link is now the 'already have a key' fallback.",
       "link_origin_contract": "served on the APEX (algovault.com/referral) so relative hrefs resolve to the apex: /account is api-canonical (Stripe success_url from request host; NOT apex-served) -> ABSOLUTE https://api.algovault.com/account; /referral-terms is proxied onto the apex (Caddy handle /referral-terms) -> relative OK; start-free -> absolute apex #quickstart. Regression guard: NO bare href=\"/account\" (would 404 on the apex).",
       "forbidden_substrings_extra": "href=\"/account\" (apex-relative app link would 404 — must be absolute api)",
       "must_contain_sot_interpolated": {
@@ -36,8 +40,7 @@
         "outcome_return_pct",
         "outcome_price",
         "price_at_signal",
-        "content=\"noindex\" (this page MUST stay indexable)",
-        "<form (anonymous visitors are handed the path to /account — NO join form / gate)"
+        "content=\"noindex\" (this page MUST stay indexable)"
       ],
       "error_contract": "renderReferralLandingPage() is a pure HTML-string renderer with no DB/Stripe/HTTP — the route effectively always returns 200 text/html; an unexpected throw falls through to Express' default 500",
       "cache_contract": "no explicit Cache-Control on the Express route (apex /referral is proxied, so it does NOT inherit the static catch-all's max-age=60); content is static per deploy",
@@ -47,7 +50,7 @@
         "the future REFERRAL-INPRODUCT-NUDGE-W1 value-moment nudge",
         "the welcome / referred-free emails"
       ],
-      "drift_check_command": "curl -s https://algovault.com/referral | grep -qE 'Refer a friend' && curl -s https://algovault.com/referral | grep -q 'content=\"index,follow\"' && ! curl -s https://algovault.com/referral | grep -qE 'outcome_(return_pct|price)|content=\"noindex\"|<form'"
+      "drift_check_command": "curl -s https://algovault.com/referral | grep -qE 'Refer a friend' && curl -s https://algovault.com/referral | grep -q 'content=\"index,follow\"' && curl -s https://algovault.com/referral | grep -q '<form id=\"av-ref-form\"' && ! curl -s https://algovault.com/referral | grep -qE 'outcome_(return_pct|price)|content=\"noindex\"'"
     }
   ]
 }

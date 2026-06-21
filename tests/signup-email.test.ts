@@ -136,17 +136,25 @@ describe('signup-email opt-in path', () => {
     // server-internal fields. Any future refactor that adds them to the API
     // response should break this test.
     const fs = await import('node:fs');
+    // REFERRAL-FREE-KEY-SIGNUP-W1: the live contract moved to the 2026-06-21 snapshot
+    // (mint-gate lift: key/referral_link on every 200; consent optional; new 400 reasons).
     const snapshot = JSON.parse(
-      fs.readFileSync('audits/signup-email-shape-snapshot-2026-05-28.json', 'utf-8'),
+      fs.readFileSync('audits/signup-email-shape-snapshot-2026-06-21.json', 'utf-8'),
     );
     expect(snapshot.endpoint).toBe('POST /api/signup-email');
-    expect(snapshot.allowed_response_keys).toEqual(['ok', 'optin_at', 'inserted', 'error']);
+    // PII / internal-leak guards (unchanged security invariant)
     expect(snapshot.forbidden_response_keys).toContain('email');
     expect(snapshot.forbidden_response_keys).toContain('id');
-    expect(snapshot.forbidden_response_keys).toContain('api_key');
     expect(snapshot.forbidden_response_keys).toContain('stripe_customer_id');
     expect(snapshot.forbidden_response_keys).toContain('outcome_return_pct');
+    expect(snapshot.forbidden_response_keys).toContain('outcome_price');
+    // the caller's OWN key + their referral link are allowed (intentional)
+    expect(snapshot.allowed_response_keys).toContain('key');
+    expect(snapshot.allowed_response_keys).toContain('referral_link');
+    // new error contract: consent_required GONE; disposable/MX ADDED
     expect(snapshot.error_contract['400']).toContain('invalid_email');
-    expect(snapshot.error_contract['400']).toContain('consent_required');
+    expect(snapshot.error_contract['400']).toContain('disposable_email');
+    expect(snapshot.error_contract['400']).toContain('no_mx');
+    expect(snapshot.error_contract['400']).not.toContain('consent_required');
   });
 });

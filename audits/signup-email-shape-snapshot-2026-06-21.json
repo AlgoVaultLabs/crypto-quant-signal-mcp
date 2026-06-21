@@ -1,0 +1,56 @@
+{
+  "endpoint": "POST /api/signup-email",
+  "wave": "REFERRAL-FREE-KEY-SIGNUP-W1",
+  "snapshot_date": "2026-06-21",
+  "supersedes": "audits/signup-email-shape-snapshot-2026-05-28.json (immutable historical record; predated REFERRAL-LIGHT-W1's key field too)",
+  "purpose": "Public-shape SoT after the mint-gate lift: EVERY signup now mints an av_free_ key (idempotent) + returns the referral code/link; consent is no longer required (transactional key email; marketing opt-in recorded separately). Future modifications ship a NEW dated snapshot.",
+  "method": "POST",
+  "path": "/api/signup-email",
+  "served_on": [
+    "https://api.algovault.com/api/signup-email (api origin)",
+    "https://algovault.com/api/signup-email (apex — scoped Caddy reverse_proxy so the /referral form POSTs same-origin; no CORS widening)"
+  ],
+  "content_type_in": "application/json",
+  "content_type_out": "application/json",
+  "request_body_schema": {
+    "email": { "type": "string", "required": true, "constraints": "max 254; EMAIL_RE; lower-cased; + disposable-domain block (mailchecker) + MX check (fail-open transient)" },
+    "source": { "type": "string", "required": false, "default": "welcome-paywall", "allowed_values": ["welcome-paywall", "outreach-reply", "manual", "referral-page"], "note": "Unknown → welcome-paywall. 'referral-page' = the /referral free-account form." },
+    "optin_consent": { "type": "boolean", "required": false, "constraints": "OPTIONAL (D4). true → recorded in signup_emails (marketing list). The key + key-email are transactional regardless." },
+    "ref": { "type": "string", "required": false, "constraints": "a referral code; valid non-self ref → +500 referee bonus + attribution (referral-exclusive)" }
+  },
+  "allowed_response_keys": ["ok", "optin_at", "inserted", "error", "key", "referral_code", "referral_link", "referral_applied", "bonus_calls"],
+  "response_key_notes": {
+    "key": "the caller's OWN newly-minted-or-existing av_free_ key (over their own request; NEVER logged). Present on EVERY 200.",
+    "referral_code": "the caller's referral code (deriveUserCode/ensureUserCode). Every 200.",
+    "referral_link": "shareLink(code) = https://api.algovault.com/signup?ref=CODE. Every 200.",
+    "referral_applied": "true ONLY when a valid non-self ref applied (additive).",
+    "bonus_calls": "the +500 referee bonus, ONLY when referral_applied (referral-exclusive)."
+  },
+  "forbidden_response_keys": ["id", "email", "source", "user_id", "api_key", "tier", "stripe_customer_id", "ip_hash", "user_agent", "session_id", "outcome_return_pct", "outcome_price"],
+  "forbidden_note": "`key` (the caller's OWN key) is allowed + intentional; a field literally named `api_key`, or ANY other user's key, is forbidden. No outcome_*/PII.",
+  "error_envelope": { "ok": false, "error": "<code>" },
+  "error_contract": {
+    "400": ["invalid_email", "disposable_email", "no_mx"],
+    "500": ["internal_error"]
+  },
+  "contract_change_vs_2026-05-28": [
+    "REMOVED 400 'consent_required' — consent is now optional (D4).",
+    "ADDED 400 'disposable_email' + 'no_mx' (validateSignupEmail).",
+    "key/referral_code/referral_link now returned on EVERY 200 (were absent / referral-only)."
+  ],
+  "cache_contract": { "Cache-Control": "no-store" },
+  "side_effects": [
+    "mintFreeKey(email) — INSERT (idempotent on email) into free_keys (the universal free account)",
+    "ensureUserCode(key, email) — persist the referral code",
+    "INSERT/UPDATE signup_emails ONLY when optin_consent=true (marketing list keeps consenting-only semantics)",
+    "INSERT processed_signup_email_events idempotency row",
+    "Fire-and-forget transactional key email (sendFreeKeyEmail non-referred / sendReferredFreeKeyEmail referred)",
+    "Referred (valid non-self ref): +500 bonus + attribution (referral-accrual)",
+    "Console log success/failure (email masked; key NEVER logged)"
+  ],
+  "consumers": [
+    { "name": "/referral free-account form", "file": "src/lib/referral-pages.ts renderReferralSignupForm", "binding": "tight (inline fetch POST, source=referral-page)" },
+    { "name": "/welcome paywall CTA form", "file": "src/lib/welcome-page.ts", "binding": "tight (now also mints a free account; key-email is account/link-framed, primary CTA stays UPGRADE)" }
+  ],
+  "drift_check_command": "curl -fsS -X POST -H 'Content-Type: application/json' -d '{\"email\":\"delivered@resend.dev\",\"source\":\"referral-page\"}' https://api.algovault.com/api/signup-email | jq -e '.ok==true and (.key|startswith(\"av_free_\")) and (.referral_link|test(\"signup\\\\?ref=\")) and (has(\"referral_applied\")|not) and (has(\"outcome_return_pct\")|not)' >/dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL"
+}

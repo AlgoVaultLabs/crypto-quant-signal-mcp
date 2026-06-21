@@ -47,6 +47,12 @@ algovault.com {
     handle /api/performance-public {
         reverse_proxy localhost:3000
     }
+    # REFERRAL-FREE-KEY-SIGNUP-W1 — the apex /referral free-account form POSTs here.
+    # Scoped to /api/signup-email ONLY (NOT a blanket /api/* on the apex) so the POST
+    # is same-origin (no CORS widening; CORS still allows api.algovault.com only).
+    handle /api/signup-email {
+        reverse_proxy localhost:3000
+    }
     handle /api/merkle-batches {
         reverse_proxy localhost:3000
     }

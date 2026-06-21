@@ -10,6 +10,7 @@ import {
   renderReferralStatsPage,
   renderReferralTermsPage,
   renderReferralLandingPage,
+  renderReferralSignupForm,
   renderAdminReferralsPage,
   renderAdminPayoutsPage,
 } from '../../src/lib/referral-pages.js';
@@ -118,14 +119,16 @@ describe('renderReferralLandingPage — LANDING-REFERRAL-PAGE-W1', () => {
     expect(page).toMatch(/<meta name="description" content="[^"]+">/);
   });
 
-  it('hands the path (no join form): CTA → api /account, links terms + the keyless start-free path', () => {
-    expect(page).not.toMatch(/<form/i);                          // no gate
-    // /account is api-canonical (Stripe success_url from request host) — the page is
-    // served on the APEX, so the link MUST be absolute api or it 404s on algovault.com.
-    expect(page).toContain('href="https://api.algovault.com/account"'); // get-your-link CTA
-    expect(page).not.toContain('href="/account"');               // never apex-relative (would 404)
+  it('hands the path via the inline free-account form (REFERRAL-FREE-KEY-SIGNUP-W1)', () => {
+    expect(page).toMatch(/<form id="av-ref-form"/);              // the email form IS the path now
+    expect(page).toContain('/api/signup-email');                 // same-origin POST (apex-proxied)
+    expect(page).toContain('source:"referral-page"');            // tagged source
+    // /account is api-canonical (Stripe success_url from request host) → absolute api
+    // (the form's "already have an account" fallback); never apex-relative (would 404).
+    expect(page).toContain('href="https://api.algovault.com/account"');
+    expect(page).not.toContain('href="/account"');
     expect(page).toContain('href="/referral-terms"');            // proxied onto the apex → relative OK
-    expect(page).toContain('href="https://algovault.com/#quickstart"'); // anon "start free"
+    expect(page).toContain('href="https://algovault.com/#quickstart"'); // keyless reassurance
   });
 
   it('is incentive-first: the hero leads with the double-sided give/get', () => {
@@ -140,7 +143,8 @@ describe('renderReferralLandingPage — LANDING-REFERRAL-PAGE-W1', () => {
   // future edit hardcoding "500"/"30%"/"12 months"/"$50" and drifting from terms.
   it('source contains zero hardcoded program-number literals (SoT-only)', () => {
     const src = readFileSync(new URL('../../src/lib/referral-pages.ts', import.meta.url), 'utf8');
-    const start = src.indexOf('export function renderReferralLandingPage');
+    // Covers the form JS const + renderReferralSignupForm + renderReferralLandingPage.
+    const start = src.indexOf('const REFERRAL_SIGNUP_FORM_JS');
     const end = src.indexOf('export interface AdminOverviewView', start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
@@ -150,5 +154,27 @@ describe('renderReferralLandingPage — LANDING-REFERRAL-PAGE-W1', () => {
     expect(fn).not.toMatch(/\b30\s*%/);
     expect(fn).not.toMatch(/\b12\s+months\b/);
     expect(fn).not.toMatch(/\$\s*50\b/);
+  });
+});
+
+describe('renderReferralSignupForm — REFERRAL-FREE-KEY-SIGNUP-W1', () => {
+  const form = renderReferralSignupForm();
+  it('is a same-origin AJAX form (no CORS) tagged source=referral-page', () => {
+    expect(form).toMatch(/<form id="av-ref-form"/);
+    expect(form).toContain('fetch("/api/signup-email"');         // relative → apex-proxied same-origin
+    expect(form).toContain('source:"referral-page"');
+    expect(form).toContain('Create my link');
+    expect(form).toContain('id="av-ref-email"');                 // the email field
+    expect(form).toContain('id="av-ref-consent"');               // optional marketing checkbox
+  });
+  it('offers the keyed-account fallback to the api-canonical /account (absolute, never apex-relative)', () => {
+    expect(form).toContain('href="https://api.algovault.com/account"');
+    expect(form).not.toContain('href="/account"');
+  });
+  it('never leaks outcome_* and hardcodes no program numbers (incentive lives in the page copy)', () => {
+    expect(form).not.toMatch(/outcome_/);
+    expect(form).not.toMatch(/\b500\b/);
+    expect(form).not.toMatch(/\b30\s*%/);
+    expect(form).not.toMatch(/\b12\s+months\b/);
   });
 });

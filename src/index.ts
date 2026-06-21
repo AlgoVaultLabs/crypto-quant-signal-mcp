@@ -41,8 +41,8 @@ import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } 
 import { clientIp } from './lib/client-ip.js';
 import { ensureProcessedStripeEventsSchema, tryClaimEvent } from './lib/stripe-events-store.js';
 import { upsertSignupEmail, markConfirmationSent, tryClaimSignupEmailEvent } from './lib/signup-emails-store.js';
-import { sendOptinConfirmationEmail, sendReferredFreeKeyEmail } from './lib/email.js';
-import { EMAIL_RE } from './lib/stripe.js';
+import { sendReferredFreeKeyEmail, sendFreeKeyEmail } from './lib/email.js';
+import { validateSignupEmail } from './lib/email-validation.js';
 import { getAnalyticsSummary } from './resources/analytics-summary.js';
 import { getSkillsAnalytics } from './resources/skills-analytics.js';
 import { generateFunnelSnapshot } from './lib/funnel-snapshot.js';
@@ -2338,7 +2338,7 @@ async function startHttp() {
   // GET /signup (Stripe Checkout redirect for paid tiers). Insert idempotent
   // via signup_emails.email UNIQUE constraint + processed_signup_email_events
   // claim. Confirmation email fire-and-forget so a Resend outage never 500s
-  // the request. Public-shape: see audits/signup-email-shape-snapshot-2026-05-28.json
+  // the request. Public-shape: see audits/signup-email-shape-snapshot-2026-06-21.json
   // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): outbound webhook subscription API
   // (POST/GET/DELETE /api/webhooks + POST /api/webhooks/:id/test). Universal
   // access gated only by the monthly call quota; ships dark — the delivery worker
@@ -2362,26 +2362,27 @@ async function startHttp() {
       const source = typeof body.source === 'string' ? body.source : 'welcome-paywall';
       const optinConsent = body.optin_consent === true;
 
-      if (!email || !EMAIL_RE.test(email) || email.length > 254) {
-        return res.status(400).json({ ok: false, error: 'invalid_email' });
+      // REFERRAL-FREE-KEY-SIGNUP-W1 (D4): syntax + disposable-domain + MX validation
+      // (fail-open on transient DNS). Specific reason so the form can message it.
+      const v = await validateSignupEmail(email);
+      if (!v.ok) {
+        return res.status(400).json({ ok: false, error: v.reason });
       }
-      if (!optinConsent) {
-        return res.status(400).json({ ok: false, error: 'consent_required' });
-      }
-      const allowedSources = new Set(['welcome-paywall', 'outreach-reply', 'manual']);
-      const safeSource = allowedSources.has(source) ? source : 'welcome-paywall';
+      // Consent is NO LONGER required (D4): the free account + key email are
+      // transactional. The marketing opt-in is recorded separately, ONLY when the
+      // box is checked — so signup_emails keeps its consenting-list semantics.
+      const allowedSources = new Set(['welcome-paywall', 'outreach-reply', 'manual', 'referral-page']);
+      const safeSource = (allowedSources.has(source) ? source : 'welcome-paywall') as 'welcome-paywall' | 'outreach-reply' | 'manual' | 'referral-page';
 
       const claim = await tryClaimSignupEmailEvent(email, 'optin');
-      const result = await upsertSignupEmail({
-        email,
-        source: safeSource as 'welcome-paywall' | 'outreach-reply' | 'manual',
-        optin_consent: true,
-      });
+      const result = optinConsent
+        ? await upsertSignupEmail({ email, source: safeSource, optin_consent: true })
+        : { inserted: false };
       const optinAt = new Date().toISOString();
 
-      // REFERRAL-LIGHT-W1 (C3): a valid, non-self ref on a fresh opt-in mints an
-      // av_free_ key + grants the +500 referee bonus (one grant per human). Invalid
-      // / absent / self ref → plain opt-in. Fail-open; never blocks the 200.
+      // Referred path UNCHANGED: a valid, non-self ref mints the key + grants the +500
+      // referee bonus + attribution. Non-referred → key only, NO bonus (the +500 stays
+      // referral-exclusive). Fail-open; never blocks the 200.
       const ref = typeof body.ref === 'string' ? body.ref : undefined;
       let referral: { applied: boolean; freeKey: string | null; bonusCalls: number } = { applied: false, freeKey: null, bonusCalls: 0 };
       if (ref) {
@@ -2394,26 +2395,33 @@ async function startHttp() {
         }
       }
 
-      // Fire-and-forget confirmation email. Only send on a fresh claim — if a
-      // retry hits within the same second, the claim returns false and we skip
-      // re-sending (caller protection). Resend outage logs but does not 500.
+      // REFERRAL-FREE-KEY-SIGNUP-W1: mint an av_free_ key for EVERY signup (idempotent
+      // on email), then derive the persisted referral code + share link. The keyless
+      // free tier (no key passed) is untouched — this only ADDS the opt-in account.
+      const { mintFreeKey } = await import('./lib/free-keys-store.js');
+      const { ensureUserCode } = await import('./lib/referral-store.js');
+      const { shareLink } = await import('./lib/referral-constants.js');
+      const key = referral.freeKey ?? (await mintFreeKey(email));
+      const referralCode = await ensureUserCode(key, email);
+      const referralLink = shareLink(referralCode);
+
+      // Transactional key email (NOT gated on marketing consent) — referred → bonus
+      // variant; non-referred → generic account/link variant (no quota-bump framing).
+      // Deduped via the per-second claim. markConfirmationSent only when a marketing
+      // row exists (consented). Fire-and-forget; Resend outage logs but never 500s.
       if (claim.claimed) {
-        // REFERRAL-LIGHT-W1 (C4): a referred free signup gets the key-bearing variant
-        // (av_free_ key + bonus note); a plain opt-in gets the generic confirmation.
-        // Email-surface wiring (C4 owns Emails); the route's mint/grant logic is C3's
-        // and unchanged. Fire-and-forget; Resend outage logs but never 500s.
-        const sendConfirmation = referral.applied && referral.freeKey
-          ? sendReferredFreeKeyEmail(email, referral.freeKey, ref ?? null)
-          : sendOptinConfirmationEmail(email);
-        sendConfirmation
+        const sendKeyEmail = referral.applied
+          ? sendReferredFreeKeyEmail(email, key, ref ?? null)
+          : sendFreeKeyEmail(email, key, referralLink);
+        sendKeyEmail
           .then(async (sent) => {
             if (sent?.id) {
-              await markConfirmationSent(email);
-              console.log(`[/api/signup-email] confirmation sent to ${email[0]}***@*** id=${sent.id}`);
+              if (optinConsent) await markConfirmationSent(email);
+              console.log(`[/api/signup-email] key email sent to ${email[0]}***@*** id=${sent.id}`);
             }
           })
           .catch((err: unknown) => {
-            console.error(`[/api/signup-email] confirmation send failed: ${err instanceof Error ? err.message : err}`);
+            console.error(`[/api/signup-email] key email send failed: ${err instanceof Error ? err.message : err}`);
           });
       }
 
@@ -2421,10 +2429,13 @@ async function startHttp() {
         ok: true,
         optin_at: optinAt,
         inserted: result.inserted,
-        // REFERRAL-LIGHT-W1 (C3): additive — present ONLY when a referral applied.
-        // `key` is the caller's own newly-minted free key (returned over their own
-        // request; never logged). C4 also delivers key + bonus via the email.
-        ...(referral.applied ? { referral_applied: true, bonus_calls: referral.bonusCalls, key: referral.freeKey } : {}),
+        // REFERRAL-FREE-KEY-SIGNUP-W1: key + referral code/link returned for EVERY signup
+        // (over the caller's own request; never logged). referral_applied/bonus_calls
+        // ONLY when a ref applied (+500 referral-exclusive).
+        key,
+        referral_code: referralCode,
+        referral_link: referralLink,
+        ...(referral.applied ? { referral_applied: true, bonus_calls: referral.bonusCalls } : {}),
       });
     } catch (err) {
       console.error(`[/api/signup-email] internal error: ${err instanceof Error ? err.message : err}`);
