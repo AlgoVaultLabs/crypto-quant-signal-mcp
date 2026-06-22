@@ -51,12 +51,12 @@ import {
 } from '../../src/lib/referral-store.js';
 import { ensureFreeKeysSchema, _resetFreeKeyCacheForTest } from '../../src/lib/free-keys-store.js';
 import { getBonusForKey } from '../../src/lib/license.js';
-import { dbRun } from '../../src/lib/performance-db.js';
+import { dbRun, dbQuery } from '../../src/lib/performance-db.js';
 
 beforeEach(() => {
   ensureReferralSchema();
   ensureFreeKeysSchema();
-  for (const t of ['referral_codes', 'referral_attributions', 'referral_ledger', 'referral_bonus', 'free_keys']) dbRun(`DELETE FROM ${t}`);
+  for (const t of ['referral_codes', 'referral_attributions', 'referral_ledger', 'referral_bonus', 'referral_notifications', 'free_keys']) dbRun(`DELETE FROM ${t}`);
   _resetFreeKeyCacheForTest();
   balanceTxnSpy.mockClear();
   customerLookup.clear();
@@ -178,5 +178,24 @@ describe('processChargeRefunded — clawback', () => {
     await processChargeRefunded({ data: { object: { invoice: 'in_pend' } } });
     expect(balanceTxnSpy).not.toHaveBeenCalled();
     expect((await getLedgerByEventId('evt_pend'))?.status).toBe('clawed_back');
+  });
+});
+
+// REFERRAL-PARITY-NOTIFS-W1 / C1 — the two triggers actually queue notifications.
+describe('notification triggers', () => {
+  it('friend_joined is queued on a referred free signup', async () => {
+    await mintPartnerCode({ code: 'NOTIF01', owner_label: 'p', owner_email: 'nowner@x.com' });
+    await processFreeReferralSignup('joiner@x.com', 'NOTIF01');
+    const rows = await dbQuery<{ event: string }>("SELECT event FROM referral_notifications WHERE referrer_code = 'NOTIF01' AND event = 'friend_joined'", []);
+    expect(rows.length).toBe(1);
+  });
+  it('commission_earned is queued on invoice.paid accrual, idempotent on replay', async () => {
+    const ownerKey = `av_live_${'c'.repeat(24)}`;
+    const ownerCode = await ensureUserCode(ownerKey, 'cowner@x.com');
+    await onPaidConversion({ customerId: 'cus_ce', apiKey: `av_live_${'d'.repeat(24)}`, refCode: ownerCode, email: 'b@x.com' });
+    await processInvoicePaid(invEvent('evt_ce', 'in_ce', 'cus_ce', 10000));
+    await processInvoicePaid(invEvent('evt_ce', 'in_ce', 'cus_ce', 10000)); // replay → idempotent
+    const rows = await dbQuery<{ event: string }>(`SELECT event FROM referral_notifications WHERE referrer_code = '${ownerCode}' AND event = 'commission_earned'`, []);
+    expect(rows.length).toBe(1);
   });
 });

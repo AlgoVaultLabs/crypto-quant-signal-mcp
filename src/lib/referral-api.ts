@@ -21,6 +21,7 @@
 import { createHmac } from 'node:crypto';
 import { ensureUserCode, resolveCode, recordAttribution, referrerStats } from './referral-store.js';
 import { REFERRAL_TERMS, isValidCodeFormat, shareLink } from './referral-constants.js';
+import { notifyFriendJoined } from './referral-notify.js';
 
 /** Canonical bot handle for the deep link (getMe-verified 2026-06-20). */
 const BOT_USERNAME = 'algovaultofficialbot';
@@ -44,11 +45,12 @@ export function tgDeepLink(code: string): string {
 }
 
 /** Program terms projected from the SoT (REFERRAL_TERMS) — never hardcoded downstream. */
-export function referralTerms(): { bonus_calls: number; commission_pct: number; commission_months: number } {
+export function referralTerms(): { bonus_calls: number; commission_pct: number; commission_months: number; usdc_min_payout_usd: number } {
   return {
     bonus_calls: REFERRAL_TERMS.BONUS_CALLS,
     commission_pct: Math.round(REFERRAL_TERMS.COMMISSION_RATE * 100),
     commission_months: REFERRAL_TERMS.COMMISSION_MONTHS,
+    usdc_min_payout_usd: REFERRAL_TERMS.USDC_MIN_PAYOUT_USD,
   };
 }
 
@@ -56,13 +58,14 @@ export interface TgCodeResult {
   code: string;
   share_url: string; // web /signup?ref=<code>
   deep_link: string; // t.me/<bot>?start=ref_<code>
-  terms: { bonus_calls: number; commission_pct: number; commission_months: number };
+  terms: { bonus_calls: number; commission_pct: number; commission_months: number; usdc_min_payout_usd: number };
   stats: {
     signups: number;
     conversions: number;
     accrued_usd_e2: number;
     credited_usd_e2: number;
     usdc_pending_usd_e2: number;
+    usdc_paid_usd_e2: number;
   };
 }
 
@@ -82,6 +85,7 @@ export async function resolveTgReferralCode(chatId: number | string): Promise<Tg
       accrued_usd_e2: s.accrued_usd_e2,
       credited_usd_e2: s.credited_usd_e2,
       usdc_pending_usd_e2: s.usdc_pending_usd_e2,
+      usdc_paid_usd_e2: s.usdc_paid_usd_e2,
     },
   };
 }
@@ -125,5 +129,6 @@ export async function attributeTgReferral(
     channel: 'tg',
   });
   if (!res.recorded) return { recorded: false, bonus_calls: 0, reason: 'already_attributed' };
+  if (res.id != null) await notifyFriendJoined(refCode, res.id); // fail-soft inside
   return { recorded: true, bonus_calls: REFERRAL_TERMS.BONUS_CALLS };
 }

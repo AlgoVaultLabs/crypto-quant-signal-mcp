@@ -20,11 +20,13 @@ import {
   appendLedger,
   markLedger,
   deriveUserCode,
+  referrerStats,
   type ReferralCodeRow,
 } from './referral-store.js';
 import { grantReferralBonus } from './license.js';
 import { mintFreeKey } from './free-keys-store.js';
 import { REFERRAL_TERMS } from './referral-constants.js';
+import { notifyFriendJoined, notifyCommissionEarned } from './referral-notify.js';
 
 const ENDPOINT_URL = 'https://api.algovault.com/webhooks/stripe';
 const REQUIRED_EVENTS = ['invoice.paid', 'charge.refunded'];
@@ -81,6 +83,7 @@ export async function processFreeReferralSignup(email: string, refCode: string |
     }
     await grantReferralBonus(freeKey, REFERRAL_TERMS.BONUS_CALLS, code.code);
     recordFunnelEvent({ eventType: 'referral_signup', sessionId: null, licenseTier: 'free', meta: { code: code.code, channel: 'free_signup' } });
+    if (attr.id != null) await notifyFriendJoined(code.code, attr.id); // fail-soft inside
     return { applied: true, freeKey, bonusCalls: REFERRAL_TERMS.BONUS_CALLS };
   } catch (err) {
     console.error('[referral] processFreeReferralSignup failed (fail-open):', err instanceof Error ? err.message : err);
@@ -116,6 +119,7 @@ export async function onPaidConversion(params: {
     if (attr.recorded) {
       await grantReferralBonus(params.apiKey, REFERRAL_TERMS.BONUS_CALLS, code.code);
       recordFunnelEvent({ eventType: 'referral_signup', sessionId: params.customerId, licenseTier: 'pro', meta: { code: code.code, channel: 'paid_checkout' } });
+      if (attr.id != null) await notifyFriendJoined(code.code, attr.id); // fail-soft inside
     }
   } catch (err) {
     console.error('[referral] onPaidConversion failed (fail-open):', err instanceof Error ? err.message : err);
@@ -184,6 +188,9 @@ export async function processInvoicePaid(event: { id: string; data?: { object?: 
       console.log(`[referral] commission ${commission}c parked usdc_pending (code ${attr.code} — no Stripe customer or credit failed)`);
     }
     recordFunnelEvent({ eventType: 'referral_conversion', sessionId: customerId, licenseTier: 'pro', meta: { code: attr.code, commission_usd_e2: commission, credited } });
+    // commission_earned notification (fail-soft inside; idempotent on the ledger id).
+    const rstats = await referrerStats(attr.code);
+    await notifyCommissionEarned(attr.code, led.id, { amount_usd_e2: commission, pending_usd_e2: rstats.usdc_pending_usd_e2 });
   } catch (err) {
     console.error('[referral] processInvoicePaid failed (fail-open):', err instanceof Error ? err.message : err);
   }

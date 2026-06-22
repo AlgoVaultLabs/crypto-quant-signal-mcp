@@ -1600,6 +1600,87 @@ async function startHttp() {
     }
   });
 
+  // REFERRAL-PARITY-NOTIFS-W1 / C1 — notification queue (bot-only, internal-key-gated):
+  // the bot pulls pending TG rows, marks them delivered, and writes the opt-out pref.
+  app.get('/api/referral/notifications', async (req, res) => {
+    if (!checkInternalBypass(req.headers as Record<string, string | undefined>)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
+    }
+    try {
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? '100'), 10) || 100));
+      const { listPendingNotifications } = await import('./lib/referral-store.js');
+      const rows = await listPendingNotifications('tg', limit); // the bot drains the tg channel only
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({
+        ok: true,
+        notifications: rows.map((r) => ({ id: r.id, code: r.referrer_code, event: r.event, payload: r.payload_json ? JSON.parse(r.payload_json) : null })),
+      });
+    } catch (err) {
+      console.error('[/api/referral/notifications] error:', err instanceof Error ? err.message : err);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  app.post('/api/referral/notifications/:id/delivered', express.json({ limit: '2kb' }), async (req, res) => {
+    if (!checkInternalBypass(req.headers as Record<string, string | undefined>)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
+    }
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'invalid_id' });
+      const { getNotificationById, markNotificationDelivered } = await import('./lib/referral-store.js');
+      const row = await getNotificationById(id);
+      if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+      markNotificationDelivered(id);
+      return res.json({ ok: true, id, status: 'delivered' });
+    } catch (err) {
+      console.error('[/api/referral/notifications/:id/delivered] error:', err instanceof Error ? err.message : err);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  app.post('/api/referral/notify-pref', express.json({ limit: '2kb' }), async (req, res) => {
+    if (!checkInternalBypass(req.headers as Record<string, string | undefined>)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
+    }
+    try {
+      const body = (req.body ?? {}) as { tg?: unknown; opt_out?: unknown };
+      const raw = body.tg;
+      const chatId = typeof raw === 'string' || typeof raw === 'number' ? String(raw).trim() : '';
+      if (!chatId || !/^-?\d{1,20}$/.test(chatId)) return res.status(400).json({ ok: false, error: 'invalid_tg' });
+      const optOut = body.opt_out === true || body.opt_out === 'true' || body.opt_out === 1;
+      const { tgIdentity } = await import('./lib/referral-api.js');
+      const { ensureUserCode, setNotifyOptOut } = await import('./lib/referral-store.js');
+      const code = await ensureUserCode(tgIdentity(chatId)); // deterministic — the TG referrer's own code
+      await setNotifyOptOut(code, optOut);
+      return res.json({ ok: true, opt_out: optOut });
+    } catch (err) {
+      console.error('[/api/referral/notify-pref] error:', err instanceof Error ? err.message : err);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  // Public one-click email unsubscribe (signed; low-stakes notify pref → same notify_opt_out column).
+  app.get('/referral/notify/unsubscribe', async (req, res) => {
+    try {
+      const code = typeof req.query.c === 'string' ? req.query.c : '';
+      const sig = typeof req.query.t === 'string' ? req.query.t : '';
+      const { isValidCodeFormat } = await import('./lib/referral-constants.js');
+      const { notifyUnsubSig } = await import('./lib/referral-notify.js');
+      const { setNotifyOptOut, resolveCode } = await import('./lib/referral-store.js');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      if (!isValidCodeFormat(code) || sig !== notifyUnsubSig(code) || !(await resolveCode(code))) {
+        return res.status(400).send('<!DOCTYPE html><meta charset="utf-8"><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;text-align:center;color:#1f2328"><h2>Invalid link</h2><p>This unsubscribe link is invalid or expired. Manage notifications from the Telegram bot (/notifications) or contact support@algovault.com.</p></body>');
+      }
+      await setNotifyOptOut(code, true);
+      return res.send('<!DOCTYPE html><meta charset="utf-8"><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;text-align:center;color:#1f2328"><h2>Notifications off</h2><p>You won&#39;t receive referral join/earnings notifications anymore. Changed your mind? Re-enable from the Telegram bot (<code>/notifications</code>).</p></body>');
+    } catch (err) {
+      console.error('[/referral/notify/unsubscribe] error:', err instanceof Error ? err.message : err);
+      return res.status(500).send('Internal error');
+    }
+  });
+
   // Admin analytics (only if ADMIN_API_KEY is set)
   let adminCleanupInterval: ReturnType<typeof setInterval> | undefined;
   const adminKeyRaw = process.env.ADMIN_API_KEY;

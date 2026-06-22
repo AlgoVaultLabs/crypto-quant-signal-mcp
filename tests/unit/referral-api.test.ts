@@ -58,6 +58,8 @@ describe('referralTerms (SoT projection)', () => {
     expect(t.bonus_calls).toBe(REFERRAL_TERMS.BONUS_CALLS);
     expect(t.commission_pct).toBe(Math.round(REFERRAL_TERMS.COMMISSION_RATE * 100));
     expect(t.commission_months).toBe(REFERRAL_TERMS.COMMISSION_MONTHS);
+    // REFERRAL-PARITY-NOTIFS-W1: min-payout exposed for the TG "gap to payout" cue.
+    expect(t.usdc_min_payout_usd).toBe(REFERRAL_TERMS.USDC_MIN_PAYOUT_USD);
   });
 });
 
@@ -78,6 +80,9 @@ describe('resolveTgReferralCode', () => {
     expect(r1.stats.signups).toBe(0);
     expect(r1.stats.conversions).toBe(0);
     expect(r1.stats.accrued_usd_e2).toBe(0);
+    // REFERRAL-PARITY-NOTIFS-W1: paid figure now in the parity payload (e2 cents); no outcome_*.
+    expect(r1.stats.usdc_paid_usd_e2).toBe(0);
+    expect(JSON.stringify(r1.stats)).not.toMatch(/outcome_/);
   });
 });
 

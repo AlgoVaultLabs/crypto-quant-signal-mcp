@@ -13,7 +13,7 @@ import { Resend } from 'resend';
 // Program numbers interpolate from REFERRAL_TERMS renderers (never hardcoded —
 // chapter gate). deriveUserCode is the pure code derivation (no DB).
 import { deriveUserCode } from './referral-store.js';
-import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2 } from './referral-constants.js';
+import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2, usdcMinPayoutLabel } from './referral-constants.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
 const ACCOUNT_URL = 'https://api.algovault.com/account';
@@ -340,6 +340,64 @@ Transaction: ${txRef}${basescan ? `\nView on Basescan: ${basescan}` : ''}
 See your full referral history: ${ACCOUNT_URL}
 Questions? support@algovault.com
 
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
+// REFERRAL-PARITY-NOTIFS-W1 / C1 — referrer activity/earnings notifications (default-ON,
+// transactional). SoT numbers; CTA-ended; one-click manage/unsubscribe link. `manageLink`
+// is built by referral-notify (avoids an email↔notify import cycle).
+function referralNotifShell(subject: string, bodyHtml: string, manageLink: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f8fa;padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #d0d7de;border-radius:12px;overflow:hidden">
+<tr><td style="padding:24px 28px;border-bottom:1px solid #d0d7de"><div style="font-size:18px;font-weight:700">AlgoVault Labs</div><div style="font-size:12px;color:#656d76;margin-top:2px">Referral program</div></td></tr>
+<tr><td style="padding:28px">${bodyHtml}
+  <p style="font-size:13px;line-height:1.5;margin:20px 0 0"><a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">See your earnings &rarr;</a></p>
+</td></tr>
+<tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">You're getting this as part of the AlgoVault referral program. Manage notifications &rarr; <a href="${manageLink}" style="color:#656d76">turn off</a>.</td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+export async function sendReferralFriendJoined(to: string, manageLink: string): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const subject = 'A friend just joined AlgoVault with your link';
+  const html = referralNotifShell(subject,
+    `<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">A friend just joined &#127881;</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">Someone signed up to AlgoVault through your referral link. If they subscribe, you earn <strong>${commissionPct()}</strong> of their plan for <strong>${commissionMonthsLabel()}</strong>.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0">Keep it going — share your link again.</p>`,
+    manageLink);
+  const text = `A friend just joined AlgoVault with your link.
+
+If they subscribe, you earn ${commissionPct()} of their plan for ${commissionMonthsLabel()}. Share again — see your earnings: ${ACCOUNT_URL}
+
+Manage notifications (turn off): ${manageLink}
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
+export async function sendReferralEarned(to: string, manageLink: string, payload: { amount_usd_e2: number; pending_usd_e2: number }): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const amount = formatUsdE2(payload.amount_usd_e2);
+  const pending = formatUsdE2(payload.pending_usd_e2);
+  const subject = `You earned ${amount} in referral commission`;
+  const html = referralNotifShell(subject,
+    `<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">You earned ${amount} &#128184;</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">A friend you referred subscribed, so you earned <strong>${amount}</strong> (${commissionPct()} for ${commissionMonthsLabel()}).</p>
+  <p style="font-size:14px;line-height:1.5;margin:0">Pending payout: <strong>${pending}</strong> — paid in USDC on Base once you reach ${usdcMinPayoutLabel()}, by the 10th of the following month.</p>`,
+    manageLink);
+  const text = `You earned ${amount} in referral commission.
+
+A friend you referred subscribed (${commissionPct()} for ${commissionMonthsLabel()}). Pending payout: ${pending} — paid in USDC on Base at ${usdcMinPayoutLabel()}, by the 10th of the following month. See your earnings: ${ACCOUNT_URL}
+
+Manage notifications (turn off): ${manageLink}
 — AlgoVault Labs`;
   const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;

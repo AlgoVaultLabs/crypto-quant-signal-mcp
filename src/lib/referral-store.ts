@@ -69,6 +69,18 @@ const REFERRAL_DDL = `
     granted_at ${TS} NOT NULL DEFAULT ${NOW},
     source_code TEXT
   );
+  CREATE TABLE IF NOT EXISTS referral_notifications (
+    id ${SERIAL_PK},
+    referrer_code TEXT NOT NULL,
+    event TEXT NOT NULL CHECK (event IN ('friend_joined', 'commission_earned')),
+    channel TEXT NOT NULL CHECK (channel IN ('email', 'tg')),
+    payload_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered')),
+    source_id TEXT NOT NULL,
+    created_at ${TS} NOT NULL DEFAULT ${NOW}
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_notif_source ON referral_notifications (channel, source_id);
+  CREATE INDEX IF NOT EXISTS idx_referral_notif_pending ON referral_notifications (status, channel);
 `;
 
 let _initialized = false;
@@ -105,6 +117,27 @@ export async function ensureReferralPayoutColumns(): Promise<void> {
 /** Reset the payout-column latch — tests only. */
 export function _resetPayoutColInitForTest(): void {
   _payoutColInit = false;
+}
+
+// REFERRAL-PARITY-NOTIFS-W1 / C1 — notify_opt_out preference on referral_codes
+// (default-ON: opt_out false). Same idempotent ALTER pattern as the payout column.
+let _notifyColInit = false;
+export async function ensureReferralNotifyColumns(): Promise<void> {
+  if (_notifyColInit) return;
+  ensureReferralSchema();
+  if (PG) {
+    dbExec('ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS notify_opt_out BOOLEAN NOT NULL DEFAULT false;');
+  } else {
+    const rows = await dbQuery<{ name: string }>('PRAGMA table_info(referral_codes)', []);
+    if (!rows.some((r) => r.name === 'notify_opt_out')) {
+      dbExec('ALTER TABLE referral_codes ADD COLUMN notify_opt_out INTEGER NOT NULL DEFAULT 0;');
+    }
+  }
+  _notifyColInit = true;
+}
+/** Reset the notify-column latch — tests only. */
+export function _resetNotifyColInitForTest(): void {
+  _notifyColInit = false;
 }
 
 // ── Types ──
@@ -576,4 +609,119 @@ export async function pendingPayouts(minUsd: number): Promise<PendingPayout[]> {
   return [...byCode.values()]
     .filter((p) => p.pending_usd_e2 >= minE2)
     .sort((x, y) => y.pending_usd_e2 - x.pending_usd_e2);
+}
+
+// ── Notifications (REFERRAL-PARITY-NOTIFS-W1 / C1) ──
+export type NotifyEvent = 'friend_joined' | 'commission_earned';
+export type NotifyChannel = 'email' | 'tg';
+export type NotifyStatus = 'pending' | 'delivered';
+
+export interface NotificationRow {
+  id: number;
+  referrer_code: string;
+  event: NotifyEvent;
+  channel: NotifyChannel;
+  payload_json: string | null;
+  status: NotifyStatus;
+  source_id: string;
+  created_at: string;
+}
+
+/** Queue a notification row, idempotent on (channel, source_id) — webhook/replay safe. */
+export async function queueNotification(params: {
+  referrer_code: string;
+  event: NotifyEvent;
+  channel: NotifyChannel;
+  payload_json: string | null;
+  source_id: string;
+}): Promise<{ queued: boolean; id: number | null }> {
+  await ensureReferralNotifyColumns();
+  const existing = await dbQuery<{ id: number }>(
+    'SELECT id FROM referral_notifications WHERE channel = ? AND source_id = ?',
+    [params.channel, params.source_id],
+  );
+  if (existing.length > 0) return { queued: false, id: Number(existing[0].id) };
+  try {
+    dbRun(
+      `INSERT INTO referral_notifications (referrer_code, event, channel, payload_json, status, source_id)
+       VALUES (?, ?, ?, ?, 'pending', ?)`,
+      params.referrer_code, params.event, params.channel, params.payload_json, params.source_id,
+    );
+  } catch {
+    const recheck = await dbQuery<{ id: number }>(
+      'SELECT id FROM referral_notifications WHERE channel = ? AND source_id = ?',
+      [params.channel, params.source_id],
+    );
+    if (recheck.length > 0) return { queued: false, id: Number(recheck[0].id) };
+    throw new Error('queueNotification insert failed');
+  }
+  const fetched = await dbQuery<{ id: number }>(
+    'SELECT id FROM referral_notifications WHERE channel = ? AND source_id = ?',
+    [params.channel, params.source_id],
+  );
+  return { queued: true, id: fetched.length > 0 ? Number(fetched[0].id) : null };
+}
+
+const NOTIF_COLS = 'id, referrer_code, event, channel, payload_json, status, source_id, created_at';
+
+/** Pending notifications for a channel (the bot pulls channel='tg'; the email drainer 'email'). */
+export async function listPendingNotifications(channel: NotifyChannel, limit = 100): Promise<NotificationRow[]> {
+  await ensureReferralNotifyColumns();
+  const rows = await dbQuery<Record<string, unknown>>(
+    `SELECT ${NOTIF_COLS} FROM referral_notifications WHERE status = 'pending' AND channel = ? ORDER BY id ASC LIMIT ?`,
+    [channel, Math.max(1, Math.floor(limit))],
+  );
+  return rows.map((r) => ({
+    id: Number(r.id),
+    referrer_code: String(r.referrer_code),
+    event: r.event as NotifyEvent,
+    channel: r.channel as NotifyChannel,
+    payload_json: (r.payload_json as string) ?? null,
+    status: r.status as NotifyStatus,
+    source_id: String(r.source_id),
+    created_at: String(r.created_at),
+  }));
+}
+
+export async function getNotificationById(id: number): Promise<NotificationRow | null> {
+  await ensureReferralNotifyColumns();
+  const rows = await dbQuery<Record<string, unknown>>(
+    `SELECT ${NOTIF_COLS} FROM referral_notifications WHERE id = ?`,
+    [id],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    id: Number(r.id),
+    referrer_code: String(r.referrer_code),
+    event: r.event as NotifyEvent,
+    channel: r.channel as NotifyChannel,
+    payload_json: (r.payload_json as string) ?? null,
+    status: r.status as NotifyStatus,
+    source_id: String(r.source_id),
+    created_at: String(r.created_at),
+  };
+}
+
+export function markNotificationDelivered(id: number): void {
+  ensureReferralSchema();
+  dbRun("UPDATE referral_notifications SET status = 'delivered' WHERE id = ?", id);
+}
+
+/** Read a referrer's opt-out flag (default-ON ⇒ false unless explicitly set). */
+export async function getNotifyOptOut(code: string): Promise<boolean> {
+  await ensureReferralNotifyColumns();
+  const rows = await dbQuery<{ notify_opt_out: number | boolean | null }>(
+    'SELECT notify_opt_out FROM referral_codes WHERE code = ?',
+    [code],
+  );
+  return rows.length > 0 ? Boolean(Number(rows[0].notify_opt_out ?? 0)) : false;
+}
+
+/** Set a referrer's opt-out flag. Both surfaces (TG toggle + email manage-link) call this. */
+export async function setNotifyOptOut(code: string, optOut: boolean): Promise<void> {
+  await ensureReferralNotifyColumns();
+  // PG boolean column wants a JS boolean; better-sqlite3 rejects booleans → bind 1/0.
+  const val: boolean | number = PG ? optOut : optOut ? 1 : 0;
+  dbRun('UPDATE referral_codes SET notify_opt_out = ? WHERE code = ?', val, code);
 }
