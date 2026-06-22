@@ -4,7 +4,8 @@
  *
  * Tier 1: Blue Chip (BTC, ETH)
  * Tier 2: Major Alts (dynamic top 20 by OI, standard perps)
- * Tier 3: TradFi (xyz dex perps — stocks, indices, commodities, FX)
+ * Tier 3: TradFi (tokenized stocks across CEXes + HL builder-dex perps — stocks,
+ *         indices, commodities, FX; detected per-venue via asset-class-detection.ts)
  * Tier 4: Meme & Micro (liquidity-filtered — top 50 OI or >$10M vol)
  */
 

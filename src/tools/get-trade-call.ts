@@ -150,7 +150,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // micro-caps". Steady-state cost: 1h cache hit ≈ free. Cold-start path
   // has static FALLBACK_TOP20 inside getTop20ByOI so this never blocks.
   const top20 = await getTop20ByOI();
-  const tier = classifyAsset(coin, top20);
+  const tier = classifyAsset(coin, top20, exchange); // venue-aware: a CEX tokenized stock won't be wrongly meme-gated (OPS-TIER-CLASSIFIER-XVENUE-W1)
   if (tier === 4) {
     const liquid = await isMemeCoinLiquid(coin, exchange);
     if (!liquid) {
