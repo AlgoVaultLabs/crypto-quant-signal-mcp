@@ -77,11 +77,11 @@ function logCrawl(req: Request, res: Response, next: NextFunction): void {
  * — bazaar discovery will reject it"). We set the header (canonical SDK encoder) AND keep
  * the JSON body (human/debug + existing clients).
  */
-function send402(res: Response, tool: string, opts?: { resourceUrl?: string; discoverable?: boolean }): void {
+function send402(res: Response, tool: string): void {
   const r = generate402Response(tool, {
-    resourceUrl: opts?.resourceUrl ?? bazaarResourceUrl(tool),
+    resourceUrl: bazaarResourceUrl(tool),
     description: bazaarRouteDescription(tool),
-    includeExtensions: opts?.discoverable ?? true,
+    includeExtensions: true,
   });
   try {
     res.setHeader('PAYMENT-REQUIRED', encodePaymentRequiredHeader(r.body as Parameters<typeof encodePaymentRequiredHeader>[0]));
@@ -187,29 +187,11 @@ export function mountX402HttpRoutes(app: Express): string[] {
   if (!resolved.discoveryEnabled) return []; // defaults (legacy/false) → not mounted
 
   const mounted: string[] = [];
-  // LANDING-X402-CALL-ROUTE-W1 (2026-06-23): mount the canonical HTTP_TOOLS routes PLUS a paid
-  // ALIAS /x402/get_trade_call. get_trade_call is the promoted canonical tool name, but the gated
-  // HTTP route was historically keyed on the back-compat alias get_trade_signal (Cowork A2,
-  // 2026-05-29). The alias delegates to get_trade_signal's pricing/handler/binding/idempotency
-  // (`tool` stays 'get_trade_signal' in the loop body), so a payment verifies —
-  // paymentMatchesToolRoute is resource-URL-agnostic: it keys off get_trade_signal's
-  // asset/network/payTo + price floor, not the path. It is deliberately NOT added to HTTP_TOOLS
-  // (so isPricedTool + the MCP free-tier path stay byte-identical) and is sent with
-  // discoverable:false (no bazaar extension → NOT Bazaar-cataloged), so the A2/A3 invariants
-  // (get_trade_call free on MCP + non-discoverable) hold. /x402/get_trade_signal stays mounted
-  // for back-compat. This lets the public docs promote /x402/get_trade_call without a 404.
-  const routeSpecs: Array<{ routePath: string; tool: HttpTool; send402Opts?: { resourceUrl?: string; discoverable?: boolean } }> = [
-    ...HTTP_TOOLS.map((t) => ({ routePath: `/x402/${t}`, tool: t })),
-    {
-      routePath: '/x402/get_trade_call',
-      tool: 'get_trade_signal' as HttpTool,
-      send402Opts: { resourceUrl: bazaarResourceUrl('get_trade_call'), discoverable: false },
-    },
-  ];
-  for (const { routePath, tool, send402Opts } of routeSpecs) {
+  for (const tool of HTTP_TOOLS) {
     const spec = BAZAAR_ROUTES[tool];
     if (!spec) continue; // defensive: only declared tools
     const validate: ValidateFunction = ajv.compile(spec.inputSchema);
+    const routePath = `/x402/${tool}`;
 
     // x402 discovery challenge (GET). The CDP Bazaar indexer crawls the resource URL
     // with a GET — it MUST return a 402 (the x402 payment-required challenge), NOT 404,
@@ -217,7 +199,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
     // 405s on GET; a POST-only route 404s on GET and stays unlisted forever despite the
     // settle returning `processing`). The actual paid invocation is the POST below.
     app.get(routePath, logCrawl, (_req: Request, res: Response) => {
-      send402(res, tool, send402Opts);
+      send402(res, tool);
     });
 
     app.post(routePath, logCrawl, tolerantJson, async (req: Request, res: Response) => {
@@ -230,7 +212,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // Paywall: require a settled-capable x402 payment. No payment → 402 carrying
       // the HTTP resource URL + bazaar extension (the channel that earns the listing).
       if (license.tier !== 'x402' || !pendingSettlement) {
-        send402(res, tool, send402Opts);
+        send402(res, tool);
         return;
       }
 
@@ -256,8 +238,8 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // underpay) → 402, do NOT serve, do NOT settle.
       const timeframe = typeof input.timeframe === 'string' ? (input.timeframe as string) : undefined;
       if (!paymentMatchesToolRoute(pendingSettlement, tool, timeframe)) {
-        console.warn(`[x402-route] payment-binding REJECT for ${routePath} (cross-tool or underpaid proof)`);
-        send402(res, tool, send402Opts);
+        console.warn(`[x402-route] payment-binding REJECT for /x402/${tool} (cross-tool or underpaid proof)`);
+        send402(res, tool);
         return;
       }
 
@@ -274,7 +256,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
       const nonce = extractPaymentNonce(pendingSettlement.paymentPayload);
       const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount);
       if (!claimed) {
-        console.warn(`[x402-route] payment-replay REJECT for ${routePath} (nonce already claimed or unclaimable)`);
+        console.warn(`[x402-route] payment-replay REJECT for /x402/${tool} (nonce already claimed or unclaimable)`);
         res.status(402).json({
           x402Version: 2,
           error: 'Payment Required',

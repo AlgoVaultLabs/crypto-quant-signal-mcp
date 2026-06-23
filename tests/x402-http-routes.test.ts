@@ -90,18 +90,56 @@ describe('x402 HTTP routes — two-flag firewall mount (R5)', () => {
     expect(mounted).toEqual([]);
   });
 
-  it('cdp + true (but not cdp + false) → mounts exactly the 6 paid routes', async () => {
+  it('cdp + true (but not cdp + false) → mounts the 6 paid routes + the get_trade_call alias', async () => {
     expect(await bootApp({ facilitator: 'cdp', bazaar: 'false' })).toEqual([]);
     if (server) { await new Promise<void>((r) => server!.close(() => r())); server = undefined; }
     const mounted = await bootApp({ facilitator: 'cdp', bazaar: 'true' });
+    // LANDING-X402-CALL-ROUTE-W1: get_trade_call is the PAID ALIAS of get_trade_signal (delegates
+    // to its pricing/handler/binding; NOT added to HTTP_TOOLS, non-discoverable) so the public docs
+    // can promote /x402/get_trade_call without a 404. /x402/get_trade_signal stays for back-compat.
     expect(mounted.slice().sort()).toEqual([
       '/x402/get_equity_call',
       '/x402/get_equity_regime',
       '/x402/get_market_regime',
+      '/x402/get_trade_call',
       '/x402/get_trade_signal',
       '/x402/scan_funding_arb',
       '/x402/scan_trade_calls',
     ]);
+  });
+});
+
+describe('x402 HTTP routes — get_trade_call PAID ALIAS (LANDING-X402-CALL-ROUTE-W1)', () => {
+  it('GET → 402 with get_trade_signal pricing, its OWN resource URL, and NO bazaar ext (A2 non-discoverable)', async () => {
+    await bootApp({ facilitator: 'cdp', bazaar: 'true' });
+    const res = await fetch(`${baseUrl}/x402/get_trade_call`, { method: 'GET' });
+    expect(res.status).toBe(402);
+    const body = await res.json() as {
+      x402Version?: number;
+      resource?: { url?: string };
+      accepts?: Array<{ extra?: { name?: string } }>;
+      extensions?: { bazaar?: unknown };
+    };
+    expect(body.x402Version).toBe(2);
+    // advertises the path the agent actually called (not get_trade_signal)
+    expect(body.resource?.url).toMatch(/\/x402\/get_trade_call$/);
+    // pricing/binding is get_trade_signal's — Base-mainnet USDC EIP-712 name = "USD Coin"
+    expect(body.accepts?.[0]?.extra?.name).toBe('USD Coin');
+    // A2: get_trade_call stays NON-discoverable — the alias 402 carries NO bazaar extension,
+    // so the CDP Bazaar crawler never catalogs it (unlike the get_trade_signal canonical route).
+    expect(body.extensions?.bazaar).toBeUndefined();
+  });
+
+  it('unpaid POST → 402 (paywalled identically to get_trade_signal)', async () => {
+    await bootApp({ facilitator: 'cdp', bazaar: 'true' });
+    const res = await fetch(`${baseUrl}/x402/get_trade_call`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coin: 'BTC' }),
+    });
+    expect(res.status).toBe(402);
+    // no free-data leak on the alias either
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.call).toBeUndefined();
+    expect(body.confidence).toBeUndefined();
   });
 });
 

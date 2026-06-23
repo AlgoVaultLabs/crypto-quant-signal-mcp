@@ -1668,7 +1668,7 @@ kraken mcp -s all</code></pre>
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
       <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
         <ol class="list-decimal pl-5 space-y-2.5">
-          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_signal</code>) with no payment attached.</span></li>
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Sign &amp; retry</span><span class="text-gray-400"> &mdash; your x402 client signs an ERC-3009 <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">transferWithAuthorization</code> and retries with the signed <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">X-PAYMENT</code> header. The facilitator submits it on-chain, so your agent pays no gas.</span></li>
           <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Get your verdict</span><span class="text-gray-400"> &mdash; the server verifies the signature and returns the result immediately; settlement confirms on Base in ~2 seconds.</span></li>
@@ -1690,7 +1690,7 @@ const wallet  = createWalletClient({ account, chain: base, transport: http() });
 const fetchWithPay = wrapFetchWithPayment(fetch, wallet);
 
 // Pays automatically on the 402, then returns the verdict
-const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", {
+const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_signal", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ coin: "BTC", timeframe: "1h" }),
@@ -1707,7 +1707,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
           <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
         </tr></thead>
         <tbody>
-          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_trade_call</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT 1m&ndash;5m: up to $0.05)</span></td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_trade_signal</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT 1m&ndash;5m: up to $0.05)</span></td></tr>
           <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/scan_funding_arb</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.01</td></tr>
           <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
         </tbody>

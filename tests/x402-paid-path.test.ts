@@ -18,7 +18,7 @@
  *   - premium-timeframe underpay (base $0.02 proof on a 1m=$0.05 call) → 402
  *   - wrong network proof → 402
  *   - replayed nonce → 402; first-use nonce → 200
- *   - free get_trade_call route unaffected (never mounted as a paid route)
+ *   - get_trade_call /x402 alias is now a paid route (W1); still OUT of HTTP_TOOLS (MCP free path unchanged)
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -277,11 +277,17 @@ describe('X402-02 — replayed nonce rejected', () => {
 });
 
 describe('free tool unaffected', () => {
-  it('get_trade_call is NOT a mounted paid route → 404', async () => {
+  // LANDING-X402-CALL-ROUTE-W1: /x402/get_trade_call is NOW a PAID ALIAS of get_trade_signal so the
+  // public docs can promote it (was 404 pre-W1). The free-tier invariant that REMAINS: it is still
+  // OUT of HTTP_TOOLS, so isPricedTool + the MCP free-tier path are byte-unchanged (the alias is
+  // HTTP-only); it also stays non-discoverable (asserted in x402-http-routes.test.ts).
+  it('get_trade_call /x402 alias is now a paid route → unpaid POST 402 (was 404 pre-W1); still NOT in HTTP_TOOLS', async () => {
     const res = await fetch(`${baseUrl}/x402/get_trade_call`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(402);
+    const { HTTP_TOOLS } = await import('../src/lib/x402-http-routes.js');
+    expect((HTTP_TOOLS as readonly string[]).includes('get_trade_call')).toBe(false);
   });
 
   it('unpaid (no settlement) get_trade_signal → 402, not served', async () => {

@@ -1,0 +1,43 @@
+{
+  "endpoint": "POST /x402/get_trade_call",
+  "resource_url": "https://api.algovault.com/x402/get_trade_call",
+  "wave": "LANDING-X402-CALL-ROUTE-W1",
+  "date": "2026-06-23",
+  "transport": "HTTP x402 — PAID ALIAS of /x402/get_trade_signal. get_trade_call is the promoted canonical tool name; this route delegates to the get_trade_signal pricing/handler/binding/idempotency (same single-source core fn). Response shape is BYTE-IDENTICAL to get_trade_signal (drift-protected by the shared handler).",
+  "alias_of": "POST /x402/get_trade_signal",
+  "price_usd": 0.02,
+  "discovery_type": "NONE — non-discoverable (send402 discoverable:false → NO extensions.bazaar). Deliberately kept OUT of HTTP_TOOLS and OUT of the CDP Bazaar catalog (A2 2026-05-29); the canonical get_trade_signal route carries the single Bazaar listing. isPricedTool + the MCP free-tier path are byte-unchanged (the alias is HTTP-only).",
+  "allowed_keys": [
+    "_algovault",
+    "call",
+    "coin",
+    "confidence",
+    "indicators",
+    "price",
+    "reasoning",
+    "regime",
+    "timeframe"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase e",
+    "phase-e",
+    "outcome wr",
+    "outcome win",
+    "internal-only"
+  ],
+  "error_contract": {
+    "400": "invalid_input / X402_HTTP_INVALID_INPUT — body failed BAZAAR_ROUTES[get_trade_signal].inputSchema (ajv)",
+    "402": "Payment-Required envelope { x402Version, error, resource{url=/x402/get_trade_call,description,mimeType}, accepts[] (get_trade_signal requirements) } — NO extensions.bazaar (non-discoverable), NO live tool result",
+    "500": "internal_error / X402_HTTP_HANDLER_ERROR"
+  },
+  "cache_contract": "no cache — live per-request via the shared core fn (HOLDs free; async settle post-response)",
+  "paywall": "x402 only (license.tier===x402); unpaid → 402; binds via paymentMatchesToolRoute(get_trade_signal) which is resource-URL-agnostic (asset/network/payTo + price floor)",
+  "consumers": [
+    "public docs (algovault.com/docs.html#x402 quickstart promotes this canonical-name route)",
+    "autonomous x402 agents calling the canonical get_trade_call name"
+  ],
+  "leak_guard": "tests/x402-http-routes.test.ts (alias GET → 402 with own resource URL + USD Coin requirement + NO bazaar extension) + tests/x402-paid-path.test.ts (unpaid POST → 402, no top-level call/confidence leak; still NOT in HTTP_TOOLS)",
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/x402/get_trade_call -H 'Content-Type: application/json' -H 'x-payment: <signed>' -d '{\"coin\":\"BTC\",\"timeframe\":\"4h\",\"exchange\":\"BINANCE\",\"includeReasoning\":true}' | jq 'keys'"
+}
