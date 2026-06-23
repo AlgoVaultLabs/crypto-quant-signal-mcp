@@ -21,6 +21,7 @@ import {
   GAP_SOURCE_COLUMN_VALUE,
   type GapBrief,
 } from '../../src/lib/geo-gap-list.js';
+import { loadObjective, productFitOf } from '../../src/lib/geo-decide.js';
 
 const dbQueryMock = vi.mocked(dbQuery);
 const dbExecMock = vi.mocked(dbExec);
@@ -90,6 +91,50 @@ describe('persistGapBriefs', () => {
     const persisted = await persistGapBriefs([], 1);
     expect(persisted).toEqual([]);
     expect(dbQueryMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('persistGapBriefs — product_fit + injectable single-derivation canary (OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1)', () => {
+  // INSERT arg order: dbRun(sql, week, query_id, query_tier, model, sov, top_competitor,
+  // top_competitor_domain, recommended_action, rank_score, product_fit, injectable)
+  const PF_IDX = 10; // product_fit position in the dbRun call array (call[0] = sql)
+  const INJ_IDX = 11; // injectable position
+
+  const MISFIT: GapBrief = { query_id: 'best-python-backtester', query_tier: 'head', model: 'sonar', sov: 0, top_competitor: 'vectorbt', top_competitor_domain: 'vectorbt.dev', recommended_action: 'x', rank_score: 1.0 };
+  const ONFIT: GapBrief = { query_id: 'ai-agent-trade-signals', query_tier: 'head', model: 'sonar', sov: 0, top_competitor: null, top_competitor_domain: null, recommended_action: 'y', rank_score: 1.0 };
+
+  it('(a) a misfit gap is WRITTEN (not dropped) but injectable=false, with product_fit from the SoT', async () => {
+    dbQueryMock.mockResolvedValueOnce([{ n: 0 }] as never);
+    const persisted = await persistGapBriefs([MISFIT], 1, new Date('2026-06-02T00:00:00Z'));
+    expect(persisted).toHaveLength(1); // Data Integrity: misfit gaps preserved for analytics
+    const sql = String(dbRunMock.mock.calls[0][0]);
+    expect(sql).toContain('product_fit');
+    expect(sql).toContain('injectable');
+    const call = dbRunMock.mock.calls[0];
+    expect(call[PF_IDX]).toBeCloseTo(0.15); // best-python-backtester from geo-objective.yaml
+    expect(call[INJ_IDX]).toBe(false); // 0.15 < inject_threshold 0.5
+  });
+
+  it('(a2) an on-fit OPEN gap persists injectable=true (default product_fit 1.0)', async () => {
+    dbQueryMock.mockResolvedValueOnce([{ n: 0 }] as never);
+    await persistGapBriefs([ONFIT], 1, new Date('2026-06-02T00:00:00Z'));
+    const call = dbRunMock.mock.calls[0];
+    expect(call[PF_IDX]).toBeCloseTo(1.0);
+    expect(call[INJ_IDX]).toBe(true);
+  });
+
+  it('(c) write-side product_fit == the scorer’s productFitOf for the same query (ONE SoT, identical projection)', async () => {
+    const obj = loadObjective();
+    dbQueryMock.mockResolvedValueOnce([{ n: 0 }] as never);
+    await persistGapBriefs([MISFIT], 1, new Date('2026-06-02T00:00:00Z'));
+    const call = dbRunMock.mock.calls[0];
+    expect(call[PF_IDX]).toBe(productFitOf(obj, 'best-python-backtester'));
+  });
+
+  it('invariant: inject_threshold >= open_query.product_fit_threshold (autopub never LOOSER than the scorer surface)', () => {
+    const obj = loadObjective();
+    expect(typeof obj.inject_threshold).toBe('number');
+    expect(obj.inject_threshold!).toBeGreaterThanOrEqual(obj.open_query!.product_fit_threshold);
   });
 });
 

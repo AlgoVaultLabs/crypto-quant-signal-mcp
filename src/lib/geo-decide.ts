@@ -55,6 +55,14 @@ export interface Objective {
   product_fit?: Record<string, number>;
   /** OPEN (no-leader) query handling — emit `seed_the_answer` candidates for uncontested queries. */
   open_query?: OpenQueryConfig;
+  /**
+   * Autopub gate for the gap-persist→injector path (OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1): a
+   * persisted gap is `injectable` only if its product_fit ≥ this. INTENTIONALLY DISTINCT from
+   * `open_query.product_fit_threshold` (which gates the SCORER surfacing a move to a human) —
+   * autopub is higher-risk (auto-publishes behind only a 12h-veto), so its gate is independently
+   * tunable and MUST stay ≥ the scorer threshold (autopub never looser than what we'd surface).
+   */
+  inject_threshold?: number;
   /** "<tier>:<engine-or-query_id>" -> drafted action-spec path (Q3 fast-path). */
   known_action_specs?: Record<string, string>;
   /**
@@ -153,8 +161,13 @@ function revenueProximity(obj: Objective, tier: string): number {
   return obj.revenue_proximity[tier] ?? obj.revenue_proximity.niche ?? 0.5;
 }
 
-/** Per-query product-fit (0..1) from the objective SoT; default 1.0 (on-fit) when unmapped. */
-function productFitOf(obj: Objective, query_id: string): number {
+/**
+ * Per-query product-fit (0..1) from the objective SoT; default 1.0 (on-fit) when unmapped.
+ * EXPORTED as the single shared projection (OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1): both the
+ * scorer (scoreWeek) and the write-side (geo-gap-list persistGapBriefs) call THIS one fn, so
+ * the persisted gap product_fit is byte-identical to the scorer's — the single-derivation canary.
+ */
+export function productFitOf(obj: Objective, query_id: string): number {
   const v = obj.product_fit?.[query_id];
   return typeof v === 'number' ? v : 1.0;
 }

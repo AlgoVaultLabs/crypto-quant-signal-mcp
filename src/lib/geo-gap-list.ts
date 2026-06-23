@@ -14,6 +14,9 @@
  * on-a-trusted-domain. Idempotent + fail-open; ISO-week dedup + cap in the table.
  */
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
+// Single product_fit SoT (OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1): the write-side resolves product_fit
+// via the SAME helper the scorer uses, so the persisted value is byte-identical to the scorer's.
+import { loadObjective, productFitOf } from './geo-decide.js';
 
 /**
  * The calendar "Source" column value the C6 host-side injector stamps on rows it
@@ -98,11 +101,17 @@ export function ensureGeoGapSchema(): void {
       recommended_action    TEXT,
       rank_score            NUMERIC,
       injected_at           TIMESTAMPTZ,
+      product_fit           REAL,
+      injectable            BOOLEAN,
       UNIQUE (iso_week, query_id)
     );
     CREATE INDEX IF NOT EXISTS idx_geo_content_gaps_uninjected
       ON geo_content_gaps (rank_score DESC) WHERE injected_at IS NULL;
   `);
+  // Idempotent column add for pre-existing tables (CREATE TABLE IF NOT EXISTS won't alter them).
+  // Mirrors the OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1 SSH migration so a fresh deploy self-heals.
+  dbExec(`ALTER TABLE geo_content_gaps ADD COLUMN IF NOT EXISTS product_fit REAL;`);
+  dbExec(`ALTER TABLE geo_content_gaps ADD COLUMN IF NOT EXISTS injectable BOOLEAN;`);
 }
 
 /**
@@ -193,12 +202,19 @@ export async function persistGapBriefs(
     if (remaining === 0) return []; // weekly cap reached -> no-op
 
     const toPersist = [...briefs].sort((a, b) => b.rank_score - a.rank_score).slice(0, remaining);
+    // Resolve product_fit from the ONE objective SoT (same helper the scorer uses) + derive
+    // injectable = product_fit >= inject_threshold. Misfit gaps are still WRITTEN (Data Integrity:
+    // preserved for analytics) — just injectable=false so geo_gap_injector won't auto-publish them.
+    const objective = loadObjective();
+    const injectThreshold = objective.inject_threshold ?? 0.5;
     const persisted: GapBrief[] = [];
     for (const b of toPersist) {
+      const productFit = productFitOf(objective, b.query_id);
+      const injectable = productFit >= injectThreshold;
       dbRun(
         `INSERT INTO geo_content_gaps
-           (iso_week, query_id, query_tier, model, sov, top_competitor, top_competitor_domain, recommended_action, rank_score)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           (iso_week, query_id, query_tier, model, sov, top_competitor, top_competitor_domain, recommended_action, rank_score, product_fit, injectable)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (iso_week, query_id) DO NOTHING`,
         week,
         b.query_id,
@@ -209,6 +225,8 @@ export async function persistGapBriefs(
         b.top_competitor_domain,
         b.recommended_action,
         b.rank_score,
+        productFit,
+        injectable,
       );
       persisted.push(b);
     }

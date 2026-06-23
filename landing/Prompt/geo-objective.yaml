@@ -76,6 +76,19 @@ open_query:
   product_fit_threshold: 0.5   # an OPEN query below this is NOT promoted to a seed (we can't credibly own an off-product answer) — it falls to gated owned_content
   open_bonus: 0.9              # expected_lift floor for an uncontested query (defaults HIGH)
 
+# Autopub gate for the gap-persist→injector path (OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1).
+# A persisted geo_content_gaps row is injectable (eligible for AUTO-PUBLISH via geo_gap_injector)
+# only if its product_fit >= inject_threshold. Misfits (best-python-backtester 0.15 / python-quant-
+# for-ai 0.2) fall below; on-fit queries (default 1.0) clear it. The injector honors the persisted
+# `injectable` column; it never re-reads this yaml (Postgres is the cross-repo boundary).
+#
+# INTENTIONALLY DISTINCT from open_query.product_fit_threshold above: that gates the SCORER
+# SURFACING a move to a human; THIS gates AUTO-PUBLISHING with no human in the loop (only a 12h
+# veto). Autopub is higher-risk, so its gate is independent + may later be set STRICTER. INVARIANT
+# (asserted in the geo-gap-list canary): inject_threshold >= open_query.product_fit_threshold —
+# autopub must NEVER be looser than what the scorer is willing to merely surface.
+inject_threshold: 0.5
+
 # Action-type registry: tier order + execution channel + automatability/effort weights.
 action_types:
   eligibility:
