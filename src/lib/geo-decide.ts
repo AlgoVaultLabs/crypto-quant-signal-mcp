@@ -27,6 +27,17 @@ export interface ActionType {
   effort: number;
 }
 
+/** OPEN (no-leader) query handling — the "seed/own the definitive answer" move-type. */
+export interface OpenQueryConfig {
+  /** move label key for an uncontested query (e.g. 'seed_the_answer'). */
+  move_type: string;
+  /** an OPEN query with product_fit BELOW this is NOT promoted to a seed_the_answer move. */
+  product_fit_threshold: number;
+  /** expected_lift floor for an uncontested query — 0→cited on a no-leader query is the
+   *  easiest win, so its lift defaults HIGH (never below open_bonus). */
+  open_bonus: number;
+}
+
 export interface Objective {
   version: number;
   priority_gate: PriorityTier[];
@@ -34,6 +45,16 @@ export interface Objective {
   revenue_proximity: Record<string, number>;
   score_formula: string;
   action_types: Record<PriorityTier, ActionType>;
+  /**
+   * Per-query_id product-fit multiplier (0..1), sourced from brand-facts honest-scope:
+   * "can AlgoVault CREDIBLY own this query?". Default (absent) = 1.0 (on-fit). Misfits
+   * (e.g. best-python-backtester / python-quant-for-ai — AlgoVault is the signal layer a
+   * backtest CALLS, never the backtester/framework) carry an explicit low value so the
+   * scorer stops surfacing entrenched-but-unwinnable, off-product queries.
+   */
+  product_fit?: Record<string, number>;
+  /** OPEN (no-leader) query handling — emit `seed_the_answer` candidates for uncontested queries. */
+  open_query?: OpenQueryConfig;
   /** "<tier>:<engine-or-query_id>" -> drafted action-spec path (Q3 fast-path). */
   known_action_specs?: Record<string, string>;
   /**
@@ -75,8 +96,12 @@ export interface Candidate {
   query_tier?: string;
   engine?: string;
   domain?: string;
+  /** third_party move subtype: 'pursue_placement' (a leader exists) vs 'seed_the_answer' (OPEN, no leader). */
+  move?: 'pursue_placement' | 'seed_the_answer';
   expected_lift: number;
   revenue_proximity: number;
+  /** product-fit multiplier applied to the score (1.0 = on-fit; <1.0 = brand-facts honest-scope misfit). */
+  product_fit: number;
   automatability: number;
   effort: number;
   score: number;
@@ -120,12 +145,18 @@ export function loadObjective(yamlPath?: string): Objective {
 }
 
 /** score within the unlocked tier — the documented form lives in geo-objective.yaml. */
-function scoreOf(expectedLift: number, revenueProx: number, at: ActionType): number {
-  return (expectedLift * revenueProx * at.automatability) / Math.max(at.effort, 0.01);
+function scoreOf(expectedLift: number, revenueProx: number, productFit: number, at: ActionType): number {
+  return (expectedLift * revenueProx * productFit * at.automatability) / Math.max(at.effort, 0.01);
 }
 
 function revenueProximity(obj: Objective, tier: string): number {
   return obj.revenue_proximity[tier] ?? obj.revenue_proximity.niche ?? 0.5;
+}
+
+/** Per-query product-fit (0..1) from the objective SoT; default 1.0 (on-fit) when unmapped. */
+function productFitOf(obj: Objective, query_id: string): number {
+  const v = obj.product_fit?.[query_id];
+  return typeof v === 'number' ? v : 1.0;
 }
 
 /**
@@ -150,36 +181,68 @@ export function scoreWeek(input: ScoreInput, obj: Objective): RankedDecision {
       engine,
       expected_lift: 1.0, // unblocking an engine enables ALL citations on it
       revenue_proximity: 1.0,
+      product_fit: 1.0, // unblocking an engine is product-agnostic
       automatability: atE.automatability,
       effort: atE.effort,
-      score: scoreOf(1.0, 1.0, atE),
+      score: scoreOf(1.0, 1.0, 1.0, atE),
       known_action_spec: obj.known_action_specs?.[key],
     });
   }
 
   // ── third-party + owned-content tiers, routed per gap by competitor presence ──
+  // product_fit multiplies every score (brand-facts honest-scope): an entrenched-but-misfit
+  // query (e.g. best-python-backtester — not a backtester) is demoted vs an on-fit query. An
+  // OPEN (no-leader) query that clears product_fit_threshold becomes a SEED_THE_ANSWER move in
+  // the same third_party tier (own the definitive answer), so the easiest, best-fit wins —
+  // instead of being stranded in the gated owned_content tier behind a misfit placement.
   const atT = obj.action_types.third_party;
   const atO = obj.action_types.owned_content;
   for (const g of input.gaps ?? []) {
     const lift = Math.max(0, 1 - g.sov);
     const rp = revenueProximity(obj, g.query_tier);
+    const pf = productFitOf(obj, g.query_id);
     if (g.top_competitor_domain) {
+      // a leader exists → pursue a placement on that surface (product_fit penalizes misfits).
       const key = `third_party:${g.query_id}`;
       all.third_party.push({
         tier: 'third_party',
         key,
+        move: 'pursue_placement',
         label: `${g.top_competitor ?? 'a competitor'} leads "${g.query_id}" (${g.query_tier}) via ${g.top_competitor_domain} — pursue a placement on that surface`,
         query_id: g.query_id,
         query_tier: g.query_tier,
         domain: g.top_competitor_domain,
         expected_lift: lift,
         revenue_proximity: rp,
+        product_fit: pf,
         automatability: atT.automatability,
         effort: atT.effort,
-        score: scoreOf(lift, rp, atT),
+        score: scoreOf(lift, rp, pf, atT),
+        known_action_spec: obj.known_action_specs?.[key],
+      });
+    } else if (obj.open_query && pf >= obj.open_query.product_fit_threshold) {
+      // OPEN, no leader, on-fit → SEED the definitive third-party answer (the easiest win:
+      // 0→cited on an uncontested query). expected_lift floors at open_bonus (defaults HIGH).
+      const openLift = Math.max(lift, obj.open_query.open_bonus);
+      const key = `third_party:${g.query_id}`;
+      all.third_party.push({
+        tier: 'third_party',
+        key,
+        move: 'seed_the_answer',
+        label: `"${g.query_id}" (${g.query_tier}) is OPEN — no leader (SoV ${g.sov.toFixed(2)}) — seed/own the definitive third-party answer`,
+        query_id: g.query_id,
+        query_tier: g.query_tier,
+        expected_lift: openLift,
+        revenue_proximity: rp,
+        product_fit: pf,
+        automatability: atT.automatability,
+        effort: atT.effort,
+        score: scoreOf(openLift, rp, pf, atT),
         known_action_spec: obj.known_action_specs?.[key],
       });
     } else {
+      // OPEN but BELOW product_fit_threshold (or no open_query config) → not a credible seed;
+      // falls back to the gated owned_content tier.
       const key = `owned_content:${g.query_id}`;
       all.owned_content.push({
         tier: 'owned_content',
@@ -189,9 +252,10 @@ export function scoreWeek(input: ScoreInput, obj: Objective): RankedDecision {
         query_tier: g.query_tier,
         expected_lift: lift,
         revenue_proximity: rp,
+        product_fit: pf,
         automatability: atO.automatability,
         effort: atO.effort,
-        score: scoreOf(lift, rp, atO),
+        score: scoreOf(lift, rp, pf, atO),
         known_action_spec: obj.known_action_specs?.[key],
       });
     }
@@ -246,8 +310,9 @@ export function renderDecisionBrief(d: RankedDecision, gaps: GapLike[], dateLabe
   L.push('| # | move | query | tier | lift | score |');
   L.push('|---|---|---|---|---|---|');
   d.ranked.forEach((c, i) => {
+    const moveCell = c.engine ?? c.domain ?? (c.move === 'seed_the_answer' ? 'seed the answer' : '—');
     L.push(
-      `| ${i + 1} | ${c.engine ?? c.domain ?? '—'} | ${c.query_id ?? '—'} | ${c.query_tier ?? '—'} | ${c.expected_lift.toFixed(2)} | ${c.score.toFixed(2)} |`,
+      `| ${i + 1} | ${moveCell} | ${c.query_id ?? '—'} | ${c.query_tier ?? '—'} | ${c.expected_lift.toFixed(2)} | ${c.score.toFixed(2)} |`,
     );
   });
   L.push('');
@@ -276,8 +341,13 @@ export function renderDecisionBrief(d: RankedDecision, gaps: GapLike[], dateLabe
     L.push(`- Why is ${d.chosen.engine} not retrieving algovault.com? (index status, robots/sitemap, last crawl)`);
     L.push('- Concrete re-crawl move + expected lift (unblocking enables ALL citations on that engine).');
   } else if (tier === 'third_party') {
-    L.push(`- Why does ${d.chosen.domain} win "${d.chosen.query_id}"? (page structure, proof, authority)`);
-    L.push('- Concrete placement move + expected SoV lift + which sub-goal (A/B/C) it advances.');
+    if (d.chosen.move === 'seed_the_answer') {
+      L.push(`- "${d.chosen.query_id}" has NO leader — what definitive third-party answer would own it? (0→cited on an uncontested query is the easiest win)`);
+      L.push('- Concrete seed/own-the-answer move (dev.to/Medium answer post or owned page) + expected SoV lift + which sub-goal (A/B/C) it advances.');
+    } else {
+      L.push(`- Why does ${d.chosen.domain} win "${d.chosen.query_id}"? (page structure, proof, authority)`);
+      L.push('- Concrete placement move + expected SoV lift + which sub-goal (A/B/C) it advances.');
+    }
   } else {
     L.push(`- What answer/comparison content would win "${d.chosen.query_id}"?`);
     L.push('- Concrete owned-content move (Tier-1/2 Code spec) + expected lift + sub-goal.');

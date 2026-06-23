@@ -49,7 +49,32 @@ revenue_proximity:
 
 # score within the unlocked tier (implemented in geo-decide.ts::scoreWeek; keep this
 # string in sync with that function — it is the documented form of the computation).
-score_formula: "expected_lift * revenue_proximity * automatability / effort"
+score_formula: "expected_lift * revenue_proximity * product_fit * automatability / effort"
+
+# Product-fit multiplier per query_id (0..1) — "can AlgoVault CREDIBLY own this query?".
+# Sourced from brand-facts honest-scope, NOT volume. Default (unmapped) = 1.0 (on-fit).
+# Without this term the scorer rewards high-volume but off-product queries it cannot win
+# (this week it ranked best-python-backtester #1; Mr.1 had to override it). Each <1.0 value
+# traces to the brand-facts honest-scope rule below, so the list is auditable, not arbitrary.
+#   AlgoVault honest-scope (brand-facts): the verifiable call / signal-INTERPRETATION layer an
+#   agent or a backtest CALLS — it returns one composite trade call. It is NOT a backtester and
+#   NOT a full quant framework. So "best backtester" / "python quant framework" queries miscast
+#   the product: we are the signal SOURCE those stacks consume, never the stack itself.
+product_fit:
+  best-python-backtester: 0.15   # honest-scope: AlgoVault is NOT a backtester (it is the signal a backtest calls)
+  python-quant-for-ai: 0.2       # honest-scope: NOT a full quant framework (it is the call/interpretation layer a framework consumes)
+
+# OPEN (no-leader) query handling. Most weeks the scorer only emitted "pursue a placement on
+# <leader domain>" moves — so an uncontested query (no leader) was invisible or stranded in the
+# gated owned_content tier behind an entrenched-but-misfit placement. OPEN queries are the
+# EASIEST wins (no incumbent to displace). When a query has NO leader AND product_fit ≥
+# product_fit_threshold, scoreWeek emits a `seed_the_answer` move in the third_party tier (own
+# the definitive third-party answer, e.g. a dev.to/Medium answer post), with expected_lift
+# floored at open_bonus (0→cited on no-leader is easier than displacing a leader → lift HIGH).
+open_query:
+  move_type: seed_the_answer
+  product_fit_threshold: 0.5   # an OPEN query below this is NOT promoted to a seed (we can't credibly own an off-product answer) — it falls to gated owned_content
+  open_bonus: 0.9              # expected_lift floor for an uncontested query (defaults HIGH)
 
 # Action-type registry: tier order + execution channel + automatability/effort weights.
 action_types:

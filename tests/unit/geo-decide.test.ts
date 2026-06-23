@@ -32,16 +32,25 @@ const OBJ: Objective = {
   version: 1,
   priority_gate: ['eligibility', 'third_party', 'owned_content'],
   revenue_proximity: { head: 1.0, branded: 0.8, niche: 0.6 },
-  score_formula: 'expected_lift * revenue_proximity * automatability / effort',
+  score_formula: 'expected_lift * revenue_proximity * product_fit * automatability / effort',
   action_types: {
     eligibility: { tier: 1, channel: 'deterministic_or_operator', automatability: 0.9, effort: 0.3 },
     third_party: { tier: 2, channel: 'draft_for_operator', automatability: 0.4, effort: 0.6 },
     owned_content: { tier: 3, channel: 'cowork_authored_code_wave', automatability: 0.7, effort: 1.0 },
   },
+  // product-fit map (brand-facts honest-scope): AlgoVault is the verifiable call/signal-
+  // interpretation layer, NOT a backtester / full quant framework → those queries are misfits.
+  product_fit: { 'best-python-backtester': 0.15, 'python-quant-for-ai': 0.2 },
+  // OPEN (no-leader) query handling: an uncontested query with product_fit ≥ threshold is
+  // scoreable as a seed_the_answer move (own the definitive third-party answer) with a high lift.
+  open_query: { move_type: 'seed_the_answer', product_fit_threshold: 0.5, open_bonus: 0.9 },
   known_action_specs: { 'eligibility:gemini': 'Prompt/fix-gemini-google-index-presence-w1.md' },
 };
 
-/** An open head gap with maximal lift (sov 0) — the adversarial owned-content tempter. */
+/**
+ * An OPEN head gap with maximal lift (sov 0), ON-FIT (product_fit default 1.0) → now a
+ * third_party seed_the_answer move (GEO-OBJECTIVE-PRODUCT-FIT-OPEN-QUERY-FIX-W1; was owned_content).
+ */
 const OPEN_HEAD_GAP = {
   query_id: 'best-mcp-trading',
   query_tier: 'head',
@@ -50,22 +59,35 @@ const OPEN_HEAD_GAP = {
   top_competitor_domain: null,
 };
 
+/**
+ * An OPEN head gap that is BELOW the product_fit threshold (python-quant-for-ai → 0.2) → it is
+ * NOT promoted to a seed; it falls to the gated owned_content tier. The owned-content tempter.
+ */
+const OWNED_FALLBACK_GAP = {
+  query_id: 'python-quant-for-ai',
+  query_tier: 'head',
+  sov: 0,
+  top_competitor: null,
+  top_competitor_domain: null,
+};
+
 describe('scoreWeek — HARD priority gate', () => {
-  it('a genuinely NOT-INDEXED engine (GSC-authoritative) ALWAYS outranks any owned-content move', () => {
+  it('a genuinely NOT-INDEXED engine (GSC-authoritative) ALWAYS outranks any lower-tier (seed/owned) move', () => {
     const input: ScoreInput = {
       eligibility: { notIndexed: ['gemini'] }, // a REAL index block (substrate absent from the GSC SoT)
-      // a max-lift open head query would be a high-scoring owned move on its own…
-      gaps: [OPEN_HEAD_GAP],
+      // high-scoring lower-tier moves on their own: an on-fit OPEN seed (third_party) + an off-fit owned move…
+      gaps: [OPEN_HEAD_GAP, OWNED_FALLBACK_GAP],
     };
     const d = scoreWeek(input, OBJ);
 
     expect(d.priority_tier).toBe('eligibility');
     expect(d.chosen?.tier).toBe('eligibility');
     expect(d.chosen?.engine).toBe('gemini');
-    // …but it is GATED: ranked holds only the active tier; the owned move exists but is excluded.
+    // …but BOTH are GATED: ranked holds only the active tier; the lower-tier moves exist but are excluded.
     expect(d.ranked.every((c) => c.tier === 'eligibility')).toBe(true);
-    expect(d.all.owned_content.length).toBeGreaterThan(0);
-    expect(d.ranked.some((c) => c.tier === 'owned_content')).toBe(false);
+    expect(d.all.third_party.length).toBeGreaterThan(0); // the on-fit OPEN seed
+    expect(d.all.owned_content.length).toBeGreaterThan(0); // the off-fit owned move
+    expect(d.ranked.some((c) => c.tier !== 'eligibility')).toBe(false);
   });
 
   it('with no engine blocked, third-party leads and owned-content is gated below', () => {
@@ -73,7 +95,7 @@ describe('scoreWeek — HARD priority gate', () => {
       eligibility: { notIndexed: [] },
       gaps: [
         { query_id: 'best-mcp-trading', query_tier: 'head', sov: 0.1, top_competitor: 'altfins', top_competitor_domain: 'altfins.com' },
-        OPEN_HEAD_GAP, // owned-content tempter, same tier/lift
+        OWNED_FALLBACK_GAP, // off-fit OPEN query → owned-content tempter, gated below
       ],
     };
     const d = scoreWeek(input, OBJ);
@@ -85,10 +107,12 @@ describe('scoreWeek — HARD priority gate', () => {
     expect(d.all.owned_content.length).toBeGreaterThan(0);
   });
 
-  it('with no eligibility block and no competitor, owned-content is the tier', () => {
+  it('with no eligibility block and a no-leader BELOW-fit query, owned-content is the tier', () => {
+    // An on-fit OPEN query now seeds the answer in third_party; only a BELOW-fit OPEN query
+    // (python-quant-for-ai 0.2 < threshold) falls to the owned_content tier.
     const input: ScoreInput = {
       eligibility: { notIndexed: [] },
-      gaps: [OPEN_HEAD_GAP],
+      gaps: [OWNED_FALLBACK_GAP],
     };
     const d = scoreWeek(input, OBJ);
     expect(d.priority_tier).toBe('owned_content');
@@ -142,6 +166,75 @@ describe('scoreWeek — within-tier scoring', () => {
   });
 });
 
+describe('scoreWeek — product_fit + OPEN-query seed_the_answer (GEO-OBJECTIVE-PRODUCT-FIT-OPEN-QUERY-FIX-W1)', () => {
+  // The misfit leader: entrenched (vectorbt leads), but AlgoVault is not a backtester (product_fit 0.15).
+  const MISFIT_LEADER = {
+    query_id: 'best-python-backtester',
+    query_tier: 'head',
+    sov: 0,
+    top_competitor: 'vectorbt',
+    top_competitor_domain: 'vectorbt.dev',
+  };
+  // The OPEN-fit best-shot: no leader, perfect product fit (default 1.0).
+  const OPEN_FIT = {
+    query_id: 'ai-agent-trade-signals',
+    query_tier: 'head',
+    sov: 0,
+    top_competitor: null,
+    top_competitor_domain: null,
+  };
+
+  it('REGRESSION: an entrenched-but-misfit head query never outranks an OPEN-fit head query', () => {
+    const d = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [MISFIT_LEADER, OPEN_FIT] }, OBJ);
+    // both compete in the SAME unlocked tier (third_party) — the OPEN-fit query wins.
+    expect(d.priority_tier).toBe('third_party');
+    expect(d.chosen?.query_id).toBe('ai-agent-trade-signals');
+    const fitIdx = d.ranked.findIndex((c) => c.query_id === 'ai-agent-trade-signals');
+    const misfitIdx = d.ranked.findIndex((c) => c.query_id === 'best-python-backtester');
+    expect(fitIdx).toBeGreaterThanOrEqual(0);
+    expect(misfitIdx).toBeGreaterThan(fitIdx); // misfit STRICTLY below the OPEN-fit move
+  });
+
+  it('an OPEN no-leader on-fit query produces a seed_the_answer third-party candidate (it produced none before)', () => {
+    const d = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [OPEN_FIT] }, OBJ);
+    expect(d.priority_tier).toBe('third_party');
+    const seed = d.all.third_party.find((c) => c.query_id === 'ai-agent-trade-signals');
+    expect(seed).toBeDefined();
+    expect(seed?.move).toBe('seed_the_answer');
+    expect(seed?.domain).toBeUndefined(); // no leader to "pursue a placement on"
+    expect(seed?.label.toLowerCase()).toContain('seed');
+  });
+
+  it('product_fit multiplies into the score: a misfit scores below the same-tier full-fit query', () => {
+    const dMisfit = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [MISFIT_LEADER] }, OBJ);
+    const onFitLeader = { ...MISFIT_LEADER, query_id: 'best-mcp-trading', top_competitor_domain: 'altfins.com' };
+    const dOnFit = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [onFitLeader] }, OBJ);
+    expect(dMisfit.chosen?.product_fit).toBeCloseTo(0.15);
+    expect(dOnFit.chosen?.product_fit).toBeCloseTo(1.0);
+    // identical inputs except product_fit → the misfit must score strictly lower.
+    expect(dOnFit.chosen!.score).toBeGreaterThan(dMisfit.chosen!.score);
+  });
+
+  it('the HARD priority gate is unchanged: a NOT-INDEXED engine still outranks every seed/placement', () => {
+    const d = scoreWeek({ eligibility: { notIndexed: ['gemini'] }, gaps: [OPEN_FIT, MISFIT_LEADER] }, OBJ);
+    expect(d.priority_tier).toBe('eligibility');
+    expect(d.chosen?.tier).toBe('eligibility');
+    expect(d.ranked.every((c) => c.tier === 'eligibility')).toBe(true);
+    expect(d.all.third_party.length).toBeGreaterThan(0); // the seed + placement exist but are GATED
+  });
+
+  it('an OPEN query BELOW the product_fit threshold is NOT promoted to seed_the_answer (stays gated owned-content)', () => {
+    // best-python-backtester as an OPEN query (no leader) — but product_fit 0.15 < threshold 0.5.
+    const openMisfit = { ...MISFIT_LEADER, top_competitor: null, top_competitor_domain: null };
+    const d = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [openMisfit] }, OBJ);
+    expect(d.all.third_party.find((c) => c.query_id === 'best-python-backtester')).toBeUndefined();
+    const owned = d.all.owned_content.find((c) => c.query_id === 'best-python-backtester');
+    expect(owned).toBeDefined();
+    expect(owned?.product_fit).toBeCloseTo(0.15);
+    expect(d.priority_tier).toBe('owned_content');
+  });
+});
+
 describe('renderDecisionBrief', () => {
   it('renders a valid brief with the move, candidate-action line, gap table, and research scope', () => {
     const input: ScoreInput = {
@@ -176,5 +269,18 @@ describe('loadObjective — parses the real SoT', () => {
     expect(obj.revenue_proximity.niche).toBe(0.6);
     // branded must be weighted above niche (the architect's expected-value lift).
     expect(obj.revenue_proximity.branded).toBeGreaterThan(obj.revenue_proximity.niche);
+  });
+
+  it('carries the product_fit misfit map (traced to brand-facts honest-scope) + OPEN-query config', () => {
+    const obj = loadObjective();
+    // misfits must be present and < 1.0 (AlgoVault is not a backtester / quant framework).
+    expect(obj.product_fit?.['best-python-backtester']).toBeLessThan(1.0);
+    expect(obj.product_fit?.['python-quant-for-ai']).toBeLessThan(1.0);
+    // OPEN-query seed config present + threshold above the misfit values (so misfits never seed).
+    expect(obj.open_query?.move_type).toBe('seed_the_answer');
+    expect(obj.open_query?.product_fit_threshold).toBeGreaterThan(obj.product_fit!['best-python-backtester']);
+    expect(obj.open_query?.open_bonus).toBeGreaterThan(0);
+    // the documented score_formula string carries the new product_fit term.
+    expect(obj.score_formula).toContain('product_fit');
   });
 });
