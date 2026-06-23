@@ -1662,7 +1662,7 @@ kraken mcp -s all</code></pre>
       </div>
       <!-- BUILD:signup-flow:end -->
 
-      <h3 id="x402" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">x402 Pay-Per-Call (USDC on Base)</h3>
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">x402 Pay-Per-Call (USDC on Base)</h3>
       <p class="text-gray-500 text-sm mb-4">No signup. No API key. Your agent pays per call with USDC on Base. Works with any x402-compatible wallet.</p>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden">
         <thead><tr class="border-b border-white/5">

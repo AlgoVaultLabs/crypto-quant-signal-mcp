@@ -176,7 +176,7 @@ ${accountArtboardOpen()}
           <label for="ref_api_key">API Key</label>
           <input type="password" id="ref_api_key" name="api_key" placeholder="av_live_... or av_free_..." autocomplete="off" required>
           <button type="submit">View my referrals &rarr;</button>
-          <div class="hint" style="margin-top:12px">No API key yet? <a href="https://algovault.com/referral" style="color:var(--mint);text-decoration:none">Get a free account + referral link &rarr;</a></div>
+          <div class="hint" style="margin-top:12px">No API key yet? <a href="https://algovault.com/referral">Get a free account + referral link &rarr;</a></div>
         </form>
         <div class="help-line">Need help? <a href="mailto:support@algovault.com">support@algovault.com</a></div>
       </div>
