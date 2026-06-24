@@ -4093,6 +4093,8 @@ setInterval(updateNextBatchCountdown, 60000);
     <a href="/signup" style="color:var(--fg-3);text-decoration:none">Signup</a>
     <a href="/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a>
   </div>
+  <!-- PH-BADGE-LANDING-W1: reusable social-proof badge slot. Future badges (PH #1 Product of the Day, MCP-registry, awards) drop into this same data-slot div without re-templating. theme=light reads cleanly on the dark footer bg. Byte-identical twin lives in src/lib/account-handlers.ts ACCOUNT_FOOTER_HTML (keep in sync until OPS footer-unify wave). -->
+  <div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer"><img alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1179739&theme=light" /></a></div>
 </footer>
 </body>
 </html>`;

@@ -236,6 +236,18 @@ function applyFooterUrls(html) {
     .replace(/href="#contract"/g, 'href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" rel="noopener noreferrer"');
 }
 
+// PH-BADGE-LANDING-W1: inject the reusable social-proof badge slot as the last child
+// of the LandingFooter, byte-matching the manual insertion in landing/index.html so a
+// future `landing-rest` re-render reproduces (never drops) the Product Hunt badge.
+// Dual-render LAW (Design.md §4): the deployed footer + this generator stay in sync.
+// Future badges (PH #1 Product of the Day, MCP-registry, awards) append inside this same
+// data-slot div without re-templating. theme=light reads cleanly on the dark footer bg.
+// Applied ONLY to the apex LandingFooter render (not how-it-works / Express footers).
+function injectFooterBadge(html) {
+  const slot = '<div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer"><img alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1179739&theme=light" /></a></div>';
+  return html.replace('</footer>', slot + '</footer>');
+}
+
 function stripUseCasesDate(html) {
   // Q-W13: strip stale date placeholder
   return html.replace(/verified 2026-04-26/g, 'official Skills Hub');
@@ -2096,7 +2108,7 @@ async function main() {
       ));
       const fd = applyFooterUrls(renderToString(React.createElement(exports.ForDevelopers, { mobile })));
       const fq = renderToString(React.createElement(exports.FAQ, { mobile })) + FAQ_ACCORDION_JS;
-      const ft = applyFooterUrls(renderToString(React.createElement(exports.LandingFooter, { mobile })));
+      const ft = injectFooterBadge(applyFooterUrls(renderToString(React.createElement(exports.LandingFooter, { mobile }))));
       // Final pass: wrap "5 exchanges" / "11 timeframes" prose literals with proxy spans (copy-consistency canary).
       html = wrapCounterLiteralsInProse(lv + ltr + tp + tb + sp + wt + vs + uc + try30 + fd + fq + ft);
     } else if (target === 'hero') {
