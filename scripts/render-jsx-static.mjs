@@ -236,15 +236,14 @@ function applyFooterUrls(html) {
     .replace(/href="#contract"/g, 'href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" rel="noopener noreferrer"');
 }
 
-// PH-BADGE-LANDING-W1: inject the reusable social-proof badge slot as the last child
-// of the LandingFooter, byte-matching the manual insertion in landing/index.html so a
-// future `landing-rest` re-render reproduces (never drops) the Product Hunt badge.
-// Dual-render LAW (Design.md §4): the deployed footer + this generator stay in sync.
-// Future badges (PH #1 Product of the Day, MCP-registry, awards) append inside this same
-// data-slot div without re-templating. theme=light reads cleanly on the dark footer bg.
-// Applied ONLY to the apex LandingFooter render (not how-it-works / Express footers).
+// PH-BADGE-COMPACT-W1: inject the social-proof badge slot (official PH "Follow" badge,
+// Dark + Small 86x32, count-free) as the last child of the LandingFooter, byte-matching the
+// manual edit in landing/index.html so a future `landing-rest` re-render reproduces it.
+// Replaces the W1 boxed image badge (count-free per Mr.1 2026-06-24; PH has no count-free
+// hosted variant of the larger badge). 1px var(--line) border for contrast (the dark badge bg
+// ~matches the near-black footer). Dual-render LAW (Design.md §4). Apex LandingFooter only.
 function injectFooterBadge(html) {
-  const slot = '<div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer"><img alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1179739&theme=light" /></a></div>';
+  const slot = '<div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div>';
   return html.replace('</footer>', slot + '</footer>');
 }
 
