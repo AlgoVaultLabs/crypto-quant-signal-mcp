@@ -34,6 +34,9 @@ export default defineConfig({
       // ATTRIBUTION-SRC-COVERAGE-W1 — node:test acquisition `?src=` coverage canary (same
       // node:test ownership; exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/attribution-src-coverage.test.mjs',
+      // FOOTER-UNIFY-W1 — node:test footer-drift canary (canonical runner is node:test;
+      // exclude from vitest so it doesn't false-fail "No test suite found").
+      'tests/unit/footer-unify-canary.test.mjs',
       // P1-TRACK-RECORD-LEADERBOARD-W1 — node:test + jsdom leaderboard behavioral suite
       // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
       // "No test suite found").
