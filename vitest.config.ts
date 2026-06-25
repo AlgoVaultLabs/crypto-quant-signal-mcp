@@ -37,6 +37,9 @@ export default defineConfig({
       // FOOTER-UNIFY-W1 — node:test footer-drift canary (canonical runner is node:test;
       // exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/footer-unify-canary.test.mjs',
+      // LANDING-DUAL-RENDER-PARITY-W1 — node:test dual-render copy-drift canary (canonical
+      // runner is node:test; exclude from vitest so it doesn't false-fail "No test suite found").
+      'tests/unit/landing-dual-render-parity.test.mjs',
       // P1-TRACK-RECORD-LEADERBOARD-W1 — node:test + jsdom leaderboard behavioral suite
       // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
       // "No test suite found").

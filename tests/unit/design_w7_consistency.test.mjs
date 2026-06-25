@@ -102,6 +102,10 @@ test('Q-W7-3: V1Hero nav stripped (cross-page consistency); v1.x version pill no
   // Code's render pipeline still implements the version live-bind for forward-compat (if nav-strip
   // is ever lifted in a future wave, the version pill will be live-bound automatically).
   assert.doesNotMatch(html, /v1\.4 shipped/, 'no v1.4 fictional version (defensive — nav stripped anyway)');
+  // LANDING-DUAL-RENDER-PARITY-W1: the mobile hero eyebrow drifted to a BARE "· v1.4" (no
+  // "shipped"), slipping through the guard above. Close that exact gap here; the generic
+  // "· vN.N" class is owned site-wide by tests/unit/landing-dual-render-parity.test.mjs (d).
+  assert.doesNotMatch(html, /·\s*v1\.4\b/, 'no bare "· v1.4" hero-eyebrow version literal');
   // Verify render pipeline supports the live-bind (forward-compat) by reading the script source.
   const renderSrc = await read('scripts/render-jsx-static.mjs');
   assert.match(renderSrc, /w7HeroNavVersion/, 'render pipeline implements w7HeroNavVersion (Q-W7-3 forward-compat)');
@@ -155,6 +159,7 @@ test('Factuality LAW canary: 0 fictional placeholders in deployed hero', async (
     '32 venues integrated',       // V0Diagram footer placeholder (Q-W7-4)
     'BTC 1h Binance · HOLD · 0.8s ago', // LAST_CALLS first cycling sample (H-PR2 mount-point)
     'v1.4 shipped',               // Nav version placeholder (Q-W7-3)
+    '· v1.4',                     // LANDING-DUAL-RENDER-PARITY-W1: bare hero-eyebrow version (was the mobile-twin drift)
   ];
   for (const f of fictional) {
     assert.ok(!html.includes(f), `0 occurrences of fictional placeholder "${f}"`);
