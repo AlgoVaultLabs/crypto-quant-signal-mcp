@@ -11,7 +11,7 @@
 
 ## 2. `exchange_count` hydration — pair discipline SATISFIED (`landing/js/track-record-proxy.js`)
 - `:107 function setField(name, value)` → `:109 querySelectorAll('[data-tr-field="' + name + '"]')` sets `textContent` on **ALL** matching nodes.
-- `:147 setField('exchange_count', formatRawInt(perf && perf.exchange_count))`; `:288` "refresh() … updates ALL data-tr-field"; load + a 3s polling refresh.
+- `:147 setField('exchange_count', formatRawInt(perf && perf.exchange_count))`; `:288` "refresh() … updates ALL data-tr-field"; load + a 3s refresh poll (`setInterval(…,3000)`).
 - `:24` comment "exchange_count → '5' (raw integer; auto-updates when 6th adapter lands)".
 → My new eyebrow `<span data-tr-field="exchange_count">5</span>` is **auto-hydrated by the existing loop** (adding a span for an already-hydrated key). `5` ships as the snapshot fallback. **No proxy change.** (Category (b): API-fetched w/ refresh.)
 

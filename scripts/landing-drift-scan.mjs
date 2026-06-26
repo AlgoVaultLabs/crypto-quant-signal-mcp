@@ -81,6 +81,7 @@ md += `Read-only recon (LANDING-EYEBROW-LIVEBIND-W1 B). Normalized visible copy;
 
 let pairCount = 0;
 let cleanPairs = 0;
+let structuralPairs = 0;
 const summary = [];
 
 for (const { file, base } of TARGETS) {
@@ -90,16 +91,25 @@ for (const { file, base } of TARGETS) {
   const html = raw.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
   const ds = blocks(html, base, 'desktop');
   const ms = blocks(html, base, 'mobile');
+  // CSS-selector occurrences (`.lp-base-variant` in <style>) are NOT DOM twins. Count them from
+  // the RAW html and report separately so the wrapper count can't be misread as a twin count
+  // (the grep-counts-CSS trap that mis-sized this wave's deferred-twin estimate at 6 vs a live 4).
+  const cssRefs = (raw.match(new RegExp(`\\.lp-${base}-(?:desktop|mobile)`, 'g')) || []).length;
   const n = Math.max(ds.length, ms.length);
-  md += `## ${file} — \`lp-${base}\` (${ds.length} desktop / ${ms.length} mobile block(s))\n\n`;
+  md += `## ${file} — \`lp-${base}\`: ${ds.length} desktop + ${ms.length} mobile HTML wrapper(s)` +
+    (cssRefs ? ` (plus ${cssRefs} \`.lp-${base}-*\` CSS-selector ref(s) in <style> — NOT twins)` : '') + `\n\n`;
   for (let i = 0; i < n; i++) {
     pairCount++;
     const d = ds[i] != null ? normalize(ds[i]) : '⟨missing desktop block⟩';
     const m = ms[i] != null ? normalize(ms[i]) : '⟨missing mobile block⟩';
+    const bothEmpty = ds[i] != null && ms[i] != null && d.length === 0 && m.length === 0;
     const identical = d === m;
-    const { onlyDesktop, onlyMobile } = (ds[i] != null && ms[i] != null) ? multisetDiff(d, m) : { onlyDesktop: [], onlyMobile: [] };
-    const verdict = identical ? 'NO DRIFT (token-identical)' : (onlyDesktop.length || onlyMobile.length ? 'REVIEW' : 'NO DRIFT');
-    if (verdict.startsWith('NO DRIFT')) cleanPairs++;
+    const { onlyDesktop, onlyMobile } = (ds[i] != null && ms[i] != null && !bothEmpty) ? multisetDiff(d, m) : { onlyDesktop: [], onlyMobile: [] };
+    const verdict = bothEmpty ? 'STRUCTURAL (empty wrapper — grouped/nested, not a content twin)'
+      : identical ? 'NO DRIFT (token-identical)'
+      : (onlyDesktop.length || onlyMobile.length ? 'REVIEW' : 'NO DRIFT');
+    if (bothEmpty) structuralPairs++;
+    else if (verdict.startsWith('NO DRIFT')) cleanPairs++;
     summary.push(`${file} lp-${base}[${i}]: ${verdict}`);
     md += `### pair [${i}] — ${verdict}\n\n`;
     md += `- desktop chars: ${d.length} · mobile chars: ${m.length}\n`;
@@ -112,7 +122,8 @@ for (const { file, base } of TARGETS) {
   }
 }
 
-md = md.replace('not the bar.\n\n', `not the bar.\n\n## Summary\n\n- ${pairCount} twin pair(s) scanned; ${cleanPairs} token-identical / no-drift, ${pairCount - cleanPairs} flagged REVIEW.\n` + summary.map((s) => `  - ${s}`).join('\n') + `\n\n`);
+const reviewPairs = pairCount - cleanPairs - structuralPairs;
+md = md.replace('not the bar.\n\n', `not the bar.\n\n## Summary\n\n- ${pairCount} wrapper pair(s); ${cleanPairs} no-drift, ${reviewPairs} REVIEW, ${structuralPairs} structural-empty (not content twins).\n` + summary.map((s) => `  - ${s}`).join('\n') + `\n\n`);
 
 await writeFile(OUT, md);
-console.log(`[landing-drift-scan] ${pairCount} pair(s); ${cleanPairs} no-drift, ${pairCount - cleanPairs} review → ${path.relative(ROOT, OUT)}`);
+console.log(`[landing-drift-scan] ${pairCount} wrapper pair(s); ${cleanPairs} no-drift, ${reviewPairs} review, ${structuralPairs} structural-empty → ${path.relative(ROOT, OUT)}`);

@@ -4,13 +4,13 @@ Read-only recon (LANDING-EYEBROW-LIVEBIND-W1 B). Normalized visible copy; live `
 
 ## Summary
 
-- 4 twin pair(s) scanned; 1 token-identical / no-drift, 3 flagged REVIEW.
+- 4 wrapper pair(s); 0 no-drift, 3 REVIEW, 1 structural-empty (not content twins).
   - landing/index.html lp-rest[0]: REVIEW
   - landing/how-it-works.html lp-howit[0]: REVIEW
-  - landing/how-it-works.html lp-howit[1]: NO DRIFT (token-identical)
+  - landing/how-it-works.html lp-howit[1]: STRUCTURAL (empty wrapper — grouped/nested, not a content twin)
   - landing/verify.html lp-verify[0]: REVIEW
 
-## landing/index.html — `lp-rest` (1 desktop / 1 mobile block(s))
+## landing/index.html — `lp-rest`: 1 desktop + 1 mobile HTML wrapper(s)
 
 ### pair [0] — REVIEW
 
@@ -32,7 +32,7 @@ Read-only recon (LANDING-EYEBROW-LIVEBIND-W1 B). Normalized visible copy; live `
 ```
 </details>
 
-## landing/how-it-works.html — `lp-howit` (2 desktop / 2 mobile block(s))
+## landing/how-it-works.html — `lp-howit`: 2 desktop + 2 mobile HTML wrapper(s) (plus 2 `.lp-howit-*` CSS-selector ref(s) in <style> — NOT twins)
 
 ### pair [0] — REVIEW
 
@@ -54,7 +54,7 @@ Read-only recon (LANDING-EYEBROW-LIVEBIND-W1 B). Normalized visible copy; live `
 ```
 </details>
 
-### pair [1] — NO DRIFT (token-identical)
+### pair [1] — STRUCTURAL (empty wrapper — grouped/nested, not a content twin)
 
 - desktop chars: 0 · mobile chars: 0
 
@@ -72,7 +72,7 @@ Read-only recon (LANDING-EYEBROW-LIVEBIND-W1 B). Normalized visible copy; live `
 ```
 </details>
 
-## landing/verify.html — `lp-verify` (1 desktop / 1 mobile block(s))
+## landing/verify.html — `lp-verify`: 1 desktop + 1 mobile HTML wrapper(s) (plus 2 `.lp-verify-*` CSS-selector ref(s) in <style> — NOT twins)
 
 ### pair [0] — REVIEW
 
@@ -94,19 +94,3 @@ algovault.com / verify base L2 · merkle batch ⟦live⟧ Verify Any AlgoVault T
 ```
 </details>
 
-
----
-
-## Verdict (recon — informs the W2 breadth decision)
-
-**4 real DOM twin pairs** (rest×1, howit×1 real + 1 degenerate, verify×1) — NOT the 6 the spec estimated. The spec's `howit×3`/`verify×2` counted CSS selectors (`.lp-howit-desktop` in `<style>`), not `class="…"` wrappers; live wrappers = rest 1, howit 2 (1 real + 1 grouped/empty), verify 1.
-
-**The desktop↔mobile differences are LEGIT viewport adaptation, NOT the accidental same-intent-different-wording drift class W1 retired:**
-- howit pair[0]: desktop spells full venue names (`Binance Hyperliquid Bybit OKX Bitget`); mobile uses short codes (`BN HL BY OK BG`) + condensed phrasing + a related-links list. Intentional.
-- verify pair[0]: the ONLY diff is layout separators — desktop `→` arrows vs mobile `·` middots. Pure presentation, not copy.
-- rest pair[0]: a handful of label tokens render twice on mobile (`call/per/for/Output/Built/Integration`); no contradictory copy.
-- The version-literal class is ALREADY guarded site-wide by the W1 canary (d).
-
-**→ W2 stays correctly DEFERRED.** A blanket mark of ~300 `lp-rest` fragments adjacent to live nodes is NOT justified by evidence of drift. If W2 proceeds it should be SELECTIVE (genuinely-parallel headings only), gated on a confirmed same-intent divergence.
-
-**Scanner limitations (heuristic, not a gate):** token-multiset over nested HTML → separator/arrow tokens (`→`/`·`) and short-code-vs-full-name read as "REVIEW" though legitimate; grouped/adjacent 2nd-wrapper extraction can degenerate to 0 chars (howit pair[1] — the real howit twin is pair[0]). The report measures DIRECTION, not a precise diff.

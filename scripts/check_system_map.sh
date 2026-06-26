@@ -44,7 +44,17 @@ declare -a FILE_PATTERNS=(
   '^src/scripts/seed-signals\.ts$'                       # cron-driver edits
 )
 
-# ── [skip-map-check] escape hatch ──
+# ── escape hatches for confirmed false positives ──
+# (1) env var — the RELIABLE non-interactive hatch. The COMMIT_EDITMSG check below
+#     CANNOT fire on `git commit -m/-F` (the pre-commit hook runs before the message
+#     file is written), so `ALGOVAULT_SKIP_MAP_CHECK=1 git commit …` is the canonical
+#     bypass for scripted/agent commits.
+if [ -n "${ALGOVAULT_SKIP_MAP_CHECK:-}" ]; then
+  echo "[system-map gate] OK — ALGOVAULT_SKIP_MAP_CHECK set; bypassing (documented escape hatch)."
+  exit 0
+fi
+# (2) [skip-map-check] in the commit message — works for interactive/editor commits and
+#     amends, where COMMIT_EDITMSG is populated before the pre-commit hook runs.
 GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo "")
 if [ -n "$GIT_DIR" ] && [ -f "$GIT_DIR/COMMIT_EDITMSG" ] && \
    grep -q '\[skip-map-check\]' "$GIT_DIR/COMMIT_EDITMSG"; then
@@ -60,7 +70,19 @@ if echo "$STAGED_FILES" | grep -qE 'system-map\.md$'; then
 fi
 
 # ── Scan staged diff + file list for edge-mutation signals ──
-DIFF=$(git diff --cached 2>/dev/null || echo "")
+# Signals are SERVER-CODE patterns (routes / tools / SQL / cron / env / package.json), so the
+# diff scan is scoped to code paths. We EXCLUDE: markdown + audits + docs (an edge described in
+# PROSE is not an edge mutation), landing/** (client HTML + inline JS — a `setInterval` poller
+# or a minified hero line re-emitted as `+` is not a server cron/edge), and tests/** (which
+# REFERENCE signals like `server.tool(` in assertions). Real edges live in src/scripts/
+# migrations/package.json, all still fully scanned. (system-map-gate false-positive hardening.)
+DIFF=$(git diff --cached -- . \
+  ':(exclude,glob)**/*.md' \
+  ':(exclude,glob)audits/**' \
+  ':(exclude,glob)docs/**' \
+  ':(exclude,glob)landing/**' \
+  ':(exclude,glob)tests/**' \
+  2>/dev/null || echo "")
 HITS=()
 for pat in "${SIGNAL_PATTERNS[@]}"; do
   match=$(echo "$DIFF" | grep -nE "$pat" || true)
@@ -102,8 +124,8 @@ system-map.md path: $SYSTEM_MAP_PATH
 system-map.md age:  ${AGE}s ago — STALE (max allowed: ${MAX_AGE_SEC}s).
 Required action: touch the relevant component card / edge row in system-map.md,
                  then re-attempt the commit.
-Escape hatch:    append [skip-map-check] to the commit message for confirmed
-                 false positives.
+Escape hatch:    ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (reliable, non-interactive)
+                 — or append [skip-map-check] to the message (interactive / amend commits).
 Reference:       CLAUDE.md "## Execution flow" step 6 + "## Plan Mode rules"
                  govern this gate (per SYSTEM-MAP-ENFORCEMENT-W1 C2).
 EOF
