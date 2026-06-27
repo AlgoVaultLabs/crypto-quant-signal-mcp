@@ -69,6 +69,26 @@ beforeEach(() => {
   mockUniverse.mockImplementation((_ex, n: number) => Promise.resolve(makeAssets(n)));
 });
 
+describe('rankBy — schema + handler validation (SCAN-RANKBY-W1)', () => {
+  it('schema: rankBy defaults to "oi" and forwards a raw string token', () => {
+    expect(SCHEMA.parse({}).rankBy).toBe('oi'); // omitted ⇒ default
+    expect(SCHEMA.parse({ rankBy: 'nfr' }).rankBy).toBe('nfr'); // raw (MCP resolves the alias)
+  });
+
+  it('handler rejects an unknown lens with invalid_rank_by — no scan, no charge', async () => {
+    const calls = { n: 0 };
+    _setScanScorerForTest(specScorer(SPEC, calls));
+    const r = await runScanTradeCall({ exchange: 'BINANCE', rankBy: 'garbage' }, starter('av_badrank'));
+    expect('error' in r).toBe(true);
+    const err = r as unknown as { error: string; code: string; valid_lenses: string[] };
+    expect(err.error).toBe('invalid_rank_by');
+    expect(err.code).toBe('invalid_parameter');
+    expect(err.valid_lenses).toContain('funding_negative');
+    expect(err.valid_lenses).toContain('nfr');
+    expect(calls.n).toBe(0); // rejected BEFORE any scan → nothing charged
+  });
+});
+
 describe('SCAN_TRADE_CALLS_SCHEMA bounds + defaults', () => {
   it('rejects topN 0 and 101', () => {
     expect(SCHEMA.safeParse({ topN: 0 }).success).toBe(false);

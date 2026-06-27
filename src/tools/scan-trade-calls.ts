@@ -35,6 +35,7 @@ import { referralCodeForKey } from '../lib/referral-store.js';
 import { buildReferralHint, buildAhaReferral, type ReferralHint } from '../lib/nudge-copy.js';
 import { shouldShowAhaReferral } from '../lib/aha-event.js';
 import { getTrackRecord } from '../lib/track-record-snapshot.js';
+import { resolveRankBy, rankByTokens } from '../lib/rank-constants.js';
 import {
   SCAN_TRADE_CALLS_DESCRIPTION,
   PARAM_DESC_SCAN_TOP_N,
@@ -43,6 +44,7 @@ import {
   PARAM_DESC_SCAN_MIN_CONFIDENCE,
   PARAM_DESC_SCAN_INCLUDE_HOLDS,
   PARAM_DESC_SCAN_LIMIT,
+  PARAM_DESC_SCAN_RANK_BY,
 } from '../tool-descriptions.js';
 import type { LicenseInfo } from '../types.js';
 
@@ -63,6 +65,10 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
   minConfidence: z.number().min(0).max(100).optional().describe(PARAM_DESC_SCAN_MIN_CONFIDENCE),
   includeHolds: z.boolean().default(false).describe(PARAM_DESC_SCAN_INCLUDE_HOLDS),
   limit: z.number().int().min(1).max(100).default(10).describe(PARAM_DESC_SCAN_LIMIT),
+  // SCAN-RANKBY-W1: universe-selection lens (param, not a tool — tools/list stays 9).
+  // Raw string so the bot can forward an alias (nfr/pfr/…) verbatim; the MCP resolves
+  // it via resolveRankBy (the single alias map). Default 'oi' ⇒ byte-identical output.
+  rankBy: z.string().optional().default('oi').describe(PARAM_DESC_SCAN_RANK_BY),
 };
 
 export interface ScanAlgovaultMeta {
@@ -104,6 +110,19 @@ export interface ScanQuotaExhaustedResponse {
   _algovault: { tool: 'scan_trade_calls'; version: string; session_id: string | null };
 }
 
+/** SCAN-RANKBY-W1: structured rejection for an unrecognized `rankBy` lens token
+ *  (CLAUDE.md structured-error LAW). Returned BEFORE any quota check, scan, or
+ *  charge — an invalid lens is never billed. The bot pre-validates against
+ *  /capabilities, so this backstops agent / x402 callers. */
+export interface ScanInvalidRankResponse {
+  error: 'invalid_rank_by';
+  code: 'invalid_parameter';
+  message: string;
+  valid_lenses: string[];
+  suggested_action: string;
+  _algovault: { tool: 'scan_trade_calls'; version: string; session_id: string | null };
+}
+
 /** REFERRAL-INPRODUCT-NUDGE-W1 trigger (b): min # live (non-HOLD) calls in one scan
  *  to count as a "multi-hit" referral moment (Step-0; scan default limit is 10). */
 const SCAN_REFERRAL_MIN_HITS = 3;
@@ -121,7 +140,23 @@ const TRACK_RECORD_POINTER =
 export async function runScanTradeCall(
   params: ScanTradeCallsParams,
   license: LicenseInfo,
-): Promise<ScanTradeCallsResponse | ScanQuotaExhaustedResponse> {
+): Promise<ScanTradeCallsResponse | ScanQuotaExhaustedResponse | ScanInvalidRankResponse> {
+  // SCAN-RANKBY-W1: reject an unrecognized lens BEFORE quota/scan/charge. Only a
+  // NON-EMPTY unknown token is invalid — omitted/empty (direct + x402 callers that
+  // don't apply the Zod default) means the default 'oi', NOT an error.
+  const rawRank = params.rankBy;
+  if (rawRank != null && String(rawRank).trim() !== '' && resolveRankBy(rawRank) == null) {
+    const lenses = rankByTokens();
+    return {
+      error: 'invalid_rank_by',
+      code: 'invalid_parameter',
+      message: `Unknown rankBy '${String(params.rankBy)}'. Valid lenses: ${lenses.join(', ')}.`,
+      valid_lenses: lenses,
+      suggested_action: `Pass one of: ${lenses.join(', ')} (or omit for the default 'oi').`,
+      _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
+    };
+  }
+
   const refCode = referralCodeForKey(license.key);
   const entry = checkQuota(license);
   if (!entry.allowed) {

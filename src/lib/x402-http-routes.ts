@@ -154,6 +154,9 @@ export async function callCoreHandler(
           minConfidence: input.minConfidence as number | undefined,
           includeHolds: input.includeHolds as boolean,
           limit: input.limit as number,
+          // SCAN-RANKBY-W1: forward the lens on the x402 channel too (parity). Default
+          // 'oi' when absent → byte-identical paid scan; resolveRankBy owns validation.
+          rankBy: input.rankBy as string | undefined,
         },
         license,
       );

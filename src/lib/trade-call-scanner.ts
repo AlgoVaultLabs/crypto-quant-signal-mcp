@@ -34,6 +34,8 @@
 import pLimit from 'p-limit';
 import { getTradeSignal } from '../tools/get-trade-call.js';
 import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
+import { getRankedUniverse, type RankedAsset } from './rank-metrics.js';
+import { resolveRankBy, type RankBy } from './rank-constants.js';
 import { ResultCache } from './result-cache.js';
 import type { SignalVerdict, RegimeType } from '../types.js';
 
@@ -49,6 +51,19 @@ export interface ScanCallItem {
   call: SignalVerdict;
   confidence: number;
   regime: RegimeType;
+  // ── SCAN-RANKBY-W1: additive rank-metric echo. Present ONLY for a non-default
+  //    (non-`oi`) lens; omitted/`oi` ⇒ byte-identical to the historical shape.
+  //    NEVER any `outcome_*`. ──
+  /** The metric this call's universe was ranked by (OI USD / volume USD / 24h % / funding). */
+  rank_value?: number;
+  /** gainers / losers / movers. */
+  change_24h_pct?: number;
+  /** volume. */
+  volume_24h?: number;
+  /** funding_positive / funding_negative — per-interval funding fraction. */
+  funding_rate?: number;
+  /** funding_* — annualized APR, or null when the interval is unknown. */
+  funding_apr?: number | null;
 }
 
 export interface ScanTradeCallsResult {
@@ -72,6 +87,10 @@ export interface ScanTradeCallsParams {
   minConfidence?: number;
   includeHolds?: boolean;
   limit?: number;
+  /** SCAN-RANKBY-W1: raw universe-selection lens token (canonical or alias). The
+   *  scanner resolves it via `resolveRankBy` (unknown → 'oi'); the handler does the
+   *  strict reject. Omitted ⇒ 'oi' (byte-identical default). */
+  rankBy?: string;
 }
 
 /** The allow-listed subset a scorer must yield. Decouples the scanner from the full TradeCallResult. */
@@ -99,6 +118,32 @@ export function toScanCallItem(score: ScanScore, exchange: ScanExchangeId): Scan
     confidence: score.confidence,
     regime: score.regime,
   };
+}
+
+/**
+ * SCAN-RANKBY-W1: attach the rank-metric echo to an output call (allow-list LAW —
+ * explicit copy, never spread). Applied at OUTPUT assembly, NOT baked into the
+ * cached verdict cell (a coin's verdict is rank-independent — caching the rank
+ * fields would cross-contaminate a later scan under a different lens). `ranked`
+ * absent (or the default `oi` lens) ⇒ the verdict-only shape, byte-identical.
+ * Only the typed field(s) for THIS lens are emitted; never any `outcome_*`.
+ */
+export function attachRank(item: ScanCallItem, ranked: RankedAsset | undefined): ScanCallItem {
+  const base: ScanCallItem = {
+    coin: item.coin,
+    timeframe: item.timeframe,
+    exchange: item.exchange,
+    call: item.call,
+    confidence: item.confidence,
+    regime: item.regime,
+  };
+  if (!ranked || ranked.rankBy === 'oi') return base;
+  base.rank_value = ranked.rank_value;
+  if (ranked.change_24h_pct !== undefined) base.change_24h_pct = ranked.change_24h_pct;
+  if (ranked.volume_24h !== undefined) base.volume_24h = ranked.volume_24h;
+  if (ranked.funding_rate !== undefined) base.funding_rate = ranked.funding_rate;
+  if (ranked.funding_apr !== undefined) base.funding_apr = ranked.funding_apr;
+  return base;
 }
 
 /** Real scorer — the internal trade-call compute path (skips quota + track record). */
@@ -242,7 +287,20 @@ export async function scanTradeCalls(params: ScanTradeCallsParams): Promise<Scan
   const deadlineMs = envPositiveInt('SCAN_DEADLINE_MS', 30000);
   const scorer = _scorerOverride ?? defaultScorer;
 
-  const coins = await getTopCoinSet(exchange, topN);
+  // SCAN-RANKBY-W1: universe selection by lens. `oi` (default) stays on the existing
+  // path — byte-identical output + webhook/test parity. Other lenses use the
+  // generalized metric selector and carry a per-coin rank echo (attached at OUTPUT,
+  // never cached into the rank-independent verdict cell).
+  const rankBy: RankBy = resolveRankBy(params.rankBy) ?? 'oi';
+  let coins: string[];
+  let rankMap: Map<string, RankedAsset> | undefined;
+  if (rankBy === 'oi') {
+    coins = await getTopCoinSet(exchange, topN);
+  } else {
+    const ranked = await getRankedUniverse(exchange, rankBy, topN);
+    coins = ranked.map((r) => r.coin);
+    rankMap = new Map(ranked.map((r) => [r.coin, r]));
+  }
   const scanned = coins.length;
 
   const limiter = pLimit(concurrency);
@@ -276,7 +334,11 @@ export async function scanTradeCalls(params: ScanTradeCallsParams): Promise<Scan
     const sortedHolds = computed.filter((c) => c.call === 'HOLD').sort((a, b) => b.confidence - a.confidence);
     ordered = [...eligible, ...sortedHolds];
   }
-  const calls = ordered.slice(0, limit);
+  // Output order stays confidence-desc (the verdict order) — the lens picked the
+  // UNIVERSE, not the display order. Echo the rank metric per call (non-`oi` only).
+  const sliced = ordered.slice(0, limit);
+  const rm = rankMap; // const alias so TS narrows inside the .map closure
+  const calls = rm ? sliced.map((c) => attachRank(c, rm.get(c.coin))) : sliced;
   const eligible_non_hold = calls.filter((c) => c.call !== 'HOLD').length;
 
   return { scanned, eligible_non_hold, holds, errors, partial, calls };

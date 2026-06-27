@@ -1,0 +1,61 @@
+{
+  "endpoint": "scan_trade_calls",
+  "wave": "SCAN-RANKBY-W1",
+  "date": "2026-06-27",
+  "summary": "Additive rankBy lens + per-call rank echo. rankBy omitted/'oi' ⇒ byte-identical to the pre-wave shape (no rank_* keys). tools/list unchanged (9); rankBy is a param.",
+  "calls_item": {
+    "allowed_keys": [
+      "coin",
+      "timeframe",
+      "exchange",
+      "call",
+      "confidence",
+      "regime",
+      "rank_value",
+      "change_24h_pct",
+      "volume_24h",
+      "funding_rate",
+      "funding_apr"
+    ],
+    "always_present": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
+    "present_only_for_non_oi_lens": ["rank_value"],
+    "lens_typed_fields": {
+      "volume": ["volume_24h"],
+      "gainers": ["change_24h_pct"],
+      "losers": ["change_24h_pct"],
+      "movers": ["change_24h_pct"],
+      "funding_positive": ["funding_rate", "funding_apr"],
+      "funding_negative": ["funding_rate", "funding_apr"],
+      "oi": []
+    },
+    "forbidden_keys": ["outcome_return_pct", "outcome_price", "price", "indicators", "reasoning"],
+    "notes": "funding_apr is number|null (null when the venue's funding interval is unknown — never guessed). Echo attached at OUTPUT assembly, never cached into the rank-independent verdict cell."
+  },
+  "envelope_keys": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault", "_receipts"],
+  "input_schema_additive": {
+    "rankBy": "string, optional, default 'oi'. Canonical: oi|volume|gainers|losers|movers|funding_positive|funding_negative. Aliases (resolved by the MCP, the bot forwards raw): vol|gain|lose|move|pfr|nfr. Raw string (not a Zod enum) so the bot can forward an alias verbatim; resolveRankBy validates."
+  },
+  "error_contract": {
+    "quota_exhausted": { "error": "quota_exhausted", "code": "tier_limit_reached" },
+    "invalid_rank_by": {
+      "error": "invalid_rank_by",
+      "code": "invalid_parameter",
+      "keys": ["error", "code", "message", "valid_lenses", "suggested_action", "_algovault"],
+      "note": "Returned BEFORE quota/scan/charge for a NON-EMPTY unknown token. Omitted/empty ⇒ default 'oi' (no error)."
+    }
+  },
+  "cache_contract": {
+    "okx_funding": "OKX has no bulk funding endpoint (50014). funding_* on OKX ranks the top-RANK_FUNDING_POOL_SIZE-by-OI pool (default 150) via per-instId fetches in a coalesced cache: ttl 3min, loadTimeout 900ms (cold serves empty fallback, load self-warms), negativeTtl 30s, lazy background warmer (long-lived server only). Request path never fans out (<1s).",
+    "binance_funding": "joined from the 60s-coalesced bulk premiumIndex (getPremiumIndexBulkCoalesced).",
+    "same_call_funding": "BYBIT/BITGET/HL carry funding (+ Bybit fundingIntervalHour) on the bulk ticker — no extra call."
+  },
+  "consumers": [
+    "src/index.ts (MCP server.tool scan_trade_calls handler)",
+    "src/lib/x402-http-routes.ts (x402 paid scan route — forwards rankBy)",
+    "src/lib/trade-call-scanner.ts (scanTradeCalls engine)",
+    "src/lib/rank-metrics.ts (getRankedUniverse) + src/lib/exchange-universe.ts (FETCHERS)",
+    "algovault-bot /scan + /scanwatch (CH3 — forwards raw token)",
+    "webhook scan_digest (getTopCoinSet oi path — unchanged)"
+  ],
+  "drift_check_command": "node -e \"const{getRankedUniverse}=require('./dist/lib/rank-metrics.js');getRankedUniverse('BYBIT','funding_negative',5).then(r=>{const ok=r.every(x=>!('outcome_return_pct'in x)&&!('outcome_price'in x)&&typeof x.funding_rate==='number');console.log(ok?'OK':'DRIFT');process.exit(ok?0:1)})\""
+}

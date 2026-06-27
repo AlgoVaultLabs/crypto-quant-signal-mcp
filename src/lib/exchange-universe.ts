@@ -28,9 +28,42 @@ export interface ExchangeAsset {
   notionalOI_usd: number;
   /** USD-equivalent 24h trading volume. Computed per-exchange — see per-branch comments. */
   volume24h_usd: number;
+  // ── SCAN-RANKBY-W1: additive rank-metric fields (back-compat — `oi`/`volume`
+  //    consumers like asset-tiers.ts ignore these). Per-venue divergence is LAW:
+  //    24h-% is reconstructed UNIFORMLY as `(last − prior) / prior × 100` from each
+  //    venue's OWN prior-price field (Binance `openPrice` / Bybit `prevPrice24h` /
+  //    OKX·Bitget `open24h` / HL `prevDayPx`) — never assume a shared %-field or scale. ──
+  /** Signed 24h price change PERCENT (e.g. +5.2 = +5.2%). undefined if unavailable. */
+  changePct24h?: number;
+  /** Per-interval funding rate as a FRACTION (e.g. 0.0001 = 0.01%). undefined when the
+   *  venue's bulk call omits funding (Binance/OKX — filled by rank-metrics.ts). */
+  fundingRate?: number;
+  /** Funding interval in hours (HL=1; Bybit live `fundingIntervalHour`; 8h default
+   *  elsewhere). null = unknown → APR null (never guessed). */
+  fundingIntervalHours?: number | null;
 }
 
 type PromotedExchangeId = 'HL' | 'BINANCE' | 'BYBIT' | 'OKX' | 'BITGET';
+
+/** Default funding interval (hours) for venues that don't report it on the bulk call. */
+const DEFAULT_FUNDING_INTERVAL_H = 8;
+/** Hyperliquid funding is HOURLY — NOT 8h (verified live 2026-06-27; APR ×8760). */
+const HL_FUNDING_INTERVAL_H = 1;
+
+/** Uniform signed 24h % from a venue's last + prior-day price. undefined when unusable. */
+function pctChange24h(last: number, prior: number): number | undefined {
+  if (Number.isFinite(last) && Number.isFinite(prior) && prior > 0) {
+    return ((last - prior) / prior) * 100;
+  }
+  return undefined;
+}
+
+/** Parse a funding fraction string → number, or undefined when absent/unparseable. */
+function parseFunding(raw: string | undefined): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 // OPS-ADAPTER-RATELIMIT-UNIFY-W1 (C1/C4): the former local `fetchWithTimeout`
 // helper + its TIMEOUT_MS were removed — all five fetchers now route through the
@@ -43,7 +76,7 @@ async function fetchHL(limit: number): Promise<ExchangeAsset[]> {
   // direct fetch bypassing the adapter chokepoint).
   const raw = await hlInfoPost<[
     { universe: { name: string }[] },
-    { openInterest?: string; markPx?: string; dayNtlVlm?: string }[],
+    { openInterest?: string; markPx?: string; dayNtlVlm?: string; prevDayPx?: string; funding?: string }[],
   ]>({ type: 'metaAndAssetCtxs' });
   const meta = raw[0];
   const ctxs = raw[1];
@@ -56,6 +89,10 @@ async function fetchHL(limit: number): Promise<ExchangeAsset[]> {
         coin: a.name.toUpperCase(),
         notionalOI_usd: oi * px,
         volume24h_usd: vol, // HL natively reports USD-notional volume
+        // SCAN-RANKBY-W1: % from prevDayPx; funding is HOURLY (interval = 1h).
+        changePct24h: pctChange24h(px, parseFloat(ctxs[i]?.prevDayPx || '0')),
+        fundingRate: parseFunding(ctxs[i]?.funding),
+        fundingIntervalHours: HL_FUNDING_INTERVAL_H,
       };
     })
     .filter((a) => a.notionalOI_usd > 0);
@@ -83,6 +120,11 @@ async function fetchBinance(limit: number): Promise<ExchangeAsset[]> {
         coin: t.symbol.replace(/USDT$/, '').toUpperCase(),
         notionalOI_usd: qv, // proxy: rank by 24h USD volume since no bulk OI endpoint
         volume24h_usd: qv, // quoteVolume is USDT-denominated (≈ USD for USDT-margined perps)
+        // SCAN-RANKBY-W1: % from openPrice (futures 24h-open; prevClosePrice is spot-only —
+        // OPS-TRADE-CALL-CLUSTER-W1). Funding is NOT on ticker/24hr → filled by rank-metrics.ts
+        // from the bulk premiumIndex; interval default 8h.
+        changePct24h: pctChange24h(parseFloat(t.lastPrice || '0'), parseFloat(t.openPrice || '0')),
+        fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -97,17 +139,23 @@ async function fetchBybit(limit: number): Promise<ExchangeAsset[]> {
   // OPS-ADAPTER-RATELIMIT-UNIFY-W1: routed through the shared upstreamFetch so this
   // non-adapter Bybit caller inherits the cross-process budget + typed 403/ban handling.
   const json = await upstreamFetch<{
-    result: { list: Array<{ symbol: string; openInterest?: string; lastPrice?: string; turnover24h?: string }> };
+    result: { list: Array<{ symbol: string; openInterest?: string; lastPrice?: string; turnover24h?: string;
+      prevPrice24h?: string; fundingRate?: string; fundingIntervalHour?: number | string }> };
   }>(VENUE_FETCH_CONFIGS.BYBIT, { url: 'https://api.bybit.com/v5/market/tickers?category=linear' });
   const assets: ExchangeAsset[] = json.result.list
     .filter((t) => t.symbol.endsWith('USDT'))
     .map((t) => {
       const oi = parseFloat(t.openInterest || '0');
       const px = parseFloat(t.lastPrice || '0');
+      // SCAN-RANKBY-W1: % from prevPrice24h; funding + interval BOTH live in the tickers call.
+      const interval = t.fundingIntervalHour != null ? Number(t.fundingIntervalHour) : NaN;
       return {
         coin: t.symbol.replace(/USDT$/, '').toUpperCase(),
         notionalOI_usd: oi * px,
         volume24h_usd: parseFloat(t.turnover24h || '0'), // turnover24h is USDT-denominated
+        changePct24h: pctChange24h(px, parseFloat(t.prevPrice24h || '0')),
+        fundingRate: parseFunding(t.fundingRate),
+        fundingIntervalHours: Number.isFinite(interval) && interval > 0 ? interval : DEFAULT_FUNDING_INTERVAL_H,
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -128,7 +176,7 @@ async function fetchOKX(limit: number): Promise<ExchangeAsset[]> {
   const [oiData, tickersData] = await Promise.all([
     upstreamFetch<{ data: Array<{ instId: string; oiCcy?: string }> }>(
       VENUE_FETCH_CONFIGS.OKX, { url: 'https://www.okx.com/api/v5/public/open-interest?instType=SWAP' }),
-    upstreamFetch<{ data: Array<{ instId: string; last?: string; markPx?: string; volCcy24h?: string }> }>(
+    upstreamFetch<{ data: Array<{ instId: string; last?: string; markPx?: string; volCcy24h?: string; open24h?: string }> }>(
       VENUE_FETCH_CONFIGS.OKX, { url: 'https://www.okx.com/api/v5/market/tickers?instType=SWAP' }),
   ]);
   const tickerMap = new Map(tickersData.data.map((t) => [t.instId, t]));
@@ -143,6 +191,10 @@ async function fetchOKX(limit: number): Promise<ExchangeAsset[]> {
         coin: o.instId.replace(/-USDT-SWAP$/, '').toUpperCase(),
         notionalOI_usd: oiBase * px,
         volume24h_usd: volBase * px, // Q-OKX-VOL-DENOMINATION: volCcy24h is base-denominated; multiply by markPx
+        // SCAN-RANKBY-W1: % from open24h. OKX has NO bulk funding endpoint (live 50014) →
+        // funding filled by rank-metrics.ts per-instId over the bounded pool; interval default 8h.
+        changePct24h: pctChange24h(px, parseFloat(ticker?.open24h || '0')),
+        fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -156,17 +208,23 @@ async function fetchOKX(limit: number): Promise<ExchangeAsset[]> {
 async function fetchBitget(limit: number): Promise<ExchangeAsset[]> {
   // OPS-ADAPTER-RATELIMIT-UNIFY-W1: routed through upstreamFetch (budget + typed ban/body-code).
   const json = await upstreamFetch<{
-    data: Array<{ symbol: string; holdingAmount?: string; markPrice?: string; quoteVolume?: string }>;
+    data: Array<{ symbol: string; holdingAmount?: string; markPrice?: string; quoteVolume?: string;
+      open24h?: string; lastPr?: string; fundingRate?: string }>;
   }>(VENUE_FETCH_CONFIGS.BITGET, { url: 'https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES' });
   const assets: ExchangeAsset[] = json.data
     .filter((t) => t.symbol.endsWith('USDT'))
     .map((t) => {
       const oi = parseFloat(t.holdingAmount || '0');
       const px = parseFloat(t.markPrice || '0');
+      // SCAN-RANKBY-W1: % from open24h (last = lastPr, fallback markPrice); funding in the same call.
+      const last = parseFloat(t.lastPr || t.markPrice || '0');
       return {
         coin: t.symbol.replace(/USDT$/, '').toUpperCase(),
         notionalOI_usd: oi * px,
         volume24h_usd: parseFloat(t.quoteVolume || '0'), // quoteVolume is USDT-denominated
+        changePct24h: pctChange24h(last, parseFloat(t.open24h || '0')),
+        fundingRate: parseFunding(t.fundingRate),
+        fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -207,4 +265,22 @@ export async function getExchangeTopAssetsWithVolume(
     );
   }
   return fetcher(limit);
+}
+
+/**
+ * SCAN-RANKBY-W1: the FULL rich USDT-perp universe on `exchange` (OI-desc, NO
+ * slice), each asset carrying the rank-metric fields. The seam `getRankedUniverse`
+ * (rank-metrics.ts) generalizes — it re-sorts this set by the chosen lens. Same
+ * 5-venue support + throw contract as `getExchangeTopAssetsWithVolume`; the
+ * `Number.MAX_SAFE_INTEGER` limit makes each fetcher's `slice` a no-op (return all).
+ */
+export async function fetchVenueUniverse(exchange: ExchangeId): Promise<ExchangeAsset[]> {
+  const fetcher = FETCHERS[exchange as PromotedExchangeId];
+  if (!fetcher) {
+    throw new Error(
+      `fetchVenueUniverse: unsupported exchange '${exchange}' ` +
+        `(expected one of HL/BINANCE/BYBIT/OKX/BITGET)`,
+    );
+  }
+  return fetcher(Number.MAX_SAFE_INTEGER);
 }
