@@ -22,6 +22,8 @@ vi.mock('../../src/lib/performance-db.js', () => ({
   getFundingZScore: vi.fn().mockResolvedValue(null),
   getDb: vi.fn(),
   dbExec: vi.fn(),
+  // SCAN-RANKBY-W3: computeOiDelta reads dbQuery; default [] → oi_snapshots warming → factor omitted.
+  dbQuery: vi.fn().mockResolvedValue([]),
   // OPS-GRID-PROCESS-BOUNDARY-W1: cross-asset-grid imports isShortLivedScript from
   // performance-db (server-only refresh gate); false = server → grid stays active.
   isShortLivedScript: () => false,
@@ -29,6 +31,7 @@ vi.mock('../../src/lib/performance-db.js', () => ({
 
 import { getTradeSignal } from '../../src/tools/get-trade-call.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
+import { dbQuery } from '../../src/lib/performance-db.js';
 import { resetLicenseCache } from '../../src/lib/license.js';
 import { InsufficientCandlesError } from '../../src/lib/errors.js';
 import {
@@ -103,18 +106,47 @@ describe('get_trade_call — TradFi hardening wiring', () => {
     const result = await getTradeSignal({ coin: 'BTC', timeframe: '1h' });
     const keys = Object.keys(result.indicators);
 
-    // Exact additive shape: the 7 pre-existing keys (order preserved) + underlying_session.
-    expect(keys).toEqual([
+    // Always-present allow-listed keys. SCAN-RANKBY-W3: oi_change_pct (+ oi_change_window)
+    // is now CONDITIONAL — present only when the oi_snapshots store has ≥2 snapshots spanning
+    // the window; here (no store in the test env) it's omitted (warming), never the old proxy.
+    const required = [
       'funding_rate', 'funding_24h_avg', 'funding_state',
-      'oi_change_pct', 'volume_24h', 'trend_persistence', 'breakout_pending',
-      'underlying_session',
-    ]);
+      'volume_24h', 'trend_persistence', 'breakout_pending', 'underlying_session',
+    ];
+    for (const k of required) expect(keys).toContain(k);
+    // Only allow-listed keys may appear (no surprise/forbidden additions).
+    const allowed = new Set([...required, 'oi_change_pct', 'oi_change_window', 'funding_note']);
+    for (const k of keys) expect(allowed.has(k)).toBe(true);
+    // oi_change_pct and its window are a pair (both present, or both absent).
+    expect('oi_change_window' in result.indicators).toBe('oi_change_pct' in result.indicators);
     expect(result.indicators.underlying_session).toBe('ALWAYS_OPEN'); // BTC = CRYPTO
     expect('funding_note' in result.indicators).toBe(false); // omitted for crypto
 
     // Data-Integrity forbidden + legacy-stripped keys must NOT reappear.
     for (const forbidden of ['outcome_return_pct', 'outcome_price', 'signal', 'rsi', 'ema_9', 'funding_z_score', 'squeeze_active', 'try_next']) {
       expect(keys).not.toContain(forbidden);
+    }
+  });
+
+  it('SCAN-RANKBY-W3: oi_change_pct renders the REAL OI delta (computeOiDelta) when the store is warm', async () => {
+    vi.mocked(getAdapter).mockReturnValue(makeAdapter());
+    const now = Date.now();
+    // Route ONLY the oi_snapshots SELECT (getVenueStatus etc. also use dbQuery) to 2 snapshots
+    // spanning 24h: OI 100 → 120 = +20% (real OI, NOT the old priceChange×100 proxy).
+    const q = vi.mocked(dbQuery);
+    q.mockImplementation(async (sql: unknown) =>
+      (typeof sql === 'string' && sql.includes('oi_snapshots')
+        ? [{ ts: now - 24 * 60 * 60 * 1000, oi: 100 }, { ts: now, oi: 120 }]
+        : []) as never,
+    );
+    try {
+      const result = await getTradeSignal({ coin: 'BTC', timeframe: '1h' });
+      expect(result.indicators.oi_change_pct).toBe(20);
+      expect(result.indicators.oi_change_window).toBe('24h');
+      expect(result.indicators).not.toHaveProperty('outcome_return_pct'); // never leak internals
+    } finally {
+      q.mockReset();
+      q.mockResolvedValue([] as never); // restore the default (warming) for later tests
     }
   });
 

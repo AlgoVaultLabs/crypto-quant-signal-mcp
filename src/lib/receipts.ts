@@ -95,7 +95,8 @@ export interface VerdictContext {
   indicators: {
     funding_rate: number;
     funding_state: FundingState;
-    oi_change_pct: number;
+    /** SCAN-RANKBY-W3: REAL OI %Δ; OMITTED while the oi_snapshots store is warming. */
+    oi_change_pct?: number;
     trend_persistence: TrendPersistence;
     breakout_pending: BreakoutPending;
   };
@@ -142,7 +143,8 @@ function buildFactors(ind: VerdictContext['indicators']): ReceiptFactor[] {
   if (ind.breakout_pending === 'IMMINENT') {
     // Compression pending direction — directionless by definition.
     factors.push({ factor: 'breakout_pending', direction: 'neutral', value: ind.breakout_pending });
-  } else if (Math.abs(ind.oi_change_pct) >= 0.5) {
+  } else if (ind.oi_change_pct !== undefined && Math.abs(ind.oi_change_pct) >= 0.5) {
+    // SCAN-RANKBY-W3: skipped while oi_change_pct is warming (omitted) — never a stale/wrong factor.
     factors.push({ factor: 'oi_change_pct', direction: oiDirection(ind.oi_change_pct), value: signedPct(ind.oi_change_pct) });
   }
   return factors;

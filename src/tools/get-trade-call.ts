@@ -12,6 +12,7 @@ import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions
 import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
 import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
 import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { computeOiDelta, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import { getClosestTradeable, getTryNext } from '../lib/cross-asset-grid.js';
@@ -493,8 +494,21 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // and all 7 raw indicators (rsi/ema_cross/ema_9/ema_21/hurst/funding_z_score/
   // squeeze_active) are stripped in this chapter — agents reading the response
   // see only the bucketed surface (closes moat-1 quant-weighting leakage).
+  // SCAN-RANKBY-W3: oi_change_pct now reads the REAL OI delta from the oi_snapshots
+  // store (computeOiDelta — the SAME source the oi_change lens reads → single-derivation),
+  // NOT the old priceChange×100 proxy (CH1: that was a 24h PRICE change mislabeled as OI;
+  // BTC live showed "OI +1.4% bullish" while real OI fell −1.0%). OMITTED while the store
+  // is warming (< 2 snapshots spanning 24h) — omission beats a wrong sign. Fail-soft: a
+  // store error never breaks the verdict. The internal verdict scoring (oiScore, ~L307,
+  // also priceChange-derived) is UNCHANGED → call/confidence byte-identical.
+  let oiDelta: Awaited<ReturnType<typeof computeOiDelta>> = null;
+  try {
+    oiDelta = await computeOiDelta(coin, exchange, DEFAULT_OI_WINDOW_MS);
+  } catch {
+    /* oi_snapshots unavailable → omit the OI factor; never break the verdict */
+  }
   // Indicators key-order: funding_rate, funding_24h_avg, funding_state,
-  // oi_change_pct, volume_24h, trend_persistence, breakout_pending.
+  // oi_change_pct (+ oi_change_window) [omitted while warming], volume_24h, trend_persistence, breakout_pending.
   const result: TradeCallResult = {
     call: signal,
     confidence,
@@ -503,7 +517,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       funding_rate: fundingRate,
       funding_24h_avg: funding24hAvg,
       funding_state: fundingState,
-      oi_change_pct: parseFloat((priceChange * 100).toFixed(1)),
+      ...(oiDelta ? { oi_change_pct: oiDelta.oi_change_pct, oi_change_window: oiDelta.oi_change_window } : {}),
       volume_24h: volume24h,
       trend_persistence: bucketTrendPersistence(hurstVal),
       breakout_pending: bucketBreakoutPending(squeezeActive),

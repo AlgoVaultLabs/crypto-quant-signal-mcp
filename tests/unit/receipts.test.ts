@@ -126,6 +126,22 @@ describe('formatReceipts — structured allow-listed block', () => {
     expect(down!.value).toBe('-1.1%');
   });
 
+  it('SCAN-RANKBY-W3: omits the oi_change_pct factor while the store is warming (field absent)', () => {
+    const factors = formatReceipts(
+      verdict({
+        indicators: {
+          funding_rate: 0.0001,
+          funding_state: 'NORMAL',
+          trend_persistence: 'MEDIUM',
+          breakout_pending: 'INACTIVE',
+          // oi_change_pct intentionally ABSENT (the store is warming → omitted, never a wrong value)
+        },
+      }),
+    ).factors;
+    expect(factors.find((f) => f.factor === 'oi_change_pct')).toBeUndefined();
+    expect(factors.map((f) => f.factor)).toEqual(['trend_persistence', 'funding_state']);
+  });
+
   it('prefers an IMMINENT breakout over OI for the 3rd factor slot', () => {
     const names = formatReceipts(verdict({ indicators: { ...verdict().indicators, breakout_pending: 'IMMINENT', oi_change_pct: 2.4 } }))
       .factors.map((f) => f.factor);

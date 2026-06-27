@@ -258,8 +258,14 @@ export interface TradeCallResult {
     funding_24h_avg: number;
     /** v1.10.0 bucket: |funding-Z| → NORMAL / ELEVATED / EXTREME. */
     funding_state: import('./lib/indicator-buckets.js').FundingState;
-    /** Day-over-day open-interest change percentage. */
-    oi_change_pct: number;
+    /**
+     * REAL open-interest % change over `oi_change_window` (SCAN-RANKBY-W3:
+     * computeOiDelta over the oi_snapshots store — NOT the old priceChange proxy).
+     * OMITTED while the store is warming (< 2 snapshots spanning the window).
+     */
+    oi_change_pct?: number;
+    /** The oi_change_pct window label, e.g. "24h". Present iff oi_change_pct is. */
+    oi_change_window?: string;
     /** 24-hour spot volume in quote currency. */
     volume_24h: number;
     /** v1.10.0 bucket: Hurst exponent → LOW / MEDIUM / HIGH. */
