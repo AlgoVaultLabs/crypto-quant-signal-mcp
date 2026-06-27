@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "wave": "SCAN-RANKBY-W3 (CH3 — oi_change_pct factor correction)",
+    "tool": "get_trade_call (+ get_trade_signal alias — same producer getTradeSignal)",
+    "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio + x402 paid route",
+    "captured_at": "2026-06-27",
+    "purpose": "Public-response-shape SoT after the Data-Integrity correction of indicators.oi_change_pct. Supersedes get-trade-call-shape-snapshot-2026-06-22.json. CH1 proved the field was priceChange×100 — a 24h PRICE change mislabeled as OI (BTC live: '+1.4% bullish' while real OI fell −1.0%). It now reads the REAL OI delta (computeOiDelta over the oi_snapshots store — the SAME source the scan oi_change lens reads, single-derivation). NO field removed/renamed; the verdict (call/confidence) is BYTE-IDENTICAL (the internal oiScore is unchanged)."
+  },
+  "top_level_allowed_keys": ["call", "confidence", "price", "indicators", "regime", "reasoning", "timestamp", "coin", "timeframe", "_algovault", "closest_tradeable", "also_see", "_receipts"],
+  "indicators_change": {
+    "oi_change_pct": "SEMANTICS CHANGED + now OPTIONAL. Was `number` (always present, priceChange×100 — a price proxy). NOW `number?` = the REAL OI % delta over oi_change_window (computeOiDelta over oi_snapshots). OMITTED (key absent) while the store is warming (< 2 snapshots spanning the window) OR on a store error (fail-soft) — never the old proxy, never a wrong sign (omission beats a wrong value).",
+    "oi_change_window": "NEW additive `string?` (e.g. '24h'). Present IFF oi_change_pct is present (they are a pair).",
+    "_receipts.factors[oi_change_pct]": "AUTO-CORRECTS via the source: the receipts 'oi_change_pct' factor (bullish/bearish on |Δ|≥0.5%) now reflects the REAL OI delta; SKIPPED entirely while oi_change_pct is omitted (warming).",
+    "verdict_unchanged": "call + confidence + regime are BYTE-IDENTICAL — the internal oiScore (get-trade-call.ts:307-310, also priceChange-derived) is verdict SCORING and is intentionally UNCHANGED this wave (changing it would change verdicts; flagged as a separate verdict-quant follow-up)."
+  },
+  "indicators_allowed_keys": ["funding_rate", "funding_24h_avg", "funding_state", "oi_change_pct", "oi_change_window", "volume_24h", "trend_persistence", "breakout_pending", "underlying_session", "funding_note"],
+  "indicators_always_present": ["funding_rate", "funding_24h_avg", "funding_state", "volume_24h", "trend_persistence", "breakout_pending", "underlying_session"],
+  "indicators_conditional": {
+    "oi_change_pct": "present iff the oi_snapshots store is warm for (coin, exchange)",
+    "oi_change_window": "present iff oi_change_pct is",
+    "funding_note": "present iff TradFi/pre-IPO funding annotation applies"
+  },
+  "enums": { "call": ["BUY", "SELL", "HOLD"] },
+  "forbidden_keys": [
+    "outcome_return_pct", "outcome_price", "phase_e_wr", "outcome_win_rate", "realized_return", "pnl",
+    "signal", "rsi", "ema_9", "ema_21", "funding_z_score", "squeeze_active", "try_next"
+  ],
+  "additive_and_correction_rule": "oi_change_pct keeps its NAME (always meant 'OI change %') but its SOURCE is corrected to a real OI delta; it becomes OPTIONAL (omitted while warming). oi_change_window is additive. No other field removed/renamed; content[0] stays the JSON envelope. Showing the old priceChange×100 in oi_change_pct, or a value while warming, = Factuality/Data-Integrity violation → HALT.",
+  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run trade-call-tradfi-hardening receipts   # indicators allow-list (oi_change_pct/window conditional pair), real-OI present-case, warming-omit, no outcome_*",
+  "consumers": [
+    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call — read indicators.oi_change_pct + the _receipts factor",
+    "algovault-bot (Telegram) — parses content[0] JSON (tolerant of an omitted oi_change_pct)",
+    "src/lib/receipts.ts (formatReceipts — the oi_change_pct factor, auto-skips when omitted)",
+    "src/lib/oi-snapshots.ts (computeOiDelta — the single OI-delta source shared with the scan oi_change lens)"
+  ]
+}

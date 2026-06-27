@@ -41,12 +41,13 @@ const FAILS = [];
 const fail = (m) => FAILS.push(m);
 const close = (label, got, want, tol = 1e-9) => Math.abs(got - want) <= tol || (fail(`${label}: got ${got}, want ≈${want}`), false);
 
-let rank, constants, registry, rankAtr;
+let rank, constants, registry, rankAtr, oiSnap;
 try {
   rank = await import(path.join(REPO_ROOT, 'dist', 'lib', 'rank-metrics.js'));
   constants = await import(path.join(REPO_ROOT, 'dist', 'lib', 'rank-constants.js'));
   registry = await import(path.join(REPO_ROOT, 'dist', 'lib', 'feature-registry.js'));
   rankAtr = await import(path.join(REPO_ROOT, 'dist', 'lib', 'rank-atr.js'));
+  oiSnap = await import(path.join(REPO_ROOT, 'dist', 'lib', 'oi-snapshots.js'));
 } catch (e) {
   console.error('[rank-parity] FATAL — dist not built (run `npm run build`):', e.message);
   process.exit(2);
@@ -55,6 +56,7 @@ const { getRankedUniverse, _setUniverseFetcherForTest, _resetRankMetricsForTest 
 const { RANK_BY_VALUES, RANK_BY_ALIASES, resolveRankBy, rankByTokens, annualizeFunding } = constants;
 const { projectCapabilities } = registry;
 const { computeATRP } = rankAtr;
+const { oiDeltaFromSnapshots, DEFAULT_OI_WINDOW_MS } = oiSnap;
 
 const NON_FUNDING = ['oi', 'volume', 'gainers', 'losers', 'movers'];
 const TYPED_FIELD = {
@@ -91,11 +93,12 @@ function checkApr() {
 
 // ── (2) lens contract ──
 function checkContract() {
-  const want = ['oi', 'volume', 'gainers', 'losers', 'movers', 'funding_positive', 'funding_negative', 'volatility'];
+  const want = ['oi', 'volume', 'gainers', 'losers', 'movers', 'funding_positive', 'funding_negative', 'volatility', 'oi_change'];
   if (JSON.stringify([...RANK_BY_VALUES]) !== JSON.stringify(want)) fail(`RANK_BY_VALUES drift: ${RANK_BY_VALUES}`);
   for (const t of rankByTokens()) if (resolveRankBy(t) == null) fail(`token '${t}' does not resolve`);
   if (resolveRankBy('nfr') !== 'funding_negative') fail("alias nfr must resolve to funding_negative");
   if (resolveRankBy('atr') !== 'volatility') fail("alias atr must resolve to volatility"); // SCAN-RANKBY-W2
+  if (resolveRankBy('oid') !== 'oi_change') fail("alias oid must resolve to oi_change"); // SCAN-RANKBY-W3
 }
 
 // ── (3) /capabilities advertises the lens set ──
@@ -106,7 +109,7 @@ function checkCapabilities() {
   if (L.param !== 'rankBy') fail(`lenses.param != rankBy (${L.param})`);
   if (JSON.stringify(L.values) !== JSON.stringify([...RANK_BY_VALUES])) fail('lenses.values != RANK_BY_VALUES');
   if (L.default !== 'oi') fail(`lenses.default != oi (${L.default})`);
-  for (const a of ['vol', 'gain', 'lose', 'move', 'pfr', 'nfr', 'atr']) {
+  for (const a of ['vol', 'gain', 'lose', 'move', 'pfr', 'nfr', 'atr', 'oid']) {
     if (!(a in L.aliases)) fail(`lenses.aliases missing '${a}'`);
   }
 }
@@ -123,6 +126,18 @@ function checkAtrp() {
   if (Math.abs(computeATRP(flat(3, 1)) - computeATRP(flat(3, 60000))) > 1e-6) fail('ATRP must be price-normalized (raw ATR would differ)');
   if (computeATRP(flat(2, 100, 14)) !== null) fail('computeATRP must return null for <15 candles');
   if (!RANK_BY_VALUES.includes('volatility')) fail('volatility missing from RANK_BY_VALUES');
+}
+
+// ── (5b) SCAN-RANKBY-W3: oi_change pure OI-delta unit (offline) ──
+function checkOiChange() {
+  const now = 1_800_000_000_000;
+  const H = 60 * 60 * 1000;
+  const d = oiDeltaFromSnapshots([{ ts: now - 24 * H, oi: 100 }, { ts: now, oi: 120 }], DEFAULT_OI_WINDOW_MS, now);
+  if (!d || d.oi_change_pct !== 20) fail(`oiDeltaFromSnapshots(+20%) drift: ${JSON.stringify(d)}`);
+  if (oiDeltaFromSnapshots([{ ts: now, oi: 100 }], DEFAULT_OI_WINDOW_MS, now) !== null) {
+    fail('oiDeltaFromSnapshots must return null (warming) with < 2 spanning points');
+  }
+  if (!RANK_BY_VALUES.includes('oi_change')) fail('oi_change missing from RANK_BY_VALUES');
 }
 
 // ── (4) per-venue field parity (offline, fixture-injected) ──
@@ -176,6 +191,15 @@ async function checkLiveParity() {
       if (rows.length && rows.every((r) => typeof r.atrp === 'number')) console.log(`  ✓ LIVE ${venue}/volatility (${rows.length})`);
       else console.log(`  · ${venue}/volatility: processGate-skipped in script context (verified server-side + vitest + probe)`);
     } catch (e) { console.log(`  ~ LIVE ${venue}/volatility unreachable: ${e.message}`); }
+    // SCAN-RANKBY-W3: oi_change reads the oi_snapshots store; the oiChangeCache processGate
+    // SKIPS the loader in script context (serves the empty fallback), and the store is populated
+    // only on the SERVER by the hourly sampler. Live oi_change-parity is covered post-deploy
+    // (`scan_trade_calls({rankBy:'oi_change'})` once warm) + vitest — not failable from this script.
+    try {
+      const rows = await getRankedUniverse(venue, 'oi_change', 5, '15m');
+      if (rows.length && rows.every((r) => typeof r.oi_change_pct === 'number')) console.log(`  ✓ LIVE ${venue}/oi_change (${rows.length})`);
+      else console.log(`  · ${venue}/oi_change: processGate-skipped / store warming in script context (verified server-side + vitest)`);
+    } catch (e) { console.log(`  ~ LIVE ${venue}/oi_change unreachable: ${e.message}`); }
   }
   console.log('  · OKX/BINANCE funding parity verified in server context + vitest (script processGate / live premiumIndex)');
 }
@@ -186,6 +210,7 @@ try {
   checkContract();
   checkCapabilities();
   checkAtrp();
+  checkOiChange();
   if (MODE_LIVE) await checkLiveParity();
   else await checkOfflineParity(/* withChange */ !MODE_DRIFT);
 } catch (e) {
