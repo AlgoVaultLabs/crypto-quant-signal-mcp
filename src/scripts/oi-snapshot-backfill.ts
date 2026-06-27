@@ -13,11 +13,13 @@
 import type { ExchangeId } from '../types.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { fetchOiHistoryUsd } from '../lib/oi-sources.js';
-import { recordOiSnapshots, bucketHour } from '../lib/oi-snapshots.js';
+import { recordOiSnapshots, bucketHour, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
 
 const BACKFILL_VENUES: ExchangeId[] = ['BINANCE', 'BYBIT'];
 const POOL = Number(process.env.RANK_OI_SAMPLE_POOL ?? 60);
-const HOURS = Number(process.env.RANK_OI_BACKFILL_HOURS ?? 24);
+// Window + 2h margin: N hourly points span only (N−1)h, so a bare `window` (24) is 1h short of
+// a 24h delta anchor → all coins stay "warming" until the next sampler tick extends the span.
+const HOURS = Number(process.env.RANK_OI_BACKFILL_HOURS ?? (DEFAULT_OI_WINDOW_MS / (60 * 60 * 1000) + 2));
 
 export interface BackfillResult {
   perVenue: Record<string, { coins: number; snapshots: number }>;
