@@ -60,7 +60,9 @@ export interface ScanDigestWebhookEventData {
   cadence: string;               // '1h' | '4h' | '1d' — the delivery cadence bucket
   timeframe: string;             // the scan timeframe (drives cadenceForTimeframe)
   exchange: string;              // the scanned venue
-  calls: ScanCallItem[];         // allow-listed ranked non-HOLD calls (no Phase-E keys)
+  calls: ScanCallItem[];         // allow-listed ranked non-HOLD calls (no Phase-E keys).
+                                 // SCAN-DIGEST-MCP-PARITY-W1 CH2: enriched (price+factors+
+                                 // reasoning+oi_change_window via enrichScanCall) — additive.
   generated_at: number;          // epoch seconds (when the digest scan ran)
 }
 

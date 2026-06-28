@@ -109,6 +109,11 @@ export async function runScanDigestTick(now: number = nowSec()): Promise<{ due: 
         timeframe: head.timeframe,
         exchange: head.exchange,
         minConfidence: head.minConfidence,
+        // SCAN-DIGEST-MCP-PARITY-W1 CH2: project the SAME enriched calls every channel
+        // derives from (enrichScanCall) — additive (price/factors/reasoning ride along
+        // on calls[]; existing subscribers' parsers are unaffected). Charging is the
+        // delivery rule max(1, non-HOLD), independent of enrichment → 0 new units.
+        includeReasoning: true,
       });
       scans++;
       for (const r of group) {

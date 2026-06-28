@@ -54,8 +54,9 @@ export interface WebhookPayloadData {
 
 /**
  * FEATURE-PARITY-CHANNELS-W1 CH1 — the public scan_digest payload. ALLOW-LISTED:
- * `calls` is ScanCallItem[] (coin/timeframe/exchange/call/confidence/regime only),
- * so no forbidden Phase-E key can leak by shape.
+ * `calls` is ScanCallItem[] (coin/timeframe/exchange/call/confidence/regime, plus the
+ * SCAN-DIGEST-MCP-PARITY-W1 CH2 enrichment — price/factors/reasoning/oi_change_window
+ * via enrichScanCall), so no forbidden Phase-E key can leak by shape.
  */
 export interface ScanDigestPayloadData {
   type: 'scan_digest';

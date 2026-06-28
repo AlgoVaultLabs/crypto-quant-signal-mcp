@@ -162,3 +162,47 @@ describe('CH2 — scan_digest delivery charges the scanner rule max(1, non-HOLD)
     expect(after - before).toBe(1);
   });
 });
+
+describe('SCAN-DIGEST-MCP-PARITY-W1 CH2 — scan_digest projects from the enriched scan', () => {
+  const enrichedCalls = [
+    {
+      coin: 'BTC', timeframe: '15m', exchange: 'BINANCE', call: 'BUY', confidence: 80, regime: 'TRENDING_UP',
+      price: 50000, factors: [{ factor: 'trend_persistence', direction: 'neutral', value: 'HIGH' }],
+      reasoning: 'Trending regime, upward bias.', oi_change_window: '24h',
+    },
+  ];
+
+  it('the scheduler opts into enrichment (includeReasoning:true) so calls[] carry the digest fields', async () => {
+    await store.createSubscription(mkSub({ ownerKey: 'av_starter_enr' }));
+    const spy = vi
+      .spyOn(scanner, 'scanTradeCalls')
+      .mockResolvedValue(mockScanResult({ scanned: 1, eligible_non_hold: 1, holds: 0, calls: enrichedCalls }) as never);
+
+    await scheduler.runScanDigestTick(1_700_003_600);
+
+    // The ONE CH2 change: the scheduler requests the enriched projection.
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ includeReasoning: true }));
+
+    // The enriched fields flow through buildPayload → event_data.calls (additive — no
+    // separate assembly; existing subscribers' parsers are unaffected).
+    const pending = await store.pendingDeliveries(10);
+    const ed = JSON.parse(pending[0].event_data);
+    expect(ed.type).toBe('scan_digest');
+    expect(ed.calls[0].price).toBe(50000);
+    expect(ed.calls[0].factors).toBeDefined();
+    expect(ed.calls[0].reasoning).toContain('Trending');
+    expect(ed.calls[0].oi_change_window).toBe('24h');
+  });
+
+  it('trade_call delivery shape is byte-unchanged (the firewall — scan-only change)', async () => {
+    const sub = await store.createSubscription({ url: 'https://sink.example.com/h', events: ['trade_call'], tier: 'starter', ownerKey: 'av_starter_fw' });
+    const ev = { type: 'trade_call', coin: 'BTC', timeframe: '1h', exchange: 'HL', call: 'BUY', confidence: 72, regime: 'TRENDING_UP', price_at_call: 50000, signal_hash: '0xfw', created_at: 1_700_003_600 };
+    const enq = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:0xfw', eventType: 'trade_call', eventData: ev as never });
+    const payload = delivery.buildPayload(ev as never, enq.deliveryId!);
+    // trade_call payload carries NO scan-digest enrichment keys.
+    const json = JSON.stringify(payload);
+    expect(json).not.toContain('"factors"');
+    expect(json).not.toContain('"oi_change_window"');
+    expect((payload as { event: string }).event).toBe('trade_call');
+  });
+});
