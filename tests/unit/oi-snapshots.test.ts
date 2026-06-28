@@ -22,6 +22,9 @@ import {
   _resetOiSnapshotsEnsure,
   OI_BUCKET_MS,
   DEFAULT_OI_WINDOW_MS,
+  OI_WINDOWS,
+  DEFAULT_OI_WINDOW,
+  oiWindowLabelForMs,
 } from '../../src/lib/oi-snapshots.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -97,6 +100,29 @@ describe('bucketHour', () => {
   });
 });
 
+describe('OI_WINDOWS / oiWindowLabelForMs (SCAN-RANKBY-REFINEMENTS-W1 CH1 — selectable window)', () => {
+  it('maps each label to its ms; 24h is the default', () => {
+    expect(OI_WINDOWS).toEqual({ '1h': HOUR, '4h': 4 * HOUR, '24h': 24 * HOUR });
+    expect(OI_WINDOWS['24h']).toBe(DEFAULT_OI_WINDOW_MS);
+    expect(DEFAULT_OI_WINDOW).toBe('24h');
+  });
+  it('oiWindowLabelForMs reverses ms → label (unknown ms → 24h default)', () => {
+    expect(oiWindowLabelForMs(HOUR)).toBe('1h');
+    expect(oiWindowLabelForMs(4 * HOUR)).toBe('4h');
+    expect(oiWindowLabelForMs(24 * HOUR)).toBe('24h');
+    expect(oiWindowLabelForMs(999)).toBe('24h');
+  });
+  it('oiDeltaFromSnapshots echoes the passed window label (4h)', () => {
+    const d = oiDeltaFromSnapshots(
+      [{ ts: NOW - 4 * HOUR, oi: 100 }, { ts: NOW, oi: 112 }],
+      OI_WINDOWS['4h'],
+      NOW,
+      oiWindowLabelForMs(OI_WINDOWS['4h']),
+    );
+    expect(d).toEqual({ oi_change_pct: 12, oi_change_window: '4h' });
+  });
+});
+
 describe('recordOiSnapshots (SQL/param contract)', () => {
   beforeEach(() => {
     dbQuery.mockReset();
@@ -161,6 +187,15 @@ describe('computeOiDelta / computeOiDeltaForPool (query contract)', () => {
     expect(m.has('SOL')).toBe(false); // warming → not in the map
     const [sql] = dbQuery.mock.calls[0];
     expect(sql).toMatch(/WHERE exchange = \$1 AND ts >= \$2 ORDER BY symbol ASC, ts ASC/);
+  });
+
+  it('computeOiDeltaForPool with the 4h window derives the "4h" label echo (CH1)', async () => {
+    dbQuery.mockResolvedValue([
+      { symbol: 'BTC', ts: NOW - 4 * HOUR, oi: '100' },
+      { symbol: 'BTC', ts: NOW, oi: '105' },
+    ]);
+    const m = await computeOiDeltaForPool('BYBIT', OI_WINDOWS['4h'], NOW);
+    expect(m.get('BTC')).toEqual({ oi_change_pct: 5, oi_change_window: '4h' });
   });
 });
 

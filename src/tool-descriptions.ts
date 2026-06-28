@@ -115,6 +115,9 @@ export const PARAM_DESC_SCAN_RANK_BY =
 export const PARAM_DESC_SCAN_INCLUDE_REASONING =
   'Enrich each non-HOLD call with price, the top 2-3 drivers, and one-line reasoning ' +
   '(default false → bare verdict cells). HOLDs stay bare. Same per-call detail as get_trade_call.';
+// SCAN-RANKBY-REFINEMENTS-W1 CH1: OI-delta window for the oi_change lens.
+export const PARAM_DESC_SCAN_OI_CHANGE_WINDOW =
+  'OI-delta window for rankBy=oi_change: 1h, 4h, or 24h (default 24h). Ignored by other lenses.';
 
 // Top-20 keyword phrases the canary asserts each of the 3 BM25-audited tools'
 // combined-text contains ≥15 of (case-insensitive substring match). Sourced

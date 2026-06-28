@@ -31,6 +31,10 @@ vi.mock('../../src/lib/exchange-adapter.js', () => ({
 vi.mock('../../src/lib/oi-snapshots.js', () => ({
   computeOiDeltaForPool: vi.fn(),
   DEFAULT_OI_WINDOW_MS: 86_400_000,
+  // SCAN-RANKBY-REFINEMENTS-W1 CH1: rank-metrics now imports these too — a partial
+  // mock MUST list them or they resolve `undefined` (incomplete-partial-mock trap).
+  OI_WINDOWS: { '1h': 3_600_000, '4h': 14_400_000, '24h': 86_400_000 },
+  DEFAULT_OI_WINDOW: '24h',
 }));
 
 import { fetchVenueUniverse } from '../../src/lib/exchange-universe.js';
@@ -236,5 +240,35 @@ describe('getRankedUniverse — oi_change (real OI delta, SCAN-RANKBY-W3)', () =
     mockOiDelta.mockResolvedValue(new Map());
     const r = await getRankedUniverse('OKX', 'oi_change', 20);
     expect(r).toEqual([]);
+  });
+
+  // ── SCAN-RANKBY-REFINEMENTS-W1 CH1: trader-selectable OI-delta window ──
+  it('CH1: oiChangeWindow="4h" resolves to the 4h window-ms + echoes "4h"', async () => {
+    mockOiDelta.mockResolvedValue(new Map([['BTC', { oi_change_pct: 1.2, oi_change_window: '4h' }]]));
+    const r = await getRankedUniverse('BYBIT', 'oi_change', 5, '15m', { oiChangeWindow: '4h' });
+    expect(r[0]).toMatchObject({ coin: 'BTC', oi_change_pct: 1.2, oi_change_window: '4h' });
+    expect(mockOiDelta).toHaveBeenCalledWith('BYBIT', 14_400_000); // 4h in ms
+  });
+
+  it('CH1: omitted oiChangeWindow defaults to 24h (byte-identical)', async () => {
+    mockOiDelta.mockResolvedValue(new Map([['BTC', { oi_change_pct: 2.1, oi_change_window: '24h' }]]));
+    await getRankedUniverse('BYBIT', 'oi_change', 5);
+    expect(mockOiDelta).toHaveBeenCalledWith('BYBIT', 86_400_000); // 24h default
+  });
+
+  it('CH1: distinct windows resolve to distinct store reads (no cross-serve)', async () => {
+    // Keyed by the window-ms so the assertion is robust to the cache's internal
+    // load-invocation count (TTL/loadTimeout implementation detail).
+    mockOiDelta.mockImplementation(async (_ex: string, windowMs: number) =>
+      windowMs === 3_600_000
+        ? new Map([['BTC', { oi_change_pct: 0.3, oi_change_window: '1h' }]])
+        : new Map([['BTC', { oi_change_pct: 2.1, oi_change_window: '24h' }]]),
+    );
+    const a = await getRankedUniverse('BYBIT', 'oi_change', 5, '15m', { oiChangeWindow: '1h' });
+    const b = await getRankedUniverse('BYBIT', 'oi_change', 5, '15m', { oiChangeWindow: '24h' });
+    expect(a[0].oi_change_window).toBe('1h');
+    expect(b[0].oi_change_window).toBe('24h'); // distinct cache keys never cross-serve
+    expect(mockOiDelta).toHaveBeenCalledWith('BYBIT', 3_600_000); // the 1h window-ms
+    expect(mockOiDelta).toHaveBeenCalledWith('BYBIT', 86_400_000); // the 24h window-ms
   });
 });

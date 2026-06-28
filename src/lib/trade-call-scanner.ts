@@ -36,6 +36,7 @@ import { getTradeSignal } from '../tools/get-trade-call.js';
 import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
 import { getRankedUniverse, type RankedAsset } from './rank-metrics.js';
 import { resolveRankBy, type RankBy } from './rank-constants.js';
+import type { OiWindow } from './oi-snapshots.js';
 import { ResultCache } from './result-cache.js';
 import type { SignalVerdict, RegimeType, TradeCallResult } from '../types.js';
 import { enrichScanCall } from './scan-digest.js';
@@ -113,6 +114,9 @@ export interface ScanTradeCallsParams {
    *  price + factors + reasoning (+ oi_change_window) via enrichScanCall. Default
    *  false ⇒ bare verdict cells, byte-identical to today. Orthogonal to rankBy. */
   includeReasoning?: boolean;
+  /** SCAN-RANKBY-REFINEMENTS-W1 CH1: OI-delta window for the oi_change lens
+   *  (1h/4h/24h). Omitted ⇒ '24h' (byte-identical). Ignored by other lenses. */
+  oiChangeWindow?: OiWindow;
 }
 
 /** The subset a scorer yields. Decouples the scanner from the full TradeCallResult,
@@ -346,7 +350,10 @@ export async function scanTradeCalls(params: ScanTradeCallsParams): Promise<Scan
     coins = await getTopCoinSet(exchange, topN);
   } else {
     // SCAN-RANKBY-W2: pass timeframe (volatility/ATRP ranks on the scan timeframe).
-    const ranked = await getRankedUniverse(exchange, rankBy, topN, timeframe);
+    // SCAN-RANKBY-REFINEMENTS-W1 CH1: forward the OI-delta window for the oi_change lens.
+    const ranked = await getRankedUniverse(exchange, rankBy, topN, timeframe, {
+      oiChangeWindow: params.oiChangeWindow,
+    });
     coins = ranked.map((r) => r.coin);
     rankMap = new Map(ranked.map((r) => [r.coin, r]));
   }

@@ -26,6 +26,28 @@ export const OI_BUCKET_MS = 60 * 60 * 1000;
 export const DEFAULT_OI_WINDOW_MS = 24 * OI_BUCKET_MS;
 export const OI_WINDOW_LABEL = '24h';
 
+/**
+ * SCAN-RANKBY-REFINEMENTS-W1 CH1 — the trader-selectable OI-delta windows for the
+ * `oi_change` lens. The sampler stores one point per hour, so each of 1h/4h/24h
+ * resolves to ≥2 points spanning the window. '24h' is the default ⇒ byte-identical
+ * to the SCAN-RANKBY-W3 behaviour when `oiChangeWindow` is omitted.
+ */
+export const OI_WINDOWS = {
+  '1h': OI_BUCKET_MS,
+  '4h': 4 * OI_BUCKET_MS,
+  '24h': DEFAULT_OI_WINDOW_MS,
+} as const;
+export type OiWindow = keyof typeof OI_WINDOWS;
+export const DEFAULT_OI_WINDOW: OiWindow = '24h';
+
+/** ms → human window label, for the `oi_change_window` echo (any of the 3 windows; else 24h). */
+export function oiWindowLabelForMs(windowMs: number): string {
+  for (const [label, ms] of Object.entries(OI_WINDOWS)) {
+    if (ms === windowMs) return label;
+  }
+  return OI_WINDOW_LABEL;
+}
+
 const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS oi_snapshots (
   exchange  TEXT             NOT NULL,
   symbol    TEXT             NOT NULL,
@@ -151,6 +173,7 @@ export async function computeOiDelta(
     rows.map((r) => ({ ts: Number(r.ts), oi: Number(r.oi) })),
     windowMs,
     nowMs,
+    oiWindowLabelForMs(windowMs),
   );
 }
 
@@ -172,7 +195,7 @@ export async function computeOiDeltaForPool(
   }
   const out = new Map<string, OiDelta>();
   for (const [sym, pts] of bySym) {
-    const d = oiDeltaFromSnapshots(pts, windowMs, nowMs);
+    const d = oiDeltaFromSnapshots(pts, windowMs, nowMs, oiWindowLabelForMs(windowMs));
     if (d) out.set(sym, d);
   }
   return out;

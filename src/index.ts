@@ -667,12 +667,12 @@ function createServer(): McpServer {
     SCAN_TRADE_CALLS_DESCRIPTION,
     SCAN_TRADE_CALLS_SCHEMA,
     { title: 'Market Scanner', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning }) => {
+    async ({ topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
         const result = await runAsCaller('scan_trade_calls', () => runScanTradeCall(
-          { topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning },
+          { topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow },
           license,
         ));
         logRequest({

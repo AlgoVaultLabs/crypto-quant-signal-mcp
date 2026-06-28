@@ -1,0 +1,36 @@
+{
+  "endpoint": "scan_trade_calls",
+  "wave": "SCAN-RANKBY-REFINEMENTS-W1 (CH1 oiChangeWindow; CH3 oiBasis — appended at CH3)",
+  "date": "2026-06-28",
+  "summary": "Additive input params modifying the oi_change lens. CH1 adds `oiChangeWindow` (1h|4h|24h, default 24h). CH3 adds `oiBasis` (notional|contracts, default notional) + the `oi_change_basis` per-call echo. Both default to the SCAN-RANKBY-W3 behaviour ⇒ byte-identical when omitted. tools/list unchanged (9); both are params, not new lenses/tools. The rankBy lens set (RANK_BY_VALUES) is UNCHANGED.",
+  "input_schema_additive": {
+    "added_params": [
+      {
+        "name": "oiChangeWindow",
+        "wave": "CH1",
+        "zod": "z.enum(['1h','4h','24h']).default('24h')",
+        "semantics": "OI-delta window for rankBy=oi_change. Invalid → MCP zod rejection (same default-deny as exchange/timeframe). Ignored by other lenses.",
+        "byte_identical_when": "omitted ⇒ 24h"
+      }
+    ],
+    "added_params_ch3_pending": [
+      {
+        "name": "oiBasis",
+        "wave": "CH3",
+        "zod": "z.enum(['notional','contracts']).default('notional')",
+        "semantics": "OI-delta basis for rankBy=oi_change. 'contracts' = base-coin-unit OI (price-independent). Ignored by other lenses.",
+        "byte_identical_when": "omitted ⇒ notional"
+      }
+    ],
+    "removed_keys": [],
+    "note": "Additive only — no existing param changed or removed. Default keyword on the new params is a documented additive inputSchema diff (behavior-preserving; no client cache-refresh / tool rename needed)."
+  },
+  "calls_item": {
+    "allowed_keys_additive_ch3": ["oi_change_basis"],
+    "note": "CH3 adds `oi_change_basis` ('notional'|'contracts') to the oi_change lens echo, alongside the existing oi_change_pct + oi_change_window. Present only for rankBy=oi_change. The full calls_item allow-list is in scan_trade_calls-rankby-shape-snapshot-2026-06-27.json + the digest snapshot."
+  },
+  "forbidden_keys": ["outcome_return_pct", "outcome_price"],
+  "tools_list_count": 9,
+  "consumers": ["MCP scan_trade_calls", "TG bot /scan + /scanwatch (forward raw params)", "x402 paid scan route"],
+  "drift_check_command": "grep -nE 'oiChangeWindow|oiBasis' src/tools/scan-trade-calls.ts src/lib/trade-call-scanner.ts && node scripts/check-rank-metrics-parity.mjs --check"
+}

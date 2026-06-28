@@ -29,7 +29,14 @@ import { annualizeFunding, isFundingRank, type RankBy } from './rank-constants.j
 import { computeATRP } from './rank-atr.js';
 import { getAdapter } from './exchange-adapter.js';
 import { intervalMsFor } from './candle-guard.js';
-import { computeOiDeltaForPool, DEFAULT_OI_WINDOW_MS, type OiDelta } from './oi-snapshots.js';
+import {
+  computeOiDeltaForPool,
+  DEFAULT_OI_WINDOW_MS,
+  OI_WINDOWS,
+  DEFAULT_OI_WINDOW,
+  type OiDelta,
+  type OiWindow,
+} from './oi-snapshots.js';
 
 /**
  * The per-coin rank metric carried alongside the selected universe. `rank_value`
@@ -56,6 +63,17 @@ export interface RankedAsset {
   oi_change_pct?: number;
   /** oi_change — the OI-delta window label, e.g. "24h". */
   oi_change_window?: string;
+}
+
+/**
+ * SCAN-RANKBY-REFINEMENTS-W1: optional per-call modifiers for the `oi_change` lens.
+ * Both default to the SCAN-RANKBY-W3 behaviour (24h / notional) ⇒ byte-identical
+ * when omitted. Passed as a TRAILING optional arg to `getRankedUniverse` (the
+ * enum-widening LAW — narrower callers stay assignable, no N-file cascade).
+ */
+export interface RankOptions {
+  /** CH1: OI-delta window for the oi_change lens (1h/4h/24h). Default '24h'. */
+  oiChangeWindow?: OiWindow;
 }
 
 /**
@@ -232,7 +250,12 @@ function getAtrpForPool(exchange: ExchangeId, timeframe: string): Promise<Map<st
 // loadTimeoutMs (cold-serves an empty map; the store is the source so the load is just a query).
 const OI_CHANGE_TTL_MS = 60 * 1000;
 const oiChangeCache = coalescedCache<Map<string, OiDelta>>({
-  load: async (exchange) => computeOiDeltaForPool(exchange as ExchangeId, DEFAULT_OI_WINDOW_MS),
+  // SCAN-RANKBY-REFINEMENTS-W1 CH1: keyed `${exchange}:${window}` so 1h/4h/24h each
+  // memoize independently (mirrors atrpCache's `${exchange}:${timeframe}` key).
+  load: async (key) => {
+    const [exchange, window] = key.split(':') as [ExchangeId, OiWindow];
+    return computeOiDeltaForPool(exchange, OI_WINDOWS[window] ?? DEFAULT_OI_WINDOW_MS);
+  },
   ttlMs: OI_CHANGE_TTL_MS,
   staleOk: true,
   loadTimeoutMs: 900,
@@ -241,8 +264,11 @@ const oiChangeCache = coalescedCache<Map<string, OiDelta>>({
   processGate: () => isShortLivedScript(process.argv[1]),
 });
 
-function getOiChangeForPool(exchange: ExchangeId): Promise<Map<string, OiDelta>> {
-  return oiChangeCache.get(exchange);
+function getOiChangeForPool(
+  exchange: ExchangeId,
+  window: OiWindow = DEFAULT_OI_WINDOW,
+): Promise<Map<string, OiDelta>> {
+  return oiChangeCache.get(`${exchange}:${window}`);
 }
 
 /**
@@ -262,6 +288,7 @@ export async function getRankedUniverse(
   rankBy: RankBy,
   topN: number,
   timeframe = '15m',
+  opts: RankOptions = {},
 ): Promise<RankedAsset[]> {
   // SCAN-RANKBY-W2: volatility ranks the top-by-OI pool by ATRP on the scan timeframe,
   // served from the coalesced ATRP cache (which owns the pool + candle fetch — no `all`
@@ -277,7 +304,7 @@ export async function getRankedUniverse(
   // Symbols still "warming" (< 2 snapshots spanning the window) are omitted. Echoed at output
   // (never cached into the verdict cell). The store IS the universe → no `all` fetch here.
   if (rankBy === 'oi_change') {
-    const deltaMap = await getOiChangeForPool(exchange);
+    const deltaMap = await getOiChangeForPool(exchange, opts.oiChangeWindow ?? DEFAULT_OI_WINDOW);
     const sorted = [...deltaMap.entries()].sort((a, b) => b[1].oi_change_pct - a[1].oi_change_pct); // OI %Δ desc
     return sorted.slice(0, topN).map(([coin, d]) => ({
       coin,

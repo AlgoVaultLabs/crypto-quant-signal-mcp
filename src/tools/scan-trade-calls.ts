@@ -46,6 +46,7 @@ import {
   PARAM_DESC_SCAN_LIMIT,
   PARAM_DESC_SCAN_RANK_BY,
   PARAM_DESC_SCAN_INCLUDE_REASONING,
+  PARAM_DESC_SCAN_OI_CHANGE_WINDOW,
 } from '../tool-descriptions.js';
 import type { LicenseInfo } from '../types.js';
 
@@ -74,6 +75,10 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
   // output, byte-identical to today. Mirrors get_trade_call's param name (NB:
   // get_trade_call defaults TRUE; scan defaults FALSE — bare back-compat is the firewall).
   includeReasoning: z.boolean().default(false).describe(PARAM_DESC_SCAN_INCLUDE_REASONING),
+  // SCAN-RANKBY-REFINEMENTS-W1 CH1: OI-delta window for the oi_change lens. z.enum
+  // rejects an invalid value at the MCP boundary (the same default-deny as exchange/
+  // timeframe); default '24h' ⇒ byte-identical when omitted. Ignored by other lenses.
+  oiChangeWindow: z.enum(['1h', '4h', '24h']).default('24h').describe(PARAM_DESC_SCAN_OI_CHANGE_WINDOW),
 };
 
 export interface ScanAlgovaultMeta {
