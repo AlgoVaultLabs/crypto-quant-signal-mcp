@@ -34,6 +34,7 @@
   <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81"><img src="https://img.shields.io/badge/Track_Record-On--Chain_Verified-blue?logo=ethereum" alt="On-Chain Verified" /></a>
   <a href="https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544"><img src="https://img.shields.io/badge/ERC--8004-Verified_Agent-8A2BE2?logo=ethereum" alt="ERC-8004 Verified Agent" /></a>
   <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp"><img src="https://img.shields.io/github/stars/AlgoVaultLabs/crypto-quant-signal-mcp?style=social" alt="GitHub Repo stars" /></a>
+  <a href="https://smithery.ai/server/@algovault/crypto-quant-signal-mcp"><img src="https://smithery.ai/badge/algovault/crypto-quant-signal-mcp" alt="Smithery" /></a>
 </p>
 
 ---
@@ -91,7 +92,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.20.0",
+    "version": "1.21.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -241,12 +242,17 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 ---
 
-## What's new in v1.20.1
+## What's new in v1.21.0
 
-Live since 2026-06-05:
+- **📊 `scan_trade_calls` ranking lenses (`rankBy`).** Rank the scan universe 9 ways — funding (negative/positive), top gainers/losers, volume, open interest, volatility (ATRP), and 24h OI change — plus aliases. One scanner, many market lenses.
+- **🧾 Verdict receipts (`_receipts`).** Every `get_trade_call` / `get_trade_signal` / `scan_trade_calls` verdict now carries inline proof: conviction, the top factors behind it, the live track record, and a verify link.
+- **🔌 Gemini, Kraken & Alpaca pairings.** Tutorials + runnable keyless demos that wire AlgoVault's analysis into each venue's own MCP execution kit. Browse at [algovault.com/integrations](https://algovault.com/integrations).
+- **🏆 Live track-record leaderboard.** One real-time, filterable leaderboard at [algovault.com/track-record](https://algovault.com/track-record).
+- **🎁 Referral program.** Free email-to-key signup + a public [referral page](https://algovault.com/referral) — refer a friend, you both get more calls.
+- **💸 Pay-per-call on the trade-call and scanner routes.** x402 (USDC on Base) — 100 free calls/month, then pay per call, no signup.
 
-- **🔌 Three new exchange pairings: Gemini, Kraken, Alpaca.** Step-by-step tutorials + runnable keyless demos that wire AlgoVault's analysis into each venue's own MCP execution kit — built for autonomous trading agents. AlgoVault calls the trade (composite verdict, market regime, and the `scan_trade_calls` market sweep); the venue executes. Browse them at [algovault.com/integrations](https://algovault.com/integrations); tutorials live in [algovault-skills](https://github.com/AlgoVaultLabs/algovault-skills).
-- **🤖 Same drop-in pattern across every venue.** ≤5 minutes to a runnable demo, testnet/demo only — zero real-money risk. AlgoVault stays the analysis layer; your agent and the venue handle execution.
+### 🔒 Security hardening
+Payment-path and webhook hardening: x402 per-route price binding + replay protection; webhook delivery now pins egress IPs and signs every payload with a timestamped HMAC. **Webhook subscribers:** the signature scheme changed — if you verify `X-AlgoVault-Signature`, update per [docs/WEBHOOKS.md](https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/docs/WEBHOOKS.md).
 
 ### v1.20.0 highlights (recap)
 
