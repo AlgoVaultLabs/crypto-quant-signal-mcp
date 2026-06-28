@@ -37,6 +37,7 @@ import {
   type OiDelta,
   type OiWindow,
 } from './oi-snapshots.js';
+import { getOkxFullFundingIfWarm } from './okx-funding-poller.js';
 
 /**
  * The per-coin rank metric carried alongside the selected universe. `rank_value`
@@ -344,6 +345,22 @@ export async function getRankedUniverse(
   }
 
   if (isFundingRank(rankBy)) {
+    // SCAN-RANKBY-REFINEMENTS-W1 CH2: OKX ranks funding over the FULL universe when the
+    // background-warmed full-universe funding cache is ready (lifts pfr/nfr beyond the
+    // liquid pool). The other 4 venues keep the Q2-A uniform top-pool shortlist, and OKX
+    // FAILS SOFT to that same shortlist when the full cache is cold/stale (no request-path
+    // fan-out → the <1s request path is preserved).
+    if (exchange === 'OKX') {
+      const full = await getOkxFullFundingIfWarm();
+      if (full) {
+        for (const a of all) {
+          const r = full.get(a.coin);
+          if (r !== undefined) a.fundingRate = r;
+        }
+        return rankFunding(all, rankBy, topN); // FULL OKX universe, not the shortlist
+      }
+      // cold/stale → fall through to the shortlist path below (fail-soft)
+    }
     const pool = all.slice(0, FUNDING_POOL_SIZE); // top-by-OI candidate pool (uniform shortlist)
     await augmentFunding(exchange, pool);
     return rankFunding(pool, rankBy, topN);

@@ -1,5 +1,8 @@
 {
-  "endpoint": "scan_trade_calls",
+  "endpoint": "scan_trade_calls — rankBy refinements (oiChangeWindow CH1 / oiBasis CH3)",
+  "snapshot_date": "2026-06-28",
+  "allowed_keys": ["oiChangeWindow (input param)", "oiBasis (input param, CH3)", "oi_change_basis (calls_item echo, CH3)"],
+  "note_endpoint": "Unique endpoint string (NOT bare 'scan_trade_calls') so this aspect-snapshot COEXISTS in the knowledge bundle alongside the canonical scan_trade_calls-rankby-shape-snapshot-2026-06-27.json — one snapshot per endpoint-id (knowledge-bundle-duplicate-response-shape guard). Mirrors the scan_trade_calls-digest-shape-snapshot pattern.",
   "wave": "SCAN-RANKBY-REFINEMENTS-W1 (CH1 oiChangeWindow; CH3 oiBasis — appended at CH3)",
   "date": "2026-06-28",
   "summary": "Additive input params modifying the oi_change lens. CH1 adds `oiChangeWindow` (1h|4h|24h, default 24h). CH3 adds `oiBasis` (notional|contracts, default notional) + the `oi_change_basis` per-call echo. Both default to the SCAN-RANKBY-W3 behaviour ⇒ byte-identical when omitted. tools/list unchanged (9); both are params, not new lenses/tools. The rankBy lens set (RANK_BY_VALUES) is UNCHANGED.",

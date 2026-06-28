@@ -36,6 +36,8 @@ vi.mock('../../src/lib/oi-snapshots.js', () => ({
   OI_WINDOWS: { '1h': 3_600_000, '4h': 14_400_000, '24h': 86_400_000 },
   DEFAULT_OI_WINDOW: '24h',
 }));
+// SCAN-RANKBY-REFINEMENTS-W1 CH2: the full-universe OKX funding cache gates the funding branch.
+vi.mock('../../src/lib/okx-funding-poller.js', () => ({ getOkxFullFundingIfWarm: vi.fn() }));
 
 import { fetchVenueUniverse } from '../../src/lib/exchange-universe.js';
 import { getPremiumIndexBulkCoalesced } from '../../src/lib/adapters/binance.js';
@@ -43,6 +45,7 @@ import { upstreamFetch } from '../../src/lib/adapters/_upstream-fetch.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { getRankedUniverse, _resetRankMetricsForTest } from '../../src/lib/rank-metrics.js';
 import { computeOiDeltaForPool } from '../../src/lib/oi-snapshots.js';
+import { getOkxFullFundingIfWarm } from '../../src/lib/okx-funding-poller.js';
 import type { Candle } from '../../src/types.js';
 
 const mockUniverse = vi.mocked(fetchVenueUniverse);
@@ -50,6 +53,7 @@ const mockPremium = vi.mocked(getPremiumIndexBulkCoalesced);
 const mockUpstream = vi.mocked(upstreamFetch);
 const mockGetAdapter = vi.mocked(getAdapter);
 const mockOiDelta = vi.mocked(computeOiDeltaForPool);
+const mockFullFunding = vi.mocked(getOkxFullFundingIfWarm);
 
 function asset(
   coin: string,
@@ -75,6 +79,8 @@ beforeEach(() => {
   mockPremium.mockReset();
   mockUpstream.mockReset();
   mockGetAdapter.mockReset();
+  mockFullFunding.mockReset();
+  mockFullFunding.mockResolvedValue(null); // CH2: default cold → funding falls back to the shortlist
 });
 afterEach(() => _resetRankMetricsForTest());
 
@@ -178,6 +184,26 @@ describe('getRankedUniverse — funding lenses (uniform shortlist)', () => {
     expect(r.map((a) => a.coin)).toEqual(['SOL', 'DOGE']); // -0.0009, -0.0003
     expect(r[0].funding_rate).toBe(-0.0009);
     expect(r[0].funding_apr).toBeCloseTo(-0.0009 * 3 * 365, 9);
+  });
+
+  // ── SCAN-RANKBY-REFINEMENTS-W1 CH2: OKX full-universe funding (warm) ──
+  it('OKX funding ranks the FULL universe from the warm full cache (no shortlist fan-out)', async () => {
+    mockUniverse.mockResolvedValue(uni()); // 5 coins
+    mockFullFunding.mockResolvedValue(
+      new Map([['BTC', 0.001], ['ETH', 0.002], ['SOL', -0.005], ['XRP', -0.004], ['DOGE', 0.003]]),
+    );
+    const r = await getRankedUniverse('OKX', 'funding_negative', 3);
+    expect(r.map((a) => a.coin)).toEqual(['SOL', 'XRP', 'BTC']); // full-cache funding asc
+    expect(r[0].funding_rate).toBe(-0.005);
+    expect(mockUpstream).not.toHaveBeenCalled(); // full cache used → NO per-instId shortlist fan-out
+  });
+
+  it('OKX funding ignores the full cache for the OTHER 4 venues (BYBIT stays shortlist)', async () => {
+    mockFullFunding.mockResolvedValue(new Map([['BTC', -0.99]])); // would distort if wrongly applied
+    mockUniverse.mockResolvedValue(uni());
+    const r = await getRankedUniverse('BYBIT', 'funding_negative', 1);
+    expect(r[0].coin).toBe('SOL'); // BYBIT bulk funding (uni: SOL -0.0009 is most negative), NOT BTC -0.99
+    expect(mockFullFunding).not.toHaveBeenCalled(); // only OKX consults the full cache
   });
 
   it('funding ranks EXCLUDE coins with no resolvable funding', async () => {
