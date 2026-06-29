@@ -31,8 +31,18 @@ REVIEW_TIMEOUT_S = 8  # advisory gate — never block the trade on a slow respon
 
 
 def get_trade_call(coin: str, timeframe: str, api_key: str | None) -> dict:
-    """Call AlgoVault get_trade_call via MCP JSON-RPC."""
-    headers = {"Content-Type": "application/json"}
+    """Call AlgoVault get_trade_call via MCP JSON-RPC.
+
+    AlgoVault's /mcp is stateless streamable-HTTP: it requires the
+    ``Accept: application/json, text/event-stream`` header (otherwise 406) and
+    replies with an SSE frame (``event: message`` / ``data: {…}``), so the JSON
+    lives on the ``data:`` line rather than in ``r.json()``. A bare ``tools/call``
+    works with no initialize handshake.
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",  # required by streamable-HTTP MCP
+    }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     payload = {
@@ -46,9 +56,14 @@ def get_trade_call(coin: str, timeframe: str, api_key: str | None) -> dict:
     }
     r = requests.post(ALGOVAULT_MCP, json=payload, headers=headers, timeout=15)
     r.raise_for_status()
-    result = r.json()
-    # MCP result is nested: result.result.content[0].text -> JSON string
-    content = result.get("result", {}).get("content", [{}])[0].get("text", "{}")
+    if "text/event-stream" in r.headers.get("content-type", ""):
+        # SSE frame: take the JSON envelope off the `data:` line.
+        line = next(ln[5:] for ln in r.text.splitlines() if ln.startswith("data:"))
+        envelope = json.loads(line.strip())
+    else:
+        envelope = r.json()
+    # MCP result is nested: result.content[0].text -> JSON string
+    content = envelope.get("result", {}).get("content", [{}])[0].get("text", "{}")
     return json.loads(content)
 
 
@@ -59,23 +74,28 @@ def review_trade(signal: dict, coin: str, size_usd: float, leverage: float,
     the gate is unavailable (network error, 402 without a funded key, etc.).
     The caller treats None as SKIP — the gate is advisory only.
     """
-    artifact = {
-        "coin": coin,
-        "direction": signal.get("call", "UNKNOWN"),
-        "size_usd": size_usd,
-        "leverage": leverage,
-        "entry_price": signal.get("price"),
-        "confidence": signal.get("confidence"),
-        "regime": signal.get("regime"),
-        "reasoning": signal.get("reasoning", ""),
-    }
+    # /review takes `artifact` as a STRING (per the published schema), so the
+    # proposed order is rendered as a concise human-readable line. Note AlgoVault
+    # confidence is 0–100 (e.g. 37), so it's labelled `/100` here — /review must
+    # not read it as a 0–1 probability.
+    artifact = (
+        f"Proposed {signal.get('call', 'UNKNOWN')} {coin}: "
+        f"size ${size_usd:,.0f} at {leverage}x leverage, entry {signal.get('price')}. "
+        f"AlgoVault signal confidence {signal.get('confidence')}/100, "
+        f"regime {signal.get('regime')}. Reasoning: {signal.get('reasoning', '')}".strip()
+    )
     headers = {"Content-Type": "application/json"}
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
     try:
         r = requests.post(
             INVINOVERITAS_REVIEW,
-            json={"artifact_type": "trade", "artifact": artifact, "sign": True},
+            json={
+                "artifact_type": "trade",
+                "artifact": artifact,
+                "severity_threshold": "all",
+                "sign": True,
+            },
             headers=headers,
             timeout=REVIEW_TIMEOUT_S,
         )
