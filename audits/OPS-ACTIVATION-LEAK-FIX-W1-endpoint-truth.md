@@ -5,7 +5,17 @@
 **Probed:** 2026-06-29 (UTC), live `origin/main` @ `7b13f0c` + Hetzner `204.168.185.24`
 **Worktree:** `/Users/tank/code/cqsm-wt-activation-leak-fix` (branch `ops/activation-leak-fix-w1`, off `origin/main` — worktree-first LAW)
 **Reconcile:** local `~/code/crypto-quant-signal-mcp` was 82 commits behind `origin/main` + had unrelated uncommitted dirt (README/landing) → worked off a fresh `origin/main` worktree, dirt untouched.
-**Verdict:** 🛑 **HALT before CH2 mutation** — ≥3 load-bearing spec-vs-reality drifts that change the CH2/CH3 build and require architect (Mr.1 → Cowork) decisions. Q-block at bottom.
+**Verdict:** 🛑 HALT raised → ✅ **RESOLVED by Mr.1 (2026-06-29) — A/A/A ratified. CH2 cleared to proceed.** Ratified corrections below are the SoT for CH2–CH5; HALT again only on NEW drift.
+
+---
+
+## Ratified drift corrections (Mr.1, 2026-06-29) — SoT for CH2–CH5
+
+**Q1-A — `mcp_tools_list` capture locus.** Emit `funnel_events('mcp_tools_list')` at the `/mcp` POST layer: peek the already-parsed JSON-RPC envelope `method==='tools/list'` **before** the SDK consumes it (SDK handles tools/list internally → never reaches `request_log`, hence the all-time 0). Use the shared `resolveSessionCorrelationId` + **bounded-LRU per-session dedup** (mirror `aha-event.ts`); fire-and-forget, fail-open; `tier!=='internal'` excluded; `tools/list` response **byte-identical (=9)**. Redirect `getMcpToolsListSessionCount()` → `funnel_events`, **keep the `request_log` read as the 0-fallback (dual-shape)**. Rejected B (request_log is a broad consumer surface — quota/rate-limit/analytics; injecting tools/list rows mutates its semantics + blast radius).
+
+**Q2-A — denominator semantics.** KEEP the 14-stage npm-`install`→`first_call` funnel **byte-stable**; ADD the cleaned server-side funnel **ALONGSIDE** (additive / NON-stage — same precedent as `track_record_viewed`, `first_non_hold_verdict`; **no `CANONICAL_STAGE_ORDER` change → no sign-off needed**). Forced, not just safe: (1) npm downloads are structurally UN-cleanable (registry returns counts only — no per-download UA/IP); (2) redefining install/first_call breaks the byte-stable contract + WoW history. Report the cleaned number as the **"true activation"** metric next to the historical 25%.
+
+**Q3 — bot-clean base + single-derivation.** Base = **`mcp_connect`** (669; server-side, carries UA/IP → cleanable; npm install isn't). **ONE canonical pure `classifyTraffic()` is authoritative** for the funnel; `is_bot_internal` is a NARROWER **input** (internal/admin tier only — insufficient alone for external crawlers/health-checks/datacenter scrapers). `classifyTraffic()` is the SUPERSET and **consumes the same in-request internal-tier signal** that sets `is_bot_internal` (does NOT re-derive "internal"): `L0 internal-tier ∪ L1 isbot/crawler-UA ∪ L2 health-check UA tokens ∪ L4 datacenter-IP + generic-client-UA + no-real-call`. **Single-derivation LAW:** extract `classifyTraffic()` as ONE shared pure fn; the funnel `meta_json` tag projects from it; pin a **subset canary** `is_bot_internal===true ⟹ classifyTraffic()=automated` so the two can never contradict. **Cleaned activation** = `classifyTraffic()=human` `mcp_connect` sessions → first **REAL** `tools/call` (returns data; `tools/list` + handshake-only never count).
 
 ---
 
