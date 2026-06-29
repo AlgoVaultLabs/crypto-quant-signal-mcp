@@ -15,6 +15,7 @@ import {
   getArgvTrackToken,
   parseTrackTokenFromArgv,
   resolveTrackTokenForRequest,
+  resolveSessionIdentity,
   shouldEmitForRequest,
 } from '../src/lib/track-token.js';
 
@@ -196,5 +197,45 @@ describe('OPS-TRACK-TOKEN-STDIO-CLIENT-WRAPPER-W1 — embedded channel slugs rec
     // First tools/call per (session, token) → emit; duplicate → suppressed.
     expect(shouldEmitForRequest('sess-track-w1', 'chan-docs')).toBe(true);
     expect(shouldEmitForRequest('sess-track-w1', 'chan-docs')).toBe(false);
+  });
+});
+
+describe('OPS-ACTIVATION-LEAK-FIX-W1 CH2 — resolveSessionIdentity (single-derivation id + tier)', () => {
+  const NEVER_UUID = () => 'UUID-SHOULD-NOT-BE-CALLED';
+
+  it('token tier: a valid track-token header → {id: token, tier: token}', () => {
+    const id = resolveSessionIdentity({ 'x-algovault-track-token': 'tok-12345678' }, 'iphash-xyz', NEVER_UUID);
+    expect(id).toEqual({ id: 'tok-12345678', tier: 'token' });
+  });
+
+  it('fallback tier: no token but ipHash present → {id: ipHash, tier: fallback}', () => {
+    const id = resolveSessionIdentity({}, 'iphash-xyz', NEVER_UUID);
+    expect(id).toEqual({ id: 'iphash-xyz', tier: 'fallback' });
+  });
+
+  it('anon tier: neither token nor ipHash → {id: uuid, tier: anon} (uuid only fires here)', () => {
+    const id = resolveSessionIdentity({}, '', () => 'fixed-uuid');
+    expect(id).toEqual({ id: 'fixed-uuid', tier: 'anon' });
+  });
+
+  it('precedence: token beats ipHash (token wins even when both present)', () => {
+    const id = resolveSessionIdentity({ 'x-algovault-track-token': 'tok-abcdefgh' }, 'iphash-xyz', NEVER_UUID);
+    expect(id.tier).toBe('token');
+    expect(id.id).toBe('tok-abcdefgh');
+  });
+
+  it('an invalid (too-short) track-token is ignored → falls through to ipHash fallback', () => {
+    // 'short' fails the token regex in resolveTrackTokenForRequest → treated as no token.
+    const id = resolveSessionIdentity({ 'x-algovault-track-token': 'short' }, 'iphash-xyz', NEVER_UUID);
+    expect(id).toEqual({ id: 'iphash-xyz', tier: 'fallback' });
+  });
+
+  it('the resolved .id is byte-identical to the historical token??ipHash??uuid precedence', () => {
+    // token branch
+    expect(resolveSessionIdentity({ 'x-algovault-track-token': 'tok-99999999' }, 'h', NEVER_UUID).id).toBe('tok-99999999');
+    // ipHash branch
+    expect(resolveSessionIdentity({}, 'h', NEVER_UUID).id).toBe('h');
+    // uuid branch
+    expect(resolveSessionIdentity({}, '', () => 'u').id).toBe('u');
   });
 });

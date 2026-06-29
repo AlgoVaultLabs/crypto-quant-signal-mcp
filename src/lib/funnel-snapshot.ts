@@ -154,6 +154,22 @@ export interface FunnelSnapshot {
     first_call: number; // of connects, that made >=1 tool call (agent_sessions)
     conversion: number; // of connects, that reached a paid tier (agent_sessions)
   }> | null;
+  /**
+   * OPS-ACTIVATION-LEAK-FIX-W1 CH2: identity-tier coverage over per-session
+   * `mcp_connect` events — how stitchable the attributable funnel is (honest
+   * cookieless reporting). `identified` = stable track-token, `fallback` = ipHash
+   * (may over-merge), `anonymous` = uuid (unstitchable). `coverage_pct` =
+   * identified / total. Additive / NON-stage (absent from CANONICAL_STAGE_ORDER →
+   * the 14-stage funnel + its 13 retentions stay byte-stable). Pre-CH2 connect
+   * rows (no `identity_tier` in meta) are excluded from all buckets (not bucketed
+   * as anonymous), so this reads 0/0/0/null until labeled traffic flows.
+   */
+  identity_coverage: {
+    identified: number | null;
+    fallback: number | null;
+    anonymous: number | null;
+    coverage_pct: number | null;
+  };
   warnings: string[]; // non-fatal notes, e.g. "agent_sessions empty — fell back to request_log"
 }
 
@@ -277,14 +293,37 @@ async function getStripeEventCount(
 }
 
 /**
- * Count distinct session_ids that invoked `tools/list` within the window.
- * Stage 2 proxy. `request_log.tool_name` for the MCP `tools/list` JSON-RPC
- * method is stored verbatim — confirmed via Plan-Mode P11.
+ * Count distinct session_ids that issued `tools/list` within the window. Funnel
+ * stage 2.
+ *
+ * OPS-ACTIVATION-LEAK-FIX-W1 CH2 (Q1-A): PRIMARY source is `funnel_events`
+ * (event_type='mcp_tools_list'), emitted at the /mcp POST layer (see
+ * tools-list-event.ts). The legacy `request_log` read is kept as a dual-shape
+ * 0-FALLBACK only. The prior wave's "P11 confirmed verbatim" claim was wrong —
+ * the high-level McpServer answers `tools/list` INTERNALLY, so it never reaches a
+ * per-tool handler, is never `logRequest`'d, and `request_log` has 0 'tools/list'
+ * rows ALL-TIME (the source of the historical 0.000% artifact; see audits/
+ * OPS-ACTIVATION-LEAK-FIX-W1-endpoint-truth.md P1). We prefer funnel_events; only
+ * if that query throws do we fall back to request_log (which returns 0 in
+ * practice) so the function never regresses to null.
  */
 async function getMcpToolsListSessionCount(
   windowFromIso: string,
   windowToIso: string,
 ): Promise<number | null> {
+  // Primary: the CH2 funnel_events capture path.
+  try {
+    const rows = await dbQuery<{ c: number | string }>(
+      `SELECT COUNT(DISTINCT session_id) AS c
+         FROM funnel_events
+        WHERE event_type = 'mcp_tools_list'
+          AND ts >= ? AND ts <= ?`,
+      [windowFromIso, windowToIso],
+    );
+    return safeInt(rows[0]?.c) ?? 0;
+  } catch {
+    // Dual-shape 0-fallback: the legacy request_log read (returns 0 in practice).
+  }
   const rows = await dbQuery<{ c: number | string }>(
     `SELECT COUNT(DISTINCT session_id) AS c
        FROM request_log
@@ -293,6 +332,72 @@ async function getMcpToolsListSessionCount(
     [windowFromIso, windowToIso],
   );
   return safeInt(rows[0]?.c) ?? 0;
+}
+
+/**
+ * OPS-ACTIVATION-LEAK-FIX-W1 CH2 — identity-tier coverage over the per-session
+ * `mcp_connect` events in the window. Reports how stitchable the attributable
+ * funnel is (honest cookieless reporting): `identified` (track-token, reliably
+ * cross-request joinable), `fallback` (ipHash, may over-merge NAT'd clients),
+ * `anonymous` (uuid, unstitchable). `coverage_pct` = identified / total, the
+ * fraction we can confidently stitch by a stable token. Additive / NON-stage —
+ * does NOT touch CANONICAL_STAGE_ORDER. Events that predate CH2 (no identity_tier
+ * in meta_json) are EXCLUDED from all buckets (counted as neither — they are not
+ * silently bucketed as 'anonymous'), so the field reads 0/0/0/null until labeled
+ * traffic flows rather than mislabeling history. Fail-open: returns all-null on
+ * query error (pushes a warning).
+ */
+async function getIdentityCoverage(
+  windowFromIso: string,
+  windowToIso: string,
+  warnings: string[],
+): Promise<{ identified: number | null; fallback: number | null; anonymous: number | null; coverage_pct: number | null }> {
+  try {
+    const rows = await dbQuery<{ session_id: string | null; meta_json: string | null }>(
+      `SELECT session_id, meta_json
+         FROM funnel_events
+        WHERE event_type = 'mcp_connect'
+          AND ts >= ? AND ts <= ?`,
+      [windowFromIso, windowToIso],
+    );
+    // One connect row per session (deduped at emit via shouldEmitConnect), but
+    // guard anyway: a session's tier is taken from its FIRST labeled connect.
+    const tierBySession = new Map<string, string>();
+    for (const r of rows) {
+      if (!r.session_id) continue;
+      if (tierBySession.has(r.session_id)) continue;
+      let tier: string | null = null;
+      try {
+        const m = r.meta_json ? (JSON.parse(r.meta_json) as Record<string, unknown>) : {};
+        if (typeof m.identity_tier === 'string') tier = m.identity_tier;
+      } catch {
+        /* malformed meta → unlabeled */
+      }
+      if (tier === 'token' || tier === 'fallback' || tier === 'anon') {
+        tierBySession.set(r.session_id, tier);
+      }
+    }
+    let identified = 0;
+    let fallback = 0;
+    let anonymous = 0;
+    for (const tier of tierBySession.values()) {
+      if (tier === 'token') identified += 1;
+      else if (tier === 'fallback') fallback += 1;
+      else anonymous += 1;
+    }
+    const total = identified + fallback + anonymous;
+    return {
+      identified,
+      fallback,
+      anonymous,
+      coverage_pct: total > 0 ? identified / total : null,
+    };
+  } catch (err) {
+    warnings.push(
+      `identity_coverage query failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { identified: null, fallback: null, anonymous: null, coverage_pct: null };
+  }
 }
 
 /**
@@ -818,7 +923,7 @@ export async function generateFunnelSnapshot(
   try {
     mcpToolsList = await getMcpToolsListSessionCount(windowFromIso, windowToIso);
   } catch (err) {
-    warnings.push(`request_log mcp_tools_list query failed: ${err instanceof Error ? err.message : String(err)}`);
+    warnings.push(`mcp_tools_list query failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   let quotaHitSoft: number | null = null;
@@ -915,6 +1020,9 @@ export async function generateFunnelSnapshot(
     warnings,
   );
 
+  // OPS-ACTIVATION-LEAK-FIX-W1 CH2: identity-tier coverage (additive, non-stage).
+  const identityCoverage = await getIdentityCoverage(windowFromIso, windowToIso, warnings);
+
   return {
     generated_at: new Date().toISOString(),
     window: { from: windowFromIso, to: windowToIso },
@@ -958,6 +1066,7 @@ export async function generateFunnelSnapshot(
     hold_rate_get_trade_signal: holdRateGetTradeSignal,
     tier_cohort_sizes: tierCohortSizes,
     by_source: bySource,
+    identity_coverage: identityCoverage,
     warnings,
   };
 }

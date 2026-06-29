@@ -26,6 +26,8 @@
  * signal-generation logic (per System Taxonomy scope rules for this wave).
  */
 
+import { randomUUID } from 'node:crypto';
+
 // Module-level state. `argvTrackToken` is captured ONCE at startup via
 // `captureArgvTrackToken()` and never mutated. `emittedKeys` is the LRU
 // of (session, token) tuples we've already emitted for, capped at MAX_KEYS.
@@ -116,6 +118,42 @@ export function resolveTrackTokenForRequest(
   headers: Record<string, unknown>,
 ): string | null {
   return extractHeaderTrackToken(headers) ?? getArgvTrackToken();
+}
+
+/**
+ * OPS-ACTIVATION-LEAK-FIX-W1 CH2 — single-derivation session identity.
+ *
+ * Resolves BOTH the correlation id AND its identity tier from the SAME branch
+ * logic, so the id and the tier can never drift (single-derivation LAW). The
+ * tier labels how stitchable the id is — the honest way to report cookieless
+ * traffic (PostHog 3-layer identity model: stable-id → fingerprint-fallback →
+ * ephemeral; ICO: a hashed IP is still personal data, so `ipHash` is salted
+ * upstream, never raw):
+ *   - 'token'    → X-AlgoVault-Track-Token / --track-token argv (IDENTIFIED; cross-request stitchable)
+ *   - 'fallback' → ipHash (stable per client behind Caddy, but MAY over-merge NAT'd clients)
+ *   - 'anon'     → randomUUID (only when both absent; UNSTITCHABLE across requests)
+ *
+ * Precedence is byte-identical to the historical `resolveSessionCorrelationId`
+ * order (token ?? ipHash ?? uuid) — that function is now a thin `.id` projection
+ * of this one. `makeUuid` is injectable for deterministic tests; production uses
+ * node:crypto randomUUID.
+ */
+export type IdentityTier = 'token' | 'fallback' | 'anon';
+
+export interface SessionIdentity {
+  id: string;
+  tier: IdentityTier;
+}
+
+export function resolveSessionIdentity(
+  headers: Record<string, unknown>,
+  ipHash: string,
+  makeUuid: () => string = randomUUID,
+): SessionIdentity {
+  const token = resolveTrackTokenForRequest(headers);
+  if (token && token.length > 0) return { id: token, tier: 'token' };
+  if (ipHash && ipHash.length > 0) return { id: ipHash, tier: 'fallback' };
+  return { id: makeUuid(), tier: 'anon' };
 }
 
 /**

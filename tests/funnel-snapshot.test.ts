@@ -27,8 +27,10 @@ const describeOrSkip = SKIP_REASON ? describe.skip : describe;
 const SENTINEL_PREFIX = 'funnel-test-';
 
 async function deleteSentinels() {
-  // Remove any sentinel test rows from prior runs.
+  // Remove any sentinel test rows from prior runs (funnel_events + the
+  // request_log rows the CH2 monotonic test seeds for the first_call fallback).
   await dbRun(`DELETE FROM funnel_events WHERE session_id LIKE ?`, `${SENTINEL_PREFIX}%`);
+  await dbRun(`DELETE FROM request_log WHERE session_id LIKE ?`, `${SENTINEL_PREFIX}%`);
 }
 
 describeOrSkip('funnel-snapshot — 14-stage extension', () => {
@@ -201,6 +203,69 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
     expect(snap).not.toHaveProperty('outcome_price');
     expect(snap).not.toHaveProperty('admin_key');
     expect(snap).not.toHaveProperty('database_url');
+  });
+
+  // ── OPS-ACTIVATION-LEAK-FIX-W1 CH2 ──
+
+  it('CH2: mcp_tools_list is sourced from funnel_events (the 0.000% artifact is gone)', async () => {
+    // Pre-CH2 this read request_log WHERE tool_name='tools/list' (0 rows all-time —
+    // tools/list is SDK-handled, never logRequest'd). Now it reads
+    // funnel_events('mcp_tools_list'). 3 distinct sessions list tools; session 1
+    // lists twice → DISTINCT(session_id) collapses it → 3.
+    for (const i of [1, 2, 3]) {
+      recordFunnelEvent({ eventType: 'mcp_tools_list', sessionId: `${SENTINEL_PREFIX}${i}`, licenseTier: 'free', meta: { identity_tier: 'fallback' } });
+    }
+    recordFunnelEvent({ eventType: 'mcp_tools_list', sessionId: `${SENTINEL_PREFIX}1`, licenseTier: 'free', meta: { identity_tier: 'fallback' } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const snap = await generateFunnelSnapshot({ days: 1 });
+    expect(snap.funnel.mcp_tools_list).toBe(3);
+  });
+
+  it('CH2: identity_coverage buckets per-session mcp_connect tiers; coverage_pct = identified/total; pre-CH2 rows excluded', async () => {
+    // 2 token (identified), 1 fallback (ipHash), 1 anon (uuid) → coverage 2/4 = 0.5.
+    const tiered: Array<[string, string]> = [['1', 'token'], ['2', 'token'], ['3', 'fallback'], ['4', 'anon']];
+    for (const [i, tier] of tiered) {
+      recordFunnelEvent({ eventType: 'mcp_connect', sessionId: `${SENTINEL_PREFIX}${i}`, licenseTier: 'free', meta: { source: 'unknown', source_confidence: 'unknown', identity_tier: tier } });
+    }
+    // A pre-CH2 connect WITHOUT identity_tier must be EXCLUDED (not bucketed as anon).
+    recordFunnelEvent({ eventType: 'mcp_connect', sessionId: `${SENTINEL_PREFIX}5`, licenseTier: 'free', meta: { source: 'unknown', source_confidence: 'unknown' } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const snap = await generateFunnelSnapshot({ days: 1 });
+    expect(snap.identity_coverage.identified).toBe(2);
+    expect(snap.identity_coverage.fallback).toBe(1);
+    expect(snap.identity_coverage.anonymous).toBe(1);
+    expect(snap.identity_coverage.coverage_pct).toBeCloseTo(0.5, 6);
+    // Additive / non-stage: the 14-stage funnel + its 13 retentions stay byte-stable.
+    expect(Object.keys(snap.stage_retentions).length).toBe(13);
+    expect(snap).toHaveProperty('identity_coverage');
+  });
+
+  it('CH2: monotonic — mcp_tools_list >= first_call in an isolated window (the inverse of the bug)', async () => {
+    // Far-future window → no real data; agent_sessions empty → first_call falls back
+    // to COUNT(DISTINCT session_id) in request_log. 3 sessions list tools; 2 of them
+    // also make a real call. A healthy funnel has lists (3) >= calls (2) — the inverse
+    // of the old mcp_tools_list=0 < first_call=279 artifact.
+    const from = '2099-12-30T00:00:00.000Z';
+    const to = '2099-12-31T00:00:00.000Z';
+    const ts = '2099-12-30T12:00:00.000Z';
+    for (const i of [1, 2, 3]) {
+      await dbRun(
+        `INSERT INTO funnel_events (event_type, ts, session_id, license_tier, meta_json) VALUES (?, ?, ?, ?, ?)`,
+        'mcp_tools_list', ts, `${SENTINEL_PREFIX}${i}`, 'free', JSON.stringify({ identity_tier: 'fallback' }),
+      );
+    }
+    for (const i of [1, 2]) {
+      await dbRun(
+        `INSERT INTO request_log (timestamp, session_id, tool_name, license_tier, response_time_ms) VALUES (?, ?, ?, ?, ?)`,
+        ts, `${SENTINEL_PREFIX}${i}`, 'get_trade_call', 'free', 5,
+      );
+    }
+    const snap = await generateFunnelSnapshot({ since: from, until: to });
+    expect(snap.funnel.mcp_tools_list).toBe(3);
+    expect(snap.funnel.first_call).toBe(2);
+    expect((snap.funnel.mcp_tools_list ?? 0) >= (snap.funnel.first_call ?? 0)).toBe(true);
+    // The previously-null/zero stage-2→3 transition is now a real ratio in (0,1].
+    expect(snap.stage_retentions['mcp_tools_list_to_first_call']).toBeCloseTo(2 / 3, 6);
   });
 });
 

@@ -64,7 +64,10 @@ import {
   captureArgvTrackToken,
   resolveTrackTokenForRequest,
   shouldEmitForRequest,
+  resolveSessionIdentity,
+  type IdentityTier,
 } from './lib/track-token.js';
+import { recordMcpToolsListEvent } from './lib/tools-list-event.js';
 import { resolveSource, shouldEmitConnect } from './lib/attribution-sources.js';
 import {
   isStripeConfigured,
@@ -315,10 +318,12 @@ export function resolveSessionCorrelationId(
   headers: Record<string, unknown>,
   ipHash: string,
 ): string {
-  const trackToken = resolveTrackTokenForRequest(headers);
-  if (trackToken && trackToken.length > 0) return trackToken;
-  if (ipHash && ipHash.length > 0) return ipHash;
-  return crypto.randomUUID();
+  // OPS-ACTIVATION-LEAK-FIX-W1 CH2: thin `.id` projection of the shared
+  // resolveSessionIdentity (single-derivation LAW). The id and its identity tier
+  // (token|fallback|anon) now derive from ONE branch, so the funnel's
+  // identity_coverage can never disagree with the correlation id. Precedence
+  // (token ?? ipHash ?? uuid) is byte-identical to the prior inline form.
+  return resolveSessionIdentity(headers, ipHash).id;
 }
 
 /**
@@ -2824,9 +2829,20 @@ async function startHttp() {
     // Mcp-Session-Id, so resolve ONE id (track-token ?? ipHash ?? uuid) used for the funnel +
     // skill-attribution emit AND the requestContext ALS store (read by getRequestSessionId()
     // at the per-tool cohort sites). Stateful (=0) preserves the prior header-based value.
+    // OPS-ACTIVATION-LEAK-FIX-W1 CH2: resolve the shared identity ONCE (id + tier)
+    // so the mcp_connect + mcp_tools_list emits below stamp the SAME tier the
+    // correlation id was derived from (single-derivation). `sessionId` is the
+    // byte-identical `.id`, so every downstream consumer is unaffected.
+    const sessionIdentity = MCP_STATELESS
+      ? resolveSessionIdentity(req.headers as Record<string, unknown>, ipHash)
+      : null;
     const sessionId = MCP_STATELESS
-      ? resolveSessionCorrelationId(req.headers as Record<string, unknown>, ipHash)
+      ? sessionIdentity!.id
       : (req.headers['mcp-session-id'] as string | undefined);
+    // Identity tier for funnel coverage. Under the deprecated stateful path
+    // (MCP_STATELESS=0) the POST-layer funnel emits don't meaningfully join, so a
+    // default 'anon' label is harmless (only read when sessionId is set + stateless).
+    const identityTier: IdentityTier = sessionIdentity?.tier ?? 'anon';
 
     // C6 (algovault-skills SKILLS-W1): per-Skill attribution.
     // If the request carries X-AlgoVault-Skill-Slug AND is a tools/call,
@@ -2902,9 +2918,33 @@ async function startHttp() {
           eventType: 'mcp_connect',
           sessionId,
           licenseTier: license.tier,
-          meta: { source, source_confidence },
+          // identity_tier (OPS-ACTIVATION-LEAK-FIX-W1 CH2): projected from the SHARED
+          // resolveSessionIdentity tier so the snapshot's identity_coverage reads
+          // per-session stitchability off the once-per-session connect event (not a
+          // re-derivation). Additive to the existing {source, source_confidence}.
+          meta: { source, source_confidence, identity_tier: identityTier },
         });
       } catch { /* best-effort; never blocks request */ }
+    }
+
+    // OPS-ACTIVATION-LEAK-FIX-W1 CH2 (Q1-A): capture `mcp_tools_list` (funnel stage 2)
+    // at the POST layer by peeking the already-parsed JSON-RPC envelope BEFORE the SDK
+    // consumes it. The high-level McpServer answers `tools/list` internally → it never
+    // reaches a per-tool handler → never `logRequest`'d → request_log has 0 'tools/list'
+    // rows all-time (the source of the 0.000% artifact). Emit here via the SHARED
+    // resolveSessionIdentity id + bounded-LRU per-session dedup; the snapshot now reads
+    // this from funnel_events (request_log kept as a 0-fallback). Fire-and-forget,
+    // fail-open; internal-tier excluded; the tools/list RESPONSE is byte-identical
+    // (side-effect emit only — nothing here touches `res` or the envelope).
+    if (
+      req.method === 'POST' &&
+      sessionId &&
+      license.tier !== 'internal' &&
+      req.body &&
+      typeof req.body === 'object' &&
+      (req.body as { method?: string }).method === 'tools/list'
+    ) {
+      recordMcpToolsListEvent({ sessionId, licenseTier: license.tier, identityTier });
     }
 
     // Run the entire request handling inside AsyncLocalStorage context
