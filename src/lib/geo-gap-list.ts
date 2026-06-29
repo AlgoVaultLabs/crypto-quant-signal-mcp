@@ -17,6 +17,9 @@ import { dbExec, dbRun, dbQuery } from './performance-db.js';
 // Single product_fit SoT (OPS-GEO-GAP-INJECTOR-PRODUCT-FIT-W1): the write-side resolves product_fit
 // via the SAME helper the scorer uses, so the persisted value is byte-identical to the scorer's.
 import { loadObjective, productFitOf } from './geo-decide.js';
+// OPS-GEO-PROBE-MULTI-RUN-W1 — the scorer's SoV (sov → expected_lift) projects from the ONE shared
+// getQueryRates (same source as the digest's per-engine rate); no inline AVG(share_of_voice) re-derivation.
+import { getQueryRates } from './geo-rates.js';
 
 /**
  * The calendar "Source" column value the C6 host-side injector stamps on rows it
@@ -120,15 +123,17 @@ export function ensureGeoGapSchema(): void {
  */
 export async function computeGapList(windowWeeks = 4): Promise<GapBrief[]> {
   try {
-    const mentions = await dbQuery<MentionAgg>(
-      `SELECT query_id, max(query_tier) AS query_tier, model,
-              AVG(share_of_voice) AS sov, count(*) AS samples
-         FROM geo_mentions
-        WHERE ran_at > now() - make_interval(weeks => $1) AND retrieval = true
-          AND query_tier IS DISTINCT FROM 'presence'
-        GROUP BY query_id, model`,
-      [windowWeeks],
-    );
+    // SoV per (query, engine) projects from the ONE shared getQueryRates (same grouping/window/
+    // filter the inline query used) — so the scorer's expected_lift = 1 - sov derives from the
+    // SAME denoised source as the digest's per-engine rate. avg_sov → sov, total_runs → samples.
+    const rates = await getQueryRates(windowWeeks);
+    const mentions: MentionAgg[] = rates.map((r) => ({
+      query_id: r.query_id,
+      query_tier: r.query_tier,
+      model: r.model,
+      sov: r.avg_sov,
+      samples: r.total_runs,
+    }));
 
     const competitors = await dbQuery<CompetitorAgg>(
       `SELECT query_id, source_domain, competitor_name, count(*) AS cites

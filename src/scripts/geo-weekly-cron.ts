@@ -11,11 +11,13 @@
  * `--dry-run` builds + prints the digest from existing DB state (no LLM / DB
  * writes / Telegram).
  */
-import { runWeeklyProbe } from '../lib/geo-orchestrator.js';
+import { runWeeklyProbe, resolveGeoProbe } from '../lib/geo-orchestrator.js';
 import { dbQuery } from '../lib/performance-db.js';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { WOW_DROP_SQL, WEEKLY_CITED_3W_SQL } from '../lib/geo-dashboard.js';
 import { isSignificantDecline, resolveAlertHygiene, type SignificanceVerdict } from '../lib/geo-alert-hygiene.js';
+// OPS-GEO-PROBE-MULTI-RUN-W1 — the ONE shared per-(query,engine) rate+CI source (single-derivation).
+import { getQueryRates, rollupByEngine } from '../lib/geo-rates.js';
 import {
   buildDigest,
   shortEngine,
@@ -196,19 +198,15 @@ async function fetchDigestData(): Promise<{
     [],
   );
 
-  const perEngine = await dbQuery<{
-    model: string;
-    mention_rate_pct: string | number | null;
-    cited_rate_pct: string | number | null;
-  }>(
-    `SELECT model,
-            ROUND(100.0 * count(*) FILTER (WHERE mention_found) / NULLIF(count(*), 0), 1) AS mention_rate_pct,
-            ROUND(100.0 * count(*) FILTER (WHERE cited) / NULLIF(count(*), 0), 1) AS cited_rate_pct
-     FROM geo_mentions
-     WHERE retrieval = true AND ran_at > now() - interval '1 week'
-       AND query_tier IS DISTINCT FROM 'presence'
-     GROUP BY model ORDER BY model`,
-    [],
+  // OPS-GEO-PROBE-MULTI-RUN-W1 — per-engine mention/cited RATE + 95% Wilson CI + low_confidence
+  // from the ONE shared getQueryRates (rollupByEngine over this week's K samples). REPLACES the
+  // old inline per-model `FILTER (WHERE cited)/count(*)` rate re-derivation — single-derivation:
+  // the digest's per-engine "cited X/K = R% [CI]" line AND the scorer's SoV (computeGapList) both
+  // project from getQueryRates, so they can never drift.
+  const probeCfg = resolveGeoProbe(loadObjective().probe);
+  const engineRates = rollupByEngine(
+    await getQueryRates(1, probeCfg.lowConfidenceMinSamples),
+    probeCfg.lowConfidenceMinSamples,
   );
 
   // Attribution: each injected gap >=7d old, before/after injected_at.
@@ -410,10 +408,15 @@ async function fetchDigestData(): Promise<{
       weeklyCitations,
       alertHygiene,
     },
-    perEngineMention: perEngine.map((e) => ({
+    perEngineMention: engineRates.map((e) => ({
       model: e.model,
-      mention_rate_pct: num(e.mention_rate_pct),
-      cited_rate_pct: num(e.cited_rate_pct),
+      mention_rate_pct: e.mention_rate * 100,
+      cited_rate_pct: e.cited_rate * 100,
+      cited_count: e.cited_count,
+      total_runs: e.total_runs,
+      cited_rate_lo_pct: e.cited_rate_lo * 100,
+      cited_rate_hi_pct: e.cited_rate_hi * 100,
+      low_confidence: e.low_confidence,
     })),
     attributionGaps,
     contested,
@@ -464,7 +467,10 @@ async function main(): Promise<void> {
   }
 
   console.log('[geo-cron] starting weekly multi-engine probe');
-  const { runId, resultCount, errorCount, engineIds } = await runWeeklyProbe();
+  // OPS-GEO-PROBE-MULTI-RUN-W1 — K (per-engine), engine concurrency, and per-engine pacing
+  // come from the objective SoT `probe:` block (resolved in the orchestrator). Tuning = edit yaml.
+  const { probe } = loadObjective();
+  const { runId, resultCount, errorCount, engineIds } = await runWeeklyProbe({ probe });
   console.log(
     `[geo-cron] run ${runId} complete: engines=[${engineIds.join(',')}] rows=${resultCount} errors=${errorCount}`,
   );

@@ -180,6 +180,16 @@ export function ensureGeoSchema(): void {
 /**
  * Persist one (result, mentions) pair. Fire-and-forget — catches and logs;
  * never throws to the orchestrator. Mirrors `recordChatEvent` precedent.
+ *
+ * OPS-GEO-PROBE-MULTI-RUN-W1 — on the ERROR path (`result.error_code` set) ONLY the
+ * geo_query_runs row is written (the raw error is preserved for forensics + the dashboard
+ * error_count); the geo_mentions row is SKIPPED. Rationale: an errored retrieval is a FAILED
+ * observation, not "the engine didn't cite us". Writing it as a SAFE_DEFAULTS cited=false row
+ * is indistinguishable from a genuine miss and silently DEFLATES the read-time citation rate
+ * (e.g. gemini's ~59% 429s). Excluding it makes `total_runs` in geo_mentions = SUCCESSFUL
+ * samples, so getQueryRates' rate denominator is honest and partial-K → low_confidence (a wide
+ * Wilson CI), never a precise-but-wrong low rate. The cited-count gate history is unaffected
+ * (error rows were cited=false, never counted). No schema change.
  */
 export async function recordGeoRun(
   result: GeoQueryResult,
@@ -201,27 +211,30 @@ export async function recordGeoRun(
       result.latency_ms,
       result.error_code ?? null,
     );
-    dbRun(
-      `INSERT INTO geo_mentions
-         (run_id, query_id, model, mention_found, mention_count, mention_position, mention_context, competitors_mentioned, sentiment_score,
-          retrieval, cited, cited_url, share_of_voice, query_tier, sample_idx)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      result.run_id,
-      result.query_id,
-      result.model,
-      mentions.mention_found,
-      mentions.mention_count,
-      mentions.mention_position,
-      mentions.mention_context,
-      mentions.competitors_mentioned,
-      mentions.sentiment_score,
-      ctx.retrieval ?? false,
-      mentions.cited,
-      mentions.cited_url,
-      mentions.share_of_voice,
-      ctx.query_tier ?? null,
-      ctx.sample_idx ?? 0,
-    );
+    // Skip the geo_mentions row on the error path — see the JSDoc (honest read-time denominator).
+    if (!result.error_code) {
+      dbRun(
+        `INSERT INTO geo_mentions
+           (run_id, query_id, model, mention_found, mention_count, mention_position, mention_context, competitors_mentioned, sentiment_score,
+            retrieval, cited, cited_url, share_of_voice, query_tier, sample_idx)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        result.run_id,
+        result.query_id,
+        result.model,
+        mentions.mention_found,
+        mentions.mention_count,
+        mentions.mention_position,
+        mentions.mention_context,
+        mentions.competitors_mentioned,
+        mentions.sentiment_score,
+        ctx.retrieval ?? false,
+        mentions.cited,
+        mentions.cited_url,
+        mentions.share_of_voice,
+        ctx.query_tier ?? null,
+        ctx.sample_idx ?? 0,
+      );
+    }
   } catch (err) {
     console.error(
       `[geo-storage] insert failed (silent recovery) run_id=${result.run_id} query_id=${result.query_id}: ${err instanceof Error ? err.message : String(err)}`,

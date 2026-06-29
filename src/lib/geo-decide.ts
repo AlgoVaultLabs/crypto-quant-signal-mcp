@@ -82,6 +82,20 @@ export interface Objective {
     min_relative_drop?: number;
     consecutive_down_cycles?: number;
   };
+  /**
+   * OPS-GEO-PROBE-MULTI-RUN-W1 — weekly-probe sampling + pacing config (resolved by
+   * geo-orchestrator.ts::resolveGeoProbe; shape matches GeoProbeRaw). Static policy config
+   * (no live numbers). Absent ⇒ DEFAULT_GEO_PROBE (K=3 / concurrency 4 / 15s pacing). The
+   * shape is inlined (not imported) to keep geo-decide a leaf — same pattern as alert_hygiene.
+   */
+  probe?: {
+    runs_per_query?: number;
+    runs_per_query_by_engine?: Record<string, number>;
+    max_engine_concurrency?: number;
+    inter_sample_delay_ms?: number;
+    inter_sample_delay_ms_by_engine?: Record<string, number>;
+    low_confidence_min_samples?: number;
+  };
 }
 
 /** One per-query gap signal — a projection of geo-gap-list GapBrief / geo_mentions agg. */

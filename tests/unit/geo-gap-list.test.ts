@@ -35,11 +35,14 @@ beforeEach(() => {
 
 describe('computeGapList', () => {
   it('ranks lowest-SoV × highest-tier × competitor-on-trusted-domain first', async () => {
+    // OPS-GEO-PROBE-MULTI-RUN-W1 — computeGapList now sources SoV from the shared getQueryRates,
+    // so the first dbQuery (QUERY_RATES_SQL) returns RateRow shape (avg_sov → sov, total_runs →
+    // samples). SoV drives gap severity (1 - sov); head-low (sov 0.1) must outrank branded-high.
     dbQueryMock
       .mockResolvedValueOnce([
-        { query_id: 'head-low', query_tier: 'head', model: 'sonar', sov: 0.1, samples: 3 },
-        { query_id: 'branded-high', query_tier: 'branded', model: 'sonar', sov: 0.9, samples: 3 },
-        { query_id: 'niche-mid', query_tier: 'niche', model: 'sonar', sov: 0.5, samples: 3 },
+        { query_id: 'head-low', query_tier: 'head', model: 'sonar', total_runs: 3, cited_count: 0, mention_count: 1, avg_sov: 0.1 },
+        { query_id: 'branded-high', query_tier: 'branded', model: 'sonar', total_runs: 3, cited_count: 3, mention_count: 3, avg_sov: 0.9 },
+        { query_id: 'niche-mid', query_tier: 'niche', model: 'sonar', total_runs: 3, cited_count: 1, mention_count: 2, avg_sov: 0.5 },
       ] as never)
       .mockResolvedValueOnce([
         { query_id: 'head-low', source_domain: 'github.com', competitor_name: 'vectorbt', cites: 5 },

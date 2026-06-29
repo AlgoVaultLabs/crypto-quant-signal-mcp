@@ -94,6 +94,21 @@ describe('recordGeoRun (new geo_mentions columns)', () => {
     expect(params[13]).toBeNull();
     expect(params[14]).toBe(0);
   });
+
+  // OPS-GEO-PROBE-MULTI-RUN-W1 — honest read-time denominator: an errored retrieval logs ONLY
+  // geo_query_runs (the raw error for forensics), NOT geo_mentions — so getQueryRates' total_runs
+  // counts SUCCESSFUL samples and a failing engine (gemini 429s) reads as partial-K low_confidence,
+  // never a precise-but-wrong low rate. The cited-count gate history is unaffected (errors were cited=false).
+  it('on the error path writes geo_query_runs ONLY (skips geo_mentions)', async () => {
+    const errResult: GeoQueryResult = { ...RESULT, response_text: '', prompt_tokens: 0, completion_tokens: 0, error_code: 'GEMINI_API_ERROR 429' };
+    await recordGeoRun(errResult, { ...MENTIONS, mention_found: false, cited: false }, { retrieval: true, sample_idx: 1 });
+    expect(dbRunMock).toHaveBeenCalledTimes(1); // geo_query_runs only
+    const sql = String(dbRunMock.mock.calls[0][0]);
+    expect(sql).toContain('INTO geo_query_runs');
+    expect(dbRunMock.mock.calls.some((c) => String(c[0]).includes('INTO geo_mentions'))).toBe(false);
+    // the error_code IS persisted to geo_query_runs (forensics / dashboard error_count)
+    expect(dbRunMock.mock.calls[0].slice(1)).toContain('GEMINI_API_ERROR 429');
+  });
 });
 
 describe('recordSourceCitations', () => {

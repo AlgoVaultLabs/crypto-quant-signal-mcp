@@ -314,8 +314,23 @@ export interface GeoDigestData {
   dateLabel: string; // e.g. "Mon 9 Jun" (cron-supplied; keeps this module Date-free)
   dashboardUrl: string;
   momentumDeltas: MomentumDeltas;
-  /** per-engine named-in-answers + citation rate, this week. */
-  perEngineMention: Array<{ model: string; mention_rate_pct: number; cited_rate_pct: number }>;
+  /**
+   * Per-engine named-in-answers + citation rate, this week. OPS-GEO-PROBE-MULTI-RUN-W1: the
+   * cron projects this from the ONE shared `getQueryRates` (via `rollupByEngine`) — never an
+   * inline per-model rate re-derivation. The optional fields (cited_count / total_runs / Wilson
+   * CI / low_confidence) drive the "cited X/K = R% [CI]" line; absent (legacy/test callers) ⇒
+   * only the mention-rate "Named in answers" line renders (back-compat).
+   */
+  perEngineMention: Array<{
+    model: string;
+    mention_rate_pct: number;
+    cited_rate_pct: number;
+    cited_count?: number;
+    total_runs?: number;
+    cited_rate_lo_pct?: number;
+    cited_rate_hi_pct?: number;
+    low_confidence?: boolean;
+  }>;
   attributionGaps: AttributionGap[];
   contested: EnginePlacement[];
   topGap: TopGapBrief | null;
@@ -438,6 +453,24 @@ export function buildDigest(data: GeoDigestData): string[] {
     L.push('• Named in answers: not yet named on any engine (pre-visibility)');
   } else {
     L.push(`• Named in answers: ${named.map((e) => `${Math.round(e.mention_rate_pct)}% on ${shortEngine(e.model)}`).join(', ')}`);
+  }
+
+  // OPS-GEO-PROBE-MULTI-RUN-W1 — per-engine CITATION RATE over K samples + 95% Wilson CI,
+  // projected from the ONE shared getQueryRates (rollupByEngine). Makes a single week
+  // trustworthy: "cited X/K = R% [lo–hi%]" with a low-confidence flag on partial-K engines (e.g.
+  // gemini's frequent 429s → few successful samples → wide CI). Renders only when sample data is
+  // present (total_runs); legacy/test callers without it keep the byte-stable mention-rate line.
+  const withRate = data.perEngineMention.filter((e) => typeof e.total_runs === 'number' && e.total_runs > 0);
+  if (withRate.length > 0) {
+    L.push('• Cited rate (X of K samples · 95% CI):');
+    for (const e of withRate) {
+      const lo = Math.round(e.cited_rate_lo_pct ?? 0);
+      const hi = Math.round(e.cited_rate_hi_pct ?? 0);
+      const flag = e.low_confidence ? ' ⚠️ low-confidence' : '';
+      L.push(
+        `   – ${shortEngine(e.model)}: cited ${e.cited_count ?? 0}/${e.total_runs} = ${Math.round(e.cited_rate_pct)}% [${lo}–${hi}%]${flag}`,
+      );
+    }
   }
 
   // OPS-WEEKLY-GROWTH-DIGEST-W1: ACQUISITION by source (folded; renders only when

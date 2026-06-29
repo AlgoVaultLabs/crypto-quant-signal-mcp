@@ -126,3 +126,24 @@ alert_hygiene:
   min_relative_drop: 0.20        # ≥20% week-over-week decline counts as a down-cycle.
                                  # HARD FLOOR 0.16 (research noise floor) — may RAISE, never lower below 0.16.
   consecutive_down_cycles: 2     # require ≥2 consecutive down-weeks (each clearing the floors above) before SLIPPING
+
+# OPS-GEO-PROBE-MULTI-RUN-W1 — weekly-probe sampling + pacing config (static policy, no live
+# numbers). Read by geo-weekly-cron.ts → runWeeklyProbe (via resolveGeoProbe). Each (query,engine)
+# is sampled K times/cycle; the per-(query,engine) citation RATE + Wilson CI is denoised at READ
+# time by getQueryRates (geo-rates.ts) — so a single week is trustworthy instead of an engine
+# non-determinism coin-flip (LLM retrieval ~16% noise floor). Tuning K / pacing = edit THIS file,
+# zero code change. K stays at 3 (architect 2026-06-29: the rate+CI single-derivation is the
+# trustworthiness fix and lands at any K; 3→5 buys only ~0.77x CI half-width for ~70% more cost +
+# worse gemini 429s — bump a single engine here later for ~free if its CI proves too wide).
+probe:
+  runs_per_query: 3                 # K — samples per (query, engine) per cycle (all engines)
+  runs_per_query_by_engine: {}      # optional per-engine K override, keyed by engineId
+                                    #   (claude-web / perplexity / chatgpt / gemini). Empty = all use runs_per_query.
+  max_engine_concurrency: 4         # engines swept in PARALLEL (independent APIs/rate-limits); each engine is
+                                    #   serial INTERNALLY (concurrency=1 within an engine) — so gemini never bursts.
+  inter_sample_delay_ms: 15000      # default pacing between an engine's successive samples (per-engine rate-limit respect)
+  inter_sample_delay_ms_by_engine:  # per-engine pacing override
+    gemini: 22000                   #   gemini free-tier 429'd ~59% of calls under the old bursty serial loop; even
+                                    #   ~3/min pacing + concurrency=1 keeps it well under the free RPM (no hammering).
+  low_confidence_min_samples: 3     # a (query,engine) cell with < this many SUCCESSFUL samples is flagged low_confidence
+                                    #   at read time (wide Wilson CI) — gemini's frequent partial-K reads honest, never precise-but-wrong.

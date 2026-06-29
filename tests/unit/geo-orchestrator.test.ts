@@ -239,4 +239,46 @@ describe('geo-orchestrator: runWeeklyProbe (multi-engine × samples)', () => {
       expect(call[0]).not.toBe(engine.provider); // never the engine's provider
     }
   });
+
+  // OPS-GEO-PROBE-MULTI-RUN-W1 — K is config-driven (probe block) with a per-engine override.
+  it('per-engine K override (probe.runs_per_query_by_engine) beats the global runs_per_query', async () => {
+    const alpha: RetrievalEngine = { engineId: 'alpha', provider: new StubProvider(), model: 'm-alpha' };
+    const beta: RetrievalEngine = { engineId: 'beta', provider: new StubProvider(), model: 'm-beta' };
+    const { resultCount } = await runWeeklyProbe({
+      engines: [alpha, beta],
+      yamlPath: YAML_PATH,
+      interQueryDelayMs: 0,
+      probe: { runs_per_query: 2, runs_per_query_by_engine: { beta: 5 } },
+    });
+    // alpha → global K=2, beta → override K=5
+    expect(resultCount).toBe(QUERY_COUNT * 2 + QUERY_COUNT * 5);
+    expect(mockRecord).toHaveBeenCalledTimes(QUERY_COUNT * 7);
+  });
+
+  // OPS-GEO-PROBE-MULTI-RUN-W1 — engines sweep with BOUNDED concurrency; each engine is serial
+  // internally (concurrency=1 per engine → no bursts, gemini-safe), engines in parallel ≤ cap.
+  it('caps parallel engine workers at probe.max_engine_concurrency (and is genuinely parallel)', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const makeEngine = (id: string): RetrievalEngine => ({
+      engineId: id,
+      model: `m-${id}`,
+      provider: new StubProvider(async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        return { text: 'AlgoVault is one option.', usage: { promptTokens: 1, completionTokens: 1 } };
+      }),
+    });
+    const { resultCount } = await runWeeklyProbe({
+      engines: ['a', 'b', 'c', 'd'].map(makeEngine),
+      yamlPath: YAML_PATH,
+      interQueryDelayMs: 0,
+      probe: { runs_per_query: 1, max_engine_concurrency: 2 },
+    });
+    expect(resultCount).toBe(QUERY_COUNT * 4); // all 4 engines fully processed
+    expect(maxInFlight).toBeLessThanOrEqual(2); // never exceeds the cap
+    expect(maxInFlight).toBe(2); // genuinely parallel (not serialised to 1)
+  });
 });

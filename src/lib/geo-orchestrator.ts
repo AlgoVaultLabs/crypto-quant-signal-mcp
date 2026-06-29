@@ -28,6 +28,88 @@ import { computeGapList, persistGapBriefs } from './geo-gap-list.js';
 /** GEO-MEASUREMENT-W2 (C5) — samples per (query, engine), denoised at read time. */
 export const DEFAULT_GEO_SAMPLES_PER_QUERY = 3;
 
+/**
+ * OPS-GEO-PROBE-MULTI-RUN-W1 — raw `probe:` block from geo-objective.yaml (snake_case).
+ * Shape-compatible with Objective.probe in geo-decide.ts (inlined there to keep it a leaf).
+ */
+export interface GeoProbeRaw {
+  runs_per_query?: number;
+  runs_per_query_by_engine?: Record<string, number>;
+  max_engine_concurrency?: number;
+  inter_sample_delay_ms?: number;
+  inter_sample_delay_ms_by_engine?: Record<string, number>;
+  low_confidence_min_samples?: number;
+}
+
+/** Resolved probe config (camelCase) consumed by runWeeklyProbe + (read side) getQueryRates. */
+export interface GeoProbeConfig {
+  runsPerQuery: number;
+  runsPerQueryByEngine: Record<string, number>;
+  maxEngineConcurrency: number;
+  interSampleDelayMs: number;
+  interSampleDelayMsByEngine: Record<string, number>;
+  lowConfidenceMinSamples: number;
+}
+
+export const DEFAULT_GEO_PROBE: GeoProbeConfig = {
+  runsPerQuery: DEFAULT_GEO_SAMPLES_PER_QUERY,
+  runsPerQueryByEngine: {},
+  maxEngineConcurrency: 4,
+  interSampleDelayMs: 15_000,
+  interSampleDelayMsByEngine: {},
+  lowConfidenceMinSamples: DEFAULT_GEO_SAMPLES_PER_QUERY,
+};
+
+function posIntOr(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : fallback;
+}
+
+/** Coerce a yaml object into a clean {string: non-negative-int} map (drops invalid entries). */
+function numMap(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof val === 'number' && Number.isFinite(val) && val >= 0) out[k] = Math.floor(val);
+  }
+  return out;
+}
+
+/**
+ * Resolve the objective's `probe` block into a config. Default-denies on missing / NaN /
+ * negative input (per-field fallback to DEFAULT_GEO_PROBE) and clamps `runsPerQuery`,
+ * `maxEngineConcurrency`, and `lowConfidenceMinSamples` to ≥1 (a 0 there would be a silent
+ * no-op probe / divide trap). Env `GEO_SAMPLES_PER_QUERY` is a below-yaml fallback for K
+ * (an ops override without editing yaml). Mirrors geo-alert-hygiene::resolveAlertHygiene.
+ */
+export function resolveGeoProbe(raw?: GeoProbeRaw | null): GeoProbeConfig {
+  const envK = Number(process.env.GEO_SAMPLES_PER_QUERY);
+  const envKFallback = Number.isFinite(envK) && envK > 0 ? Math.floor(envK) : DEFAULT_GEO_PROBE.runsPerQuery;
+  return {
+    runsPerQuery: Math.max(1, posIntOr(raw?.runs_per_query, envKFallback)),
+    runsPerQueryByEngine: numMap(raw?.runs_per_query_by_engine),
+    maxEngineConcurrency: Math.max(1, posIntOr(raw?.max_engine_concurrency, DEFAULT_GEO_PROBE.maxEngineConcurrency)),
+    interSampleDelayMs: posIntOr(raw?.inter_sample_delay_ms, DEFAULT_GEO_PROBE.interSampleDelayMs),
+    interSampleDelayMsByEngine: numMap(raw?.inter_sample_delay_ms_by_engine),
+    lowConfidenceMinSamples: Math.max(1, posIntOr(raw?.low_confidence_min_samples, DEFAULT_GEO_PROBE.lowConfidenceMinSamples)),
+  };
+}
+
+/**
+ * Bounded-concurrency pool: run `worker` over `items` with at most `limit` in flight. JS is
+ * single-threaded so the shared `queue.shift()` never races. runWeeklyProbe's worker never
+ * throws (per-sample errors are caught in runRetrievalEngineSample), so the pool can't reject.
+ */
+async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  const n = Math.max(1, Math.min(limit, items.length || 1));
+  const runners = Array.from({ length: n }, async () => {
+    for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
+}
+
 export interface GeoQuery {
   id: string;
   text: string;
@@ -177,18 +259,22 @@ export async function runRetrievalEngineSample(
 }
 
 /**
- * Run the full weekly probe across GEO_ENGINES × GEO_SAMPLES_PER_QUERY. Writes
- * one geo_mentions + geo_source_citations row per (query, engine, sample) — the
- * N samples are denoised at READ time by the SQL views (mean SoV / majority
- * mention). After the sweep, computes + persists the content-gap list. Returns
- * a summary for the cron digest. Engines default to the live-key-resolved set
- * (getRetrievalEngines: key-less engines stubbed in test, skipped in prod).
+ * Run the full weekly probe across GEO_ENGINES × K-samples-per-engine. Writes one
+ * geo_mentions + geo_source_citations row per SUCCESSFUL (query, engine, sample) — error
+ * samples log to geo_query_runs only (recordGeoRun skips geo_mentions on error_code), so the
+ * read-time denominator is successful samples (partial-K → low_confidence in getQueryRates).
+ *
+ * Engines are swept with BOUNDED CONCURRENCY (probe.maxEngineConcurrency, default 4) — one
+ * serial worker per engine (concurrency=1 within an engine → no bursts; gemini-safe), engines
+ * in parallel. Per-engine K + pacing from the resolved probe config. After the sweep, computes
+ * + persists the content-gap list. Engines default to the live-key-resolved set.
  */
 export async function runWeeklyProbe(opts?: {
   engines?: RetrievalEngine[];
+  /** EXPLICIT K override (tests) — applies to EVERY engine, beats the probe config. */
   samples?: number;
   yamlPath?: string;
-  /** Delay between engine calls in ms. Default 15s. Set to 0 in tests. */
+  /** EXPLICIT per-sample delay override (tests; set 0). Applies to every engine, beats probe config. */
   interQueryDelayMs?: number;
   /**
    * The extractor's LLM judge — ALWAYS Anthropic (the extractor pins a Claude
@@ -197,6 +283,12 @@ export async function runWeeklyProbe(opts?: {
    * Claude judge model). Defaults to `getLLMProvider()` (Anthropic in prod).
    */
   judgeProvider?: LLMProvider;
+  /**
+   * OPS-GEO-PROBE-MULTI-RUN-W1 — raw `probe:` block from geo-objective.yaml (K, per-engine
+   * K overrides, engine concurrency, per-engine pacing). Resolved via `resolveGeoProbe`.
+   * `opts.samples` / `opts.interQueryDelayMs` above remain explicit per-engine overrides.
+   */
+  probe?: GeoProbeRaw;
 }): Promise<{
   runId: string;
   engineIds: string[];
@@ -208,16 +300,22 @@ export async function runWeeklyProbe(opts?: {
   const queries = loadQueries(opts?.yamlPath);
   const engines = opts?.engines ?? getRetrievalEngines();
   const judgeProvider = opts?.judgeProvider ?? getLLMProvider();
-  const samples =
-    opts?.samples ?? (Number(process.env.GEO_SAMPLES_PER_QUERY) || DEFAULT_GEO_SAMPLES_PER_QUERY);
-  const delay = opts?.interQueryDelayMs ?? 15_000;
+  const probe = resolveGeoProbe(opts?.probe);
+  // opts.samples / opts.interQueryDelayMs are EXPLICIT overrides (tests) applied to EVERY engine
+  // (highest precedence); else the per-engine yaml override ?? the global resolved value.
+  const explicitSamples = opts?.samples;
+  const explicitDelay = opts?.interQueryDelayMs;
+  const samplesFor = (engineId: string): number =>
+    explicitSamples ?? probe.runsPerQueryByEngine[engineId] ?? probe.runsPerQuery;
+  const delayFor = (engineId: string): number =>
+    explicitDelay ?? probe.interSampleDelayMsByEngine[engineId] ?? probe.interSampleDelayMs;
   let errorCount = 0;
   let resultCount = 0;
 
   console.log(
     `[geo-orchestrator] weekly probe run_id=${runId} queries=${queries.length} engines=[${engines
-      .map((e) => e.engineId)
-      .join(',')}] samples=${samples}`,
+      .map((e) => `${e.engineId}×${samplesFor(e.engineId)}`)
+      .join(',')}] maxConcurrency=${probe.maxEngineConcurrency}`,
   );
 
   if (engines.length === 0) {
@@ -225,10 +323,17 @@ export async function runWeeklyProbe(opts?: {
     return { runId, engineIds: [], resultCount: 0, errorCount: 0, gapsPersisted: 0 };
   }
 
-  for (const query of queries) {
-    const tier = query.tier ?? 'niche';
-    for (const engine of engines) {
-      for (let sample = 0; sample < samples; sample++) {
+  // One serial worker PER ENGINE (concurrency=1 within an engine → no bursts, so gemini's
+  // free-tier RPM is never tripped), engines swept in PARALLEL up to maxEngineConcurrency.
+  // Per-engine K + pacing. A retrieval error is recorded to geo_query_runs (error_code) but NOT
+  // to geo_mentions (recordGeoRun skips it on error) → read-time rate denominator = successful
+  // samples only, so frequent errors surface as partial-K low_confidence, never a false low rate.
+  const sweepEngine = async (engine: RetrievalEngine): Promise<void> => {
+    const k = samplesFor(engine.engineId);
+    const delay = delayFor(engine.engineId);
+    for (const query of queries) {
+      const tier = query.tier ?? 'niche';
+      for (let sample = 0; sample < k; sample++) {
         const { result, citations } = await runRetrievalEngineSample(engine, query, runId);
         resultCount++;
         if (result.error_code) errorCount++;
@@ -249,10 +354,12 @@ export async function runWeeklyProbe(opts?: {
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
       }
       console.log(
-        `[geo-orchestrator] query=${query.id} engine=${engine.engineId} samples=${samples} done`,
+        `[geo-orchestrator] query=${query.id} engine=${engine.engineId} samples=${k} done`,
       );
     }
-  }
+  };
+
+  await runPool(engines, probe.maxEngineConcurrency, sweepEngine);
 
   // Closed loop: compute + persist the ranked content-gap brief(s) for the week.
   let gapsPersisted = 0;
