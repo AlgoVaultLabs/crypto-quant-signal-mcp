@@ -3895,9 +3895,12 @@ var LB_SORT = 'wr';           // 'wr' | 'n'
 var LB_SORT_DIR = 'desc';     // 'desc' (high->low) | 'asc' (worst-first)
 var LB_MIN_N = 30;            // Q-P1-4 filter floor (n>=0 = show everything); default 30
 var LB_SMALL_N = 30;          // muted "small sample" tag bar (single source w/ default floor)
-var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget' };
-var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC' };
-var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'];
+// OPS-VENUE-GO-LIVE-2026-06-30: promoted 5→12. The 7 appended alphabetically after
+// the original 5 (display order). Brand colors: BINGX/GATE/HTX/KUCOIN/MEXC are exact
+// brand hex; ASTER/PHEMEX brand-aligned (official hex not publicly retrievable).
+var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex' };
+var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8' };
+var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX'];
 
 // Build the row set for the active dimension from cachedData. Each row = {label, wr, n, [color], [tier]}.
 function lbRows() {

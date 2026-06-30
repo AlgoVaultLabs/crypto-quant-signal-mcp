@@ -45,6 +45,19 @@ export const EXCHANGES: readonly ExchangeEntry[] = Object.freeze([
   { id: 'BYBIT',   label: 'Bybit' },
   { id: 'OKX',     label: 'OKX' },
   { id: 'BITGET',  label: 'Bitget' },
+  // OPS-VENUE-GO-LIVE-2026-06-30 (EXCHANGE-EXPANSION-CADENCE): promoted set 5→12.
+  // The 7 below cleared the promotion gate clean (✅ QUALIFIED, no --force); BITMART
+  // held (sample below bar). Appended alphabetically after the original 5 — this
+  // array also fixes prose rendering order. EXCHANGE_COUNT (below) → 12 from here,
+  // the single source every count surface reads (eyebrow / track-record header /
+  // Tier-2 FAQ / /api/performance-public.exchange_count).
+  { id: 'ASTER',   label: 'Aster' },
+  { id: 'BINGX',   label: 'BingX' },
+  { id: 'GATE',    label: 'Gate.io' },
+  { id: 'HTX',     label: 'HTX' },
+  { id: 'KUCOIN',  label: 'KuCoin' },
+  { id: 'MEXC',    label: 'MEXC' },
+  { id: 'PHEMEX',  label: 'Phemex' },
 ]);
 
 export const EXCHANGE_COUNT: number = EXCHANGES.length;

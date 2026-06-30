@@ -20,8 +20,9 @@ const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = join(dirname(__filename), '..', '..');
 
 describe('capabilities SoT — exchange list', () => {
-  it('EXCHANGES has the canonical 5 entries in canonical order', () => {
-    expect(EXCHANGES.map((e) => e.id)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']);
+  it('EXCHANGES has the canonical 12 entries in canonical order', () => {
+    // OPS-VENUE-GO-LIVE-2026-06-30: promoted 5→12 (7 appended alphabetically).
+    expect(EXCHANGES.map((e) => e.id)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX']);
   });
   it('EXCHANGES has display labels for every entry', () => {
     for (const e of EXCHANGES) {
@@ -31,7 +32,7 @@ describe('capabilities SoT — exchange list', () => {
   });
   it('EXCHANGE_COUNT === EXCHANGES.length', () => {
     expect(EXCHANGE_COUNT).toBe(EXCHANGES.length);
-    expect(EXCHANGE_COUNT).toBe(5);
+    expect(EXCHANGE_COUNT).toBe(12);
   });
   it('EXCHANGES is frozen (cannot mutate at runtime)', () => {
     expect(Object.isFrozen(EXCHANGES)).toBe(true);

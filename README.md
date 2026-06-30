@@ -223,7 +223,7 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 | Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
-| Exchanges | All 5 | All 5 | All 5 | All 5 | All 5 | <!-- SNAPSHOT-LINE-TABLE -->
+| Exchanges | All 12 | All 12 | All 12 | All 12 | All 12 | <!-- SNAPSHOT-LINE-TABLE -->
 | Assets | All 740+ | All 740+ | All 740+ | All 740+ | All 740+ | <!-- SNAPSHOT-LINE-TABLE -->
 | Asset classes | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi | Crypto + TradFi |
 | Timeframes | All 11 | All 11 | All 11 | All 11 | All 11 |
