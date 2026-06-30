@@ -13,8 +13,9 @@
  * No `outcome_return_pct`, Phase-E, or internal-wave tokens — enforced by
  * `assertNoBazaarLeak()` at declaration time + a CI test.
  *
- * Scope: ONLY the 3 actually-402-GATED tools are declared here — the `HTTP_TOOLS`
- * allow-list (`get_trade_signal` / `scan_funding_arb` / `get_market_regime`).
+ * Scope: ONLY the 402-GATED tools are declared here — the `HTTP_TOOLS` allow-list
+ * (`get_trade_signal` / `scan_funding_arb` / `get_market_regime` / `scan_trade_calls` /
+ * `get_equity_call` / `get_equity_regime`; OPS-X402-PRICING-EXPANSION-W1 grew this 3→6).
  * `get_trade_call` is intentionally FREE (North Star: free-tier generosity) and is
  * therefore NOT discoverable — confirmed by Cowork (A2, 2026-05-29).
  * NOTE (FEATURE-REGISTRY-SOT-W1 CH3): `TOOL_PRICING` now ALSO carries a canonical
@@ -63,7 +64,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   get_trade_signal: {
     toolName: 'get_trade_signal',
     description:
-      'Composite BUY / SELL / HOLD trade verdict for a perpetual-futures market, with a 0–100 confidence score, the current market regime, live price, and multi-factor reasoning (funding rate, open-interest change, 24h volume, trend persistence, breakout state) across 17 derivatives venues. Verdict accuracy is independently auditable via a Merkle-anchored track record on Base. When the queried market is a HOLD, returns the nearest higher-confidence setups so an agent can route to an actionable market.',
+      'Returns a composite BUY / SELL / HOLD verdict for a perpetual-futures market — with a 0–100 confidence score, the current market regime, live price, and multi-factor reasoning (funding-rate, open-interest change, 24h volume, trend persistence, breakout state) — computed on demand across major CEX and perp-DEX venues. Read-only analytical output, informational only. Verdict accuracy is independently auditable via a Merkle-anchored, on-chain track record on Base. Use when an agent needs a single actionable verdict for one market; on a HOLD it also returns the nearest higher-confidence setups so the agent can route elsewhere. For a whole-board scan of many markets at once use `scan_trade_calls`; for regime context only use `get_market_regime`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -110,7 +111,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   scan_funding_arb: {
     toolName: 'scan_funding_arb',
     description:
-      'Ranked cross-venue funding-rate arbitrage scanner: in a single call it scans hundreds of perpetual-futures pairs and surfaces those whose funding spread between venues exceeds a caller-set basis-point threshold. Each opportunity returns the per-venue funding rates, the best long/short venue pair, the spread in bps, the annualized capture, a conviction grade, and the next funding times.',
+      'Returns a ranked list of cross-venue funding-rate arbitrage opportunities: in one call it scans hundreds of perpetual-futures pairs and surfaces those whose funding spread between venues exceeds a caller-set basis-point threshold. Each opportunity returns the per-venue funding rates, the best long/short venue pair, the spread in bps, the annualized capture, a conviction grade, and the next funding times. Read-only market scan, informational only. Use when an agent is hunting market-neutral funding spreads; for a directional verdict on a single market use `get_trade_signal`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -160,7 +161,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   get_market_regime: {
     toolName: 'get_market_regime',
     description:
-      'Market-regime classifier for a perpetual-futures market: returns the regime (e.g. TRENDING_UP / TRENDING_DOWN / RANGING) with a 0–100 confidence, ADX-based trend metrics (strength, slope), volatility state, price structure, cross-venue funding sentiment, and a plain-language strategy suggestion (trend-following vs mean-reversion, position-sizing guidance) so an agent can pick the right playbook before entering.',
+      'Returns a market-regime classification for a perpetual-futures market — the regime (e.g. TRENDING_UP / TRENDING_DOWN / RANGING) with a 0–100 confidence, ADX-based trend metrics (strength, slope), volatility state, price structure, and cross-venue funding sentiment — plus a plain-language summary of the regime (e.g. trending vs mean-reverting context). Read-only classifier, informational only. Use when an agent needs regime context before acting; for an actual BUY / SELL / HOLD verdict use `get_trade_signal`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -204,7 +205,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
   scan_trade_calls: {
     toolName: 'scan_trade_calls',
     description:
-      'Cross-asset market scanner: ranks the top-N perpetual-futures markets by open interest on a venue and returns the actionable BUY / SELL trade calls among them — each with a 0–100 confidence and the current market regime — so an agent can find setups across the whole board in one call instead of polling symbols one-by-one. HOLD markets are excluded by default. Flat per-scan price.',
+      'Returns the actionable BUY / SELL trade calls across the top-N perpetual-futures markets by open interest on a venue — each with a 0–100 confidence and the current market regime — so an agent can scan the whole board in one call instead of polling symbols one-by-one. HOLD markets are excluded by default; flat per-scan price. Read-only market scan, informational only. Use when an agent wants the best setups across many markets at once; for one specific market use `get_trade_signal`.',
     inputSchema: {
       type: 'object',
       properties: {
