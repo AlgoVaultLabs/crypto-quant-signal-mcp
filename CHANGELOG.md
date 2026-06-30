@@ -5,6 +5,15 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0] - 2026-06-30
+
+### Added
+- **12 exchanges live.** Added **ASTER, BingX, Gate, HTX, KuCoin, MEXC, and Phemex** to the verified public track record (5 → 12 promoted venues). Per-coin tools (`get_trade_call`, `get_market_regime`) and the per-venue PFE win-rate leaderboard now span all 12 — every call Merkle-anchored on Base L2.
+
+### Changed
+- `/track-record` now renders all 12 venues consistently (analyzing strip, exchange filter, and the cross-venue line) — data-driven, so future venue launches surface automatically with no copy change.
+- Venue coverage across tool/manifest descriptions, the landing page, and docs now reads from a live count, keeping the published number accurate as coverage grows.
+
 ## [1.21.0] - 2026-06-28
 
 ### Added
