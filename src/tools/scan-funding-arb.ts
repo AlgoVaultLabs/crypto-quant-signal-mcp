@@ -54,10 +54,13 @@ const fundingHistoryCache = new Map<string, FundingHistoryCacheEntry>();
 const LIQUIDITY_TTL_MS = 60_000;
 const liquidityCache = new Map<string, { at: number; byCoin: Map<string, number> }>();
 // (Q-B) per-leg liquidity floor — a spread surfaces only if the coin clears this on BOTH legs (notional
-// OI for real-OI venues; 24h volume for the ASTER volume-proxy). $1M start.
-// TODO(revisit by 2026-07-15): calibrate against the observed OI distribution across the 7 qualifying
-// venues — raise if the tail is noisy, lower if it kills meaningful pairs (defensive-threshold hygiene).
-const MIN_LIQUIDITY_USD = 1_000_000;
+// OI for real-OI venues; 24h volume for the ASTER volume-proxy). CALIBRATED to $5M (from the $1M start)
+// against the LIVE OI distribution (C3 probe 2026-07-01): $1M surfaced a tail of $1–3M/leg thin coins
+// (BTW/STABLE/SLX) whose 100–290% annualized spreads are only marginally executable; $5M drops those and
+// keeps the $5M+/leg opportunities (LAB/SKHYNIX). Liquid majors (BTC/ETH) never surface at meaningful
+// thresholds regardless — their cross-venue funding is a few % — so this floor only trims the thin tail.
+// TODO(revisit by 2026-07-15): re-tune against more data — raise for fewer thin coins, lower for reach.
+const MIN_LIQUIDITY_USD = 5_000_000;
 
 async function getCachedPredictedFundings(exchangeId: ExchangeId): Promise<FundingData[]> {
   const now = Date.now();

@@ -301,7 +301,7 @@ describe('scanFundingArb', () => {
       ] },
     ]));
     _setLiquidityOverrideForTest((exchangeId, coin) =>
-      coin === 'DOGE' && exchangeId === 'BINANCE' ? 100 : 5_000_000);
+      coin === 'DOGE' && exchangeId === 'BINANCE' ? 100 : 50_000_000);
 
     const coins = (await scanFundingArb({ minSpreadBps: 0 })).opportunities.map(o => o.coin);
     expect(coins).toContain('THICK');
