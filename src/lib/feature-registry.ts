@@ -55,8 +55,15 @@ export interface FeatureSpec {
   name: string;
   /** Back-compat alias names that resolve to this feature (e.g. get_trade_signal). */
   aliases: string[];
-  /** Which channels expose this feature TODAY. (W2 flips bot/webhook for the scanner, etc.) */
-  channels: { mcp: boolean; httpX402: boolean; bot: boolean; webhook: boolean };
+  /**
+   * Which channels expose this feature TODAY. (W2 flips bot/webhook for the scanner, etc.)
+   * `a2mcp` = the okx.ai A2MCP paid listing (OKX-AI-FIRST-MOVER-W1). It settles USDT0 on
+   * X Layer (`eip155:196`) via the OKX managed facilitator and ships DARK behind the
+   * `OKX_AI_ENABLED` two-flag firewall — the flag decides whether the route mounts; THIS
+   * flag decides whether the tool is eligible for the okx.ai listing (equities + knowledge
+   * excluded). The listed tool set DERIVES from this field — see `okxA2mcpTools()`.
+   */
+  channels: { mcp: boolean; httpX402: boolean; bot: boolean; webhook: boolean; a2mcp: boolean };
   /**
    * Webhook event type this feature emits, if any. CONSUMED server-side to derive
    * webhook-api's VALID_EVENTS (FEATURE-PARITY-CHANNELS-W1 CH1 — the SoT for the
@@ -98,7 +105,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
   {
     name: 'get_trade_call',
     aliases: ['get_trade_signal'],
-    channels: { mcp: true, httpX402: true, bot: true, webhook: true },
+    channels: { mcp: true, httpX402: true, bot: true, webhook: true, a2mcp: true },
     webhookEvent: 'trade_call',
     quota: { unit: 'per-non-hold', holdFree: true },
     x402: { basePriceUsd: 0.02 },
@@ -108,7 +115,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
   {
     name: 'get_market_regime',
     aliases: [],
-    channels: { mcp: true, httpX402: true, bot: true, webhook: true },
+    channels: { mcp: true, httpX402: true, bot: true, webhook: true, a2mcp: true },
     webhookEvent: 'regime_shift',
     quota: { unit: 'per-call', holdFree: false },
     x402: { basePriceUsd: 0.02 },
@@ -121,7 +128,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     // BOT-FUNDING-SOT-W1 (2026-06-15): exposed on the TG bot (/funding) — the
     // bot's command surface FOLLOWS this flag (capabilities → BOT_TOOL_SURFACE).
     // webhook stays false (no scan_funding_arb webhookEvent defined).
-    channels: { mcp: true, httpX402: true, bot: true, webhook: false },
+    channels: { mcp: true, httpX402: true, bot: true, webhook: false, a2mcp: true },
     quota: { unit: 'per-call', holdFree: false },
     x402: { basePriceUsd: 0.01 },
     descriptionRef: 'SCAN_FUNDING_ARB_DESCRIPTION',
@@ -133,7 +140,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     // FEATURE-PARITY-CHANNELS-W1 CH1: the scanner now reaches the webhook
     // (scheduled scan_digest) + bot (/scan pull + /scanwatch push) channels —
     // flipping these two flags is what makes /scan appear on both push channels.
-    channels: { mcp: true, httpX402: true, bot: true, webhook: true },
+    channels: { mcp: true, httpX402: true, bot: true, webhook: true, a2mcp: true },
     webhookEvent: 'scan_digest',
     quota: { unit: 'per-non-hold-min1', holdFree: true },
     // OPS-X402-PRICING-EXPANSION-W1: FLAT $0.02/scan. x402 declares the price in the
@@ -148,7 +155,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
   {
     name: 'get_equity_call',
     aliases: [],
-    channels: { mcp: true, httpX402: true, bot: false, webhook: false },
+    channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false },
     quota: { unit: 'per-non-hold', holdFree: true }, // HOLD-free per QUOTA-CONSISTENCY-COUNT-ALL-W1
     x402: { basePriceUsd: 0.02 }, // OPS-X402-PRICING-EXPANSION-W1: flat $0.02/call (free rail unchanged)
     descriptionRef: 'GET_EQUITY_CALL_DESCRIPTION',
@@ -157,7 +164,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
   {
     name: 'get_equity_regime',
     aliases: [],
-    channels: { mcp: true, httpX402: true, bot: false, webhook: false },
+    channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false },
     quota: { unit: 'per-call', holdFree: false },
     x402: { basePriceUsd: 0.02 }, // OPS-X402-PRICING-EXPANSION-W1: flat $0.02/call (free rail unchanged)
     descriptionRef: 'GET_EQUITY_REGIME_DESCRIPTION',
@@ -166,7 +173,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
   {
     name: 'chat_knowledge',
     aliases: [],
-    channels: { mcp: true, httpX402: false, bot: false, webhook: false },
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false },
     quota: { unit: 'rate-limited', holdFree: false }, // limiter: src/lib/chat-rate-limit.ts (token/usage, NOT 100/mo call-quota)
     x402: null,
     descriptionRef: 'CHAT_KNOWLEDGE_DESCRIPTION',
@@ -175,7 +182,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
   {
     name: 'search_knowledge',
     aliases: [],
-    channels: { mcp: true, httpX402: false, bot: false, webhook: false },
+    channels: { mcp: true, httpX402: false, bot: false, webhook: false, a2mcp: false },
     quota: { unit: 'rate-limited', holdFree: false }, // limiter: src/lib/chat-rate-limit.ts (token/usage, NOT 100/mo call-quota)
     x402: null,
     descriptionRef: 'SEARCH_KNOWLEDGE_DESCRIPTION',
@@ -212,7 +219,7 @@ export interface PublicCapability {
   name: string;
   /** The canonical name this resolves to (== name for canonical entries). */
   canonical: string;
-  channels: { mcp: boolean; httpX402: boolean; bot: boolean; webhook: boolean };
+  channels: { mcp: boolean; httpX402: boolean; bot: boolean; webhook: boolean; a2mcp: boolean };
   quota: { unit: QuotaUnit; holdFree: boolean };
   x402: { basePriceUsd: number; perUnitUsd?: number } | null;
   description: string;

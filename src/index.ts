@@ -34,6 +34,7 @@ import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing } from './lib/license.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
+import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
 import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
 import { getEquityRegime } from './lib/equities/equity-tool-formatters.js';
 import { getEquityPerformance } from './lib/equities/equity-performance.js';
@@ -3083,6 +3084,15 @@ async function startHttp() {
   const x402HttpRoutes = mountX402HttpRoutes(app);
   if (x402HttpRoutes.length > 0) {
     console.log(`x402 HTTP resource routes mounted (CDP Bazaar discovery): ${x402HttpRoutes.join(', ')}`);
+  }
+
+  // OKX-AI-FIRST-MOVER-W1: mount the okx.ai A2MCP X-Layer (eip155:196 / USDT0) settlement
+  // routes — ONLY when OKX_AI_ENABLED=true. Default (unset) → nothing mounted → /a2mcp/* 404
+  // → byte-identical prod. Stub-first: enabled-but-unprovisioned → [STUB] routes. Additive to
+  // the Base/USDC x402 rail above (that rail is untouched).
+  const okxA2mcpRoutes = mountOkxA2mcpRoutes(app);
+  if (okxA2mcpRoutes.length > 0) {
+    console.log(`okx.ai A2MCP routes mounted (X Layer / USDT0): ${okxA2mcpRoutes.join(', ')}`);
   }
 
   const httpServer = app.listen(port, () => {

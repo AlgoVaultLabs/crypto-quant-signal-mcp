@@ -17,6 +17,10 @@
  *                             3. HTTP_TOOLS alias-resolved->canonical == registry httpX402 priced set
  *                                (CH3 gated/discoverable route-set parity)
  *                             4. projection leaks ZERO internal fields (descriptionRef / outcome_* / eligible_non_hold)
+ *                             5. webhook VALID_EVENTS == registry webhook-flagged set
+ *                             6. a2mcp (okx.ai A2MCP) set DERIVES from the registry, is priced + httpX402,
+ *                                and EXCLUDES equities (OKX-AI-FIRST-MOVER-W1; --check-only — the okx.ai
+ *                                listing is an external marketplace and the routes ship dark behind OKX_AI_ENABLED)
  *
  *   --live <baseUrl>        LIVE parity (HTTP only; dist-FREE so it runs on the host or against
  *                           prod). Uses GET /capabilities as the registry's LIVE projection and
@@ -157,8 +161,27 @@ async function runStatic() {
     drifts.push(`webhook VALID_EVENTS=[${liveEvents}] != registry webhookEvent set=[${regEvents}]`);
   }
 
+  // 6. a2mcp (okx.ai A2MCP) parity — OKX-AI-FIRST-MOVER-W1.
+  //    (a) the LISTED set DERIVES from the registry (okxA2mcpTools() == enabled a2mcp features) —
+  //        no hardcoded okx.ai tool list anywhere (single-derivation lock);
+  //    (b) every a2mcp tool is PRICED (x402!=null) + httpX402 (settlement rides the x402 transport) —
+  //        a paid A2MCP listing cannot expose an unpriced/no-transport tool;
+  //    (c) equities are NEVER a2mcp (securities / okx.ai UA §7.1 HOLD).
+  const okx = await import(path.join(REPO_ROOT, 'dist', 'lib', 'okx-a2mcp.js'));
+  const regA2mcp = FEATURE_REGISTRY.filter((f) => f.enabled && f.channels.a2mcp).map((f) => f.name).sort();
+  const derivedA2mcp = [...okx.okxA2mcpTools()].sort();
+  if (!eq(derivedA2mcp, regA2mcp)) {
+    drifts.push(`okxA2mcpTools()=[${derivedA2mcp}] != registry a2mcp set=[${regA2mcp}]`);
+  }
+  for (const name of regA2mcp) {
+    const f = getFeature(name);
+    if (!f?.x402) drifts.push(`a2mcp tool ${name} is UNPRICED (x402:null) — a paid A2MCP listing needs a price`);
+    if (!f?.channels?.httpX402) drifts.push(`a2mcp tool ${name} lacks httpX402 — A2MCP settlement rides the x402 transport`);
+    if (/^get_equity_/.test(name)) drifts.push(`a2mcp tool ${name} is an equity (securities/§7.1 HOLD — must be a2mcp:false)`);
+  }
+
   if (drifts.length === 0) {
-    log(`STATIC in-sync ✅ — ${toolNames.length} tools, ${regHttpX402.length} gated x402 routes, ${regEvents.length} webhook events, projection clean`);
+    log(`STATIC in-sync ✅ — ${toolNames.length} tools, ${regHttpX402.length} gated x402 routes, ${regEvents.length} webhook events, ${regA2mcp.length} a2mcp tools, projection clean`);
     process.exit(0);
   }
   fail(`STATIC DRIFT (${drifts.length}):`);

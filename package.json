@@ -70,6 +70,8 @@
     "@coinbase/cdp-sdk": "1.51.0",
     "@coinbase/x402": "^2.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@okxweb3/x402-core": "0.1.0",
+    "@okxweb3/x402-express": "0.1.1",
     "@slicekit/erc8128": "^0.3.3",
     "@x402/core": "^2.9.0",
     "@x402/evm": "^2.9.0",
