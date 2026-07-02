@@ -354,6 +354,20 @@ async function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2m
     const ht = toHttpTool(tool);
     if (!ht) continue;
     const route = `${A2MCP_PREFIX}/${tool}`;
+    // GET → 402 discovery challenge. Crawlers/validators (à la the CDP Bazaar indexer) probe the
+    // resource URL with a GET and require a 402, not a 404, to index/validate it. The OKX middleware
+    // only gates the configured POST route, so a GET falls through to here — we emit the same
+    // x402-v2 challenge (eip155:196 / USDT0 / price / payTo) via the shared builder. Paid invocation
+    // is still POST-only.
+    app.get(route, (_req: Request, res: Response) => {
+      const body = buildXLayer402Body(tool, resolved.payTo!, false);
+      try {
+        res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(body)).toString('base64'));
+      } catch {
+        /* body still carries the payload */
+      }
+      res.status(402).json(body);
+    });
     app.post(route, express.json(), async (req: Request, res: Response) => {
       try {
         const result = await callCoreHandler(ht, (req.body ?? {}) as Record<string, unknown>, X402_LICENSE);
