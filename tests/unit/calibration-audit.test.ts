@@ -23,7 +23,14 @@ import {
   computeAuditReport,
   cryptoRowToAudit,
   cryptoTierProxy,
+  normalCdf,
+  wilsonInterval,
+  excessZP,
+  benjaminiHochberg,
+  bonferroni,
+  edgeMetricReport,
   type AuditRow,
+  type EdgeCell,
 } from '../../src/scripts/calibration-audit.js';
 
 function row(o: Partial<AuditRow> & Pick<AuditRow, 'call'>): AuditRow {
@@ -291,5 +298,87 @@ describe('crypto loader — reconstruct benchmarks from stored (pfe, mae)', () =
     expect(cryptoTierProxy('BTC')).toBe('T1_bluechip');
     expect(cryptoTierProxy('ETH')).toBe('T1_bluechip');
     expect(cryptoTierProxy('DOGE')).toBe('rest');
+  });
+});
+
+describe('edge-metric statistics', () => {
+  it('normalCdf: standard values', () => {
+    expect(normalCdf(0)).toBeCloseTo(0.5, 4);
+    expect(normalCdf(1.96)).toBeCloseTo(0.975, 3);
+    expect(normalCdf(-1.96)).toBeCloseTo(0.025, 3);
+  });
+
+  it('wilsonInterval: 50/100 ≈ [0.404, 0.596]', () => {
+    const w = wilsonInterval(50, 100);
+    expect(w.pHat).toBeCloseTo(0.5, 10);
+    expect(w.lo).toBeCloseTo(0.404, 2);
+    expect(w.hi).toBeCloseTo(0.596, 2);
+    expect(wilsonInterval(0, 0).pHat).toBeNaN();
+  });
+
+  it('excessZP: one-sided upper test vs a benchmark rate', () => {
+    const { z, p } = excessZP(650, 1000, 0.5); // 0.65 vs 0.5
+    expect(z).toBeCloseTo(9.49, 1);
+    expect(p).toBeLessThan(1e-6);
+    expect(excessZP(500, 1000, 0.5).p).toBeCloseTo(0.5, 2); // no excess
+  });
+
+  it('benjaminiHochberg: rejects the small-p prefix at q=0.05', () => {
+    const { rejected } = benjaminiHochberg([0.001, 0.01, 0.5], 0.05);
+    expect(rejected).toEqual([true, true, false]);
+  });
+
+  it('bonferroni: p ≤ q/m', () => {
+    expect(bonferroni([0.001, 0.02, 0.5], 0.05)).toEqual([true, false, false]);
+  });
+
+  it('edgeMetricReport: EDGE-FOUND only for a benchmark-positive, FDR-surviving, out-of-sample cell', () => {
+    const good: EdgeCell = {
+      key: 'good',
+      full: { n: 1000, engineHits: 650, upCount: 500 }, // rh .65 vs naive .5 → excess .15
+      train: { n: 600, engineHits: 390, upCount: 300 },
+      holdout: { n: 400, engineHits: 260, upCount: 200 }, // holdout excess .15, z≈6
+    };
+    const drift: EdgeCell = {
+      key: 'drift',
+      full: { n: 1000, engineHits: 570, upCount: 570 }, // rh == naive → excess 0 (tape drift)
+      train: { n: 600, engineHits: 342, upCount: 342 },
+      holdout: { n: 400, engineHits: 228, upCount: 228 },
+    };
+    const overfit: EdgeCell = {
+      key: 'overfit',
+      full: { n: 1000, engineHits: 540, upCount: 500 }, // in-sample +0.04 …
+      train: { n: 600, engineHits: 360, upCount: 300 },
+      holdout: { n: 400, engineHits: 190, upCount: 200 }, // … but holdout excess NEGATIVE
+    };
+    const rep = edgeMetricReport([good, drift, overfit], { minN: 30 });
+    expect(rep.familySize).toBe(3);
+    expect(rep.verdict).toBe('EDGE-FOUND');
+    expect(rep.validated).toBe(1);
+    expect(rep.cells.find((c) => c.key === 'good')!.validated).toBe(true);
+    expect(rep.cells.find((c) => c.key === 'drift')!.excess).toBeCloseTo(0, 6);
+    expect(rep.cells.find((c) => c.key === 'overfit')!.validated).toBe(false); // holdout flips
+  });
+
+  it('edgeMetricReport: NO-VALIDATED-EDGE when only drift/overfit cells exist', () => {
+    const drift: EdgeCell = {
+      key: 'd', full: { n: 2000, engineHits: 1140, upCount: 1140 },
+      train: { n: 1200, engineHits: 684, upCount: 684 }, holdout: { n: 800, engineHits: 456, upCount: 456 },
+    };
+    const overfit: EdgeCell = {
+      key: 'o', full: { n: 1000, engineHits: 540, upCount: 500 },
+      train: { n: 600, engineHits: 360, upCount: 300 }, holdout: { n: 400, engineHits: 190, upCount: 200 },
+    };
+    const rep = edgeMetricReport([drift, overfit], { minN: 30 });
+    expect(rep.verdict).toBe('NO-VALIDATED-EDGE');
+    expect(rep.validated).toBe(0);
+  });
+
+  it('edgeMetricReport: low-power cells (n<minN) are excluded from the family', () => {
+    const tiny: EdgeCell = {
+      key: 't', full: { n: 10, engineHits: 9, upCount: 5 },
+      train: { n: 6, engineHits: 5, upCount: 3 }, holdout: { n: 4, engineHits: 4, upCount: 2 },
+    };
+    expect(edgeMetricReport([tiny], { minN: 30 }).familySize).toBe(0);
   });
 });

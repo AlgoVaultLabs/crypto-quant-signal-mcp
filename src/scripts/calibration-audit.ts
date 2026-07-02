@@ -316,6 +316,153 @@ export function cryptoRowToAudit(r: CryptoSignalRow): AuditRow {
   };
 }
 
+// ── Edge-metric layer (CRYPTO-EDGE-METRIC-W1) — statistically-honest cell test ─
+// The audit's coarse scan lacked CIs, multiple-testing control, and out-of-sample
+// validation. A "winning cell" found by scanning N cells is a false positive
+// unless it (a) beats its best always-long/short benchmark by a CI-separated
+// margin, (b) survives FDR at q across ALL cells tested, and (c) repeats
+// out-of-sample. The benchmark is the CRUX: realized-hit-vs-50% is inflated by
+// tape drift — the honest edge is realized-hit − max(always-BUY, always-SELL).
+
+/** erf via Abramowitz-Stegun 7.1.26. */
+function erf(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y =
+    1 -
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) *
+      t *
+      Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+export function normalCdf(z: number): number {
+  return 0.5 * (1 + erf(z / Math.SQRT2));
+}
+
+/** Wilson score interval for a binomial proportion k/n. */
+export function wilsonInterval(k: number, n: number, z = 1.96): { lo: number; hi: number; pHat: number } {
+  if (n === 0) return { lo: 0, hi: 1, pHat: NaN };
+  const p = k / n;
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / denom;
+  const half = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denom;
+  return { lo: Math.max(0, center - half), hi: Math.min(1, center + half), pHat: p };
+}
+
+/** One-sided z-test that the observed rate exceeds a benchmark rate p0. */
+export function excessZP(hits: number, n: number, p0: number): { z: number; p: number } {
+  if (n === 0 || p0 <= 0 || p0 >= 1) return { z: 0, p: 1 };
+  const pHat = hits / n;
+  const se = Math.sqrt((p0 * (1 - p0)) / n);
+  const z = (pHat - p0) / se;
+  return { z, p: 1 - normalCdf(z) };
+}
+
+/** Benjamini-Hochberg FDR at level q. Returns per-index rejection + the cut p. */
+export function benjaminiHochberg(pvals: number[], q = 0.05): { rejected: boolean[]; threshold: number } {
+  const m = pvals.length;
+  const order = pvals.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+  let kMax = -1;
+  for (let r = 0; r < m; r++) if (order[r].p <= ((r + 1) / m) * q) kMax = r;
+  const rejected = new Array(m).fill(false);
+  for (let r = 0; r <= kMax; r++) rejected[order[r].i] = true;
+  return { rejected, threshold: kMax >= 0 ? order[kMax].p : 0 };
+}
+
+/** Bonferroni family-wise correction. */
+export function bonferroni(pvals: number[], q = 0.05): boolean[] {
+  const thr = q / Math.max(1, pvals.length);
+  return pvals.map((p) => p <= thr);
+}
+
+export interface EdgeSplit {
+  n: number;
+  engineHits: number; // realized directional hits (engine's call correct on close-to-close)
+  upCount: number; // signals with outcome_return_pct > 0 (for the always-long/short benchmark)
+}
+export interface EdgeCell {
+  key: string;
+  full: EdgeSplit;
+  train: EdgeSplit;
+  holdout: EdgeSplit;
+}
+/** Best naive fixed-direction accuracy = max(always-BUY, always-SELL) realized. */
+export function naiveRate(s: EdgeSplit): number {
+  return s.n > 0 ? Math.max(s.upCount, s.n - s.upCount) / s.n : 0;
+}
+
+export interface EdgeCellResult {
+  key: string;
+  n: number;
+  realizedHit: number;
+  naive: number;
+  excess: number; // realizedHit − naive  (the honest directional edge)
+  z: number;
+  p: number;
+  ciLo: number;
+  ciHi: number;
+  fdrReject: boolean;
+  bonferroni: boolean;
+  holdoutN: number;
+  holdoutExcess: number;
+  holdoutZ: number;
+  validated: boolean; // FDR-corrected AND out-of-sample-persistent
+}
+export interface EdgeReport {
+  familySize: number;
+  q: number;
+  minN: number;
+  rawPass: number;
+  fdrPass: number;
+  bonferroniPass: number;
+  validated: number;
+  verdict: 'EDGE-FOUND' | 'NO-VALIDATED-EDGE';
+  cells: EdgeCellResult[];
+}
+
+/**
+ * The full rigor: benchmark-excess + Wilson CI + BH-FDR (+ Bonferroni cross-check)
+ * + walk-forward. A cell is `validated` ONLY if it survives FDR AND its holdout
+ * excess is positive and one-sided-significant. `EDGE-FOUND` iff ≥1 validated.
+ */
+export function edgeMetricReport(cells: EdgeCell[], opts: { q?: number; minN?: number } = {}): EdgeReport {
+  const q = opts.q ?? 0.05;
+  const minN = opts.minN ?? 30;
+  const powered = cells.filter((c) => c.full.n >= minN);
+  const stats = powered.map((c) => {
+    const nr = naiveRate(c.full);
+    const rh = c.full.engineHits / c.full.n;
+    const { z, p } = excessZP(c.full.engineHits, c.full.n, nr);
+    const wi = wilsonInterval(c.full.engineHits, c.full.n);
+    const hoNr = naiveRate(c.holdout);
+    const hoRh = c.holdout.n > 0 ? c.holdout.engineHits / c.holdout.n : 0;
+    const hoExcess = c.holdout.n > 0 ? hoRh - hoNr : 0;
+    const hoZ = c.holdout.n > 0 ? excessZP(c.holdout.engineHits, c.holdout.n, hoNr).z : 0;
+    return { key: c.key, n: c.full.n, realizedHit: rh, naive: nr, excess: rh - nr, z, p, ciLo: wi.lo, ciHi: wi.hi, holdoutN: c.holdout.n, holdoutExcess: hoExcess, holdoutZ: hoZ };
+  });
+  const pvals = stats.map((s) => s.p);
+  const { rejected } = benjaminiHochberg(pvals, q);
+  const bonf = bonferroni(pvals, q);
+  const cellResults: EdgeCellResult[] = stats.map((s, i) => ({
+    ...s,
+    fdrReject: rejected[i],
+    bonferroni: bonf[i],
+    validated: rejected[i] && s.holdoutN >= minN && s.holdoutExcess > 0 && s.holdoutZ > 1.645,
+  }));
+  const validated = cellResults.filter((c) => c.validated).length;
+  return {
+    familySize: powered.length,
+    q,
+    minN,
+    rawPass: stats.filter((s) => s.p < 0.05).length,
+    fdrPass: rejected.filter(Boolean).length,
+    bonferroniPass: bonf.filter(Boolean).length,
+    validated,
+    verdict: validated > 0 ? 'EDGE-FOUND' : 'NO-VALIDATED-EDGE',
+    cells: cellResults.sort((a, b) => b.excess - a.excess),
+  };
+}
+
 // ── CLI (read-only fetch → report). Runs in-container: node dist/scripts/calibration-audit.js ──
 /* c8 ignore start */
 const EQUITY_AUDIT_SQL = `
@@ -394,6 +541,49 @@ export async function loadCryptoAuditInput(
 
 const CRYPTO_TFS = ['3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'];
 
+// Edge-metric cell loader: per (timeframe × tier × confidence-bin × regime),
+// realized directional hits + up-count (for the always-long/short benchmark),
+// split into 60% train / 40% holdout by created_at. Read-only.
+const CRYPTO_EDGE_SQL = `
+WITH base AS (
+  SELECT timeframe,
+    CASE WHEN coin IN ('BTC','ETH') THEN 'T1' ELSE 'rest' END AS tier,
+    CASE WHEN confidence<60 THEN 'c52_59' WHEN confidence<75 THEN 'c60_74' ELSE 'c75_100' END AS conf_bin,
+    coalesce(regime,'none') AS regime, signal, outcome_return_pct AS orp, created_at
+  FROM signals
+  WHERE signal IN ('BUY','SELL') AND pfe_return_pct IS NOT NULL AND outcome_return_pct IS NOT NULL
+    AND timeframe IN ('3m','5m','15m','30m','1h','2h','4h','8h','12h','1d')
+),
+bnd AS (SELECT percentile_cont(0.6) WITHIN GROUP (ORDER BY created_at) AS cut FROM base),
+x AS (
+  SELECT timeframe, tier, conf_bin, regime,
+    ((signal='BUY' AND orp>0) OR (signal='SELL' AND orp<0))::int AS hit,
+    (orp>0)::int AS up,
+    CASE WHEN created_at < (SELECT cut FROM bnd) THEN 'train' ELSE 'holdout' END AS split
+  FROM base
+)
+SELECT timeframe||'|'||tier||'|'||conf_bin||'|'||regime AS key,
+  count(*)::int AS full_n, sum(hit)::int AS full_hits, sum(up)::int AS full_up,
+  count(*) FILTER (WHERE split='train')::int AS tr_n, coalesce(sum(hit) FILTER (WHERE split='train'),0)::int AS tr_hits, coalesce(sum(up) FILTER (WHERE split='train'),0)::int AS tr_up,
+  count(*) FILTER (WHERE split='holdout')::int AS ho_n, coalesce(sum(hit) FILTER (WHERE split='holdout'),0)::int AS ho_hits, coalesce(sum(up) FILTER (WHERE split='holdout'),0)::int AS ho_up
+FROM x GROUP BY timeframe, tier, conf_bin, regime`;
+
+export async function loadCryptoEdgeCells(): Promise<EdgeCell[]> {
+  const { dbQuery } = await import('../lib/performance-db.js');
+  const raw = await dbQuery<{
+    key: string;
+    full_n: number; full_hits: number; full_up: number;
+    tr_n: number; tr_hits: number; tr_up: number;
+    ho_n: number; ho_hits: number; ho_up: number;
+  }>(CRYPTO_EDGE_SQL);
+  return raw.map((r) => ({
+    key: r.key,
+    full: { n: r.full_n, engineHits: r.full_hits, upCount: r.full_up },
+    train: { n: r.tr_n, engineHits: r.tr_hits, upCount: r.tr_up },
+    holdout: { n: r.ho_n, engineHits: r.ho_hits, upCount: r.ho_up },
+  }));
+}
+
 async function main(): Promise<void> {
   const argAfter = (flag: string): string | undefined =>
     process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : undefined;
@@ -405,6 +595,20 @@ async function main(): Promise<void> {
     return;
   }
   if (asset === 'crypto') {
+    if (process.argv.includes('--edge')) {
+      const report = edgeMetricReport(await loadCryptoEdgeCells(), { q: 0.05, minN: 30 });
+      const top = report.cells.slice(0, 15).map((c) => ({
+        key: c.key, n: c.n, realizedHit: +c.realizedHit.toFixed(4), naive: +c.naive.toFixed(4),
+        excess: +c.excess.toFixed(4), z: +c.z.toFixed(2), fdr: c.fdrReject, bonf: c.bonferroni,
+        holdoutN: c.holdoutN, holdoutExcess: +c.holdoutExcess.toFixed(4), validated: c.validated,
+      }));
+      console.log(JSON.stringify({
+        verdict: report.verdict, familySize: report.familySize, q: report.q, minN: report.minN,
+        rawPass: report.rawPass, fdrPass: report.fdrPass, bonferroniPass: report.bonferroniPass,
+        validated: report.validated, topByExcess: top,
+      }, null, 2));
+      return;
+    }
     const tf = argAfter('--timeframe');
     if (tf) {
       const rows = await loadCryptoAuditInput({ timeframe: tf });
