@@ -34,7 +34,9 @@ import type { LicenseInfo } from '../types.js';
 // OKX managed facilitator (HMAC-signed verify/settle → web3.okx.com). Live path only —
 // constructed lazily inside mountLive(), so importing this module is side-effect-free.
 import { OKXFacilitatorClient } from '@okxweb3/x402-core';
-import { paymentMiddlewareFromConfig } from '@okxweb3/x402-express';
+import { x402ResourceServer, x402HTTPResourceServer } from '@okxweb3/x402-core/server';
+import { registerExactEvmScheme } from '@okxweb3/x402-evm/exact/server';
+import { paymentMiddlewareFromHTTPServer } from '@okxweb3/x402-express';
 
 // ─────────────────────── X Layer constants (on-chain-verified 2026-06-30) ───────────────────────
 /** CAIP-2 for X Layer mainnet (`eth_chainId`=0xc4=196). */
@@ -221,13 +223,27 @@ function toHttpTool(tool: string): HttpTool | undefined {
 
 /**
  * Mount the okx.ai A2MCP X-Layer routes on the Express app — ONLY when OKX_AI_ENABLED=true.
- * Returns the mounted paths ([] when off → routes never register → prod byte-identical).
+ * Async because the LIVE path pre-initializes the x402 resource server (validates the scheme
+ * config + syncs the facilitator) before mounting. **Boot-safe:** any LIVE-mount failure is
+ * caught → a2mcp stays DARK, the app never crash-loops (the two-flag firewall's intent; an
+ * uncaught async init throw crash-looped prod once — OKX-AI-FIRST-MOVER incident 2026-07-01).
+ * Returns the mounted paths ([] when off / stub-empty / live-failed → prod byte-identical).
  */
-export function mountOkxA2mcpRoutes(app: Express, env: OkxA2mcpEnv = process.env): string[] {
+export async function mountOkxA2mcpRoutes(app: Express, env: OkxA2mcpEnv = process.env): Promise<string[]> {
   const resolved = selectOkxA2mcp(resolveOkxA2mcpConfig(env));
   if (!resolved.active) return [];
   const tools = okxA2mcpTools();
-  if (resolved.mode === 'live') return mountLive(app, tools, resolved);
+  if (resolved.mode === 'live') {
+    try {
+      return await mountLive(app, tools, resolved);
+    } catch (err: unknown) {
+      console.error(
+        '[okx-a2mcp] LIVE mount failed — leaving a2mcp DARK (app boot unaffected):',
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
+  }
   console.warn(
     '[STUB] OKX_AI_ENABLED=true but OKX_API_KEY/OKX_SECRET_KEY/OKX_PASSPHRASE/OKX_A2MCP_PAYTO missing — ' +
       'mounting [STUB] a2mcp routes (no real settlement). Provision creds + payTo to go live.',
@@ -274,32 +290,29 @@ function mountStub(app: Express, tools: string[], provider: StubOkxA2mcpProvider
 }
 
 /**
- * LIVE routes: the OKX managed facilitator gates each route (verify+settle on X Layer), then
- * the SAME core handler runs (output parity). LIVE-UNVERIFIED until Mr.1 provisions creds +
- * registers on okx.ai (R5) — confirm USDT0 asset/domain via `facilitator.getSupported()` first.
+ * Build the x402 HTTP resource server for the a2mcp routes. **Registers the `exact` EVM scheme
+ * for X Layer** — the step whose omission threw `RouteConfigurationError: No scheme
+ * implementation registered for "exact" on network "eip155:196"` and crash-looped the server
+ * (OKX-AI-FIRST-MOVER incident 2026-07-01). Exported so the boot-test can `initialize()` it with
+ * a fake facilitator and prove it no longer throws. `facilitator` is any `FacilitatorClient`.
  */
-function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2mcp): string[] {
-  const facilitator = new OKXFacilitatorClient({
-    apiKey: resolved.apiKey!,
-    secretKey: resolved.secretKey!,
-    passphrase: resolved.passphrase!,
-    ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
-    // syncSettle=true → the facilitator waits for on-chain confirmation and returns status="success".
-    syncSettle: true,
-  });
-
-  const routes: Parameters<typeof paymentMiddlewareFromConfig>[0] = {};
-  const mounted: string[] = [];
+export function buildOkxHttpResourceServer(
+  facilitator: ConstructorParameters<typeof x402ResourceServer>[0],
+  tools: string[],
+  payTo: string,
+): x402HTTPResourceServer {
+  const server = new x402ResourceServer(facilitator);
+  registerExactEvmScheme(server, { networks: [XLAYER_NETWORK] });
+  const routes: ConstructorParameters<typeof x402HTTPResourceServer>[1] = {};
   for (const tool of tools) {
     if (!toHttpTool(tool)) continue;
-    const route = `${A2MCP_PREFIX}/${tool}`;
-    routes[`POST ${route}`] = {
+    routes[`POST ${A2MCP_PREFIX}/${tool}`] = {
       accepts: [
         {
           scheme: 'exact',
           network: XLAYER_NETWORK,
-          payTo: resolved.payTo!,
-          // Money (string) — the SDK MoneyParser resolves the USDT0 AssetAmount for eip155:196.
+          payTo,
+          // Money (string) — ExactEvmScheme's MoneyParser resolves the USDT0 AssetAmount for eip155:196.
           price: String(okxA2mcpPriceUsdt0(tool)),
           maxTimeoutSeconds: 300,
           extra: { asset: XLAYER_USDT0, name: XLAYER_USDT0_EIP712_NAME },
@@ -309,11 +322,34 @@ function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2mcp): s
       mimeType: 'application/json',
     };
   }
+  return new x402HTTPResourceServer(server, routes);
+}
 
-  // The OKX middleware gates the configured routes (unpaid → 402; paid → next()). Non-matching
-  // requests pass straight through, so app-level use() is safe (the Base rail is unaffected).
-  app.use(paymentMiddlewareFromConfig(routes, facilitator));
+/**
+ * LIVE routes: the OKX managed facilitator gates each route (verify+settle on X Layer), then the
+ * SAME core handler runs (output parity). Pre-`initialize()`s (validates the scheme/route config +
+ * syncs the facilitator's supported kinds) so a misconfig or unreachable facilitator throws HERE
+ * and is caught by `mountOkxA2mcpRoutes` (→ DARK, no crash). Still LIVE-UNVERIFIED end-to-end
+ * until a real buyer settles USDT0 on X Layer (R5/R6).
+ */
+async function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2mcp): Promise<string[]> {
+  const facilitator = new OKXFacilitatorClient({
+    apiKey: resolved.apiKey!,
+    secretKey: resolved.secretKey!,
+    passphrase: resolved.passphrase!,
+    ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+    // syncSettle=true → the facilitator waits for on-chain confirmation and returns status="success".
+    syncSettle: true,
+  });
+  const httpServer = buildOkxHttpResourceServer(facilitator, tools, resolved.payTo!);
+  // Validate scheme/route config + sync supported kinds NOW (throws on misconfig → caller keeps DARK).
+  await httpServer.initialize();
+  // Already initialized → mount with syncFacilitatorOnStart=false (no duplicate boot sync). The
+  // middleware gates the configured routes (unpaid → 402; paid → next()); non-matching requests
+  // pass straight through, so app-level use() leaves the Base rail unaffected.
+  app.use(paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false));
 
+  const mounted: string[] = [];
   for (const tool of tools) {
     const ht = toHttpTool(tool);
     if (!ht) continue;

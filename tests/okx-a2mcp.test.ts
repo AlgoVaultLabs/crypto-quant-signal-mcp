@@ -18,6 +18,7 @@ import {
   okxA2mcpPriceUsdt0,
   mountOkxA2mcpRoutes,
   StubOkxA2mcpProvider,
+  buildOkxHttpResourceServer,
   XLAYER_NETWORK,
   XLAYER_USDT0,
   A2MCP_PREFIX,
@@ -114,15 +115,15 @@ describe('StubOkxA2mcpProvider', () => {
 });
 
 describe('mountOkxA2mcpRoutes — dark by default', () => {
-  it('OKX_AI_ENABLED off → mounts NOTHING (returns [])', () => {
+  it('OKX_AI_ENABLED off → mounts NOTHING (returns [])', async () => {
     const app = fakeApp();
-    expect(mountOkxA2mcpRoutes(app, {})).toEqual([]);
+    expect(await mountOkxA2mcpRoutes(app, {})).toEqual([]);
     expect(app._paths).toEqual([]);
   });
 
-  it('enabled-but-unprovisioned → stub mounts the registry-derived route set', () => {
+  it('enabled-but-unprovisioned → stub mounts the registry-derived route set', async () => {
     const app = fakeApp();
-    const mounted = mountOkxA2mcpRoutes(app, { OKX_AI_ENABLED: 'true' });
+    const mounted = await mountOkxA2mcpRoutes(app, { OKX_AI_ENABLED: 'true' });
     const expected = okxA2mcpTools().map((t) => `${A2MCP_PREFIX}/${t}`).sort();
     expect(mounted.sort()).toEqual(expected);
     // each mounted tool got a GET (402 challenge) + a POST (settle) route
@@ -130,5 +131,36 @@ describe('mountOkxA2mcpRoutes — dark by default', () => {
       expect(app._paths).toContain(`GET ${A2MCP_PREFIX}/${t}`);
       expect(app._paths).toContain(`POST ${A2MCP_PREFIX}/${t}`);
     }
+  });
+});
+
+// Regression guard for the OKX-AI-FIRST-MOVER incident (2026-07-01): the LIVE mount crash-looped
+// prod because `paymentMiddlewareFromConfig(routes, facilitator)` had NO scheme implementation
+// registered for `exact` on eip155:196 → x402HTTPResourceServer.initialize() threw
+// RouteConfigurationError. The fix registers ExactEvmScheme; this proves initialize() no longer throws.
+describe('live mount boot-safety — exact scheme registered for eip155:196', () => {
+  // Minimal FacilitatorClient stub — getSupported() drives initialize()'s sync (no network).
+  const fakeFacilitator = {
+    getSupported: async () => ({
+      kinds: [{ scheme: 'exact', network: 'eip155:196', x402Version: 2, extra: null }],
+      signers: { 'eip155:196': ['0x0000000000000000000000000000000000000001'] },
+      extensions: [],
+    }),
+    verify: async () => ({ isValid: true }),
+    settle: async () => ({ success: true }),
+  } as never;
+
+  it('buildOkxHttpResourceServer().initialize() RESOLVES (no RouteConfigurationError)', async () => {
+    const hs = buildOkxHttpResourceServer(fakeFacilitator, okxA2mcpTools(), '0x62366c50e1bb14ed4ff2b6c8c143f6049df075b9');
+    await expect(hs.initialize()).resolves.toBeUndefined();
+  });
+
+  it('negative control: WITHOUT the exact scheme, initialize() REJECTS (guards the crash bug)', async () => {
+    const core = await import('@okxweb3/x402-core/server');
+    const server = new core.x402ResourceServer(fakeFacilitator);
+    const hs = new core.x402HTTPResourceServer(server, {
+      'POST /a2mcp/get_trade_call': { accepts: [{ scheme: 'exact', network: 'eip155:196', payTo: '0x0', price: '0.02' }] },
+    } as never);
+    await expect(hs.initialize()).rejects.toThrow();
   });
 });

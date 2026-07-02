@@ -3090,7 +3090,7 @@ async function startHttp() {
   // routes — ONLY when OKX_AI_ENABLED=true. Default (unset) → nothing mounted → /a2mcp/* 404
   // → byte-identical prod. Stub-first: enabled-but-unprovisioned → [STUB] routes. Additive to
   // the Base/USDC x402 rail above (that rail is untouched).
-  const okxA2mcpRoutes = mountOkxA2mcpRoutes(app);
+  const okxA2mcpRoutes = await mountOkxA2mcpRoutes(app);
   if (okxA2mcpRoutes.length > 0) {
     console.log(`okx.ai A2MCP routes mounted (X Layer / USDT0): ${okxA2mcpRoutes.join(', ')}`);
   }
