@@ -42,8 +42,15 @@ Section **`### 💰 Finance & Fintech`** (anchor `#finance--fintech`). The CONTR
 >
 > Entry is alphabetically placed, format-matched, and carries no drifting numbers. Thanks for maintaining the list.
 
+## ⚠️ REQUIRED: Glama score badge (automated `glama-check` gate)
+This list's `github-actions` bot comments on every new-server PR requiring a **Glama score badge** in the entry (its "listing requirement"). **Include the badge in the INITIAL entry** so the gate passes on submission — don't wait for the bot. Format = repo link, then the badge, then the emoji flags:
+```
+- [AlgoVaultLabs/crypto-quant-signal-mcp](https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp) [![AlgoVaultLabs/crypto-quant-signal-mcp MCP server](https://glama.ai/mcp/servers/AlgoVaultLabs/crypto-quant-signal-mcp/badges/score.svg)](https://glama.ai/mcp/servers/AlgoVaultLabs/crypto-quant-signal-mcp) 📇 ☁️ 🏠 🍎 🪟 🐧 - Composite crypto trade verdicts (direction, confidence, regime) across 5 perp venues. Cross-venue funding-rate arbitrage; on-chain Merkle-verified track record. Free tier. `npx crypto-quant-signal-mcp`
+```
+- Glama page (301s to this): `glama.ai/mcp/servers/AlgoVaultLabs/crypto-quant-signal-mcp`. **Caveat:** the badge renders a low **0.5** score — Glama can't "install" a *remote* MCP server (the known `qo8ps65foe` "cannot be installed" cosmetic issue). Raising it = add a Dockerfile *on Glama* (separate optional effort). The badge presence, not its score, is what the bot's step-2 checks.
+- **History:** the original 2026-06-05 PR ([#7446](https://github.com/punkpeye/awesome-mcp-servers/pull/7446)) omitted the badge → the bot flagged it → badge added 2026-07-03 (commit `9d54ede` on branch `AlgoVaultFi/awesome-mcp-servers-1:patch-2`).
+
 ## Maintainer pushback to expect
-- **"Add a Glama badge."** Optional; the list auto-adds Glama score badges. Fine to omit — a maintainer/bot may add it.
 - **"Alphabetical order."** If they ask, move the line to strict `owner/name` position.
 - **High PR volume (~100+ open).** Merges can take days–weeks; this is normal for an 88k-star list. Do not bump.
 - **"Is it real / maintained?"** Point to the npm release cadence + the live on-chain track record.
