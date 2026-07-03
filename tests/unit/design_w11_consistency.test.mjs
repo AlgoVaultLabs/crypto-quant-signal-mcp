@@ -67,25 +67,35 @@ function scopeToPerfFunc(src) {
 
 // ── /track-record chrome assertions (Q-W11-1, Q-W11-4, Q-W11-7) ──────────────
 
-test('/track-record: canonical Nav present in getPerformanceDashboardHtml (Q-W11-2 actual class string)', async () => {
+// LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1: the canonical nav was extracted to the
+// shared SoT src/lib/site-nav.ts (renderSiteNav). The page now DELEGATES; the byte-level
+// nav content contract (class strings, links, active-link, brand-mark) is owned by the
+// frozen-oracle byte-equivalence gate in tests/site-nav.test.ts. These assertions verify
+// the page uses the shared generator with the correct params + the SoT carries the chrome.
+test('/track-record: canonical Nav via shared renderSiteNav generator (Q-W11-2; LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1)', async () => {
   const src = await read('src/index.ts');
   const func = scopeToPerfFunc(src);
-  const nav = countOcc(func, '<nav class="fixed top-0 w-full z-50 border-b border-white/5"');
-  assert.strictEqual(nav, 1, `Expected exactly 1 canonical Nav block; got ${nav}`);
+  assert.match(func, /renderSiteNav\(\{ active: 'track-record', trackRecordHref: '\/track-record' \}\)/,
+    '/track-record must render its nav via renderSiteNav({active:track-record, relative TR href})');
+  assert.strictEqual(countOcc(func, '<nav class="fixed top-0'), 0,
+    'inline <nav> literal must be retired from the page body (now via renderSiteNav)');
 });
 
-test('/track-record: Track Record nav link uses active-link styling (Q-W11-1: text-mint-400 font-medium)', async () => {
-  const src = await read('src/index.ts');
-  const func = scopeToPerfFunc(src);
-  const active = countOcc(func, '<a href="/track-record" class="text-mint-400 font-medium">Track Record</a>');
-  assert.strictEqual(active, 1, `Expected exactly 1 active-link Track Record nav link; got ${active}`);
+test('/track-record: Track Record active-link styling via shared nav (Q-W11-1: active track-record -> text-mint-400 font-medium)', async () => {
+  const func = scopeToPerfFunc(await read('src/index.ts'));
+  assert.match(func, /renderSiteNav\(\{ active: 'track-record'/, '/track-record must pass active:track-record');
+  const nav = await read('src/lib/site-nav.ts');
+  assert.ok(nav.includes("const ACTIVE = 'text-mint-400 font-medium'"), 'shared nav must define the mint ACTIVE style');
+  assert.ok(nav.includes("active === 'track-record' ? ACTIVE : HOVER"),
+    'Track Record link must switch to ACTIVE when active:track-record');
 });
 
-test('/track-record: brand-mark wrap follows /account precedent (Q-W11-4: direct ahref + aria-label + cross-origin)', async () => {
-  const src = await read('src/index.ts');
-  const func = scopeToPerfFunc(src);
-  const brandMark = countOcc(func, '<a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">');
-  assert.strictEqual(brandMark, 1, `Expected exactly 1 canonical brand-mark wrap; got ${brandMark}`);
+test('/track-record: canonical brand-mark wrap via shared nav SoT (Q-W11-4: direct ahref + aria-label + cross-origin)', async () => {
+  const func = scopeToPerfFunc(await read('src/index.ts'));
+  assert.match(func, /renderSiteNav\(\{ active: 'track-record'/, '/track-record nav comes from the shared renderSiteNav');
+  const nav = await read('src/lib/site-nav.ts');
+  assert.strictEqual(countOcc(nav, '<a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">'), 1,
+    'shared nav must carry exactly 1 canonical brand-mark wrap');
 });
 
 test('/track-record: footer renders from the single brand-footer SoT (FOOTER-UNIFY-W1)', async () => {

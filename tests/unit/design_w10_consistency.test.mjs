@@ -47,25 +47,35 @@ const DISPLAY = { binance: 'Binance', okx: 'OKX', bybit: 'Bybit', bitget: 'Bitge
 
 // ── /account chrome assertions (Q-W10-1/2/3/6/8/10) ──────────────────────────
 
-test('/account: Q-W10-1 + Q-W10-8 — canonical Nav present (actual class string, not <nav class="nav">)', async () => {
+// LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1: the canonical nav was extracted to the shared
+// SoT src/lib/site-nav.ts (renderSiteNav). /account DELEGATES; the byte-level nav content
+// contract is owned by tests/site-nav.test.ts (frozen-oracle byte-equivalence).
+test('/account: Q-W10-1 + Q-W10-8 — canonical Nav via shared renderSiteNav (LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1)', async () => {
   const src = await read('src/lib/account-handlers.ts');
-  assert.ok(countOcc(src, '<nav class="fixed top-0 w-full z-50 border-b border-white/5"') >= 1,
-    'canonical Nav opening tag missing or wrong class string');
-  assert.ok(countOcc(src, 'AlgoVault Labs') >= 1, 'brand-mark "AlgoVault Labs" span missing');
-  // /account is served on api.algovault.com → cross-subdomain links are ABSOLUTE by design
-  // (a relative "/track-record" would resolve to api.algovault.com and 404). Assert the
-  // canonical absolute form the handler correctly emits.
-  assert.ok(src.includes('href="https://algovault.com/track-record"'), 'Track Record link missing');
-  assert.ok(src.includes('href="https://algovault.com/integrations"'), 'Integrations link missing');
-  assert.ok(src.includes('href="https://api.algovault.com/account"'), 'Account link missing');
-  assert.ok(src.includes('href="https://api.algovault.com/signup"'), 'Signup link missing');
+  // /account is on api.algovault.com → the Track Record link must be ABSOLUTE (a relative
+  // "/track-record" would resolve to api.algovault.com and 404). That is passed as the param:
+  assert.match(src, /renderSiteNav\(\{ active: 'account', trackRecordHref: 'https:\/\/algovault\.com\/track-record' \}\)/,
+    '/account must render its nav via renderSiteNav({active:account, absolute TR href})');
+  assert.strictEqual(countOcc(src, '<nav class="fixed top-0'), 0,
+    'inline <nav> literal must be retired (now via renderSiteNav)');
+  // Canonical nav content (class string, absolute links, brand-mark) lives in the SoT:
+  const nav = await read('src/lib/site-nav.ts');
+  assert.ok(countOcc(nav, '<nav class="fixed top-0 w-full z-50 border-b border-white/5"') >= 1,
+    'canonical Nav opening tag missing or wrong class string in site-nav SoT');
+  assert.ok(nav.includes('AlgoVault Labs'), 'brand-mark "AlgoVault Labs" span missing in site-nav SoT');
+  // URL substrings (robust to href="…" literal vs the SIGNUP_HREF constant in the SoT).
+  assert.ok(nav.includes('https://algovault.com/integrations'), 'Integrations link missing');
+  assert.ok(nav.includes('https://api.algovault.com/account'), 'Account link missing');
+  assert.ok(nav.includes('https://api.algovault.com/signup'), 'Signup link missing');
 });
 
-test('/account: Q-W10-2 — Account link active-link styling (text-mint-400 font-medium)', async () => {
+test('/account: Q-W10-2 — Account active-link styling via shared nav (active account -> text-mint-400 font-medium)', async () => {
   const src = await read('src/lib/account-handlers.ts');
-  // The Account link uses `text-mint-400 font-medium` instead of `hover:text-white transition`.
-  assert.match(src, /href="https:\/\/api\.algovault\.com\/account" class="text-mint-400 font-medium"/,
-    'Account link must use text-mint-400 font-medium (active-link styling)');
+  assert.match(src, /renderSiteNav\(\{ active: 'account'/, '/account must pass active:account to renderSiteNav');
+  const nav = await read('src/lib/site-nav.ts');
+  assert.ok(nav.includes("const ACTIVE = 'text-mint-400 font-medium'"), 'shared nav must define the mint ACTIVE style');
+  assert.ok(nav.includes("active === 'account' ? ACTIVE : HOVER"),
+    'Account link must switch to ACTIVE when active:account');
 });
 
 test('/account: Q-W10-3 — canonical H1 with mint accent on `Account` (3 pages: main + error + success)', async () => {
@@ -273,12 +283,16 @@ for (const ex of INTEGRATIONS) {
 
 // ── DESIGN-W10-FF (2026-05-12) — top-left logo links to homepage on every page ──
 
-test('DESIGN-W10-FF: /account brand-mark wrapped in <a href="https://algovault.com/"> (absolute URL — cross-host /account on api.algovault.com)', async () => {
+test('DESIGN-W10-FF: /account brand-mark wrapped in <a href="https://algovault.com/"> — via shared nav SoT (absolute, cross-host)', async () => {
   const src = await read('src/lib/account-handlers.ts');
-  // Cross-host: /account is on api.algovault.com; relative `/` would resolve to api.algovault.com/ which 404s.
-  assert.match(src, /<a href="https:\/\/algovault\.com\/" class="flex items-center gap-2\.5"/,
-    '/account brand-mark must wrap in <a> with absolute URL https://algovault.com/');
-  assert.ok(src.includes('aria-label="AlgoVault home"'),
+  // Cross-host: /account is on api.algovault.com; the brand-mark uses the absolute
+  // https://algovault.com/ href (a relative `/` would resolve to api.algovault.com/ and 404).
+  // Nav extracted to the shared SoT src/lib/site-nav.ts; /account delegates via renderSiteNav.
+  assert.match(src, /renderSiteNav\(\{ active: 'account'/, '/account nav comes from the shared renderSiteNav');
+  const nav = await read('src/lib/site-nav.ts');
+  assert.match(nav, /<a href="https:\/\/algovault\.com\/" class="flex items-center gap-2\.5"/,
+    'shared nav brand-mark must wrap in <a> with absolute URL https://algovault.com/');
+  assert.ok(nav.includes('aria-label="AlgoVault home"'),
     'brand-mark <a> should have aria-label for accessibility');
 });
 
