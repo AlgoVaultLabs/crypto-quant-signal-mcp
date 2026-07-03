@@ -92,6 +92,14 @@ describe('offerings — requirement mapping + price', () => {
     const o = offeringByName('AlgoVault Trade Call')!;
     expect(requirementToParams(o, { coin: 'BTC', timeframe: '4h', junk: 1 })).toEqual({ coin: 'BTC', timeframe: '4h' });
   });
+  it('offeringByName tolerates the live registration naming (normalized match)', () => {
+    // The jobs are registered on Virtuals as algovault_tradecall / algoVault_MarketScan / algoVault_FundingArb.
+    expect(offeringByName('algovault_tradecall')?.canonicalTool).toBe('get_trade_call');
+    expect(offeringByName('algoVault_MarketScan')?.canonicalTool).toBe('scan_trade_calls');
+    expect(offeringByName('algoVault_FundingArb')?.canonicalTool).toBe('scan_funding_arb');
+    expect(offeringByName('AlgoVault Trade Call')?.canonicalTool).toBe('get_trade_call'); // exact still works
+    expect(offeringByName('totally unknown')).toBeUndefined();
+  });
   it('price derives from the registry SoT', () => {
     expect(acpPriceUsd('get_trade_call')).toBe(0.02);
     expect(acpPriceUsd('scan_trade_calls')).toBe(0.02);

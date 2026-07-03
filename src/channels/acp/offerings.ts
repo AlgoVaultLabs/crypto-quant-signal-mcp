@@ -103,9 +103,19 @@ export const ACP_OFFERINGS: readonly AcpOffering[] = Object.freeze([
 ]);
 
 /** Resolve an offering by its buyer-facing name (== `session.job?.description`). */
+/** Normalize an offering name for matching — case/space/underscore-insensitive — so the worker
+ *  tolerates the platform's registration naming (e.g. "AlgoVault Trade Call" registered as
+ *  "algovault_tradecall" / "algoVault_MarketScan"). The buyer's job.description is matched via this. */
+export function normalizeOfferingName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 export function offeringByName(name: string | null | undefined): AcpOffering | undefined {
   if (!name) return undefined;
-  return ACP_OFFERINGS.find((o) => o.name === name);
+  const exact = ACP_OFFERINGS.find((o) => o.name === name);
+  if (exact) return exact;
+  const norm = normalizeOfferingName(name);
+  return ACP_OFFERINGS.find((o) => normalizeOfferingName(o.name) === norm);
 }
 
 /**

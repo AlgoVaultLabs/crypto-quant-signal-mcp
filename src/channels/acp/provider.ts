@@ -134,7 +134,11 @@ export async function createLiveAcpAgent(resolved: ResolvedAcp): Promise<AcpAgen
   const sdk = await import('@virtuals-protocol/acp-node-v2');
   const isTestnet = resolved.network !== 'mainnet';
   const serverUrl = isTestnet ? sdk.ACP_TESTNET_SERVER_URL : sdk.ACP_SERVER_URL;
-  const privyAppId = isTestnet ? sdk.TESTNET_PRIVY_APP_ID : sdk.PRIVY_APP_ID;
+  // The Privy app-id follows the AGENT WALLET's environment, NOT the ACP job network: an agent minted
+  // on the production Virtuals console lives on the prod Privy app even when its jobs run on the Base
+  // Sepolia sandbox. Default to the network-based id, but ACP_PRIVY_APP_ID overrides it (no-redeploy
+  // toggle) so a prod-console wallet can settle sandbox jobs.
+  const privyAppId = process.env.ACP_PRIVY_APP_ID?.trim() || (isTestnet ? sdk.TESTNET_PRIVY_APP_ID : sdk.PRIVY_APP_ID);
   const chain = isTestnet ? baseSepolia : base;
   const provider = await sdk.PrivyAlchemyEvmProviderAdapter.create({
     walletAddress: resolved.walletAddress! as `0x${string}`,
