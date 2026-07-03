@@ -131,8 +131,25 @@ tailwind.config = {
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
       <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
+      <button type="button" data-mobile-nav-toggle id="mobile-nav-toggle" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false" class="sm:hidden inline-flex items-center justify-center w-11 h-11 -mr-2 text-gray-400 hover:text-white transition">
+        <svg data-mobile-nav-icon-open class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg data-mobile-nav-icon-close class="w-6 h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
   </div>
-</nav>
+
+      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:rgba(6,10,20,0.97);backdrop-filter:blur(12px)">
+        <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-llamaindex" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Track Record</a>
+        <a href="/#pricing" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Pricing</a>
+        <a href="/integrations" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Integrations</a>
+        <a href="/skills" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Skills</a>
+        <a href="/docs.html" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
+        <a href="/verify" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Verify</a>
+        <a href="https://api.algovault.com/account" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Account</a>
+        <div class="px-6 py-3">
+          <a href="https://api.algovault.com/signup" class="block px-4 py-3 rounded-lg text-sm text-center bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 font-semibold transition">Signup</a>
+        </div>
+      </div>
+    </nav>
 
 <!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
 <main class="lp-integrations-desktop">
@@ -319,5 +336,29 @@ asyncio.run(run())
     <a href="/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a>
   </div>
 </footer>
+
+<script>
+/* mobile-nav-header controller (shared, identical across all landing pages) */
+(function(){
+  var toggle = document.querySelector('[data-mobile-nav-toggle]');
+  var panel = document.getElementById('mobile-menu');
+  if (!toggle || !panel) return;
+  var nav = toggle.closest('nav');
+  var iconOpen = toggle.querySelector('[data-mobile-nav-icon-open]');
+  var iconClose = toggle.querySelector('[data-mobile-nav-icon-close]');
+  function isOpen(){ return !panel.classList.contains('hidden'); }
+  function setOpen(open){
+    panel.classList.toggle('hidden', !open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    if (iconOpen) iconOpen.classList.toggle('hidden', open);
+    if (iconClose) iconClose.classList.toggle('hidden', !open);
+  }
+  toggle.addEventListener('click', function(e){ e.stopPropagation(); setOpen(!isOpen()); });
+  panel.addEventListener('click', function(e){ if (e.target.closest('a')) setOpen(false); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && isOpen()) setOpen(false); });
+  document.addEventListener('click', function(e){ if (isOpen() && nav && !nav.contains(e.target)) setOpen(false); });
+})();
+</script>
 </body>
 </html>
