@@ -112,7 +112,7 @@
     {
       "url": "https://api.algovault.com/mcp",
       "name": "scan_funding_arb",
-      "description": "Cross-venue funding arbitrage scanner. Funding rate spreads across Binance Bybit OKX Bitget Hyperliquid perpetual futures — long one, short other. Composite verdict, multi-exchange funding intelligence. MCP tool for trading. AI trading signal for crypto quant + Claude trading agents. Verified track record, on-chain verified merkle anchor on Base.",
+      "description": "Cross-venue funding arbitrage scanner. Funding rate spreads across Hyperliquid Binance Bybit Gate KuCoin Aster OKX perpetual futures — long one, short other. Composite verdict, multi-exchange funding intelligence. MCP tool for trading. AI trading signal for crypto quant + Claude trading agents. Verified track record, on-chain verified merkle anchor on Base.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -302,5 +302,5 @@
     "title": "Crypto Quant Signal MCP",
     "description": "Composite BUY/SELL/HOLD trade calls across leading crypto perp venues. Verified track record, Merkle-anchored on Base L2. Drop-in tutorials for LangChain, LlamaIndex, Microsoft Agent Framework, and CrewAI. Ask-AlgoVault-anything via search_knowledge + chat_knowledge tools."
   },
-  "version": "17"
+  "version": "18"
 }
