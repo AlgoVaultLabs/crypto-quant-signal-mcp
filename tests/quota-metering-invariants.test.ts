@@ -43,8 +43,12 @@ vi.mock('../src/lib/equities/equity-store.js', () => ({
 vi.mock('../src/lib/trade-call-scanner.js', () => ({ scanTradeCalls: vi.fn() }));
 
 import { getTradeSignal } from '../src/tools/get-trade-call.js';
+// OPS-VITEST-SUITE-REPAIR: neutralize the cross-asset grid so getTradeSignal's
+// enrichment reads an injected (empty) snapshot instead of driving the live ~7s
+// 42-cell refresh (v1.10.5 SHADOW-SEED-W1), which overruns the 5s test timeout.
+import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../src/lib/cross-asset-grid.js';
 import { getMarketRegime } from '../src/tools/get-market-regime.js';
-import { scanFundingArb } from '../src/tools/scan-funding-arb.js';
+import { scanFundingArb, _resetScanFundingArbCaches, _setLiquidityOverrideForTest } from '../src/tools/scan-funding-arb.js';
 import { getEquityCall, getEquityRegime } from '../src/lib/equities/equity-tool-formatters.js';
 import { runScanTradeCall } from '../src/tools/scan-trade-calls.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
@@ -99,6 +103,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetLicenseCache();
   process.env.CQS_API_KEY = 'test-key';
+  // Fresh empty grid snapshot → no live 42-cell refresh (see import comment).
+  _clearCache();
+  _setScorerOverride(null);
+  _setSnapshotForTest([]);
+  // scan_funding_arb: skip the live venue-universe prefetch (network) so the
+  // metering assertion never hangs — mirrors the dedicated scan-funding-arb suite.
+  _resetScanFundingArbCaches();
+  _setLiquidityOverrideForTest(() => Infinity);
 });
 
 // ── crypto singles + alias ──

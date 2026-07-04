@@ -21,6 +21,10 @@ vi.mock('../../src/lib/performance-db.js', () => ({
   recordHoldCount: vi.fn(),
   getFundingZScore: vi.fn().mockResolvedValue(null),
   getDb: vi.fn(),
+  // Complete the partial mock so getVenueStatus (venue-shadow) reads a stubbed
+  // dbQuery instead of throwing "No dbExec export" — mirrors the tradfi sibling.
+  dbExec: vi.fn(),
+  dbQuery: vi.fn().mockResolvedValue([]),
   // OPS-GRID-PROCESS-BOUNDARY-W1: cross-asset-grid imports isShortLivedScript from
   // performance-db (server-only refresh gate); false = server → grid stays active.
   isShortLivedScript: () => false,
@@ -30,6 +34,10 @@ import { getTradeSignal } from '../../src/tools/get-trade-call.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../../src/lib/license.js';
 import { getFundingZScore } from '../../src/lib/performance-db.js';
+// OPS-VITEST-SUITE-REPAIR: neutralize the cross-asset grid so getTradeSignal's
+// enrichment reads an injected (empty) snapshot instead of driving the live ~7s
+// 42-cell refresh (v1.10.5 SHADOW-SEED-W1), which overruns the 5s test timeout.
+import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/lib/cross-asset-grid.js';
 import type { ExchangeAdapter, Candle, AssetContext } from '../../src/types.js';
 
 const FORBIDDEN_REGEX: ReadonlyArray<RegExp> = [
@@ -71,6 +79,10 @@ describe('getTradeSignal — emitted reasoning is sanitized', () => {
     vi.clearAllMocks();
     resetLicenseCache();
     process.env.CQS_API_KEY = 'test-key';
+    // Fresh empty grid snapshot → no live 42-cell refresh (see import comment).
+    _clearCache();
+    _setScorerOverride(null);
+    _setSnapshotForTest([]);
   });
 
   // Sweep representative inputs to exercise the prose-helper composition end-to-end.

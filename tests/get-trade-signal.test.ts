@@ -8,6 +8,9 @@ vi.mock('../src/lib/exchange-adapter.js', () => ({
 // Mock performance-db to avoid SQLite in tests
 vi.mock('../src/lib/performance-db.js', () => ({
   recordSignal: vi.fn(),
+  recordFunding: vi.fn(),
+  recordHoldCount: vi.fn(),
+  getFundingZScore: vi.fn().mockResolvedValue(null),
   getDb: vi.fn(),
   // OPS-GRID-PROCESS-BOUNDARY-W1: cross-asset-grid imports isShortLivedScript from
   // performance-db (server-only refresh gate); false = server → grid stays active.
@@ -17,6 +20,11 @@ vi.mock('../src/lib/performance-db.js', () => ({
 import { getTradeSignal, deriveVerdict, oiScoreFromOiDelta } from '../src/tools/get-trade-call.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../src/lib/license.js';
+// OPS-VITEST-SUITE-REPAIR: neutralize the cross-asset grid so getTradeSignal's
+// enrichment reads an injected (empty) snapshot instead of driving the live ~7s
+// 42-cell refresh (v1.10.5 SHADOW-SEED-W1), which overruns the 5s test timeout.
+// Mirrors the passing sibling suites (get-trade-signal-envelope / trade-call-also-see).
+import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../src/lib/cross-asset-grid.js';
 import { InsufficientCandlesError } from '../src/lib/errors.js';
 import type { ExchangeAdapter, Candle, AssetContext, FundingData } from '../src/types.js';
 
@@ -61,6 +69,12 @@ describe('getTradeSignal', () => {
     vi.clearAllMocks();
     resetLicenseCache();
     process.env.CQS_API_KEY = 'test-key';
+    // Fresh empty grid snapshot → enrichment (getTryNext/getClosestTradeable)
+    // returns []/null without a live refresh; _clearCache() also drops any
+    // in-flight refresh promise leaked from a prior test.
+    _clearCache();
+    _setScorerOverride(null);
+    _setSnapshotForTest([]);
   });
 
   it('returns a valid signal for ETH', async () => {

@@ -52,6 +52,16 @@ jobs:
       - name: Knowledge bundle generator (pre-deploy fail-fast)
         run: npm run build:knowledge
 
+      # OPS-VITEST-SUITE-REPAIR-W1 (2026-07-04): full vitest suite as a pre-deploy
+      # gate. Until now the suite was gated ONLY by the local pre-push hook
+      # (scripts/check_test_baseline.sh) — which had been warn-overridden — so a red
+      # suite (e.g. the cross-asset-grid 42-cell-refresh timeouts) could reach prod
+      # via a no-test deploy. deps + dist are already installed/built above; SQLite
+      # backend (no DATABASE_URL) mirrors the pre-push gate. A failure here fails the
+      # job BEFORE the SSH-deploy step below, blocking the deploy.
+      - name: Vitest suite (pre-deploy gate)
+        run: npx vitest run
+
       - name: Landing-page sync guard (build_landing --check)
         run: node scripts/build_landing.mjs --check
 

@@ -34,6 +34,10 @@ import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { dbQuery } from '../../src/lib/performance-db.js';
 import { resetLicenseCache } from '../../src/lib/license.js';
 import { InsufficientCandlesError } from '../../src/lib/errors.js';
+// OPS-VITEST-SUITE-REPAIR: neutralize the cross-asset grid so getTradeSignal's
+// enrichment reads an injected (empty) snapshot instead of driving the live ~7s
+// 42-cell refresh (v1.10.5 SHADOW-SEED-W1), which overruns the 5s test timeout.
+import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/lib/cross-asset-grid.js';
 import {
   _clearUnderlyingTypeCache,
   _setUnderlyingTypeFetcherForTest,
@@ -82,6 +86,10 @@ describe('get_trade_call — TradFi hardening wiring', () => {
     vi.clearAllMocks();
     resetLicenseCache();
     process.env.CQS_API_KEY = 'test-key';
+    // Fresh empty grid snapshot → no live 42-cell refresh (see import comment).
+    _clearCache();
+    _setScorerOverride(null);
+    _setSnapshotForTest([]);
     _clearUnderlyingTypeCache();
     _setUnderlyingTypeFetcherForTest(async () => CRYPTO_MAP());
   });
