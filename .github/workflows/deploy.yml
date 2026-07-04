@@ -60,7 +60,12 @@ jobs:
       # backend (no DATABASE_URL) mirrors the pre-push gate. A failure here fails the
       # job BEFORE the SSH-deploy step below, blocking the deploy.
       - name: Vitest suite (pre-deploy gate)
-        run: npx vitest run
+        run: |
+          # Best-effort pre-create the local SQLite DB via a SINGLE connection so the
+          # parallel suite never races the first WAL-mode switch on a truly-fresh DB
+          # (a fresh-open quirk seen on newer node). Harmless / no-op when unneeded.
+          node -e "require('./dist/lib/performance-db.js').dbExec('SELECT 1')" || true
+          npx vitest run
 
       - name: Landing-page sync guard (build_landing --check)
         run: node scripts/build_landing.mjs --check
