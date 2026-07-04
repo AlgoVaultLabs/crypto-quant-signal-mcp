@@ -354,7 +354,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
       <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
         <span class="text-mint-400">&#9670;</span> scan_funding_arb
       </h2>
-      <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences between Hyperliquid, Binance, and Bybit. Returns top arbitrage opportunities ranked by annualized spread.</p>
+      <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences across 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Returns top arbitrage opportunities ranked by annualized spread, with a per-leg liquidity filter so only tradeable spreads surface.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -1769,7 +1769,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance (default for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code>), Hyperliquid (default for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>), Bybit, OKX, or Bitget. Funding arb scans Hyperliquid, Binance, and Bybit. Response time depends on the exchange's API latency and the number of assets scanned.
+            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance (default for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code>), Hyperliquid (default for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>), Bybit, OKX, or Bitget. Funding arb scans 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Response time depends on the exchange's API latency and the number of assets scanned.
           </div>
         </details>
 
