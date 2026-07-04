@@ -61,10 +61,10 @@ jobs:
       # job BEFORE the SSH-deploy step below, blocking the deploy.
       - name: Vitest suite (pre-deploy gate)
         run: |
-          # Best-effort pre-create the local SQLite DB via a SINGLE connection so the
-          # parallel suite never races the first WAL-mode switch on a truly-fresh DB
-          # (a fresh-open quirk seen on newer node). Harmless / no-op when unneeded.
-          node -e "require('./dist/lib/performance-db.js').dbExec('SELECT 1')" || true
+          # Pre-create the local SQLite DB by running ONE DB-touching suite in a single
+          # worker first, so the parallel run never races the first fresh-DB open
+          # (funnel-snapshot et al. otherwise flake on a cold DB). Best-effort (|| true).
+          npx vitest run tests/analytics-external-only.test.ts >/dev/null 2>&1 || true
           npx vitest run
 
       - name: Landing-page sync guard (build_landing --check)
