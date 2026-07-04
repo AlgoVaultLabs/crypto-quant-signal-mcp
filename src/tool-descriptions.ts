@@ -39,7 +39,7 @@ export const TRADE_CALL_ALIAS_SUFFIX =
   ' [ALIAS] This tool is an alias of get_trade_call — same behavior, kept for backward compatibility.';
 
 export const SCAN_FUNDING_ARB_DESCRIPTION =
-  'Returns ranked cross-venue funding arbitrage across crypto perpetual futures on Binance Bybit OKX Bitget Hyperliquid — funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. For a directional trade call use get_trade_call. Read-only, no orders. Verified track record, on-chain verified merkle anchor.';
+  'Returns ranked cross-venue funding arbitrage across crypto perpetual futures on 7 venues — Hyperliquid Binance Bybit Gate KuCoin Aster OKX — funding rate spreads annualized per venue funding interval, with a per-leg liquidity filter so only tradeable spreads surface, long one venue short another, as a BUY SELL HOLD composite verdict per pair. For a directional trade call use get_trade_call. Read-only, no orders. Verified track record, on-chain verified merkle anchor.';
 
 export const GET_MARKET_REGIME_DESCRIPTION =
   'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. For a US equity use get_equity_regime. Read-only, live exchange APIs. Verified track record, on-chain verified merkle anchor.';
