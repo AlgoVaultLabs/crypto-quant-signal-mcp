@@ -52,6 +52,24 @@ const INTERVAL_MAP: Record<string, string> = {
   '8h': '8H', '12h': '12H', '1d': '1D',
 };
 
+// Bar duration in ms — used to detect the historical-coverage gap and page the history endpoint.
+const BAR_MS: Record<string, number> = {
+  '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000,
+  '30m': 1_800_000, '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000,
+  '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
+};
+
+function mapOkxCandle(c: string[]): Candle {
+  return {
+    time: parseInt(c[0], 10),
+    open: parseFloat(c[1]),
+    high: parseFloat(c[2]),
+    low: parseFloat(c[3]),
+    close: parseFloat(c[4]),
+    volume: parseFloat(c[5]),
+  };
+}
+
 // ── Rate-limited HTTP client ──
 
 let lastRequestTime = 0;
@@ -140,27 +158,38 @@ export class OKXAdapter implements ExchangeAdapter {
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const instId = toOKXInstId(coin);
     const bar = INTERVAL_MAP[interval] || '1H';
+    const barMs = BAR_MS[interval] || 3_600_000;
 
-    // OKX candles response: [[ts, open, high, low, close, vol, volCcy, volCcyQuote, confirm], ...]
-    // OKX pagination: "before" returns records NEWER than the timestamp
+    // Recent path (live/indicator use — UNCHANGED): `/market/candles` `before` = records NEWER
+    // than startTime. OKX returns DESCENDING (newest first) → reverse to ascending.
     const resp = await okxGet<string[][]>('/api/v5/market/candles', {
       instId,
       bar,
       before: startTime,
       limit: 100,
     });
+    const candles = (resp.data || []).reverse().map(mapOkxCandle);
 
-    // CRITICAL: OKX returns candles DESCENDING (newest first) — reverse to ascending
-    const candles = (resp.data || []).reverse();
+    // `/market/candles` only holds the recent window (~1440 bars), so a HISTORICAL startTime
+    // yields the newest bars instead of bars AT startTime (the labeler then filters them all out
+    // → noKlines). Detect the gap — the oldest returned bar should sit at ~startTime; if it's far
+    // newer, the recent endpoint couldn't reach startTime — and fall back to the history endpoint.
+    // Recent requests satisfy the guard here and return the live path verbatim.
+    if (candles.length > 0 && candles[0].time <= startTime + 5 * barMs) {
+      return candles;
+    }
 
-    return candles.map(c => ({
-      time: parseInt(c[0], 10),
-      open: parseFloat(c[1]),
-      high: parseFloat(c[2]),
-      low: parseFloat(c[3]),
-      close: parseFloat(c[4]),
-      volume: parseFloat(c[5]),
-    }));
+    // Historical fallback: `/market/history-candles` `after` = records EARLIER than the ts (desc).
+    // Anchor just past the wanted window so the page lands on [startTime, startTime + ~100 bars].
+    const after = startTime + 100 * barMs;
+    const hist = await okxGet<string[][]>('/api/v5/market/history-candles', {
+      instId,
+      bar,
+      after,
+      limit: 100,
+    });
+    const histAsc = (hist.data || []).reverse().map(mapOkxCandle).filter(c => c.time >= startTime);
+    return histAsc.length > 0 ? histAsc : candles;
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
