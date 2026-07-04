@@ -48,6 +48,24 @@ const INTERVAL_MAP: Record<string, string> = {
   '8h': '6H', '12h': '12H', '1d': '1D',
 };
 
+// Bar duration in ms — to detect the historical-coverage gap + page the history endpoint.
+const BAR_MS: Record<string, number> = {
+  '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000,
+  '30m': 1_800_000, '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000,
+  '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
+};
+
+function mapBitgetCandle(c: string[]): Candle {
+  return {
+    time: parseInt(c[0]),
+    open: parseFloat(c[1]),
+    high: parseFloat(c[2]),
+    low: parseFloat(c[3]),
+    close: parseFloat(c[4]),
+    volume: parseFloat(c[5]),
+  };
+}
+
 // ── Bitget response wrapper ──
 
 interface BitgetResponse<T> {
@@ -114,9 +132,10 @@ export class BitgetAdapter implements ExchangeAdapter {
   async getCandles(coin: string, interval: string, startTime: number, _dex?: DexType): Promise<Candle[]> {
     const symbol = toBitgetSymbol(coin);
     const granularity = INTERVAL_MAP[interval] || '1h';
+    const barMs = BAR_MS[interval] || 3_600_000;
 
-    // Response: array of string arrays [ts, open, high, low, close, baseVol, quoteVol]
-    // Returns ASCENDING order — no need to reverse
+    // Recent path (live/indicator use — UNCHANGED): `/market/candles` returns ASCENDING
+    // [ts, open, high, low, close, baseVol, quoteVol]; no reverse needed.
     const data = await bitgetGet<string[][]>('/api/v2/mix/market/candles', {
       productType: 'USDT-FUTURES',
       symbol,
@@ -124,15 +143,28 @@ export class BitgetAdapter implements ExchangeAdapter {
       startTime,
       limit: 200,
     });
+    const candles = (data || []).map(mapBitgetCandle);
 
-    return (data || []).map(c => ({
-      time: parseInt(c[0]),
-      open: parseFloat(c[1]),
-      high: parseFloat(c[2]),
-      low: parseFloat(c[3]),
-      close: parseFloat(c[4]),
-      volume: parseFloat(c[5]),
-    }));
+    // `/market/candles` only holds the recent window, so a HISTORICAL startTime yields the newest
+    // bars instead of bars AT startTime (the labeler then filters them all → noKlines). Detect the
+    // gap — the oldest returned bar should sit at ~startTime — and fall back to history-candles.
+    // Recent requests satisfy the guard here and return the live path verbatim.
+    if (candles.length > 0 && candles[0].time <= startTime + 5 * barMs) {
+      return candles;
+    }
+
+    // Historical fallback: `/market/history-candles` returns bars BEFORE `endTime`, ascending.
+    // Anchor endTime just past the wanted window so the page lands on [startTime, startTime + ~200 bars].
+    const endTime = startTime + 200 * barMs;
+    const hist = await bitgetGet<string[][]>('/api/v2/mix/market/history-candles', {
+      productType: 'USDT-FUTURES',
+      symbol,
+      granularity,
+      endTime,
+      limit: 200,
+    });
+    const histAsc = (hist || []).map(mapBitgetCandle).filter(c => c.time >= startTime);
+    return histAsc.length > 0 ? histAsc : candles;
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
