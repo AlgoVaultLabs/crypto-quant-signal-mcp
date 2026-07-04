@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0] - 2026-07-03
+
+### Changed
+- `scan_funding_arb` now scans 7 venues (was 3): Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Funding is annualized at each venue's own interval, and a per-leg liquidity filter drops thin/untradeable spreads. The tool description changed — MCP clients should refresh tools/list.
+
+### Internal
+- Ops, monitoring, and infrastructure hardening. No MCP tool-count change (tools/list = 9).
+
 ## [1.22.1] - 2026-06-30
 
 ### Fixed
