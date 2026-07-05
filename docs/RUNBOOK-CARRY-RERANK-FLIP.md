@@ -2,7 +2,7 @@
 
 _EDGE-CARRY-SERVING-W1 shipped the machinery DARK. This runbook is the ONE-LINE flip a separate
 Mr.1 dispatch executes after divergence review. Scope inherited from `CARRY_RANKER_PASS_TA`:
-**re-ranking (selection) only — no premium/return claims anywhere, internal or public.**_
+**re-ranking (selection) only — no performance-claim language of any kind, internal or public.**_
 
 ## What flips
 
