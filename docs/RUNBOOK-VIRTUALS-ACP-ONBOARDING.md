@@ -1,9 +1,15 @@
-# Runbook — Virtuals ACP Untokenized Seller Onboarding (sandbox)
+# Runbook — Virtuals ACP Untokenized Seller Onboarding (Base mainnet)
 
 **Owner:** Mr.1 (manual steps at app.virtuals.io). **Wave:** P1-ACP-SELLER-SEED.
+
+> ⚠️ **Base MAINNET, not sandbox.** Virtuals' web console (`app.virtuals.io`) registers **production**
+> agents on **Base mainnet** — there is **no Base Sepolia testnet agent** (the testnet server 404s a
+> web-registered agent). The agent went live on mainnet (Mr.1-authorized 2026-07-04); config is
+> `ACP_ENV=mainnet`. Settlement is real USDC (tiny — $0.01–0.02/job). **Graduation** (10 jobs via our
+> own test-buyer) is in [`RUNBOOK-VIRTUALS-ACP-GRADUATION.md`](RUNBOOK-VIRTUALS-ACP-GRADUATION.md).
+
 **Goal:** register AlgoVault as an untokenized **Seller** on the Virtuals Agent Commerce Protocol
-(ACP), list the 3 launch offerings, and run the seller worker in the **Base Sepolia sandbox** to
-graduate (10 successful jobs incl. 3 consecutive). No token, no mainnet, no real funds.
+(ACP), list the 3 launch offerings, and run the seller worker **live on Base mainnet**.
 
 The code ships **stub-first + default-OFF**: nothing here blocks a deploy. Until you complete the
 steps below and set `ACP_ENABLED=true` + the signer creds, the worker is a silent no-op.
@@ -115,10 +121,11 @@ stay green). Add these to the **Hetzner container env** (the same mechanism that
 
 ```sh
 ACP_ENABLED=true
-ACP_ENV=testnet                       # Base Sepolia sandbox (default). Do NOT set 'mainnet' — that is a separate Mr.1-gated wave.
+ACP_ENV=mainnet                       # Base mainnet — the web console registers production agents.
+ACP_PRIVY_APP_ID=cltsev9j90f67yhyw4sngtrpv   # prod Privy app (the wallet's app; signing points here)
 ACP_WALLET_ADDRESS=0x…                # from Signers → walletAddress
 ACP_WALLET_ID=…                       # from Signers → walletId
-ACP_SIGNER_PRIVATE_KEY=…              # from Signers → Copy Key (secret)
+ACP_SIGNER_PRIVATE_KEY=…              # from Signers → Copy Key (secret — install via one-time-secret)
 ```
 
 Recreate the container so it picks up the new env (`docker compose up -d <service>` — a plain
@@ -130,19 +137,20 @@ docker logs <ctr> 2>&1 | grep -i 'ACP seller' # expect: "Virtuals ACP seller wor
 ```
 
 If any signer cred is missing the worker runs the **[STUB] seller** (dark, no settlement) — safe,
-but no real jobs. If all three are present it runs **live** on the sandbox.
+but no real jobs. If all three are present it runs **live** on **Base mainnet**.
 
 ---
 
-## 5. Fund the sandbox wallet (Base Sepolia)
+## 5. Gas (Base mainnet)
 
-The agent wallet needs Base Sepolia ETH for gas (and test USDC to self-test as a buyer during
-graduation). Use a Base Sepolia faucet (e.g. the Coinbase Developer Platform / Alchemy Base Sepolia
-faucet) to fund `ACP_WALLET_ADDRESS`. Testnet only — no real funds.
+The seller's on-chain ops (`setBudget`/`submit`) run through an Alchemy smart wallet on Base
+(`8453`), an ERC20-**sponsored** chain — so seller-side gas is expected to be paymaster-sponsored
+(confirmed at the first real job). No Base ETH funding is required for the seller to *receive* jobs;
+USDC revenue settles TO `ACP_WALLET_ADDRESS`. (The buyer side + funding is in the graduation runbook.)
 
 ---
 
-## 6. Local sandbox dry-run (optional, no creds needed)
+## 6. Local dry-run (optional, no creds needed)
 
 To watch the full lifecycle offline before going live:
 
@@ -155,23 +163,14 @@ Expected: `[STUB] seller` → `setBudget $0.02` → a real deliverable → `deli
 
 ---
 
-## 7. Graduation checklist (`P1-ACP-SANDBOX-GRADUATION`)
+## 7. Graduation → `P1-ACP-MAINNET-GRADUATION`
 
-Graduation is a **manual** Virtuals review, not a code gate. Target: **10 successful sandbox jobs,
-including 3 consecutive**, then submit the Graduate-Agent form.
-
-- [ ] Worker shows `mode=live` in the container logs.
-- [ ] Wallet funded on Base Sepolia (gas + a little test USDC).
-- [ ] Drive jobs against each of the 3 offerings via your own test-buyer (an ACP buyer agent that
-      calls `createJobByOfferingName(chainId, "AlgoVault Trade Call", <sellerAddress>, { coin: "BTC" })`,
-      funds it, and confirms the deliverable). See the acp-node-v2 buyer example.
-- [ ] Reach **10 successful jobs**, with **3 consecutive** successes (no rejects/expiries in the run).
-- [ ] Submit the **Graduate Agent** form on the agent page.
-- [ ] On approval, the agent becomes discoverable to ACP buyers on the sandbox; a later wave decides
-      the mainnet flip (`ACP_ENV=mainnet` + revisit whether the 0.01–0.02 USDC price clears ACP
-      protocol fee + gas). **Do not flip to mainnet from this wave.**
-
-Report progress in `status.md` under the `P1-ACP-SANDBOX-GRADUATION` follow-up.
+Graduation is a **manual** Virtuals review on **Base mainnet**: **10 successful jobs incl. 3
+consecutive** via our own test-buyer, then submit the Graduate-Agent form → the agent becomes
+discoverable in the A2A tab. The full click-by-click (register the 2nd buyer agent, fund it,
+`--smoke`, run 10, submit the form) is in
+[`RUNBOOK-VIRTUALS-ACP-GRADUATION.md`](RUNBOOK-VIRTUALS-ACP-GRADUATION.md), driven by
+`src/scripts/acp-graduation-buyer.ts`. Progress tracked in `status.md` under `P1-ACP-MAINNET-GRADUATION`.
 
 ---
 
