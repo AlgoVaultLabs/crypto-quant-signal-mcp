@@ -101,6 +101,85 @@ const CREATE_SKILL_INVOCATIONS_INDEX_TS_SQL = `
   CREATE INDEX IF NOT EXISTS idx_skill_invocations_timestamp ON skill_invocations(timestamp);
 `;
 
+// OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1 (2026-07-06): the algovault-bot daily metric bridge
+// (Option A). Written by algovault-bot's digest.py (single-derivation, least-priv role);
+// READ here for the main digest's 🔁 TG bot line. Pre-applied on prod PG via SSH BEFORE this
+// deploy → this CREATE IF NOT EXISTS is a no-op there (schema-as-code parity). The SQLite
+// variant lets unit tests / stdio init create the table so getUsageStats() never throws on a
+// fresh DB (empty table → tgBot null → renderer omits the line).
+const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS bot_daily_metrics (
+      metric_date DATE PRIMARY KEY,
+      calls_total INTEGER NOT NULL DEFAULT 0,
+      calls_watch INTEGER NOT NULL DEFAULT 0,
+      calls_scanwatch INTEGER NOT NULL DEFAULT 0,
+      calls_scan INTEGER NOT NULL DEFAULT 0,
+      alerts_regime INTEGER NOT NULL DEFAULT 0,
+      subscribers INTEGER NOT NULL DEFAULT 0,
+      new_subscribers_24h INTEGER NOT NULL DEFAULT 0,
+      blocked_subscribers INTEGER NOT NULL DEFAULT 0,
+      watchlist_entries INTEGER NOT NULL DEFAULT 0,
+      quota_exhausted_notices INTEGER NOT NULL DEFAULT 0,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`
+  : `CREATE TABLE IF NOT EXISTS bot_daily_metrics (
+      metric_date TEXT PRIMARY KEY,
+      calls_total INTEGER NOT NULL DEFAULT 0,
+      calls_watch INTEGER NOT NULL DEFAULT 0,
+      calls_scanwatch INTEGER NOT NULL DEFAULT 0,
+      calls_scan INTEGER NOT NULL DEFAULT 0,
+      alerts_regime INTEGER NOT NULL DEFAULT 0,
+      subscribers INTEGER NOT NULL DEFAULT 0,
+      new_subscribers_24h INTEGER NOT NULL DEFAULT 0,
+      blocked_subscribers INTEGER NOT NULL DEFAULT 0,
+      watchlist_entries INTEGER NOT NULL DEFAULT 0,
+      quota_exhausted_notices INTEGER NOT NULL DEFAULT 0,
+      generated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );`;
+
+/** Staleness threshold for the bridged bot metric: a skipped 03:00 bot digest ages the row
+ * to ~29h by the 08:00 main digest → past this ⇒ render "metrics stale" not a frozen number. */
+export const TG_BOT_STALE_MS = 26 * 60 * 60 * 1000;
+
+/** Parse a Postgres timestamptz text (`2026-07-06 14:31:39.6+00`) or ISO string to epoch ms.
+ * Normalizes the space separator + a minute-less `+00` offset so Date.parse is reliable. */
+function parseTsMs(s: string): number {
+  const t = s.trim().replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+  return Date.parse(t);
+}
+
+/** Pure: map the latest bot_daily_metrics row → the `tgBot` payload the digest renderer reads.
+ * null row → null (renderer omits the line); unparseable/aged generated_at → stale=true. */
+export function deriveTgBot(
+  row:
+    | {
+        calls_total?: unknown;
+        calls_watch?: unknown;
+        calls_scanwatch?: unknown;
+        calls_scan?: unknown;
+        subscribers?: unknown;
+        metric_date?: unknown;
+        generated_at?: unknown;
+      }
+    | undefined,
+  nowMs: number,
+): Record<string, unknown> | null {
+  if (!row) return null;
+  const genMs = parseTsMs(String(row.generated_at ?? ''));
+  const stale = !Number.isFinite(genMs) || nowMs - genMs > TG_BOT_STALE_MS;
+  return {
+    present: true,
+    stale,
+    calls_total: Number(row.calls_total ?? 0),
+    calls_watch: Number(row.calls_watch ?? 0),
+    calls_scanwatch: Number(row.calls_scanwatch ?? 0),
+    calls_scan: Number(row.calls_scan ?? 0),
+    subscribers: Number(row.subscribers ?? 0),
+    metric_date: String(row.metric_date ?? ''),
+    generated_at: String(row.generated_at ?? ''),
+  };
+}
+
 export function initAnalytics(): void {
   dbExec(CREATE_TABLE_SQL);
   // BOT-W1 / D1-C: backward-compat migration for request_log (is_bot_internal).
@@ -140,6 +219,14 @@ export function initAnalytics(): void {
   }
   dbExec(CREATE_SKILL_INVOCATIONS_INDEX_SLUG_SQL);
   dbExec(CREATE_SKILL_INVOCATIONS_INDEX_TS_SQL);
+  // OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1: bot_daily_metrics (bot writes, main digest reads).
+  // Pre-applied on prod PG via SSH → no-op there; SQLite dev/test gets it now. Best-effort.
+  try {
+    dbExec(CREATE_BOT_DAILY_METRICS_SQL);
+  } catch {
+    // Best-effort — table may already exist (PG IF NOT EXISTS no-ops); a failure here must
+    // not break analytics init (the read path treats a missing table as "tgBot null" anyway).
+  }
 }
 
 // ── IP hashing ──
@@ -437,6 +524,8 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     recognizedSessions24h,
     paidSessions24h,
     rawTopSessions24h,
+    // OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1: the bot's latest daily metric (Option A bridge).
+    botDailyMetrics,
   ] = await Promise.all([
     // DASH-EXTERNAL-ONLY-W1: every dashboard tile / breakdown counts EXTERNAL
     // calls only (internal loopback like algovault-bot excluded). Per CLAUDE.md
@@ -492,6 +581,17 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     // poller surge actually shows; the prior all-external scope (externalConcentration, kept
     // for back-compat) diluted it. Denominator = the raw bucket total (automatedFree24h).
     dbQuery<{ session_id: string; count: string }>("SELECT session_id, COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND license_tier = 'free' AND is_automated = ? AND session_id IS NOT NULL GROUP BY session_id ORDER BY count DESC LIMIT 5", [dayAgo, BOT_FALSE, BOT_TRUE]),
+    // OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1: latest bot daily metric row (portable columns only —
+    // freshness computed in JS via deriveTgBot, so the query stays PG/SQLite-agnostic).
+    dbQuery<{
+      metric_date: string;
+      calls_total: string;
+      calls_watch: string;
+      calls_scanwatch: string;
+      calls_scan: string;
+      subscribers: string;
+      generated_at: string;
+    }>('SELECT metric_date, calls_total, calls_watch, calls_scanwatch, calls_scan, subscribers, generated_at FROM bot_daily_metrics ORDER BY metric_date DESC LIMIT 1', []),
   ]);
 
   // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: concentration % of the top talkers
@@ -561,6 +661,9 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     // OPS-DIGEST-CHANNEL-LABELS-W1: concentration scoped to the Raw API clients bucket
     // (the digest's "top IP %" now reads from this, on the 🔌 Raw API clients line).
     rawConcentration: { top1_pct: pctOfRaw(rawTop1), top5_pct: pctOfRaw(rawTop5) },
+    // OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1: the bridged 🔁 TG bot line source (fresh/stale/missing
+    // resolved here; renderer just projects). null → renderer omits the line (fail-open).
+    tgBot: deriveTgBot(botDailyMetrics[0], Date.now()),
     topAssets: topAssets.map(r => ({ asset: r.asset, calls: Number(r.count) })),
     // Genuine-slice top assets — the digest uses THIS (bot-BTC excluded).
     topAssetsGenuine: topAssetsGenuine24h.map(r => ({ asset: r.asset, calls: Number(r.count) })),
