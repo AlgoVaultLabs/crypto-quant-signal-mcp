@@ -141,11 +141,23 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
  * to ~29h by the 08:00 main digest → past this ⇒ render "metrics stale" not a frozen number. */
 export const TG_BOT_STALE_MS = 26 * 60 * 60 * 1000;
 
-/** Parse a Postgres timestamptz text (`2026-07-06 14:31:39.6+00`) or ISO string to epoch ms.
- * Normalizes the space separator + a minute-less `+00` offset so Date.parse is reliable. */
-function parseTsMs(s: string): number {
-  const t = s.trim().replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
-  return Date.parse(t);
+/** Epoch ms from generated_at whatever shape the driver hands back: the node-postgres
+ * driver parses TIMESTAMPTZ to a JS `Date`; SQLite/tests give a string; be liberal. */
+function toEpochMs(v: unknown): number {
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'number') return v;
+  const s = String(v ?? '').trim();
+  if (!s) return NaN;
+  const direct = Date.parse(s); // handles ISO 8601 + JS Date.toString()
+  if (Number.isFinite(direct)) return direct;
+  // Fallback: raw PG timestamptz text ("2026-07-06 14:31:39.6+00") — space sep + minute-less offset.
+  return Date.parse(s.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00'));
+}
+
+/** Normalize a value that may be a JS Date (pg driver) or string to a clean stamp. */
+function stampStr(v: unknown, dateOnly: boolean): string {
+  if (v instanceof Date) return dateOnly ? v.toISOString().slice(0, 10) : v.toISOString();
+  return String(v ?? '');
 }
 
 /** Pure: map the latest bot_daily_metrics row → the `tgBot` payload the digest renderer reads.
@@ -165,7 +177,7 @@ export function deriveTgBot(
   nowMs: number,
 ): Record<string, unknown> | null {
   if (!row) return null;
-  const genMs = parseTsMs(String(row.generated_at ?? ''));
+  const genMs = toEpochMs(row.generated_at);
   const stale = !Number.isFinite(genMs) || nowMs - genMs > TG_BOT_STALE_MS;
   return {
     present: true,
@@ -175,8 +187,8 @@ export function deriveTgBot(
     calls_scanwatch: Number(row.calls_scanwatch ?? 0),
     calls_scan: Number(row.calls_scan ?? 0),
     subscribers: Number(row.subscribers ?? 0),
-    metric_date: String(row.metric_date ?? ''),
-    generated_at: String(row.generated_at ?? ''),
+    metric_date: stampStr(row.metric_date, true),
+    generated_at: stampStr(row.generated_at, false),
   };
 }
 

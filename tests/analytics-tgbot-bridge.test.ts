@@ -50,6 +50,18 @@ describe('deriveTgBot — freshness mapping', () => {
   it('treats an unparseable generated_at as stale (conservative)', () => {
     expect(deriveTgBot({ generated_at: 'not-a-timestamp' }, NOW)).toMatchObject({ present: true, stale: true });
   });
+
+  it('handles a JS Date generated_at (the node-postgres TIMESTAMPTZ shape) — fresh, not NaN→stale', () => {
+    // Regression guard: the pg driver returns TIMESTAMPTZ as a Date, not text. A fresh Date
+    // (5h before NOW) MUST read fresh; metric_date Date → normalized to YYYY-MM-DD.
+    const tg = deriveTgBot(
+      { metric_date: new Date('2026-07-06T00:00:00Z'), generated_at: new Date(NOW - 5 * 3600_000), subscribers: 21 },
+      NOW,
+    );
+    expect(tg).toMatchObject({ present: true, stale: false, subscribers: 21, metric_date: '2026-07-06' });
+    // a Date older than 26h is stale
+    expect(deriveTgBot({ generated_at: new Date(NOW - 30 * 3600_000) }, NOW)).toMatchObject({ stale: true });
+  });
 });
 
 describe('formatAgentActivity — 🔁 TG bot line', () => {
