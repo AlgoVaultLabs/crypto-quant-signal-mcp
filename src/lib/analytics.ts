@@ -433,6 +433,10 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     automatedFree7d,
     topSessions24h,
     topAssetsGenuine24h,
+    // OPS-DIGEST-CHANNEL-LABELS-W1: per-channel distinct sessions + Raw-bucket concentration.
+    recognizedSessions24h,
+    paidSessions24h,
+    rawTopSessions24h,
   ] = await Promise.all([
     // DASH-EXTERNAL-ONLY-W1: every dashboard tile / breakdown counts EXTERNAL
     // calls only (internal loopback like algovault-bot excluded). Per CLAUDE.md
@@ -478,6 +482,16 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     dbQuery<{ session_id: string; count: string }>("SELECT session_id, COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND session_id IS NOT NULL GROUP BY session_id ORDER BY count DESC LIMIT 5", [dayAgo, BOT_FALSE]),
     // Top assets over the GENUINE slice only (so bot-BTC-polling doesn't dominate).
     dbQuery<{ asset: string; count: string }>("SELECT asset, COUNT(*) as count FROM request_log WHERE asset IS NOT NULL AND timestamp >= ? AND is_bot_internal = ? AND (license_tier <> 'free' OR is_automated = ?) GROUP BY asset ORDER BY count DESC LIMIT 10", [dayAgo, BOT_FALSE, BOT_FALSE]),
+    // OPS-DIGEST-CHANNEL-LABELS-W1: per-channel distinct sessions (24h) for the digest
+    // Sessions block. Recognized clients = genuine free-tier sessions (is_automated=false);
+    // Paid = distinct sessions on any non-free non-internal tier. (Raw-client sessions
+    // already = externalAutomated.sessions.)
+    dbQuery<{ count: string }>("SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier = 'free' AND is_automated = ?", [dayAgo, BOT_FALSE, BOT_FALSE]),
+    dbQuery<{ count: string }>("SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier NOT IN ('free','internal')", [dayAgo, BOT_FALSE]),
+    // Concentration re-scoped to the Raw API clients bucket (free-tier automated) — where a
+    // poller surge actually shows; the prior all-external scope (externalConcentration, kept
+    // for back-compat) diluted it. Denominator = the raw bucket total (automatedFree24h).
+    dbQuery<{ session_id: string; count: string }>("SELECT session_id, COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND license_tier = 'free' AND is_automated = ? AND session_id IS NOT NULL GROUP BY session_id ORDER BY count DESC LIMIT 5", [dayAgo, BOT_FALSE, BOT_TRUE]),
   ]);
 
   // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: concentration % of the top talkers
@@ -490,6 +504,14 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     extTotal24h > 0 ? Math.round((n / extTotal24h) * 1000) / 10 : 0;
   const genuineFreeN = Number(genuineFree24h[0]?.count ?? 0);
   const genuinePaidN = Number(genuinePaid24h[0]?.count ?? 0);
+  // OPS-DIGEST-CHANNEL-LABELS-W1: concentration over the Raw API clients bucket only
+  // (free-tier automated) — denominator = that bucket's call total, not all-external.
+  const rawTotal24h = Number(automatedFree24h[0]?.count ?? 0);
+  const rawTopCounts = rawTopSessions24h.map(r => Number(r.count));
+  const rawTop1 = rawTopCounts[0] ?? 0;
+  const rawTop5 = rawTopCounts.slice(0, 5).reduce((s, v) => s + v, 0);
+  const pctOfRaw = (n: number): number =>
+    rawTotal24h > 0 ? Math.round((n / rawTotal24h) * 1000) / 10 : 0;
 
   return {
     totalCalls: {
@@ -519,6 +541,11 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       free: genuineFreeN,
       paid: genuinePaidN,
       sessions: Number(genuineSessions24h[0]?.count ?? 0),
+      // OPS-DIGEST-CHANNEL-LABELS-W1: per-channel session counts for the digest Sessions
+      // block. freeSessions = 🟢 Recognized clients; paidSessions = 💳 Paid. (`sessions`
+      // stays = genuine-total for back-compat.)
+      freeSessions: Number(recognizedSessions24h[0]?.count ?? 0),
+      paidSessions: Number(paidSessions24h[0]?.count ?? 0),
       last7d: {
         total: Number(genuineFree7d[0]?.count ?? 0) + Number(genuinePaid7d[0]?.count ?? 0),
         free: Number(genuineFree7d[0]?.count ?? 0),
@@ -531,6 +558,9 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       last7d: { total: Number(automatedFree7d[0]?.count ?? 0) },
     },
     externalConcentration: { top1_pct: pctOfExternal(top1Calls), top5_pct: pctOfExternal(top5Calls) },
+    // OPS-DIGEST-CHANNEL-LABELS-W1: concentration scoped to the Raw API clients bucket
+    // (the digest's "top IP %" now reads from this, on the 🔌 Raw API clients line).
+    rawConcentration: { top1_pct: pctOfRaw(rawTop1), top5_pct: pctOfRaw(rawTop5) },
     topAssets: topAssets.map(r => ({ asset: r.asset, calls: Number(r.count) })),
     // Genuine-slice top assets — the digest uses THIS (bot-BTC excluded).
     topAssetsGenuine: topAssetsGenuine24h.map(r => ({ asset: r.asset, calls: Number(r.count) })),
