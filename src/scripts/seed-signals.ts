@@ -224,7 +224,7 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): { timeframe: 
   // SHADOW-SEED-W1: --restricted-universe N replaces the per-exchange
   // OI-ranked universe with the top-N coins by historical call-count from
   // /api/performance-public.byAsset (proxy for adoption / liquidity rank).
-  // Used by 1m + 3m shadow-mode crons to keep CPX22 load bounded.
+  // Used by 1m + 3m shadow-mode crons to keep host load bounded (CPX42).
   let restrictedUniverse = 0; // 0 = use per-exchange OI (default)
   const ruIdx = args.indexOf('--restricted-universe');
   if (ruIdx !== -1 && args[ruIdx + 1]) {
@@ -354,7 +354,7 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): { timeframe: 
 /**
  * SHADOW-SEED-W1: Returns the top-N coins by historical call-count from
  * `byAsset` aggregation in performance-db. Used by 1m + 3m shadow-mode
- * crons to bound CPX22 load — instead of seeding the full per-exchange
+ * crons to bound host load (CPX42) — instead of seeding the full per-exchange
  * universe (300+ symbols), we seed only the assets users actually call.
  *
  * 5-min in-process cache. Falls back to a hardcoded majors set if the

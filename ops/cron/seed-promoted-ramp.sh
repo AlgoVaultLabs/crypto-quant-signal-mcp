@@ -40,24 +40,30 @@
 #                        (firewall: shadow + HL line counts + total line count unchanged;
 #                        1d orch line still --exchange-list), install. Idempotent.
 #   --revert <backup>    crontab <backup>.
+#   --set-concurrency N  (Re)set --concurrency on the tight 3m + 5m lines (OPS-SEED-
+#                        CONCURRENCY-TUNE-W1; validated safe value = 2; env SEED_RAMP_CONCURRENCY).
 set -euo pipefail
 
 TOP_3M="${SEED_RAMP_TOP_3M:-15}"
 TOP_5M="${SEED_RAMP_TOP_5M:-30}"
+# OPS-SEED-CONCURRENCY-TUNE-W1 (2026-07-08): the tight 3m + 5m lines carry --concurrency 2.
+# c=2 is the empirically-validated safe value (3m 95.7s / 5m 124.9s, overrun=false, 0 bans);
+# the ceiling is the exchanges' per-IP rate-limits (Bybit 10006 at c=3+top-50), NOT box CPU.
+CONC="${SEED_RAMP_CONCURRENCY:-2}"
 NEW_SEL='--status promoted --exclude HL'
 BACKUP_DIR="${SEED_RAMP_BACKUP_DIR:-/opt}"
 
 cur() { crontab -l 2>/dev/null || true; }
 
 transform() {
-  awk -v newsel="$NEW_SEL" -v top3m="$TOP_3M" -v top5m="$TOP_5M" '
+  awk -v newsel="$NEW_SEL" -v top3m="$TOP_3M" -v top5m="$TOP_5M" -v conc="$CONC" '
   {
     line = $0
     if (line ~ /seed-3m-standard\.log/ && line ~ /--timeframe 3m --top 50/) {
-      sub(/--timeframe 3m --top 50/, "--timeframe 3m --top " top3m " " newsel, line)
+      sub(/--timeframe 3m --top 50/, "--timeframe 3m --top " top3m " " newsel " --concurrency " conc, line)
     } else if (line ~ /seed-orch-(5m|15m|30m|1h|2h|4h|8h|12h)\.log/ && line ~ /--exchange-list BINANCE,BYBIT,OKX,BITGET/) {
       sub(/--exchange-list BINANCE,BYBIT,OKX,BITGET/, newsel, line)
-      if (line ~ /seed-orch-5m\.log/) { sub(/--top 50/, "--top " top5m, line) }
+      if (line ~ /seed-orch-5m\.log/) { sub(/--top 50/, "--top " top5m, line); sub(/--concurrency 1/, "--concurrency " conc, line) }
     }
     print line
   }'
@@ -96,5 +102,18 @@ case "${1:-}" in
     [ -n "${2:-}" ] && [ -f "${2:-}" ] || { echo "usage: $0 --revert <backup-path>" >&2; exit 1; }
     crontab "$2"; echo "REVERTED crontab from $2"
     ;;
-  *) echo "usage: $0 --check | --apply | --revert <backup-path>" >&2; exit 1 ;;
+  --set-concurrency)
+    # OPS-SEED-CONCURRENCY-TUNE-W1: (re)set --concurrency on the tight 3m + 5m promoted
+    # lines of the CURRENT crontab (idempotent — strip existing, add fresh). Default 2.
+    n="${2:-$CONC}"
+    case "$n" in 1|2|3|4|5|6|7|8) ;; *) echo "usage: $0 --set-concurrency <1-8>" >&2; exit 1 ;; esac
+    ts=$(date -u +%Y%m%dT%H%M%SZ); bkp="$BACKUP_DIR/crontab.bak-$ts"
+    cur > "$bkp"; echo "backup: $bkp"
+    tmp=$(mktemp)
+    cur | sed -E "/seed-(3m-standard|orch-5m)\.log/{ s/ --concurrency [0-9]+//; s/ >>/ --concurrency $n >>/ }" > "$tmp"
+    validate "$tmp"
+    crontab "$tmp"; rm -f "$tmp"
+    echo "set --concurrency $n on the 3m + 5m promoted lines"; echo "revert: $0 --revert $bkp"
+    ;;
+  *) echo "usage: $0 --check | --apply | --revert <backup-path> | --set-concurrency <1-8>" >&2; exit 1 ;;
 esac

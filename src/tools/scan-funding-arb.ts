@@ -28,10 +28,10 @@ import { writeDivergenceLog } from '../lib/carry-divergence-log.js';
 // from ~1093ms → ~500ms (cuts the two adapter roundtrips that dominate the
 // hot path).
 //
-// CPX22 RAM cap proof:
+// RAM cap proof (CPX42, 16 GB — was CPX22 pre-upgrade; even more headroom now):
 //   - predictedFundingsCache: 1 entry, ~50KB max
 //   - fundingHistoryCache:    200 entries × ~20KB = 4MB max
-//   Total: <5MB worst case. Well inside CPX22 budget.
+//   Total: <5MB worst case. Well inside the budget.
 
 const PREDICTED_FUNDINGS_TTL_MS = 30_000; // HL updates funding on the minute; 30s safe
 const FUNDING_HISTORY_TTL_MS = 60_000;    // 24h-window data; 60s + 1-min bucket = stable
