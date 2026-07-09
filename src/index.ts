@@ -1542,14 +1542,18 @@ async function startHttp() {
     const utmSource = typeof req.query.utm_source === 'string' ? req.query.utm_source : null;
     const utmCampaign = typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : null;
 
+    // FUNNEL-FIX-HUMAN-SIGNUP-W1: render the value-before-email + OAuth options only when flagged.
+    const { isNewSignupEnabled } = await import('./lib/auth-providers.js');
+    const newSignupEnabled = isNewSignupEnabled();
+
     // Organic visit (no session_id) — render paywall CTA + no API-key reveal.
     if (!sessionId) {
-      return res.send(getWelcomePageHtml(null, null, null, { utmSource, utmCampaign }));
+      return res.send(getWelcomePageHtml(null, null, null, { utmSource, utmCampaign, newSignupEnabled }));
     }
 
     try {
       const { apiKey, tier, email } = await getCustomerApiKey(sessionId);
-      res.send(getWelcomePageHtml(apiKey, tier, email, { utmSource, utmCampaign }));
+      res.send(getWelcomePageHtml(apiKey, tier, email, { utmSource, utmCampaign, newSignupEnabled }));
     } catch (err) {
       console.error('Welcome page error:', err instanceof Error ? err.message : err);
       res.status(500).send('Failed to retrieve your API key. Please contact support@algovault.com');
@@ -2611,7 +2615,7 @@ async function startHttp() {
   });
   app.post('/api/signup-email', signupEmailLimiter, express.json({ limit: '2kb' }), async (req, res) => {
     try {
-      const body = (req.body ?? {}) as { email?: unknown; source?: unknown; optin_consent?: unknown; ref?: unknown };
+      const body = (req.body ?? {}) as { email?: unknown; source?: unknown; optin_consent?: unknown; ref?: unknown; ephemeral_key?: unknown };
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
       const source = typeof body.source === 'string' ? body.source : 'welcome-paywall';
       const optinConsent = body.optin_consent === true;
@@ -2652,10 +2656,23 @@ async function startHttp() {
       // REFERRAL-FREE-KEY-SIGNUP-W1: mint an av_free_ key for EVERY signup (idempotent
       // on email), then derive the persisted referral code + share link. The keyless
       // free tier (no key passed) is untouched — this only ADDS the opt-in account.
-      const { mintFreeKey } = await import('./lib/free-keys-store.js');
+      const { mintFreeKey, isEphemeralKey } = await import('./lib/free-keys-store.js');
       const { ensureUserCode } = await import('./lib/referral-store.js');
       const { shareLink } = await import('./lib/referral-constants.js');
-      const key = referral.freeKey ?? (await mintFreeKey(email));
+      const { isNewSignupEnabled } = await import('./lib/auth-providers.js');
+      // FUNNEL-FIX-HUMAN-SIGNUP-W1: if this signup CLAIMS a prior ephemeral key (deferred
+      // email), MERGE it (email = identity; idempotent; no double key) instead of minting
+      // anew — behind NEW_SIGNUP_ENABLED. Legacy path (no ephemeral_key / flag off) unchanged.
+      const ephemeralKey = typeof body.ephemeral_key === 'string' ? body.ephemeral_key : null;
+      let key: string;
+      if (referral.freeKey) {
+        key = referral.freeKey;
+      } else if (ephemeralKey && isNewSignupEnabled() && (await isEphemeralKey(ephemeralKey))) {
+        const { captureEmail } = await import('./lib/deferred-signup.js');
+        key = (await captureEmail(ephemeralKey, email, ref ?? null)).key;
+      } else {
+        key = await mintFreeKey(email);
+      }
       const referralCode = await ensureUserCode(key, email);
       const referralLink = shareLink(referralCode);
 
@@ -2694,6 +2711,118 @@ async function startHttp() {
     } catch (err) {
       console.error(`[/api/signup-email] internal error: ${err instanceof Error ? err.message : err}`);
       return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  // ── FUNNEL-FIX-HUMAN-SIGNUP-W1: value-before-email + one-tap sign-in ──
+  // ALL new-signup routes are behind NEW_SIGNUP_ENABLED (default OFF → 404, invisible).
+  // The legacy email-first flow above stays intact. MCP/TG surfaces untouched.
+
+  // Value BEFORE email: mint an ephemeral key + return a real signal, no email required.
+  app.post('/api/start-free', express.json({ limit: '2kb' }), async (req, res) => {
+    const { isNewSignupEnabled } = await import('./lib/auth-providers.js');
+    if (!isNewSignupEnabled()) return res.status(404).json({ ok: false, error: 'not_found' });
+    try {
+      const q = req.query as Record<string, string | undefined>;
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const str = (v: unknown): string | null => (typeof v === 'string' && v.length <= 200 ? v : null);
+      const { startFree } = await import('./lib/deferred-signup.js');
+      const result = await startFree({
+        src: str(q.src) ?? str(b.src),
+        ref: str(q.ref) ?? str(b.ref),
+        utm_source: str(q.utm_source) ?? str(b.utm_source),
+        utm_campaign: str(q.utm_campaign) ?? str(b.utm_campaign),
+        landing_path: str(q.landing_path),
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ ok: true, ...result });
+    } catch (err) {
+      console.error(`[/api/start-free] internal error: ${err instanceof Error ? err.message : err}`);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  // One-tap OAuth start: redirect to the IdP (or the Stub loopback) with a CSRF state cookie.
+  app.get('/auth/:provider', async (req, res) => {
+    const { isNewSignupEnabled, getAuthProvider, generateOAuthState, safeRedirectPath } = await import('./lib/auth-providers.js');
+    if (!isNewSignupEnabled()) return res.status(404).send('Not found');
+    const id = req.params.provider;
+    if (id !== 'google' && id !== 'github') return res.status(404).send('Unknown provider');
+    try {
+      const provider = getAuthProvider(id);
+      const state = generateOAuthState();
+      const next = safeRedirectPath(req.query.next);
+      const redirectUri = `https://${req.get('host')}/auth/${id}/callback`;
+      const secure = req.secure || req.get('x-forwarded-proto') === 'https';
+      // Short-lived, HttpOnly CSRF + next cookies (10 min).
+      res.setHeader('Set-Cookie', [
+        `av_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=600${secure ? '; Secure' : ''}`,
+        `av_oauth_next=${encodeURIComponent(next)}; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=600${secure ? '; Secure' : ''}`,
+        ...(typeof req.query.src === 'string' ? [`av_oauth_src=${encodeURIComponent(req.query.src.slice(0, 60))}; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=600${secure ? '; Secure' : ''}`] : []),
+      ]);
+      return res.redirect(302, provider.authorizeUrl({ state, redirectUri }));
+    } catch (err) {
+      console.error(`[/auth/${id}] internal error: ${err instanceof Error ? err.message : err}`);
+      return res.status(500).send('Sign-in error');
+    }
+  });
+
+  // OAuth callback: verify state → exchange → issue a free key for the verified email.
+  app.get('/auth/:provider/callback', async (req, res) => {
+    const { isNewSignupEnabled, getAuthProvider, safeRedirectPath } = await import('./lib/auth-providers.js');
+    if (!isNewSignupEnabled()) return res.status(404).send('Not found');
+    const id = req.params.provider;
+    if (id !== 'google' && id !== 'github') return res.status(404).send('Unknown provider');
+    try {
+      const cookie = req.headers.cookie ?? '';
+      const readCookie = (n: string): string | null => {
+        const m = cookie.match(new RegExp(`${n}=([^;]+)`));
+        return m ? decodeURIComponent(m[1]) : null;
+      };
+      const expectState = readCookie('av_oauth_state');
+      const gotState = typeof req.query.state === 'string' ? req.query.state : '';
+      if (!expectState || !gotState || !safeCompare(expectState, gotState)) {
+        return res.status(400).send('Invalid or expired sign-in state. Please try again.');
+      }
+      const code = typeof req.query.code === 'string' ? req.query.code : '';
+      if (!code) return res.status(400).send('Missing authorization code.');
+      const provider = getAuthProvider(id);
+      const redirectUri = `https://${req.get('host')}/auth/${id}/callback`;
+      const profile = await provider.exchange({ code, redirectUri });
+
+      // Issue (or return the existing) free key for the verified email — email = identity.
+      const { mintFreeKey } = await import('./lib/free-keys-store.js');
+      const { ensureUserCode } = await import('./lib/referral-store.js');
+      const { shareLink } = await import('./lib/referral-constants.js');
+      const key = await mintFreeKey(profile.email);
+      const referralCode = await ensureUserCode(key, profile.email);
+      const referralLink = shareLink(referralCode);
+      // Attribution first-touch survives the redirect: stamp ?src (cookie) against the key.
+      try {
+        const src = readCookie('av_oauth_src');
+        const { recordSignupAttribution } = await import('./lib/subscriber-attribution.js');
+        recordSignupAttribution({ clientReferenceId: key, utmSource: src, tierRequested: 'free' });
+      } catch { /* best-effort */ }
+      // Clear the CSRF cookies.
+      res.setHeader('Set-Cookie', [
+        'av_oauth_state=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+        'av_oauth_next=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+        'av_oauth_src=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0',
+      ]);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      const stubNote = provider.live ? '' : ' <em>(stub — set the provider OAuth creds to go live)</em>';
+      return res.send(
+        `<!doctype html><meta charset="utf-8"><title>You're in — AlgoVault</title>` +
+        `<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;max-width:560px;margin:60px auto;padding:0 20px">` +
+        `<h1 style="color:#56d364">You're in via ${id}${stubNote}</h1>` +
+        `<p>Your free API key (100 calls/mo, no card):</p>` +
+        `<pre style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;user-select:all">${key}</pre>` +
+        `<p>Referral link: <a style="color:#58a6ff" href="${referralLink}">${referralLink}</a></p>` +
+        `<p style="color:#8b949e;font-size:13px">Use it as <code>Authorization: Bearer &lt;key&gt;</code>. <a style="color:#58a6ff" href="/account">Manage your account →</a></p></body>`,
+      );
+    } catch (err) {
+      console.error(`[/auth/${id}/callback] internal error: ${err instanceof Error ? err.message : err}`);
+      return res.status(500).send('Sign-in error. Please try again.');
     }
   });
 

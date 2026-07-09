@@ -23,6 +23,8 @@ function sanitizeUtm(raw: unknown): string {
 export interface WelcomePageOptions {
   utmSource?: string | null;
   utmCampaign?: string | null;
+  /** FUNNEL-FIX-HUMAN-SIGNUP-W1: render the value-before-email + OAuth options (NEW_SIGNUP_ENABLED). */
+  newSignupEnabled?: boolean;
 }
 
 export function getWelcomePageHtml(
@@ -53,6 +55,29 @@ export function getWelcomePageHtml(
     ? `<div class="paywall-cta">
          <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
          <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         ${opts.newSignupEnabled ? `
+         <div class="startfree-block" style="margin:10px 0">
+           <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
+           <div id="startfree-result" style="display:none;margin-top:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;font-size:13px"></div>
+           <div style="display:flex;gap:8px;margin-top:10px">
+             <a class="paywall-btn" style="flex:1;text-align:center;background:#21262d" href="/auth/github?next=/welcome">Continue with GitHub</a>
+             <a class="paywall-btn" style="flex:1;text-align:center;background:#21262d" href="/auth/google?next=/welcome">Continue with Google</a>
+           </div>
+           <div style="text-align:center;color:#8b949e;margin:12px 0;font-size:12px">— or get your key by email —</div>
+         </div>
+         <script>
+         function avStartFree(btn){btn.disabled=true;btn.textContent='Getting your signal…';
+           fetch('/api/start-free',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+             .then(function(r){return r.json();}).then(function(d){
+               var el=document.getElementById('startfree-result');el.style.display='block';
+               if(!d.ok){el.textContent='Could not start — use email below.';btn.disabled=false;btn.textContent='⚡ Start free — no card, no email';return;}
+               window.__avEphemeralKey=d.key;
+               var sig=d.signal?('BTC 1h: '+(d.signal.verdict||'—')+(d.signal.confidence!=null?(' · confidence '+d.signal.confidence):'')):'signal warming up';
+               el.innerHTML='<div style="color:#56d364;font-weight:600">'+sig+'</div><div style="margin-top:8px">Your free API key (100/mo, no card):</div><pre style="user-select:all;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px;overflow:auto;margin:6px 0">'+d.key+'</pre><div style="color:#8b949e">Add an email below anytime to keep it + earn referrals.</div>';
+               btn.style.display='none';
+             }).catch(function(){var el=document.getElementById('startfree-result');el.style.display='block';el.textContent='Network error — use email below.';btn.disabled=false;btn.textContent='⚡ Start free — no card, no email';});
+         }
+         </script>` : ''}
          <div id="signup-email-block">
            <form id="signup-email-form" class="signup-email-form" novalidate>
              <label for="signup-email-input" class="signup-email-label">Get a free account — your API key + referral link, no card.</label>
@@ -181,7 +206,7 @@ export function getWelcomePageHtml(
       fetch('/api/signup-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, source: 'welcome-paywall', optin_consent: consentEl.checked })
+        body: JSON.stringify({ email: email, source: 'welcome-paywall', optin_consent: consentEl.checked, ephemeral_key: window.__avEphemeralKey || undefined })
       })
         .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'parse_error' }; }); })
         .then(function (data) {

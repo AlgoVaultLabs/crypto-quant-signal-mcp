@@ -137,3 +137,84 @@ export function lookupFreeKeyCached(key: string): FreeKeyRow | null {
   if (cached && cached.expiresAt > Date.now()) return cached.row;
   return null;
 }
+
+// ── FUNNEL-FIX-HUMAN-SIGNUP-W1: deferred identity (value BEFORE email) ──────────
+//
+// An EPHEMERAL key is a real av_free_ key with email = NULL: a human gets a working
+// key + real value first, hands over an email only later (quota edge / referral /
+// persistence). Same per-key 100/mo quota (resolveLicense keys the tracker by the
+// key). Claimed via mergeEphemeralIntoEmail (email = identity; idempotent; no double
+// key). Idle unclaimed keys are reaped on a 7d SLIDING window (last_used_at bumps on
+// every lookupFreeKey). ENTITLEMENT INVARIANT untouched — resolveFromApiKeyAsync +
+// existing keys resolve identically; this only ADDS an issuance path.
+
+/** Mint an ephemeral (email-less) free key. Reaps idle ephemerals lazily first. */
+export async function mintEphemeralKey(refCode?: string | null): Promise<string> {
+  ensureFreeKeysSchema();
+  await expireIdleEphemeralKeys().catch(() => { /* never block issuance on a reap */ });
+  const apiKey = generateFreeKey();
+  dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', apiKey, null, refCode ?? null);
+  cacheSet(apiKey, { api_key: apiKey, email: null, ref_code: refCode ?? null });
+  return apiKey;
+}
+
+/** True if the key exists and is an UNCLAIMED ephemeral (email still NULL). */
+export async function isEphemeralKey(key: string): Promise<boolean> {
+  if (!key.startsWith(FREE_KEY_PREFIX)) return false;
+  ensureFreeKeysSchema();
+  const rows = await dbQuery<{ email: string | null }>('SELECT email FROM free_keys WHERE api_key = ?', [key]);
+  return rows.length > 0 && rows[0].email === null;
+}
+
+/** Best-effort: fold the ephemeral key's quota usage into the claimed key, then drop it. */
+async function carryQuotaUsage(fromKey: string, toKey: string): Promise<void> {
+  const from = await dbQuery<{ call_count: number | string }>('SELECT call_count FROM quota_usage WHERE tracker_key = ?', [fromKey]);
+  const n = Number(from[0]?.call_count ?? 0);
+  if (Number.isFinite(n) && n > 0) {
+    const to = await dbQuery<{ call_count: number | string }>('SELECT call_count FROM quota_usage WHERE tracker_key = ?', [toKey]);
+    if (to.length > 0) dbRun('UPDATE quota_usage SET call_count = call_count + ? WHERE tracker_key = ?', n, toKey);
+    // else: the claimed key has no quota row yet → nothing to add to; its next call creates one.
+  }
+  dbRun('DELETE FROM quota_usage WHERE tracker_key = ?', fromKey);
+}
+
+/**
+ * Claim an ephemeral key with an email (email = identity). IDEMPOTENT + no double key:
+ *  - not an unclaimed ephemeral (missing / already has an email) → return the email's key
+ *    (mint if none) — a re-run lands here and is a safe no-op;
+ *  - email already owns a key → carry the ephemeral's quota usage into it, delete the
+ *    ephemeral, return the existing key;
+ *  - email is new → promote the ephemeral in place (set its email), return the same key.
+ */
+export async function mergeEphemeralIntoEmail(ephemeralKey: string, email: string, refCode?: string | null): Promise<string> {
+  ensureFreeKeysSchema();
+  const ephRows = await dbQuery<{ email: string | null }>('SELECT email FROM free_keys WHERE api_key = ?', [ephemeralKey]);
+  const eph = ephRows[0];
+  if (!eph || eph.email !== null) {
+    return mintFreeKey(email, refCode); // idempotent: existing key for the email, or a fresh one
+  }
+  const existingRows = await dbQuery<{ api_key: string }>('SELECT api_key FROM free_keys WHERE email = ?', [email]);
+  if (existingRows.length > 0) {
+    const existing = existingRows[0].api_key;
+    try { await carryQuotaUsage(ephemeralKey, existing); } catch { /* fail-open — never orphan the claim */ }
+    dbRun('DELETE FROM free_keys WHERE api_key = ?', ephemeralKey);
+    cache.delete(ephemeralKey);
+    cacheSet(existing, { api_key: existing, email, ref_code: refCode ?? null });
+    return existing;
+  }
+  dbRun('UPDATE free_keys SET email = ?, ref_code = COALESCE(ref_code, ?) WHERE api_key = ?', email, refCode ?? null, ephemeralKey);
+  cacheSet(ephemeralKey, { api_key: ephemeralKey, email, ref_code: refCode ?? null });
+  return ephemeralKey;
+}
+
+/** Reap idle UNCLAIMED ephemeral keys (email NULL, idle > idleDays; sliding on last_used_at). */
+export async function expireIdleEphemeralKeys(idleDays = 7): Promise<number> {
+  ensureFreeKeysSchema();
+  const cutoff = new Date(Date.now() - idleDays * 24 * 60 * 60 * 1000).toISOString();
+  const stale = await dbQuery<{ api_key: string }>(
+    `SELECT api_key FROM free_keys WHERE email IS NULL AND COALESCE(last_used_at, created_at) < ?`,
+    [cutoff],
+  );
+  for (const r of stale) { dbRun('DELETE FROM free_keys WHERE api_key = ?', r.api_key); cache.delete(r.api_key); }
+  return stale.length;
+}
