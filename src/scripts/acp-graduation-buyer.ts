@@ -56,6 +56,8 @@ interface BuyerAgent {
     requirementData: Record<string, unknown>,
     opts?: { evaluatorAddress?: string },
   ): Promise<bigint>;
+  /** Off-chain job read (reliable HTTP API; TS-private in the SDK but present at runtime). */
+  api?: { getJob(chainId: number, jobId: string): Promise<{ status?: number | string } | null> };
 }
 
 const JOB_TIMEOUT_MS = 180_000; // 3 min/job (< the 5-min SLA); a stuck fund/submit resolves 'timeout'.
@@ -189,12 +191,17 @@ export async function runGraduation(
 }
 
 // ─────────────── live SDK wiring (dynamic import — ESM-only SDK from CJS) ───────────────
-function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const t = new Promise<T>((r) => {
-    timer = setTimeout(() => r(onTimeout), ms);
-  });
-  return Promise.race([p, t]).finally(() => clearTimeout(timer));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Map a raw off-chain job status (numeric JobStatus index or string) → a terminal driver outcome. */
+function classifyStatus(raw: { status?: number | string } | null): JobOutcome | null {
+  if (!raw || raw.status == null) return null;
+  const st = raw.status;
+  // SDK on-chain JobStatus enum (baseAcpClient.js): OPEN=0 FUNDED=1 SUBMITTED=2 COMPLETED=3 REJECTED=4 EXPIRED=5
+  const name = typeof st === 'number' ? ['OPEN', 'FUNDED', 'SUBMITTED', 'COMPLETED', 'REJECTED', 'EXPIRED'][st] : String(st).toUpperCase();
+  if (name === 'COMPLETED') return 'completed';
+  if (name === 'REJECTED' || name === 'EXPIRED') return 'failed';
+  return null; // OPEN / FUNDED / SUBMITTED — still in progress
 }
 
 interface BuyerBundle {
@@ -204,9 +211,15 @@ interface BuyerBundle {
 }
 
 /**
- * Construct the buyer agent (mirrors provider.ts::createLiveAcpAgent) + a live driveJob that runs the
- * per-job event loop: create (self-eval) → on `budget.set` fund → on `job.submitted` complete → resolve
- * on `job.completed`. A single `on("entry")` handler routes to the active (sequential) job.
+ * Construct the buyer agent (mirrors provider.ts::createLiveAcpAgent) + a live driveJob.
+ *
+ * SKIP-EVALUATION mode (no `evaluatorAddress`): the seller's deliverable submission AUTO-COMPLETES the
+ * job — the buyer never calls `complete()`, so it needs NO read after funding. This removes the fragile
+ * buyer-side step that a transient off-chain 404 broke in the first smoke (self-eval stalled when the
+ * buyer's `job.submitted` dispatch skipped on a `fetchJob` throw). The buyer's ONLY action is `fund`
+ * (on `budget.set`). Completion is detected by whichever fires first: the `job.completed` event, OR an
+ * independent off-chain status poll (`agent.api.getJob`, the reliable HTTP API — retried) as a backstop
+ * for a missed final event. (A `fetchJob` throw only skips ONE dispatch; the socket survives.)
  */
 async function createBuyerAgent(cfg: BuyerConfig, log: (m: string) => void): Promise<BuyerBundle> {
   const sdk = await import('@virtuals-protocol/acp-node-v2');
@@ -224,11 +237,10 @@ async function createBuyerAgent(cfg: BuyerConfig, log: (m: string) => void): Pro
     privyAppId,
   });
   const agent = (await sdk.AcpAgent.create({ provider })) as unknown as BuyerAgent;
-  const buyerAddress = cfg.buyer.walletAddress!;
   const seller = cfg.seller!;
   const chainId = chain.id;
 
-  // single handler → active-job state machine (sequential: exactly one in-flight)
+  // active-job state machine (sequential: exactly one in-flight). Buyer only funds; seller auto-completes.
   const state: { jobId: string | null; price: number; funded: boolean; resolve: ((o: JobOutcome) => void) | null } = {
     jobId: null,
     price: 0,
@@ -240,13 +252,11 @@ async function createBuyerAgent(cfg: BuyerConfig, log: (m: string) => void): Pro
     try {
       switch (entry.event.type) {
         case 'budget.set':
-          log(`  budget.set → fund $${state.price.toFixed(2)}`);
-          await session.fund(sdk.AssetToken.usdc(state.price, chainId));
-          state.funded = true;
-          break;
-        case 'job.submitted':
-          log('  job.submitted → complete');
-          await session.complete('graduation-ok');
+          if (!state.funded) {
+            log(`  budget.set → fund $${state.price.toFixed(2)}`);
+            await session.fund(sdk.AssetToken.usdc(state.price, chainId));
+            state.funded = true;
+          }
           break;
         case 'job.completed':
           state.resolve?.('completed');
@@ -258,25 +268,53 @@ async function createBuyerAgent(cfg: BuyerConfig, log: (m: string) => void): Pro
       }
     } catch (e) {
       log(`  handler error: ${e instanceof Error ? e.message : String(e)}`);
-      state.resolve?.('error');
     }
   });
 
+  /** Reliable off-chain status read (retries a transient 404 / not-yet-indexed on the HTTP API). */
+  const pollStatus = async (jobId: string): Promise<JobOutcome | null> => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return classifyStatus((await agent.api?.getJob(chainId, jobId)) ?? null);
+      } catch {
+        await sleep(1200 * (attempt + 1));
+      }
+    }
+    return null;
+  };
+
   const driveJob: DriveJob = async (offering, requirement) => {
-    const jobId = await agent.createJobByOfferingName(chainId, offering.name, seller, requirement, { evaluatorAddress: buyerAddress });
-    state.jobId = String(jobId);
+    // SKIP-EVAL: omit evaluatorAddress → the seller's submit auto-completes the job.
+    const jobId = await agent.createJobByOfferingName(chainId, offering.name, seller, requirement);
+    const jid = String(jobId);
+    state.jobId = jid;
     state.price = offeringPrice(offering);
     state.funded = false;
-    log(`  job ${jobId} created (${offering.name})`);
-    const outcome = await withTimeout(new Promise<JobOutcome>((r) => (state.resolve = r)), JOB_TIMEOUT_MS, 'timeout');
-    const stuck = outcome === 'timeout' && state.funded ? state.jobId : null;
+    log(`  job ${jid} created (${offering.name}) [skip-eval → auto-complete on delivery]`);
+
+    // whichever fires first: the job.completed event, OR the off-chain poll backstop.
+    let stopPoll = false;
+    const eventP = new Promise<JobOutcome>((r) => (state.resolve = r));
+    const pollP = (async (): Promise<JobOutcome> => {
+      const deadline = Date.now() + JOB_TIMEOUT_MS;
+      while (!stopPoll && Date.now() < deadline) {
+        await sleep(7000);
+        const s = await pollStatus(jid);
+        if (s) return s;
+      }
+      return 'timeout';
+    })();
+    const outcome = await Promise.race([eventP, pollP]);
+    stopPoll = true;
+
+    const stuck = outcome === 'timeout' && state.funded ? jid : null;
     state.jobId = null;
     state.resolve = null;
-    if (stuck) log(`  ⚠ job ${stuck} funded but not completed within ${JOB_TIMEOUT_MS / 1000}s — SLA auto-refunds (~5m); investigate`);
+    if (stuck) log(`  ⚠ job ${stuck} funded but not observed complete within ${JOB_TIMEOUT_MS / 1000}s — SLA auto-refunds (~5m); investigate`);
     return outcome;
   };
 
-  return { agent, buyerAddress, driveJob };
+  return { agent, buyerAddress: cfg.buyer.walletAddress!, driveJob };
 }
 
 // ─────────────── entrypoint ───────────────

@@ -43,3 +43,11 @@
 ## 6. Safety (mainnet-micro-canary)
 
 `--dry-run` DEFAULT (zero txns); `--execute` required to spend real; `--smoke`=1 job; `MAX_SPEND_USD` hard-cap (default 0.50); stop-on-error; sequential (1 in-flight → ≤$0.02 at risk); finally-cleanup logs any funded-but-incomplete jobId (SLA auto-refunds ~5 min); real-money preamble asserts (mainnet + `--execute`) before the first spend.
+
+## 7. LIVE-RUN ADDENDUM (2026-07-09) — self-eval → skip-eval correction (C4)
+
+The first live `--execute --smoke` (job 66989, self-eval) **funded but stalled**: after `fund`, the SDK's `JobSession.fetchJob` (→ `api.getJob` → `GET /jobs/{chainId}/{jobId}`, an **off-chain HTTP** read, not on-chain despite the "on chain" error string) threw on a transient **not-yet-indexed 404**, so `AcpAgent.dispatch` skipped that one `job.submitted` event. In **self-eval** the buyer MUST act on `job.submitted` (call `complete()`), so missing it permanently stalled the job (timeout → SLA refund). The seller delivered fine throughout.
+
+**Fix (C4):** switch the driver to **skip-evaluation** (omit `evaluatorAddress`) so the seller's submit **auto-completes** the job — the buyer needs no post-fund read. Added a retried off-chain `api.getJob` **status-poll backstop** (`JobStatus` enum: `COMPLETED=3`/`REJECTED=4`/`EXPIRED=5`) racing the `job.completed` event, so a missed final event can't yield a false timeout. `agent.api` is TS-private in the SDK typings but present at runtime (accessed via the local `BuyerAgent` interface).
+
+**Result:** `--execute --max-jobs 10` → **10/10 completed, 10 consecutive** (`GRADUATION_JOBS_COMPLETE`; jobs 67005–67025, seller-delivered each; ~$0.17). Gas paymaster-sponsored (buyer held 0 Base ETH). Graduation criteria MET — only the Mr.1 Graduate-form submission remains.

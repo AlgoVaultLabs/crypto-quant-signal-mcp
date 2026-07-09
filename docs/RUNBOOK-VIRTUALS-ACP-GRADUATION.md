@@ -6,6 +6,11 @@ The AlgoVault **seller** is already live on Base mainnet (`mode=live, network=ma
 submit the *Graduate Agent* form (manual Virtuals review) → the agent becomes discoverable in the
 **A2A tab** (the point of the whole seed). Real USDC, tiny (~$0.15 for 10 jobs).
 
+> ✅ **Live-run status (2026-07-09): Steps 1–5 DONE.** Code drove **10/10 jobs to completion, all 10
+> consecutive** (`GRADUATION_JOBS_COMPLETE`, jobs 67005–67025; seller delivered each), against buyer
+> agent `BoostTrading` (`0xcc1d…78b9`). Gas was paymaster-sponsored (buyer holds 0 ETH). **The ONLY
+> remaining step is Step 6 — Mr.1 submits the Graduate Agent form.** Kept here as the reusable procedure.
+
 Driver: [`src/scripts/acp-graduation-buyer.ts`](../src/scripts/acp-graduation-buyer.ts) —
 **`--dry-run` is the DEFAULT (0 txns)**; `--execute` is required to spend; `MAX_SPEND_USD` hard-cap;
 stop-on-error; sequential (1 job in-flight).
@@ -58,9 +63,15 @@ defaults to the prod Privy app). `SELLER_WALLET_ADDRESS=0x195aeeff4db75c004a7a19
 # in the worktree, with BUYER_* + SELLER_WALLET_ADDRESS + ACP_ENV=mainnet in the env
 npx tsx src/scripts/acp-graduation-buyer.ts --execute --smoke
 ```
-Expect the full chain for **1 job**: `createJob → budget.set → fund → job.submitted → complete →
-job.completed → ✓ completed`, then `GRADUATION_INCOMPLETE` (1 < 10 — smoke only). This confirms the
+Expect the full chain for **1 job**: `createJob (skip-eval) → budget.set → fund → (seller delivers →
+auto-completes) → ✓ completed`, then `GRADUATION_INCOMPLETE` (1 < 10 — smoke only). This confirms the
 real API contract **and** gas sponsorship. If it errors on gas → fund Base ETH (Step 2) + re-run.
+
+> **Why skip-eval:** the driver creates jobs in **skip-evaluation** mode (no `evaluatorAddress`), so the
+> seller's deliverable submission **auto-completes** the job — the buyer never calls `complete()`. The
+> first live smoke used self-eval and stalled when a transient off-chain job-fetch (a not-yet-indexed
+> 404) made the buyer miss the single `job.submitted` event; skip-eval + an off-chain status-poll
+> backstop removed that fragility. Completion is detected by the `job.completed` event OR a retried poll.
 
 ---
 
