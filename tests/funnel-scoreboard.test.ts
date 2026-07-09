@@ -18,7 +18,10 @@ import {
   bucketDaily,
   bucketWeeklyByChannel,
   projectClientActivity,
+  classifyTierBucket,
+  computeRetentionBreakdown,
   type ScoreboardDeps,
+  type RetentionSession,
 } from '../src/lib/funnel-scoreboard.js';
 import type { FunnelSnapshot } from '../src/lib/funnel-snapshot.js';
 
@@ -134,6 +137,44 @@ describe('bucketDaily / bucketWeeklyByChannel', () => {
   });
 });
 
+describe('classifyTierBucket', () => {
+  it('paid when first_tier or tiers_seen carries any paid tier', () => {
+    expect(classifyTierBucket('pro', 'pro')).toBe('paid');
+    expect(classifyTierBucket('free', 'free,starter')).toBe('paid'); // ever-paid via tiers_seen
+    expect(classifyTierBucket('x402', 'x402')).toBe('paid');
+  });
+  it('internal for the bot alert-engine; free otherwise', () => {
+    expect(classifyTierBucket('internal', 'internal')).toBe('internal');
+    expect(classifyTierBucket('free', 'free')).toBe('free');
+    expect(classifyTierBucket(null, null)).toBe('free'); // default-free, never internal/paid by accident
+  });
+});
+
+describe('computeRetentionBreakdown', () => {
+  const sessions: RetentionSession[] = [
+    { firstSeenMs: NOW - 40 * DAY, lastSeenMs: NOW - 5 * DAY, tierBucket: 'free', channel: 'claude' }, // retained
+    { firstSeenMs: NOW - 40 * DAY, lastSeenMs: NOW - 39 * DAY, tierBucket: 'free', channel: 'claude' }, // not
+    { firstSeenMs: NOW - 40 * DAY, lastSeenMs: NOW - 2 * DAY, tierBucket: 'paid', channel: 'unknown' }, // retained
+    { firstSeenMs: NOW - 40 * DAY, lastSeenMs: NOW - 1 * DAY, tierBucket: 'internal', channel: 'untagged' }, // excluded
+  ];
+  it('excludes internal from every curve + counts it', () => {
+    const b = computeRetentionBreakdown(sessions, NOW);
+    expect(b.internal_excluded).toBe(1);
+    expect(b.overall.cohort_size).toBe(3); // 4 − 1 internal
+  });
+  it('splits free vs paid', () => {
+    const b = computeRetentionBreakdown(sessions, NOW);
+    expect(b.by_tier.free.d7).toBeCloseTo(0.5); // 2 free eligible, 1 retained
+    expect(b.by_tier.paid.d7).toBeCloseTo(1); // 1 paid eligible + retained
+  });
+  it('groups by channel, sorted by cohort size desc', () => {
+    const b = computeRetentionBreakdown(sessions, NOW);
+    expect(b.by_channel[0].channel).toBe('claude'); // 2 > 1
+    expect(b.by_channel.find(c => c.channel === 'claude')?.curve.d7).toBeCloseTo(0.5);
+    expect(b.by_channel.some(c => c.channel === 'untagged')).toBe(false); // internal-only channel dropped
+  });
+});
+
 describe('projectClientActivity (mirrors the Telegram digest, single-derivation)', () => {
   const usage = {
     totalCallsExternal: { last24h: 707 },
@@ -197,13 +238,21 @@ function makeDeps(overrides: Partial<ScoreboardDeps> = {}): ScoreboardDeps {
     { created_at: new Date(NOW - 7 * DAY).toISOString(), channel: 'direct' },
   ]; // total 4: direct 3, tg_bot 1
   const agentSessions = [
-    { first_seen: NOW - 40 * DAY, last_seen: NOW - 5 * DAY },
-    { first_seen: NOW - 40 * DAY, last_seen: NOW - 39 * DAY },
-    { first_seen: NOW - 3 * DAY, last_seen: NOW - 3 * DAY },
+    { session_id: 's1', first_seen: NOW - 40 * DAY, last_seen: NOW - 5 * DAY, first_tier: 'free', tiers_seen: 'free' }, // free, retained
+    { session_id: 's2', first_seen: NOW - 40 * DAY, last_seen: NOW - 39 * DAY, first_tier: 'free', tiers_seen: 'free' }, // free, not retained
+    { session_id: 's3', first_seen: NOW - 3 * DAY, last_seen: NOW - 3 * DAY, first_tier: 'free', tiers_seen: 'free' }, // free, too young
+    { session_id: 's4', first_seen: NOW - 40 * DAY, last_seen: NOW - 2 * DAY, first_tier: 'pro', tiers_seen: 'free,pro' }, // paid, retained
+    { session_id: 's5', first_seen: NOW - 40 * DAY, last_seen: NOW - 1 * DAY, first_tier: 'internal', tiers_seen: 'internal' }, // internal → excluded
   ];
+  const connectSrcRows = [
+    { session_id: 's1', meta_json: JSON.stringify({ src: 'claude' }) },
+    { session_id: 's2', meta_json: JSON.stringify({ src: 'claude' }) },
+    { session_id: 's4', meta_json: JSON.stringify({ source: 'unknown' }) },
+  ]; // s3 → untagged; s5 excluded (internal)
   const query = async <T>(sql: string): Promise<T[]> => {
     if (sql.includes('processed_x402_payments')) return [{ c: 7 }] as unknown as T[];
-    if (sql.includes("event_type = 'mcp_connect'")) return [{ c: 7183 }] as unknown as T[];
+    if (sql.includes('COUNT(DISTINCT session_id)') && sql.includes("'mcp_connect'")) return [{ c: 7183 }] as unknown as T[];
+    if (sql.includes('session_id, meta_json') && sql.includes("'mcp_connect'")) return connectSrcRows as unknown as T[];
     if (sql.includes('FROM signup_attribution')) return signupRows as unknown as T[];
     if (sql.includes('FROM free_keys')) return [{ c: 6 }] as unknown as T[];
     if (sql.includes('FROM signup_emails')) return [{ c: 0 }] as unknown as T[];
@@ -254,11 +303,17 @@ describe('getFunnelScoreboard (composed, injected deps)', () => {
     expect(sb.conversion.paid_over_signup_intent).toBeCloseTo(1 / 4);
     expect(sb.conversion.unattributable_pct).toBe(1); // the 1 conversion is attribution_captured=false
 
-    // Metric 4 — retention curve, d90 immature → null
-    expect(sb.retention.d7).toBeCloseTo(0.5);
-    expect(sb.retention.d30).toBeCloseTo(0.5);
-    expect(sb.retention.d90).toBeNull();
-    expect(sb.retention.d90_matures_on).toBe('2026-08-28');
+    // Metric 4 — retention breakdown: internal bot excluded, free vs paid, by channel
+    expect(sb.retention.overall.d7).toBeCloseTo(2 / 3); // s1,s2,s4 eligible; s1,s4 retained
+    expect(sb.retention.overall.d90).toBeNull();
+    expect(sb.retention.overall.d90_matures_on).toBe('2026-08-28');
+    expect(sb.retention.by_tier.free.d7).toBeCloseTo(0.5); // s1,s2 eligible; s1 retained
+    expect(sb.retention.by_tier.paid.d7).toBeCloseTo(1); // s4 eligible + retained
+    expect(sb.retention.internal_excluded).toBe(1); // s5 (internal) removed from every curve
+    expect(sb.retention.by_channel[0].channel).toBe('claude'); // sorted by cohort desc
+    const claude = sb.retention.by_channel.find(c => c.channel === 'claude');
+    expect(claude?.curve.cohort_size).toBe(2);
+    expect(claude?.curve.d7).toBeCloseTo(0.5);
 
     // Intent panel
     expect(sb.intent_panel.upgrade_cta_clicked).toBe(1);

@@ -98,6 +98,72 @@ export function computeRetentionCurve(
   return out;
 }
 
+const PAID_TIERS = ['pro', 'starter', 'enterprise', 'x402'] as const;
+
+/**
+ * Bucket a session by tier for retention: `paid` (ever authenticated as any paid
+ * tier), `internal` (the bot alert-engine's continuous polling — NOT a customer,
+ * excluded from user retention), else `free`. Reads agent_sessions.first_tier +
+ * tiers_seen. Pure.
+ */
+export function classifyTierBucket(firstTier: unknown, tiersSeen: unknown): 'free' | 'paid' | 'internal' {
+  const first = typeof firstTier === 'string' ? firstTier.toLowerCase() : '';
+  const seen = typeof tiersSeen === 'string' ? tiersSeen.toLowerCase() : '';
+  if (PAID_TIERS.some(t => first === t || seen.includes(t))) return 'paid';
+  if (first === 'internal' || seen.includes('internal')) return 'internal';
+  return 'free';
+}
+
+export interface RetentionSession {
+  firstSeenMs: number;
+  lastSeenMs: number;
+  tierBucket: 'free' | 'paid' | 'internal';
+  channel: string; // connection-layer ?src= acquisition source (joins to session activity)
+}
+
+export interface RetentionBreakdown {
+  /** Non-internal (free + paid) — the de-noised headline (excludes the bot alert-engine). */
+  overall: RetentionCurve;
+  by_tier: { free: RetentionCurve; paid: RetentionCurve };
+  /** Per connection-source ?src= (NOT the /signup direct/tg_bot channel — that can't join to sessions). */
+  by_channel: Array<{ channel: string; curve: RetentionCurve }>;
+  /** Bot-alert-engine sessions removed from every curve above (they poll continuously → not a user signal). */
+  internal_excluded: number;
+  basis: string;
+  coverage_caveat: string;
+}
+
+/**
+ * Split the session return-retention curve three ways: overall (non-internal),
+ * by tier (free vs paid), and by connection acquisition source. The pooled number
+ * is dominated by the internal bot-alert-engine (continuous polling), so every
+ * curve here EXCLUDES internal sessions — free/paid user retention is the real
+ * signal. Pure. `channel` is the connection ?src= source (session-joinable), NOT
+ * the /signup direct/tg_bot channel (which is a checkout-CTA click, not a session).
+ */
+export function computeRetentionBreakdown(sessions: RetentionSession[], nowMs: number): RetentionBreakdown {
+  const nonInternal = sessions.filter(s => s.tierBucket !== 'internal');
+  const free = nonInternal.filter(s => s.tierBucket === 'free');
+  const paid = nonInternal.filter(s => s.tierBucket === 'paid');
+  const byCh = new Map<string, RetentionSession[]>();
+  for (const s of nonInternal) {
+    const k = s.channel || 'untagged';
+    const arr = byCh.get(k);
+    if (arr) arr.push(s); else byCh.set(k, [s]);
+  }
+  const by_channel = [...byCh.entries()]
+    .map(([channel, ss]) => ({ channel, curve: computeRetentionCurve(ss, nowMs) }))
+    .sort((a, b) => (b.curve.cohort_size ?? 0) - (a.curve.cohort_size ?? 0));
+  return {
+    overall: computeRetentionCurve(nonInternal, nowMs),
+    by_tier: { free: computeRetentionCurve(free, nowMs), paid: computeRetentionCurve(paid, nowMs) },
+    by_channel,
+    internal_excluded: sessions.length - nonInternal.length,
+    basis: 'agent_sessions return-retention (retained at dN = last_seen − first_seen ≥ N days), split by tier (tiers_seen) + by connection acquisition source (mcp_connect ?src=); the bot alert-engine (internal) is excluded from every curve.',
+    coverage_caveat: 'Channel here = the connection-layer ?src= source (the only channel that joins to session activity) — NOT the /signup direct/tg_bot channel (those are checkout-CTA clicks, and the TG bot polls as one internal identity). Cookieless: anon sessions get a fresh id per visit and read as non-retained.',
+  };
+}
+
 /** Default-deny ratio: null unless both are finite numbers and denom > 0 (never 0-coerce a broken input). */
 export function safeRatio(numer: number | null | undefined, denom: number | null | undefined): number | null {
   if (typeof numer !== 'number' || !Number.isFinite(numer)) return null;
@@ -286,7 +352,7 @@ export interface FunnelScoreboard {
     joinable_cohort: { attributed_conversions: number; total_conversions: number; note: string };
     unattributable_pct: number | null;
   };
-  retention: RetentionCurve & { basis: string; coverage_caveat: string };
+  retention: RetentionBreakdown;
   intent_panel: {
     upgrade_cta_clicked: number | null;
     landing_cta_clicked: number | null;
@@ -445,25 +511,56 @@ export async function getFunnelScoreboard(
     unattributable_pct: unattributable,
   };
 
-  // ── Metric 4: retention curve (agent_sessions return-retention; d90 null until mature) ──
-  let sessionRows: Array<{ first_seen: unknown; last_seen: unknown }> = [];
+  // ── Metric 4: retention — session return-retention, split by tier + connection source ──
+  // (d90 null until a cohort matures; the bot alert-engine `internal` is excluded from
+  // every curve so free/paid user retention isn't drowned by continuous polling.)
+  let sessionRows: Array<{ session_id: unknown; first_seen: unknown; last_seen: unknown; first_tier: unknown; tiers_seen: unknown }> = [];
   try {
-    sessionRows = await deps.query<{ first_seen: unknown; last_seen: unknown }>(
-      `SELECT first_seen, last_seen FROM agent_sessions WHERE first_seen >= ?`,
+    sessionRows = await deps.query<{ session_id: unknown; first_seen: unknown; last_seen: unknown; first_tier: unknown; tiers_seen: unknown }>(
+      `SELECT session_id, first_seen, last_seen, first_tier, tiers_seen FROM agent_sessions WHERE first_seen >= ?`,
       [nowMs - 180 * DAY_MS],
     );
   } catch (err) {
     warnings.push(`agent_sessions read failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const sessions = sessionRows
-    .map(r => ({ firstSeenMs: toEpochMs(r.first_seen), lastSeenMs: toEpochMs(r.last_seen) }))
-    .filter((s): s is { firstSeenMs: number; lastSeenMs: number } => s.firstSeenMs !== null && s.lastSeenMs !== null);
-  const curve = computeRetentionCurve(sessions, nowMs);
-  const retention: FunnelScoreboard['retention'] = {
-    ...curve,
-    basis: 'agent_sessions return-retention: a session is retained at dN if last_seen − first_seen ≥ N days; eligible only when old enough to observe N days',
-    coverage_caveat: 'Cookieless: anon (uuid) sessions cannot be stitched across visits and read as non-retained; see intent_panel.identity_coverage for the stitchable share',
-  };
+  // Connection-layer ?src= acquisition source per session (the only channel that joins
+  // to session activity). Parsed from mcp_connect meta_json in JS (cross-backend; mirrors
+  // getIdentityCoverage in funnel-snapshot.ts). First labeled connect wins per session.
+  let connectRows: Array<{ session_id: unknown; meta_json: unknown }> = [];
+  try {
+    connectRows = await deps.query<{ session_id: unknown; meta_json: unknown }>(
+      `SELECT session_id, meta_json FROM funnel_events WHERE event_type = 'mcp_connect'`,
+      [],
+    );
+  } catch (err) {
+    warnings.push(`mcp_connect source read failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const sourceBySession = new Map<string, string>();
+  for (const r of connectRows) {
+    const sid = typeof r.session_id === 'string' ? r.session_id : null;
+    if (!sid || sourceBySession.has(sid)) continue;
+    let src = 'untagged';
+    try {
+      const m = r.meta_json ? (JSON.parse(String(r.meta_json)) as Record<string, unknown>) : {};
+      if (typeof m.src === 'string' && m.src) src = m.src;
+      else if (typeof m.source === 'string' && m.source) src = m.source;
+    } catch { /* malformed meta → untagged */ }
+    sourceBySession.set(sid, src);
+  }
+  const retSessions: RetentionSession[] = [];
+  for (const r of sessionRows) {
+    const fs = toEpochMs(r.first_seen);
+    const ls = toEpochMs(r.last_seen);
+    if (fs === null || ls === null) continue;
+    const sid = typeof r.session_id === 'string' ? r.session_id : '';
+    retSessions.push({
+      firstSeenMs: fs,
+      lastSeenMs: ls,
+      tierBucket: classifyTierBucket(r.first_tier, r.tiers_seen),
+      channel: sourceBySession.get(sid) ?? 'untagged',
+    });
+  }
+  const retention = computeRetentionBreakdown(retSessions, nowMs);
 
   // ── Intent panel ──
   const tagged = Object.entries(signupByChannel)

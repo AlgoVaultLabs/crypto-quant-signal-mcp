@@ -68,10 +68,16 @@ export function renderFunnelDashboardHtml(): string {
     "  setText('cv-intent',pct(cv.paid_over_signup_intent));",
     "  setText('cv-unattr',pct(cv.unattributable_pct));",
     "  setText('cv-cohort','attributed '+num(cv.joinable_cohort.attributed_conversions)+' / '+num(cv.joinable_cohort.total_conversions)+' conversions');",
-    "  var rt=d.retention;",
-    "  setText('rt-d7',pct(rt.d7));setText('rt-d14',pct(rt.d14));setText('rt-d30',pct(rt.d30));",
-    "  setText('rt-d90',rt.d90==null?('null — matures '+(rt.d90_matures_on||'?')):pct(rt.d90));",
-    "  setText('rt-cohort','cohort n='+num(rt.cohort_size));",
+    "  var rt=d.retention;var ov=rt.overall;",
+    "  setText('rt-d7',pct(ov.d7));setText('rt-d14',pct(ov.d14));setText('rt-d30',pct(ov.d30));",
+    "  setText('rt-d90',ov.d90==null?('null \\u2014 matures '+(ov.d90_matures_on||'?')):pct(ov.d90));",
+    "  setText('rt-cohort','overall n='+num(ov.cohort_size)+'  \\u00b7  free d7 '+pct(rt.by_tier.free.d7)+'  \\u00b7  paid d7 '+pct(rt.by_tier.paid.d7)+'  \\u00b7  internal excl '+num(rt.internal_excluded));",
+    "  function d90c(c){return c.d90==null?'\\u2014':pct(c.d90);}",
+    "  var rtd=[['\\ud83d\\udfe2 Free',pct(rt.by_tier.free.d7),pct(rt.by_tier.free.d14),pct(rt.by_tier.free.d30),d90c(rt.by_tier.free),num(rt.by_tier.free.cohort_size)],['\\ud83d\\udcb3 Paid',pct(rt.by_tier.paid.d7),pct(rt.by_tier.paid.d14),pct(rt.by_tier.paid.d30),d90c(rt.by_tier.paid),num(rt.by_tier.paid.cohort_size)]];",
+    "  table(document.getElementById('rt-tier'),['Tier','d7','d14','d30','d90','sessions'],rtd);",
+    "  var rtc=rt.by_channel.map(function(x){return [x.channel,pct(x.curve.d7),pct(x.curve.d14),pct(x.curve.d30),d90c(x.curve),num(x.curve.cohort_size)];});",
+    "  table(document.getElementById('rt-channel'),['Channel (conn ?src=)','d7','d14','d30','d90','sessions'],rtc);",
+    "  setText('rt-caveat',rt.coverage_caveat);",
     "  var ip=d.intent_panel;",
     "  setText('ip-upgrade',num(ip.upgrade_cta_clicked));setText('ip-landing',num(ip.landing_cta_clicked));",
     "  setText('ip-quota','soft '+num(ip.quota_hits.soft)+' · hard '+num(ip.quota_hits.hard)+' · block '+num(ip.quota_hits.block));",
@@ -102,15 +108,15 @@ export function renderFunnelDashboardHtml(): string {
     '<div class="muted" id="ps-recon" style="margin-top:6px">—</div></div>',
     '<div class="card"><h2>Free signups — micro-funnel</h2>',
     '<div class="funnel-collapse"><span>Reach <b id="fs-reach">—</b></span><span class="arrow">→</span>',
-    '<span>Intent <b id="fs-intent">—</b></span><span class="arrow">→</span><span>Accounts <b id="fs-acct">—</b></span></div>',
-    '<div class="muted" style="margin-top:8px">reach=mcp_connect (context) · intent=/signup · accounts=free_keys+emails (conversion denom)</div>',
+    '<span>Subscribe clicks <b id="fs-intent">—</b></span><span class="arrow">→</span><span>Free signups <b id="fs-acct">—</b></span></div>',
+    '<div class="muted" style="margin-top:8px">reach = mcp_connect connections (context) · subscribe-clicks = /signup CTA · free-signups = email → free key (the conversion denominator)</div>',
     '<div class="muted" id="fs-chan" style="margin-top:6px">—</div></div>',
     '<div class="card"><h2>Free → paid conversion</h2>',
-    '<div class="row"><span>vs free accounts</span><b id="cv-acct">—</b></div>',
-    '<div class="row"><span>vs signup intent</span><b id="cv-intent">—</b></div>',
+    '<div class="row"><span>vs free signups</span><b id="cv-acct">—</b></div>',
+    '<div class="row"><span>vs subscribe clicks</span><b id="cv-intent">—</b></div>',
     '<div class="row"><span>unattributable</span><b id="cv-unattr">—</b></div>',
     '<div class="muted" id="cv-cohort" style="margin-top:6px">—</div></div>',
-    '<div class="card"><h2>Retention curve</h2>',
+    '<div class="card"><h2>Client retention (excl. bot)</h2>',
     '<div class="row"><span>d7</span><b id="rt-d7">—</b></div>',
     '<div class="row"><span>d14</span><b id="rt-d14">—</b></div>',
     '<div class="row"><span>d30</span><b id="rt-d30">—</b></div>',
@@ -128,13 +134,22 @@ export function renderFunnelDashboardHtml(): string {
     '</div></section>',
   ].join('');
 
+  const retentionHtml = [
+    '<section class="panel"><h2>Retention detail — by tier &amp; by channel (internal bot excluded)</h2>',
+    '<div class="muted" style="margin:0 0 6px">By tier — free vs paid (the pooled headline is dominated by the bot; this is the real user signal)</div>',
+    '<div id="rt-tier"></div>',
+    '<div class="muted" style="margin:12px 0 6px">By channel — connection <code>?src=</code> acquisition source (the only channel that joins to session activity)</div>',
+    '<div id="rt-channel"></div>',
+    '<div class="muted" id="rt-caveat" style="margin-top:8px"></div></section>',
+  ].join('');
+
   const clientHtml = [
     '<section class="panel"><h2>Client activity (24h) — matches the Telegram daily digest</h2>',
     '<div id="client"></div><div class="muted" id="client-note" style="margin-top:8px"></div></section>',
   ].join('');
 
   const tablesHtml = [
-    '<section class="panel"><h2>Signup intent — weekly by channel</h2><div id="weekly"></div></section>',
+    '<section class="panel"><h2>Subscribe-CTA clicks — weekly by channel</h2><div id="weekly"></div></section>',
     '<section class="panel"><h2>Daily timeseries (signup intent + conversions)</h2><div id="daily"></div></section>',
   ].join('');
 
@@ -150,7 +165,7 @@ export function renderFunnelDashboardHtml(): string {
     '<label class="sub">window(d) <input id="days" value="90" style="width:56px;background:#0b0f14;color:#e6edf3;border:1px solid #2d3748;border-radius:5px;padding:3px 6px"></label>',
     '<button id="refresh">Refresh</button></header>',
     '<main><div id="warnbox" class="warn"></div>',
-    cardsHtml, intentHtml, clientHtml, tablesHtml,
+    cardsHtml, intentHtml, retentionHtml, clientHtml, tablesHtml,
     '</main><footer id="ft-computed">—</footer>',
     '<script>', js, '</script></body></html>',
   ].join('');
