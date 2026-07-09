@@ -1,0 +1,542 @@
+{
+    "result": {
+        "tools": [
+            {
+                "name": "get_trade_call",
+                "description": "Returns a composite verdict \u2014 BUY SELL HOLD trade call with confidence and market regime \u2014 for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls, for US stocks use get_equity_call. Read-only: reads live exchange APIs, no orders. Verified track record, on-chain verified merkle anchor.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "maxLength": 20,
+                            "description": "Base asset, e.g. BTC ETH SOL signal, or a US stock/ETF ticker (no USDT)."
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": [
+                                "1m",
+                                "3m",
+                                "5m",
+                                "15m",
+                                "30m",
+                                "1h",
+                                "2h",
+                                "4h",
+                                "8h",
+                                "12h",
+                                "1d"
+                            ],
+                            "description": "Candle timeframe, 1m to 1d. Default 15m. Crypto quant intraday horizon."
+                        },
+                        "includeReasoning": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Include reasoning: trend ranging crypto signal and market regime drivers."
+                        },
+                        "exchange": {
+                            "type": "string",
+                            "enum": [
+                                "HL",
+                                "BINANCE",
+                                "BYBIT",
+                                "OKX",
+                                "BITGET",
+                                "ASTER",
+                                "EDGEX",
+                                "GATE",
+                                "MEXC",
+                                "KUCOIN",
+                                "PHEMEX",
+                                "BINGX",
+                                "HTX",
+                                "WEEX",
+                                "BITMART",
+                                "XT",
+                                "WHITEBIT"
+                            ],
+                            "description": "Crypto venue (default Binance), e.g. Binance Bybit OKX Bitget Hyperliquid."
+                        },
+                        "assetClass": {
+                            "type": "string",
+                            "enum": [
+                                "perp",
+                                "equity"
+                            ],
+                            "description": "Force engine: 'perp' or 'equity'. Cross-venue multi-exchange AI trading signal."
+                        }
+                    },
+                    "required": [
+                        "coin"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Composite Trade Call",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "get_trade_signal",
+                "description": "Returns a composite verdict \u2014 BUY SELL HOLD trade call with confidence and market regime \u2014 for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls, for US stocks use get_equity_call. Read-only: reads live exchange APIs, no orders. Verified track record, on-chain verified merkle anchor. [ALIAS] This tool is an alias of get_trade_call \u2014 same behavior, kept for backward compatibility.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "maxLength": 20,
+                            "description": "Base asset, e.g. BTC ETH SOL signal, or a US stock/ETF ticker (no USDT)."
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": [
+                                "1m",
+                                "3m",
+                                "5m",
+                                "15m",
+                                "30m",
+                                "1h",
+                                "2h",
+                                "4h",
+                                "8h",
+                                "12h",
+                                "1d"
+                            ],
+                            "description": "Candle timeframe, 1m to 1d. Default 15m. Crypto quant intraday horizon."
+                        },
+                        "includeReasoning": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Include reasoning: trend ranging crypto signal and market regime drivers."
+                        },
+                        "exchange": {
+                            "type": "string",
+                            "enum": [
+                                "HL",
+                                "BINANCE",
+                                "BYBIT",
+                                "OKX",
+                                "BITGET",
+                                "ASTER",
+                                "EDGEX",
+                                "GATE",
+                                "MEXC",
+                                "KUCOIN",
+                                "PHEMEX",
+                                "BINGX",
+                                "HTX",
+                                "WEEX",
+                                "BITMART",
+                                "XT",
+                                "WHITEBIT"
+                            ],
+                            "description": "Crypto venue (default Binance), e.g. Binance Bybit OKX Bitget Hyperliquid."
+                        },
+                        "assetClass": {
+                            "type": "string",
+                            "enum": [
+                                "perp",
+                                "equity"
+                            ],
+                            "description": "Force engine: 'perp' or 'equity'. Cross-venue multi-exchange AI trading signal."
+                        }
+                    },
+                    "required": [
+                        "coin"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Trade Signal",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "get_market_regime",
+                "description": "Returns the market regime \u2014 TRENDING_UP TRENDING_DOWN RANGING VOLATILE \u2014 with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. For a US equity use get_equity_regime. Read-only, live exchange APIs. Verified track record, on-chain verified merkle anchor.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "maxLength": 20,
+                            "description": "Base asset crypto signal, e.g. BTC ETH SOL signal. Crypto quant regime."
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": [
+                                "1h",
+                                "4h",
+                                "1d"
+                            ],
+                            "default": "4h",
+                            "description": "Candle timeframe, e.g. 1h 4h 1d. Buy sell hold AI trading signal context."
+                        },
+                        "exchange": {
+                            "type": "string",
+                            "enum": [
+                                "HL",
+                                "BINANCE",
+                                "BYBIT",
+                                "OKX",
+                                "BITGET",
+                                "ASTER",
+                                "EDGEX",
+                                "GATE",
+                                "MEXC",
+                                "KUCOIN",
+                                "PHEMEX",
+                                "BINGX",
+                                "HTX",
+                                "WEEX",
+                                "BITMART",
+                                "XT",
+                                "WHITEBIT"
+                            ],
+                            "default": "HL",
+                            "description": "Crypto venue, e.g. Binance Bybit OKX Bitget Hyperliquid. Multi-exchange."
+                        }
+                    },
+                    "required": [
+                        "coin"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Market Regime Classifier",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "scan_funding_arb",
+                "description": "Ranked cross-venue funding arbitrage across major crypto perpetual futures venues \u2014 funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. AI trading signal for crypto quant and Claude trading agents. Trade call via get_trade_call, market regime via get_market_regime. On-chain verified merkle anchor.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "minSpreadBps": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 10000,
+                            "default": 5,
+                            "description": "Minimum funding rate spread in bps. Cross-venue multi-exchange crypto signal."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 10,
+                            "description": "Max ranked results, e.g. 5 (free tier cap). Crypto quant AI trading signal."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Funding Arbitrage Scanner",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "scan_trade_calls",
+                "description": "Returns ranked BUY SELL HOLD trade calls across the top crypto perpetual futures by open interest \u2014 one scan for whole-market coverage, each with confidence and market regime. Use this for breadth; use get_trade_call for per-coin depth and reasoning. Read-only: reads live exchange APIs, places no orders.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "topN": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                            "description": "How many top perps by open interest to scan, 1 to 100 (default 20)."
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": [
+                                "1m",
+                                "3m",
+                                "5m",
+                                "15m",
+                                "30m",
+                                "1h",
+                                "2h",
+                                "4h",
+                                "8h",
+                                "12h",
+                                "1d"
+                            ],
+                            "default": "15m",
+                            "description": "Candle timeframe, 1m to 1d for the scan. Default 15m intraday."
+                        },
+                        "exchange": {
+                            "type": "string",
+                            "enum": [
+                                "HL",
+                                "BINANCE",
+                                "BYBIT",
+                                "OKX",
+                                "BITGET",
+                                "ASTER",
+                                "BINGX",
+                                "GATE",
+                                "HTX",
+                                "KUCOIN",
+                                "MEXC",
+                                "PHEMEX"
+                            ],
+                            "default": "BINANCE",
+                            "description": "Venue: BINANCE (default) HL BYBIT OKX BITGET."
+                        },
+                        "minConfidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "description": "Optional confidence floor, 0 to 100, applied to non-HOLD trade calls."
+                        },
+                        "includeHolds": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Include HOLD calls after non-HOLD (default false). HOLDs never cost quota."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "Max ranked calls to return, 1 to 100 (default 10). Non-HOLD ranked first."
+                        },
+                        "rankBy": {
+                            "type": "string",
+                            "default": "oi",
+                            "description": "Universe lens: oi (default) volume gainers losers movers funding_positive funding_negative volatility oi_change (aliases vol gain lose move pfr nfr atr oid). funding_*/volatility/oi_change rank among the most-liquid perps; oi_change = real 24h open-interest %\u0394."
+                        },
+                        "includeReasoning": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Enrich each non-HOLD call with price, the top 2-3 drivers, and one-line reasoning (default false \u2192 bare verdict cells). HOLDs stay bare. Same per-call detail as get_trade_call."
+                        },
+                        "oiChangeWindow": {
+                            "type": "string",
+                            "enum": [
+                                "1h",
+                                "4h",
+                                "24h"
+                            ],
+                            "default": "24h",
+                            "description": "OI-delta window for rankBy=oi_change: 1h, 4h, or 24h (default 24h). Ignored by other lenses."
+                        },
+                        "oiBasis": {
+                            "type": "string",
+                            "enum": [
+                                "notional",
+                                "contracts"
+                            ],
+                            "default": "notional",
+                            "description": "OI-delta basis for rankBy=oi_change: notional (default, USD) or contracts (base-coin, price-independent). Ignored by other lenses."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Market Scanner",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "get_equity_call",
+                "description": "Returns a daily-bar BUY/SELL/HOLD trade call for a US stock or ETF \u2014 verdict, confidence, market regime, and the technical factors behind it \u2014 from Databento EQUS.MINI daily bars. Universe = top US equities by dollar-volume plus index and crypto-proxy ETFs (SPY, QQQ, IBIT); an out-of-universe ticker returns a structured SYMBOL_NOT_IN_UNIVERSE error with nearest-symbol suggestions (accepts BRK-B or BRK.B). Defaults to the stock read; naming a crypto exchange or timeframe routes to the perpetual-futures call instead \u2014 for crypto or tokenized-stock perps, use get_trade_call. Read-only: reads a live market-data API, places no orders.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "maxLength": 12,
+                            "description": "US equity/ETF ticker, e.g. AAPL, SPY, BRK.B (BRK-B also accepted)."
+                        },
+                        "exchange": {
+                            "type": "string",
+                            "enum": [
+                                "HL",
+                                "BINANCE",
+                                "BYBIT",
+                                "OKX",
+                                "BITGET",
+                                "ASTER",
+                                "EDGEX",
+                                "GATE",
+                                "MEXC",
+                                "KUCOIN",
+                                "PHEMEX",
+                                "BINGX",
+                                "HTX",
+                                "WEEX",
+                                "BITMART",
+                                "XT",
+                                "WHITEBIT"
+                            ],
+                            "description": "Optional crypto venue \u2014 naming one routes to the perp call (prefer get_trade_call)."
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": [
+                                "1m",
+                                "3m",
+                                "5m",
+                                "15m",
+                                "30m",
+                                "1h",
+                                "2h",
+                                "4h",
+                                "8h",
+                                "12h",
+                                "1d"
+                            ],
+                            "description": "Optional candle timeframe \u2014 supplying one routes to the perp call."
+                        }
+                    },
+                    "required": [
+                        "symbol"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Equity Trade Call",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "get_equity_regime",
+                "description": "Returns the market regime for a US stock or ETF \u2014 trending_up, trending_down, compression, or ranging, with a confidence score \u2014 derived from daily-bar trend strength (ADX/DI), persistence (Hurst), and volatility compression. Defaults to SPY. For a crypto regime use get_market_regime instead. Read-only: reads a live market-data API.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "maxLength": 12,
+                            "description": "US equity/ETF ticker; defaults to SPY."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Equity Market Regime",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "chat_knowledge",
+                "description": "Returns a synthesized natural-language answer with citations, grounded in the AlgoVault knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use when you need an explanation, code pattern, or how-to; for raw ranked snippets without LLM synthesis use search_knowledge (faster, no quota cost). Read-only: calls an LLM, no other side effects. Quota: Free 10/month, Starter 50, Pro 200, Enterprise 2000.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "minLength": 5,
+                            "maxLength": 500,
+                            "description": "Natural-language question (5-500 chars)."
+                        },
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "claude-haiku-4-5-20251001",
+                                "claude-sonnet-4-6"
+                            ],
+                            "description": "Optional model override (default claude-haiku-4-5-20251001)."
+                        }
+                    },
+                    "required": [
+                        "question"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Knowledge Q&A",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            },
+            {
+                "name": "search_knowledge",
+                "description": "Returns ranked snippets from the AlgoVault knowledge bundle answering a question about its MCP tools, response shapes, integration patterns (LangChain, LlamaIndex, MAF, CrewAI), or code examples. Call this BEFORE other tool calls to confirm parameter usage and avoid hallucinating tool shapes. Fast: BM25 lexical search, no LLM call, no quota cost. For a synthesized natural-language answer use chat_knowledge. Read-only, no side effects.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 500,
+                            "description": "Natural-language search query (3-500 chars)."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "description": "Max ranked results (1-50, default 10)."
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "annotations": {
+                    "title": "Knowledge Search",
+                    "readOnlyHint": true,
+                    "openWorldHint": true,
+                    "destructiveHint": false
+                },
+                "execution": {
+                    "taskSupport": "forbidden"
+                }
+            }
+        ]
+    },
+    "jsonrpc": "2.0",
+    "id": 2
+}
