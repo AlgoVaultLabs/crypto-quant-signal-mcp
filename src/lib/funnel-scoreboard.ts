@@ -30,6 +30,7 @@ import {
   type SubscriberProfileRow,
 } from './subscriber-attribution.js';
 import { countActiveSubscriptionsByTier, type ActiveSubscriberTierCensus } from './stripe.js';
+import { getUsageStats } from './analytics.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WINDOWS_DAYS = [7, 14, 30, 90] as const;
@@ -176,6 +177,82 @@ export function bucketWeeklyByChannel(
     .map(([week, v]) => ({ week, total: v.total, by_channel: v.by_channel }));
 }
 
+/** Walk a nested path in the loosely-typed getUsageStats() blob → integer or null. */
+function nestedInt(obj: unknown, ...path: string[]): number | null {
+  let cur: unknown = obj;
+  for (const k of path) {
+    if (cur === null || typeof cur !== 'object') return null;
+    cur = (cur as Record<string, unknown>)[k];
+  }
+  return safeCount(cur);
+}
+
+/** Same walk but preserves a float (e.g. a percent like 10.3) instead of truncating. */
+function nestedFloat(obj: unknown, ...path: string[]): number | null {
+  let cur: unknown = obj;
+  for (const k of path) {
+    if (cur === null || typeof cur !== 'object') return null;
+    cur = (cur as Record<string, unknown>)[k];
+  }
+  if (typeof cur === 'number') return Number.isFinite(cur) ? cur : null;
+  if (typeof cur === 'string' && cur.trim() !== '' && Number.isFinite(Number(cur))) return Number(cur);
+  return null;
+}
+
+export interface ClientActivity24h {
+  calls: {
+    total: number | null;
+    recognized: number | null;
+    raw_api: number | null;
+    raw_api_top1_pct: number | null; // percent (0-100), 1 decimal — top IP's share of the Raw-API bucket
+    paid: number | null;
+    tg_bot: number | null;
+    tg_bot_breakdown: { watch: number | null; scanwatch: number | null; scan: number | null };
+  };
+  sessions: {
+    total: number | null;
+    recognized: number | null;
+    raw_api: number | null;
+    paid: number | null;
+    tg_bot_subscribers: number | null;
+  };
+  note: string;
+}
+
+/**
+ * Project the daily digest's client-TYPE split (🟢 Recognized · 🔌 Raw-API ·
+ * 💳 Paid · 🔁 TG-bot, 24h) from the SAME `getUsageStats()` the Telegram digest
+ * renders — SINGLE DERIVATION, so this panel matches the digest number-for-number
+ * (same source, same 24h window). Pure. Distinct from the acquisition-source
+ * channels in `free_signups` (which group by /signup origin, not client type).
+ */
+export function projectClientActivity(u: Record<string, unknown> | null): ClientActivity24h {
+  const tg = (u && typeof u.tgBot === 'object' && u.tgBot !== null) ? (u.tgBot as Record<string, unknown>) : null;
+  return {
+    calls: {
+      total: nestedInt(u, 'totalCallsExternal', 'last24h'),
+      recognized: nestedInt(u, 'externalGenuine', 'free'),
+      raw_api: nestedInt(u, 'externalAutomated', 'total'),
+      raw_api_top1_pct: nestedFloat(u, 'rawConcentration', 'top1_pct'),
+      paid: nestedInt(u, 'externalGenuine', 'paid'),
+      tg_bot: tg ? safeCount(tg.calls_total) : null,
+      tg_bot_breakdown: {
+        watch: tg ? safeCount(tg.calls_watch) : null,
+        scanwatch: tg ? safeCount(tg.calls_scanwatch) : null,
+        scan: tg ? safeCount(tg.calls_scan) : null,
+      },
+    },
+    sessions: {
+      total: nestedInt(u, 'uniqueSessionsExternal', 'last24h'),
+      recognized: nestedInt(u, 'externalGenuine', 'freeSessions'),
+      raw_api: nestedInt(u, 'externalAutomated', 'sessions'),
+      paid: nestedInt(u, 'externalGenuine', 'paidSessions'),
+      tg_bot_subscribers: tg ? safeCount(tg.subscribers) : null,
+    },
+    note: 'Same source (getUsageStats) + 24h window as the Telegram daily digest — matches it number-for-number; client-TYPE split, distinct from the acquisition-source channels above',
+  };
+}
+
 // ── Scoreboard shape ──────────────────────────────────────────────────────────
 
 export interface FunnelScoreboard {
@@ -217,6 +294,8 @@ export interface FunnelScoreboard {
     tagged_vs_direct: { tagged: number; direct: number; direct_pct: number | null };
     identity_coverage: FunnelSnapshot['identity_coverage'];
   };
+  /** The Telegram daily-digest client-TYPE split (24h), projected from the same getUsageStats(). */
+  client_activity_24h: ClientActivity24h;
   daily: Array<{ date: string; signup_intent: number; conversions: number }>;
   warnings: string[];
 }
@@ -227,6 +306,7 @@ export interface ScoreboardDeps {
   snapshot: (opts: { days: number }) => Promise<FunnelSnapshot>;
   stripeCensus: (now?: number) => Promise<ActiveSubscriberTierCensus | null>;
   listProfiles: () => Promise<SubscriberProfileRow[]>;
+  usageStats: () => Promise<Record<string, unknown>>;
   query: <T>(sql: string, params?: unknown[]) => Promise<T[]>;
   now: () => number;
 }
@@ -235,6 +315,7 @@ export const defaultScoreboardDeps: ScoreboardDeps = {
   snapshot: (opts) => generateFunnelSnapshot(opts),
   stripeCensus: (now) => countActiveSubscriptionsByTier(now),
   listProfiles: () => listSubscriberProfiles({ limit: 500 }),
+  usageStats: () => getUsageStats(),
   query: (sql, params) => dbQuery(sql, params ?? []),
   now: () => Date.now(),
 };
@@ -401,6 +482,13 @@ export async function getFunnelScoreboard(
     identity_coverage: snap?.identity_coverage ?? { identified: null, fallback: null, anonymous: null, coverage_pct: null },
   };
 
+  // ── Client-type split (24h) — projected from the digest's own getUsageStats ──
+  let usage: Record<string, unknown> | null = null;
+  try { usage = await deps.usageStats(); } catch (err) {
+    warnings.push(`usageStats failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const client_activity_24h = projectClientActivity(usage);
+
   // ── Daily timeseries (signup intent + conversions) ──
   const signupDaily = bucketDaily(signupRows.map(r => toEpochMs(r.created_at)), nowMs, Math.min(days, 90));
   const convDaily = bucketDaily(profiles.map(p => toEpochMs(p.converted_at)), nowMs, Math.min(days, 90));
@@ -422,6 +510,7 @@ export async function getFunnelScoreboard(
     conversion,
     retention,
     intent_panel,
+    client_activity_24h,
     daily,
     warnings,
   };

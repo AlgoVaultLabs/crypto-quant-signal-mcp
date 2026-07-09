@@ -77,6 +77,12 @@ export function renderFunnelDashboardHtml(): string {
     "  setText('ip-quota','soft '+num(ip.quota_hits.soft)+' · hard '+num(ip.quota_hits.hard)+' · block '+num(ip.quota_hits.block));",
     "  setText('ip-tagged','tagged '+num(ip.tagged_vs_direct.tagged)+' · direct '+num(ip.tagged_vs_direct.direct)+' ('+pct(ip.tagged_vs_direct.direct_pct)+' direct)');",
     "  setText('ip-idcov','identified '+num(ip.identity_coverage.identified)+' / cov '+pct(ip.identity_coverage.coverage_pct));",
+    "  var ca=d.client_activity_24h;",
+    "  var rawTop=num(ca.calls.raw_api)+(ca.calls.raw_api_top1_pct!=null?(' (top IP '+ca.calls.raw_api_top1_pct+'%)'):'');",
+    "  var tgb=ca.calls.tg_bot_breakdown;var tgCalls=num(ca.calls.tg_bot)+' (W'+num(tgb.watch)+'\\u00b7SW'+num(tgb.scanwatch)+'\\u00b7S'+num(tgb.scan)+')';",
+    "  var crows=[['Total',num(ca.calls.total),num(ca.sessions.total)],['\\ud83d\\udfe2 Recognized',num(ca.calls.recognized),num(ca.sessions.recognized)],['\\ud83d\\udd0c Raw API',rawTop,num(ca.sessions.raw_api)],['\\ud83d\\udcb3 Paid (x402/a2mcp)',num(ca.calls.paid),num(ca.sessions.paid)],['\\ud83d\\udd01 TG bot',tgCalls,num(ca.sessions.tg_bot_subscribers)+' subs']];",
+    "  table(document.getElementById('client'),['Client type','Calls (24h)','Sessions (24h)'],crows);",
+    "  setText('client-note',ca.note);",
     "  var wk=fs.signup_intent.weekly.map(function(w){var c=w.by_channel;var cs=Object.keys(c).map(function(k){return k+' '+c[k];}).join(', ');return [w.week,w.total,cs];});",
     "  table(document.getElementById('weekly'),['Week (Mon)','Signups','By channel'],wk);",
     "  var dr=(d.daily||[]).slice().reverse().map(function(x){return [x.date,x.signup_intent,x.conversions];});",
@@ -122,6 +128,11 @@ export function renderFunnelDashboardHtml(): string {
     '</div></section>',
   ].join('');
 
+  const clientHtml = [
+    '<section class="panel"><h2>Client activity (24h) — matches the Telegram daily digest</h2>',
+    '<div id="client"></div><div class="muted" id="client-note" style="margin-top:8px"></div></section>',
+  ].join('');
+
   const tablesHtml = [
     '<section class="panel"><h2>Signup intent — weekly by channel</h2><div id="weekly"></div></section>',
     '<section class="panel"><h2>Daily timeseries (signup intent + conversions)</h2><div id="daily"></div></section>',
@@ -139,7 +150,7 @@ export function renderFunnelDashboardHtml(): string {
     '<label class="sub">window(d) <input id="days" value="90" style="width:56px;background:#0b0f14;color:#e6edf3;border:1px solid #2d3748;border-radius:5px;padding:3px 6px"></label>',
     '<button id="refresh">Refresh</button></header>',
     '<main><div id="warnbox" class="warn"></div>',
-    cardsHtml, intentHtml, tablesHtml,
+    cardsHtml, intentHtml, clientHtml, tablesHtml,
     '</main><footer id="ft-computed">—</footer>',
     '<script>', js, '</script></body></html>',
   ].join('');

@@ -17,6 +17,7 @@ import {
   toEpochMs,
   bucketDaily,
   bucketWeeklyByChannel,
+  projectClientActivity,
   type ScoreboardDeps,
 } from '../src/lib/funnel-scoreboard.js';
 import type { FunnelSnapshot } from '../src/lib/funnel-snapshot.js';
@@ -133,6 +134,34 @@ describe('bucketDaily / bucketWeeklyByChannel', () => {
   });
 });
 
+describe('projectClientActivity (mirrors the Telegram digest, single-derivation)', () => {
+  const usage = {
+    totalCallsExternal: { last24h: 707 },
+    externalGenuine: { free: 12, paid: 0, freeSessions: 10, paidSessions: 0 },
+    externalAutomated: { total: 641, sessions: 50 },
+    rawConcentration: { top1_pct: 10.3 },
+    uniqueSessionsExternal: { last24h: 81 },
+    tgBot: { present: true, stale: false, calls_total: 54, calls_watch: 16, calls_scanwatch: 38, calls_scan: 0, subscribers: 21 },
+  };
+  it('projects the exact digest buckets (calls + sessions)', () => {
+    const ca = projectClientActivity(usage);
+    expect(ca.calls).toEqual({
+      total: 707, recognized: 12, raw_api: 641, raw_api_top1_pct: 10.3, paid: 0,
+      tg_bot: 54, tg_bot_breakdown: { watch: 16, scanwatch: 38, scan: 0 },
+    });
+    expect(ca.sessions).toEqual({ total: 81, recognized: 10, raw_api: 50, paid: 0, tg_bot_subscribers: 21 });
+  });
+  it('preserves the top-IP percent as a float (not truncated)', () => {
+    expect(projectClientActivity(usage).calls.raw_api_top1_pct).toBe(10.3);
+  });
+  it('null/empty usage → all-null, tg fields null (fail-open, never 0)', () => {
+    const ca = projectClientActivity(null);
+    expect(ca.calls.total).toBeNull();
+    expect(ca.calls.tg_bot).toBeNull();
+    expect(ca.sessions.tg_bot_subscribers).toBeNull();
+  });
+});
+
 // ── Orchestrator (injected deps → known metrics) ───────────────────────────────
 
 function stubSnapshot(): FunnelSnapshot {
@@ -188,6 +217,14 @@ function makeDeps(overrides: Partial<ScoreboardDeps> = {}): ScoreboardDeps {
       { customer_id: 'c1', status: 'active', tier: 'starter', channel: 'direct',
         converted_at: new Date(NOW - 32 * DAY).toISOString(), attribution_captured: false } as never,
     ],
+    usageStats: async () => ({
+      totalCallsExternal: { last24h: 707 },
+      externalGenuine: { free: 12, paid: 0, freeSessions: 10, paidSessions: 0 },
+      externalAutomated: { total: 641, sessions: 50 },
+      rawConcentration: { top1_pct: 10.3 },
+      uniqueSessionsExternal: { last24h: 81 },
+      tgBot: { present: true, stale: false, calls_total: 54, calls_watch: 16, calls_scanwatch: 38, calls_scan: 0, subscribers: 21 },
+    }),
     query,
     now: () => NOW,
     ...overrides,
@@ -229,6 +266,14 @@ describe('getFunnelScoreboard (composed, injected deps)', () => {
     expect(sb.intent_panel.quota_hits).toEqual({ soft: 86, hard: 64, block: 28 });
     expect(sb.intent_panel.tagged_vs_direct).toEqual({ tagged: 1, direct: 3, direct_pct: 3 / 4 });
     expect(sb.intent_panel.identity_coverage.coverage_pct).toBe(0.2);
+
+    // Client-type split (24h) — mirrors the Telegram digest number-for-number
+    expect(sb.client_activity_24h.calls.total).toBe(707);
+    expect(sb.client_activity_24h.calls.raw_api).toBe(641);
+    expect(sb.client_activity_24h.calls.raw_api_top1_pct).toBe(10.3);
+    expect(sb.client_activity_24h.calls.tg_bot).toBe(54);
+    expect(sb.client_activity_24h.sessions.total).toBe(81);
+    expect(sb.client_activity_24h.sessions.tg_bot_subscribers).toBe(21);
 
     // daily timeseries present
     expect(sb.daily.length).toBeGreaterThan(0);
