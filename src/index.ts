@@ -2136,9 +2136,12 @@ async function startHttp() {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       try {
-        const days = Math.min(Math.max(parseInt(String(req.query.days ?? '90'), 10) || 90, 1), 365);
+        // FUNNEL-SCOREBOARD-V2: ?window=7|30|90|180|365|all (default all) scopes both funnels.
+        const allowed = new Set(['7', '30', '90', '180', '365', 'all']);
+        const wRaw = String(req.query.window ?? 'all');
+        const window = (allowed.has(wRaw) ? wRaw : 'all') as '7' | '30' | '90' | '180' | '365' | 'all';
         const { getFunnelScoreboard } = await import('./lib/funnel-scoreboard.js');
-        const scoreboard = await getFunnelScoreboard({ days });
+        const scoreboard = await getFunnelScoreboard({ window });
         res.setHeader('Cache-Control', 'no-store');
         res.json(scoreboard);
       } catch (err) {

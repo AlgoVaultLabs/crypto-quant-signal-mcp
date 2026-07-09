@@ -319,6 +319,191 @@ export function projectClientActivity(u: Record<string, unknown> | null): Client
   };
 }
 
+// ── FUNNEL-SCOREBOARD-V2: dual-funnel (human + agent) + HOLD upside ─────────────
+
+export type FunnelWindow = '7' | '30' | '90' | '180' | '365' | 'all';
+const EPOCH_ISO = '1970-01-01T00:00:00.000Z';
+
+/** Window key → days, or null for 'all' (no time filter). Pure. */
+export function windowToDays(w: FunnelWindow): number | null {
+  const map: Record<string, number> = { '7': 7, '30': 30, '90': 90, '180': 180, '365': 365 };
+  return w === 'all' ? null : (map[w] ?? 90);
+}
+
+/** ISO lower-bound for a window (EPOCH for 'all'). */
+function windowIso(w: FunnelWindow, nowMs: number): string {
+  const days = windowToDays(w);
+  return days === null ? EPOCH_ISO : new Date(nowMs - days * DAY_MS).toISOString();
+}
+
+/** Benchmark band (vs dev-tool medians) — greenMin/amberMin as fractions [0,1]. */
+export interface Benchmark { greenMin: number; amberMin: number; label: string; }
+export const FUNNEL_BENCHMARKS = {
+  human_click_to_signup: { greenMin: 0.30, amberMin: 0.15, label: 'signup-form 30–55% norm' },
+  human_signup_to_paid: { greenMin: 0.05, amberMin: 0.02, label: 'free→paid ~5% dev-tool median' },
+  agent_conn_to_activated: { greenMin: 0.40, amberMin: 0.20, label: 'activation (≥1 real call)' },
+  agent_activated_to_quota: { greenMin: 0.08, amberMin: 0.02, label: 'PQL (quota-crossing) rate' },
+  agent_quota_to_paid: { greenMin: 0.05, amberMin: 0.01, label: 'monetization (quota→paid)' },
+} as const;
+
+/** RAG verdict of a rate vs its benchmark. null rate → 'a' (unknown/neutral). Pure. */
+export function ragVerdict(rate: number | null, bench: Benchmark): 'g' | 'a' | 'r' {
+  if (rate === null || !Number.isFinite(rate)) return 'a';
+  if (rate >= bench.greenMin) return 'g';
+  if (rate >= bench.amberMin) return 'a';
+  return 'r';
+}
+
+/** n<30 → low-confidence (research-mandated small-sample guard). Pure. */
+export function lowConfidence(n: number | null): boolean {
+  return n !== null && n < 30;
+}
+
+export interface FunnelStage { key: string; label: string; sublabel: string; count: number | null; illustrative?: boolean; }
+export interface FunnelTransition {
+  from: string; to: string; rate: number | null; drop: number | null;
+  verdict: 'g' | 'a' | 'r'; benchmark: string; low_confidence: boolean;
+}
+
+/** Build the transitions (rate/drop/verdict/low-confidence) between consecutive stages. Pure. */
+export function buildTransitions(stages: FunnelStage[], benches: Benchmark[]): FunnelTransition[] {
+  const out: FunnelTransition[] = [];
+  for (let i = 0; i < stages.length - 1; i++) {
+    const cur = stages[i], nxt = stages[i + 1], b = benches[i];
+    const rate = (cur.count !== null && cur.count > 0 && nxt.count !== null) ? nxt.count / cur.count : null;
+    const drop = (cur.count !== null && nxt.count !== null) ? cur.count - nxt.count : null;
+    out.push({ from: cur.label, to: nxt.label, rate, drop, verdict: ragVerdict(rate, b), benchmark: b.label, low_confidence: lowConfidence(cur.count) });
+  }
+  return out;
+}
+
+/** The step furthest BELOW its green benchmark (the worst leak). Pure. */
+export function pickBiggestLeak(trs: FunnelTransition[], benches: Benchmark[]): FunnelTransition | null {
+  const scored = trs
+    .map((t, i) => ({ t, score: t.rate === null ? Infinity : t.rate / (benches[i]?.greenMin || 1) }))
+    .filter(s => s.score !== Infinity);
+  if (!scored.length) return null;
+  return scored.sort((a, b) => a.score - b.score)[0].t;
+}
+
+export interface HumanFunnel {
+  window: FunnelWindow;
+  engagement_proxy: { track_record_viewed: number | null; landing_cta_clicked: number | null; caveat: string };
+  stages: FunnelStage[];
+  transitions: FunnelTransition[];
+  biggest_leak: FunnelTransition | null;
+  by_channel: Array<{ channel: string; count: number; pct: number | null }>;
+}
+
+/** Human funnel (web → account → Stripe sub), windowed. Visitors is a proxy CONTEXT band
+ *  (not a stage — clicks exceed the proxies, so it would invert the funnel). Stage funnel
+ *  (per-window counts), not a cohort join — the attribution gap is flagged elsewhere. */
+export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps = defaultScoreboardDeps): Promise<HumanFunnel> {
+  const nowMs = deps.now();
+  const iso = windowIso(window, nowMs);
+  const warnings: string[] = [];
+  const trackRecord = await scalar(deps, 'human_track_record', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type = 'track_record_viewed' AND ts >= ?`, [iso], warnings);
+  const landingCta = await scalar(deps, 'human_landing_cta', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type = 'landing_cta_clicked' AND ts >= ?`, [iso], warnings);
+  const subscribeClicks = await scalar(deps, 'human_subscribe', `SELECT COUNT(*) AS c FROM signup_attribution WHERE created_at >= ?`, [iso], warnings);
+  const signups = await scalar(deps, 'human_signup', `SELECT COUNT(*) AS c FROM free_keys WHERE created_at >= ?`, [iso], warnings);
+  const paid = await scalar(deps, 'human_paid', `SELECT COUNT(*) AS c FROM subscriber_profiles WHERE converted_at >= ?`, [iso], warnings);
+  let chanRows: Array<{ channel: string | null }> = [];
+  try { chanRows = await deps.query<{ channel: string | null }>(`SELECT channel FROM signup_attribution WHERE created_at >= ?`, [iso]); }
+  catch (err) { warnings.push(`human channel read failed: ${err instanceof Error ? err.message : String(err)}`); }
+  const chanCounts: Record<string, number> = {};
+  for (const r of chanRows) { const c = r.channel || 'direct'; chanCounts[c] = (chanCounts[c] ?? 0) + 1; }
+  const chanTotal = chanRows.length;
+  const by_channel = Object.entries(chanCounts).sort((a, b) => b[1] - a[1]).map(([channel, count]) => ({ channel, count, pct: chanTotal > 0 ? count / chanTotal : null }));
+  const stages: FunnelStage[] = [
+    { key: 'subscribe_click', label: 'Subscribe click', sublabel: 'Intent · /signup CTA', count: subscribeClicks },
+    { key: 'signup', label: 'Signup', sublabel: 'Account · free key + referral', count: signups },
+    { key: 'paid', label: 'Paid', sublabel: 'Conversion · Stripe sub', count: paid },
+  ];
+  const benches = [FUNNEL_BENCHMARKS.human_click_to_signup, FUNNEL_BENCHMARKS.human_signup_to_paid];
+  const transitions = buildTransitions(stages, benches);
+  return {
+    window,
+    engagement_proxy: { track_record_viewed: trackRecord, landing_cta_clicked: landingCta, caveat: 'engagement proxy — real visitor count NOT instrumented (landing is CDN/static; /signup is reachable directly). Not a funnel parent.' },
+    stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches), by_channel,
+  };
+}
+
+export interface AgentFunnel {
+  window: FunnelWindow;
+  stages: FunnelStage[];
+  transitions: FunnelTransition[];
+  biggest_leak: FunnelTransition | null;
+  quota_detail: { windowed_hard_block: number | null; soft_approaching: number | null; all_time_pqls: number | null };
+  paid_note: string;
+}
+
+/** Agent funnel (MCP/API → x402), windowed. Quota-crossing = distinct sessions that hit the
+ *  hard/block (90%+/100%) cap in-window; the all-time quota_usage≥100 count is a context chip;
+ *  soft is a secondary "approaching" metric. Paid = x402 payment COUNT (not wallets). */
+export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps = defaultScoreboardDeps): Promise<AgentFunnel> {
+  const nowMs = deps.now();
+  const iso = windowIso(window, nowMs);
+  const days = windowToDays(window);
+  const thresholdMs = days === null ? 0 : nowMs - days * DAY_MS;
+  const warnings: string[] = [];
+  const connections = await scalar(deps, 'agent_connections', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type = 'mcp_connect' AND ts >= ?`, [iso], warnings);
+  const activated = await scalar(deps, 'agent_activated', `SELECT COUNT(*) AS c FROM agent_sessions WHERE call_count >= 1 AND first_tier <> 'internal' AND first_seen >= ?`, [thresholdMs], warnings);
+  const quotaCross = await scalar(deps, 'agent_quota_cross', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type IN ('quota_hit_hard','quota_hit_block') AND ts >= ?`, [iso], warnings);
+  const quotaSoft = await scalar(deps, 'agent_quota_soft', `SELECT COUNT(DISTINCT session_id) AS c FROM funnel_events WHERE event_type = 'quota_hit_soft' AND ts >= ?`, [iso], warnings);
+  const allTimePqls = await scalar(deps, 'agent_pql_alltime', `SELECT COUNT(*) AS c FROM quota_usage WHERE call_count >= 100`, [], warnings);
+  const paidX402 = await scalar(deps, 'agent_x402', `SELECT COUNT(*) AS c FROM processed_x402_payments WHERE created_at >= ?`, [iso], warnings);
+  const stages: FunnelStage[] = [
+    { key: 'connections', label: 'Connections', sublabel: 'Reach · MCP / API', count: connections },
+    { key: 'activated', label: 'Activated', sublabel: 'Value · made ≥1 call', count: activated },
+    { key: 'quota_crossing', label: 'Quota-crossing', sublabel: 'PQL · hit 90%+/100% cap', count: quotaCross },
+    { key: 'paid_x402', label: 'Paid', sublabel: 'Conversion · x402 payments', count: paidX402 },
+  ];
+  const benches = [FUNNEL_BENCHMARKS.agent_conn_to_activated, FUNNEL_BENCHMARKS.agent_activated_to_quota, FUNNEL_BENCHMARKS.agent_quota_to_paid];
+  const transitions = buildTransitions(stages, benches);
+  return {
+    window, stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches),
+    quota_detail: { windowed_hard_block: quotaCross, soft_approaching: quotaSoft, all_time_pqls: allTimePqls },
+    paid_note: 'x402 payments (COUNT of settled micropayments) — NOT distinct paying wallets (nonce-keyed, no wallet column). quota→paid rate is unit-approximate (keys vs payment events). Distinct-wallet attribution = data-quality follow-up.',
+  };
+}
+
+export interface HoldUpside {
+  window: FunnelWindow;
+  external_calls: number | null;
+  hold_calls: number | null;
+  trade_calls: number | null;
+  non_verdict_calls: number | null;
+  active_agents: number | null;
+  avg_calls_per_active_agent: number | null;
+  hold_rate: number | null;
+  upside: Array<{ price: number; amount: number | null }>;
+  caveat: string;
+}
+
+/** HOLD-monetization upside — EXTERNAL agent calls only (is_bot_internal=false; NEVER the 36M
+ *  lifetime counter, which request_log doesn't hold). HOLD/trade from request_log.verdict;
+ *  null-verdict (chat/search/regime) excluded from the split. Upside = a LABELED projection. */
+export async function getHoldUpside(window: FunnelWindow, deps: ScoreboardDeps = defaultScoreboardDeps): Promise<HoldUpside> {
+  const nowMs = deps.now();
+  const iso = windowIso(window, nowMs);
+  const days = windowToDays(window);
+  const thresholdMs = days === null ? 0 : nowMs - days * DAY_MS;
+  const warnings: string[] = [];
+  const externalCalls = await scalar(deps, 'hold_external', `SELECT COUNT(*) AS c FROM request_log WHERE is_bot_internal = false AND timestamp >= ?`, [iso], warnings);
+  const holdCalls = await scalar(deps, 'hold_hold', `SELECT COUNT(*) AS c FROM request_log WHERE is_bot_internal = false AND verdict = 'HOLD' AND timestamp >= ?`, [iso], warnings);
+  const tradeCalls = await scalar(deps, 'hold_trade', `SELECT COUNT(*) AS c FROM request_log WHERE is_bot_internal = false AND verdict IN ('BUY','SELL') AND timestamp >= ?`, [iso], warnings);
+  const nonVerdict = await scalar(deps, 'hold_nonverdict', `SELECT COUNT(*) AS c FROM request_log WHERE is_bot_internal = false AND verdict IS NULL AND timestamp >= ?`, [iso], warnings);
+  const activeAgents = await scalar(deps, 'hold_active', `SELECT COUNT(*) AS c FROM agent_sessions WHERE call_count >= 1 AND first_tier <> 'internal' AND first_seen >= ?`, [thresholdMs], warnings);
+  const avg = safeRatio(externalCalls, activeAgents);
+  const holdRate = (holdCalls !== null && tradeCalls !== null && holdCalls + tradeCalls > 0) ? holdCalls / (holdCalls + tradeCalls) : null;
+  const upside = [0.001, 0.002, 0.005].map(price => ({ price, amount: holdCalls !== null ? holdCalls * price : null }));
+  return {
+    window, external_calls: externalCalls, hold_calls: holdCalls, trade_calls: tradeCalls, non_verdict_calls: nonVerdict,
+    active_agents: activeAgents, avg_calls_per_active_agent: avg, hold_rate: holdRate, upside,
+    caveat: 'External agent calls only (internal seed/scan excluded; request_log ≠ the 36M lifetime counter). Non-verdict calls (chat/search/regime) excluded from the HOLD/trade split. Estimate only — HOLDs stay free until you decide otherwise.',
+  };
+}
+
 // ── Scoreboard shape ──────────────────────────────────────────────────────────
 
 export interface FunnelScoreboard {
@@ -362,6 +547,10 @@ export interface FunnelScoreboard {
   };
   /** The Telegram daily-digest client-TYPE split (24h), projected from the same getUsageStats(). */
   client_activity_24h: ClientActivity24h;
+  /** FUNNEL-SCOREBOARD-V2: the two separate funnels (human web→Stripe · agent MCP→x402) + HOLD upside, windowed. */
+  human_funnel: HumanFunnel;
+  agent_funnel: AgentFunnel;
+  hold_upside: HoldUpside;
   daily: Array<{ date: string; signup_intent: number; conversions: number }>;
   warnings: string[];
 }
@@ -409,10 +598,11 @@ async function scalar(
  * subscriber/free-account/reach totals are all-time by design.
  */
 export async function getFunnelScoreboard(
-  opts: { days?: number } = {},
+  opts: { days?: number; window?: FunnelWindow } = {},
   deps: ScoreboardDeps = defaultScoreboardDeps,
 ): Promise<FunnelScoreboard> {
-  const days = Math.min(Math.max(Math.trunc(opts.days ?? 90), 1), 365);
+  const window: FunnelWindow = opts.window ?? 'all';
+  const days = Math.min(Math.max(Math.trunc(opts.days ?? windowToDays(window) ?? 90), 1), 365);
   const nowMs = deps.now();
   const nowIso = new Date(nowMs).toISOString();
   const fromIso = new Date(nowMs - days * DAY_MS).toISOString();
@@ -586,6 +776,13 @@ export async function getFunnelScoreboard(
   }
   const client_activity_24h = projectClientActivity(usage);
 
+  // ── V2 dual funnels (human + agent) + HOLD upside, scoped to the selected window ──
+  const [human_funnel, agent_funnel, hold_upside] = await Promise.all([
+    getHumanFunnel(window, deps),
+    getAgentFunnel(window, deps),
+    getHoldUpside(window, deps),
+  ]);
+
   // ── Daily timeseries (signup intent + conversions) ──
   const signupDaily = bucketDaily(signupRows.map(r => toEpochMs(r.created_at)), nowMs, Math.min(days, 90));
   const convDaily = bucketDaily(profiles.map(p => toEpochMs(p.converted_at)), nowMs, Math.min(days, 90));
@@ -608,6 +805,9 @@ export async function getFunnelScoreboard(
     retention,
     intent_panel,
     client_activity_24h,
+    human_funnel,
+    agent_funnel,
+    hold_upside,
     daily,
     warnings,
   };

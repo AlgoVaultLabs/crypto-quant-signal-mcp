@@ -20,8 +20,18 @@ import {
   projectClientActivity,
   classifyTierBucket,
   computeRetentionBreakdown,
+  windowToDays,
+  ragVerdict,
+  lowConfidence,
+  buildTransitions,
+  pickBiggestLeak,
+  getHumanFunnel,
+  getAgentFunnel,
+  getHoldUpside,
+  FUNNEL_BENCHMARKS,
   type ScoreboardDeps,
   type RetentionSession,
+  type FunnelStage,
 } from '../src/lib/funnel-scoreboard.js';
 import type { FunnelSnapshot } from '../src/lib/funnel-snapshot.js';
 
@@ -172,6 +182,131 @@ describe('computeRetentionBreakdown', () => {
     expect(b.by_channel[0].channel).toBe('claude'); // 2 > 1
     expect(b.by_channel.find(c => c.channel === 'claude')?.curve.d7).toBeCloseTo(0.5);
     expect(b.by_channel.some(c => c.channel === 'untagged')).toBe(false); // internal-only channel dropped
+  });
+});
+
+describe('V2 funnel pure helpers', () => {
+  it('windowToDays maps windows; all → null', () => {
+    expect(windowToDays('7')).toBe(7);
+    expect(windowToDays('365')).toBe(365);
+    expect(windowToDays('all')).toBeNull();
+  });
+  it('ragVerdict: green/amber/red vs benchmark; null → amber', () => {
+    const b = { greenMin: 0.3, amberMin: 0.15, label: 'x' };
+    expect(ragVerdict(0.4, b)).toBe('g');
+    expect(ragVerdict(0.2, b)).toBe('a');
+    expect(ragVerdict(0.05, b)).toBe('r');
+    expect(ragVerdict(null, b)).toBe('a');
+  });
+  it('lowConfidence flags n<30 (not null)', () => {
+    expect(lowConfidence(29)).toBe(true);
+    expect(lowConfidence(30)).toBe(false);
+    expect(lowConfidence(null)).toBe(false);
+  });
+  it('buildTransitions computes rate/drop/verdict/low-confidence; pickBiggestLeak = worst-vs-benchmark', () => {
+    const stages: FunnelStage[] = [
+      { key: 'a', label: 'A', sublabel: '', count: 100 },
+      { key: 'b', label: 'B', sublabel: '', count: 6 },   // 6% — red vs 30%
+      { key: 'c', label: 'C', sublabel: '', count: 1 },   // 16.7% — green vs 5%
+    ];
+    const benches = [FUNNEL_BENCHMARKS.human_click_to_signup, FUNNEL_BENCHMARKS.human_signup_to_paid];
+    const trs = buildTransitions(stages, benches);
+    expect(trs[0].rate).toBeCloseTo(0.06);
+    expect(trs[0].drop).toBe(94);
+    expect(trs[0].verdict).toBe('r');
+    expect(trs[0].low_confidence).toBe(false); // n=100
+    expect(trs[1].verdict).toBe('g');
+    expect(trs[1].low_confidence).toBe(true); // n=6 < 30
+    expect(pickBiggestLeak(trs, benches)?.from).toBe('A'); // A→B furthest below benchmark
+  });
+  it('buildTransitions: rate null when prior stage is 0/null (never divide-by-zero)', () => {
+    const stages: FunnelStage[] = [
+      { key: 'a', label: 'A', sublabel: '', count: 0 },
+      { key: 'b', label: 'B', sublabel: '', count: 0 },
+    ];
+    const trs = buildTransitions(stages, [FUNNEL_BENCHMARKS.human_click_to_signup]);
+    expect(trs[0].rate).toBeNull();
+    expect(pickBiggestLeak(trs, [FUNNEL_BENCHMARKS.human_click_to_signup])).toBeNull();
+  });
+});
+
+function funnelDeps(router: (sql: string, params: unknown[]) => unknown[]): ScoreboardDeps {
+  return {
+    snapshot: async () => stubSnapshot(),
+    stripeCensus: async () => null,
+    listProfiles: async () => [],
+    usageStats: async () => ({}),
+    query: async <T>(sql: string, params: unknown[] = []): Promise<T[]> => router(sql, params) as T[],
+    now: () => NOW,
+  };
+}
+
+describe('getHumanFunnel', () => {
+  const deps = funnelDeps((sql) => {
+    if (sql.includes("'track_record_viewed'")) return [{ c: 71 }];
+    if (sql.includes("'landing_cta_clicked'")) return [{ c: 88 }];
+    if (sql.includes('COUNT(*)') && sql.includes('FROM signup_attribution')) return [{ c: 100 }];
+    if (sql.includes('SELECT channel FROM signup_attribution')) return [...Array(90).fill({ channel: 'direct' }), ...Array(10).fill({ channel: 'tg_bot' })];
+    if (sql.includes('FROM free_keys')) return [{ c: 6 }];
+    if (sql.includes('FROM subscriber_profiles')) return [{ c: 1 }];
+    return [];
+  });
+  it('renders stages + proxy band + channel + biggest leak', async () => {
+    const h = await getHumanFunnel('all', deps);
+    expect(h.engagement_proxy).toMatchObject({ track_record_viewed: 71, landing_cta_clicked: 88 });
+    expect(h.stages.map(s => s.count)).toEqual([100, 6, 1]);
+    expect(h.transitions[0].rate).toBeCloseTo(0.06); // click→signup 6%
+    expect(h.transitions[0].verdict).toBe('r');
+    expect(h.biggest_leak?.from).toBe('Subscribe click');
+    expect(h.by_channel[0]).toMatchObject({ channel: 'direct', count: 90 });
+    expect(h.by_channel[0].pct).toBeCloseTo(0.9);
+  });
+});
+
+describe('getAgentFunnel', () => {
+  const deps = funnelDeps((sql) => {
+    if (sql.includes("'mcp_connect'")) return [{ c: 1000 }];
+    if (sql.includes('FROM agent_sessions')) return [{ c: 800 }];
+    if (sql.includes("'quota_hit_hard','quota_hit_block'")) return [{ c: 10 }];
+    if (sql.includes("'quota_hit_soft'")) return [{ c: 20 }];
+    if (sql.includes('FROM quota_usage')) return [{ c: 10 }];
+    if (sql.includes('FROM processed_x402_payments')) return [{ c: 7 }];
+    return [];
+  });
+  it('renders 4 stages + quota detail (windowed + all-time chip + soft)', async () => {
+    const a = await getAgentFunnel('all', deps);
+    expect(a.stages.map(s => s.count)).toEqual([1000, 800, 10, 7]);
+    expect(a.quota_detail).toEqual({ windowed_hard_block: 10, soft_approaching: 20, all_time_pqls: 10 });
+    expect(a.transitions[0].rate).toBeCloseTo(0.8); // conn→activated
+    expect(a.paid_note).toContain('NOT distinct paying wallets');
+  });
+});
+
+describe('getHoldUpside', () => {
+  const seen: string[] = [];
+  const deps = funnelDeps((sql) => {
+    seen.push(sql);
+    if (sql.includes("verdict = 'HOLD'")) return [{ c: 990 }];
+    if (sql.includes("verdict IN ('BUY','SELL')")) return [{ c: 9 }];
+    if (sql.includes('verdict IS NULL')) return [{ c: 1 }];
+    if (sql.includes('FROM request_log')) return [{ c: 1000 }]; // external total
+    if (sql.includes('FROM agent_sessions')) return [{ c: 800 }]; // active agents
+    return [];
+  });
+  it('external-only math: avg/agent, hold_rate, labeled upside', async () => {
+    const u = await getHoldUpside('all', deps);
+    expect(u.external_calls).toBe(1000);
+    expect(u.hold_calls).toBe(990);
+    expect(u.trade_calls).toBe(9);
+    expect(u.non_verdict_calls).toBe(1);
+    expect(u.avg_calls_per_active_agent).toBeCloseTo(1.25); // 1000/800
+    expect(u.hold_rate).toBeCloseTo(0.991); // 990/999
+    expect(u.upside).toEqual([{ price: 0.001, amount: 0.99 }, { price: 0.002, amount: 1.98 }, { price: 0.005, amount: 4.95 }]);
+  });
+  it('every request_log read is is_bot_internal=false (internal excluded, AC4)', () => {
+    const rl = seen.filter(s => s.includes('FROM request_log'));
+    expect(rl.length).toBeGreaterThan(0);
+    expect(rl.every(s => s.includes('is_bot_internal = false'))).toBe(true);
   });
 });
 
