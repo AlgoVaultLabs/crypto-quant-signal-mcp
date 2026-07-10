@@ -25,6 +25,8 @@ export interface WelcomePageOptions {
   utmCampaign?: string | null;
   /** FUNNEL-FIX-HUMAN-SIGNUP-W1: render the value-before-email + OAuth options (NEW_SIGNUP_ENABLED). */
   newSignupEnabled?: boolean;
+  /** Per-provider LIVE flag — an OAuth button renders ONLY when its real creds exist (no stub buttons to users). */
+  oauthProviders?: { google: boolean; github: boolean };
 }
 
 export function getWelcomePageHtml(
@@ -59,10 +61,7 @@ export function getWelcomePageHtml(
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
            <div id="startfree-result" style="display:none;margin-top:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;font-size:13px"></div>
-           <div style="display:flex;gap:8px;margin-top:10px">
-             <a class="paywall-btn" style="flex:1;text-align:center;background:#21262d" href="/auth/github?next=/welcome">Continue with GitHub</a>
-             <a class="paywall-btn" style="flex:1;text-align:center;background:#21262d" href="/auth/google?next=/welcome">Continue with Google</a>
-           </div>
+           ${(opts.oauthProviders && (opts.oauthProviders.github || opts.oauthProviders.google)) ? `<div style="display:flex;gap:8px;margin-top:10px">${opts.oauthProviders.github ? `<a class="paywall-btn" style="flex:1;text-align:center;background:#21262d" href="/auth/github?next=/welcome">Continue with GitHub</a>` : ''}${opts.oauthProviders.google ? `<a class="paywall-btn" style="flex:1;text-align:center;background:#21262d" href="/auth/google?next=/welcome">Continue with Google</a>` : ''}</div>` : ''}
            <div style="text-align:center;color:#8b949e;margin:12px 0;font-size:12px">— or get your key by email —</div>
          </div>
          <script>

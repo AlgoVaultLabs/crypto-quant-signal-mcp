@@ -1542,18 +1542,20 @@ async function startHttp() {
     const utmSource = typeof req.query.utm_source === 'string' ? req.query.utm_source : null;
     const utmCampaign = typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : null;
 
-    // FUNNEL-FIX-HUMAN-SIGNUP-W1: render the value-before-email + OAuth options only when flagged.
-    const { isNewSignupEnabled } = await import('./lib/auth-providers.js');
+    // FUNNEL-FIX-HUMAN-SIGNUP-W1: render the value-before-email + OAuth options only when flagged;
+    // each OAuth button renders ONLY when its real creds exist (no stub buttons shown to users).
+    const { isNewSignupEnabled, getAuthProvider } = await import('./lib/auth-providers.js');
     const newSignupEnabled = isNewSignupEnabled();
+    const oauthProviders = { google: getAuthProvider('google').live, github: getAuthProvider('github').live };
 
     // Organic visit (no session_id) — render paywall CTA + no API-key reveal.
     if (!sessionId) {
-      return res.send(getWelcomePageHtml(null, null, null, { utmSource, utmCampaign, newSignupEnabled }));
+      return res.send(getWelcomePageHtml(null, null, null, { utmSource, utmCampaign, newSignupEnabled, oauthProviders }));
     }
 
     try {
       const { apiKey, tier, email } = await getCustomerApiKey(sessionId);
-      res.send(getWelcomePageHtml(apiKey, tier, email, { utmSource, utmCampaign, newSignupEnabled }));
+      res.send(getWelcomePageHtml(apiKey, tier, email, { utmSource, utmCampaign, newSignupEnabled, oauthProviders }));
     } catch (err) {
       console.error('Welcome page error:', err instanceof Error ? err.message : err);
       res.status(500).send('Failed to retrieve your API key. Please contact support@algovault.com');
