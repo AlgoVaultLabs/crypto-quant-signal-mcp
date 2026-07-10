@@ -13,6 +13,14 @@ describe('classifySource — precedence + medium/confidence', () => {
     expect(classifySource({ srcParam: 'producthunt', referer: 'https://x.com/a', userAgent: 'claude' }))
       .toEqual({ source: 'producthunt', medium: 'listing', confidence: 'deterministic' });
   });
+  it('(1b) legacy ?utm_source= classifies when no ?src=; ?src wins when both (OPS-UTM-SHORTEN-W1)', () => {
+    expect(classifySource({ utmSource: 'reddit' }))
+      .toEqual({ source: 'reddit', medium: 'referral', confidence: 'deterministic' });
+    // ?src= wins over legacy ?utm_source= when both present
+    expect(classifySource({ srcParam: 'npm', utmSource: 'reddit' }).source).toBe('npm');
+    // a junk ?src= falls through to a valid legacy ?utm_source=
+    expect(classifySource({ srcParam: 'garbage', utmSource: 'x' }).source).toBe('x');
+  });
   it('(2) Referer domain when no ?src=, deterministic', () => {
     expect(classifySource({ referer: 'https://dev.to/algovault' }))
       .toEqual({ source: 'devto', medium: 'referral', confidence: 'deterministic' });
@@ -69,6 +77,7 @@ describe('logUnmatchedUa — log-only sampler (no DB, no PII), deduped + bounded
 describe('resolveSource back-compat + mediumForSource', () => {
   it('resolveSource still returns {source, source_confidence} (existing capture-hook shape)', () => {
     expect(resolveSource({ srcParam: 'claude' })).toEqual({ source: 'claude', source_confidence: 'deterministic' });
+    expect(resolveSource({ utmSource: 'smithery' })).toEqual({ source: 'smithery', source_confidence: 'deterministic' }); // legacy fallback
     expect(resolveSource({ referer: 'https://npmjs.com/package/x' })).toEqual({ source: 'npm', source_confidence: 'deterministic' });
   });
   it('mediumForSource buckets each source; unknown → direct', () => {
@@ -80,11 +89,19 @@ describe('resolveSource back-compat + mediumForSource', () => {
 });
 
 describe('taggedLink — owned links only, NEVER internal (AC5 canary)', () => {
-  it('tags absolute AlgoVault https links; idempotent', () => {
-    expect(taggedLink('https://algovault.com/signup', 'npm')).toContain('utm_source=npm');
-    expect(taggedLink('https://api.algovault.com/mcp', 'x', 'bio')).toMatch(/utm_source=x&utm_medium=bio|utm_medium=bio&utm_source=x/);
-    // idempotent: an existing utm_source is preserved
-    expect(taggedLink('https://algovault.com/?utm_source=existing', 'npm')).toContain('utm_source=existing');
+  it('emits the short ?src=<channel> for AlgoVault hosts; medium arg ignored (OPS-UTM-SHORTEN-W1)', () => {
+    expect(taggedLink('https://algovault.com/signup', 'npm')).toContain('src=npm');
+    expect(taggedLink('https://algovault.com/signup', 'npm')).not.toContain('utm_medium');
+    // the accepted-but-ignored medium arg no longer changes the emit
+    expect(taggedLink('https://api.algovault.com/mcp', 'x', 'bio')).toContain('src=x');
+    expect(taggedLink('https://api.algovault.com/mcp', 'x', 'bio')).not.toContain('utm_medium');
+  });
+  it('idempotent on an existing src OR a legacy utm_source (no double-tag)', () => {
+    const a = taggedLink('https://algovault.com/?src=existing', 'npm');
+    expect(a).toContain('src=existing'); expect(a).not.toContain('src=npm');
+    // legacy utm_source preserved — do NOT also add src (the link already classifies)
+    const b = taggedLink('https://algovault.com/?utm_source=existing', 'npm');
+    expect(b).toContain('utm_source=existing'); expect(b).not.toContain('src=npm');
   });
   it('NEVER tags internal/relative or external links (no attribution laundering)', () => {
     expect(taggedLink('/welcome', 'npm')).toBe('/welcome'); // relative internal → untouched

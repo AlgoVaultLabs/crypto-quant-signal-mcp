@@ -3166,6 +3166,7 @@ async function startHttp() {
     // Additive — resolveSessionIdentity + the stateless resolver are untouched.
     const attributionSource = classifySource({
       srcParam: req.query?.src,
+      utmSource: req.query?.utm_source, // OPS-UTM-SHORTEN-W1: legacy backward-compat fallback (behind ?src)
       userAgent: req.headers['user-agent'],
       origin: req.headers['origin'],
       referer: req.headers['referer'],

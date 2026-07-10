@@ -122,22 +122,28 @@ export function normalizeSrcParam(raw: unknown): AttributionSource | null {
  * Resolve `{source, source_confidence}` from connection-layer signals.
  *
  * Precedence:
- *   1. `?src=<known slug>`   → `deterministic`
- *   2. UA heuristic match    → `heuristic`
- *   3. nothing matched       → `unknown` / `unknown`  (default-deny)
+ *   1. `?src=<known slug>`          → `deterministic`  (the canonical short tag)
+ *   2. legacy `?utm_source=<slug>`  → `deterministic`  (OPS-UTM-SHORTEN-W1 backward-compat)
+ *   3. Referer domain              → `deterministic`
+ *   4. UA heuristic match          → `heuristic`
+ *   5. nothing matched             → `unknown` / `unknown`  (default-deny)
  *
- * An unrecognized `?src` is NOT trusted — it falls through to the UA heuristic,
- * then to `unknown`. `origin` / `referer` are accepted (so call sites pass them)
- * and reserved for future heuristics; no current rule consumes them.
+ * An unrecognized `?src`/`?utm_source` is NOT trusted — it falls through to the Referer,
+ * then the UA heuristic, then `unknown`. NOTE: `?ref=` is deliberately NOT read here — it is
+ * REFERRAL-LIGHT-W1's referral-CODE param (a different concern); classifying it as a channel
+ * would misclassify a referral code that happens to match a slug. `origin` / `referer` are
+ * accepted (so call sites pass them); `referer` feeds `classifyReferer`, `origin` is reserved.
  */
 export function resolveSource(input: {
   srcParam?: unknown;
+  utmSource?: unknown;
   userAgent?: unknown;
   origin?: unknown;
   referer?: unknown;
 }): ResolvedSource {
-  // (1) explicit ?src= / utm (deterministic).
-  const tagged = normalizeSrcParam(input.srcParam);
+  // (1) explicit ?src= (deterministic), then (2) legacy ?utm_source= (backward-compat) — both
+  //     validated against the enum, so a junk value returns null and falls through.
+  const tagged = normalizeSrcParam(input.srcParam) ?? normalizeSrcParam(input.utmSource);
   if (tagged) return { source: tagged, source_confidence: 'deterministic' };
 
   // (2) FUNNEL-FIX-ATTRIBUTION-W1: Referer domain (deterministic — a known referrer host).
@@ -185,7 +191,7 @@ export interface ClassifiedSource {
  * Never fabricates a channel. Feeds the classified-channel panel + the first-touch stamp.
  */
 export function classifySource(input: {
-  srcParam?: unknown; userAgent?: unknown; origin?: unknown; referer?: unknown;
+  srcParam?: unknown; utmSource?: unknown; userAgent?: unknown; origin?: unknown; referer?: unknown;
 }): ClassifiedSource {
   const { source, source_confidence } = resolveSource(input);
   return { source, medium: mediumForSource(source), confidence: source_confidence };
