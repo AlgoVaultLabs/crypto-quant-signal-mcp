@@ -97,7 +97,7 @@ describe('signup-email opt-in path', () => {
     expect(args.html).toContain('115,000+ verified calls');
     // Canonical CTAs / addresses preserved.
     expect(args.text).toContain('https://algovault.com/verify');
-    expect(args.text).toContain('https://algovault.com/signup');
+    expect(args.text).toContain('https://algovault.com/#quickstart');
     expect(args.text).toContain('support@algovault.com');
   });
 

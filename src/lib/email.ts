@@ -171,7 +171,7 @@ You've opted in to AlgoVault product updates. Roughly one email per month — ne
 
 For context: ${stats.pfeWr}% PFE win rate across ${stats.totalSignals}+ verified calls. Merkle-verified on Base L2. Don't trust — verify: https://algovault.com/verify
 
-Free tier: 100 free calls/month. HOLDs never cost. Start in 30 seconds: https://algovault.com/signup
+Free tier: 100 free calls/month. HOLDs never cost. Start in 30 seconds: https://algovault.com/#quickstart
 
 Reply to support@algovault.com to unsubscribe or with questions.
 
@@ -420,7 +420,7 @@ function renderOptinHtml({ pfeWr, totalSignals }: { pfeWr: string; totalSignals:
         <h1 style="font-size:22px;font-weight:700;margin:0 0 12px;color:#1f2328">Welcome aboard.</h1>
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">You've opted in to AlgoVault product updates. Roughly one email per month — new venue launches, signal-mcp features, track-record milestones.</p>
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">For context: <strong>${pfeWr}% PFE win rate</strong> across <strong>${totalSignals}+ verified calls</strong>. Merkle-verified on Base L2. Don't trust &mdash; <a href="https://algovault.com/verify" style="color:#0969da;text-decoration:none">verify</a>.</p>
-        <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">Free tier: 100 free calls/month. HOLDs never cost. <a href="https://algovault.com/signup" style="color:#0969da;text-decoration:none">Start in 30 seconds</a>.</p>
+        <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">Free tier: 100 free calls/month. HOLDs never cost. <a href="https://algovault.com/#quickstart" style="color:#0969da;text-decoration:none">Start in 30 seconds</a>.</p>
         <p style="font-size:13px;line-height:1.5;color:#656d76;margin:24px 0 0">Reply to <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a> to unsubscribe or with questions.</p>
       </td></tr>
       <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">
