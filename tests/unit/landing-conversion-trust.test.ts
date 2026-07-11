@@ -86,12 +86,15 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     expect(count('/docs.html#x402')).toBe(4);
   });
 
-  it('every Signup link uses the absolute api.algovault.com host (algovault.com/signup 404s)', () => {
-    // /signup is api-canonical: the whole signup -> Stripe checkout -> /welcome flow runs on
-    // api.algovault.com (success_url is built from the request host; /welcome + /account are NOT
-    // in the apex Caddy allowlist). A relative /signup 404s on algovault.com.
-    expect(html).not.toContain('href="/signup"');  // footer was relative -> 404; now absolute
-    expect(html).not.toContain('href="/signup?');   // pricing CTAs are absolute too
-    expect(html).toContain('href="https://api.algovault.com/signup"');
+  it('the primary nav "Signup" CTA leads to the unified sign-in /welcome on the absolute api host', () => {
+    // FUNNEL-FIX-NAV-CTA-WELCOME-W1: the nav "Signup" front door now points to /welcome
+    // (unified sign-in). /welcome + /signup + /account are api-canonical — NOT in the apex
+    // Caddy allowlist (algovault.com/welcome AND /signup 404) — so the link MUST be absolute
+    // api host. Paid "Subscribe" pricing links stay on /signup?plan= (the express-lane).
+    expect(html).not.toContain('href="/signup"');   // no relative /signup (404s on apex)
+    expect(html).not.toContain('href="/welcome"');   // no relative /welcome either (404s on apex)
+    expect(html).not.toContain('href="/signup?');    // pricing CTAs are absolute too
+    expect(html).toContain('href="https://api.algovault.com/welcome"');       // nav Signup -> unified /welcome
+    expect(html).toContain('href="https://api.algovault.com/signup?plan=');   // paid pricing express-lane preserved
   });
 });

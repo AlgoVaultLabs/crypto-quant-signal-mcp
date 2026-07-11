@@ -28,7 +28,7 @@ const HOVER = 'hover:text-white transition';
 const ACTIVE = 'text-mint-400 font-medium';
 const SIGNUP_PILL =
   'px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition';
-const SIGNUP_HREF = 'https://api.algovault.com/signup';
+const SIGNUP_HREF = 'https://api.algovault.com/welcome'; // FUNNEL-FIX-NAV-CTA-WELCOME-W1: nav Signup CTA -> unified sign-in /welcome (absolute api host — /welcome 404s on the apex allowlist)
 
 /** Ordered nav links shared by both surfaces (Signup handled separately). */
 function navLinks(o: SiteNavOptions): Array<{ href: string; label: string }> {

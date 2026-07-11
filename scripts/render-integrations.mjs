@@ -116,7 +116,7 @@ function canonicalNavHtml(exchange) {
       <a href="/docs.html" class="hover:text-white transition">Docs</a>
       <a href="/verify" class="hover:text-white transition">Verify</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/signup" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
+      <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
     </div>
   </div>
 </nav>`;

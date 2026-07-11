@@ -22,7 +22,7 @@
  * with the architect-ratified normalizations:
  *   - Q4: all internal links ABSOLUTE `https://algovault.com/...` (identical markup is
  *     correct on both algovault.com and api.algovault.com — no cross-host relative 404).
- *     Signup stays `https://api.algovault.com/signup` (the signup flow is api-canonical).
+ *     Signup CTA -> `https://api.algovault.com/welcome` (unified sign-in; api-canonical).
  *   - Q5: SUPERSET link set (GitHub · X · Signup · Refer & Earn · Privacy) on every brand
  *     surface — /track-record + /account GAIN "Refer & Earn" (additive; zero link loss).
  *   - external links carry `rel="noopener noreferrer"` (Design.md §9; the apex used bare
@@ -40,8 +40,8 @@ export const BRAND_FOOTER_BG_SIGNATURE = 'oklch(0.13 0.012 265)';
 const FOOTER_LINKS: ReadonlyArray<{ href: string; label: string; external: boolean }> = [
   { href: 'https://github.com/AlgoVaultLabs', label: 'GitHub', external: true },
   { href: 'https://x.com/AlgoVaultLabs', label: 'X / Twitter', external: true },
-  // Signup flow is api-canonical (the apex Caddy allowlist does not include /signup).
-  { href: 'https://api.algovault.com/signup', label: 'Signup', external: false },
+  // FUNNEL-FIX-NAV-CTA-WELCOME-W1: the Signup CTA leads to the unified sign-in /welcome (api-canonical; the apex allowlist excludes /welcome + /signup).
+  { href: 'https://api.algovault.com/welcome', label: 'Signup', external: false },
   { href: 'https://algovault.com/referral', label: 'Refer &amp; Earn', external: false },
   { href: 'https://algovault.com/privacy', label: 'Privacy', external: false },
 ];

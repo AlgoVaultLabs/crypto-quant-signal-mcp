@@ -66,7 +66,7 @@ test('/account: Q-W10-1 + Q-W10-8 — canonical Nav via shared renderSiteNav (LA
   // URL substrings (robust to href="…" literal vs the SIGNUP_HREF constant in the SoT).
   assert.ok(nav.includes('https://algovault.com/integrations'), 'Integrations link missing');
   assert.ok(nav.includes('https://api.algovault.com/account'), 'Account link missing');
-  assert.ok(nav.includes('https://api.algovault.com/signup'), 'Signup link missing');
+  assert.ok(nav.includes('https://api.algovault.com/welcome'), 'Signup CTA (nav -> /welcome) missing');
 });
 
 test('/account: Q-W10-2 — Account active-link styling via shared nav (active account -> text-mint-400 font-medium)', async () => {
