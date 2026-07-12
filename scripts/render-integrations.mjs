@@ -96,31 +96,15 @@ const DISPLAY_NAMES = {
   smithery: 'Smithery',
 };
 
-// DESIGN-W10 / C3 (2026-05-11): canonical Nav (8-item, post-W9 + post-W7-FF state)
-// VERBATIM from live algovault.com lines 178-201 per audits/DESIGN-W10-canonical-
-// chrome-extract.md §1. Per-page substitutions: (a) Q-W10-2 active-link styling on
-// `Integrations` link → `text-mint-400 font-medium`; (b) Q-W10-7 OPTION B utm-
-// injection on `/track-record` link to preserve Plausible attribution.
-function canonicalNavHtml(exchange) {
-  return `<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
-  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-    <a href="/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
-      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
-      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
-    </a>
-    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
-      <a href="/track-record?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${exchange}" class="hover:text-white transition">Track Record</a>
-      <a href="/#pricing" class="hover:text-white transition">Pricing</a>
-      <a href="/integrations" class="text-mint-400 font-medium">Integrations</a>
-      <a href="/skills" class="hover:text-white transition">Skills</a>
-      <a href="/docs.html" class="hover:text-white transition">Docs</a>
-      <a href="/verify" class="hover:text-white transition">Verify</a>
-      <a href="https://api.algovault.com/account" class="hover:text-white transition">Account</a>
-      <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition">Signup</a>
-    </div>
-  </div>
-</nav>`;
-}
+// NAV-PLATFORM-GENERATOR-W1 (A1): canonicalNavHtml() RETIRED. The per-page integration nav is
+// now the ONE unified nav — injected by scripts/build_nav.mjs from src/lib/site-nav.ts
+// renderSiteNav() (single-derivation across all 26 surfaces). Integration pages emit empty
+// <!-- NAV:START/END --> markers (below); build_nav fills them. Consequences of unification:
+//   • hrefs are ABSOLUTE (A6), not relative — one region works apex + api-served.
+//   • the /track-record link no longer carries a per-page utm_campaign (a byte-identical region
+//     cannot; body-embedded tutorial links KEEP their utm for Plausible attribution).
+//   • the "Integrations" active-link is applied CLIENT-SIDE by the controller (URL match).
+const NAV_REGION_MARKERS = '<!-- NAV:START -->\n<!-- NAV:END -->';
 
 // DESIGN-W10 / C3: canonical Footer VERBATIM (desktop variant, /tmp/live-landing.html
 // line 493 per chrome-extract §2). Per Q-W10-7: canonical Footer ships verbatim WITHOUT
@@ -327,10 +311,9 @@ tailwind.config = {
 </style>
 </head>
 <body>
-<!-- DESIGN-W10 / C3 / Q-W10-1 + Q-W10-2 + Q-W10-7 OPTION B: canonical Nav (Integrations
-     active-link + per-page utm-injected /track-record link). REPLACES the pre-W10
-     legacy header block per Q-W10-8 ratification. -->
-${canonicalNavHtml(exchange)}
+<!-- NAV-PLATFORM-GENERATOR-W1 (A1): unified nav region — scripts/build_nav.mjs injects the
+     shared renderSiteNav() here (single-derivation; retires the old per-page canonicalNavHtml). -->
+${NAV_REGION_MARKERS}
 
 <!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
 <main class="lp-integrations-desktop">

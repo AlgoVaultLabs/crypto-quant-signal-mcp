@@ -50,32 +50,36 @@ const DISPLAY = { binance: 'Binance', okx: 'OKX', bybit: 'Bybit', bitget: 'Bitge
 // LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1: the canonical nav was extracted to the shared
 // SoT src/lib/site-nav.ts (renderSiteNav). /account DELEGATES; the byte-level nav content
 // contract is owned by tests/site-nav.test.ts (frozen-oracle byte-equivalence).
-test('/account: Q-W10-1 + Q-W10-8 — canonical Nav via shared renderSiteNav (LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1)', async () => {
+test('/account: Q-W10-1 + Q-W10-8 — canonical Nav via shared renderSiteNav (NAV-PLATFORM-GENERATOR-W1)', async () => {
   const src = await read('src/lib/account-handlers.ts');
-  // /account is on api.algovault.com → the Track Record link must be ABSOLUTE (a relative
-  // "/track-record" would resolve to api.algovault.com and 404). That is passed as the param:
-  assert.match(src, /renderSiteNav\(\{ active: 'account', trackRecordHref: 'https:\/\/algovault\.com\/track-record' \}\)/,
-    '/account must render its nav via renderSiteNav({active:account, absolute TR href})');
+  // NAV-PLATFORM-GENERATOR-W1: /account delegates to the arg-less shared renderSiteNav() — one
+  // byte-identical Platform mega-menu region for every surface (absolute hrefs uniformly).
+  assert.match(src, /renderSiteNav\(\)/, '/account must render its nav via the shared renderSiteNav()');
   assert.strictEqual(countOcc(src, '<nav class="fixed top-0'), 0,
     'inline <nav> literal must be retired (now via renderSiteNav)');
-  // Canonical nav content (class string, absolute links, brand-mark) lives in the SoT:
-  const nav = await read('src/lib/site-nav.ts');
-  assert.ok(countOcc(nav, '<nav class="fixed top-0 w-full z-50 border-b border-white/5"') >= 1,
-    'canonical Nav opening tag missing or wrong class string in site-nav SoT');
-  assert.ok(nav.includes('AlgoVault Labs'), 'brand-mark "AlgoVault Labs" span missing in site-nav SoT');
-  // URL substrings (robust to href="…" literal vs the SIGNUP_HREF constant in the SoT).
-  assert.ok(nav.includes('https://algovault.com/integrations'), 'Integrations link missing');
+  // Canonical nav content (class string, absolute links, brand-mark) — assert the RENDERED nav
+  // (content now derives from the model in nav-manifest.ts, so read the render, not the source):
+  const { renderSiteNav } = await import('../../dist/lib/site-nav.js');
+  const nav = renderSiteNav();
+  assert.ok(nav.includes('<nav class="fixed top-0 w-full z-50 border-b border-white/5"'),
+    'canonical Nav opening tag missing or wrong class string');
+  assert.ok(nav.includes('AlgoVault Labs'), 'brand-mark "AlgoVault Labs" missing');
+  assert.ok(nav.includes('https://algovault.com/integrations'), 'Integrations link missing (Platform > Ecosystem)');
   assert.ok(nav.includes('https://api.algovault.com/account'), 'Account link missing');
   assert.ok(nav.includes('https://api.algovault.com/welcome'), 'Signup CTA (nav -> /welcome) missing');
 });
 
-test('/account: Q-W10-2 — Account active-link styling via shared nav (active account -> text-mint-400 font-medium)', async () => {
+test('/account: Q-W10-2 — active-link styling applied client-side by the shared nav controller', async () => {
   const src = await read('src/lib/account-handlers.ts');
-  assert.match(src, /renderSiteNav\(\{ active: 'account'/, '/account must pass active:account to renderSiteNav');
-  const nav = await read('src/lib/site-nav.ts');
-  assert.ok(nav.includes("const ACTIVE = 'text-mint-400 font-medium'"), 'shared nav must define the mint ACTIVE style');
-  assert.ok(nav.includes("active === 'account' ? ACTIVE : HOVER"),
-    'Account link must switch to ACTIVE when active:account');
+  assert.match(src, /renderSiteNav\(\)/, '/account must render its nav via the shared renderSiteNav()');
+  // NAV-PLATFORM-GENERATOR-W1: the current-page highlight is now applied CLIENT-SIDE by the
+  // controller (byte-identical HTML on every surface; JS marks the matching link mint) — so the
+  // active mint style is a runtime classList.add, not a server-rendered class.
+  const { renderSiteNav } = await import('../../dist/lib/site-nav.js');
+  const nav = renderSiteNav();
+  assert.ok(nav.includes("classList.add('text-mint-400','font-medium')"),
+    'shared nav controller must apply the mint active-link style client-side');
+  assert.ok(nav.includes('data-nav-link'), 'top-bar links must carry data-nav-link for the active matcher');
 });
 
 test('/account: Q-W10-3 — canonical H1 with mint accent on `Account` (3 pages: main + error + success)', async () => {
@@ -184,10 +188,14 @@ for (const ex of INTEGRATIONS) {
       'legacy custom nav header must be removed');
   });
 
-  test(`/integrations/${ex}: Q-W10-2 — Integrations link active-link styling`, async () => {
+  test(`/integrations/${ex}: Q-W10-2 — Integrations reachable in nav (Platform > Ecosystem); active-link client-side`, async () => {
     const html = await read(`landing/integrations/${ex}.html`);
-    assert.match(html, /href="\/integrations" class="text-mint-400 font-medium"/,
-      'Integrations link must use text-mint-400 font-medium active-link');
+    // NAV-PLATFORM-GENERATOR-W1: Integrations moved into the Platform mega-menu Ecosystem column
+    // (absolute href, A6); the current-page mint highlight is applied client-side by the controller.
+    assert.match(html, /href="https:\/\/algovault\.com\/integrations"[^>]*>Integrations</,
+      'Integrations link must be present in the unified nav (Platform > Ecosystem)');
+    assert.ok(html.includes("classList.add('text-mint-400','font-medium')"),
+      'client-side active-link controller must be present');
   });
 
   test(`/integrations/${ex}: Q-W10-4 — markdown H1 preserved + VEyebrow above`, async () => {
@@ -233,11 +241,15 @@ for (const ex of INTEGRATIONS) {
     assert.ok(html.includes('<strong>Provenance:</strong>'), 'Provenance blockquote must be preserved');
   });
 
-  test(`/integrations/${ex}: Q-W10-7 — utm-injected canonical Nav (preserves Plausible attribution)`, async () => {
+  test(`/integrations/${ex}: Q-W10-7 — Plausible attribution preserved on body links (nav utm retired for single-derivation)`, async () => {
     const html = await read(`landing/integrations/${ex}.html`);
-    // Per-page utm params on /track-record nav link.
-    assert.match(html, new RegExp(`href="/track-record\\?utm_source=tutorial&utm_medium=web&utm_campaign=integration-${ex}"`),
-      `utm-injected /track-record Nav link missing for ${ex}`);
+    // NAV-PLATFORM-GENERATOR-W1: the byte-identical unified nav cannot carry a per-page utm; the
+    // per-exchange Plausible attribution is preserved on the BODY tutorial link(s). The nav
+    // /track-record link is now the clean absolute href.
+    assert.ok(countOcc(html, `utm_campaign=integration-${ex}`) >= 1,
+      `per-page utm attribution must survive on a body link for ${ex}`);
+    assert.match(html, /<!-- NAV:START -->[\s\S]*href="https:\/\/algovault\.com\/track-record"[\s\S]*<!-- NAV:END -->/,
+      `nav /track-record must be the clean absolute href (no utm) for ${ex}`);
   });
 
   test(`/integrations/${ex}: Q-W10-9 — 1 JSON-LD block preserved (TechArticle, not 5)`, async () => {
@@ -276,8 +288,8 @@ for (const ex of INTEGRATIONS) {
     // Tailwind CDN preserved (was already loaded pre-W10).
     assert.ok(html.includes('https://cdn.tailwindcss.com'), 'Tailwind CDN preserved');
     // Per-exchange utm params on body-embedded links preserved (≥1 instance from markdown).
-    assert.ok(countOcc(html, `utm_campaign=integration-${ex}`) >= 2,
-      `utm_campaign=integration-${ex} must appear at least twice (Nav + body links)`);
+    assert.ok(countOcc(html, `utm_campaign=integration-${ex}`) >= 1,
+      `utm_campaign=integration-${ex} must appear on >=1 body link (nav utm retired — NAV-PLATFORM-GENERATOR-W1)`);
   });
 }
 
@@ -287,9 +299,10 @@ test('DESIGN-W10-FF: /account brand-mark wrapped in <a href="https://algovault.c
   const src = await read('src/lib/account-handlers.ts');
   // Cross-host: /account is on api.algovault.com; the brand-mark uses the absolute
   // https://algovault.com/ href (a relative `/` would resolve to api.algovault.com/ and 404).
-  // Nav extracted to the shared SoT src/lib/site-nav.ts; /account delegates via renderSiteNav.
-  assert.match(src, /renderSiteNav\(\{ active: 'account'/, '/account nav comes from the shared renderSiteNav');
-  const nav = await read('src/lib/site-nav.ts');
+  // Nav extracted to the shared SoT src/lib/site-nav.ts; /account delegates via renderSiteNav().
+  assert.match(src, /renderSiteNav\(\)/, '/account nav comes from the shared renderSiteNav()');
+  const { renderSiteNav } = await import('../../dist/lib/site-nav.js');
+  const nav = renderSiteNav();
   assert.match(nav, /<a href="https:\/\/algovault\.com\/" class="flex items-center gap-2\.5"/,
     'shared nav brand-mark must wrap in <a> with absolute URL https://algovault.com/');
   assert.ok(nav.includes('aria-label="AlgoVault home"'),
@@ -299,7 +312,7 @@ test('DESIGN-W10-FF: /account brand-mark wrapped in <a href="https://algovault.c
 for (const ex of INTEGRATIONS) {
   test(`DESIGN-W10-FF: /integrations/${ex} brand-mark wrapped in <a href="/"> (relative — same-origin algovault.com)`, async () => {
     const html = await read(`landing/integrations/${ex}.html`);
-    assert.match(html, /<a href="\/" class="flex items-center gap-2\.5"/,
+    assert.match(html, /<a href="https:\/\/algovault\.com\/" class="flex items-center gap-2\.5"/,
       `/integrations/${ex} brand-mark must wrap in <a> with relative href="/"`);
     assert.ok(html.includes('aria-label="AlgoVault home"'),
       'brand-mark <a> should have aria-label for accessibility');
@@ -308,7 +321,7 @@ for (const ex of INTEGRATIONS) {
 
 test('DESIGN-W10-FF: landing/index.html brand-mark wrapped in <a href="/"> (was the outlier — other landing pages already had it)', async () => {
   const html = await read('landing/index.html');
-  assert.match(html, /<a href="\/" class="flex items-center gap-2\.5"/,
+  assert.match(html, /<a href="https:\/\/algovault\.com\/" class="flex items-center gap-2\.5"/,
     'landing/index.html brand-mark must wrap in <a> with relative href="/"');
   // Plain <div class="flex items-center gap-2.5"> at the brand-mark position should be absent.
   assert.strictEqual(countOcc(html, /<div class="flex items-center gap-2\.5">\s*<img src="\/logo\.png" alt="AlgoVault Logo"/), 0,
@@ -317,10 +330,10 @@ test('DESIGN-W10-FF: landing/index.html brand-mark wrapped in <a href="/"> (was 
 
 // Spot-check 3 sister landing pages already had the link (no fix needed; confirm preservation).
 for (const page of ['landing/integrations.html', 'landing/skills.html', 'landing/faq.html']) {
-  test(`DESIGN-W10-FF: ${page} brand-mark <a href="/"> preserved (no regression — was already correct pre-FF)`, async () => {
+  test(`DESIGN-W10-FF: ${page} homepage brand-mark preserved (absolute href — NAV-PLATFORM-GENERATOR-W1 A6)`, async () => {
     const html = await read(page);
-    assert.ok(html.includes('href="/"') && html.includes('AlgoVault Logo'),
-      `${page} must preserve <a href="/"> brand-mark wrap`);
+    assert.ok(html.includes('<a href="https://algovault.com/" class="flex items-center gap-2.5"') && html.includes('AlgoVault Logo'),
+      `${page} must preserve the homepage brand-mark wrap`);
   });
 }
 

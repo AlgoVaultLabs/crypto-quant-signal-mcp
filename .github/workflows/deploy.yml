@@ -70,6 +70,15 @@ jobs:
       - name: Landing-page sync guard (build_landing --check)
         run: node scripts/build_landing.mjs --check
 
+      # NAV-PLATFORM-GENERATOR-W1 CH5: unified-nav drift canary (STATIC parity). Fails the push
+      # if any landing page's injected nav region has fallen out of sync with the ONE model
+      # (src/lib/site-nav.ts renderSiteNav() ← nav-manifest.ts) OR a nav-bearing page is missing
+      # the <!-- NAV:START/END --> markers (a new page that forgot the region). Network-free
+      # (imports the dist built above). Makes "the mobile menu drifted" and "we missed page N"
+      # structurally impossible.
+      - name: Nav sync + coverage guard (build_nav --check)
+        run: node scripts/build_nav.mjs --check
+
       # FEATURE-REGISTRY-SOT-W1 CH4: registry drift canary (STATIC parity). Fails the
       # push BEFORE SSH-deploy if any channel's surface (server.tool registration set /
       # x402 TOOL_PRICING derive / gated route set / capabilities projection) has fallen

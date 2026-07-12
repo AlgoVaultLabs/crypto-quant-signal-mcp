@@ -150,9 +150,11 @@ test('how-it-works.html: Read the integration docs → https://algovault.com/doc
 // `https://algovault.com/verify` PillCTA is gone with it. Canonical Nav's relative
 // `/verify` link (in HEAD_AND_NAV constant) covers the navigation requirement —
 // users still reach /verify via the top nav.
-test('how-it-works.html: /verify link present in canonical Nav', () => {
-  assert.ok(/<a href="\/verify"[^>]*>Verify<\/a>/.test(HIW),
-    'Missing /verify Nav link (canonical Nav from HEAD_AND_NAV)');
+test('how-it-works.html: /verify link present in canonical Nav (Track Record dropdown — no data-loss)', () => {
+  // NAV-PLATFORM-GENERATOR-W1: Verify moved off the top bar INTO the Track Record dropdown,
+  // absolute href (A6). Still reachable via the nav — the no-data-loss requirement.
+  assert.ok(/<a href="https:\/\/algovault\.com\/verify"[^>]*>Verify<\/a>/.test(HIW),
+    'Missing /verify Nav link (Track Record dropdown)');
 });
 
 test('how-it-works.html: Try Free in Telegram → https://t.me/algovaultofficialbot (≥2)', () => {
@@ -171,11 +173,15 @@ test('how-it-works.html: head contains track-record-proxy.js (live data hydratio
     'Missing track-record-proxy.js script tag');
 });
 
-test('how-it-works.html: canonical Nav present with How it works active-link', () => {
+test('how-it-works.html: canonical Nav present; active-link applied client-side by the controller', () => {
   assert.ok(/<nav class="fixed top-0 w-full z-50/.test(HIW),
     'Missing canonical Nav block');
-  assert.ok(/<a href="\/how-it-works" class="text-mint-400 font-medium"/.test(HIW),
-    'Missing How it works active-link styling');
+  assert.ok(/<a href="https:\/\/algovault\.com\/how-it-works"[^>]*data-nav-link>How it works<\/a>/.test(HIW),
+    'Missing How it works nav link (data-nav-link for the client-side active matcher)');
+  // NAV-PLATFORM-GENERATOR-W1: the mint active-link is applied CLIENT-SIDE (byte-identical HTML
+  // on every surface; the controller marks the matching link mint) — not a server-rendered class.
+  assert.ok(HIW.includes("classList.add('text-mint-400','font-medium')"),
+    'Missing client-side active-link controller logic');
 });
 
 test('how-it-works.html: canonical Footer present with 4 canonical links (GitHub/X/Signup/Privacy)', () => {
@@ -241,7 +247,7 @@ for (const rel of NAV_LANDING_FILES) {
   test(`Nav canonical "How it works" link present on ${rel}`, () => {
     const src = readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
     assert.ok(
-      /<a\s+href="\/how-it-works"[^>]*>How it works<\/a>/.test(src),
+      /<a\s+href="https:\/\/algovault\.com\/how-it-works"[^>]*>How it works<\/a>/.test(src),
       `Missing canonical Nav link "How it works" on ${rel}`,
     );
   });

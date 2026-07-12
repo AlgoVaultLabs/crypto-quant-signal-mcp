@@ -84,10 +84,10 @@ tailwind.config = {
 </script>
 <style>${ACCOUNT_PAGE_STYLES}</style>`;
 
-// LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1: nav now via shared renderSiteNav()
-// (src/lib/site-nav.ts) — desktop byte-identical to the prior inline ACCOUNT_NAV_HTML
-// (Account active-link, cross-origin Track Record href) + mobile hamburger/#mobile-menu/controller.
-const ACCOUNT_NAV_HTML = renderSiteNav({ active: 'account', trackRecordHref: 'https://algovault.com/track-record' });
+// NAV-PLATFORM-GENERATOR-W1: nav via the shared renderSiteNav() (src/lib/site-nav.ts),
+// now arg-less — one byte-identical Platform mega-menu region for every surface (absolute
+// hrefs uniformly; current-page highlight applied client-side by the controller).
+const ACCOUNT_NAV_HTML = renderSiteNav();
 
 // FOOTER-UNIFY-W1: the canonical brand footer now comes from the single SoT
 // (src/lib/footer-content.ts renderBrandFooter). The former inline ACCOUNT_FOOTER_HTML

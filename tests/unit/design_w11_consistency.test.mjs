@@ -72,28 +72,32 @@ function scopeToPerfFunc(src) {
 // nav content contract (class strings, links, active-link, brand-mark) is owned by the
 // frozen-oracle byte-equivalence gate in tests/site-nav.test.ts. These assertions verify
 // the page uses the shared generator with the correct params + the SoT carries the chrome.
-test('/track-record: canonical Nav via shared renderSiteNav generator (Q-W11-2; LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1)', async () => {
+test('/track-record: canonical Nav via shared renderSiteNav generator (Q-W11-2; NAV-PLATFORM-GENERATOR-W1)', async () => {
   const src = await read('src/index.ts');
   const func = scopeToPerfFunc(src);
-  assert.match(func, /renderSiteNav\(\{ active: 'track-record', trackRecordHref: '\/track-record' \}\)/,
-    '/track-record must render its nav via renderSiteNav({active:track-record, relative TR href})');
+  // NAV-PLATFORM-GENERATOR-W1: /track-record delegates to the arg-less shared renderSiteNav().
+  assert.match(func, /renderSiteNav\(\)/, '/track-record must render its nav via the shared renderSiteNav()');
   assert.strictEqual(countOcc(func, '<nav class="fixed top-0'), 0,
     'inline <nav> literal must be retired from the page body (now via renderSiteNav)');
 });
 
-test('/track-record: Track Record active-link styling via shared nav (Q-W11-1: active track-record -> text-mint-400 font-medium)', async () => {
+test('/track-record: active-link styling applied client-side by the shared nav controller (Q-W11-1)', async () => {
   const func = scopeToPerfFunc(await read('src/index.ts'));
-  assert.match(func, /renderSiteNav\(\{ active: 'track-record'/, '/track-record must pass active:track-record');
-  const nav = await read('src/lib/site-nav.ts');
-  assert.ok(nav.includes("const ACTIVE = 'text-mint-400 font-medium'"), 'shared nav must define the mint ACTIVE style');
-  assert.ok(nav.includes("active === 'track-record' ? ACTIVE : HOVER"),
-    'Track Record link must switch to ACTIVE when active:track-record');
+  assert.match(func, /renderSiteNav\(\)/, '/track-record must render its nav via the shared renderSiteNav()');
+  // The current-page highlight is now applied CLIENT-SIDE by the controller (byte-identical
+  // HTML everywhere; JS marks the matching link mint) — a runtime classList.add, not a class.
+  const { renderSiteNav } = await import('../../dist/lib/site-nav.js');
+  const nav = renderSiteNav();
+  assert.ok(nav.includes("classList.add('text-mint-400','font-medium')"),
+    'shared nav controller must apply the mint active-link style client-side');
+  assert.ok(nav.includes('data-nav-link'), 'top-bar links must carry data-nav-link for the active matcher');
 });
 
 test('/track-record: canonical brand-mark wrap via shared nav SoT (Q-W11-4: direct ahref + aria-label + cross-origin)', async () => {
   const func = scopeToPerfFunc(await read('src/index.ts'));
-  assert.match(func, /renderSiteNav\(\{ active: 'track-record'/, '/track-record nav comes from the shared renderSiteNav');
-  const nav = await read('src/lib/site-nav.ts');
+  assert.match(func, /renderSiteNav\(\)/, '/track-record nav comes from the shared renderSiteNav()');
+  const { renderSiteNav } = await import('../../dist/lib/site-nav.js');
+  const nav = renderSiteNav();
   assert.strictEqual(countOcc(nav, '<a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">'), 1,
     'shared nav must carry exactly 1 canonical brand-mark wrap');
 });

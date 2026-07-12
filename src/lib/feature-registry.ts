@@ -85,6 +85,18 @@ export interface FeatureSpec {
   /** SCAN-RANKBY-W1: optional selection-lens advertisement (e.g. scan_trade_calls.rankBy). */
   lenses?: CapabilityLenses;
   enabled: boolean;
+  /**
+   * NAV-PLATFORM-GENERATOR-W1 (A4): whether this tool appears on PUBLIC brand surfaces —
+   * the nav Platform ▸ Tools mega-menu + the /tools index page. Default `true` (undefined ==
+   * listed). Set `false` to keep a LIVE tool OUT of public marketing copy WITHOUT disabling
+   * it: `tools/list` and the GET /capabilities projection are UNCHANGED by this field
+   * (it is deliberately NOT projected — see projectCapabilities). This is orthogonal to
+   * `enabled` (liveness) and `channels` (per-channel reach): it governs discovery/listing
+   * only. Equities are held here per the standing "equities public-copy HOLD" — flip to
+   * `true` (or delete) and they resurface across nav + /tools in one edit. Consumed by
+   * `publicToolNames()` → nav-manifest.ts + the /tools generator.
+   */
+  publicListing?: boolean;
 }
 
 /** descriptionRef → canonical description string (descriptions stay in tool-descriptions.ts). */
@@ -163,6 +175,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     x402: { basePriceUsd: 0.02 }, // OPS-X402-PRICING-EXPANSION-W1: flat $0.02/call (free rail unchanged)
     descriptionRef: 'GET_EQUITY_CALL_DESCRIPTION',
     enabled: true,
+    publicListing: false, // equities public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4) — live tool, kept off public nav/tools; flip to surface
   },
   {
     name: 'get_equity_regime',
@@ -172,6 +185,7 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     x402: { basePriceUsd: 0.02 }, // OPS-X402-PRICING-EXPANSION-W1: flat $0.02/call (free rail unchanged)
     descriptionRef: 'GET_EQUITY_REGIME_DESCRIPTION',
     enabled: true,
+    publicListing: false, // equities public-copy HOLD (NAV-PLATFORM-GENERATOR-W1 A4) — live tool, kept off public nav/tools; flip to surface
   },
   {
     name: 'chat_knowledge',
@@ -201,6 +215,19 @@ export function getFeature(nameOrAlias: string): FeatureSpec | undefined {
 /** Every live MCP tool NAME (canonical + aliases) — must equal the live `tools/list` set. */
 export function allToolNames(): string[] {
   return FEATURE_REGISTRY.flatMap((f) => [f.name, ...f.aliases]);
+}
+
+/**
+ * NAV-PLATFORM-GENERATOR-W1 (A4) — canonical tool names eligible for PUBLIC brand surfaces
+ * (nav Platform ▸ Tools + /tools index), in registry order. Membership rule lives HERE (the
+ * SoT): ENABLED and not `publicListing: false`. Aliases are excluded by construction (only
+ * `f.name`). This is the ONE derivation both nav-manifest.ts and the /tools generator project
+ * from — flipping an equity's `publicListing` (or adding a tool) updates every public surface.
+ * NB: independent of `tools/list` (all enabled tools, incl. equities + the alias) and of the
+ * /capabilities projection (unchanged) — a listing decision, not a liveness/reach decision.
+ */
+export function publicToolNames(): string[] {
+  return FEATURE_REGISTRY.filter((f) => f.enabled && f.publicListing !== false).map((f) => f.name);
 }
 
 /**

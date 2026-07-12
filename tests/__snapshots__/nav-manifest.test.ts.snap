@@ -1,0 +1,132 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CH1 AC-e — model shape is stable (snapshot) > buildNavModel() matches the frozen snapshot 1`] = `
+{
+  "brand": {
+    "href": "https://algovault.com/",
+    "label": "AlgoVault Labs",
+    "logo": "/logo.png",
+  },
+  "cta": {
+    "href": "https://api.algovault.com/welcome",
+    "label": "Signup",
+  },
+  "groups": [
+    {
+      "columns": [
+        {
+          "caption": "What the brain does",
+          "items": [
+            {
+              "href": "https://algovault.com/tools#get-trade-call",
+              "label": "Trade Call",
+            },
+            {
+              "href": "https://algovault.com/tools#get-market-regime",
+              "label": "Market Regime",
+            },
+            {
+              "href": "https://algovault.com/tools#scan-funding-arb",
+              "label": "Funding Arbitrage",
+            },
+            {
+              "href": "https://algovault.com/tools#scan-trade-calls",
+              "label": "Trade Call Scanner",
+            },
+            {
+              "href": "https://algovault.com/tools#chat-knowledge",
+              "label": "Knowledge Chat",
+            },
+          ],
+          "more": {
+            "href": "https://algovault.com/tools",
+            "label": "See all tools",
+          },
+          "title": "Tools",
+        },
+        {
+          "caption": "How you connect",
+          "items": [
+            {
+              "blurb": "Native Model Context Protocol endpoint",
+              "href": "https://algovault.com/docs.html#connect-mcp",
+              "label": "MCP Server",
+            },
+            {
+              "blurb": "Call over HTTP — pay-per-call via x402",
+              "href": "https://algovault.com/docs.html#testing-with-curl",
+              "label": "REST API",
+            },
+            {
+              "blurb": "Push trade calls + regime shifts to your endpoint",
+              "href": "https://algovault.com/docs.html#webhooks",
+              "label": "Webhooks",
+            },
+            {
+              "blurb": "Trade calls delivered in Telegram",
+              "external": true,
+              "href": "https://t.me/algovaultofficialbot",
+              "label": "Telegram Bot",
+            },
+          ],
+          "title": "Channels",
+        },
+        {
+          "caption": "Extend & explore",
+          "items": [
+            {
+              "blurb": "Exchanges + AI clients",
+              "href": "https://algovault.com/integrations",
+              "label": "Integrations",
+            },
+            {
+              "blurb": "Prebuilt agent skills",
+              "href": "https://algovault.com/skills",
+              "label": "Skills",
+            },
+          ],
+          "title": "Ecosystem",
+        },
+      ],
+      "kind": "dropdown",
+      "label": "Platform",
+    },
+    {
+      "items": [
+        {
+          "blurb": "Real-time PFE win rate",
+          "href": "https://algovault.com/track-record",
+          "label": "Live Dashboard",
+        },
+        {
+          "blurb": "On-chain Merkle proofs",
+          "href": "https://algovault.com/verify",
+          "label": "Verify",
+        },
+      ],
+      "kind": "dropdown",
+      "label": "Track Record",
+    },
+    {
+      "href": "https://algovault.com/how-it-works",
+      "kind": "link",
+      "label": "How it works",
+    },
+    {
+      "href": "https://algovault.com/#pricing",
+      "kind": "link",
+      "label": "Pricing",
+    },
+    {
+      "href": "https://algovault.com/docs.html",
+      "kind": "link",
+      "label": "Docs",
+    },
+    {
+      "href": "https://api.algovault.com/account",
+      "kind": "link",
+      "label": "Account",
+    },
+  ],
+}
+`;

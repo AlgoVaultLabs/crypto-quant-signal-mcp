@@ -3772,7 +3772,7 @@ tailwind.config = {
 </head>
 <body>
 <!-- LANDING-MOBILE-NAV-FUNCTION-RENDERED-W1: canonical Nav via shared renderSiteNav() (src/lib/site-nav.ts) — desktop byte-identical to the prior inline nav (Track Record active) + mobile hamburger/#mobile-menu panel/controller. -->
-${renderSiteNav({ active: 'track-record', trackRecordHref: '/track-record' })}
+${renderSiteNav()}
 <!-- DESIGN-W11 / C2 / Q-W11-3: canonical artboard wrapper OPEN (max-width:1400px preserves dashboard layout; 80px top padding clears 56px fixed Nav + breathing). Foreground content stacks above 3 bg-* layers via position:relative;z-index:1. -->
 <main class="lp-track-record">
   <div class="artboard" style="padding:80px 24px 64px;max-width:1400px;margin:0 auto;width:100%">

@@ -166,6 +166,16 @@ async function main() {
     }
   }
 
+  // NAV-PLATFORM-GENERATOR-W1 CH3: the registry-driven /tools index (a full generated page,
+  // not a BUILD-block fill). buildToolsPage() writes/checks landing/tools.html; nav baked via
+  // the shared renderSiteNav() (same region build_nav.mjs injects — stays in sync).
+  const { buildToolsPage } = await import('./build_tools_page.mjs');
+  const toolsRes = buildToolsPage({ check: checkMode }); // writes landing/tools.html itself (unless --check)
+  if (toolsRes.drift) {
+    driftLines.push(`${toolsRes.file} (registry-driven /tools index)`);
+    writes += 1;
+  }
+
   if (checkMode) {
     if (writes === 0) {
       console.log('build_landing: in-sync (--check) — all BUILD blocks across all targets');

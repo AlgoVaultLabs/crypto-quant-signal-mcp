@@ -139,6 +139,14 @@ function htmlToMarkdownish(html) {
   let s = html;
   s = s.replace(/<script[\s\S]*?<\/script>/gi, '');
   s = s.replace(/<style[\s\S]*?<\/style>/gi, '');
+  // NAV-PLATFORM-GENERATOR-W1: strip nav + footer CHROME before indexing — it is site chrome,
+  // not page content. The unified Platform mega-menu (every tool name + channel blurb, injected
+  // into every page) would otherwise flood the BM25 corpus with tool terms and bury the actual
+  // tool entries for natural-language queries. Do this BEFORE comment-stripping (the NAV markers
+  // are HTML comments).
+  s = s.replace(/<!-- NAV:START -->[\s\S]*?<!-- NAV:END -->/g, '');
+  s = s.replace(/<nav\b[\s\S]*?<\/nav>/gi, '');
+  s = s.replace(/<footer\b[\s\S]*?<\/footer>/gi, '');
   s = s.replace(/<!--([\s\S]*?)-->/g, '');
   s = s.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, lvl, body) => '\n\n' + '#'.repeat(Number(lvl)) + ' ' + stripTags(body) + '\n\n');
   s = s.replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_m, body) => '\n- ' + stripTags(body));

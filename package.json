@@ -40,7 +40,7 @@
     "rank:parity:live": "node scripts/check-rank-metrics-parity.mjs --live",
     "scan:digest:parity:check": "tsc && node scripts/check-scan-digest-parity.mjs --check",
     "scan:digest:parity:live": "node scripts/check-scan-digest-parity.mjs --live",
-    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check"
+    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/build_nav.mjs --check"
   },
   "keywords": [
     "mcp",
