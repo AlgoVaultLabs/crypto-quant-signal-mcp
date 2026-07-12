@@ -47,6 +47,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
       retryAfterDays: daysUntilMonthReset(license),
       referralCode: referralCodeForKey(license.key),
+      tool: 'get_market_regime', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
     });
   }
 
@@ -296,6 +297,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     monthlyLimit: quota.total || getMonthlyQuota(license.tier),
     isBotInternal: license.tier === 'internal',
     upgradeUrl: DEFAULT_UPGRADE_URL,
+    tool: 'get_market_regime', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
   });
 
   return {

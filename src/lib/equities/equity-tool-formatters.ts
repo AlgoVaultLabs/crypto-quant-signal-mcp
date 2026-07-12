@@ -92,7 +92,7 @@ export function formatEquityRegime(v: PublicVerdictRow): EquityRegimeOutput {
   };
 }
 
-function tierLimitError(license: LicenseInfo, q: { used: number; total: number }): TierLimitReachedError {
+function tierLimitError(license: LicenseInfo, q: { used: number; total: number }, tool: string): TierLimitReachedError {
   return new TierLimitReachedError({
     currentUsage: q.used,
     monthlyLimit: q.total,
@@ -100,6 +100,9 @@ function tierLimitError(license: LicenseInfo, q: { used: number; total: number }
     suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
     retryAfterDays: daysUntilMonthReset(license),
     referralCode: referralCodeForKey(license.key),
+    // FUNNEL-FIX-AGENT-X402-NUDGE-W1: equities are HELD (no suggested_x402 today) — but passing
+    // the tool means they AUTO-JOIN the x402 nudge the moment EQUITY_PUBLIC_COPY_HOLD flips.
+    tool,
   });
 }
 
@@ -109,7 +112,7 @@ function tierLimitError(license: LicenseInfo, q: { used: number; total: number }
  */
 function quotaGate(license: LicenseInfo): void {
   const q = trackCall(license);
-  if (!q.allowed) throw tierLimitError(license, q);
+  if (!q.allowed) throw tierLimitError(license, q, 'get_equity_regime');
 }
 
 /**
@@ -119,7 +122,7 @@ function quotaGate(license: LicenseInfo): void {
  */
 function assertQuotaAvailable(license: LicenseInfo): void {
   const q = checkQuota(license);
-  if (!q.allowed) throw tierLimitError(license, q);
+  if (!q.allowed) throw tierLimitError(license, q, 'get_equity_call');
 }
 
 /** get_equity_call orchestrator: quota → normalize → universe → latest verdict → format. */

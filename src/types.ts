@@ -169,6 +169,55 @@ export interface TierWarning {
   monthly_limit: number;
   tier: LicenseTier;
   suggested_upgrade_url: string;
+  /**
+   * FUNNEL-FIX-AGENT-X402-NUDGE-W1: on the HARD warning (approaching the wall), the additive
+   * in-protocol x402 pay-per-call branch — a sibling to `suggested_upgrade_url` (the Stripe
+   * path). Present only when `X402_NUDGE_ENABLED` is on, the level is `hard`, and a public
+   * (non-HELD) x402 rail is live for the called tool; omitted otherwise.
+   */
+  suggested_x402?: SuggestedX402;
+}
+
+/**
+ * FUNNEL-FIX-AGENT-X402-NUDGE-W1 — one in-protocol x402 pay-per-call rail an agent can
+ * settle autonomously (no human signup) at the free-quota edge. Rail-agnostic: DERIVED from
+ * the feature-registry `channels{}` SoT + the live rail-enable predicates; the price is the
+ * one `TOOL_PRICING`/registry `basePriceUsd` SoT; the route is `/x402|/a2mcp/<the-called-tool>`.
+ * Allow-listed, agent-relayable — no internal fields, never `outcome_*`.
+ */
+export interface X402Rail {
+  /** Machine id of the rail (stable — agents may pattern-match). */
+  rail: 'x402_bazaar' | 'okx_a2mcp';
+  /** Human/agent-readable label, e.g. "CDP x402 Bazaar (Base/USDC)". */
+  label: string;
+  method: 'POST';
+  /** The payable HTTP resource — POST here, get a 402, sign ERC-3009, resend with x-payment. */
+  url: string;
+  /** CAIP-2 chain id (Base `eip155:8453` / X Layer `eip155:196`). */
+  network: string;
+  /** Settlement asset ticker (USDC on Base / USDT0 on X Layer). */
+  asset: 'USDC' | 'USDT0';
+  /** Per-call price in USD — the one price SoT (registry `basePriceUsd`). */
+  price_usd: number;
+  /** x402 payment scheme (EIP-3009 exact). */
+  scheme: 'exact';
+}
+
+/**
+ * The additive, allow-listed `suggested_x402` sibling on the tier-limit envelope + the hard
+ * `tier_warning`. Leads with the recommended rail (`primary`); other live rails in
+ * `alternatives`. Present ONLY when a public (non-HELD) x402 rail is live for the called tool
+ * AND `X402_NUDGE_ENABLED` is on; otherwise omitted (default-deny ⇒ envelope unchanged).
+ */
+export interface SuggestedX402 {
+  /** The canonical tool the agent just called (whose payable route this offers). */
+  tool: string;
+  /** Agent-relayable one-liner (price interpolated from the SoT). */
+  instructions: string;
+  /** Recommended rail (Bazaar / Base-USDC preferred when >1 live). */
+  primary: X402Rail;
+  /** Other live rails (may be empty). */
+  alternatives: X402Rail[];
 }
 
 export interface AlgoVaultMeta {

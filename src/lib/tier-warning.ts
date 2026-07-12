@@ -17,6 +17,10 @@ import type { AlgoVaultMeta, TierWarning, LicenseTier } from '../types.js';
 import { recordFunnelEvent } from './performance-db.js';
 import { getRequestSessionId } from './license.js';
 import { SOFT_THRESHOLD, HARD_THRESHOLD } from './activation-thresholds.js';
+// FUNNEL-FIX-AGENT-X402-NUDGE-W1: the hard warning also offers the additive in-protocol x402
+// branch. x402-nudge is a LEAF (imports only pure/SDK modules, never a tool handler / this
+// module) so tier-warning → x402-nudge adds no consumer init cycle. Dark behind X402_NUDGE_ENABLED.
+import { buildSuggestedX402, isX402NudgeEnabled } from './x402-nudge.js';
 
 // ACTIVATION-NUDGE-W1 (2026-06-18): thresholds now live in the pure
 // `activation-thresholds` module (single source shared with license.ts
@@ -51,6 +55,13 @@ export interface TierWarningContext {
    * variations. Defaults to `DEFAULT_UPGRADE_URL` if omitted.
    */
   upgradeUrl?: string;
+  /**
+   * FUNNEL-FIX-AGENT-X402-NUDGE-W1: the canonical tool that was called — enables the additive
+   * `suggested_x402` in-protocol pay-per-call branch on the HARD warning. Unset ⇒ no x402 branch.
+   */
+  tool?: string;
+  /** Env override (tests inject the rail flags); defaults to `process.env`. */
+  env?: Record<string, string | undefined>;
 }
 
 /**
@@ -86,13 +97,21 @@ export function computeTierWarning(ctx: TierWarningContext): TierWarning | undef
     return undefined;
   }
 
-  return {
+  const warning: TierWarning = {
     level,
     current_usage: ctx.currentUsage,
     monthly_limit: ctx.monthlyLimit,
     tier: ctx.tier,
     suggested_upgrade_url: ctx.upgradeUrl ?? DEFAULT_UPGRADE_URL,
   };
+  // FUNNEL-FIX-AGENT-X402-NUDGE-W1: on the HARD warning only, attach the additive in-protocol
+  // x402 branch (dark behind X402_NUDGE_ENABLED). buildSuggestedX402 returns undefined for a
+  // HELD tool / no live public rail, so this stays default-deny + byte-identical when off.
+  if (level === 'hard' && ctx.tool && isX402NudgeEnabled(ctx.env)) {
+    const sx = buildSuggestedX402(ctx.tool, ctx.env);
+    if (sx) warning.suggested_x402 = sx;
+  }
+  return warning;
 }
 
 /**

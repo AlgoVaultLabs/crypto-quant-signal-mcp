@@ -19,6 +19,10 @@
 // are pure / side-effect-free; no import cycle. REFERRAL-INPRODUCT-NUDGE-W1: the
 // referral arm + structured hint also come from the (pure) nudge-copy SoT.
 import { buildLimitMessage, buildReferralHint, type ReferralHint } from './nudge-copy.js';
+// FUNNEL-FIX-AGENT-X402-NUDGE-W1: type-only import (no runtime edge) so this light module never
+// imports the x402-nudge leaf — the additive `suggested_x402` is COMPUTED by the caller (index.ts)
+// and passed in; this formatter only serializes it.
+import type { SuggestedX402 } from '../types.js';
 
 /**
  * Thrown by an exchange adapter when the upstream API returns HTTP 429
@@ -102,6 +106,10 @@ export class TierLimitReachedError extends Error {
    *  the tool envelope (agent-relayable). `from: 'limit'`; keyed → own link, keyless
    *  → get-your-link path. NO outcome_*. */
   readonly referral_hint: ReferralHint;
+  /** FUNNEL-FIX-AGENT-X402-NUDGE-W1: the canonical tool that hit the wall — lets the envelope
+   *  projection derive the tool's `suggested_x402` in-protocol pay-per-call rail. Optional so
+   *  every existing throw site stays valid; unset ⇒ no x402 branch. */
+  readonly tool?: string;
 
   constructor(args: {
     currentUsage: number;
@@ -112,6 +120,8 @@ export class TierLimitReachedError extends Error {
     /** Caller's derived referral code (keyed) or null (keyless) — drives the
      *  referral-prominent copy + the structured referral_hint. */
     referralCode?: string | null;
+    /** Canonical tool name that hit the quota edge (for `suggested_x402`). */
+    tool?: string;
   }) {
     // REFERRAL-INPRODUCT-NUDGE-W1 (was ACTIVATION-NUDGE-W1): the shared builder now
     // renders the referral-PROMINENT + upgrade-RETAINED copy (generator-level — all 4
@@ -129,8 +139,51 @@ export class TierLimitReachedError extends Error {
       ? args.suggestedUpgradeUrl
       : `${args.suggestedUpgradeUrl}${args.suggestedUpgradeUrl.includes('?') ? '&' : '?'}upgrade_from=limit`;
     this.retry_after_days = args.retryAfterDays;
+    this.tool = args.tool;
     Object.setPrototypeOf(this, TierLimitReachedError.prototype);
   }
+}
+
+/** Wire payload for a `TierLimitReachedError` (allow-listed; `suggested_x402` is additive). */
+export interface TierLimitPayload {
+  code: 'TIER_LIMIT_REACHED';
+  error_code: 'TIER_LIMIT_REACHED';
+  message: string;
+  current_usage: number;
+  monthly_limit: number;
+  tier: string;
+  suggested_upgrade_url: string;
+  retry_after_days: number;
+  referral_hint: ReferralHint;
+  /** FUNNEL-FIX-AGENT-X402-NUDGE-W1: additive in-protocol x402 pay-per-call branch. */
+  suggested_x402?: SuggestedX402;
+}
+
+/**
+ * Serialize a `TierLimitReachedError` to its MCP tool-content payload — the EXPORTED allow-list
+ * formatter (extracted from the inline index.ts handler per the CLAUDE.md public-shape rule +
+ * AC3). `suggested_x402` (FUNNEL-FIX-AGENT-X402-NUDGE-W1) is an ADDITIVE, allow-listed sibling to
+ * the intact Stripe (`suggested_upgrade_url`) + `referral_hint` fields — the caller (index.ts)
+ * computes it via the x402-nudge leaf behind `X402_NUDGE_ENABLED` and passes it in. Omitted
+ * entirely when not provided ⇒ the key set + order is BYTE-IDENTICAL to today (AC3). No internal
+ * fields ever leak (allow-list, not deny-list); `outcome_return_pct` is never referenced.
+ */
+export function buildTierLimitPayload(
+  err: TierLimitReachedError,
+  opts?: { suggestedX402?: SuggestedX402 },
+): TierLimitPayload {
+  return {
+    code: err.code,
+    error_code: err.code,
+    message: err.message,
+    current_usage: err.current_usage,
+    monthly_limit: err.monthly_limit,
+    tier: err.tier,
+    suggested_upgrade_url: err.suggested_upgrade_url,
+    retry_after_days: err.retry_after_days,
+    referral_hint: err.referral_hint,
+    ...(opts?.suggestedX402 ? { suggested_x402: opts.suggestedX402 } : {}),
+  };
 }
 
 /**

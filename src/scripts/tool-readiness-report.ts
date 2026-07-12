@@ -29,13 +29,18 @@
 // ── Gate constants ───────────────────────────────────────────────────────────
 // MUST stay byte-identical to N_THRESHOLD / S_THRESHOLD at the top of
 // /opt/algovault-monitoring/equity-launch-readiness.sh (single-derivation).
+// FUNNEL-FIX-AGENT-X402-NUDGE-W1: the public-copy HOLD flag is now the ONE SoT in
+// lib/equities/equity-hold.ts (import-safe for runtime consumers like the agent x402 nudge).
+import { EQUITY_PUBLIC_COPY_HOLD } from '../lib/equities/equity-hold.js';
+
 export const EQUITY_N_THRESHOLD = 150; // min matured BUY/SELL PFE outcomes before the calibration sample is signal, not noise
 export const EQUITY_S_THRESHOLD = 3; // min distinct matured sessions — guards against a single-session fluke
 
-// Public-copy HOLD (Mr.1 2026-06-04, reaffirmed 2026-06-08): equities stay
-// INTERNAL for all release/public copy until Mr.1 flips it AFTER
-// EQUITY-CALIBRATION-AUDIT-W1. While true, the card appends the HOLD marker.
-export const EQUITY_PUBLIC_COPY_HOLD = true;
+// Public-copy HOLD (Mr.1 2026-06-04, reaffirmed 2026-06-08): equities stay INTERNAL for all
+// release/public copy until Mr.1 flips it AFTER EQUITY-CALIBRATION-AUDIT-W1. While true, the
+// card appends the HOLD marker. SoT relocated to lib/equities/equity-hold.ts; re-exported here
+// so this module's importers are byte-unchanged.
+export { EQUITY_PUBLIC_COPY_HOLD };
 
 // Canonical rank-bucket display order (the view groups into these; 'other' only
 // appears if a verdict exists for a symbol outside the ranked/ETF universe).

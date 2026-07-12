@@ -194,6 +194,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
       retryAfterDays: daysUntilMonthReset(license),
       referralCode: referralCodeForKey(license.key),
+      tool: 'scan_funding_arb', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
     });
   }
 
@@ -436,6 +437,7 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     monthlyLimit: quota.total || getMonthlyQuota(license.tier),
     isBotInternal: license.tier === 'internal',
     upgradeUrl: DEFAULT_UPGRADE_URL,
+    tool: 'scan_funding_arb', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
   });
 
   return {

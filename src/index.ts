@@ -82,7 +82,11 @@ import {
   validateApiKey,
   summarizeCheckoutCompleted,
 } from './lib/stripe.js';
-import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, buildInsufficientCandlesPayload } from './lib/errors.js';
+import { UpstreamRateLimitError, EXCHANGE_FALLBACKS, TradFiSymbolUnsupportedOnVenueError, TierLimitReachedError, InsufficientCandlesError, buildInsufficientCandlesPayload, buildTierLimitPayload } from './lib/errors.js';
+// FUNNEL-FIX-AGENT-X402-NUDGE-W1: at the quota edge, offer the agent an in-protocol x402
+// pay-per-call rail. The helper is a LEAF (imports only pure/SDK modules) so this root import
+// adds no cycle. Dark behind X402_NUDGE_ENABLED (default OFF ⇒ envelope byte-identical).
+import { buildSuggestedX402, isX402NudgeEnabled } from './lib/x402-nudge.js';
 import { runAsBatch, runAsCaller } from './lib/upstream-weight-budget.js';
 import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
@@ -177,19 +181,14 @@ function toolErrorContent(err: unknown): { content: { type: 'text'; text: string
     return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
   }
   if (err instanceof TierLimitReachedError) {
-    const payload = {
-      code: err.code,
-      error_code: err.code,
-      message: err.message,
-      current_usage: err.current_usage,
-      monthly_limit: err.monthly_limit,
-      tier: err.tier,
-      suggested_upgrade_url: err.suggested_upgrade_url,
-      retry_after_days: err.retry_after_days,
-      // REFERRAL-INPRODUCT-NUDGE-W1: additive, allow-listed referral hint (agent-
-      // relayable). The human `message` already leads with the referral arm.
-      referral_hint: err.referral_hint,
-    };
+    // FUNNEL-FIX-AGENT-X402-NUDGE-W1: additive `suggested_x402` in-protocol pay-per-call branch
+    // (the agent can settle with its own wallet, no human signup) alongside the intact Stripe/
+    // referral fields — closes the quota-crossing→paid leak (a machine can't fill a Stripe
+    // checkout). Derived from the feature-registry channels{} SoT + live rail predicates; omitted
+    // (envelope byte-identical) when X402_NUDGE_ENABLED is off, no public rail is live, or the
+    // tool is HELD. The allow-list formatter (buildTierLimitPayload) is the single wire shape.
+    const suggestedX402 = isX402NudgeEnabled() && err.tool ? buildSuggestedX402(err.tool) : undefined;
+    const payload = buildTierLimitPayload(err, { suggestedX402 });
     return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
   }
   if (err instanceof InsufficientCandlesError) {

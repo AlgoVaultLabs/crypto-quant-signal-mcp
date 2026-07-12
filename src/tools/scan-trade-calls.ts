@@ -36,6 +36,10 @@ import { buildReferralHint, buildAhaReferral, type ReferralHint } from '../lib/n
 import { shouldShowAhaReferral } from '../lib/aha-event.js';
 import { getTrackRecord } from '../lib/track-record-snapshot.js';
 import { resolveRankBy, rankByTokens } from '../lib/rank-constants.js';
+// FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): the scanner's own quota wall also offers the x402 branch.
+// x402-nudge is a LEAF (no okx-a2mcp/x402-http-routes import) so this tool handler → x402-nudge
+// creates no cycle. Dark behind X402_NUDGE_ENABLED.
+import { buildSuggestedX402, isX402NudgeEnabled } from '../lib/x402-nudge.js';
 import {
   SCAN_TRADE_CALLS_DESCRIPTION,
   PARAM_DESC_SCAN_TOP_N,
@@ -49,7 +53,7 @@ import {
   PARAM_DESC_SCAN_OI_CHANGE_WINDOW,
   PARAM_DESC_SCAN_OI_BASIS,
 } from '../tool-descriptions.js';
-import type { LicenseInfo } from '../types.js';
+import type { LicenseInfo, SuggestedX402 } from '../types.js';
 import { PROMOTED_VENUE_IDS, type PromotedVenueId } from '../lib/capabilities.js';
 
 export { SCAN_TRADE_CALLS_DESCRIPTION };
@@ -123,6 +127,9 @@ export interface ScanQuotaExhaustedResponse {
   /** REFERRAL-INPRODUCT-NUDGE-W1: the limit moment also carries the structured,
    *  allow-listed referral hint (`from: 'limit'`); the `message` leads with it. */
   referral_hint: ReferralHint;
+  /** FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): additive in-protocol x402 pay-per-call branch at the
+   *  scan wall (/x402/scan_trade_calls is live). Omitted when X402_NUDGE_ENABLED is off / no rail. */
+  suggested_x402?: SuggestedX402;
   _algovault: { tool: 'scan_trade_calls'; version: string; session_id: string | null };
 }
 
@@ -177,6 +184,9 @@ export async function runScanTradeCall(
   const entry = checkQuota(license);
   if (!entry.allowed) {
     // Limit moment (the scan wall): referral-prominent message + structured hint.
+    // FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): + the additive in-protocol x402 branch, dark behind
+    // X402_NUDGE_ENABLED, omitted when no public rail is live (default-deny ⇒ envelope unchanged).
+    const suggestedX402 = isX402NudgeEnabled() ? buildSuggestedX402('scan_trade_calls') : undefined;
     return {
       error: 'quota_exhausted',
       code: 'tier_limit_reached',
@@ -184,6 +194,7 @@ export async function runScanTradeCall(
       quota: { used: entry.used, total: entry.total, remaining: 0 },
       suggested_action: UPGRADE_HINT,
       referral_hint: buildReferralHint({ from: 'limit', code: refCode }),
+      ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
       _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
     };
   }

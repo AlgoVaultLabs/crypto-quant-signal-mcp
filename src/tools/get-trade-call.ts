@@ -213,6 +213,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
       retryAfterDays: daysUntilMonthReset(licenseForReset),
       referralCode: referralCodeForKey(licenseForReset.key),
+      tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
     });
   }
 
@@ -555,6 +556,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       monthlyLimit: quota.total || getMonthlyQuota(license.tier),
       isBotInternal: license.tier === 'internal',
       upgradeUrl: DEFAULT_UPGRADE_URL,
+      tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
     });
   }
 
