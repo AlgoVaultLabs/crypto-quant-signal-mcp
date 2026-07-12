@@ -74,6 +74,73 @@ describe('tryClaimPayment — first-use accepts, replay rejects', () => {
   });
 });
 
+describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-W1)', () => {
+  async function payerWalletOf(nonce: string): Promise<string | null> {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const rows = await dbQuery<{ payer_wallet: string | null }>(
+      'SELECT payer_wallet FROM processed_x402_payments WHERE nonce = ?',
+      [nonce],
+    );
+    return rows.length ? rows[0].payer_wallet : null;
+  }
+
+  it('stores payer_wallet on the winning claim; nonce stays PK; replay never overwrites it', async () => {
+    const nonce = '0xaa11000000000000000000000000000000000000000000000000000000000001';
+    const wallet = '0x76de895f0000000000000000000000000000c755';
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe(true);
+    expect(await payerWalletOf(nonce)).toBe(wallet);
+    // Replay (same nonce) is still rejected (idempotency byte-identical) AND the stored
+    // wallet is NOT overwritten by the DO-NOTHING conflict.
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xdeadbeef00000000000000000000000000000000')).toBe(false);
+    expect(await payerWalletOf(nonce)).toBe(wallet);
+  });
+
+  it('fail-open: omitted payer_wallet → null column, the claim still succeeds', async () => {
+    const nonce = '0xbb22000000000000000000000000000000000000000000000000000000000002';
+    expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe(true); // no wallet arg
+    expect(await payerWalletOf(nonce)).toBeNull();
+    expect(await store.getClaimedPaymentCount()).toBe(1);
+  });
+
+  it('idempotency unchanged: N concurrent claims WITH a wallet → exactly one winner', async () => {
+    const nonce = '0xcc33000000000000000000000000000000000000000000000000000000000003';
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xabc0000000000000000000000000000000000abc')),
+    );
+    expect(results.filter(Boolean).length).toBe(1);
+    expect(await store.getClaimedPaymentCount()).toBe(1);
+  });
+
+  it('distinct-wallet aggregation EXCLUDES operator self-settle (Q2/R4 — the exact conversion)', async () => {
+    const { operatorExclusionSql } = await import('../src/lib/x402-operator-wallets.js');
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const OP = '0x76de895fdd3f7b5814eb59ccd244b06b47d8c755'; // the operator harness buyer (excluded)
+    const REAL1 = '0xAAAA000000000000000000000000000000000001'; // mixed-case → lower() normalizes
+    const REAL2 = '0xbbbb000000000000000000000000000000000002';
+    const n = (h: string) => (h + '0'.repeat(66)).slice(0, 66);
+    // operator self-settle: 3 payments, ONE wallet; + 2 distinct real payers ×1 each
+    await store.tryClaimPayment(n('0xd1'), 'get_trade_signal', '20000', OP);
+    await store.tryClaimPayment(n('0xd2'), 'scan_funding_arb', '10000', OP);
+    await store.tryClaimPayment(n('0xd3'), 'get_market_regime', '20000', OP);
+    await store.tryClaimPayment(n('0xe1'), 'get_trade_signal', '20000', REAL1);
+    await store.tryClaimPayment(n('0xe2'), 'get_trade_signal', '20000', REAL2);
+
+    const { clause, params } = operatorExclusionSql();
+    const excluded = await dbQuery<{ c: number | string }>(
+      `SELECT COUNT(DISTINCT lower(payer_wallet)) AS c FROM processed_x402_payments WHERE payer_wallet IS NOT NULL${clause}`,
+      params,
+    );
+    expect(Number(excluded[0].c)).toBe(2); // 2 real wallets; operator (3 payments → 1 wallet) EXCLUDED
+
+    const all = await dbQuery<{ c: number | string }>(
+      `SELECT COUNT(DISTINCT lower(payer_wallet)) AS c FROM processed_x402_payments WHERE payer_wallet IS NOT NULL`,
+      [],
+    );
+    expect(Number(all[0].c)).toBe(3); // without exclusion: 2 real + operator = 3 (the mirage)
+    expect(await store.getClaimedPaymentCount()).toBe(5); // 5 payment EVENTS regardless
+  });
+});
+
 describe('extractPaymentNonce — x402 v2 payload shapes', () => {
   it('EIP-3009: nonce at payload.authorization.nonce', () => {
     const payload = {

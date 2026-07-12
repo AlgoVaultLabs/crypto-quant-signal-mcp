@@ -270,15 +270,26 @@ describe('getAgentFunnel', () => {
     if (sql.includes("'quota_hit_hard','quota_hit_block'")) return [{ c: 10 }];
     if (sql.includes("'quota_hit_soft'")) return [{ c: 20 }];
     if (sql.includes('FROM quota_usage')) return [{ c: 10 }];
-    if (sql.includes('FROM processed_x402_payments')) return [{ c: 7 }];
+    // OPS-X402-WALLET-ATTRIBUTION-W1: distinct wallets (exact conversion) vs payment count vs repeat-payers.
+    if (sql.includes('COUNT(DISTINCT lower(payer_wallet))')) return [{ c: 3 }];
+    if (sql.includes('GROUP BY payer_wallet')) return [
+      { payer_wallet: '0xrealpayer0000000000000000000000000000aa', c: 4 },
+      { payer_wallet: '0xrealpayer0000000000000000000000000000bb', c: 1 },
+    ];
+    if (sql.includes('FROM processed_x402_payments')) return [{ c: 7 }]; // payment count (secondary)
     return [];
   });
-  it('renders 4 stages + quota detail (windowed + all-time chip + soft)', async () => {
+  it('paid stage = DISTINCT paying WALLETS (not payments); payments secondary; repeat-payers', async () => {
     const a = await getAgentFunnel('all', deps);
-    expect(a.stages.map(s => s.count)).toEqual([1000, 800, 10, 7]);
+    expect(a.stages.map(s => s.count)).toEqual([1000, 800, 10, 3]); // paid = 3 distinct wallets, NOT 7 payments
+    expect(a.stages[3].sublabel).toContain('distinct paying wallets');
+    expect(a.paid_detail).toMatchObject({ distinct_wallets: 3, payments: 7 });
+    expect(a.paid_detail.repeat_payers).toEqual([{ wallet: '0xreal…00aa', calls: 4 }, { wallet: '0xreal…00bb', calls: 1 }]);
+    expect(a.paid_note).toContain('Distinct paying WALLETS');
     expect(a.quota_detail).toEqual({ windowed_hard_block: 10, soft_approaching: 20, all_time_pqls: 10 });
     expect(a.transitions[0].rate).toBeCloseTo(0.8); // conn→activated
-    expect(a.paid_note).toContain('NOT distinct paying wallets');
+    // AC4 (internal-only): the funnel NEVER emits a FULL wallet address — operator display is truncated.
+    expect(JSON.stringify(a)).not.toMatch(/0x[0-9a-fA-F]{40}/);
   });
 });
 
@@ -385,6 +396,7 @@ function makeDeps(overrides: Partial<ScoreboardDeps> = {}): ScoreboardDeps {
     { session_id: 's4', meta_json: JSON.stringify({ source: 'unknown' }) },
   ]; // s3 → untagged; s5 excluded (internal)
   const query = async <T>(sql: string): Promise<T[]> => {
+    if (sql.includes('GROUP BY payer_wallet')) return [] as unknown as T[];
     if (sql.includes('processed_x402_payments')) return [{ c: 7 }] as unknown as T[];
     if (sql.includes('COUNT(DISTINCT session_id)') && sql.includes("'mcp_connect'")) return [{ c: 7183 }] as unknown as T[];
     if (sql.includes('session_id, meta_json') && sql.includes("'mcp_connect'")) return connectSrcRows as unknown as T[];
@@ -475,7 +487,8 @@ describe('getFunnelScoreboard (composed, injected deps)', () => {
       query: async <T>(sql: string): Promise<T[]> => {
         if (sql.includes('FROM free_keys')) throw new Error('relation "free_keys" does not exist');
         if (sql.includes('FROM signup_emails')) throw new Error('boom');
-        if (sql.includes('processed_x402_payments')) return [{ c: 7 }] as unknown as T[];
+        if (sql.includes('GROUP BY payer_wallet')) return [] as unknown as T[];
+    if (sql.includes('processed_x402_payments')) return [{ c: 7 }] as unknown as T[];
         if (sql.includes("event_type = 'mcp_connect'")) return [{ c: 7183 }] as unknown as T[];
         if (sql.includes('FROM signup_attribution')) return [] as T[];
         if (sql.includes('FROM agent_sessions')) return [] as T[];

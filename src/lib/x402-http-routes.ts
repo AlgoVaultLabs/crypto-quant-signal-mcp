@@ -34,7 +34,7 @@ import { clientIp } from './client-ip.js';
 // including paid x402/a2mcp, via the ONE canonical classifier — no second isbot impl.
 import { classifyTraffic } from './traffic-classifier.js';
 import { generate402Response, settleX402Async, paymentMatchesToolRoute } from './x402.js';
-import { tryClaimPayment, extractPaymentNonce } from './x402-idempotency-store.js';
+import { tryClaimPayment, extractPaymentNonce, extractPayerWallet } from './x402-idempotency-store.js';
 import { BAZAAR_ROUTES, bazaarResourceUrl, bazaarRouteDescription } from './x402-bazaar.js';
 import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
@@ -278,7 +278,10 @@ export function mountX402HttpRoutes(app: Express): string[] {
         ? settlementReq.amount
         : settlementReq.amount != null ? String(settlementReq.amount) : '';
       const nonce = extractPaymentNonce(pendingSettlement.paymentPayload);
-      const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount);
+      // OPS-X402-WALLET-ATTRIBUTION-W1: capture the ERC-3009 payer wallet additively (fail-open —
+      // undefined → NULL column, never affects the claim decision). Base/USDC rail (HTTP /x402).
+      const payerWallet = extractPayerWallet(pendingSettlement.paymentPayload);
+      const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet);
       if (!claimed) {
         console.warn(`[x402-route] payment-replay REJECT for ${routePath} (nonce already claimed or unclaimable)`);
         res.status(402).json({

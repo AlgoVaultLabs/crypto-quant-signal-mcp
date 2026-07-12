@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "wave": "OPS-X402-WALLET-ATTRIBUTION-W1",
+    "emitted_at": "2026-07-12",
+    "purpose": "Canonical exclude-list of OPERATOR x402 payer wallets (self-settle harness / dev). The agent-funnel quota->paid DISTINCT-WALLET conversion metric AND the x402 census (/dashboard/funnel, operator-only) MUST exclude these, so the funnel measures REAL agent conversion and not operator self-settle. All 7 pre-instrumentation processed_x402_payments rows (2026-06-30 14:45-14:57 UTC) resolved on-chain (Base USDC AuthorizationUsed) to the single harness buyer below.",
+    "rule_cite": "OPS-X402-WALLET-ATTRIBUTION-W1 R4 + Q2 + CLAUDE.md '## Data Integrity (THE LAW)' (Tier-tagged DB rows cross-check ... flag as instrumentation_artifact: operator_dev_key)",
+    "runtime_source_note": "The RUNTIME image ships dist/, not audits/, so the LIVE source consumed by the scoreboard is src/lib/x402-operator-wallets.ts. This JSON is the documented, greppable, extensible mirror; tests/x402-operator-wallets.test.ts asserts the two never drift. To exclude a new operator/dev wallet, add it (lowercased) to BOTH."
+  },
+  "operator_wallets": [
+    "0x76de895fdd3f7b5814eb59ccd244b06b47d8c755"
+  ],
+  "wallet_labels": {
+    "0x76de895fdd3f7b5814eb59ccd244b06b47d8c755": "x402 self-settle harness buyer (operator-funded; lists Bazaar/okx routes by settling through them)"
+  },
+  "classification": "instrumentation_artifact: operator_dev_key",
+  "match_rule": "Lowercase-normalize both sides. A processed_x402_payments.payer_wallet in operator_wallets is EXCLUDED from the distinct-paying-wallet CONVERSION count (agent funnel + x402 census). Addresses are on-chain-public but INTERNAL-ONLY in our surfaces (truncated operator display 0x76de...c755; NEVER published in public copy or a public endpoint)."
+}

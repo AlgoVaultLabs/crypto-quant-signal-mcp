@@ -41,6 +41,9 @@ vi.mock('../src/lib/x402-idempotency-store.js', () => ({
     mockState.nonceSeen = n;
     return n;
   },
+  // OPS-X402-WALLET-ATTRIBUTION-W1: license.ts now also extracts the payer wallet (additive).
+  extractPayerWallet: (payload: unknown) =>
+    (payload as { payload?: { authorization?: { from?: string } } })?.payload?.authorization?.from,
   tryClaimPayment: async () => {
     const r = mockState.claimResults[mockState.claimCalls] ?? false;
     mockState.claimCalls += 1;

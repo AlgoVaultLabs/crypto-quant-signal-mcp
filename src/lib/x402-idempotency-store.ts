@@ -36,10 +36,16 @@ const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
     nonce TEXT PRIMARY KEY,
     tool TEXT,
     amount TEXT,
+    payer_wallet TEXT,
     created_at ${process.env.DATABASE_URL ? 'TIMESTAMPTZ' : 'TIMESTAMP'} DEFAULT ${process.env.DATABASE_URL ? 'now()' : "(datetime('now'))"}
   );
   CREATE INDEX IF NOT EXISTS idx_processed_x402_payments_created_at ON processed_x402_payments (created_at);
+  ${process.env.DATABASE_URL ? 'ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS payer_wallet TEXT;' : ''}
 `;
+// OPS-X402-WALLET-ATTRIBUTION-W1: `payer_wallet` is additive + nullable (nonce stays the PK /
+// idempotency key). Fresh DBs (SQLite tests + fresh PG) get it via CREATE TABLE; an EXISTING PG
+// table self-heals via the PG-only `ADD COLUMN IF NOT EXISTS` (SQLite has no such clause, but its
+// tables are fresh in tests). Prod was pre-applied via SSH → all three paths are no-ops there.
 
 let _initialized = false;
 
@@ -75,6 +81,10 @@ export async function tryClaimPayment(
   nonce: string,
   tool: string,
   amount: string,
+  // OPS-X402-WALLET-ATTRIBUTION-W1: the ERC-3009 payer wallet (additive IDENTITY dimension).
+  // Additive TRAILING optional param → every existing caller stays valid. NULL when absent
+  // (fail-open) — it is metadata on the winning insert, it NEVER gates the claim.
+  payerWallet?: string,
 ): Promise<boolean> {
   if (!nonce) {
     // No usable idempotency key — fail safe (do not serve). Should not happen
@@ -86,14 +96,16 @@ export async function tryClaimPayment(
     ensureProcessedX402PaymentsSchema();
     const isPg = !!process.env.DATABASE_URL;
     const sql = isPg
-      ? `INSERT INTO processed_x402_payments (nonce, tool, amount)
-         VALUES (?, ?, ?)
+      ? `INSERT INTO processed_x402_payments (nonce, tool, amount, payer_wallet)
+         VALUES (?, ?, ?, ?)
          ON CONFLICT (nonce) DO NOTHING
          RETURNING nonce`
-      : `INSERT OR IGNORE INTO processed_x402_payments (nonce, tool, amount)
-         VALUES (?, ?, ?)
+      : `INSERT OR IGNORE INTO processed_x402_payments (nonce, tool, amount, payer_wallet)
+         VALUES (?, ?, ?, ?)
          RETURNING nonce`;
-    const inserted = await dbQuery<{ nonce: string }>(sql, [nonce, tool, amount]);
+    // Conflict is STILL arbitrated on the nonce PK (DO NOTHING / OR IGNORE) → dedup byte-identical;
+    // payer_wallet rides only on the winning insert, and a replay's DO-NOTHING never overwrites it.
+    const inserted = await dbQuery<{ nonce: string }>(sql, [nonce, tool, amount, payerWallet ?? null]);
     // Row returned ⇒ this call won the insert ⇒ first use. Empty ⇒ replay.
     return inserted.length > 0;
   } catch (err) {
@@ -146,6 +158,41 @@ export function extractPaymentNonce(paymentPayload: unknown): string | undefined
   ];
   for (const c of candidates) {
     if (typeof c === 'string' && c.length > 0) return c;
+  }
+  return undefined;
+}
+
+/** A valid EVM address literal (0x + 40 hex). */
+const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * Extract the PAYER WALLET (ERC-3009 `from`) from a verified x402 payment payload
+ * (OPS-X402-WALLET-ATTRIBUTION-W1). The buyer signs
+ * `transferWithAuthorization(from, to, value, …)`, so the payer's wallet is the SIBLING of the
+ * `nonce` we already read (`payload.authorization.from`). Returns the address LOWERCASED
+ * (Q4: `0xAbc` and `0xabc` are the same wallet — never double-count on GROUP BY), or
+ * `undefined` when absent/malformed (fail-open — the caller writes NULL, never blocks a
+ * settle). INTERNAL-ONLY: this address is a distinct-count key + a truncated operator display;
+ * it is NEVER surfaced in public copy or a public endpoint.
+ */
+export function extractPayerWallet(paymentPayload: unknown): string | undefined {
+  if (!paymentPayload || typeof paymentPayload !== 'object') return undefined;
+  const p = paymentPayload as {
+    payload?: {
+      authorization?: { from?: unknown };
+      permit2Authorization?: { from?: unknown };
+    };
+    authorization?: { from?: unknown };
+    from?: unknown;
+  };
+  const candidates = [
+    p.payload?.authorization?.from,        // EIP-3009 (USDC transferWithAuthorization) — the prod rail
+    p.payload?.permit2Authorization?.from, // Permit2 flow (defensive)
+    p.authorization?.from,                 // defensive: un-nested authorization
+    p.from,                                // defensive: top-level
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && EVM_ADDRESS_RE.test(c)) return c.toLowerCase();
   }
   return undefined;
 }

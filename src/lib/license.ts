@@ -8,7 +8,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { verifyX402Payment, isX402Configured, paymentMatchesToolRoute, classifyToolRouteMismatch } from './x402.js';
-import { extractPaymentNonce, tryClaimPayment } from './x402-idempotency-store.js';
+import { extractPaymentNonce, extractPayerWallet, tryClaimPayment } from './x402-idempotency-store.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import { dbExec, dbRun, dbQuery, recordFunnelEvent } from './performance-db.js';
 import type { LicenseInfo, LicenseTier } from '../types.js';
@@ -281,7 +281,10 @@ async function bindAndClaimX402(
   const amtRaw = (matchedReq as { amount?: unknown })?.amount;
   const amount = typeof amtRaw === 'string' ? amtRaw : amtRaw != null ? String(amtRaw) : '';
   const nonce = extractPaymentNonce(pendingSettlement?.paymentPayload);
-  const claimed = await tryClaimPayment(nonce ?? '', tool, amount);
+  // OPS-X402-WALLET-ATTRIBUTION-W1: capture the ERC-3009 payer wallet additively (fail-open —
+  // undefined → NULL column, never affects the claim decision). Base/USDC rail (MCP x-payment).
+  const payerWallet = extractPayerWallet(pendingSettlement?.paymentPayload);
+  const claimed = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet);
   if (!claimed) {
     return { reason: 'replayed' };
   }
