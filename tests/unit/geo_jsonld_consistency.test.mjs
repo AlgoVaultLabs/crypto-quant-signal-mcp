@@ -57,6 +57,9 @@ const GEO_CONTENT_SLUGS = new Set([
   'llamaindex-quant-trading-stack.html', 'composite-cross-exchange-trade-calls.html',
   'cross-venue-funding-rate-arbitrage.html', 'crypto-market-regime-detection-api.html',
   'crypto-signal-providers-verifiable-track-record.html', 'crypto-trade-call-api-for-ai-agents.html',
+  // CHANNEL-HUB-PAGES-GEO-W1: the 3 channel hub pages are how-to answer pages (own TechArticle +
+  // FAQPage + Organization @id ref); excluded from the 5-managed-marketing-blocks requirement.
+  'mcp.html', 'rest-api.html', 'webhooks.html',
 ]);
 const managedPages = (files) => files.filter((f) => !GEO_CONTENT_SLUGS.has(f));
 

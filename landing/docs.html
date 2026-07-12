@@ -180,9 +180,9 @@ tailwind.config = {
         <div>
           <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Channels</div>
           <div class="text-[11px] text-gray-500 mb-2.5">How you connect</div>
-          <a href="https://algovault.com/docs.html#connect-mcp" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">MCP Server</span><span class="block text-[11px] text-gray-500 leading-snug">Native Model Context Protocol endpoint</span></a>
-          <a href="https://algovault.com/docs.html#testing-with-curl" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">REST API</span><span class="block text-[11px] text-gray-500 leading-snug">Call over HTTP — pay-per-call via x402</span></a>
-          <a href="https://algovault.com/docs.html#webhooks" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Webhooks</span><span class="block text-[11px] text-gray-500 leading-snug">Push trade calls + regime shifts to your endpoint</span></a>
+          <a href="https://algovault.com/mcp" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">MCP Server</span><span class="block text-[11px] text-gray-500 leading-snug">Native Model Context Protocol endpoint</span></a>
+          <a href="https://algovault.com/rest-api" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">REST API</span><span class="block text-[11px] text-gray-500 leading-snug">Call over HTTP — keyless x402 or API key</span></a>
+          <a href="https://algovault.com/webhooks" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Webhooks</span><span class="block text-[11px] text-gray-500 leading-snug">Push trade calls + regime shifts to your endpoint</span></a>
           <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Telegram Bot</span><span class="block text-[11px] text-gray-500 leading-snug">Trade calls delivered in Telegram</span></a>
         </div>
         <div>
@@ -223,9 +223,9 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
-          <a href="https://algovault.com/docs.html#connect-mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
-          <a href="https://algovault.com/docs.html#testing-with-curl" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">REST API</a>
-          <a href="https://algovault.com/docs.html#webhooks" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Webhooks</a>
+          <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
+          <a href="https://algovault.com/rest-api" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">REST API</a>
+          <a href="https://algovault.com/webhooks" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Webhooks</a>
           <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Telegram Bot</a>
           <a href="https://algovault.com/integrations" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Integrations</a>
           <a href="https://algovault.com/skills" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Skills</a>
@@ -312,29 +312,33 @@ tailwind.config = {
 
   <!-- Sidebar -->
   <aside class="hidden lg:block w-52 shrink-0 sticky top-20 self-start">
+    <!-- CHANNEL-HUB-PAGES-GEO-W1 CH4: sidebar realigned to the Platform taxonomy
+         (Tools / Channels / Ecosystem / Verify). HTTP API + Rate limits moved from
+         Knowledge Tools → Channels; all anchors preserved (no dead links). -->
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3 px-3">On this page</div>
     <a href="#quick-start" class="sidebar-link">Quick Start</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">API Reference</div>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Tools</div>
     <a href="#get-trade-signal" class="sidebar-link">get_trade_call</a>
     <a href="#scan-funding-arb" class="sidebar-link">scan_funding_arb</a>
     <a href="#get-market-regime" class="sidebar-link">get_market_regime</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Knowledge Tools</div>
-    <a href="#knowledge-tools-overview" class="sidebar-link">Overview</a>
+    <a href="#knowledge-tools-overview" class="sidebar-link">Knowledge Tools</a>
     <a href="#knowledge-tools-search" class="sidebar-link">search_knowledge</a>
     <a href="#knowledge-tools-chat" class="sidebar-link">chat_knowledge</a>
     <a href="#knowledge-tools-when" class="sidebar-link">When to use which</a>
     <a href="#knowledge-tools-examples" class="sidebar-link">Worked examples</a>
-    <a href="#knowledge-tools-api" class="sidebar-link">HTTP API</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Channels</div>
+    <a href="#connect-mcp" class="sidebar-link">Connect via MCP</a>
+    <a href="#rest-api" class="sidebar-link">REST / HTTP API</a>
+    <a href="#knowledge-tools-api" class="sidebar-link">HTTP API reference</a>
     <a href="#knowledge-tools-quota" class="sidebar-link">Rate limits &amp; cost</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Integration</div>
-    <a href="#connect-mcp" class="sidebar-link">Connect Your MCP Client</a>
+    <a href="#webhooks" class="sidebar-link">Webhooks</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Ecosystem</div>
     <a href="#connect-ai-agent" class="sidebar-link">Connect Your AI Agent</a>
     <a href="#connect-exchange-kit" class="sidebar-link">Connect Your Exchange Kit</a>
-    <a href="#webhooks" class="sidebar-link">Webhooks</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Verification</div>
+    <a href="#usage-examples" class="sidebar-link">Skills &amp; Usage Examples</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Verify</div>
     <a href="#on-chain-verification" class="sidebar-link">On-Chain Verification</a>
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">More</div>
-    <a href="#usage-examples" class="sidebar-link">Skills &amp; Usage Examples</a>
     <a href="#pricing" class="sidebar-link">Pricing &amp; Limits</a>
     <a href="#faq" class="sidebar-link">FAQ</a>
   </aside>
@@ -721,6 +725,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
 
     <!-- ============ INTEGRATION ============ -->
     <div class="border-t border-white/5 mb-16"></div>
+    <span id="mcp" style="display:block;scroll-margin-top:80px" aria-hidden="true"></span><!-- CHANNEL-HUB-PAGES-GEO-W1: canonical #mcp anchor — OUTSIDE the generated mcp-usage block so build_landing regeneration can't wipe it; aliases the #connect-mcp MCP section. -->
 
       <!-- BUILD:mcp-usage:start -->
 <section id="integration" class="mb-16">
@@ -1792,6 +1797,7 @@ kraken mcp -s all</code></pre>
       </div>
       <!-- BUILD:signup-flow:end -->
 
+      <span id="rest-api" style="display:block;scroll-margin-top:80px" aria-hidden="true"></span><!-- CHANNEL-HUB-PAGES-GEO-W1: canonical #rest-api anchor (aliases the x402/HTTP-API REST section; nav Channels + /rest-api hub) -->
       <h3 id="x402" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">x402 Pay-Per-Call (USDC on Base)</h3>
       <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
 

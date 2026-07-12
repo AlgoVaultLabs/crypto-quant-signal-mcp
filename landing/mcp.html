@@ -3,16 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlgoVault × Claude Code — Build Verifiable AI Trading Agents</title>
-<meta name="description" content="Pair AlgoVault MCP&#39;s composite verdict with Claude Code&#39;s agent execution kit. Free testnet demo · 89.4% PFE Win Rate · 56,375+ calls · 16+ Merkle-verified on-chain batches.">
-<link rel="canonical" href="https://algovault.com/integrations/claude-code">
+<title>MCP Server — Connect to AlgoVault | AlgoVault Labs</title>
+<meta name="description" content="AlgoVault's Model Context Protocol server exposes every trade-call, market-regime, and cross-venue scan tool to AI agents over one endpoint. Point Claude, ">
+<link rel="canonical" href="https://algovault.com/mcp">
 <link rel="icon" type="image/png" href="/logo.png">
-<meta property="og:title" content="AlgoVault × Claude Code — Build Verifiable AI Trading Agents">
-<meta property="og:description" content="Pair AlgoVault MCP&#39;s composite verdict with Claude Code&#39;s agent execution kit. Free testnet demo · 89.4% PFE Win Rate · 56,375+ calls · 16+ Merkle-verified on-chain batches.">
+<meta property="og:title" content="MCP Server — Connect to AlgoVault | AlgoVault Labs">
+<meta property="og:description" content="AlgoVault's Model Context Protocol server exposes every trade-call, market-regime, and cross-venue scan tool to AI agents over one endpoint. Point Claude, ">
 <meta property="og:type" content="article">
-<meta property="og:url" content="https://algovault.com/integrations/claude-code">
-<!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-04-26">
+<meta property="og:url" content="https://algovault.com/mcp">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,54 +18,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/_design/algovault-design.css">
 <!-- END: AlgoVault canonical design loader -->
-<script defer src="/js/track-record-proxy.js"></script>
-<!-- WEBSITE-REFRESH-W1 C7 — Schema.org TechArticle for Google rich-results
-     eligibility (replaced HowTo which Google deprecated for SERP rich
-     results in Aug 2023; TechArticle is current rich-result-eligible). -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "TechArticle",
-  "headline": "AlgoVault × Claude Code - Build Verifiable AI Trading Agents",
-  "url": "https://algovault.com/integrations/claude-code",
-  "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-04-26T15:00:00+00:00",
-  "author": {
-    "@type": "Organization",
-    "name": "AlgoVault Labs",
-    "url": "https://algovault.com"
-  },
-  "publisher": {
-    "@type": "Organization",
-    "name": "AlgoVault Labs",
-    "url": "https://algovault.com",
-    "logo": {
-      "@type": "ImageObject",
-      "url": "https://algovault.com/logo.png",
-      "width": 512,
-      "height": 512
-    }
-  },
-  "image": {
-    "@type": "ImageObject",
-    "url": "https://algovault.com/logo.png",
-    "width": 512,
-    "height": 512
-  },
-  "description": "Pair AlgoVault MCP's composite verdict (89.4%+ PFE Win Rate, Merkle-anchored on Base L2) with Claude Code's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.",
-  "proficiencyLevel": "Intermediate|Advanced",
-  "about": {
-    "@type": "Thing",
-    "name": "Claude Code integration with AlgoVault MCP composite verdict"
-  }
-}
-</script>
-<!-- Privacy-friendly analytics by Plausible (WEBSITE-REFRESH-W1 C6) -->
-<script async src="https://plausible.io/js/pa-RwGaS0xWrfzs4vNSkMOAX.js"></script>
-<script>
-  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init()
-</script>
 <script>
 tailwind.config = {
   theme: {
@@ -81,40 +31,92 @@ tailwind.config = {
   }
 }
 </script>
+<script type="application/ld+json" data-algovault-jsonld="TechArticle">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Connect to AlgoVault via MCP Server",
+  "description": "AlgoVault's Model Context Protocol server exposes every trade-call, market-regime, and cross-venue scan tool to AI agents over one endpoint. Point Claude, Cursor, Cline, or any MCP client at https://api.algovault.com/mcp — the free tier needs no API key. Streamable HTTP or stdio transport, with typed tool schemas out of the box.",
+  "url": "https://algovault.com/mcp",
+  "mainEntityOfPage": "https://algovault.com/mcp",
+  "articleSection": "Channels",
+  "proficiencyLevel": "Beginner",
+  "keywords": "MCP, Model Context Protocol, AI agent, Claude, Cursor, crypto trade calls, MCP server",
+  "inLanguage": "en",
+  "publisher": {
+    "@id": "https://algovault.com/#organization"
+  }
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="FAQPage">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Do I need an API key to use the MCP server?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No — the free tier is keyless. Point your MCP client at https://api.algovault.com/mcp and start calling tools. An API key raises your limits but is not required to connect."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What transports does the MCP server support?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Streamable HTTP is the default remote transport; stdio is available for local process integration (set TRANSPORT=stdio). Both expose the same tool set."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which MCP clients work with AlgoVault?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Any MCP-compliant client — Claude Desktop, Cursor, Cline, and MCP-aware agent frameworks. See the Integrations page for per-client setup recipes."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is MCP different from the REST API?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "MCP gives typed tool discovery and schemas over a protocol; the REST API is plain HTTP request/response. Use MCP when your framework speaks it, and the REST API when it does not."
+      }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json" data-algovault-jsonld="Organization">
+{
+  "@context": "https://schema.org",
+  "@id": "https://algovault.com/#organization"
+}
+</script>
 <style>
   html { scroll-behavior: smooth; }
-  /* DESIGN-W10 / C3 / Q-W10-10 cascade: use canonical CSS variables for body background.
-     algovault-design.css defines --bg / --fg / --fg-2 / --fg-3 / --line / --mint tokens. */
-  body { background: var(--bg); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
-  /* Inline code + pre code — neutral colors preserved (no gold per DESIGN-W10 swap).
-     Build Rule 8 exemption applies to syntax-highlighting inline color spans inside
-     code blocks (preserved if present in markdown source). */
-  code { font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-  pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
-  pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; color: var(--fg); }
-  /* DESIGN-W10 / C3: article headings — gold (#d4b255 / #c4a34a) → var(--fg) neutral. */
-  article h1 { font-size: 2.25rem; font-weight: 700; margin: 0 0 0.5em; color: var(--fg); }
-  article h2 { font-size: 1.6rem; font-weight: 600; margin: 0 0 0.5em; color: var(--fg); padding-top: 0; border-top: none; }
-  article h3 { font-size: 1.2rem; font-weight: 600; margin: 1.25em 0 0.4em; color: var(--fg-2); }
-  article p { margin: 0.75em 0; line-height: 1.7; }
-  article ul, article ol { margin: 0.75em 0; padding-left: 1.5em; line-height: 1.7; }
-  article li { margin: 0.25em 0; }
-  /* DESIGN-W10 / C3: article links — gold → var(--mint). */
-  article a { color: var(--mint); text-decoration: underline; }
-  article a:hover { filter: brightness(1.1); }
-  article strong { color: var(--fg); font-weight: 600; }
-  /* DESIGN-W10 / C3: blockquote — gold accent → mint. */
-  article blockquote { border-left: 3px solid var(--mint); padding-left: 16px; margin: 1em 0; color: var(--fg-3); font-style: italic; background: oklch(0.86 0.16 165 / 0.05); padding: 12px 16px; border-radius: 0 4px 4px 0; }
-  article table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-  article th, article td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
-  article th { color: var(--fg); font-weight: 600; }
-  article hr { border: none; border-top: 1px solid var(--line); margin: 2em 0; }
+  body { background: var(--bg, #060a14); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
+  .ch-wrap { max-width: 760px; margin: 0 auto; padding: 112px 24px 72px; }
+  .ch-eyebrow { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; letter-spacing: 0.12em; color: var(--mint, oklch(0.86 0.16 165)); text-transform: uppercase; margin: 0 0 14px; }
+  .ch-h1 { font-family: var(--font-display, 'Inter Tight', sans-serif); font-size: 42px; line-height: 1.05; letter-spacing: -0.02em; font-weight: 600; color: var(--fg, #f5f7fa); margin: 0 0 20px; }
+  .ch-summary { font-size: 18px; line-height: 1.6; color: var(--fg, #f5f7fa); border-left: 3px solid var(--mint, oklch(0.86 0.16 165)); padding: 4px 0 4px 18px; margin: 0 0 44px; }
+  .ch-wrap h2 { font-family: var(--font-display, 'Inter Tight', sans-serif); font-size: 24px; font-weight: 600; color: var(--fg, #f5f7fa); margin: 44px 0 14px; letter-spacing: -0.01em; }
+  .ch-wrap p { font-size: 15.5px; line-height: 1.7; color: var(--fg-2, #d1d5db); margin: 0 0 16px; }
+  .ch-code { margin: 18px 0; }
+  .ch-code pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 16px; margin: 0; }
+  .ch-code pre code { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12.5px; line-height: 1.65; color: var(--fg, #f5f7fa); background: none; }
+  .ch-code-ref { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--mint, oklch(0.86 0.16 165)); text-decoration: none; }
+  .ch-coverage { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .ch-coverage li a { display: inline-block; font-family: var(--font-mono, monospace); font-size: 13px; color: var(--fg-2, #d1d5db); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 4px 12px; text-decoration: none; }
+  .ch-coverage li a:hover { color: var(--mint, oklch(0.86 0.16 165)); border-color: var(--mint, oklch(0.86 0.16 165)); }
+  .ch-faq { border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 14px 18px; margin: 10px 0; background: oklch(0.18 0.014 265 / 0.4); }
+  .ch-faq summary { cursor: pointer; font-weight: 600; color: var(--fg, #f5f7fa); font-size: 15px; }
+  .ch-faq p { margin: 12px 0 2px; }
+  .ch-cta { display: inline-block; margin-top: 28px; padding: 11px 22px; border-radius: 10px; background: var(--mint, oklch(0.86 0.16 165)); color: #060a14; font-weight: 600; text-decoration: none; font-size: 15px; }
 </style>
 </head>
 <body>
-<!-- DESIGN-W10 / C3 / Q-W10-1 + Q-W10-2 + Q-W10-7 OPTION B: canonical Nav (Integrations
-     active-link + per-page utm-injected /track-record link). REPLACES the pre-W10
-     legacy header block per Q-W10-8 ratification. -->
 <!-- NAV:START -->
 <nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -267,92 +269,76 @@ tailwind.config = {
 })();
 </script>
 <!-- NAV:END -->
+<main class="ch-wrap">
+  <p class="ch-eyebrow">· Channels — how you connect</p>
+  <h1 class="ch-h1">MCP Server</h1>
+  <p class="ch-summary">AlgoVault's Model Context Protocol server exposes every trade-call, market-regime, and cross-venue scan tool to AI agents over one endpoint. Point Claude, Cursor, Cline, or any MCP client at https://api.algovault.com/mcp — the free tier needs no API key. Streamable HTTP or stdio transport, with typed tool schemas out of the box.</p>
 
-<!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
-<main class="lp-integrations-desktop">
-  <div class="artboard" style="padding:100px 24px 64px;max-width:1024px;margin:0 auto;width:100%">
-    <div class="bg-grid"></div>
-    <div class="bg-radial-accent"></div>
-    <div class="bg-noise"></div>
-    <div style="position:relative;z-index:1">
-      <div class="placeholder-cap" style="margin-bottom:14px">· claude-code integration</div>
-      <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
-      <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">89.4%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">56,375</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
-      </p>
-      <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
-           (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
-           "I means remove this section, not the section cards" — referring to the
-           TL;DR section content, not the visual card structure. wrapH2InTierStatCard()
-           wraps each h2 section + intro in a card; stripTLDRSection() removes the
-           redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
-      <article>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Code</h1>
-<p>Wire AlgoVault into your Claude Code CLI as a project-scoped MCP server. Commit <code>.mcp.json</code> so every teammate gets the same setup.</p>
-<blockquote>
-<p><em>Snapshot 2026-05-19 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
-</blockquote></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
-<p><strong>One-liner (recommended):</strong></p>
-<pre><code class="language-bash">claude mcp add --transport http --scope project algovault \
-  https://api.algovault.com/mcp?src=docs \
-  --header &quot;Authorization: Bearer $AV_API_KEY&quot; \
-  --header &quot;X-AlgoVault-Track-Token:int-claude-code&quot;
-</code></pre>
-<p>This writes <code>.mcp.json</code> in your repo root. Commit it; teammates clone, run <code>claude</code>, and the connector is already wired.</p>
-<p><strong><code>.mcp.json</code> shape (auto-generated):</strong></p>
-<pre><code class="language-json">{
-  &quot;mcpServers&quot;: {
-    &quot;algovault&quot;: {
-      &quot;type&quot;: &quot;http&quot;,
-      &quot;url&quot;: &quot;https://api.algovault.com/mcp?src=docs&quot;,
-      &quot;headers&quot;: {
-        &quot;Authorization&quot;: &quot;Bearer ${AV_API_KEY}&quot;,
-        &quot;X-AlgoVault-Track-Token&quot;: &quot;int-claude-code&quot;
-      }
+  <h2>When to use MCP Server vs the other channels</h2>
+  <p>Reach for MCP when your agent framework speaks the Model Context Protocol — Claude Desktop, Cursor, Cline, or an MCP-aware LangChain / LlamaIndex stack. It gives typed tool discovery and the full tool set. If you just want raw HTTP without an MCP client, use the REST API; if you want AlgoVault to push to you, use Webhooks.</p>
+
+  <h2>Connect</h2>
+      <div class="ch-code">
+<pre><code class="text-xs text-gray-300">{
+  "mcpServers": {
+    "algovault": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.algovault.com/mcp?src=docs",
+               "--header", "Authorization: Bearer ${AV_API_KEY}",
+               "--header", "X-AlgoVault-Track-Token:chan-docs"]
     }
   }
-}
-</code></pre>
-<p>Set <code>AV_API_KEY</code> in your shell or <code>.envrc</code>.</p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
-<p>In a Claude Code session, type <code>/mcp</code> to list connected servers. AlgoVault should appear with 4 tools (<code>get_trade_call</code>, <code>get_trade_signal</code>, <code>scan_funding_arb</code>, <code>get_market_regime</code>). Then ask: <em>“Use AlgoVault to get a trade call for BTC 4h.”</em> Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.</p>
-<blockquote>
-<p><em>Screenshot placeholder — Claude Code terminal showing <code>/mcp</code> list with AlgoVault + 4 tools and a <code>get_trade_call</code> response.</em></p>
-</blockquote></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
-<ul>
-<li><strong>“Server not initialized” on first call</strong> — Claude Code expects the 3-step MCP handshake; the <code>http</code> transport handles this automatically. If you see this error, your <code>.mcp.json</code> <code>type</code> might be set to <code>sse</code> instead of <code>http</code>.</li>
-<li><strong><code>AV_API_KEY</code> not set in env</strong> — Claude Code reads from the shell that launched it. Use direnv or set the key in <code>~/.zshrc</code>.</li>
-<li><strong><code>.mcp.json</code> not picked up</strong> — Claude Code reads <code>.mcp.json</code> from the CWD at session start. Restart Claude Code from the repo root.</li>
-<li><strong><code>403 Forbidden</code></strong> — your key is expired or wrong tier. Visit <code>algovault.com/account</code> to verify.</li>
-</ul></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
-<p><strong>Project scope vs user scope?</strong> Project (<code>.mcp.json</code> in repo root) shares with the team. User (<code>~/.claude/mcp.json</code>) is private.</p>
-<p><strong>Free tier works?</strong> Yes. Drop the <code>--header</code> arg from <code>claude mcp add</code>. 100 calls/month, all coins + timeframes.</p>
-<p><strong>Multiple MCP servers?</strong> Yes — repeat <code>claude mcp add</code> per server.</p>
-<p><strong>How does this differ from Claude Desktop?</strong> Claude Code is the CLI; Claude Desktop is the chat app. Both run on the same Claude family but use separate config files.</p></div>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
-<p>Add AlgoVault to your strategy-dev repo in 30 seconds. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record">see the verified track record</a>.</p></div>
-      </article>
-    </div>
-  </div>
+}</code></pre>
+        <a class="ch-code-ref" href="https://algovault.com/docs.html#connect-mcp">Full reference in the docs →</a>
+      </div>
+      <div class="ch-code">
+<pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
+
+# 1. initialize — captures session-id from response headers
+SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
+  | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
+
+# 2. notify "initialized" (required by MCP protocol)
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
+
+# 3. now call tools/call
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
+        <a class="ch-code-ref" href="https://algovault.com/docs.html#testing-with-curl">Full reference in the docs →</a>
+      </div>
+
+  <h2>Tool coverage</h2>
+  <p>Every publicly-listed tool reachable through MCP Server (equities are held from public listings):</p>
+  <ul class="ch-coverage">
+        <li><a href="https://algovault.com/tools#get-trade-call">Trade Call</a></li>
+        <li><a href="https://algovault.com/tools#get-market-regime">Market Regime</a></li>
+        <li><a href="https://algovault.com/tools#scan-funding-arb">Funding Arbitrage</a></li>
+        <li><a href="https://algovault.com/tools#scan-trade-calls">Trade Call Scanner</a></li>
+        <li><a href="https://algovault.com/tools#chat-knowledge">Knowledge Chat</a></li>
+        <li><a href="https://algovault.com/tools#search-knowledge">Knowledge Search</a></li>
+  </ul>
+
+  <h2>Frequently asked questions</h2>
+      <details class="ch-faq"><summary>Do I need an API key to use the MCP server?</summary><p>No — the free tier is keyless. Point your MCP client at https://api.algovault.com/mcp and start calling tools. An API key raises your limits but is not required to connect.</p></details>
+      <details class="ch-faq"><summary>What transports does the MCP server support?</summary><p>Streamable HTTP is the default remote transport; stdio is available for local process integration (set TRANSPORT=stdio). Both expose the same tool set.</p></details>
+      <details class="ch-faq"><summary>Which MCP clients work with AlgoVault?</summary><p>Any MCP-compliant client — Claude Desktop, Cursor, Cline, and MCP-aware agent frameworks. See the Integrations page for per-client setup recipes.</p></details>
+      <details class="ch-faq"><summary>How is MCP different from the REST API?</summary><p>MCP gives typed tool discovery and schemas over a protocol; the REST API is plain HTTP request/response. Use MCP when your framework speaks it, and the REST API when it does not.</p></details>
+
+  <a class="ch-cta" href="https://algovault.com/tools">Explore the tools →</a>
 </main>
-
-<!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
-     REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
-<footer style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)">
-  <div style="display:flex;align-items:center;gap:10px">
-    <img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0">
-    <span style="color:var(--fg-2)">Built by AlgoVault Labs</span>
-  </div>
-  <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
-    <a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener" style="color:var(--fg-3);text-decoration:none">GitHub</a>
-    <a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener" style="color:var(--fg-3);text-decoration:none">X / Twitter</a>
-    <a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a>
-    <a href="/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a>
-  </div>
-</footer>
-
+<footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
 </body>
 </html>

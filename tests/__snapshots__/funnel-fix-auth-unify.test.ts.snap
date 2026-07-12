@@ -79,9 +79,9 @@ tailwind.config = {
         <div>
           <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Channels</div>
           <div class="text-[11px] text-gray-500 mb-2.5">How you connect</div>
-          <a href="https://algovault.com/docs.html#connect-mcp" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">MCP Server</span><span class="block text-[11px] text-gray-500 leading-snug">Native Model Context Protocol endpoint</span></a>
-          <a href="https://algovault.com/docs.html#testing-with-curl" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">REST API</span><span class="block text-[11px] text-gray-500 leading-snug">Call over HTTP — pay-per-call via x402</span></a>
-          <a href="https://algovault.com/docs.html#webhooks" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Webhooks</span><span class="block text-[11px] text-gray-500 leading-snug">Push trade calls + regime shifts to your endpoint</span></a>
+          <a href="https://algovault.com/mcp" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">MCP Server</span><span class="block text-[11px] text-gray-500 leading-snug">Native Model Context Protocol endpoint</span></a>
+          <a href="https://algovault.com/rest-api" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">REST API</span><span class="block text-[11px] text-gray-500 leading-snug">Call over HTTP — keyless x402 or API key</span></a>
+          <a href="https://algovault.com/webhooks" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Webhooks</span><span class="block text-[11px] text-gray-500 leading-snug">Push trade calls + regime shifts to your endpoint</span></a>
           <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Telegram Bot</span><span class="block text-[11px] text-gray-500 leading-snug">Trade calls delivered in Telegram</span></a>
         </div>
         <div>
@@ -122,9 +122,9 @@ tailwind.config = {
           <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
           <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
           <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
-          <a href="https://algovault.com/docs.html#connect-mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
-          <a href="https://algovault.com/docs.html#testing-with-curl" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">REST API</a>
-          <a href="https://algovault.com/docs.html#webhooks" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Webhooks</a>
+          <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
+          <a href="https://algovault.com/rest-api" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">REST API</a>
+          <a href="https://algovault.com/webhooks" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Webhooks</a>
           <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Telegram Bot</a>
           <a href="https://algovault.com/integrations" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Integrations</a>
           <a href="https://algovault.com/skills" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Skills</a>

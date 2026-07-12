@@ -67,7 +67,10 @@ jobs:
           npx vitest run tests/analytics-external-only.test.ts >/dev/null 2>&1 || true
           npx vitest run
 
-      - name: Landing-page sync guard (build_landing --check)
+      # build_landing --check also covers build_tools_page + build_channel_pages (both invoked by
+      # build:landing) — the /tools index + the 3 channel hub pages (/mcp /rest-api /webhooks) stay
+      # in sync with their SoTs (NAV-PLATFORM-GENERATOR-W1 + CHANNEL-HUB-PAGES-GEO-W1).
+      - name: Landing-page sync guard (build_landing --check; incl. tools + channel pages)
         run: node scripts/build_landing.mjs --check
 
       # NAV-PLATFORM-GENERATOR-W1 CH5: unified-nav drift canary (STATIC parity). Fails the push

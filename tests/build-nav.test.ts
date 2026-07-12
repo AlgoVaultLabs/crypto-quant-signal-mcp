@@ -69,7 +69,8 @@ describe('CH2 AC — desktop/mobile parity (single-derivation): same targets + s
   it('both carry the Platform mega tools, the 4 channels, and the Signup CTA', () => {
     const s = region();
     for (const anchor of ['/tools#get-trade-call', '/tools#scan-trade-calls', '/tools']) expect(s).toContain(anchor);
-    for (const ch of ['#connect-mcp', '#testing-with-curl', '#webhooks', 't.me/algovaultofficialbot']) expect(s).toContain(ch);
+    // CHANNEL-HUB-PAGES-GEO-W1: Channels repointed off /docs.html anchors → dedicated hub pages.
+    for (const ch of ['/mcp', '/rest-api', '/webhooks', 't.me/algovaultofficialbot']) expect(s).toContain(ch);
     expect(s).toContain('https://api.algovault.com/welcome');
   });
 });

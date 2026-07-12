@@ -176,6 +176,15 @@ async function main() {
     writes += 1;
   }
 
+  // CHANNEL-HUB-PAGES-GEO-W1 CH2: the 3 channel hub pages (generated from the channel SoT +
+  // verbatim docs code reuse; nav baked via renderSiteNav, same region build_nav.mjs injects).
+  const { buildChannelPages } = await import('./build_channel_pages.mjs');
+  const chRes = buildChannelPages({ check: checkMode });
+  if (chRes.drifted.length) {
+    for (const f of chRes.drifted) driftLines.push(`${f} (channel hub page)`);
+    writes += chRes.drifted.length;
+  }
+
   if (checkMode) {
     if (writes === 0) {
       console.log('build_landing: in-sync (--check) — all BUILD blocks across all targets');

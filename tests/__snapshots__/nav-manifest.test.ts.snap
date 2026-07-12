@@ -49,17 +49,17 @@ exports[`CH1 AC-e — model shape is stable (snapshot) > buildNavModel() matches
           "items": [
             {
               "blurb": "Native Model Context Protocol endpoint",
-              "href": "https://algovault.com/docs.html#connect-mcp",
+              "href": "https://algovault.com/mcp",
               "label": "MCP Server",
             },
             {
-              "blurb": "Call over HTTP — pay-per-call via x402",
-              "href": "https://algovault.com/docs.html#testing-with-curl",
+              "blurb": "Call over HTTP — keyless x402 or API key",
+              "href": "https://algovault.com/rest-api",
               "label": "REST API",
             },
             {
               "blurb": "Push trade calls + regime shifts to your endpoint",
-              "href": "https://algovault.com/docs.html#webhooks",
+              "href": "https://algovault.com/webhooks",
               "label": "Webhooks",
             },
             {

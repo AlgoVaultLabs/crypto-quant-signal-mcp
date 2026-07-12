@@ -10,6 +10,9 @@
 // no DOM, exposes no internal/alias/equities-internal tool. Rendering lives in the injector +
 // site-nav.ts; this module is the model those consumers read.
 import { FEATURE_REGISTRY, type FeatureSpec } from './feature-registry.js';
+// CHANNEL-HUB-PAGES-GEO-W1: the Channels column now DERIVES from the channel SoT (single source
+// across nav + the 3 hub pages + docs) instead of the former inline CHANNEL_NAV map.
+import { CHANNELS, channelHref, coveredRegistryChannels } from './channel-registry.js';
 
 // ── Absolute-href hosts (A6: absolute uniformly). One injected region renders on BOTH the
 //    apex-served static pages (algovault.com) and the api-served /account (api.algovault.com);
@@ -97,18 +100,11 @@ const TOOL_LABELS: Record<string, string> = {
   search_knowledge: 'Knowledge Search',
 };
 
-// ── Channels column: MEMBERSHIP (reach) from the registry, PRESENTATION local ─────────────
-// Render order = the confirmed public-copy order. Each maps a registry channel key → its
-// nav surface (label/href/blurb). Hrefs point at REAL docs.html section anchors (live-probed
-// CH4): #connect-mcp / #testing-with-curl (raw HTTP/curl) / #webhooks all exist today.
-const CHANNEL_ORDER: readonly string[] = ['mcp', 'httpX402', 'webhook', 'bot'];
-// Blurbs use the canonical "trade call" voice (never "signal" — brand + how-it-works copy law).
-const CHANNEL_NAV: Record<string, NavMenuItem> = {
-  mcp: { label: 'MCP Server', href: `${DOCS}#connect-mcp`, blurb: 'Native Model Context Protocol endpoint' },
-  httpX402: { label: 'REST API', href: `${DOCS}#testing-with-curl`, blurb: 'Call over HTTP — pay-per-call via x402' },
-  webhook: { label: 'Webhooks', href: `${DOCS}#webhooks`, blurb: 'Push trade calls + regime shifts to your endpoint' },
-  bot: { label: 'Telegram Bot', href: TG_BOT, blurb: 'Trade calls delivered in Telegram', external: true },
-};
+// ── Channels column: MEMBERSHIP (reach) from the registry, PRESENTATION from the channel SoT ──
+// The per-channel label/href/blurb now live in src/lib/channel-registry.ts (CHANNELS), so the nav
+// Channels column, the 3 hub pages, and the docs Channels section are one source (Single-Derivation
+// LAW). Destinations are the dedicated hub pages (/mcp · /rest-api · /webhooks) + the external
+// Telegram link — repointed from the former /docs.html#… anchors (CHANNEL-HUB-PAGES-GEO-W1).
 
 /** URL-fragment slug for a tool anchor (`/tools#<slug>`). ONE definition — the /tools page reuses it. */
 export function slug(name: string): string {
@@ -179,21 +175,29 @@ function buildToolsColumn(registry: readonly FeatureSpec[]): NavColumn {
 }
 
 /**
- * Build the Platform ▸ Channels column from the registry's reach-flags. Every reached,
- * non-excluded channel key MUST have a CHANNEL_NAV mapping, else THROW (drift trap, CH1 AC-d).
+ * Build the Platform ▸ Channels column from the channel SoT (src/lib/channel-registry.ts). The
+ * drift trap is PRESERVED: every registry reach-flag reached by an enabled feature and NOT in
+ * NAV_EXCLUDED_CHANNELS MUST be covered by a CHANNELS entry (via its `registryChannel` bridge),
+ * else THROW — a new registry channel with neither a channel-registry entry nor an exclusion fails
+ * the build (A3, by design; a2mcp/acp stay excluded as marketplace rails).
  */
 function buildChannelsColumn(registry: readonly FeatureSpec[]): NavColumn {
   const reached = reachedChannelKeys(registry).filter((k) => !NAV_EXCLUDED_CHANNELS.includes(k));
-  const unmapped = reached.filter((k) => !(k in CHANNEL_NAV));
+  const covered = coveredRegistryChannels();
+  const unmapped = reached.filter((k) => !covered.has(k));
   if (unmapped.length > 0) {
     throw new Error(
-      `nav-manifest: registry channel key(s) reached but not mapped and not excluded: ` +
-        `${unmapped.join(', ')}. Add to CHANNEL_NAV (user-facing) or NAV_EXCLUDED_CHANNELS (rail).`,
+      `nav-manifest: registry channel key(s) reached but not covered by channel-registry and not excluded: ` +
+        `${unmapped.join(', ')}. Add a CHANNELS entry (channel-registry.ts) or NAV_EXCLUDED_CHANNELS (rail).`,
     );
   }
-  // Render in the confirmed order, only channels that are actually reached.
-  const reachedSet = new Set(reached);
-  const items = CHANNEL_ORDER.filter((k) => reachedSet.has(k)).map((k) => CHANNEL_NAV[k]);
+  // Render every channel in the SoT (hosted → /<slug>, external → its URL), in SoT order.
+  const items: NavMenuItem[] = CHANNELS.map((c) => ({
+    label: c.label,
+    href: channelHref(c),
+    blurb: c.navBlurb,
+    ...(c.hosted ? {} : { external: true }),
+  }));
   return { title: 'Channels', caption: 'How you connect', items };
 }
 

@@ -97,6 +97,12 @@ const FILES_TO_SKIP = new Set([
   'crypto-market-regime-detection-api.html',
   'crypto-signal-providers-verifiable-track-record.html',
   'crypto-trade-call-api-for-ai-agents.html',
+  // CHANNEL-HUB-PAGES-GEO-W1: the 3 channel hub pages are how-to ANSWER pages — they carry
+  // their OWN TechArticle + FAQPage + Organization @id ref and must NOT receive the 5 managed
+  // marketing blocks (same treatment as the GEO answer pages above).
+  'mcp.html',
+  'rest-api.html',
+  'webhooks.html',
 ]);
 
 async function fetchLiveData() {
