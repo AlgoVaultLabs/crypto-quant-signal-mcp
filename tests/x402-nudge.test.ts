@@ -126,11 +126,12 @@ describe('buildSuggestedX402 — rail-agnostic (AC2/R4) + per-tool single-deriva
 });
 
 describe('isX402NudgeEnabled', () => {
-  it('is true ONLY when X402_NUDGE_ENABLED === "true" (default OFF ⇒ envelope byte-identical)', () => {
+  it('is true for the funnel-flag go-live values 1/true (default OFF ⇒ envelope byte-identical)', () => {
+    expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: '1' })).toBe(true); // the documented go-live value (auth-providers.ts convention)
     expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: 'true' })).toBe(true);
     expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: 'TRUE' })).toBe(true);
     expect(isX402NudgeEnabled({})).toBe(false);
     expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: 'false' })).toBe(false);
-    expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: '1' })).toBe(false);
+    expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: '0' })).toBe(false);
   });
 });

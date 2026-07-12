@@ -56,7 +56,13 @@ const BASE_CAIP2: Record<string, string> = {
  * added ⇒ the envelope is byte-identical to today.
  */
 export function isX402NudgeEnabled(env: NudgeEnv = process.env): boolean {
-  return env.X402_NUDGE_ENABLED?.trim().toLowerCase() === 'true';
+  // Funnel-flag convention (auth-providers.ts `NEW_SIGNUP_ENABLED`/`UNIFIED_SIGNIN_ENABLED` both
+  // accept `=== '1' || === 'true'`): the documented go-live value is `X402_NUDGE_ENABLED=1`, so a
+  // `=== 'true'`-only parse would leave the flag dark after the operator's `=1` flip. Accept both.
+  // NB: 3rd funnel flag with this exact parse → a shared `parseFunnelFlag` helper is a WIS
+  // extraction candidate (3-example threshold; deferred, not inline-extracted here).
+  const v = env.X402_NUDGE_ENABLED?.trim().toLowerCase();
+  return v === '1' || v === 'true';
 }
 
 /** Agent-relayable copy; price interpolated from the SoT (NEVER hardcoded — scan_funding_arb is $0.01). */
