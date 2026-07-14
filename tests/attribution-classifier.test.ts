@@ -4,7 +4,7 @@
  * and the log-only unmatched-UA sampler (no DB / no PII).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifySource, classifyReferer, resolveSource, mediumForSource } from '../src/lib/attribution-sources.js';
+import { classifySource, classifyReferer, resolveSource, mediumForSource, normalizeUtmSource, AI_REFERRAL_SOURCES, ATTRIBUTION_SOURCES } from '../src/lib/attribution-sources.js';
 import { matchLlmClientUa, logUnmatchedUa, _resetUaSamplesForTest } from '../src/lib/llm-clients.js';
 import { taggedLink, isInternalOrRelative } from '../src/lib/tagged-link.js';
 
@@ -49,6 +49,55 @@ describe('classifyReferer', () => {
     expect(classifyReferer(null)).toBeNull();
     // must not be fooled by a lookalike host containing the brand as a substring
     expect(classifyReferer('https://x.com.evil.example/x')).toBeNull();
+  });
+});
+
+describe('OPS-ATTRIBUTION-AI-REFERRAL-W1 — ai_* human-referral family (distinct from agent UA channels)', () => {
+  it('AC1 — the 6 AI web hosts classify to their ai_* slug (Referer · medium=ai · deterministic)', () => {
+    expect(classifySource({ referer: 'https://chatgpt.com/c/abc' })).toEqual({ source: 'ai_chatgpt', medium: 'ai', confidence: 'deterministic' });
+    expect(classifySource({ referer: 'https://chat.openai.com/c/abc' }).source).toBe('ai_chatgpt');
+    expect(classifySource({ referer: 'https://www.perplexity.ai/search/x' }).source).toBe('ai_perplexity');
+    expect(classifySource({ referer: 'https://claude.ai/chat/x' }).source).toBe('ai_claude');
+    expect(classifySource({ referer: 'https://gemini.google.com/app' }).source).toBe('ai_gemini');
+    expect(classifySource({ referer: 'https://bard.google.com/' }).source).toBe('ai_gemini');
+    expect(classifySource({ referer: 'https://copilot.microsoft.com/' }).source).toBe('ai_copilot');
+    expect(classifySource({ referer: 'https://grok.com/' }).source).toBe('ai_grok');
+  });
+  it('AC2 — utm_source=chatgpt.com survives the referer-strip → ai_chatgpt (no referer · Layer 2)', () => {
+    expect(classifySource({ utmSource: 'chatgpt.com' })).toEqual({ source: 'ai_chatgpt', medium: 'ai', confidence: 'deterministic' });
+    expect(normalizeUtmSource('chatgpt.com')).toBe('ai_chatgpt');
+    expect(normalizeUtmSource('reddit')).toBe('reddit');          // legacy short utm slug still classifies
+    expect(normalizeUtmSource('totally-made-up.com')).toBeNull(); // unknown utm default-denies
+  });
+  it('AC3 — ordering: gemini.google.com → ai_gemini NOT organic (ai rule precedes google→organic); plain google stays organic', () => {
+    expect(classifySource({ referer: 'https://gemini.google.com/app' }).source).toBe('ai_gemini');
+    expect(classifySource({ referer: 'https://www.google.com/search?q=algovault' }).source).toBe('organic');
+  });
+  it('AC3 — bing.com → organic NOT ai_copilot (conservative; ai_copilot only from copilot.microsoft.com)', () => {
+    expect(classifySource({ referer: 'https://www.bing.com/search?q=x' }).source).toBe('organic');
+    expect(classifySource({ referer: 'https://bing.com/' }).source).toBe('organic');
+  });
+  it('AC3 — Grok-on-X (x.com/i/grok) stays social `x` (host-unrecoverable); grok.com → ai_grok; grok.ai dropped', () => {
+    expect(classifySource({ referer: 'https://x.com/i/grok' }).source).toBe('x');
+    expect(classifySource({ referer: 'https://grok.com/' }).source).toBe('ai_grok');
+    expect(classifyReferer('https://grok.ai/')).toBeNull(); // grok.ai intentionally omitted (ownership unverified)
+  });
+  it('AC1 — NO conflation: an agent chatgpt/claude UA (no referer/utm) stays the agent slug, not ai_*', () => {
+    expect(classifySource({ userAgent: 'ChatGPT/1.0' })).toEqual({ source: 'chatgpt', medium: 'agent', confidence: 'heuristic' });
+    expect(classifySource({ userAgent: 'claude-user/1.0 anthropic' }).source).toBe('claude');
+    // a real AI referer beats a conflicting agent UA (Referer step precedes the UA step)
+    expect(classifySource({ referer: 'https://chatgpt.com/x', userAgent: 'claude-user anthropic' }).source).toBe('ai_chatgpt');
+  });
+  it('subdomain-safe: a look-alike AI host defaults-deny (the $-anchor)', () => {
+    expect(classifyReferer('https://chatgpt.com.evil.example/x')).toBeNull();
+    expect(classifyReferer('https://claude.ai.evil.example/x')).toBeNull();
+  });
+  it('mediumForSource maps every ai_* → ai; AI_REFERRAL_SOURCES === the medium==ai set (drift canary)', () => {
+    for (const s of AI_REFERRAL_SOURCES) expect(mediumForSource(s)).toBe('ai');
+    const byMedium = ATTRIBUTION_SOURCES.filter((s) => mediumForSource(s) === 'ai');
+    expect([...byMedium].sort()).toEqual([...AI_REFERRAL_SOURCES].sort());
+    expect(AI_REFERRAL_SOURCES.length).toBe(6);
+    expect([...AI_REFERRAL_SOURCES]).toContain('ai_chatgpt');
   });
 });
 

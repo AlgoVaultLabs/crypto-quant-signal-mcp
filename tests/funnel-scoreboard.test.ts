@@ -246,7 +246,12 @@ describe('getHumanFunnel', () => {
     if (sql.includes("'track_record_viewed'")) return [{ c: 71 }];
     if (sql.includes("'landing_cta_clicked'")) return [{ c: 88 }];
     if (sql.includes('COUNT(*)') && sql.includes('FROM signup_attribution')) return [{ c: 100 }];
-    if (sql.includes('SELECT channel FROM signup_attribution')) return [...Array(90).fill({ channel: 'direct' }), ...Array(10).fill({ channel: 'tg_bot' })];
+    if (sql.includes('referrer, utm_source FROM signup_attribution')) return [
+      ...Array(88).fill({ channel: 'direct', referrer: null, utm_source: null }),
+      ...Array(10).fill({ channel: 'tg_bot', referrer: null, utm_source: null }),
+      { channel: 'direct', referrer: 'https://chatgpt.com/c/abc', utm_source: null }, // OPS-ATTRIBUTION-AI-REFERRAL-W1: AI via Referer
+      { channel: 'direct', referrer: null, utm_source: 'chatgpt.com' },               // AI via utm (survives referer-strip)
+    ];
     if (sql.includes('FROM free_keys')) return [{ c: 6 }];
     if (sql.includes('FROM subscriber_profiles')) return [{ c: 1 }];
     return [];
@@ -260,6 +265,10 @@ describe('getHumanFunnel', () => {
     expect(h.biggest_leak?.from).toBe('Subscribe click');
     expect(h.by_channel[0]).toMatchObject({ channel: 'direct', count: 90 });
     expect(h.by_channel[0].pct).toBeCloseTo(0.9);
+    // OPS-ATTRIBUTION-AI-REFERRAL-W1: AI-referral family = the 2 AI-classified signups (1 Referer + 1 utm), medium==='ai'
+    expect(h.ai_referral.total).toBe(2);
+    expect(h.ai_referral.by_source).toEqual([{ source: 'ai_chatgpt', count: 2, pct: 1 }]);
+    expect(h.ai_referral.floor_note).toMatch(/FLOOR/);
   });
 });
 

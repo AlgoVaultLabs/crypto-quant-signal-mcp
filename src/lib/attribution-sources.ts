@@ -51,6 +51,10 @@ export const ATTRIBUTION_SOURCES = [
   'cursor', 'windsurf', 'cline', 'continue', 'zed', 'copilot',
   // FUNNEL-FIX-ATTRIBUTION-W1 — inbound referrer channels (referer-domain-matched):
   'devto', 'medium', 'lobehub', 'producthunt', 'reddit', 'organic',
+  // OPS-ATTRIBUTION-AI-REFERRAL-W1 — AI-assistant HUMAN-referral channels (Referer + utm_source
+  // matched). DISTINCT from the UA-matched agent slugs `chatgpt`/`claude` above: a HUMAN clicking an
+  // AI citation link is NOT the same event as an agent connecting via that AI's MCP client.
+  'ai_chatgpt', 'ai_perplexity', 'ai_claude', 'ai_gemini', 'ai_copilot', 'ai_grok',
   'unknown', // default-deny terminal — an untagged/unclassified hit is unknown, not "direct"
 ] as const;
 
@@ -58,6 +62,19 @@ export type AttributionSource = (typeof ATTRIBUTION_SOURCES)[number];
 
 /** O(1) membership set for validation. */
 export const ATTRIBUTION_SOURCE_SET: ReadonlySet<string> = new Set(ATTRIBUTION_SOURCES);
+
+/**
+ * OPS-ATTRIBUTION-AI-REFERRAL-W1 — the `ai_*` human-referral family, DERIVED from the enum by the
+ * `ai_` prefix (single SoT: add a slug to ATTRIBUTION_SOURCES → it joins the family automatically).
+ * Consumers group by this set OR, equivalently, by `mediumForSource(s) === 'ai'`; never hardcode the
+ * slug list at a call site. A drift canary asserts the two derivations agree.
+ */
+export const AI_REFERRAL_SOURCES: readonly AttributionSource[] =
+  ATTRIBUTION_SOURCES.filter((s) => s.startsWith('ai_'));
+export const AI_REFERRAL_SOURCE_SET: ReadonlySet<string> = new Set(AI_REFERRAL_SOURCES);
+export function isAiReferralSource(source: unknown): boolean {
+  return typeof source === 'string' && AI_REFERRAL_SOURCE_SET.has(source);
+}
 
 export type SourceConfidence = 'deterministic' | 'heuristic' | 'unknown';
 
@@ -74,6 +91,19 @@ export interface ResolvedSource {
  * Owned-surface + organic domains, seeded from the ratified Q3 map. Extend = one row.
  */
 const REFERER_DOMAIN_MAP: ReadonlyArray<{ pattern: RegExp; source: AttributionSource }> = [
+  // OPS-ATTRIBUTION-AI-REFERRAL-W1 — AI-assistant web-UI referrers → ai_* (listed FIRST so
+  // gemini.google.com wins BEFORE the generic google→organic rule below, and each AI host wins
+  // before any parent rule). A HUMAN browser referral (desktop-web) — a FLOOR: native apps strip
+  // the Referer, and Google AI-Overviews arrive as host `google.*` → `organic` (unrecoverable).
+  // Grok-on-X is `x.com/i/grok` (a PATH → Referer host = `x.com`) → unrecoverable, stays `x`; the
+  // canonical standalone `grok.com` IS capturable. `grok.ai` is intentionally omitted — ownership
+  // unverified (Factuality LAW: don't attribute a possible look-alike).
+  { pattern: /(^|\.)chatgpt\.com$|(^|\.)chat\.openai\.com$/i, source: 'ai_chatgpt' },
+  { pattern: /(^|\.)perplexity\.ai$/i, source: 'ai_perplexity' },
+  { pattern: /(^|\.)claude\.ai$/i, source: 'ai_claude' },
+  { pattern: /(^|\.)gemini\.google\.com$|(^|\.)bard\.google\.com$/i, source: 'ai_gemini' },
+  { pattern: /(^|\.)copilot\.microsoft\.com$/i, source: 'ai_copilot' },
+  { pattern: /(^|\.)grok\.com$/i, source: 'ai_grok' },
   { pattern: /(^|\.)x\.com$|(^|\.)twitter\.com$/i, source: 'x' },
   { pattern: /(^|\.)github\.com$/i, source: 'github' },
   { pattern: /(^|\.)npmjs\.com$/i, source: 'npm' },
@@ -119,11 +149,29 @@ export function normalizeSrcParam(raw: unknown): AttributionSource | null {
 }
 
 /**
+ * OPS-ATTRIBUTION-AI-REFERRAL-W1 — allow-listed normalization of an inbound `utm_source` value to an
+ * `ai_*` slug (Layer 2). ChatGPT auto-appends `utm_source=chatgpt.com` to the links it cites; that
+ * tag SURVIVES the Referer-strip on mobile / native apps, so it is the single highest-value AI-
+ * referral capture. Applied ONLY to `utm_source` (the external auto-tag), NEVER to our canonical
+ * `?src=`. Allow-list only (default-deny), then falls back to the enum for legacy short utm slugs
+ * (OPS-UTM-SHORTEN-W1 back-compat). Extend = one row (Perplexity/Gemini/Claude do NOT consistently
+ * utm-tag as of 2026-07 — add when observed).
+ */
+const AI_UTM_SOURCE_MAP: ReadonlyMap<string, AttributionSource> = new Map([
+  ['chatgpt.com', 'ai_chatgpt'],
+]);
+export function normalizeUtmSource(raw: unknown): AttributionSource | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().toLowerCase();
+  return AI_UTM_SOURCE_MAP.get(v) ?? normalizeSrcParam(v);
+}
+
+/**
  * Resolve `{source, source_confidence}` from connection-layer signals.
  *
  * Precedence:
  *   1. `?src=<known slug>`          → `deterministic`  (the canonical short tag)
- *   2. legacy `?utm_source=<slug>`  → `deterministic`  (OPS-UTM-SHORTEN-W1 backward-compat)
+ *   2. `?utm_source=` — allow-listed AI domain (`chatgpt.com`→`ai_chatgpt`, Layer 2) OR legacy short slug → `deterministic`
  *   3. Referer domain              → `deterministic`
  *   4. UA heuristic match          → `heuristic`
  *   5. nothing matched             → `unknown` / `unknown`  (default-deny)
@@ -141,9 +189,10 @@ export function resolveSource(input: {
   origin?: unknown;
   referer?: unknown;
 }): ResolvedSource {
-  // (1) explicit ?src= (deterministic), then (2) legacy ?utm_source= (backward-compat) — both
-  //     validated against the enum, so a junk value returns null and falls through.
-  const tagged = normalizeSrcParam(input.srcParam) ?? normalizeSrcParam(input.utmSource);
+  // (1) explicit ?src= (deterministic), then (2) ?utm_source= — an allow-listed AI domain
+  //     (chatgpt.com→ai_chatgpt, OPS-ATTRIBUTION-AI-REFERRAL-W1 Layer 2) OR a legacy short slug.
+  //     Both default-deny: a junk value returns null and falls through to the Referer/UA.
+  const tagged = normalizeSrcParam(input.srcParam) ?? normalizeUtmSource(input.utmSource);
   if (tagged) return { source: tagged, source_confidence: 'deterministic' };
 
   // (2) FUNNEL-FIX-ATTRIBUTION-W1: Referer domain (deterministic — a known referrer host).
@@ -164,7 +213,7 @@ export function resolveSource(input: {
 }
 
 /** Coarse medium for a resolved source (for the classified-channel panel). Pure. */
-export type SourceMedium = 'listing' | 'social' | 'agent' | 'organic' | 'referral' | 'direct';
+export type SourceMedium = 'listing' | 'social' | 'agent' | 'organic' | 'referral' | 'ai' | 'direct';
 export function mediumForSource(source: AttributionSource): SourceMedium {
   switch (source) {
     case 'x': return 'social';
@@ -175,6 +224,10 @@ export function mediumForSource(source: AttributionSource): SourceMedium {
     case 'producthunt': return 'listing';
     case 'organic': return 'organic';
     case 'github': case 'docs': case 'devto': case 'medium': case 'reddit': return 'referral';
+    // OPS-ATTRIBUTION-AI-REFERRAL-W1 — the ai_* human-referral family, grouped as its OWN medium so
+    // the scoreboard sums by `medium === 'ai'` (single-derivation), never a hardcoded slug list.
+    case 'ai_chatgpt': case 'ai_perplexity': case 'ai_claude': case 'ai_gemini':
+    case 'ai_copilot': case 'ai_grok': return 'ai';
     default: return 'direct'; // 'unknown' → the honest direct/unknown residual
   }
 }

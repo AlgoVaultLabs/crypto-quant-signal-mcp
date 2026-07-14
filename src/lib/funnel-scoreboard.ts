@@ -31,7 +31,7 @@ import {
 } from './subscriber-attribution.js';
 import { countActiveSubscriptionsByTier, type ActiveSubscriberTierCensus } from './stripe.js';
 import { getUsageStats } from './analytics.js';
-import { mediumForSource, type AttributionSource } from './attribution-sources.js';
+import { classifySource, mediumForSource, type AttributionSource } from './attribution-sources.js';
 // OPS-X402-WALLET-ATTRIBUTION-W1: operator self-settle wallets are excluded from the distinct-
 // paying-wallet CONVERSION metric (instrumentation_artifact); operator display is truncated.
 import { operatorExclusionSql, truncateWallet } from './x402-operator-wallets.js';
@@ -397,6 +397,9 @@ export interface HumanFunnel {
   transitions: FunnelTransition[];
   biggest_leak: FunnelTransition | null;
   by_channel: Array<{ channel: string; count: number; pct: number | null }>;
+  /** OPS-ATTRIBUTION-AI-REFERRAL-W1: AI-referred SIGNUPS (sum of ai_* first-touch, medium==='ai'),
+   *  classified from the stored referrer + utm_source via the SHARED classifier. A FLOOR — see note. */
+  ai_referral: { total: number; by_source: Array<{ source: string; count: number; pct: number | null }>; floor_note: string };
 }
 
 /** Human funnel (web → account → Stripe sub), windowed. Visitors is a proxy CONTEXT band
@@ -411,13 +414,30 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   const subscribeClicks = await scalar(deps, 'human_subscribe', `SELECT COUNT(*) AS c FROM signup_attribution WHERE created_at >= ?`, [iso], warnings);
   const signups = await scalar(deps, 'human_signup', `SELECT COUNT(*) AS c FROM free_keys WHERE created_at >= ?`, [iso], warnings);
   const paid = await scalar(deps, 'human_paid', `SELECT COUNT(*) AS c FROM subscriber_profiles WHERE converted_at >= ?`, [iso], warnings);
-  let chanRows: Array<{ channel: string | null }> = [];
-  try { chanRows = await deps.query<{ channel: string | null }>(`SELECT channel FROM signup_attribution WHERE created_at >= ?`, [iso]); }
+  let chanRows: Array<{ channel: string | null; referrer: string | null; utm_source: string | null }> = [];
+  try { chanRows = await deps.query<{ channel: string | null; referrer: string | null; utm_source: string | null }>(`SELECT channel, referrer, utm_source FROM signup_attribution WHERE created_at >= ?`, [iso]); }
   catch (err) { warnings.push(`human channel read failed: ${err instanceof Error ? err.message : String(err)}`); }
   const chanCounts: Record<string, number> = {};
-  for (const r of chanRows) { const c = r.channel || 'direct'; chanCounts[c] = (chanCounts[c] ?? 0) + 1; }
+  // OPS-ATTRIBUTION-AI-REFERRAL-W1: AI-referral family = signups whose stored referrer/utm classify to
+  // an ai_* slug (medium==='ai') via the SHARED classifySource (single-derivation with the /mcp path).
+  // FLOOR: signup_attribution.referrer is the SIGNUP-MOMENT referer (the /signup click origin), NOT the
+  // first-touch landing referer — so only a DIRECT click from an AI host into /signup counts today;
+  // anonymous AI visitors (land→browse→signup) light up when the web-visitor beacon lands
+  // (OPS-ATTRIBUTION-AI-REFERRAL-BEACON-W1). Reuses the same signup_attribution rows (no extra query).
+  const aiCounts: Record<string, number> = {};
+  let aiTotal = 0;
+  for (const r of chanRows) {
+    const c = r.channel || 'direct'; chanCounts[c] = (chanCounts[c] ?? 0) + 1;
+    const cls = classifySource({ referer: r.referrer, utmSource: r.utm_source });
+    if (cls.medium === 'ai') { aiCounts[cls.source] = (aiCounts[cls.source] ?? 0) + 1; aiTotal++; }
+  }
   const chanTotal = chanRows.length;
   const by_channel = Object.entries(chanCounts).sort((a, b) => b[1] - a[1]).map(([channel, count]) => ({ channel, count, pct: chanTotal > 0 ? count / chanTotal : null }));
+  const ai_referral = {
+    total: aiTotal,
+    by_source: Object.entries(aiCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => ({ source, count, pct: aiTotal > 0 ? count / aiTotal : null })),
+    floor_note: 'FLOOR — AI-referred signups (Referer/utm-classified). signup_attribution.referrer is the signup-moment referer, so only direct-to-/signup clicks from an AI host count today; anonymous AI visitors (land→browse→signup) light up with the web-visitor beacon (OPS-ATTRIBUTION-AI-REFERRAL-BEACON-W1). Referer-only ~30%; AI Overviews + native apps uncapturable.',
+  };
   const stages: FunnelStage[] = [
     { key: 'subscribe_click', label: 'Subscribe click', sublabel: 'Intent · /signup CTA', count: subscribeClicks },
     { key: 'signup', label: 'Signup', sublabel: 'Account · free key + referral', count: signups },
@@ -428,7 +448,7 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   return {
     window,
     engagement_proxy: { track_record_viewed: trackRecord, landing_cta_clicked: landingCta, caveat: 'engagement proxy — real visitor count NOT instrumented (landing is CDN/static; /signup is reachable directly). Not a funnel parent.' },
-    stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches), by_channel,
+    stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches), by_channel, ai_referral,
   };
 }
 

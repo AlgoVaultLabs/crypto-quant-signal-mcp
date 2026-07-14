@@ -26,14 +26,18 @@ describe('attribution-sources — SoT enum', () => {
       // FUNNEL-FIX-ATTRIBUTION-W1 ratified additions (LLM-client + inbound-referrer channels):
       'cursor', 'windsurf', 'cline', 'continue', 'zed', 'copilot',
       'devto', 'medium', 'lobehub', 'producthunt', 'reddit', 'organic',
+      // OPS-ATTRIBUTION-AI-REFERRAL-W1 — ai_* human-referral family (DISTINCT from agent chatgpt/claude):
+      'ai_chatgpt', 'ai_perplexity', 'ai_claude', 'ai_gemini', 'ai_copilot', 'ai_grok',
     ]) {
       expect(set.has(s as never)).toBe(true);
     }
+    // no conflation: the agent UA slug and the ai_* human-referral slug both exist and are distinct.
+    expect(set.has('chatgpt' as never) && set.has('ai_chatgpt' as never)).toBe(true);
     // A4: `direct` was intentionally dropped (an untagged connect is `unknown`).
     expect(set.has('direct' as never)).toBe(false);
-    // 15 original + 12 FUNNEL-FIX-ATTRIBUTION-W1 = 27 slugs, no duplicates.
-    expect(ATTRIBUTION_SOURCES.length).toBe(27);
-    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(27);
+    // 15 original + 12 FUNNEL-FIX-ATTRIBUTION-W1 + 6 OPS-ATTRIBUTION-AI-REFERRAL-W1 = 33 slugs, no dupes.
+    expect(ATTRIBUTION_SOURCES.length).toBe(33);
+    expect(new Set(ATTRIBUTION_SOURCES).size).toBe(33);
   });
 
   it('isAttributionSource is a correct type guard', () => {

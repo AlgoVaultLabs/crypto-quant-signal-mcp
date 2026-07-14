@@ -112,6 +112,8 @@ export function renderFunnelDashboardHtml(): string {
     "    leakExtra:'Human web-flow friction, not traffic. vs the 30\\u201355% signup-form norm.',",
     "    fixHtml:'<div class=\"fixline\"><b>Fix (deferred \\u2192 FUNNEL-FIX-HUMAN-SIGNUP-W1):</b> OAuth / one-tap \\u00b7 defer the email + referral step to AFTER first value. (Nudge layer already shipped.)</div>',",
     "    chLab:'By channel (human source)',chans:hc});",
+    // OPS-ATTRIBUTION-AI-REFERRAL-W1 — AI-referral family (human funnel · floor): AI-referred signups
+    "  var air=hf.ai_referral;if(air){var airRows=(air.by_source||[]).map(function(s){return [String(s.source).replace('ai_',''),f(s.count),pct(s.pct)];});if(!airRows.length)airRows=[['\\u2014 none yet',0,'\\u2014']];table(el('aireferral'),['AI surface','Signups','Share'],airRows);el('aireferral-note').textContent='AI-referred signups (floor): '+f(air.total)+'. '+air.floor_note;}",
     // agent channels = retention.by_channel (d7 quality signal)
     "  var ac=(d.retention&&d.retention.by_channel||[]).slice(0,4).map(function(x){return {nm:x.channel,w:Math.max(6,Math.round((x.curve.d7||0)*100)),col:(x.curve.d7>=0.3?'#56d364':(x.curve.d7>0?'#d29922':'#ff7b72')),txt:pct(x.curve.d7)+' d7',n:'n='+f(x.curve.cohort_size)};});",
     "  funnel(el('agent'),{title:'Agent funnel',path:'MCP / API \\u2192 x402 \\u00b7 no signup',money:'x402',moneyCls:'money-x402',stages:af.stages,transitions:af.transitions,leak:af.biggest_leak,",
@@ -134,7 +136,7 @@ export function renderFunnelDashboardHtml(): string {
     "  el('cross').innerHTML='<div class=\"warn\"><b>Attribution is '+pct(directPct)+' blind.</b> Most human clicks + agent connects are untagged \\u201cdirect\\u201d \\u2014 you can\\u2019t yet tell which channel produces payers. Fix = UTM every owned link + server-side ?src= first-touch.</div>'"
     ,
     "    +'<div class=\"warn\"><b>No activation-timing stage.</b> Neither funnel measures time-to-first-call (TTFC) \\u2014 the documented precursor to retention + payment. Activated counts \\u22651 call but not <em>how fast</em>.</div>';",
-    "  var sc=d.source_channels;if(sc){var scrows=sc.by_source.map(function(x){return [x.source,x.medium,f(x.count),pct(x.pct)+(x.low_confidence?' n<30':'')];});table(el('srcchan'),['Source','Medium','Sessions','Share'],scrows);setText('srccov','Coverage '+pct(sc.coverage_pct)+' classified ('+f(sc.classified)+' of '+f(sc.total)+' sessions). '+esc(sc.note));}",
+    "  var sc=d.source_channels;if(sc){var scrows=sc.by_source.map(function(x){return [x.source,x.medium,f(x.count),pct(x.pct)+(x.low_confidence?' n<30':'')];});table(el('srcchan'),['Source','Medium','Sessions','Share'],scrows);el('srccov').textContent='Coverage '+pct(sc.coverage_pct)+' classified ('+f(sc.classified)+' of '+f(sc.total)+' sessions). '+esc(sc.note);}",
     // detail panels (retained)
     "  var rt=d.retention;if(rt){var d90=function(c){return c.d90==null?'\\u2014':pct(c.d90);};",
     "    table(el('rt-tier'),['Tier','d7','d14','d30','d90','sessions'],[['\\ud83d\\udfe2 Free',pct(rt.by_tier.free.d7),pct(rt.by_tier.free.d14),pct(rt.by_tier.free.d30),d90(rt.by_tier.free),f(rt.by_tier.free.cohort_size)],['\\ud83d\\udcb3 Paid',pct(rt.by_tier.paid.d7),pct(rt.by_tier.paid.d14),pct(rt.by_tier.paid.d30),d90(rt.by_tier.paid),f(rt.by_tier.paid.cohort_size)]]);",
@@ -161,6 +163,8 @@ export function renderFunnelDashboardHtml(): string {
     '<div id="warnbox" class="warnbox"></div>',
     '<div class="splitnote"><b>Primary split = Human vs Agent.</b> The journeys don\'t share stages — "signup / referral" is human-only, "x402 pay-per-call" is agent-only, on different rails (Stripe vs x402). Channel is the secondary breakdown inside each.</div>',
     '<div class="duo"><div class="fcard" id="human"></div><div class="fcard" id="agent"></div></div>',
+    '<div class="st">AI referral (human funnel · floor) <span style="font-size:11px;font-weight:400;color:#8b949e;float:right">AI-referred signups · anonymous AI visitors land with the 1K-visitor beacon</span></div>',
+    '<div id="aireferral"></div><div class="muted" id="aireferral-note"></div>',
     '<div class="st">Agent engagement + HOLD-monetization upside <span style="font-size:11px;font-weight:400;color:#8b949e;float:right">~99% of external calls are free HOLDs today — the untapped ceiling</span></div>',
     '<div class="hold" id="hold"></div>',
     '<div class="bridge" id="bridge"></div>',
