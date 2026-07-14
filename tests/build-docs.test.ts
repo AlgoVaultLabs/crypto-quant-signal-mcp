@@ -26,10 +26,13 @@ const docsHtml = () => fs.readFileSync(path.join(REPO, 'landing', 'docs.html'), 
 
 describe('build_docs.mjs generator', () => {
   beforeAll(() => {
-    // dist must exist for the outline import (the gate runs `tsc` first; do it here so the suite
-    // is self-contained). We do NOT run build:landing — docs.html is asserted in its committed state.
-    execFileSync('npx', ['tsc'], { cwd: REPO, stdio: 'ignore' });
-  });
+    // build_docs imports dist/lib/docs-outline.js. CI + the pre-push gate run `npm run build`
+    // BEFORE the suite, so dist is normally already present — only compile if MISSING. (A full
+    // `tsc` here exceeds vitest's 10s default hookTimeout on a cold CI runner — the pre-deploy
+    // gate flaked on exactly that.) We do NOT run build:landing — docs.html is asserted committed.
+    const dist = path.join(REPO, 'dist', 'lib', 'docs-outline.js');
+    if (!fs.existsSync(dist)) execFileSync('npx', ['tsc'], { cwd: REPO, stdio: 'ignore' });
+  }, 120_000);
 
   it('--verify-partials passes (every outline partial present)', () => {
     expect(run(['--verify-partials'])).toMatch(/all \d+ outline partials present/);
