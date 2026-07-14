@@ -67,6 +67,15 @@ jobs:
           npx vitest run tests/analytics-external-only.test.ts >/dev/null 2>&1 || true
           npx vitest run
 
+      # DOCS-GENERATOR-FROM-NAV-SOT-W1 CH5: docs.html structural drift canary. Fails the push if the
+      # docs sidebar / body / anchors have fallen out of sync with the ONE outline SoT
+      # (src/lib/docs-outline.ts ← nav publicToolEntries + channel-registry), the Tools/Channels counts
+      # diverge from the registries, or a partial is missing. Network-free (imports the dist built above).
+      # Runs BEFORE build_landing --check (which fills the connect-surface + signup-flow markers build_docs
+      # emits empty). Makes docs drift + silent section omission structurally impossible.
+      - name: Docs structural drift canary (build_docs --check)
+        run: node scripts/build_docs.mjs --check
+
       # build_landing --check also covers build_tools_page + build_channel_pages (both invoked by
       # build:landing) — the /tools index + the 3 channel hub pages (/mcp /rest-api /webhooks) stay
       # in sync with their SoTs (NAV-PLATFORM-GENERATOR-W1 + CHANNEL-HUB-PAGES-GEO-W1).
