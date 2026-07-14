@@ -302,5 +302,5 @@
     "title": "Crypto Quant Signal MCP",
     "description": "Composite BUY/SELL/HOLD trade calls across leading crypto perp venues. Verified track record, Merkle-anchored on Base L2. Drop-in tutorials for LangChain, LlamaIndex, Microsoft Agent Framework, and CrewAI. Ask-AlgoVault-anything via search_knowledge + chat_knowledge tools."
   },
-  "version": "18"
+  "version": "19"
 }
