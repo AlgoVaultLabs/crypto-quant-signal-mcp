@@ -55,7 +55,8 @@ export interface DocsNode {
   codeName?: string;
   /** How build_docs sources the body. */
   body: DocsBody;
-  /** A "connect CTA" / hub href appended to the section (channels → hub, dashboard → /track-record). */
+  /** Channel nodes only: the hub href (channelHref) — the SoT for the Channels→hub mapping (CH1-tested).
+   *  Non-channel sections carry their own contextual CTAs inside their partials. */
   ctaHref?: string;
   /** True → present in the BODY (+ its anchor/aliases) but NOT a sidebar entry (tool subsections). */
   sidebarHidden?: boolean;
@@ -96,10 +97,10 @@ const TOOL_SUBSECTIONS: DocsNode[] = [
  * yet); extend the marker pattern to a 4th slot if a TRADING_PLATFORMS surface lands.
  */
 const CONNECT_H4S: DocsNode[] = [
-  { id: 'connect-mcp-client', level: 4, label: 'Connect Your MCP Client', anchor: 'connect-mcp', body: { kind: 'marker', name: 'connect-mcp-client' }, ctaHref: '/integrations' },
-  { id: 'connect-ai-agent', level: 4, label: 'Connect Your AI Agent', anchor: 'connect-ai-agent', body: { kind: 'marker', name: 'connect-ai-agent' }, ctaHref: '/integrations' },
-  { id: 'connect-exchange-kit', level: 4, label: 'Connect Your Exchange Kit', anchor: 'connect-exchange-kit', body: { kind: 'marker', name: 'connect-exchange-kit' }, ctaHref: '/integrations' },
-  { id: 'connect-trading-platform', level: 4, label: 'Connect Your Trading Platform', anchor: 'connect-trading-platform', body: { kind: 'partial' }, ctaHref: '/integrations' },
+  { id: 'connect-mcp-client', level: 4, label: 'Connect Your MCP Client', anchor: 'connect-mcp', body: { kind: 'marker', name: 'connect-mcp-client' } },
+  { id: 'connect-ai-agent', level: 4, label: 'Connect Your AI Agent', anchor: 'connect-ai-agent', body: { kind: 'marker', name: 'connect-ai-agent' } },
+  { id: 'connect-exchange-kit', level: 4, label: 'Connect Your Exchange Kit', anchor: 'connect-exchange-kit', body: { kind: 'marker', name: 'connect-exchange-kit' } },
+  { id: 'connect-trading-platform', level: 4, label: 'Connect Your Trading Platform', anchor: 'connect-trading-platform', body: { kind: 'partial' } },
 ];
 
 /**
@@ -209,7 +210,7 @@ export function buildDocsOutline(registry: readonly FeatureSpec[] = FEATURE_REGI
       anchor: 'track-record',
       body: { kind: 'group', intro: false },
       children: [
-        { id: 'live-dashboard', level: 2, label: 'Live Dashboard', anchor: 'live-dashboard', body: { kind: 'partial' }, ctaHref: '/track-record' },
+        { id: 'live-dashboard', level: 2, label: 'Live Dashboard', anchor: 'live-dashboard', body: { kind: 'partial' } },
         { id: 'verify', level: 2, label: 'Verify', anchor: 'verify', aliases: ['on-chain-verification'], body: { kind: 'partial' } },
       ],
     },
