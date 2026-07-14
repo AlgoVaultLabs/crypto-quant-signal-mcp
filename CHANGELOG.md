@@ -5,6 +5,15 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.1] - 2026-07-14
+
+### Added
+- Dedicated channel hub pages — algovault.com/mcp, /rest-api, /webhooks — each with connect-in-minutes code and a short FAQ.
+- Public tools index at algovault.com/tools + a unified Platform navigation menu across the site.
+
+### Internal
+- Funnel, attribution, and analytics-infrastructure hardening. No MCP tool surface change (tools/list = 9).
+
 ## [1.23.0] - 2026-07-03
 
 ### Changed
