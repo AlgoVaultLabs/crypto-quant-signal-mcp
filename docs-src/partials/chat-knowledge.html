@@ -1,0 +1,13 @@
+      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault a natural-language question &mdash; get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost).</p>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>question</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language question (5&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Optional model override. <code class="text-xs bg-navy-800 px-1 rounded">claude-haiku-4-5-20251001</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">claude-sonnet-4-6</code></td></tr>
+        </tbody>
+      </table>

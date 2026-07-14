@@ -1,0 +1,64 @@
+      <p class="text-gray-500 text-sm mb-6">Stop polling. Register an HTTPS endpoint and AlgoVault POSTs you a signed event the instant a new trade call fires, the regime shifts, or a scheduled scan completes &mdash; every delivery is HMAC-signed, idempotent, and retried. Needs a free or paid <code class="text-xs bg-navy-800 px-1 rounded">av_live_</code> key (get one in your <a href="https://api.algovault.com/account" class="text-mint-400 hover:underline">account</a>).</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Events</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-400 align-top w-40"><code class="text-xs">trade_call</code></td><td class="text-gray-300 text-sm">A new BUY/SELL trade call is recorded for an asset you track.</td></tr>
+          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">regime_shift</code></td><td class="text-gray-300 text-sm">The market regime for <code class="text-xs bg-navy-800 px-1 rounded">(coin, timeframe, exchange)</code> changes vs the previous call.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">scan_digest</code></td><td class="text-gray-300 text-sm">A scheduled scan completes &mdash; the ranked top-N calls for a timeframe/exchange at your chosen cadence.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscribe</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/webhooks \
+  -H "Authorization: Bearer av_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-server.com/hook",
+    "events": ["trade_call", "regime_shift"],
+    "timeframes": ["15m", "1h"],
+    "assets": ["BTC", "ETH", "top:25"],
+    "min_confidence": 60
+  }'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-6">Filters are optional &mdash; omit them to receive every call. <code class="text-xs bg-navy-800 px-1 rounded">assets</code> accepts coin symbols or a <code class="text-xs bg-navy-800 px-1 rounded">top:N</code> token (N 1&ndash;100); <code class="text-xs bg-navy-800 px-1 rounded">min_confidence</code> is 0&ndash;100. For <code class="text-xs bg-navy-800 px-1 rounded">scan_digest</code> add <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">top_n</code> (1&ndash;100) and <code class="text-xs bg-navy-800 px-1 rounded">cadence</code> (1h/4h/1d). The response includes a per-subscription <code class="text-xs bg-navy-800 px-1 rounded">secret</code> &mdash; store it to verify signatures.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Manage</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-300 align-top w-64"><code class="text-xs">GET /api/webhooks</code></td><td class="text-gray-400 text-sm">List your active subscriptions.</td></tr>
+          <tr class="param-row"><td class="text-gray-300 align-top"><code class="text-xs">DELETE /api/webhooks/:id</code></td><td class="text-gray-400 text-sm">Remove a subscription.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-300 align-top"><code class="text-xs">POST /api/webhooks/:id/test</code></td><td class="text-gray-400 text-sm">Send a sample delivery to your endpoint to verify wiring.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Delivery &amp; signature</h3>
+      <p class="text-gray-400 text-sm mb-4">Each delivery is a POST to your URL with these headers:</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-400 align-top w-56"><code class="text-xs">X-AlgoVault-Event</code></td><td class="text-gray-300 text-sm">The event type.</td></tr>
+          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Delivery</code></td><td class="text-gray-300 text-sm">Unique delivery id &mdash; use it as an idempotency key.</td></tr>
+          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Timestamp</code></td><td class="text-gray-300 text-sm">Unix seconds; reject deliveries outside your tolerance to stop replays.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Signature</code></td><td class="text-gray-300 text-sm"><code class="text-xs bg-navy-800 px-1 rounded">HMAC-SHA256(secret, "{timestamp}.{rawBody}")</code> in hex &mdash; recompute and constant-time compare before trusting a payload.</td></tr>
+        </tbody>
+      </table>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "event": "trade_call",
+  "delivery_id": "d_8f3c...",
+  "data": {
+    "type": "trade_call",
+    "coin": "BTC",
+    "timeframe": "15m",
+    "exchange": "BINANCE",
+    "call": "BUY",
+    "confidence": 72,
+    "regime": "TRENDING_UP",
+    "verify_url": "https://algovault.com/verify?id=..."
+  }
+}</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs">Endpoint URLs must be HTTPS (SSRF-guarded; internal addresses are rejected). Full reference &mdash; payload schemas, retry/backoff, and self-healing &mdash; in <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/docs/WEBHOOKS.md" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">docs/WEBHOOKS.md &rarr;</a></p>

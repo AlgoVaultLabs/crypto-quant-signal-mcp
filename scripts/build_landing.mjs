@@ -3,9 +3,11 @@
  * build_landing.mjs — inject generated HTML blocks into landing HTML
  * files between named BUILD markers. Targets:
  *
- *   landing/docs.html:
- *     BUILD:signup-flow:start / :end          — renderSignupFlowTailwind()
- *     BUILD:mcp-usage:start    / :end          — MCP_USAGE_HTML
+ *   landing/docs.html (structure owned by build_docs.mjs; this script only fills body slots):
+ *     BUILD:signup-flow:start          / :end  — renderSignupFlowTailwind()
+ *     BUILD:connect-mcp-client:start   / :end  — renderSurfaceSection(MCP_CLIENTS)   (ruling D split)
+ *     BUILD:connect-ai-agent:start     / :end  — renderSurfaceSection(AI_AGENTS)
+ *     BUILD:connect-exchange-kit:start / :end  — renderSurfaceSection(EXCHANGE_KITS)
  *
  *   landing/integrations.html (INTEGRATIONS-FULL-STACK-W1 C3):
  *     BUILD:INTEGRATIONS_INDEX_MCP_CLIENTS:start / :end   — renderIndexGrid(MCP_CLIENTS)
@@ -46,7 +48,6 @@ const require = createRequire(import.meta.url);
 const DOCS_HTML_PATH         = path.join(REPO_ROOT, 'landing', 'docs.html');
 const INTEGRATIONS_HTML_PATH = path.join(REPO_ROOT, 'landing', 'integrations.html');
 const SIGNUP_FLOW_DIST       = path.join(REPO_ROOT, 'dist', 'lib', 'signup-flow.js');
-const MCP_USAGE_DIST         = path.join(REPO_ROOT, 'dist', 'lib', 'mcp-usage-docs.js');
 const MCP_CLIENTS_DIST       = path.join(REPO_ROOT, 'dist', 'lib', 'integrations-data', 'mcp-clients.js');
 const AI_AGENTS_DIST         = path.join(REPO_ROOT, 'dist', 'lib', 'integrations-data', 'ai-agents.js');
 const EXCHANGE_KITS_DIST     = path.join(REPO_ROOT, 'dist', 'lib', 'integrations-data', 'exchange-kits.js');
@@ -104,7 +105,6 @@ async function processFile(filePath, blocks) {
 async function main() {
   const required = [
     SIGNUP_FLOW_DIST,
-    MCP_USAGE_DIST,
     MCP_CLIENTS_DIST,
     AI_AGENTS_DIST,
     EXCHANGE_KITS_DIST,
@@ -124,17 +124,22 @@ async function main() {
   }
 
   const { renderSignupFlowTailwind } = await import(SIGNUP_FLOW_DIST);
-  const { MCP_USAGE_HTML } = await import(MCP_USAGE_DIST);
   // Default-export CJS modules — use createRequire to avoid ESM-interop double-wrap.
   const MCP_CLIENTS = require(MCP_CLIENTS_DIST).default;
   const AI_AGENTS = require(AI_AGENTS_DIST).default;
   const EXCHANGE_KITS = require(EXCHANGE_KITS_DIST).default;
-  const { renderIndexGrid } = require(RENDER_DIST);
+  const { renderIndexGrid, renderSurfaceSection } = require(RENDER_DIST);
 
-  // landing/docs.html blocks
+  // landing/docs.html blocks. DOCS-GENERATOR-FROM-NAV-SOT-W1 CH3 (ruling D): the former single
+  // `mcp-usage` block (renderIntegrationH2 → all 3 surfaces at once) is SPLIT into 3 slot markers
+  // that build_docs emits empty at the Ecosystem "Connect Your …" H4s, each filled from its
+  // integrations-data surface via renderSurfaceSection — so docs auto-follows a new integration.
+  // build_docs owns the page structure; build_landing only fills these body slots.
   const docsBlocks = [
-    { name: 'mcp-usage',   content: MCP_USAGE_HTML },
-    { name: 'signup-flow', content: renderSignupFlowTailwind() },
+    { name: 'connect-mcp-client',   content: renderSurfaceSection(MCP_CLIENTS) },
+    { name: 'connect-ai-agent',     content: renderSurfaceSection(AI_AGENTS) },
+    { name: 'connect-exchange-kit', content: renderSurfaceSection(EXCHANGE_KITS) },
+    { name: 'signup-flow',          content: renderSignupFlowTailwind() },
   ];
 
   // landing/integrations.html blocks (INTEGRATIONS-FULL-STACK-W1 C3)

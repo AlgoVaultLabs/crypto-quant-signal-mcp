@@ -1,0 +1,56 @@
+      <p class="text-gray-500 text-sm mb-6">Every call is hashed and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">How It Works</h3>
+      <div class="space-y-3 mb-8">
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">1</span>
+          <p class="text-gray-400 text-sm">Every BUY/SELL call is hashed using <code class="text-xs bg-navy-800 px-1 rounded">keccak256(coin, signal, confidence, timeframe, timestamp, price)</code> at the moment it's generated</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">2</span>
+          <p class="text-gray-400 text-sm">Hashes accumulate throughout the day</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">3</span>
+          <p class="text-gray-400 text-sm">At 00:05 UTC, all new hashes are assembled into a Merkle tree</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">4</span>
+          <p class="text-gray-400 text-sm">The Merkle root is published to the <code class="text-xs bg-navy-800 px-1 rounded">MerkleRootRegistry</code> smart contract on Base L2</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">5</span>
+          <p class="text-gray-400 text-sm">Anyone can verify that a specific call existed in a batch by checking its Merkle proof against the on-chain root</p>
+        </div>
+      </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Verification Endpoints</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/verify-signal?signalId=<ID>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">GET /api/verify-signal?signalId=&lt;ID&gt;</code></pre>
+        <p class="text-gray-500 text-xs mt-2">Returns: call details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
+      </div>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/merkle-batches');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">GET /api/merkle-batches</code></pre>
+        <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, call counts, tx hashes, and Basescan links.</p>
+      </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Visual Verification</h3>
+      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-400">Address</td><td class="text-gray-300"><code class="text-xs">0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81</code></td></tr>
+          <tr class="param-row"><td class="text-gray-400">Chain</td><td class="text-gray-300">Base (chain ID 8453)</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400">Explorer</td><td><a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-mint-400 hover:underline text-sm">View on Basescan &rarr;</a></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What This Proves</h3>
+      <ul class="space-y-2 text-sm text-gray-400">
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Calls were recorded BEFORE outcomes were known</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No call can be retroactively edited or deleted</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> The complete set of calls in each batch is locked &mdash; cherry-picking is detectable via sequential call IDs</li>
+      </ul>

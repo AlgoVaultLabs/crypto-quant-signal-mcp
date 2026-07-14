@@ -1,0 +1,45 @@
+      <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences across 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Returns top arbitrage opportunities ranked by annualized spread, with a per-leg liquidity filter so only tradeable spreads surface.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>minSpreadBps</td><td class="text-gray-400">number</td><td class="text-gray-400">Minimum spread in basis points to include. Default: <code class="text-xs bg-navy-800 px-1 rounded">5</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max results to return. Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code>. Free tier: max 5</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "opportunities": [
+    {
+      "coin": "ETH",
+      "rates": {
+        "HlPerp": 0.000125,
+        "BinPerp": -0.000042,
+        "BybitPerp": -0.000038
+      },
+      "bestArb": {
+        "longVenue": "Binance",
+        "shortVenue": "Hyperliquid",
+        "spreadBps": 13.4,
+        "annualizedPct": 117.3,
+        "direction": "Long Binance / Short Hyperliquid"
+      }
+    }
+  ],
+  "scannedPairs": 245,
+  "timestamp": 1712764800,
+  "_algovault": {
+    "version": "1.10.0",
+    "tool": "scan_funding_arb",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-execution-mcp"]
+  }
+}</code></pre>
+      </div>

@@ -1,0 +1,47 @@
+
+      <p class="text-gray-300 text-sm mb-2 mt-4"><strong>1. Discovery query</strong> &mdash; agent asks for trade-call docs before calling <code class="text-xs">get_trade_call</code>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">search_knowledge({
+  query: "how do I get a trade call with stop loss for BTC"
+})
+// → ranked snippets including get_trade_call describe-text + integration excerpts</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>2. Comparison query</strong> &mdash; ask for synthesis across two tool descriptions:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">chat_knowledge({
+  question: "what's the difference between get_trade_call and get_market_regime"
+})
+// → synthesized answer with [source: ...] citations</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>3. Integration discovery</strong> &mdash; agent finds the LangChain tutorial:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">search_knowledge({
+  query: "how do I integrate with LangChain"
+})
+// → LangChain integration tutorial ranks first, with full code snippet</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>4. Direct HTTP &mdash; search</strong>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"BTC stop loss","limit":3}'
+
+# → { "query": "BTC stop loss", "total_results": 3, "results": [...], "_algovault": {...} }</code></pre>
+      </div>
+
+      <p class="text-gray-300 text-sm mb-2"><strong>5. Direct HTTP &mdash; chat</strong>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question":"how do I get a BTC trade call","model":"claude-haiku-4-5-20251001"}'
+
+# → { "question": "...", "answer": "...", "citations": [...], "model": "...", "_algovault": {...} }</code></pre>
+      </div>

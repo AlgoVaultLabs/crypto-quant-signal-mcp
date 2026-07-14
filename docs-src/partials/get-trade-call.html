@@ -1,0 +1,45 @@
+      <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning across <span data-tr-field="exchange_count">5</span> exchanges.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <code class="text-xs bg-navy-800 px-1 rounded">BTC</code>, <code class="text-xs bg-navy-800 px-1 rounded">ETH</code>, <code class="text-xs bg-navy-800 px-1 rounded">TSLA</code>, <code class="text-xs bg-navy-800 px-1 rounded">GOLD</code>. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded">1m</code> <code class="text-xs bg-navy-800 px-1 rounded">3m</code> <code class="text-xs bg-navy-800 px-1 rounded">5m</code> <code class="text-xs bg-navy-800 px-1 rounded">15m</code> <code class="text-xs bg-navy-800 px-1 rounded">30m</code> <code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">2h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">8h</code> <code class="text-xs bg-navy-800 px-1 rounded">12h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">15m</code></td></tr>
+          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">HL</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include human-readable reasoning. Default: <code class="text-xs bg-navy-800 px-1 rounded">true</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "call": "BUY",
+  "confidence": 78,
+  "price": 84250.50,
+  "indicators": {
+    "funding_rate": 0.0001,
+    "funding_24h_avg": 0.00008,
+    "funding_state": "NORMAL",
+    "oi_change_pct": 2.4,
+    "volume_24h": 2381602633,
+    "trend_persistence": "HIGH",
+    "breakout_pending": "INACTIVE"
+  },
+  "regime": "TRENDING_UP",
+  "reasoning": "Trending regime, upward bias. Funding pressure mild. Volatility neither expanding nor compressed. Trend persistence elevated; momentum structure. Strong conviction from aligned signals.",
+  "timestamp": 1712764800,
+  "coin": "BTC",
+  "timeframe": "1h",
+  "_algovault": {
+    "version": "1.10.0",
+    "tool": "get_trade_call",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
+  }
+}</code></pre>
+      </div>

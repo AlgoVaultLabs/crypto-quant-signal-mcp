@@ -51,6 +51,8 @@ export interface DocsNode {
   anchor: string;
   /** Legacy anchor ids to ALSO emit (empty <span id>) so inbound links never 404. */
   aliases?: string[];
+  /** Canonical MCP tool name shown alongside the friendly heading (tool nodes only). */
+  codeName?: string;
   /** How build_docs sources the body. */
   body: DocsBody;
   /** A "connect CTA" / hub href appended to the section (channels → hub, dashboard → /track-record). */
@@ -73,8 +75,10 @@ const CHANNEL_ANCHOR_ALIASES: Record<string, string[]> = {
   // kept DISTINCT from the MCP_CLIENTS surface table (CH2 ruling D). #connect-mcp
   // stays on the Ecosystem "Connect Your MCP Client" surface (its content home).
   mcp: ['testing-with-curl'],
-  // REST API merges the x402 + API-key HTTP reference sections.
-  'rest-api': ['x402', 'knowledge-tools-api'],
+  // NB: #x402 + #knowledge-tools-api are NOT outline aliases — they live POSITIONED on their
+  // <h4>s inside channel-rest-api.html so build_channel_pages' per-anchor extractFirstPre()
+  // resolves each to its own code block. Bunching them here as adjacent top-of-section spans
+  // broke that extraction (the /rest-api hub code-ref link flipped). Verified present by the CH4 grep.
 };
 
 /** Tools subsections — migrated + generalised from #knowledge-tools-*, body-only (not sidebar H3s). */
@@ -118,6 +122,7 @@ function buildToolNodes(registry: readonly FeatureSpec[]): DocsNode[] {
     label: e.label, // the ONE label source (TOOL_LABELS) — nav + /tools + docs
     anchor: e.anchor,
     aliases: TOOL_ANCHOR_ALIASES[e.name] ?? [],
+    codeName: e.name, // the canonical tool name, rendered beside the friendly heading
     body: { kind: 'partial' as const },
   }));
 }

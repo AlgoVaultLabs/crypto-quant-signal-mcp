@@ -1,0 +1,68 @@
+      <p class="text-gray-400 text-sm mb-6">Two keyless / keyed HTTP rails for non-MCP consumers: <strong>x402</strong> pay-per-call (USDC on Base, no signup) for autonomous agents, and plain <strong>API-key</strong> <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> endpoints for the knowledge tools. Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>.</p>
+            <h4 id="x402" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-2">x402 Pay-Per-Call (USDC on Base)</h4>
+      <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <ol class="list-decimal pl-5 space-y-2.5">
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Sign &amp; retry</span><span class="text-gray-400"> &mdash; your x402 client signs an ERC-3009 <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">transferWithAuthorization</code> and retries with the signed <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">X-PAYMENT</code> header. The facilitator submits it on-chain, so your agent pays no gas.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Get your verdict</span><span class="text-gray-400"> &mdash; the server verifies the signature and returns the result immediately; settlement confirms on Base in ~2 seconds.</span></li>
+        </ol>
+      </div>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick start (TypeScript)</h4>
+      <p class="text-gray-400 text-sm mb-3 leading-relaxed">The official <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code> client wraps <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">fetch</code> and runs the 402 &rarr; sign &rarr; retry handshake for you. Your wallet just needs USDC on Base.</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
+import { wrapFetchWithPayment } from "x402-fetch";
+import { createWalletClient, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base } from "viem/chains";
+
+const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+const wallet  = createWalletClient({ account, chain: base, transport: http() });
+const fetchWithPay = wrapFetchWithPayment(fetch, wallet);
+
+// Pays automatically on the 402, then returns the verdict
+const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ coin: "BTC", timeframe: "1h" }),
+});
+
+const verdict = await res.json();
+console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
+      </div>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Endpoint</th>
+          <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_trade_call</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT 1m&ndash;5m: up to $0.05)</span></td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/scan_funding_arb</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.01</td></tr>
+          <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>. <span class="text-emerald-400">HOLD verdicts are free</span> &mdash; when the engine says &ldquo;don&rsquo;t trade&rdquo;, there&rsquo;s no charge and no settlement (see the Free HOLD Policy above).</p>
+      <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
+            <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
+      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Cache</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/search</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"query": "string", "limit": 10}</code></td><td class="text-gray-400 text-sm px-4 py-3">public, max-age=300</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/chat</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"question": "string", "model": "..."}</code></td><td class="text-gray-400 text-sm px-4 py-3">no-store (per-user)</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-6">Error contract: <code class="text-xs">INVALID_QUERY</code> / <code class="text-xs">QUERY_TOO_SHORT</code> / <code class="text-xs">QUERY_TOO_LONG</code> / <code class="text-xs">INVALID_QUESTION</code> / <code class="text-xs">QUESTION_TOO_SHORT</code> / <code class="text-xs">QUESTION_TOO_LONG</code> / <code class="text-xs">INVALID_MODEL</code> / <code class="text-xs">CHAT_QUOTA_EXHAUSTED</code> / <code class="text-xs">INTERNAL_ERROR</code>. All return JSON <code class="text-xs">{"code": "...", "message": "..."}</code>.</p>
+      <p class="text-gray-400 text-sm mt-8"><a href="https://algovault.com/rest-api" class="text-mint-400 hover:underline font-medium">Full REST API guide &rarr;</a></p>

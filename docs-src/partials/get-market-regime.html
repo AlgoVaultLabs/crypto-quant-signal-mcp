@@ -1,0 +1,41 @@
+      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across <span data-tr-field="exchange_count">5</span> exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "regime": "TRENDING_UP",
+  "confidence": 85,
+  "metrics": {
+    "adx_interpretation": "Strong trend",
+    "volatility_interpretation": "Normal",
+    "price_structure": "HIGHER_HIGHS",
+    "trend_strength": "STRONG",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 3.2x above CEX avg — longs concentrated on HL"
+  },
+  "suggestion": "Strong uptrend detected. Favor long positions with trend-following strategies.",
+  "timestamp": 1712764800,
+  "coin": "BTC",
+  "timeframe": "4h",
+  "_algovault": {
+    "version": "1.10.0",
+    "tool": "get_market_regime",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
+  }
+}</code></pre>
+      </div>

@@ -1,0 +1,13 @@
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Use case</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Pick</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Why</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Param lookup before tool call</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">search_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Free, fast (no LLM call), returns the exact describe-text snippet.</td></tr>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">"How do I integrate with X"</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">search_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Integration tutorials are indexed verbatim. BM25 ranks the right tutorial first.</td></tr>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium">Compare two tools</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">chat_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Synthesis across multiple snippets needs an LLM. Cited answer beats raw retrieval.</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium">"Write me code for X"</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">chat_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Pattern synthesis from code examples needs reasoning. Free tier covers 10/month.</td></tr>
+        </tbody>
+      </table>

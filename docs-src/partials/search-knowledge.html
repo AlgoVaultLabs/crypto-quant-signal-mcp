@@ -1,0 +1,13 @@
+      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.</p>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language search query (3&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+        </tbody>
+      </table>

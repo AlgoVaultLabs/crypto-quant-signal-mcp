@@ -316,31 +316,32 @@ tailwind.config = {
          (Tools / Channels / Ecosystem / Verify). HTTP API + Rate limits moved from
          Knowledge Tools → Channels; all anchors preserved (no dead links). -->
     <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3 px-3">On this page</div>
-    <a href="#quick-start" class="sidebar-link">Quick Start</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Tools</div>
-    <a href="#get-trade-signal" class="sidebar-link">get_trade_call</a>
-    <a href="#scan-funding-arb" class="sidebar-link">scan_funding_arb</a>
-    <a href="#get-market-regime" class="sidebar-link">get_market_regime</a>
-    <a href="#knowledge-tools-overview" class="sidebar-link">Knowledge Tools</a>
-    <a href="#knowledge-tools-search" class="sidebar-link">search_knowledge</a>
-    <a href="#knowledge-tools-chat" class="sidebar-link">chat_knowledge</a>
-    <a href="#knowledge-tools-when" class="sidebar-link">When to use which</a>
-    <a href="#knowledge-tools-examples" class="sidebar-link">Worked examples</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Channels</div>
-    <a href="#connect-mcp" class="sidebar-link">Connect via MCP</a>
-    <a href="#rest-api" class="sidebar-link">REST / HTTP API</a>
-    <a href="#knowledge-tools-api" class="sidebar-link">HTTP API reference</a>
-    <a href="#knowledge-tools-quota" class="sidebar-link">Rate limits &amp; cost</a>
-    <a href="#webhooks" class="sidebar-link">Webhooks</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Ecosystem</div>
-    <a href="#connect-ai-agent" class="sidebar-link">Connect Your AI Agent</a>
-    <a href="#connect-exchange-kit" class="sidebar-link">Connect Your Exchange Kit</a>
-    <a href="#usage-examples" class="sidebar-link">Skills &amp; Usage Examples</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">Verify</div>
-    <a href="#on-chain-verification" class="sidebar-link">On-Chain Verification</a>
-    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2 px-3">More</div>
-    <a href="#pricing" class="sidebar-link">Pricing &amp; Limits</a>
-    <a href="#faq" class="sidebar-link">FAQ</a>
+        <a href="#quick-start" class="sidebar-link" style="padding-left:22px">Quick Start</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:12px">Platform</div>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:22px">Tools</div>
+    <a href="#get-trade-call" class="sidebar-link" style="padding-left:32px">Trade Call</a>
+    <a href="#get-market-regime" class="sidebar-link" style="padding-left:32px">Market Regime</a>
+    <a href="#scan-funding-arb" class="sidebar-link" style="padding-left:32px">Funding Arbitrage</a>
+    <a href="#scan-trade-calls" class="sidebar-link" style="padding-left:32px">Trade Call Scanner</a>
+    <a href="#chat-knowledge" class="sidebar-link" style="padding-left:32px">Knowledge Chat</a>
+    <a href="#search-knowledge" class="sidebar-link" style="padding-left:32px">Knowledge Search</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:22px">Channels</div>
+    <a href="#mcp" class="sidebar-link" style="padding-left:32px">MCP Server</a>
+    <a href="#rest-api" class="sidebar-link" style="padding-left:32px">REST API</a>
+    <a href="#webhooks" class="sidebar-link" style="padding-left:32px">Webhooks</a>
+    <a href="#telegram" class="sidebar-link" style="padding-left:32px">Telegram Bot</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:22px">Ecosystem</div>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:32px">Integration</div>
+    <a href="#connect-mcp" class="sidebar-link" style="padding-left:42px">Connect Your MCP Client</a>
+    <a href="#connect-ai-agent" class="sidebar-link" style="padding-left:42px">Connect Your AI Agent</a>
+    <a href="#connect-exchange-kit" class="sidebar-link" style="padding-left:42px">Connect Your Exchange Kit</a>
+    <a href="#connect-trading-platform" class="sidebar-link" style="padding-left:42px">Connect Your Trading Platform</a>
+    <a href="#usage-examples" class="sidebar-link" style="padding-left:32px">Skills & Usage Examples</a>
+    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold mt-5 mb-2" style="padding-left:12px">Track Record</div>
+    <a href="#live-dashboard" class="sidebar-link" style="padding-left:22px">Live Dashboard</a>
+    <a href="#verify" class="sidebar-link" style="padding-left:22px">Verify</a>
+    <a href="#pricing" class="sidebar-link" style="padding-left:12px">Pricing</a>
+    <a href="#faq" class="sidebar-link" style="padding-left:12px">FAQ</a>
   </aside>
 
   <!-- Main content -->
@@ -349,11 +350,8 @@ tailwind.config = {
     <h1 class="text-3xl font-bold text-white mb-2">Documentation</h1>
     <p class="text-gray-500 text-sm mb-10">API reference, usage examples, and pricing for AI agents and human developers.</p>
 
-    <!-- ============ QUICK START ============ -->
-    <section id="quick-start" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Quick Start
-      </h2>
+        <section id="quick-start" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Quick Start</h2>
       <p class="text-gray-400 text-sm mb-4">Add AlgoVault to Claude Desktop in under 30 seconds. Paste this into your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">claude_desktop_config.json</code>:</p>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
@@ -374,50 +372,22 @@ tailwind.config = {
       <p class="text-gray-400 text-sm mt-4">Your agent can also ask AlgoVault to teach itself how to use the tools &mdash; see <a href="#knowledge-tools-overview" class="text-mint-400 hover:underline">Knowledge Tools</a> below.</p>
     </section>
 
-    <!-- ============ RAW HTTP TESTING ============ -->
-    <section id="testing-with-curl" class="mb-16">
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Testing with raw HTTP / curl</h3>
-      <p class="text-gray-400 text-sm mb-4">If you want to test your API key without an MCP client (Claude Desktop, Cursor, Claude Code), the MCP <em>Streamable HTTP</em> protocol requires a 3-step handshake before <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code>:</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
-
-# 1. initialize — captures session-id from response headers
-SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $AV_KEY" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
-  | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
-
-# 2. notify "initialized" (required by MCP protocol)
-curl -sS -X POST https://api.algovault.com/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $AV_KEY" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
-
-# 3. now call tools/call
-curl -sS -X POST https://api.algovault.com/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $AV_KEY" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
-      </div>
-      <p class="text-gray-500 text-xs">Most users won't need this — Claude Desktop / Cursor / Claude Code MCP clients handle the handshake automatically. Use this only for direct integration into a non-MCP system or for debugging.</p>
-    </section>
-
-    <!-- ============ API REFERENCE ============ -->
     <div class="border-t border-white/5 mb-16"></div>
 
-    <!-- get_trade_call (canonical, v1.10.0); alias get_trade_call kept for back-compat -->
-    <a id="get-trade-signal" aria-hidden="true"></a>
-    <section id="get-trade-call" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> get_trade_call <span class="text-gray-500 text-xs">(alias: get_trade_signal)</span>
-      </h2>
+    <section id="platform" class="mb-16">
+      <h2 class="text-2xl font-bold text-white mb-5 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Platform</h2>
+
+    </section>
+
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="tools" class="mb-16"><span id="knowledge-tools-overview" aria-hidden="true"></span><span id="knowledge-tools" aria-hidden="true"></span>
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Tools</h2>
+      <p class="text-gray-400 text-sm mb-8">Six MCP tools: a directional <strong>trade call</strong>, <strong>market-regime</strong> classification, cross-venue <strong>funding arbitrage</strong>, a multi-asset <strong>trade-call scanner</strong>, and two <strong>knowledge tools</strong> your agent can query to learn the API before calling it. Each is callable over MCP and (where flagged) the REST/x402 HTTP API, webhooks, and the Telegram bot &mdash; see <a href="#channels" class="text-mint-400 hover:underline">Channels</a>.</p>
+    </section>
+
+    <section id="get-trade-call" class="mb-16"><span id="get-trade-signal" aria-hidden="true"></span>
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Trade Call <span class="text-gray-500 text-sm font-normal">get_trade_call</span></h3>
       <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning across <span data-tr-field="exchange_count">5</span> exchanges.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
@@ -465,11 +435,53 @@ curl -sS -X POST https://api.algovault.com/mcp \
       </div>
     </section>
 
-    <!-- scan_funding_arb -->
+    <section id="get-market-regime" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Market Regime <span class="text-gray-500 text-sm font-normal">get_market_regime</span></h3>
+      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across <span data-tr-field="exchange_count">5</span> exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "regime": "TRENDING_UP",
+  "confidence": 85,
+  "metrics": {
+    "adx_interpretation": "Strong trend",
+    "volatility_interpretation": "Normal",
+    "price_structure": "HIGHER_HIGHS",
+    "trend_strength": "STRONG",
+    "cross_venue_funding_sentiment": "BULLISH_BIAS",
+    "funding_divergence_note": "HL funding 3.2x above CEX avg — longs concentrated on HL"
+  },
+  "suggestion": "Strong uptrend detected. Favor long positions with trend-following strategies.",
+  "timestamp": 1712764800,
+  "coin": "BTC",
+  "timeframe": "4h",
+  "_algovault": {
+    "version": "1.10.0",
+    "tool": "get_market_regime",
+    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
+  }
+}</code></pre>
+      </div>
+    </section>
+
     <section id="scan-funding-arb" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> scan_funding_arb
-      </h2>
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Funding Arbitrage <span class="text-gray-500 text-sm font-normal">scan_funding_arb</span></h3>
       <p class="text-gray-400 text-sm mb-5">Scans cross-venue funding rate differences across 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Returns top arbitrage opportunities ranked by annualized spread, with a per-leg liquidity filter so only tradeable spreads surface.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
@@ -517,12 +529,9 @@ curl -sS -X POST https://api.algovault.com/mcp \
       </div>
     </section>
 
-    <!-- get_market_regime -->
-    <section id="get-market-regime" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> get_market_regime
-      </h2>
-      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across <span data-tr-field="exchange_count">5</span> exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+    <section id="scan-trade-calls" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Trade Call Scanner <span class="text-gray-500 text-sm font-normal">scan_trade_calls</span></h3>
+      <p class="text-gray-400 text-sm mb-5">Scans a whole promoted-venue universe in one call and returns the top-ranked <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">get_trade_call</code> verdicts, ordered by a selectable lens (open interest, OI change, volume, momentum, &hellip;). One request instead of N per-asset calls &mdash; ideal for an agent building a watchlist or a scheduled digest.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -532,78 +541,35 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
         </tr></thead>
         <tbody>
-          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
-          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+          <tr class="param-row"><td>topN</td><td class="text-gray-400">number</td><td class="text-gray-400">Universe size to evaluate before ranking (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">20</code></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval for each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">1h</code></td></tr>
+          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Promoted venue to scan. <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> (default), plus other promoted venues.</td></tr>
+          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Universe-selection lens: <code class="text-xs bg-navy-800 px-1 rounded">oi</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">oi_change</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume</code>, &hellip; See <code class="text-xs bg-navy-800 px-1 rounded">/capabilities</code> for the live lens set.</td></tr>
+          <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked calls to return (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+          <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop calls below this confidence (0&ndash;100). Optional.</td></tr>
+          <tr class="param-row"><td>includeHolds</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include HOLD verdicts in the results. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
         </tbody>
       </table>
 
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example</h3>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">{
-  "regime": "TRENDING_UP",
-  "confidence": 85,
-  "metrics": {
-    "adx_interpretation": "Strong trend",
-    "volatility_interpretation": "Normal",
-    "price_structure": "HIGHER_HIGHS",
-    "trend_strength": "STRONG",
-    "cross_venue_funding_sentiment": "BULLISH_BIAS",
-    "funding_divergence_note": "HL funding 3.2x above CEX avg — longs concentrated on HL"
-  },
-  "suggestion": "Strong uptrend detected. Favor long positions with trend-following strategies.",
-  "timestamp": 1712764800,
-  "coin": "BTC",
-  "timeframe": "4h",
-  "_algovault": {
-    "version": "1.10.0",
-    "tool": "get_market_regime",
-    "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
-  }
-}</code></pre>
+        <pre><code class="text-sm text-gray-300">scan_trade_calls({
+  topN: 20,
+  timeframe: "1h",
+  exchange: "BINANCE",
+  rankBy: "oi",
+  limit: 10
+})
+// &rarr; the 10 highest-ranked assets, each a get_trade_call verdict
+//    (call, confidence, regime, price, indicators, _algovault)</code></pre>
       </div>
+      <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan. HOLD verdicts are free.</p>
     </section>
 
-    <!-- ============ KNOWLEDGE TOOLS ============ -->
-    <div class="border-t border-white/5 mb-16"></div>
-
-    <section id="knowledge-tools" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Knowledge Tools
-      </h2>
-      <p class="text-gray-400 text-sm mb-8">Two MCP tools that let your AI agent learn how to use AlgoVault before calling the trading tools. Search the docs lexically; ask synthesized questions; never invent a parameter shape again.</p>
-
-      <h3 id="knowledge-tools-overview" class="text-lg font-semibold text-white mb-3 mt-8 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> What are knowledge tools
-      </h3>
-      <p class="text-gray-400 text-sm mb-3">Most MCP-aware agents read <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/list</code> once, then invent parameter shapes when calling tools. AlgoVault ships two meta-tools that let an agent self-serve documentation instead:</p>
-      <ul class="text-gray-400 text-sm space-y-2 mb-4 list-disc pl-5">
-        <li><code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">search_knowledge</code> &mdash; BM25 lexical search over every tool description, response shape, integration tutorial, and code example.</li>
-        <li><code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">chat_knowledge</code> &mdash; natural-language answer with citations, grounded in the same bundle.</li>
-      </ul>
-      <p class="text-gray-500 text-xs mb-6">Both tools query a knowledge bundle auto-rebuilt within 30 seconds of every release &mdash; no stale answers.</p>
-
-      <h3 id="knowledge-tools-search" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> search_knowledge
-      </h3>
-      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.</p>
-      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
-        <thead><tr class="border-b border-white/5">
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
-        </tr></thead>
-        <tbody>
-          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language search query (3&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
-        </tbody>
-      </table>
-
-      <h3 id="knowledge-tools-chat" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> chat_knowledge
-      </h3>
+    <section id="chat-knowledge" class="mb-16"><span id="knowledge-tools-chat" aria-hidden="true"></span>
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Knowledge Chat <span class="text-gray-500 text-sm font-normal">chat_knowledge</span></h3>
       <p class="text-gray-400 text-sm mb-5">Ask AlgoVault a natural-language question &mdash; get a synthesized answer with citations, grounded in the canonical knowledge bundle (every MCP tool description, response shape, integration tutorial, and code example). Use this when you need an explanation, code pattern, or "how do I" answer. For raw ranked snippets without LLM synthesis, use search_knowledge (faster, no quota cost).</p>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -617,10 +583,27 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <tr class="param-row" style="border-bottom:none"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Optional model override. <code class="text-xs bg-navy-800 px-1 rounded">claude-haiku-4-5-20251001</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">claude-sonnet-4-6</code></td></tr>
         </tbody>
       </table>
+    </section>
 
-      <h3 id="knowledge-tools-when" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> When to use which
-      </h3>
+    <section id="search-knowledge" class="mb-16"><span id="knowledge-tools-search" aria-hidden="true"></span>
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Knowledge Search <span class="text-gray-500 text-sm font-normal">search_knowledge</span></h3>
+      <p class="text-gray-400 text-sm mb-5">Ask AlgoVault any question about its MCP tools, response shapes, integration patterns (LangChain / LlamaIndex / MAF / CrewAI), or code examples. Returns ranked snippets from the canonical knowledge bundle. Use this BEFORE attempting any tool call to confirm correct parameter usage and avoid hallucinating tool shapes. Fast (BM25 lexical search, no LLM call, no quota cost). For natural-language synthesized answers, use chat_knowledge instead.</p>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language search query (3&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="tools-when-to-use" class="mb-16"><span id="knowledge-tools-when" aria-hidden="true"></span>
+      <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> When to use which</h4>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Use case</th>
@@ -634,10 +617,10 @@ curl -sS -X POST https://api.algovault.com/mcp \
           <tr><td class="text-white text-sm px-4 py-3 font-medium">"Write me code for X"</td><td class="text-mint-400 text-sm px-4 py-3"><code class="text-xs">chat_knowledge</code></td><td class="text-gray-400 text-sm px-4 py-3">Pattern synthesis from code examples needs reasoning. Free tier covers 10/month.</td></tr>
         </tbody>
       </table>
+    </section>
 
-      <h3 id="knowledge-tools-examples" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Worked examples
-      </h3>
+    <section id="tools-worked-examples" class="mb-16"><span id="knowledge-tools-examples" aria-hidden="true"></span>
+      <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Worked examples</h4>
 
       <p class="text-gray-300 text-sm mb-2 mt-4"><strong>1. Discovery query</strong> &mdash; agent asks for trade-call docs before calling <code class="text-xs">get_trade_call</code>:</p>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
@@ -685,27 +668,10 @@ curl -sS -X POST https://api.algovault.com/mcp \
 
 # → { "question": "...", "answer": "...", "citations": [...], "model": "...", "_algovault": {...} }</code></pre>
       </div>
+    </section>
 
-      <h3 id="knowledge-tools-api" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> HTTP API
-      </h3>
-      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
-        <thead><tr class="border-b border-white/5">
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Cache</th>
-        </tr></thead>
-        <tbody>
-          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/search</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"query": "string", "limit": 10}</code></td><td class="text-gray-400 text-sm px-4 py-3">public, max-age=300</td></tr>
-          <tr><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/chat</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"question": "string", "model": "..."}</code></td><td class="text-gray-400 text-sm px-4 py-3">no-store (per-user)</td></tr>
-        </tbody>
-      </table>
-      <p class="text-gray-500 text-xs mb-6">Error contract: <code class="text-xs">INVALID_QUERY</code> / <code class="text-xs">QUERY_TOO_SHORT</code> / <code class="text-xs">QUERY_TOO_LONG</code> / <code class="text-xs">INVALID_QUESTION</code> / <code class="text-xs">QUESTION_TOO_SHORT</code> / <code class="text-xs">QUESTION_TOO_LONG</code> / <code class="text-xs">INVALID_MODEL</code> / <code class="text-xs">CHAT_QUOTA_EXHAUSTED</code> / <code class="text-xs">INTERNAL_ERROR</code>. All return JSON <code class="text-xs">{"code": "...", "message": "..."}</code>.</p>
-
-      <h3 id="knowledge-tools-quota" class="text-lg font-semibold text-white mb-3 mt-10 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Rate limits &amp; cost
-      </h3>
+    <section id="tools-rate-limits" class="mb-16"><span id="knowledge-tools-quota" aria-hidden="true"></span>
+      <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Rate limits & cost</h4>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-32">Tier</th>
@@ -723,17 +689,208 @@ curl -sS -X POST https://api.algovault.com/mcp \
       <p class="text-gray-500 text-xs">Cost transparency: <code class="text-xs">chat_knowledge</code> costs about $0.002 per call with prompt caching. Quota resets at the first of each UTC month.</p>
     </section>
 
-    <!-- ============ INTEGRATION ============ -->
     <div class="border-t border-white/5 mb-16"></div>
-    <span id="mcp" style="display:block;scroll-margin-top:80px" aria-hidden="true"></span><!-- CHANNEL-HUB-PAGES-GEO-W1: canonical #mcp anchor — OUTSIDE the generated mcp-usage block so build_landing regeneration can't wipe it; aliases the #connect-mcp MCP section. -->
 
-      <!-- BUILD:mcp-usage:start -->
-<section id="integration" class="mb-16">
-  <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-    <span class="text-mint-400">&#9670;</span> Integration
-  </h2>
-  <p class="text-gray-400 text-sm mb-8">Drop AlgoVault into any MCP-compatible client, any major agent framework, or any exchange Agent Trade Kit. Pick your path below.</p>
+    <section id="channels" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Channels</h2>
+      <p class="text-gray-400 text-sm mb-8">Four ways to reach the same engine: the <a href="#mcp" class="text-mint-400 hover:underline">MCP server</a>, the <a href="#rest-api" class="text-mint-400 hover:underline">REST / x402 HTTP API</a>, outbound <a href="#webhooks" class="text-mint-400 hover:underline">webhooks</a>, and the <a href="#telegram" class="text-mint-400 hover:underline">Telegram bot</a>. Pick the surface that fits your stack &mdash; each links to a dedicated guide.</p>
+    </section>
 
+    <section id="mcp" class="mb-16"><span id="testing-with-curl" aria-hidden="true"></span>
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> MCP Server</h3>
+      <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) runs the handshake for you &mdash; see <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. To wire a non-MCP system or debug directly, the MCP <em>Streamable HTTP</em> transport needs a 3-step handshake before <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code>:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
+
+# 1. initialize — captures session-id from response headers
+SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
+  | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
+
+# 2. notify "initialized" (required by MCP protocol)
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
+
+# 3. now call tools/call
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs">Most users won't need this — Claude Desktop / Cursor / Claude Code MCP clients handle the handshake automatically. Use this only for direct integration into a non-MCP system or for debugging.</p>
+      <p class="text-gray-400 text-sm mt-6"><a href="https://algovault.com/mcp" class="text-mint-400 hover:underline font-medium">Full MCP Server guide &rarr;</a></p>
+    </section>
+
+    <section id="rest-api" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> REST API</h3>
+      <p class="text-gray-400 text-sm mb-6">Two keyless / keyed HTTP rails for non-MCP consumers: <strong>x402</strong> pay-per-call (USDC on Base, no signup) for autonomous agents, and plain <strong>API-key</strong> <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> endpoints for the knowledge tools. Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>.</p>
+            <h4 id="x402" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-2">x402 Pay-Per-Call (USDC on Base)</h4>
+      <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <ol class="list-decimal pl-5 space-y-2.5">
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Sign &amp; retry</span><span class="text-gray-400"> &mdash; your x402 client signs an ERC-3009 <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">transferWithAuthorization</code> and retries with the signed <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">X-PAYMENT</code> header. The facilitator submits it on-chain, so your agent pays no gas.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Get your verdict</span><span class="text-gray-400"> &mdash; the server verifies the signature and returns the result immediately; settlement confirms on Base in ~2 seconds.</span></li>
+        </ol>
+      </div>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick start (TypeScript)</h4>
+      <p class="text-gray-400 text-sm mb-3 leading-relaxed">The official <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code> client wraps <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">fetch</code> and runs the 402 &rarr; sign &rarr; retry handshake for you. Your wallet just needs USDC on Base.</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
+import { wrapFetchWithPayment } from "x402-fetch";
+import { createWalletClient, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base } from "viem/chains";
+
+const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+const wallet  = createWalletClient({ account, chain: base, transport: http() });
+const fetchWithPay = wrapFetchWithPayment(fetch, wallet);
+
+// Pays automatically on the 402, then returns the verdict
+const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ coin: "BTC", timeframe: "1h" }),
+});
+
+const verdict = await res.json();
+console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
+      </div>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Endpoint</th>
+          <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_trade_call</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT 1m&ndash;5m: up to $0.05)</span></td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/scan_funding_arb</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.01</td></tr>
+          <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>. <span class="text-emerald-400">HOLD verdicts are free</span> &mdash; when the engine says &ldquo;don&rsquo;t trade&rdquo;, there&rsquo;s no charge and no settlement (see the Free HOLD Policy above).</p>
+      <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
+            <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
+      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Cache</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/search</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"query": "string", "limit": 10}</code></td><td class="text-gray-400 text-sm px-4 py-3">public, max-age=300</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/chat</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"question": "string", "model": "..."}</code></td><td class="text-gray-400 text-sm px-4 py-3">no-store (per-user)</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-6">Error contract: <code class="text-xs">INVALID_QUERY</code> / <code class="text-xs">QUERY_TOO_SHORT</code> / <code class="text-xs">QUERY_TOO_LONG</code> / <code class="text-xs">INVALID_QUESTION</code> / <code class="text-xs">QUESTION_TOO_SHORT</code> / <code class="text-xs">QUESTION_TOO_LONG</code> / <code class="text-xs">INVALID_MODEL</code> / <code class="text-xs">CHAT_QUOTA_EXHAUSTED</code> / <code class="text-xs">INTERNAL_ERROR</code>. All return JSON <code class="text-xs">{"code": "...", "message": "..."}</code>.</p>
+      <p class="text-gray-400 text-sm mt-8"><a href="https://algovault.com/rest-api" class="text-mint-400 hover:underline font-medium">Full REST API guide &rarr;</a></p>
+    </section>
+
+    <section id="webhooks" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Webhooks</h3>
+      <p class="text-gray-500 text-sm mb-6">Stop polling. Register an HTTPS endpoint and AlgoVault POSTs you a signed event the instant a new trade call fires, the regime shifts, or a scheduled scan completes &mdash; every delivery is HMAC-signed, idempotent, and retried. Needs a free or paid <code class="text-xs bg-navy-800 px-1 rounded">av_live_</code> key (get one in your <a href="https://api.algovault.com/account" class="text-mint-400 hover:underline">account</a>).</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Events</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-400 align-top w-40"><code class="text-xs">trade_call</code></td><td class="text-gray-300 text-sm">A new BUY/SELL trade call is recorded for an asset you track.</td></tr>
+          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">regime_shift</code></td><td class="text-gray-300 text-sm">The market regime for <code class="text-xs bg-navy-800 px-1 rounded">(coin, timeframe, exchange)</code> changes vs the previous call.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">scan_digest</code></td><td class="text-gray-300 text-sm">A scheduled scan completes &mdash; the ranked top-N calls for a timeframe/exchange at your chosen cadence.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscribe</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/webhooks \
+  -H "Authorization: Bearer av_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-server.com/hook",
+    "events": ["trade_call", "regime_shift"],
+    "timeframes": ["15m", "1h"],
+    "assets": ["BTC", "ETH", "top:25"],
+    "min_confidence": 60
+  }'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-6">Filters are optional &mdash; omit them to receive every call. <code class="text-xs bg-navy-800 px-1 rounded">assets</code> accepts coin symbols or a <code class="text-xs bg-navy-800 px-1 rounded">top:N</code> token (N 1&ndash;100); <code class="text-xs bg-navy-800 px-1 rounded">min_confidence</code> is 0&ndash;100. For <code class="text-xs bg-navy-800 px-1 rounded">scan_digest</code> add <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">top_n</code> (1&ndash;100) and <code class="text-xs bg-navy-800 px-1 rounded">cadence</code> (1h/4h/1d). The response includes a per-subscription <code class="text-xs bg-navy-800 px-1 rounded">secret</code> &mdash; store it to verify signatures.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Manage</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-300 align-top w-64"><code class="text-xs">GET /api/webhooks</code></td><td class="text-gray-400 text-sm">List your active subscriptions.</td></tr>
+          <tr class="param-row"><td class="text-gray-300 align-top"><code class="text-xs">DELETE /api/webhooks/:id</code></td><td class="text-gray-400 text-sm">Remove a subscription.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-300 align-top"><code class="text-xs">POST /api/webhooks/:id/test</code></td><td class="text-gray-400 text-sm">Send a sample delivery to your endpoint to verify wiring.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Delivery &amp; signature</h3>
+      <p class="text-gray-400 text-sm mb-4">Each delivery is a POST to your URL with these headers:</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-400 align-top w-56"><code class="text-xs">X-AlgoVault-Event</code></td><td class="text-gray-300 text-sm">The event type.</td></tr>
+          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Delivery</code></td><td class="text-gray-300 text-sm">Unique delivery id &mdash; use it as an idempotency key.</td></tr>
+          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Timestamp</code></td><td class="text-gray-300 text-sm">Unix seconds; reject deliveries outside your tolerance to stop replays.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Signature</code></td><td class="text-gray-300 text-sm"><code class="text-xs bg-navy-800 px-1 rounded">HMAC-SHA256(secret, "{timestamp}.{rawBody}")</code> in hex &mdash; recompute and constant-time compare before trusting a payload.</td></tr>
+        </tbody>
+      </table>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "event": "trade_call",
+  "delivery_id": "d_8f3c...",
+  "data": {
+    "type": "trade_call",
+    "coin": "BTC",
+    "timeframe": "15m",
+    "exchange": "BINANCE",
+    "call": "BUY",
+    "confidence": 72,
+    "regime": "TRENDING_UP",
+    "verify_url": "https://algovault.com/verify?id=..."
+  }
+}</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs">Endpoint URLs must be HTTPS (SSRF-guarded; internal addresses are rejected). Full reference &mdash; payload schemas, retry/backoff, and self-healing &mdash; in <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/docs/WEBHOOKS.md" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">docs/WEBHOOKS.md &rarr;</a></p>
+    </section>
+
+    <section id="telegram" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Telegram Bot</h3>
+      <p class="text-gray-400 text-sm mb-4">Trade calls delivered straight to Telegram &mdash; no client, no key. Start the bot, ask for a composite verdict in chat, or subscribe to push alerts for regime shifts and new calls. Free tier works out of the box.</p>
+      <p class="text-gray-400 text-sm"><a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline font-medium">Start @algovaultofficialbot on Telegram &rarr;</a></p>
+    </section>
+
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="ecosystem" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Ecosystem</h2>
+      <p class="text-gray-400 text-sm mb-8">Drop AlgoVault into what you already run &mdash; MCP clients, agent frameworks, exchange execution kits, and hosted trading platforms &mdash; plus ready-made skills and 20 worked examples.</p>
+    </section>
+
+    <section id="integration" class="mb-16">
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Integration</h3>
+      <p class="text-gray-400 text-sm mb-6">Connect AlgoVault to your existing tools. Pick your surface below; each links to a step-by-step guide at <a href="https://algovault.com/integrations" class="text-mint-400 hover:underline">/integrations</a>.</p>
+    </section>
+
+    <div class="mb-16">
+      <!-- BUILD:connect-mcp-client:start -->
   <h3 id="connect-mcp" class="text-lg font-semibold text-white mb-4 mt-8 flex items-center gap-2">
     <span class="text-mint-400">&#9670;</span> Connect Your MCP Client
   </h3>
@@ -909,7 +1066,11 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
     <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
     Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
   </p>
+      <!-- BUILD:connect-mcp-client:end -->
+    </div>
 
+    <div class="mb-16">
+      <!-- BUILD:connect-ai-agent:start -->
   <h3 id="connect-ai-agent" class="text-lg font-semibold text-white mb-4 mt-12 flex items-center gap-2">
     <span class="text-mint-400">&#9670;</span> Connect Your AI Agent
   </h3>
@@ -1043,7 +1204,11 @@ with MCPServerAdapter(server_params) as tools:
   <p class="text-gray-400 text-sm mt-8 text-center">
     Try a framework integration: <a class="text-mint-400 hover:underline" href="/integrations/langchain">algovault.com/integrations/langchain</a>
   </p>
+      <!-- BUILD:connect-ai-agent:end -->
+    </div>
 
+    <div class="mb-16">
+      <!-- BUILD:connect-exchange-kit:start -->
   <h3 id="connect-exchange-kit" class="text-lg font-semibold text-white mb-4 mt-12 flex items-center gap-2">
     <span class="text-mint-400">&#9670;</span> Connect Your Exchange Kit
   </h3>
@@ -1217,155 +1382,17 @@ kraken mcp -s all</code></pre>
   <p class="text-gray-400 text-sm mt-8 text-center">
     Try an exchange integration: <a class="text-mint-400 hover:underline" href="/integrations/binance">algovault.com/integrations/binance</a>
   </p>
-</section>
+      <!-- BUILD:connect-exchange-kit:end -->
+    </div>
 
-      <!-- BUILD:mcp-usage:end -->
-
-    <!-- ============ WEBHOOKS ============ -->
-    <div class="border-t border-white/5 mb-16"></div>
-
-    <section id="webhooks" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Webhooks
-      </h2>
-      <p class="text-gray-500 text-sm mb-6">Stop polling. Register an HTTPS endpoint and AlgoVault POSTs you a signed event the instant a new trade call fires, the regime shifts, or a scheduled scan completes &mdash; every delivery is HMAC-signed, idempotent, and retried. Needs a free or paid <code class="text-xs bg-navy-800 px-1 rounded">av_live_</code> key (get one in your <a href="https://api.algovault.com/account" class="text-mint-400 hover:underline">account</a>).</p>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Events</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
-        <tbody>
-          <tr class="param-row"><td class="text-gray-400 align-top w-40"><code class="text-xs">trade_call</code></td><td class="text-gray-300 text-sm">A new BUY/SELL trade call is recorded for an asset you track.</td></tr>
-          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">regime_shift</code></td><td class="text-gray-300 text-sm">The market regime for <code class="text-xs bg-navy-800 px-1 rounded">(coin, timeframe, exchange)</code> changes vs the previous call.</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">scan_digest</code></td><td class="text-gray-300 text-sm">A scheduled scan completes &mdash; the ranked top-N calls for a timeframe/exchange at your chosen cadence.</td></tr>
-        </tbody>
-      </table>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscribe</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">curl -X POST https://api.algovault.com/api/webhooks \
-  -H "Authorization: Bearer av_live_..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://your-server.com/hook",
-    "events": ["trade_call", "regime_shift"],
-    "timeframes": ["15m", "1h"],
-    "assets": ["BTC", "ETH", "top:25"],
-    "min_confidence": 60
-  }'</code></pre>
-      </div>
-      <p class="text-gray-500 text-xs mb-6">Filters are optional &mdash; omit them to receive every call. <code class="text-xs bg-navy-800 px-1 rounded">assets</code> accepts coin symbols or a <code class="text-xs bg-navy-800 px-1 rounded">top:N</code> token (N 1&ndash;100); <code class="text-xs bg-navy-800 px-1 rounded">min_confidence</code> is 0&ndash;100. For <code class="text-xs bg-navy-800 px-1 rounded">scan_digest</code> add <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">top_n</code> (1&ndash;100) and <code class="text-xs bg-navy-800 px-1 rounded">cadence</code> (1h/4h/1d). The response includes a per-subscription <code class="text-xs bg-navy-800 px-1 rounded">secret</code> &mdash; store it to verify signatures.</p>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Manage</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
-        <tbody>
-          <tr class="param-row"><td class="text-gray-300 align-top w-64"><code class="text-xs">GET /api/webhooks</code></td><td class="text-gray-400 text-sm">List your active subscriptions.</td></tr>
-          <tr class="param-row"><td class="text-gray-300 align-top"><code class="text-xs">DELETE /api/webhooks/:id</code></td><td class="text-gray-400 text-sm">Remove a subscription.</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td class="text-gray-300 align-top"><code class="text-xs">POST /api/webhooks/:id/test</code></td><td class="text-gray-400 text-sm">Send a sample delivery to your endpoint to verify wiring.</td></tr>
-        </tbody>
-      </table>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Delivery &amp; signature</h3>
-      <p class="text-gray-400 text-sm mb-4">Each delivery is a POST to your URL with these headers:</p>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
-        <tbody>
-          <tr class="param-row"><td class="text-gray-400 align-top w-56"><code class="text-xs">X-AlgoVault-Event</code></td><td class="text-gray-300 text-sm">The event type.</td></tr>
-          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Delivery</code></td><td class="text-gray-300 text-sm">Unique delivery id &mdash; use it as an idempotency key.</td></tr>
-          <tr class="param-row"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Timestamp</code></td><td class="text-gray-300 text-sm">Unix seconds; reject deliveries outside your tolerance to stop replays.</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400 align-top"><code class="text-xs">X-AlgoVault-Signature</code></td><td class="text-gray-300 text-sm"><code class="text-xs bg-navy-800 px-1 rounded">HMAC-SHA256(secret, "{timestamp}.{rawBody}")</code> in hex &mdash; recompute and constant-time compare before trusting a payload.</td></tr>
-        </tbody>
-      </table>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">{
-  "event": "trade_call",
-  "delivery_id": "d_8f3c...",
-  "data": {
-    "type": "trade_call",
-    "coin": "BTC",
-    "timeframe": "15m",
-    "exchange": "BINANCE",
-    "call": "BUY",
-    "confidence": 72,
-    "regime": "TRENDING_UP",
-    "verify_url": "https://algovault.com/verify?id=..."
-  }
-}</code></pre>
-      </div>
-      <p class="text-gray-500 text-xs">Endpoint URLs must be HTTPS (SSRF-guarded; internal addresses are rejected). Full reference &mdash; payload schemas, retry/backoff, and self-healing &mdash; in <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/docs/WEBHOOKS.md" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">docs/WEBHOOKS.md &rarr;</a></p>
+    <section id="connect-trading-platform" class="mb-16">
+      <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Connect Your Trading Platform</h4>
+      <p class="text-gray-400 text-sm mb-4">Feed AlgoVault calls into hosted crypto-bot and copy-trade platforms &mdash; e.g. <strong>Cryptohopper</strong>'s signaler marketplace, <strong>3Commas</strong>, and other signal-bot platforms &mdash; via the <a href="#webhooks" class="text-mint-400 hover:underline">Webhooks</a> channel or the platform's signal import. Your bot trades on AlgoVault's directional calls without you writing glue code.</p>
+      <p class="text-gray-400 text-sm"><a href="https://algovault.com/integrations" class="text-mint-400 hover:underline font-medium">See trading-platform integrations &rarr;</a></p>
     </section>
-
-    <!-- ============ ON-CHAIN VERIFICATION ============ -->
-    <div class="border-t border-white/5 mb-16"></div>
-
-    <section id="on-chain-verification" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> On-Chain Verification
-      </h2>
-      <p class="text-gray-500 text-sm mb-6">Every call is hashed and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof.</p>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">How It Works</h3>
-      <div class="space-y-3 mb-8">
-        <div class="flex gap-3 items-start">
-          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">1</span>
-          <p class="text-gray-400 text-sm">Every BUY/SELL call is hashed using <code class="text-xs bg-navy-800 px-1 rounded">keccak256(coin, signal, confidence, timeframe, timestamp, price)</code> at the moment it's generated</p>
-        </div>
-        <div class="flex gap-3 items-start">
-          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">2</span>
-          <p class="text-gray-400 text-sm">Hashes accumulate throughout the day</p>
-        </div>
-        <div class="flex gap-3 items-start">
-          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">3</span>
-          <p class="text-gray-400 text-sm">At 00:05 UTC, all new hashes are assembled into a Merkle tree</p>
-        </div>
-        <div class="flex gap-3 items-start">
-          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">4</span>
-          <p class="text-gray-400 text-sm">The Merkle root is published to the <code class="text-xs bg-navy-800 px-1 rounded">MerkleRootRegistry</code> smart contract on Base L2</p>
-        </div>
-        <div class="flex gap-3 items-start">
-          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">5</span>
-          <p class="text-gray-400 text-sm">Anyone can verify that a specific call existed in a batch by checking its Merkle proof against the on-chain root</p>
-        </div>
-      </div>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Verification Endpoints</h3>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/verify-signal?signalId=<ID>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">GET /api/verify-signal?signalId=&lt;ID&gt;</code></pre>
-        <p class="text-gray-500 text-xs mt-2">Returns: call details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
-      </div>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/merkle-batches');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">GET /api/merkle-batches</code></pre>
-        <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, call counts, tx hashes, and Basescan links.</p>
-      </div>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Visual Verification</h3>
-      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
-        <tbody>
-          <tr class="param-row"><td class="text-gray-400">Address</td><td class="text-gray-300"><code class="text-xs">0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81</code></td></tr>
-          <tr class="param-row"><td class="text-gray-400">Chain</td><td class="text-gray-300">Base (chain ID 8453)</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400">Explorer</td><td><a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-mint-400 hover:underline text-sm">View on Basescan &rarr;</a></td></tr>
-        </tbody>
-      </table>
-
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What This Proves</h3>
-      <ul class="space-y-2 text-sm text-gray-400">
-        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Calls were recorded BEFORE outcomes were known</li>
-        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No call can be retroactively edited or deleted</li>
-        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> The complete set of calls in each batch is locked &mdash; cherry-picking is detectable via sequential call IDs</li>
-      </ul>
-    </section>
-
-    <!-- ============ USAGE EXAMPLES ============ -->
-    <div class="border-t border-white/5 mb-16"></div>
 
     <section id="usage-examples" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Skills &amp; Usage Examples
-      </h2>
+      <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Skills & Usage Examples</h3>
       <p class="text-gray-500 text-sm mb-8">20 real-world workflows for AI agents and human developers. From simple one-liners to multi-agent orchestration.</p>
 
       <div class="grid gap-4">
@@ -1733,13 +1760,87 @@ kraken mcp -s all</code></pre>
       </div>
     </section>
 
-    <!-- ============ PRICING ============ -->
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="track-record" class="mb-16">
+      <h2 class="text-2xl font-bold text-white mb-5 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Track Record</h2>
+
+    </section>
+
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="live-dashboard" class="mb-16">
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Live Dashboard</h2>
+      <p class="text-gray-400 text-sm mb-4">Every recorded BUY/SELL call is scored by PFE (Peak Favorable Excursion) win rate and broken down by asset, timeframe, and regime &mdash; updated live from the same on-chain-anchored record. No cherry-picking: the full call set is public.</p>
+      <p class="text-gray-400 text-sm"><a href="https://algovault.com/track-record" class="text-mint-400 hover:underline font-medium">Open the live track record &rarr;</a></p>
+    </section>
+
+    <div class="border-t border-white/5 mb-16"></div>
+
+    <section id="verify" class="mb-16"><span id="on-chain-verification" aria-hidden="true"></span>
+      <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Verify</h2>
+      <p class="text-gray-500 text-sm mb-6">Every call is hashed and anchored on Base L2 via daily Merkle batches. This makes the track record tamper-proof.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">How It Works</h3>
+      <div class="space-y-3 mb-8">
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">1</span>
+          <p class="text-gray-400 text-sm">Every BUY/SELL call is hashed using <code class="text-xs bg-navy-800 px-1 rounded">keccak256(coin, signal, confidence, timeframe, timestamp, price)</code> at the moment it's generated</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">2</span>
+          <p class="text-gray-400 text-sm">Hashes accumulate throughout the day</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">3</span>
+          <p class="text-gray-400 text-sm">At 00:05 UTC, all new hashes are assembled into a Merkle tree</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">4</span>
+          <p class="text-gray-400 text-sm">The Merkle root is published to the <code class="text-xs bg-navy-800 px-1 rounded">MerkleRootRegistry</code> smart contract on Base L2</p>
+        </div>
+        <div class="flex gap-3 items-start">
+          <span class="text-mint-400 font-mono text-xs font-bold bg-mint-400/10 px-2 py-0.5 rounded mt-0.5">5</span>
+          <p class="text-gray-400 text-sm">Anyone can verify that a specific call existed in a batch by checking its Merkle proof against the on-chain root</p>
+        </div>
+      </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Verification Endpoints</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/verify-signal?signalId=<ID>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">GET /api/verify-signal?signalId=&lt;ID&gt;</code></pre>
+        <p class="text-gray-500 text-xs mt-2">Returns: call details, hash, Merkle proof, batch info, Basescan tx link, and a boolean <code class="text-xs bg-navy-800 px-1 rounded">verified</code> field.</p>
+      </div>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('GET /api/merkle-batches');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">GET /api/merkle-batches</code></pre>
+        <p class="text-gray-500 text-xs mt-2">Returns: list of all published batches with root hashes, call counts, tx hashes, and Basescan links.</p>
+      </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Visual Verification</h3>
+      <p class="text-gray-400 text-sm mb-6">Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call and see its on-chain proof in a human-readable format.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Contract Details</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-6">
+        <tbody>
+          <tr class="param-row"><td class="text-gray-400">Address</td><td class="text-gray-300"><code class="text-xs">0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81</code></td></tr>
+          <tr class="param-row"><td class="text-gray-400">Chain</td><td class="text-gray-300">Base (chain ID 8453)</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td class="text-gray-400">Explorer</td><td><a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81" target="_blank" class="text-mint-400 hover:underline text-sm">View on Basescan &rarr;</a></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What This Proves</h3>
+      <ul class="space-y-2 text-sm text-gray-400">
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Calls were recorded BEFORE outcomes were known</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No call can be retroactively edited or deleted</li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> The complete set of calls in each batch is locked &mdash; cherry-picking is detectable via sequential call IDs</li>
+      </ul>
+    </section>
+
     <div class="border-t border-white/5 mb-16"></div>
 
     <section id="pricing" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> Pricing &amp; Limits
-      </h2>
+      <h2 class="text-2xl font-bold text-white mb-5 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Pricing</h2>
       <p class="text-gray-500 text-sm mb-6">Two payment rails: Stripe subscriptions for human developers, x402 micropayments (USDC on Base) for autonomous agents.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Subscription Tiers</h3>
@@ -1796,69 +1897,12 @@ kraken mcp -s all</code></pre>
         </ol>
       </div>
       <!-- BUILD:signup-flow:end -->
-
-      <span id="rest-api" style="display:block;scroll-margin-top:80px" aria-hidden="true"></span><!-- CHANNEL-HUB-PAGES-GEO-W1: canonical #rest-api anchor (aliases the x402/HTTP-API REST section; nav Channels + /rest-api hub) -->
-      <h3 id="x402" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">x402 Pay-Per-Call (USDC on Base)</h3>
-      <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
-
-      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
-      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
-        <ol class="list-decimal pl-5 space-y-2.5">
-          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
-          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
-          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Sign &amp; retry</span><span class="text-gray-400"> &mdash; your x402 client signs an ERC-3009 <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">transferWithAuthorization</code> and retries with the signed <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">X-PAYMENT</code> header. The facilitator submits it on-chain, so your agent pays no gas.</span></li>
-          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Get your verdict</span><span class="text-gray-400"> &mdash; the server verifies the signature and returns the result immediately; settlement confirms on Base in ~2 seconds.</span></li>
-        </ol>
-      </div>
-
-      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick start (TypeScript)</h4>
-      <p class="text-gray-400 text-sm mb-3 leading-relaxed">The official <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code> client wraps <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">fetch</code> and runs the 402 &rarr; sign &rarr; retry handshake for you. Your wallet just needs USDC on Base.</p>
-      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
-        <pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
-import { wrapFetchWithPayment } from "x402-fetch";
-import { createWalletClient, http } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { base } from "viem/chains";
-
-const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
-const wallet  = createWalletClient({ account, chain: base, transport: http() });
-const fetchWithPay = wrapFetchWithPayment(fetch, wallet);
-
-// Pays automatically on the 402, then returns the verdict
-const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ coin: "BTC", timeframe: "1h" }),
-});
-
-const verdict = await res.json();
-console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
-      </div>
-
-      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>
-      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
-        <thead><tr class="border-b border-white/5">
-          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Endpoint</th>
-          <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
-        </tr></thead>
-        <tbody>
-          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_trade_call</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT 1m&ndash;5m: up to $0.05)</span></td></tr>
-          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/scan_funding_arb</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.01</td></tr>
-          <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
-        </tbody>
-      </table>
-      <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>. <span class="text-emerald-400">HOLD verdicts are free</span> &mdash; when the engine says &ldquo;don&rsquo;t trade&rdquo;, there&rsquo;s no charge and no settlement (see the Free HOLD Policy above).</p>
-      <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
     </section>
 
-    <!-- ============ FAQ ============ -->
     <div class="border-t border-white/5 mb-16"></div>
 
     <section id="faq" class="mb-16">
-      <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-        <span class="text-mint-400">&#9670;</span> FAQ
-      </h2>
+      <h2 class="text-2xl font-bold text-white mb-5 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> FAQ</h2>
 
       <div class="space-y-3">
         <details class="bg-navy-700 border border-white/5 rounded-xl group">

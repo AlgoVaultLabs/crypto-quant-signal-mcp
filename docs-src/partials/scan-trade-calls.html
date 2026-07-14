@@ -1,0 +1,35 @@
+      <p class="text-gray-400 text-sm mb-5">Scans a whole promoted-venue universe in one call and returns the top-ranked <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">get_trade_call</code> verdicts, ordered by a selectable lens (open interest, OI change, volume, momentum, &hellip;). One request instead of N per-asset calls &mdash; ideal for an agent building a watchlist or a scheduled digest.</p>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-36">Name</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>topN</td><td class="text-gray-400">number</td><td class="text-gray-400">Universe size to evaluate before ranking (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">20</code></td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval for each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">1h</code></td></tr>
+          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Promoted venue to scan. <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> (default), plus other promoted venues.</td></tr>
+          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Universe-selection lens: <code class="text-xs bg-navy-800 px-1 rounded">oi</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">oi_change</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume</code>, &hellip; See <code class="text-xs bg-navy-800 px-1 rounded">/capabilities</code> for the live lens set.</td></tr>
+          <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked calls to return (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+          <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop calls below this confidence (0&ndash;100). Optional.</td></tr>
+          <tr class="param-row"><td>includeHolds</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include HOLD verdicts in the results. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example</h3>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">scan_trade_calls({
+  topN: 20,
+  timeframe: "1h",
+  exchange: "BINANCE",
+  rankBy: "oi",
+  limit: 10
+})
+// &rarr; the 10 highest-ranked assets, each a get_trade_call verdict
+//    (call, confidence, regime, price, indicators, _algovault)</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan. HOLD verdicts are free.</p>

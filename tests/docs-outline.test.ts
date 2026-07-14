@@ -140,7 +140,7 @@ describe('docs-outline — Single-Derivation invariants (sidebar === body === ou
     for (const m of markerNames()) expect(p.has(m)).toBe(false);
   });
 
-  it('every legacy anchor survives as canonical or alias (no dead links)', () => {
+  it('every positioning-insensitive legacy anchor survives as canonical or outline alias', () => {
     const ids = new Set(allAnchorIds());
     for (const legacy of [
       'get-trade-signal',
@@ -149,16 +149,18 @@ describe('docs-outline — Single-Derivation invariants (sidebar === body === ou
       'knowledge-tools-when',
       'knowledge-tools-examples',
       'knowledge-tools-quota',
-      'knowledge-tools-api',
       'knowledge-tools-overview',
       'testing-with-curl',
-      'x402',
       'rest-api',
       'on-chain-verification',
       'usage-examples',
     ]) {
       expect(ids.has(legacy)).toBe(true);
     }
+    // #x402 + #knowledge-tools-api are POSITIONED inside channel-rest-api.html (not outline aliases,
+    // so build_channel_pages can extract each code block by anchor) — verified by the CH4 docs.html grep.
+    expect(ids.has('x402')).toBe(false);
+    expect(ids.has('knowledge-tools-api')).toBe(false);
   });
 
   it('top-level IA matches the dictated tree (Quick Start · Platform · Track Record · Pricing · FAQ)', () => {

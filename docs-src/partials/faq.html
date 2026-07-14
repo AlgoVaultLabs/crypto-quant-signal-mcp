@@ -1,0 +1,102 @@
+
+      <div class="space-y-3">
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            How often should I call get_trade_call?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Match your call frequency to the timeframe. A 5m trade call is stale after ~5 minutes, while a 4h call is relevant for several hours. For most agents, calling once per candle close on your chosen timeframe is optimal.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            Can I combine multiple tools in one workflow?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Yes &mdash; and it's encouraged. The recommended flow is: <strong>regime &rarr; trade call &rarr; arb</strong>. Check the regime first to decide if conditions favor directional trading, then get a trade call for direction, then check if a funding arb exists on the same asset. See the <a href="#usage-examples" class="text-mint-400 hover:underline">usage examples</a> for 20 real-world workflows.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What's the latency per call?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance (default for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code>), Hyperliquid (default for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>), Bybit, OKX, or Bitget. Funding arb scans 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Response time depends on the exchange's API latency and the number of assets scanned.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            How is trade call performance tracked?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Every trade call with confidence &ge; 60% is automatically recorded. After enough candles have passed, the system measures PFE (Peak Favorable Excursion) win rate &mdash; did price move in the called direction at any point during the evaluation window? Results are available via the <code class="text-xs bg-navy-800 px-1 rounded">performance://signal-performance</code> MCP resource and on the <a href="https://api.algovault.com/dashboard" class="text-mint-400 hover:underline">live dashboard</a>.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What assets are supported?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            All perpetuals listed across <span data-tr-field="exchange_count">5</span> exchanges &mdash; Binance, Hyperliquid, Bybit, OKX, and Bitget. This includes standard crypto perps (BTC, ETH, SOL, etc.) and liquidity-filtered meme coins on every venue. TradFi perpetuals (TSLA, XAU, NVDA, SPX, MSTR, COIN, AAPL, and more) are available on multiple venues &mdash; asset availability varies per venue; pass exchange explicitly to target a specific venue. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            Do you provide exit calls?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            No. AlgoVault provides <strong>directional entry calls only</strong> &mdash; BUY, SELL, or HOLD. Your agent or strategy determines exit timing. This is by design: exit logic depends on your risk tolerance, position size, and portfolio context, which only you know. PFE Win Rate measures whether the called direction was correct, independent of exit.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What is x402 and how do agent payments work?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            x402 is an open protocol for machine-to-machine micropayments. Your agent pays per API call with USDC on Base &mdash; no signup, no API key, no subscription. The agent signs an ERC-3009 authorization, the server verifies it on-chain, and the call proceeds. It's the native payment rail for autonomous agents that don't have credit cards.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            What is the HOLD Rate?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. A high HOLD rate (~84%) means the engine is selective &mdash; it only calls when multiple indicators align. HOLD calls are always free across all tiers.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            How do I verify a call's integrity?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Every call is hashed and anchored on Base L2 via daily Merkle batches. Visit <a href="/verify" class="text-mint-400 hover:underline">algovault.com/verify</a> to look up any call by ID. You'll see its hash, Merkle proof, batch details, and a direct link to the transaction on Basescan. You can also call the API directly: <code class="text-xs bg-navy-800 px-1 rounded">GET /api/verify-signal?signalId=&lt;ID&gt;</code>.
+          </div>
+        </details>
+
+        <details class="bg-navy-700 border border-white/5 rounded-xl group">
+          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+            Can I run AlgoVault locally?
+            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
+            Yes. Install via <code class="text-xs bg-navy-800 px-1 rounded">npx -y crypto-quant-signal-mcp</code> and it runs locally in stdio mode for Claude Desktop. For remote access, the hosted version at <code class="text-xs bg-navy-800 px-1 rounded">api.algovault.com/mcp</code> supports Streamable HTTP transport.
+          </div>
+        </details>
+      </div>

@@ -1,0 +1,18 @@
+      <p class="text-gray-400 text-sm mb-4">Add AlgoVault to Claude Desktop in under 30 seconds. Paste this into your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">claude_desktop_config.json</code>:</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-4">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "mcpServers": {
+    "crypto-quant-signal": {
+      "command": "npx",
+      "args": ["-y", "crypto-quant-signal-mcp"]
+    }
+  }
+}</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-3">Then ask Claude:</p>
+      <div class="bg-navy-700 border border-white/5 rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
+        "Get me a trade call for BTC on the 1h timeframe"
+      </div>
+      <p class="text-gray-500 text-xs">Free tier: all 716 assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
+      <p class="text-gray-400 text-sm mt-4">Your agent can also ask AlgoVault to teach itself how to use the tools &mdash; see <a href="#knowledge-tools-overview" class="text-mint-400 hover:underline">Knowledge Tools</a> below.</p>

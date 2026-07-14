@@ -1,0 +1,31 @@
+      <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) runs the handshake for you &mdash; see <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. To wire a non-MCP system or debug directly, the MCP <em>Streamable HTTP</em> transport needs a 3-step handshake before <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code>:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
+
+# 1. initialize — captures session-id from response headers
+SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
+  | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
+
+# 2. notify "initialized" (required by MCP protocol)
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
+
+# 3. now call tools/call
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs">Most users won't need this — Claude Desktop / Cursor / Claude Code MCP clients handle the handshake automatically. Use this only for direct integration into a non-MCP system or for debugging.</p>
+      <p class="text-gray-400 text-sm mt-6"><a href="https://algovault.com/mcp" class="text-mint-400 hover:underline font-medium">Full MCP Server guide &rarr;</a></p>
