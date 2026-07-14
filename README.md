@@ -242,7 +242,12 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 ---
 
-## What's new in v1.23.0
+## What's new in v1.23.1
+
+- **🔗 A dedicated page for every way to connect.** New hub pages walk through each access channel end-to-end, with copy-paste code and a quick FAQ: [MCP](https://algovault.com/mcp), [REST API](https://algovault.com/rest-api), and [webhooks](https://algovault.com/webhooks).
+- **🧭 Tools index + unified navigation.** Browse all public tools at [algovault.com/tools](https://algovault.com/tools); a new Platform menu makes the whole site easier to navigate.
+
+### v1.23.0 highlights (recap)
 
 - **📡 Cross-venue funding arbitrage now spans 7 venues.** `scan_funding_arb` expanded from 3 to 7 — Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX — with interval-correct annualization per venue and a per-leg liquidity filter, so only tradeable spreads surface.
 
