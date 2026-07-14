@@ -1,6 +1,6 @@
 # Plausible Custom Events — `algovault.com`
 
-WEBSITE-REFRESH-W1 C6 ships the Plausible script tag (script ID `pa-RwGaS0xWrfzs4vNSkMOAX`, provided by architect mid-execution). Pageviews + bounce rate + outbound clicks track automatically. The 4 custom events below need **one-time configuration** in the Plausible dashboard at <https://plausible.io/algovault.com/settings/goals> (~3 min total).
+WEBSITE-REFRESH-W1 C6 ships the Plausible script tag (script ID `pa-RwGaS0xWrfzs4vNSkMOAX`, provided by architect mid-execution). Pageviews + bounce rate + outbound clicks track automatically. The 4 custom events below need **one-time configuration** in the **self-hosted** Plausible dashboard at <https://plausible.algovault.com/algovault.com/settings/goals> (~3 min total). _(Migrated off Plausible Cloud by SELFHOST-PLAUSIBLE-CE-AND-CF-ORIGIN-SHIELD-W1, 2026-07-12; script id is now `pa-gfOGxVcQKNfocPr5V3vR8` on `plausible.algovault.com`.)_
 
 ## Convention
 
@@ -78,7 +78,7 @@ C7 adds 2 more goals for AI-referred traffic — see `docs/PLAUSIBLE_GEO_GOALS.m
 
 After configuration, test each event by:
 
-1. Opening the Plausible dashboard live view (<https://plausible.io/algovault.com>).
+1. Opening the Plausible dashboard live view (<https://plausible.algovault.com/algovault.com>).
 2. Triggering the relevant CTA in a browser tab.
 3. Confirming the event appears in the live event stream within 10 seconds.
 

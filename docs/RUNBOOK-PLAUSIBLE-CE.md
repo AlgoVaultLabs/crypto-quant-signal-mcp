@@ -37,7 +37,7 @@ The first admin account requires a browser + a password the operator sets (agent
 1. Open <https://plausible.algovault.com/register>, register **admin@algovault.com** with a password you control (store in 1Password). This first user becomes the instance owner.
 2. (Optional lockdown) set `DISABLE_REGISTRATION=true` in `.env` then `docker compose up -d plausible` so no further self-registration is possible (invites still work).
 3. Add site: dashboard → **+ Add a website** → domain `algovault.com` (exactly — the beacon's `data-domain` must match). Timezone as desired.
-4. Copy the **exact** snippet the site's "Installation" tab shows — it will be `<script defer data-domain="algovault.com" src="https://plausible.algovault.com/js/script.js"></script>` (verify before A6 uses it).
+4. Copy the **exact** snippet the site's "Installation" tab shows. **A6 already shipped it (2026-07-12).** The CE instance uses the modern **`pa-` script format** (NOT the classic `script.js`): `<script async src="https://plausible.algovault.com/js/pa-gfOGxVcQKNfocPr5V3vR8.js"></script>` + the `plausible.init()` bootstrap — now on all 24 landing pages (migrated from the Cloud `pa-RwGaS0xWrfzs4vNSkMOAX` id).
 5. Configure the 4 custom-event goals from `docs/PLAUSIBLE_EVENTS.md`: **Signup Click**, **Plan Selection**, **Skill Install Click**, **Integration View** (Settings → Goals → + Add goal → Custom event → exact name). These are the manual-event `window.plausible('<name>', {props})` calls already embedded in the landing pages.
 
 ---
@@ -91,7 +91,7 @@ docker compose up -d plausible
 ```
 
 ### Add another site (one-manifest-row pattern)
-Dashboard → **+ Add a website** → new domain → copy its snippet → drop `<script defer data-domain="<domain>" src="https://plausible.algovault.com/js/script.js"></script>` into that site's `<head>`. No code change to Plausible.
+Dashboard → **+ Add a website** → new domain → copy its **exact snippet from the Installation tab** (modern `pa-<id>.js` form) → drop it into that site's `<head>`. No code change to Plausible.
 
 ---
 
@@ -115,12 +115,12 @@ Bahnhof AB (AS8473, Sweden, residential line `h-46-59-32-60.A1283.priv.bahnhof.s
 | `plausible.algovault.com` 502/no-cert | `docker compose ps` (app up on 8000?); `curl -sI http://127.0.0.1:8000` on box; `systemctl status caddy`; Caddy logs `journalctl -u caddy --since '-10min'` |
 | Origin cert near expiry | Caddy renews at ~2/3 lifetime; if stuck under orange, temporarily grey the DNS record (proxied:false), let Caddy renew via HTTP-01, re-orange. |
 | ClickHouse OOM / eating RAM | `docker stats` — `mem_limit 3g` caps it; the container is OOM-killed & restarted before it can starve the prod MCP box (16Gi total, ~8Gi headroom). Raise `mem_limit` in `compose.override.yml` only with headroom to spare. |
-| No pageviews after A6 | DevTools → Network → confirm the page loads `plausible.algovault.com/js/script.js` (not `plausible.io`); confirm site `algovault.com` exists in the dashboard; API/bot traffic is intentionally not counted. |
+| No pageviews after A6 | DevTools → Network → confirm the page loads `plausible.algovault.com/js/pa-gfOGxVcQKNfocPr5V3vR8.js` (not `plausible.io`); confirm site `algovault.com` exists in the dashboard; API/bot traffic is intentionally not counted. |
 | Custom events missing | Confirm the 4 goals are configured (§2.5); the manual `window.plausible(...)` onclick calls need the base `script.js` loaded. |
 
 ---
 
 ## 6. Related
 - Custom events: `docs/PLAUSIBLE_EVENTS.md`
-- Landing re-point (A6, deferred until NAV-PLATFORM-GENERATOR-W1): swap the 24 `pa-RwGaS0xWrfzs4vNSkMOAX.js` tags → `plausible.algovault.com/js/script.js` + `data-domain="algovault.com"`.
+- Landing re-point (A6, **SHIPPED 2026-07-12** after NAV-PLATFORM-GENERATOR-W1): swapped the 24 `pa-RwGaS0xWrfzs4vNSkMOAX.js` (Cloud) tags → `plausible.algovault.com/js/pa-gfOGxVcQKNfocPr5V3vR8.js` (self-hosted) in `landing/*.html` + the 2 generators (`render-integrations.mjs`, `render-jsx-static.mjs`); test `design_w10_consistency` assertion updated.
 - Fast-follow: `OPS-PLAUSIBLE-FIRSTPARTY-PROXY-W1` (first-party `/js/<renamed>.js` + `/api/event` proxy to beat adblockers — measure the undercount first).
