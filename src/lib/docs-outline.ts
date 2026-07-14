@@ -27,7 +27,7 @@
  * tools or channels by hand, and it never re-orders where a registry defines order.
  */
 
-import { FEATURE_REGISTRY, type FeatureSpec } from './feature-registry.js';
+import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from './feature-registry.js';
 import { publicToolEntries } from './nav-manifest.js';
 import { CHANNELS, channelHref, type ChannelSpec } from './channel-registry.js';
 
@@ -275,4 +275,15 @@ export function toolNodeCount(registry: readonly FeatureSpec[] = FEATURE_REGISTR
 /** Count of Channels H3s (=== CHANNELS.length). */
 export function channelNodeCount(): number {
   return buildChannelNodes().length;
+}
+
+/**
+ * OPS-DOCS-JSONLD-TOOLCOUNT-W1: the docs `<head>` TechArticle JSON-LD "N AlgoVault MCP tools
+ * (…names…)" clause, DERIVED from the public tool set (`publicToolNames()`) — build_docs injects
+ * it into the `__TECH_ARTICLE_TOOLS__` template placeholder so the JSON-LD count + name list can
+ * never re-hardcode / drift from the SoT (the "5 tools" bug this retires). `toolNames` is injectable
+ * so a test can prove the count FOLLOWS the list (a mock 7th name → "7 …"), not a frozen literal.
+ */
+export function techArticleToolClause(toolNames: readonly string[] = publicToolNames()): string {
+  return `${toolNames.length} AlgoVault MCP tools (${toolNames.join(', ')})`;
 }

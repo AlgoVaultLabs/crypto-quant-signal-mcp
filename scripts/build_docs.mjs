@@ -33,6 +33,8 @@ const DOCS_HTML_PATH = path.join(REPO_ROOT, 'landing', 'docs.html');
 
 const SIDEBAR_PLACEHOLDER = '<!--DOCS:SIDEBAR-->';
 const BODY_PLACEHOLDER = '<!--DOCS:BODY-->';
+// OPS-DOCS-JSONLD-TOOLCOUNT-W1: the <head> TechArticle JSON-LD tool clause, derived from the SoT.
+const TECH_ARTICLE_PLACEHOLDER = '__TECH_ARTICLE_TOOLS__';
 
 const checkMode = process.argv.includes('--check');
 const verifyPartialsMode = process.argv.includes('--verify-partials');
@@ -122,7 +124,10 @@ function blankMarkers(html, markerNames) {
 function generate(outlineMod) {
   const flat = outlineMod.flattenOutline();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf8');
-  return template.replace(SIDEBAR_PLACEHOLDER, renderSidebar(flat)).replace(BODY_PLACEHOLDER, renderBody(flat));
+  return template
+    .replace(SIDEBAR_PLACEHOLDER, renderSidebar(flat))
+    .replace(BODY_PLACEHOLDER, renderBody(flat))
+    .replace(TECH_ARTICLE_PLACEHOLDER, outlineMod.techArticleToolClause());
 }
 
 async function main() {

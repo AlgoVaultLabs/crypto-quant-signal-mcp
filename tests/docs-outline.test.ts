@@ -9,6 +9,7 @@ import {
   toolNodeCount,
   channelNodeCount,
   CONNECT_SURFACE_EXPECTATIONS,
+  techArticleToolClause,
   type DocsNode,
 } from '../src/lib/docs-outline.js';
 import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from '../src/lib/feature-registry.js';
@@ -165,5 +166,20 @@ describe('docs-outline — Single-Derivation invariants (sidebar === body === ou
 
   it('top-level IA matches the dictated tree (Quick Start · Platform · Track Record · Pricing · FAQ)', () => {
     expect(buildDocsOutline().map((n) => n.anchor)).toEqual(['quick-start', 'platform', 'track-record', 'pricing', 'faq']);
+  });
+});
+
+describe('docs-outline — TechArticle JSON-LD tool clause derives from the SoT (OPS-DOCS-JSONLD-TOOLCOUNT-W1)', () => {
+  it('renders the current public tool set — count + names === publicToolNames() (6, incl scan_trade_calls)', () => {
+    expect(techArticleToolClause()).toBe(`${publicToolNames().length} AlgoVault MCP tools (${publicToolNames().join(', ')})`);
+    expect(techArticleToolClause()).toBe(
+      '6 AlgoVault MCP tools (get_trade_call, get_market_regime, scan_funding_arb, scan_trade_calls, chat_knowledge, search_knowledge)',
+    );
+  });
+
+  it('the count FOLLOWS the tool list, not a frozen literal (a mock 7th tool flips it to "7 …")', () => {
+    const clause = techArticleToolClause([...publicToolNames(), 'mock_seventh_tool']);
+    expect(clause.startsWith('7 AlgoVault MCP tools (')).toBe(true);
+    expect(clause).toContain('mock_seventh_tool');
   });
 });

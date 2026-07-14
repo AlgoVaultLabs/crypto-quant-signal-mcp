@@ -216,3 +216,25 @@ test('no <PFE_WR> / <TOTAL_SIGNALS> placeholder leakage anywhere', async () => {
     assert.equal(matches.length, 0, `${f} has unrendered placeholders: ${matches.slice(0, 3).join(', ')}`);
   }
 });
+
+// OPS-DOCS-JSONLD-TOOLCOUNT-W1: the docs <head> TechArticle description enumerates the public MCP
+// tool set. It is STATIC in docs-src/template.html, but build_docs INJECTS the derived clause
+// (techArticleToolClause ← publicToolNames) into the __TECH_ARTICLE_TOOLS__ placeholder — so the
+// count + name list can never re-hardcode (the "5 tools" bug this retires). This guards the RENDERED
+// output vs the SoT; the derivation itself (mock-7th) is unit-tested in tests/docs-outline.test.ts.
+// (NB: generate_jsonld.mjs does NOT render this TechArticle — it only manages the 5 data-algovault-
+// jsonld marketing blocks; the docs TechArticle is the page's own, injected by build_docs.)
+test('docs.html TechArticle JSON-LD tool clause === the public-tool SoT (no hardcoded count)', async () => {
+  const { publicToolNames } = await import('../../dist/lib/feature-registry.js');
+  const html = await readHtml('docs.html');
+  const m = html.match(/<script type="application\/ld\+json">\s*(\{[\s\S]*?"@type":\s*"TechArticle"[\s\S]*?\})\s*<\/script>/);
+  assert.ok(m, 'docs.html missing TechArticle JSON-LD block');
+  const node = JSON.parse(m[1]);
+  const names = publicToolNames();
+  const clause = `${names.length} AlgoVault MCP tools (${names.join(', ')})`;
+  assert.ok(
+    node.description.includes(clause),
+    `TechArticle must state the SoT-derived clause "${clause}"; got: ${node.description.slice(0, 140)}`,
+  );
+  assert.doesNotMatch(html, /\b5 AlgoVault MCP tools\b/, 'the retired hardcoded "5 AlgoVault MCP tools" must never return');
+});
