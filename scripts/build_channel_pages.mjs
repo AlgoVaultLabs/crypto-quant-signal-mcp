@@ -83,7 +83,7 @@ function faqJsonLd(c) {
 }
 
 function renderChannelPage(c, deps) {
-  const { channelToolCoverage, publicToolEntries, docsHtml, renderSiteNav, renderBrandFooter } = deps;
+  const { channelToolCoverage, publicToolEntries, docsHtml, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet } = deps;
   const anchor = c.docsAnchors[0] ?? '';
   // Verbatim code blocks from the channel's docs sections (Rule 3).
   const codeBlocks = c.docsAnchors
@@ -175,6 +175,7 @@ ${JSON.stringify({ '@context': 'https://schema.org', '@id': ORG_ID }, null, 2)}
   .ch-cta { display: inline-block; margin-top: 28px; padding: 11px 22px; border-radius: 10px; background: var(--mint, oklch(0.86 0.16 165)); color: #060a14; font-weight: 600; text-decoration: none; font-size: 15px; }
 </style>
 <!-- ANALYTICS:START -->
+${renderAnalyticsSnippet()}
 <!-- ANALYTICS:END -->
 </head>
 <body>
@@ -214,9 +215,10 @@ export function buildChannelPages({ check = false, root = REPO_ROOT } = {}) {
   const { hostedChannels, channelToolCoverage } = require(path.join(root, 'dist', 'lib', 'channel-registry.js'));
   const { publicToolEntries } = require(path.join(root, 'dist', 'lib', 'nav-manifest.js'));
   const { renderSiteNav } = require(path.join(root, 'dist', 'lib', 'site-nav.js'));
+  const { renderAnalyticsSnippet } = require(path.join(root, 'dist', 'lib', 'analytics-snippet.js'));
   const { renderBrandFooter } = require(path.join(root, 'dist', 'lib', 'footer-content.js'));
   const docsHtml = fs.readFileSync(path.join(root, 'landing', 'docs.html'), 'utf8');
-  const deps = { channelToolCoverage, publicToolEntries, docsHtml, renderSiteNav, renderBrandFooter };
+  const deps = { channelToolCoverage, publicToolEntries, docsHtml, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet };
 
   const changed = [];
   const drifted = [];

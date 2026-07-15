@@ -59,6 +59,7 @@ export function renderToolsPage(existingHtml = '') {
   const { publicToolEntries } = require(path.join(REPO_ROOT, 'dist', 'lib', 'nav-manifest.js'));
   const { projectCapabilities } = require(path.join(REPO_ROOT, 'dist', 'lib', 'feature-registry.js'));
   const { renderSiteNav } = require(path.join(REPO_ROOT, 'dist', 'lib', 'site-nav.js'));
+  const { renderAnalyticsSnippet } = require(path.join(REPO_ROOT, 'dist', 'lib', 'analytics-snippet.js'));
   const { renderBrandFooter } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
 
   const caps = projectCapabilities().tools;
@@ -121,6 +122,7 @@ tailwind.config = {
   .tools-badge { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 10.5px; letter-spacing: 0.04em; color: var(--fg-3, #9ca3af); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 2px 9px; }
 </style>
 ${preservedJsonLd(existingHtml)}<!-- ANALYTICS:START -->
+${renderAnalyticsSnippet()}
 <!-- ANALYTICS:END -->
 </head>
 <body>
