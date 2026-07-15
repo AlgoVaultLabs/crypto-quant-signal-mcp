@@ -85,7 +85,7 @@ tailwind.config = {
       "name": "What is AlgoVault?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across 5 crypto perp venues — Hyperliquid, Binance, Bybit, OKX, Bitget. Every call is Merkle-anchored on Base L2."
+        "text": "AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across 12 crypto perp venues. Every call is Merkle-anchored on Base L2."
       }
     },
     {
@@ -109,7 +109,7 @@ tailwind.config = {
       "name": "How does AlgoVault compare to TradingView, Coinglass, and raw exchange APIs?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts — one API call returns {call, confidence, regime, factors} across 5 venues. Skip N adapter integrations."
+        "text": "TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts — one API call returns {call, confidence, regime, factors} across 12 crypto perp venues. Skip N adapter integrations."
       }
     },
     {
@@ -125,7 +125,7 @@ tailwind.config = {
       "name": "Which exchanges, assets, and timeframes does AlgoVault cover?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "729+ assets, 11 timeframes (1m–1d), 5 exchanges — Hyperliquid, Binance, Bybit, OKX, Bitget. The public track record covers 10 of 11 timeframes (3m + 5m–1d, cron-seeded). The 1m timeframe remains API-on-demand while sample density accrues."
+        "text": "729+ assets, 11 timeframes (1m–1d), 12 crypto perp venues. The public track record covers 10 of 11 timeframes (3m + 5m–1d, cron-seeded). The 1m timeframe remains API-on-demand while sample density accrues."
       }
     },
     {
@@ -133,7 +133,7 @@ tailwind.config = {
       "name": "What MCP tools does AlgoVault expose?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Three tools. get_trade_call returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. scan_funding_arb returns top cross-venue funding-rate arbitrage spreads (Hyperliquid vs Binance vs Bybit). get_market_regime returns trending / ranging / volatile classification with strategy and sizing suggestions. All three return structured JSON with an _algovault metadata block."
+        "text": "Three tools. get_trade_call returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. scan_funding_arb returns top cross-venue funding-rate arbitrage spreads across Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. get_market_regime returns trending / ranging / volatile classification with strategy and sizing suggestions. All three return structured JSON with an _algovault metadata block."
       }
     },
     {
@@ -168,7 +168,7 @@ tailwind.config = {
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "AlgoVault",
-  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 12 crypto perp venues. Market regime classification and cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "image": "https://algovault.com/logo.png",
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
@@ -198,7 +198,7 @@ tailwind.config = {
   "serviceType": "Composite trade-call API for AI trading agents",
   "provider": { "@id": "https://algovault.com/#organization" },
   "url": "https://algovault.com",
-  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 5 crypto perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 12 crypto perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
   "areaServed": "Worldwide",
   "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
   "hasOfferCatalog": {
@@ -220,7 +220,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 850+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 12 crypto perp venues, 850+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -455,7 +455,7 @@ tailwind.config = {
     <article id="what-is-algovault" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What is AlgoVault?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across <span data-tr-field="exchange_count">5</span> crypto perp venues &mdash; Hyperliquid, Binance, Bybit, OKX, Bitget. Every call is Merkle-anchored on Base L2 (<a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>).
+        AlgoVault is an MCP server for AI trading agents. It returns composite BUY/SELL/HOLD trade calls, market regime classification, and cross-venue funding-rate arbitrage across <span data-tr-field="exchange_count">12</span> crypto perp venues. Every call is Merkle-anchored on Base L2 (<a href="/track-record" class="text-mint-400 hover:underline">/track-record</a>).
       </p>
     </article>
 
@@ -476,7 +476,7 @@ tailwind.config = {
     <article id="vs-tradingview-coinglass" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">How does AlgoVault compare to TradingView, Coinglass, and raw exchange APIs?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts &mdash; one API call returns <code class="text-mint-400">{call, confidence, regime, factors}</code> across <span data-tr-field="exchange_count">5</span> venues. Skip N adapter integrations.
+        TradingView: human chart-readers. Coinglass: human funding watchers. Raw exchange APIs: uninterpreted OHLC, funding, OI. AlgoVault: AI agents reading verdicts &mdash; one API call returns <code class="text-mint-400">{call, confidence, regime, factors}</code> across <span data-tr-field="exchange_count">12</span> venues. Skip N adapter integrations.
       </p>
     </article>
 
@@ -490,14 +490,14 @@ tailwind.config = {
     <article id="coverage" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Which exchanges, assets, and timeframes does AlgoVault cover?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        <span data-tr-field="asset_count">729</span>+ assets, <span data-tr-field="timeframe_count">11</span> timeframes (1m&ndash;1d), <span data-tr-field="exchange_count">5</span> exchanges &mdash; Hyperliquid, Binance, Bybit, OKX, Bitget. The public <a href="/track-record" class="text-mint-400 hover:underline">track record</a> covers 10 of 11 timeframes (3m + 5m&ndash;1d, cron-seeded). The 1m timeframe remains API-on-demand while sample density accrues.
+        <span data-tr-field="asset_count">729</span>+ assets, <span data-tr-field="timeframe_count">11</span> timeframes (1m&ndash;1d), <span data-tr-field="exchange_count">12</span> exchanges. The public <a href="/track-record" class="text-mint-400 hover:underline">track record</a> covers 10 of 11 timeframes (3m + 5m&ndash;1d, cron-seeded). The 1m timeframe remains API-on-demand while sample density accrues.
       </p>
     </article>
 
     <article id="mcp-tools" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">What MCP tools does AlgoVault expose?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Three tools. <code class="text-mint-400">get_trade_call</code> returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. <code class="text-mint-400">scan_funding_arb</code> returns top cross-venue funding-rate arbitrage spreads (Hyperliquid vs Binance vs Bybit). <code class="text-mint-400">get_market_regime</code> returns trending / ranging / volatile classification with strategy and sizing suggestions. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> for ready-made agent recipes.
+        Three tools. <code class="text-mint-400">get_trade_call</code> returns a composite BUY/SELL/HOLD verdict with confidence, regime, and contributing factors. <code class="text-mint-400">scan_funding_arb</code> returns top cross-venue funding-rate arbitrage spreads across <span data-tr-field="funding_venue_count">7</span> venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. <code class="text-mint-400">get_market_regime</code> returns trending / ranging / volatile classification with strategy and sizing suggestions. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> for ready-made agent recipes.
       </p>
     </article>
 

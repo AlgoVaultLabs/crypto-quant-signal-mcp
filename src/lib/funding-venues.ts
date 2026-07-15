@@ -63,3 +63,14 @@ const FUNDING_VENUE_SHORT_LABEL: Partial<Record<ExchangeId, string>> = {
 export const FUNDING_VENUE_LABELS: readonly string[] = Object.values(FUNDING_VENUE_META).map(
   (v) => FUNDING_VENUE_SHORT_LABEL[v.exchangeId] ?? v.exchangeId,
 );
+
+/**
+ * The funding-arb venue list rendered as public-copy text ("A, B, …, and Z") — single-derived from
+ * FUNDING_VENUE_LABELS. Imported by non-live-bindable surfaces (e.g. `src/scripts/agent-forum-post.ts`)
+ * so their venue naming never drifts; the landing pages mirror this exact string as a static list and
+ * the CH4 canary asserts the two agree (name-list == FUNDING_VENUE_COUNT).
+ */
+export const FUNDING_VENUE_LIST_TEXT: string =
+  FUNDING_VENUE_LABELS.length > 1
+    ? `${FUNDING_VENUE_LABELS.slice(0, -1).join(', ')}, and ${FUNDING_VENUE_LABELS[FUNDING_VENUE_LABELS.length - 1]}`
+    : FUNDING_VENUE_LABELS[0];

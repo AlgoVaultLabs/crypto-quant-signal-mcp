@@ -31,7 +31,49 @@
       "apply_to_files": [
         "landing/index.html",
         "landing/how-it-works.html",
-        "landing/skills.html"
+        "landing/skills.html",
+        "landing/faq.html"
+      ],
+      "replace_all": true
+    },
+    {
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: funding-arb venue-count span (=7), single-derived from FUNDING_VENUE_COUNT via /api/performance-public.funding_venue_count. Mirrors dtrf-exchange-count.",
+      "id": "dtrf-funding-venue-count",
+      "find_pattern": "(data-tr-field=\"funding_venue_count\"[^>]*>)[^<]+(<)",
+      "replace_template": "$1{value}$2",
+      "sot": "performance",
+      "accessor": "funding_venue_count",
+      "format": "integer",
+      "apply_to_files": [
+        "landing/faq.html"
+      ],
+      "replace_all": true
+    },
+    {
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: general perp venue count in ld+json / free-text descriptions ('N crypto perp venues') → keeps the digit synced to exchange_count. Venue-count substring ONLY; does NOT match data-tr-field spans ('12</span> crypto perp venues' is non-contiguous) and does NOT touch docs.html (DOCS-GENERATOR domain).",
+      "id": "jsonld-perp-venue-count",
+      "find_pattern": "\\d+( crypto perp venues)",
+      "replace_template": "{value}$1",
+      "sot": "performance",
+      "accessor": "exchange_count",
+      "format": "integer",
+      "apply_to_files": [
+        "landing/index.html",
+        "landing/faq.html",
+        "landing/glossary.html"
+      ],
+      "replace_all": true
+    },
+    {
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: index.html eyebrow 'N venues unified behind one MCP' → exchange_count.",
+      "id": "eyebrow-venues-unified",
+      "find_pattern": "\\d+( venues unified behind one MCP)",
+      "replace_template": "{value}$1",
+      "sot": "performance",
+      "accessor": "exchange_count",
+      "format": "integer",
+      "apply_to_files": [
+        "landing/index.html"
       ],
       "replace_all": true
     },

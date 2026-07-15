@@ -75,7 +75,7 @@ tailwind.config = {
     {
       "@type": "DefinedTerm",
       "name": "Cross-venue intelligence",
-      "description": "Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification."
+      "description": "Aggregating market data and detecting opportunities across multiple exchanges rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification."
     },
     {
       "@type": "DefinedTerm",
@@ -85,7 +85,7 @@ tailwind.config = {
     {
       "@type": "DefinedTerm",
       "name": "Funding arbitrage",
-      "description": "A cross-venue trading strategy that exploits differences in perpetual-swap funding rates between exchanges. AlgoVault's scan_funding_arb MCP tool returns ranked opportunities by annualized basis-point spread across Hyperliquid, Binance, and Bybit."
+      "description": "A cross-venue trading strategy that exploits differences in perpetual-swap funding rates between exchanges. AlgoVault's scan_funding_arb MCP tool returns ranked opportunities by annualized basis-point spread across Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX."
     },
     {
       "@type": "DefinedTerm",
@@ -150,7 +150,7 @@ tailwind.config = {
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "AlgoVault",
-  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget). Market regime classification and cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 12 crypto perp venues. Market regime classification and cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "image": "https://algovault.com/logo.png",
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
@@ -180,7 +180,7 @@ tailwind.config = {
   "serviceType": "Composite trade-call API for AI trading agents",
   "provider": { "@id": "https://algovault.com/#organization" },
   "url": "https://algovault.com",
-  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 5 crypto perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 12 crypto perp venues. Every call Merkle-anchored on Base L2 and verifiable at /verify.",
   "areaServed": "Worldwide",
   "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
   "hasOfferCatalog": {
@@ -202,7 +202,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 5 crypto perp venues, 850+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 12 crypto perp venues, 850+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -436,7 +436,7 @@ tailwind.config = {
     <article id="cross-venue-intelligence" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-mint-400 mb-2">Cross-venue intelligence</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Aggregating market data and detecting opportunities across multiple exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget) rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification.
+        Aggregating market data and detecting opportunities across multiple exchanges rather than a single venue. Enables funding-rate arbitrage detection and venue-aware regime classification.
       </p>
     </article>
 
@@ -450,7 +450,7 @@ tailwind.config = {
     <article id="funding-arbitrage" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">Funding arbitrage</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        A cross-venue trading strategy that exploits differences in perpetual-swap funding rates between exchanges. AlgoVault&rsquo;s <code class="text-mint-400">scan_funding_arb</code> MCP tool returns ranked opportunities by annualized basis-point spread across Hyperliquid, Binance, and Bybit. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> for ready-made agent recipes.
+        A cross-venue trading strategy that exploits differences in perpetual-swap funding rates between exchanges. AlgoVault&rsquo;s <code class="text-mint-400">scan_funding_arb</code> MCP tool returns ranked opportunities by annualized basis-point spread across Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. See <a href="/skills" class="text-mint-400 hover:underline">/skills</a> for ready-made agent recipes.
       </p>
     </article>
 

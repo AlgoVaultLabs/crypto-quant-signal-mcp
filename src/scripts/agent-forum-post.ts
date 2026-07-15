@@ -18,6 +18,7 @@
  */
 
 import { stripExternalUrlsForModeration } from '../lib/forum-post-content.js';
+import { FUNDING_VENUE_LIST_TEXT } from '../lib/funding-venues.js';
 import {
   verifyHashnodePost,
   verifyHashnodePostMultiStageDeferred,
@@ -470,7 +471,7 @@ async function generateMarketInsight(): Promise<Post> {
       const lines = arb.opportunities.slice(0, 3).map(o =>
         `  ${o.coin}: ${o.bestArb.spreadBps} bps (${o.bestArb.annualizedPct}% ann.) — ${o.bestArb.direction} | Urgency: ${o.bestArb.urgency.label} | Conviction: ${o.conviction.label}`
       ).join('\n');
-      body = `Top funding arb opportunities right now:\n\n${lines}\n\nScanned ${arb.scannedPairs} pairs across Hyperliquid, Binance, and Bybit. These spreads reflect cross-venue funding rate differences that delta-neutral strategies can capture.`;
+      body = `Top funding arb opportunities right now:\n\n${lines}\n\nScanned ${arb.scannedPairs} pairs across ${FUNDING_VENUE_LIST_TEXT}. These spreads reflect cross-venue funding rate differences that delta-neutral strategies can capture.`;
     }
   } catch (err) {
     console.error(`[market-insight] Arb call failed:`, err instanceof Error ? err.message : err);

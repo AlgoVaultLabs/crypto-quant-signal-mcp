@@ -13,6 +13,7 @@ import {
   FUNDING_ARB_FETCH_ADAPTERS,
   FUNDING_VENUE_COUNT,
   FUNDING_VENUE_LABELS,
+  FUNDING_VENUE_LIST_TEXT,
 } from '../../src/lib/funding-venues.js';
 
 describe('FUNDING_VENUE_META — the qualifying-venue SoT', () => {
@@ -60,6 +61,12 @@ describe('FUNDING_VENUE_COUNT — the public funding venue count SoT (OPS-LANDIN
   it('never inflates ahead of the engine: Bitget stays excluded from the public count + name list', () => {
     expect(FUNDING_VENUE_LABELS).not.toContain('Bitget');
     expect(FUNDING_VENUE_META).not.toHaveProperty('BitgetPerp');
+  });
+
+  it('FUNDING_VENUE_LIST_TEXT is the Oxford-joined public-copy string (mirrored on the landing pages)', () => {
+    expect(FUNDING_VENUE_LIST_TEXT).toBe('Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX');
+    // the copy string names exactly FUNDING_VENUE_COUNT venues (comma + trailing "and")
+    expect(FUNDING_VENUE_LIST_TEXT.split(/,\s*(?:and\s+)?/).filter(Boolean).length).toBe(FUNDING_VENUE_COUNT);
   });
 });
 
