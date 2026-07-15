@@ -32,6 +32,7 @@ import { buildPublicCtaBlock } from './lib/public-cta.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
+import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing } from './lib/license.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
@@ -2280,6 +2281,10 @@ async function startHttp() {
         exchange_count: EXCHANGE_COUNT,
         timeframe_count: TIMEFRAME_COUNT,
         shadow_venue_count,
+        // OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: additive PUBLIC funding-arb venue
+        // count (=7), single-derived from FUNDING_VENUE_META. Count-only, no outcome_*;
+        // lets landing copy live-bind funding_venue_count the same way exchange_count does.
+        funding_venue_count: FUNDING_VENUE_COUNT,
         // OPS-PUBLIC-API-CONVERT-NUDGE-W1: additive machine-readable conversion
         // CTA. Existing fields byte-unchanged; single-derivation from
         // src/lib/public-cta.ts (no data withheld, no rate-limit).

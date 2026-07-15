@@ -8,7 +8,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import { annualizeFunding } from '../../src/lib/rank-constants.js';
-import { FUNDING_VENUE_META, FUNDING_ARB_FETCH_ADAPTERS } from '../../src/lib/funding-venues.js';
+import {
+  FUNDING_VENUE_META,
+  FUNDING_ARB_FETCH_ADAPTERS,
+  FUNDING_VENUE_COUNT,
+  FUNDING_VENUE_LABELS,
+} from '../../src/lib/funding-venues.js';
 
 describe('FUNDING_VENUE_META — the qualifying-venue SoT', () => {
   it('is exactly the 7 architect-ratified venues with correct intervals', () => {
@@ -25,6 +30,36 @@ describe('FUNDING_VENUE_META — the qualifying-venue SoT', () => {
 
   it('fetch-adapter set uses the HL aggregate for Bin/Bybit (no double-count)', () => {
     expect([...FUNDING_ARB_FETCH_ADAPTERS]).toEqual(['HL', 'GATE', 'KUCOIN', 'ASTER', 'OKX']);
+  });
+});
+
+describe('FUNDING_VENUE_COUNT — the public funding venue count SoT (OPS-LANDING-FUNDING-VENUE-RECONCILE-W1)', () => {
+  it('== |FUNDING_VENUE_META| == 7 (the qualifying set the engine actually reports)', () => {
+    expect(FUNDING_VENUE_COUNT).toBe(Object.keys(FUNDING_VENUE_META).length);
+    expect(FUNDING_VENUE_COUNT).toBe(7);
+  });
+
+  it('is NOT the fetch-adapter count (=5): the public claim must derive from META, not FETCH_ADAPTERS', () => {
+    // HL's aggregate feed fans out to HL+Binance+Bybit, so 5 fetch adapters → 7 venues.
+    // Guards the CH1 spec-correction: FUNDING_ARB_FETCH_ADAPTERS.length would understate the count.
+    expect(FUNDING_ARB_FETCH_ADAPTERS.length).toBe(5);
+    expect(FUNDING_VENUE_COUNT).not.toBe(FUNDING_ARB_FETCH_ADAPTERS.length);
+  });
+
+  it('name-list length == count (Q4b coupling): a future META add that bumps the count but not the names FAILS here', () => {
+    expect(FUNDING_VENUE_LABELS.length).toBe(FUNDING_VENUE_COUNT);
+  });
+
+  it('labels are exactly the 7 named venues in the canonical (docs.html) copy order', () => {
+    // Exact match also proves no label fell back to a raw exchangeId (e.g. 'HL' → 'Hyperliquid').
+    expect([...FUNDING_VENUE_LABELS]).toEqual([
+      'Hyperliquid', 'Binance', 'Bybit', 'Gate', 'KuCoin', 'Aster', 'OKX',
+    ]);
+  });
+
+  it('never inflates ahead of the engine: Bitget stays excluded from the public count + name list', () => {
+    expect(FUNDING_VENUE_LABELS).not.toContain('Bitget');
+    expect(FUNDING_VENUE_META).not.toHaveProperty('BitgetPerp');
   });
 });
 

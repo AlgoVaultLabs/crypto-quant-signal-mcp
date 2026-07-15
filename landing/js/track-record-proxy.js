@@ -146,6 +146,9 @@
       setField('asset_count',     formatAssetCount(perf && perf.asset_count));
       setField('exchange_count',  formatRawInt(perf && perf.exchange_count));
       setField('timeframe_count', formatRawInt(perf && perf.timeframe_count));
+      // OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: funding-arb venue count (=7), live-bound
+      // exactly like exchange_count. Static span fallback stays visible if the fetch fails.
+      setField('funding_venue_count', formatRawInt(perf && perf.funding_venue_count));
       // DESIGN-W7 H-PR1: total_calls_executed = totalCalls + totalHolds (= "Agent Calls" hero counter).
       // Computed CLIENT-SIDE (no server-side schema change). Refresh cadence: shared with hero
       // counter — see refreshHeroCounter setInterval at end of this module (3s) which calls refresh().
