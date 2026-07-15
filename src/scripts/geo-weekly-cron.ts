@@ -343,8 +343,9 @@ async function fetchDigestData(): Promise<{
     top_competitor_domain: string | null;
   }>(
     `SELECT query_id, query_tier, recommended_action, top_competitor, top_competitor_domain
-     FROM geo_content_gaps ORDER BY computed_at DESC, rank_score DESC LIMIT 1`,
-    [],
+     FROM geo_content_gaps WHERE query_id = ANY($1::text[])
+     ORDER BY computed_at DESC, rank_score DESC LIMIT 1`,
+    [targetIds],
   );
 
   // R5 — index presence: per-engine "did the substrate retrieve algovault.com?" for
@@ -381,6 +382,10 @@ async function fetchDigestData(): Promise<{
   const seenQ = new Set<string>();
   const gaps: GapLike[] = [];
   for (const b of gapBriefs) {
+    // GEO-TARGET-DIGEST-REDESIGN-W1 — target-only decision path: a dropped-misfit query whose data
+    // still lingers in the 4-week gap window (best-python-backtester / python-quant-for-ai) never
+    // reaches the scorer/brief/decision-basis. (scoreWeek also skips them; this trims the brief table.)
+    if (!targetIdSet.has(b.query_id)) continue;
     if (seenQ.has(b.query_id)) continue; // rank_score desc → first per query_id is its worst gap
     seenQ.add(b.query_id);
     gaps.push({

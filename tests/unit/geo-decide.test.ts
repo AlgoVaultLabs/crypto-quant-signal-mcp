@@ -361,4 +361,18 @@ describe('scoreWeek — contested → earned move (never a competitor placement 
     const all = [...d.all.eligibility, ...d.all.third_party, ...d.all.owned_content];
     expect(all.find((x) => x.query_id === 'algovault-exists')).toBeUndefined();
   });
+
+  it('a query ABSENT from target_set (a dropped misfit whose 4-week data lingers) is SKIPPED — never scored', () => {
+    const obj = loadObjective();
+    const d = scoreWeek(
+      { eligibility: { notIndexed: [] }, gaps: [gap('best-python-backtester', true), gap('python-quant-for-ai', true), gap('composite-quant-signal', true)] },
+      obj,
+    );
+    const all = [...d.all.eligibility, ...d.all.third_party, ...d.all.owned_content];
+    // the two DROPPED misfits are gone from the decision (fixes the live dry-run leak)
+    expect(all.find((x) => x.query_id === 'best-python-backtester')).toBeUndefined();
+    expect(all.find((x) => x.query_id === 'python-quant-for-ai')).toBeUndefined();
+    // the real target query is still scored
+    expect(all.find((x) => x.query_id === 'composite-quant-signal')).toBeDefined();
+  });
 });

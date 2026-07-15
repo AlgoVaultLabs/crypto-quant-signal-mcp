@@ -222,16 +222,10 @@ export function productFitOf(obj: Objective, query_id: string): number {
   return typeof v === 'number' ? v : 1.0;
 }
 
-/**
- * GEO-TARGET-DIGEST-REDESIGN-W1 — a query's conversion classification from the objective SoT
- * (`target_set`). EXPORTED as the single shared projection: the scorer's earned-routing AND the
- * digest's Tier-A/B split both read THIS (never re-derive). An unmapped id defaults to a Tier-B
- * `owned` classification (back-compat: pre-wave behavior = seed/placement/owned routing); a C3
- * canary asserts every live query is classified, so the default only ever guards a transient drift.
- */
-export function targetOf(obj: Objective, query_id: string): TargetClassification {
-  return obj.target_set?.[query_id] ?? { tier: 'B', audience: 'ALL', target_mode: 'owned' };
-}
+// GEO-TARGET-DIGEST-REDESIGN-W1 — the conversion classification is read directly from
+// `obj.target_set?.[query_id]` at the ONE consumer (scoreWeek): a present target_set means a
+// query absent from it is NOT a target (skipped), so a defaulting helper would MASK dropped-misfit
+// leakage. The digest badges + cron read their own `target_set` map the same way.
 
 /**
  * Rank the week's candidate moves through the HARD priority gate. PURE: same input +
@@ -275,14 +269,17 @@ export function scoreWeek(input: ScoreInput, obj: Objective): RankedDecision {
     const lift = Math.max(0, 1 - g.sov);
     const rp = revenueProximity(obj, g.query_tier);
     const pf = productFitOf(obj, g.query_id);
-    // GEO-TARGET-DIGEST-REDESIGN-W1 — the conversion classification gates the move-type BEFORE the
-    // competitor-presence routing, so a contested query can never emit a competitor placement.
-    const targetMode = targetOf(obj, g.query_id).target_mode;
-    if (targetMode === 'measure_only') {
-      // probe-only (the presence retrieval check) — never a target. Presence-tier queries are
-      // already excluded upstream at SQL (getQueryRates); this is a defensive belt.
+    // GEO-TARGET-DIGEST-REDESIGN-W1 — when a target_set SoT is present, ONLY classified TARGET queries
+    // are scored: a query ABSENT from target_set (a dropped misfit whose historical data still lingers
+    // in the 4-week gap window — e.g. best-python-backtester) OR a measure_only presence probe is
+    // SKIPPED, never surfaced as a recommended move. The classification also gates the move-type BEFORE
+    // the competitor-presence routing, so a contested query can never emit a competitor placement.
+    // (target_set absent ⇒ back-compat: every gap routes as `owned`.)
+    const classified = obj.target_set?.[g.query_id];
+    if (obj.target_set && (!classified || classified.tier === 'measure_only' || classified.target_mode === 'measure_only')) {
       continue;
     }
+    const targetMode = classified?.target_mode ?? 'owned';
     if (targetMode === 'earned') {
       // CONTESTED / earned-only → draft an EARNED placement (independent press / Reddit / listicle).
       // NEVER `pursue_placement` on the competitor's surface, NEVER an owned post — regardless of
