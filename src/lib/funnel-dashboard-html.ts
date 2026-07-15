@@ -110,7 +110,7 @@ export function renderFunnelDashboardHtml(): string {
     "  var proxy='<div class=\"proxyband\">Engagement (proxy \\u00b7 not a funnel parent): track-record views <b>'+f(ep.track_record_viewed)+'</b> \\u00b7 landing CTA <b>'+f(ep.landing_cta_clicked)+'</b><div class=\"hint\">'+esc(ep.caveat)+'</div></div>';",
     "  funnel(el('human'),{title:'Human funnel',path:'Web \\u2192 account \\u2192 subscription',money:'Stripe',moneyCls:'money-stripe',stages:hf.stages,transitions:hf.transitions,leak:hf.biggest_leak,proxyBand:proxy,",
     "    leakExtra:'Human web-flow friction, not traffic. vs the 30\\u201355% signup-form norm.',",
-    "    fixHtml:'<div class=\"fixline\"><b>Fix (deferred \\u2192 FUNNEL-FIX-HUMAN-SIGNUP-W1):</b> OAuth / one-tap \\u00b7 defer the email + referral step to AFTER first value. (Nudge layer already shipped.)</div>',",
+    "    fixHtml:'<div class=\"fixline\"><b>\\u2705 Fix shipped (FUNNEL-FIX-HUMAN-SIGNUP-W1, live):</b> OAuth/one-tap + defer email/referral to after first value. Leak persists post-ship \\u2192 the binding constraint is traffic/demand, not signup friction.</div>',",
     "    chLab:'By channel (human source)',chans:hc});",
     // OPS-ATTRIBUTION-AI-REFERRAL-W1 — AI-referral family (human funnel · floor): AI-referred signups
     "  var air=hf.ai_referral;if(air){var airRows=(air.by_source||[]).map(function(s){return [String(s.source).replace('ai_',''),f(s.count),pct(s.pct)];});if(!airRows.length)airRows=[['\\u2014 none yet',0,'\\u2014']];table(el('aireferral'),['AI surface','Signups','Share'],airRows);el('aireferral-note').textContent='AI-referred signups (floor): '+f(air.total)+'. '+air.floor_note;}",
@@ -118,7 +118,7 @@ export function renderFunnelDashboardHtml(): string {
     "  var ac=(d.retention&&d.retention.by_channel||[]).slice(0,4).map(function(x){return {nm:x.channel,w:Math.max(6,Math.round((x.curve.d7||0)*100)),col:(x.curve.d7>=0.3?'#56d364':(x.curve.d7>0?'#d29922':'#ff7b72')),txt:pct(x.curve.d7)+' d7',n:'n='+f(x.curve.cohort_size)};});",
     "  funnel(el('agent'),{title:'Agent funnel',path:'MCP / API \\u2192 x402 \\u00b7 no signup',money:'x402',moneyCls:'money-x402',stages:af.stages,transitions:af.transitions,leak:af.biggest_leak,",
     "    leakExtra:'quota\\u2192paid rate is unit-approximate (keys vs payment events) \\u2014 '+esc(af.paid_note.split('.')[0])+'. Quota detail: hard/block '+f(af.quota_detail.windowed_hard_block)+' \\u00b7 approaching(soft) '+f(af.quota_detail.soft_approaching)+' \\u00b7 all-time PQLs '+f(af.quota_detail.all_time_pqls)+'.',",
-    "    fixHtml:'<div class=\"fixline\"><b>Fix (deferred \\u2192 FUNNEL-FIX-AGENT-X402-NUDGE-W1):</b> surface x402 pay-per-call in-protocol at the quota edge (the shipped nudge points to a Stripe sub, not x402).</div>',",
+    "    fixHtml:'<div class=\"fixline\"><b>\\u2705 Fix shipped (FUNNEL-FIX-AGENT-X402-NUDGE-W1, live):</b> x402 pay-per-call surfaced in-protocol at the quota edge. Still 0 paid \\u2192 agents consume free HOLDs; willingness-to-pay is the constraint, not the gate.</div>',",
     "    chLab:'By channel (retention d7 \\u2014 quality signal)',chans:ac});",
     // HOLD upside
     "  var up=hu.upside.map(function(u){return '<div class=\"up\"><div class=\"pr\">$'+u.price+' / HOLD</div><div class=\"amt\">$'+f(u.amount)+'</div><div class=\"yr\">this window</div></div>';}).join('');",
@@ -133,9 +133,9 @@ export function renderFunnelDashboardHtml(): string {
     // bridge + cross-cutting
     "  el('bridge').innerHTML='<b>The bridge:</b> the two funnels connect through the API key \\u2014 a human signs up \\u2192 gets a key + referral code \\u2192 wires it into agents, which then appear \\u201crecognized\\u201d in the agent funnel. Most agents never enter the human funnel (free tier needs no signup). <b>Humans are the buyers; agents are the consumers.</b>';",
     "  var directPct=null,tot=0,direct=0;(hf.by_channel||[]).forEach(function(c){tot+=c.count;if(c.channel==='direct')direct=c.count;});if(tot>0)directPct=direct/tot;",
-    "  el('cross').innerHTML='<div class=\"warn\"><b>Attribution is '+pct(directPct)+' blind.</b> Most human clicks + agent connects are untagged \\u201cdirect\\u201d \\u2014 you can\\u2019t yet tell which channel produces payers. Fix = UTM every owned link + server-side ?src= first-touch.</div>'"
+    "  el('cross').innerHTML='<div class=\"warn\"><b>Attribution is '+pct(directPct)+' blind.</b> Most human clicks + agent connects are untagged \\u201cdirect\\u201d \\u2014 you can\\u2019t yet tell which channel produces payers. \\u2705 Fix shipped (FUNNEL-FIX-ATTRIBUTION-W1 + OPS-UTM-SHORTEN-W1, live): server-side ?src= first-touch + owned-link tags. Coverage is new-traffic-forward (see the source-classified panel below) \\u2014 it climbs as tagged traffic accrues. A time/volume gap now, not a build gap.</div>'"
     ,
-    "    +'<div class=\"warn\"><b>No activation-timing stage.</b> Neither funnel measures time-to-first-call (TTFC) \\u2014 the documented precursor to retention + payment. Activated counts \\u22651 call but not <em>how fast</em>.</div>';",
+    "    +'<div class=\"warn\"><b>No activation-timing stage.</b> Neither funnel measures time-to-first-call (TTFC) \\u2014 the documented precursor to retention + payment. Activated counts \\u22651 call but not <em>how fast</em>. (the one remaining instrumentation gap)</div>';",
     "  var sc=d.source_channels;if(sc){var scrows=sc.by_source.map(function(x){return [x.source,x.medium,f(x.count),pct(x.pct)+(x.low_confidence?' n<30':'')];});table(el('srcchan'),['Source','Medium','Sessions','Share'],scrows);el('srccov').textContent='Coverage '+pct(sc.coverage_pct)+' classified ('+f(sc.classified)+' of '+f(sc.total)+' sessions). '+esc(sc.note);}",
     // detail panels (retained)
     "  var rt=d.retention;if(rt){var d90=function(c){return c.d90==null?'\\u2014':pct(c.d90);};",
@@ -163,7 +163,7 @@ export function renderFunnelDashboardHtml(): string {
     '<div id="warnbox" class="warnbox"></div>',
     '<div class="splitnote"><b>Primary split = Human vs Agent.</b> The journeys don\'t share stages — "signup / referral" is human-only, "x402 pay-per-call" is agent-only, on different rails (Stripe vs x402). Channel is the secondary breakdown inside each.</div>',
     '<div class="duo"><div class="fcard" id="human"></div><div class="fcard" id="agent"></div></div>',
-    '<div class="st">AI referral (human funnel · floor) <span style="font-size:11px;font-weight:400;color:#8b949e;float:right">AI-referred signups · anonymous AI visitors land with the 1K-visitor beacon</span></div>',
+    '<div class="st">AI referral (human funnel · floor) <span style="font-size:11px;font-weight:400;color:#8b949e;float:right">AI-referred signups · anonymous AI visitors surface once the self-hosted Plausible referrer view lands</span></div>',
     '<div id="aireferral"></div><div class="muted" id="aireferral-note"></div>',
     '<div class="st">Agent engagement + HOLD-monetization upside <span style="font-size:11px;font-weight:400;color:#8b949e;float:right">~99% of external calls are free HOLDs today — the untapped ceiling</span></div>',
     '<div class="hold" id="hold"></div>',

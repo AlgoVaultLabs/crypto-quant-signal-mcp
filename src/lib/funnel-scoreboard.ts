@@ -422,8 +422,8 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   // an ai_* slug (medium==='ai') via the SHARED classifySource (single-derivation with the /mcp path).
   // FLOOR: signup_attribution.referrer is the SIGNUP-MOMENT referer (the /signup click origin), NOT the
   // first-touch landing referer — so only a DIRECT click from an AI host into /signup counts today;
-  // anonymous AI visitors (land→browse→signup) light up when the web-visitor beacon lands
-  // (OPS-ATTRIBUTION-AI-REFERRAL-BEACON-W1). Reuses the same signup_attribution rows (no extra query).
+  // anonymous AI visitors (land→browse→signup) surface once the self-hosted Plausible referrer view
+  // lands (a custom web-visitor beacon is parked — it would duplicate Plausible). Reuses the same signup_attribution rows (no extra query).
   const aiCounts: Record<string, number> = {};
   let aiTotal = 0;
   for (const r of chanRows) {
@@ -436,7 +436,7 @@ export async function getHumanFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   const ai_referral = {
     total: aiTotal,
     by_source: Object.entries(aiCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => ({ source, count, pct: aiTotal > 0 ? count / aiTotal : null })),
-    floor_note: 'FLOOR — AI-referred signups (Referer/utm-classified). signup_attribution.referrer is the signup-moment referer, so only direct-to-/signup clicks from an AI host count today; anonymous AI visitors (land→browse→signup) light up with the web-visitor beacon (OPS-ATTRIBUTION-AI-REFERRAL-BEACON-W1). Referer-only ~30%; AI Overviews + native apps uncapturable.',
+    floor_note: 'FLOOR — AI-referred signups (Referer/utm-classified). signup_attribution.referrer is the signup-moment referer, so only direct-to-/signup clicks from an AI host count today; anonymous AI visitors surface once the self-hosted Plausible referrer view lands (parked: a custom beacon would duplicate Plausible). Referer-only ~30%; AI Overviews + native apps uncapturable.',
   };
   const stages: FunnelStage[] = [
     { key: 'subscribe_click', label: 'Subscribe click', sublabel: 'Intent · /signup CTA', count: subscribeClicks },
