@@ -1,0 +1,70 @@
+{
+  "wave": "OPS-PUBLIC-API-CONVERT-NUDGE-W1",
+  "snapshot_date": "2026-07-15",
+  "purpose": "Public-response-shape gate for the additive `_algovault` conversion CTA block on the 3 hot public proof endpoints. This is the REUSABLE artifact: any future public JSON endpoint adopts the block via `res.json({ ...body, _algovault: buildPublicCtaBlock() })` and is covered by the `_algovault` contract below. Supersedes — for the `_algovault` key only — the per-endpoint snapshots api-performance-public-shape-snapshot-2026-06-22.json and api-erc-8004-reputation-shape-snapshot-2026-05-16.json (both PRESERVED unmutated for historical lineage; the 2026-05-16 file is explicitly never-mutate). Existing (non-`_algovault`) fields are BYTE-UNCHANGED by this wave.",
+  "source": "src/lib/public-cta.ts::buildPublicCtaBlock() (single-derivation) + src/index.ts handlers + src/lib/erc8004-reputation.ts builder. Verified live pre/post deploy via the drift_check_command below.",
+  "cta_block": {
+    "key": "_algovault",
+    "single_derivation_source": "src/lib/public-cta.ts::buildPublicCtaBlock()",
+    "allowed_sub_keys": ["brand", "note", "get_started", "docs"],
+    "approved_copy_verbatim": {
+      "brand": "The Brain Layer for AI Trading Agents",
+      "note": "Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.",
+      "get_started": "https://algovault.com/#pricing",
+      "docs": "https://algovault.com/docs.html"
+    },
+    "approved_by": "Mr.1 2026-07-15",
+    "cache_note": "Static values → no per-request variance → cache-safe under the 45s origin-shield edge cache on all 3 paths.",
+    "reusable_pattern": "ADD (fresh block): res.json({ ...body, _algovault: buildPublicCtaBlock() }). EXTEND (endpoint already emits `_algovault` meta): _algovault: { ...existingMeta, ...buildPublicCtaBlock() }."
+  },
+  "endpoints": {
+    "/api/performance-public": {
+      "change_class": "ADDITIVE — new top-level `_algovault` key. All 17 prior top-level keys byte-unchanged.",
+      "allowed_keys": [
+        "asset_count", "byAsset", "byCallType", "byExchange", "byTier", "byTimeframe",
+        "exchange_count", "hold_rate", "holdsByTier", "methodology", "overall", "period",
+        "recentSignals", "shadow_venue_count", "timeframe_count", "totalCalls", "totalHolds",
+        "_algovault"
+      ],
+      "algovault_sub_keys": ["brand", "note", "get_started", "docs"],
+      "forbidden_keys": ["outcome_return_pct", "outcome_price", "outcome_won", "pfe_return_pct", "mae_return_pct", "win_rate", "phase_e"],
+      "consumers": [
+        "landing/js/track-record-proxy.js (reads byExchange/byAsset/byTimeframe/byTier/totalCalls/overall — ignores `_algovault`)",
+        "Cloudflare edge cache (45s origin-shield; static CTA is cache-safe)",
+        "/opt/algovault-monitoring/website-drift-canary.py (reads per-metric-class jq accessors — .totalCalls/.overall.pfeWinRate/etc — NOT a top-level key-set; `_algovault` is inert to it)"
+      ]
+    },
+    "/api/merkle-batches": {
+      "change_class": "ADDITIVE — new top-level `_algovault` key. batches/contractAddress/chain byte-unchanged.",
+      "allowed_keys": ["batches", "contractAddress", "chain", "_algovault"],
+      "algovault_sub_keys": ["brand", "note", "get_started", "docs"],
+      "forbidden_keys": ["outcome_return_pct", "outcome_price", "win_rate", "phase_e"],
+      "consumers": [
+        "landing (data-tr-field=latest_batch_at via .batches[0].published_at)",
+        "Cloudflare edge cache (45s origin-shield)",
+        "/opt/algovault-monitoring/website-drift-canary.py (reads .batches|length FLOOR — `_algovault` inert)"
+      ]
+    },
+    "/api/erc-8004-reputation": {
+      "change_class": "EXTEND — endpoint already emitted `_algovault` {version, endpoint_version, freshness_seconds}; the 4 CTA sub-keys are APPENDED. The 3 prior meta sub-keys + all 13 sibling top-level keys byte-unchanged. Historical shape lock preserved in api-erc-8004-reputation-shape-snapshot-2026-05-16.json (never-mutate).",
+      "allowed_keys": [
+        "agent_id", "registry", "chain", "chain_id", "identity_registry",
+        "attestation_registry", "score", "total_attestations", "status", "status_message",
+        "first_registered_at", "last_attestation_at", "basescan_url", "_algovault"
+      ],
+      "algovault_sub_keys": ["version", "endpoint_version", "freshness_seconds", "brand", "note", "get_started", "docs"],
+      "forbidden_keys": ["outcome_return_pct", "outcome_price", "phase_e_wr", "phase_e", "win_rate"],
+      "consumers": [
+        "landing/index.html + landing/verify.html (agent_id/basescan_url/identity_registry — ignore CTA sub-keys)",
+        "Cloudflare edge cache (5-min body TTL + 45s edge)",
+        "external ERC-8004-aware indexers (consume canonical shape; additive CTA is non-breaking)"
+      ]
+    }
+  },
+  "data_integrity": {
+    "law": "The `_algovault` CTA carries brand + generic CTA + public URLs ONLY. Zero internal metrics.",
+    "grep_check": "curl -s https://algovault.com/api/<endpoint> | jq -c '._algovault' | grep -icE 'outcome_return_pct|outcome_price|win.?rate|equit|phase.?e'  → MUST be 0 for all 3 endpoints."
+  },
+  "drift_check_command": "for p in performance-public merkle-batches erc-8004-reputation; do curl -s \"https://algovault.com/api/$p\" | jq -e '._algovault | (.brand==\"The Brain Layer for AI Trading Agents\" and .note==\"Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.\" and .get_started==\"https://algovault.com/#pricing\" and .docs==\"https://algovault.com/docs.html\")' >/dev/null && echo \"$p CTA_OK\" || echo \"$p CTA_FAIL\"; curl -s \"https://algovault.com/api/$p\" | jq -c '._algovault' | grep -iqE 'outcome_return_pct|outcome_price|win.?rate|equit|phase.?e' && echo \"$p FORBIDDEN_LEAK\" || echo \"$p CLEAN\"; done",
+  "unit_test": "tests/unit/public-cta.test.ts (formatter copy + purity + Data-Integrity canary); tests/unit/erc8004-public-shape.test.ts (extended `_algovault` toEqual lock)."
+}

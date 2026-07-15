@@ -28,6 +28,7 @@ import { startDeliveryWorker } from './lib/webhook-delivery.js';
 import { startScanDigestScheduler, stopScanDigestScheduler } from './lib/scan-digest-scheduler.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
+import { buildPublicCtaBlock } from './lib/public-cta.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
@@ -2279,6 +2280,10 @@ async function startHttp() {
         exchange_count: EXCHANGE_COUNT,
         timeframe_count: TIMEFRAME_COUNT,
         shadow_venue_count,
+        // OPS-PUBLIC-API-CONVERT-NUDGE-W1: additive machine-readable conversion
+        // CTA. Existing fields byte-unchanged; single-derivation from
+        // src/lib/public-cta.ts (no data withheld, no rate-limit).
+        _algovault: buildPublicCtaBlock(),
       });
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch performance stats' });
@@ -2445,6 +2450,10 @@ async function startHttp() {
         })),
         contractAddress: MERKLE_CONTRACT_ADDR,
         chain: 'Base (8453)',
+        // OPS-PUBLIC-API-CONVERT-NUDGE-W1: additive machine-readable conversion
+        // CTA (single-derivation from src/lib/public-cta.ts). Existing fields
+        // byte-unchanged.
+        _algovault: buildPublicCtaBlock(),
       });
     } catch {
       res.status(500).json({ error: 'Failed to load batches' });

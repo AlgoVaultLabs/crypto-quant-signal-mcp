@@ -14,6 +14,7 @@ import {
   IDENTITY_REGISTRY_ADDRESS,
   BASE_CHAIN_ID,
 } from './erc8004.js';
+import { buildPublicCtaBlock, type PublicCtaBlock } from './public-cta.js';
 
 export interface Erc8004ReputationBodyOptions {
   pkgVersion: string;
@@ -36,11 +37,15 @@ export interface Erc8004ReputationBody {
   first_registered_at: string | null;
   last_attestation_at: string | null;
   basescan_url: string | null;
+  // OPS-PUBLIC-API-CONVERT-NUDGE-W1: the endpoint-meta `_algovault` block is
+  // EXTENDED with the additive conversion CTA (PublicCtaBlock). Existing meta
+  // keys (version/endpoint_version/freshness_seconds) are byte-unchanged; the
+  // 4 CTA keys are appended from the single-derivation formatter.
   _algovault: {
     version: string;
     endpoint_version: 'v1';
     freshness_seconds: number;
-  };
+  } & PublicCtaBlock;
 }
 
 const PATH_3_STATUS_MESSAGE =
@@ -69,6 +74,9 @@ export function buildErc8004ReputationBody(
       version: opts.pkgVersion,
       endpoint_version: 'v1',
       freshness_seconds: opts.freshnessSeconds,
+      // Additive conversion CTA (single-derivation) merged into the existing
+      // endpoint-meta block so `jq ._algovault` carries the 4 approved keys.
+      ...buildPublicCtaBlock(),
     },
   };
 }

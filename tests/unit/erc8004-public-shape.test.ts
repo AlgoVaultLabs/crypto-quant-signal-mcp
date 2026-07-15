@@ -67,6 +67,12 @@ describe('/api/erc-8004-reputation shape (Path 3 / Amendment C)', () => {
         version: '1.12.0',
         endpoint_version: 'v1',
         freshness_seconds: 0,
+        // OPS-PUBLIC-API-CONVERT-NUDGE-W1: additive conversion CTA merged into
+        // the endpoint-meta block (single-derivation from src/lib/public-cta.ts).
+        brand: 'The Brain Layer for AI Trading Agents',
+        note: 'Building an agent? Get a free API key — higher limits, all tools, x402 pay-per-call.',
+        get_started: 'https://algovault.com/#pricing',
+        docs: 'https://algovault.com/docs.html',
       },
     });
   });
