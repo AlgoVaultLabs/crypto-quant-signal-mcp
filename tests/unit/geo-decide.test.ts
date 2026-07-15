@@ -26,6 +26,8 @@ import {
   type Objective,
   type ScoreInput,
 } from '../../src/lib/geo-decide.js';
+// GEO-TARGET-DIGEST-REDESIGN-W1 — the target_set coverage canary cross-checks against the live query set.
+import { loadQueries } from '../../src/lib/geo-orchestrator.js';
 
 // Fixture objective — mirrors the ratified landing/Prompt/geo-objective.yaml.
 const OBJ: Objective = {
@@ -271,16 +273,92 @@ describe('loadObjective — parses the real SoT', () => {
     expect(obj.revenue_proximity.branded).toBeGreaterThan(obj.revenue_proximity.niche);
   });
 
-  it('carries the product_fit misfit map (traced to brand-facts honest-scope) + OPEN-query config', () => {
+  it('GEO-TARGET-DIGEST-REDESIGN-W1 — misfits DROPPED (not down-weighted); product_fit map now empty', () => {
     const obj = loadObjective();
-    // misfits must be present and < 1.0 (AlgoVault is not a backtester / quant framework).
-    expect(obj.product_fit?.['best-python-backtester']).toBeLessThan(1.0);
-    expect(obj.product_fit?.['python-quant-for-ai']).toBeLessThan(1.0);
-    // OPEN-query seed config present + threshold above the misfit values (so misfits never seed).
+    // The two off-product misfits are REMOVED from geo-queries.yaml entirely (not merely down-weighted),
+    // so product_fit no longer needs to carry them — the map is empty (every live query is on-fit).
+    expect(obj.product_fit?.['best-python-backtester']).toBeUndefined();
+    expect(obj.product_fit?.['python-quant-for-ai']).toBeUndefined();
+    expect(Object.keys(obj.product_fit ?? {})).toHaveLength(0);
+    // The OPEN-query seed mechanism is retained (unchanged).
     expect(obj.open_query?.move_type).toBe('seed_the_answer');
-    expect(obj.open_query?.product_fit_threshold).toBeGreaterThan(obj.product_fit!['best-python-backtester']);
     expect(obj.open_query?.open_bonus).toBeGreaterThan(0);
-    // the documented score_formula string carries the new product_fit term.
+    // INVARIANT still holds trivially while product_fit is empty: inject_threshold ≥ product_fit_threshold.
+    expect(obj.inject_threshold ?? 0.5).toBeGreaterThanOrEqual(obj.open_query!.product_fit_threshold);
     expect(obj.score_formula).toContain('product_fit');
+  });
+
+  // GEO-TARGET-DIGEST-REDESIGN-W1 — the conversion-tiered target_set classification (the SoT).
+  it('parses the target_set classification covering every live query (A / B / contested / measure_only)', () => {
+    const obj = loadObjective();
+    const ts = obj.target_set!;
+    expect(ts).toBeDefined();
+    const byTier: Record<string, number> = {};
+    for (const v of Object.values(ts)) byTier[v.tier] = (byTier[v.tier] ?? 0) + 1;
+    expect(byTier).toEqual({ A: 11, B: 6, contested: 2, measure_only: 1 });
+    // the presence probe is measure_only; the 2 contested are earned-only.
+    expect(ts['algovault-exists']).toMatchObject({ tier: 'measure_only', target_mode: 'measure_only' });
+    expect(ts['best-mcp-trading']).toMatchObject({ tier: 'contested', target_mode: 'earned' });
+    expect(ts['agent-signal-api']).toMatchObject({ tier: 'contested', target_mode: 'earned' });
+    // every contested query is earned, and only contested queries are earned (the invariant).
+    const earned = Object.keys(ts).filter((id) => ts[id].target_mode === 'earned').sort();
+    const contested = Object.keys(ts).filter((id) => ts[id].tier === 'contested').sort();
+    expect(earned).toEqual(contested);
+    // the 6 NEW Tier-A buyer queries are classified A/owned.
+    for (const id of ['trade-call-not-data', 'verifiable-winrate-api', 'altfins-alternative', 'x402-signal-api', 'signal-api-pricing', 'retail-signals-verifiable']) {
+      expect(ts[id]).toMatchObject({ tier: 'A', target_mode: 'owned' });
+    }
+  });
+
+  it('the target_set classifies exactly the live geo-queries.yaml id set (coverage canary)', () => {
+    const obj = loadObjective();
+    const queries = loadQueries();
+    const queryIds = new Set(queries.map((q) => q.id));
+    const tsIds = new Set(Object.keys(obj.target_set ?? {}));
+    // no query missing a classification, no classification without a query.
+    for (const id of queryIds) expect(tsIds.has(id)).toBe(true);
+    for (const id of tsIds) expect(queryIds.has(id)).toBe(true);
+  });
+});
+
+// GEO-TARGET-DIGEST-REDESIGN-W1 — the scorer's target_mode routing on the REAL objective.
+describe('scoreWeek — contested → earned move (never a competitor placement / owned post)', () => {
+  const gap = (query_id: string, hasLeader: boolean) => ({
+    query_id,
+    query_tier: 'branded',
+    sov: 0.1,
+    top_competitor: hasLeader ? 'altfins' : null,
+    top_competitor_domain: hasLeader ? 'altfins.com' : null,
+  });
+
+  it('a contested query emits an `earned` move — NO domain, NO "pursue a placement", NOT owned', () => {
+    const obj = loadObjective();
+    const d = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [gap('best-mcp-trading', true)] }, obj);
+    const c = [...d.all.third_party, ...d.all.owned_content].find((x) => x.query_id === 'best-mcp-trading')!;
+    expect(c.move).toBe('earned');
+    expect(c.tier).toBe('third_party'); // earned is a third-party (draft-for-operator) channel, never owned_content
+    expect(c.domain).toBeUndefined(); // no competitor domain attached
+    expect(c.label).not.toMatch(/pursue a placement/i);
+    expect(c.label).toMatch(/press \/ Reddit \/ third-party listicle/i);
+    // and never an owned_content candidate for a contested query
+    expect(d.all.owned_content.find((x) => x.query_id === 'best-mcp-trading')).toBeUndefined();
+  });
+
+  it('an owned Tier-A query with a leader still emits pursue_placement (unchanged)', () => {
+    const obj = loadObjective();
+    const d = scoreWeek({ eligibility: { notIndexed: [] }, gaps: [gap('composite-quant-signal', true)] }, obj);
+    const c = d.all.third_party.find((x) => x.query_id === 'composite-quant-signal')!;
+    expect(c.move).toBe('pursue_placement');
+    expect(c.domain).toBe('altfins.com');
+  });
+
+  it('a measure_only (presence) query is SKIPPED — never a scored candidate', () => {
+    const obj = loadObjective();
+    const d = scoreWeek(
+      { eligibility: { notIndexed: [] }, gaps: [{ query_id: 'algovault-exists', query_tier: 'presence', sov: 0.9, top_competitor: null, top_competitor_domain: null }] },
+      obj,
+    );
+    const all = [...d.all.eligibility, ...d.all.third_party, ...d.all.owned_content];
+    expect(all.find((x) => x.query_id === 'algovault-exists')).toBeUndefined();
   });
 });

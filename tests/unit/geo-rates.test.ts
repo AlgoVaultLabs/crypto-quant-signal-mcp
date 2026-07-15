@@ -24,9 +24,12 @@ import {
   wilsonInterval,
   computeRates,
   rollupByEngine,
+  rollupByQuery,
+  computeAttributionRates,
   getQueryRates,
   DEFAULT_LOW_CONFIDENCE_MIN_SAMPLES,
   type RateRow,
+  type QueryEngineRate,
 } from '../../src/lib/geo-rates.js';
 
 const dbQueryMock = vi.mocked(dbQuery);
@@ -179,5 +182,72 @@ describe('single-derivation: consumers project from getQueryRates (no inline rat
   it('scorer gap-list sources SoV from getQueryRates (no inline AVG(share_of_voice))', () => {
     expect(gapList).toContain('getQueryRates(');
     expect(gapList).not.toContain('AVG(share_of_voice)');
+  });
+
+  // GEO-TARGET-DIGEST-REDESIGN-W1 — the digest's per-query trend (our-action) + the full-funnel
+  // attribution also project from the shared geo-rates helpers, never an inline rate/CI.
+  it('cron sources the per-query trend + attribution from rollupByQuery + computeAttributionRates', () => {
+    expect(cron).toContain('rollupByQuery(');
+    expect(cron).toContain('computeAttributionRates(');
+    // no hand-rolled Wilson interval in the cron — the CI math stays in geo-rates.
+    expect(cron).not.toContain('wilsonInterval(');
+  });
+});
+
+// GEO-TARGET-DIGEST-REDESIGN-W1 — the new per-query rollup + full-funnel attribution helpers.
+describe('rollupByQuery (pool per-(query,engine) → per-query, Wilson CI on cited AND mention)', () => {
+  const cell = (query_id: string, model: string, total: number, cited: number, mention: number, sov: number): QueryEngineRate =>
+    computeRates([{ query_id, query_tier: 'branded', model, total_runs: total, cited_count: cited, mention_count: mention, avg_sov: sov }])[0];
+
+  it('sums cells across engines into one per-query row with pooled rates', () => {
+    const rows = rollupByQuery([
+      cell('composite-quant-signal', 'sonar', 3, 1, 2, 0.2),
+      cell('composite-quant-signal', 'gemini-2.5-flash', 3, 2, 3, 0.4),
+    ]);
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    expect(r.query_id).toBe('composite-quant-signal');
+    expect(r.engine_count).toBe(2);
+    expect(r.total_runs).toBe(6);
+    expect(r.cited_count).toBe(3);
+    expect(r.cited_rate).toBeCloseTo(0.5); // 3/6
+    expect(r.mention_count).toBe(5);
+    expect(r.mention_rate).toBeCloseTo(5 / 6);
+    expect(r.avg_sov).toBeCloseTo((0.2 * 3 + 0.4 * 3) / 6); // sample-weighted
+    // Wilson CIs bracket both point rates
+    expect(r.cited_rate_lo).toBeLessThanOrEqual(r.cited_rate);
+    expect(r.cited_rate_hi).toBeGreaterThanOrEqual(r.cited_rate);
+    expect(r.mention_rate_lo).toBeLessThanOrEqual(r.mention_rate);
+    expect(r.mention_rate_hi).toBeGreaterThanOrEqual(r.mention_rate);
+  });
+
+  it('flags low_confidence when pooled successful samples < floor', () => {
+    const [r] = rollupByQuery([cell('q', 'sonar', 2, 1, 1, 0.1)]);
+    expect(r.low_confidence).toBe(true); // 2 < 3
+  });
+});
+
+describe('computeAttributionRates (full-funnel before/after Δ + CI; the false-negative fix)', () => {
+  it('mention lift with cited FLAT → positive mention_delta, ~zero cited_delta (worked on the leading indicator)', () => {
+    const [a] = computeAttributionRates([
+      { query_id: 'q', runs_before: 9, cited_before: 1, mention_before: 0, sov_before: 0.02, runs_after: 9, cited_after: 1, mention_after: 3, sov_after: 0.05 },
+    ]);
+    expect(a.before.mention_rate).toBeCloseTo(0);
+    expect(a.after.mention_rate).toBeCloseTo(3 / 9);
+    expect(a.mention_delta).toBeCloseTo(3 / 9); // leading indicator moved
+    expect(a.cited_delta).toBeCloseTo(0); // cited flat
+    expect(a.sov_delta).toBeCloseTo(0.03);
+    // Wilson CI present on BOTH cited and mention (after side)
+    expect(a.after.mention_rate_hi).toBeGreaterThan(a.after.mention_rate_lo);
+    expect(a.after.cited_rate_hi).toBeGreaterThanOrEqual(a.after.cited_rate_lo);
+  });
+
+  it('zero post-move samples → after side is all-zero + low_confidence (renders too-early upstream)', () => {
+    const [a] = computeAttributionRates([
+      { query_id: 'q', runs_before: 9, cited_before: 1, mention_before: 1, sov_before: 0.03, runs_after: 0, cited_after: 0, mention_after: 0, sov_after: null },
+    ]);
+    expect(a.after.total_runs).toBe(0);
+    expect(a.after.cited_rate).toBe(0);
+    expect(a.after.low_confidence).toBe(true);
   });
 });

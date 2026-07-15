@@ -38,6 +38,19 @@ export interface OpenQueryConfig {
   open_bonus: number;
 }
 
+/** GEO-TARGET-DIGEST-REDESIGN-W1 — a query's conversion classification (target_set SoT value). */
+export type TargetTier = 'A' | 'B' | 'contested' | 'measure_only';
+export type TargetMode = 'owned' | 'earned' | 'measure_only';
+export interface TargetClassification {
+  /** A = conversion (signups) · B = brand-presence (citations only) · contested = earned-only · measure_only = probe-only. */
+  tier: TargetTier;
+  /** ICP tier served (T1/T2/T3/ALL/META or a compound like "T2/T3") — display metadata, no code branch. */
+  audience: string;
+  /** owned = seed/own an answer · earned = press/Reddit/listicle only (never owned/placement) · measure_only = never a target. */
+  target_mode: TargetMode;
+}
+export type TargetSet = Record<string, TargetClassification>;
+
 export interface Objective {
   version: number;
   priority_gate: PriorityTier[];
@@ -53,6 +66,15 @@ export interface Objective {
    * scorer stops surfacing entrenched-but-unwinnable, off-product queries.
    */
   product_fit?: Record<string, number>;
+  /**
+   * GEO-TARGET-DIGEST-REDESIGN-W1 — the conversion-tiered TARGET SET (SoT). Per-query_id
+   * classification the scorer's earned-routing AND the digest's Tier-A/B split both PROJECT
+   * from (single-derivation). `contested` ⇒ `target_mode: 'earned'` ⇒ scoreWeek emits an
+   * `earned` press/Reddit/listicle move, NEVER a competitor placement or an owned post.
+   * Orthogonal to `revenue_proximity` (head/niche/branded). Absent id ⇒ treated as `owned`
+   * (back-compat; a C3 canary asserts every live query is classified).
+   */
+  target_set?: TargetSet;
   /** OPEN (no-leader) query handling — emit `seed_the_answer` candidates for uncontested queries. */
   open_query?: OpenQueryConfig;
   /**
@@ -128,8 +150,12 @@ export interface Candidate {
   query_tier?: string;
   engine?: string;
   domain?: string;
-  /** third_party move subtype: 'pursue_placement' (a leader exists) vs 'seed_the_answer' (OPEN, no leader). */
-  move?: 'pursue_placement' | 'seed_the_answer';
+  /**
+   * third_party move subtype: 'pursue_placement' (a leader exists) · 'seed_the_answer' (OPEN, no
+   * leader) · 'earned' (a CONTESTED/target_mode=earned query — draft press/Reddit/listicle, NEVER
+   * a competitor placement or an owned post; GEO-TARGET-DIGEST-REDESIGN-W1).
+   */
+  move?: 'pursue_placement' | 'seed_the_answer' | 'earned';
   expected_lift: number;
   revenue_proximity: number;
   /** product-fit multiplier applied to the score (1.0 = on-fit; <1.0 = brand-facts honest-scope misfit). */
@@ -197,6 +223,17 @@ export function productFitOf(obj: Objective, query_id: string): number {
 }
 
 /**
+ * GEO-TARGET-DIGEST-REDESIGN-W1 — a query's conversion classification from the objective SoT
+ * (`target_set`). EXPORTED as the single shared projection: the scorer's earned-routing AND the
+ * digest's Tier-A/B split both read THIS (never re-derive). An unmapped id defaults to a Tier-B
+ * `owned` classification (back-compat: pre-wave behavior = seed/placement/owned routing); a C3
+ * canary asserts every live query is classified, so the default only ever guards a transient drift.
+ */
+export function targetOf(obj: Objective, query_id: string): TargetClassification {
+  return obj.target_set?.[query_id] ?? { tier: 'B', audience: 'ALL', target_mode: 'owned' };
+}
+
+/**
  * Rank the week's candidate moves through the HARD priority gate. PURE: same input +
  * objective ⇒ same decision. The active tier is the FIRST tier in `priority_gate`
  * with ≥1 candidate; ONLY its candidates appear in `ranked` (the gate). Lower-tier
@@ -238,6 +275,38 @@ export function scoreWeek(input: ScoreInput, obj: Objective): RankedDecision {
     const lift = Math.max(0, 1 - g.sov);
     const rp = revenueProximity(obj, g.query_tier);
     const pf = productFitOf(obj, g.query_id);
+    // GEO-TARGET-DIGEST-REDESIGN-W1 — the conversion classification gates the move-type BEFORE the
+    // competitor-presence routing, so a contested query can never emit a competitor placement.
+    const targetMode = targetOf(obj, g.query_id).target_mode;
+    if (targetMode === 'measure_only') {
+      // probe-only (the presence retrieval check) — never a target. Presence-tier queries are
+      // already excluded upstream at SQL (getQueryRates); this is a defensive belt.
+      continue;
+    }
+    if (targetMode === 'earned') {
+      // CONTESTED / earned-only → draft an EARNED placement (independent press / Reddit / listicle).
+      // NEVER `pursue_placement` on the competitor's surface, NEVER an owned post — regardless of
+      // whether a leader exists. No `domain` is attached, so no downstream render can turn this into
+      // a "pursue a placement on <competitor>" suggestion (the wave's hard prohibition).
+      const key = `third_party:${g.query_id}`;
+      const leaderNote = g.top_competitor ? ` — ${g.top_competitor} currently leads` : '';
+      all.third_party.push({
+        tier: 'third_party',
+        key,
+        move: 'earned',
+        label: `contested "${g.query_id}" (${g.query_tier})${leaderNote} — draft an EARNED placement (independent press / Reddit / third-party listicle); never an owned post or a placement on a competitor's site`,
+        query_id: g.query_id,
+        query_tier: g.query_tier,
+        expected_lift: lift,
+        revenue_proximity: rp,
+        product_fit: pf,
+        automatability: atT.automatability,
+        effort: atT.effort,
+        score: scoreOf(lift, rp, pf, atT),
+        known_action_spec: obj.known_action_specs?.[key],
+      });
+      continue;
+    }
     if (g.top_competitor_domain) {
       // a leader exists → pursue a placement on that surface (product_fit penalizes misfits).
       const key = `third_party:${g.query_id}`;
@@ -347,7 +416,10 @@ export function renderDecisionBrief(d: RankedDecision, gaps: GapLike[], dateLabe
   L.push('| # | move | query | tier | lift | score |');
   L.push('|---|---|---|---|---|---|');
   d.ranked.forEach((c, i) => {
-    const moveCell = c.engine ?? c.domain ?? (c.move === 'seed_the_answer' ? 'seed the answer' : '—');
+    const moveCell =
+      c.engine ??
+      c.domain ??
+      (c.move === 'seed_the_answer' ? 'seed the answer' : c.move === 'earned' ? 'earned (press/Reddit/listicle)' : '—');
     L.push(
       `| ${i + 1} | ${moveCell} | ${c.query_id ?? '—'} | ${c.query_tier ?? '—'} | ${c.expected_lift.toFixed(2)} | ${c.score.toFixed(2)} |`,
     );

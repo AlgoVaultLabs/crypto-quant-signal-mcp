@@ -14,12 +14,19 @@ import {
   computeIndexPresence,
   buildDigest,
   buildBySourceSection,
+  buildOurActionSection,
+  tierBadge,
   type Verdict,
   type MomentumDeltas,
   type AttributionGap,
   type GeoDigestData,
   type BySourceData,
+  type OurActionRow,
 } from '../../src/lib/geo-digest.js';
+// GEO-TARGET-DIGEST-REDESIGN-W1 — fixtures use the SHARED rate helper so a test's before/after rate
+// is byte-identical to what the cron feeds computeAttribution (single-derivation in the tests too).
+import { computeAttributionRates, type QueryAttributionRate } from '../../src/lib/geo-rates.js';
+import type { TargetSet } from '../../src/lib/geo-decide.js';
 
 const VERDICT_EMOJI: Record<Verdict, string> = { gaining: '🟢', holding: '🟡', slipping: '🔴' };
 const VERDICT_WORD: Record<Verdict, string> = { gaining: 'GAINING', holding: 'HOLDING', slipping: 'SLIPPING' };
@@ -107,25 +114,44 @@ describe('computeMomentum', () => {
   });
 });
 
-describe('computeAttribution', () => {
+// GEO-TARGET-DIGEST-REDESIGN-W1 (a) — full-funnel attribution: mention + cited + SoV RATE Δ, "works
+// if it lifts the LEADING indicator (mention) even while cited is flat". Rate built via the SHARED
+// computeAttributionRates (same wilsonInterval math as production).
+const rateOf = (
+  query_id: string,
+  rb: number, cb: number, mb: number, sb: number,
+  ra: number, ca: number, ma: number, sa: number,
+): QueryAttributionRate =>
+  computeAttributionRates([
+    { query_id, runs_before: rb, cited_before: cb, mention_before: mb, sov_before: sb, runs_after: ra, cited_after: ca, mention_after: ma, sov_after: sa },
+  ])[0];
+
+describe('computeAttribution (full-funnel: mention + cited + SoV Δ)', () => {
   const gap = (over: Partial<AttributionGap>): AttributionGap => ({
     query_id: 'q',
+    tier: 'A',
     recommended_action: 'do x',
     injected_at: '2026-05-20T00:00:00Z',
     days_since_injected: 13,
     post_data_days: 13,
-    cited_before: 0,
-    cited_after: 0,
-    mention_before: 0,
-    mention_after: 0,
+    rate: rateOf('q', 9, 0, 0, 0, 9, 0, 0, 0), // flat by default
     ...over,
   });
 
-  it('worked: citations rose after the move', () => {
-    const [a] = computeAttribution([gap({ cited_before: 0, cited_after: 2 })]);
+  it('WORKED on the LEADING indicator: mention rose even while cited is FLAT (the false-negative fix)', () => {
+    const [a] = computeAttribution([gap({ rate: rateOf('q', 9, 1, 0, 0.02, 9, 1, 1, 0.05) })]);
     expect(a.status).toBe('worked');
     expect(a.emoji).toBe('✅');
-    expect(a.text).toContain('worked');
+    expect(a.text).toContain('leading indicator (mention) up');
+    expect(a.text).toContain('mention 0→11%'); // a RATE, not a raw count
+    expect(a.text).toContain('cited 11→11%'); // cited FLAT — still counts as worked
+    expect(a.text).toContain('SoV 0.02→0.05');
+  });
+
+  it('worked on cited when only the cited rate rose', () => {
+    const [a] = computeAttribution([gap({ rate: rateOf('q', 10, 0, 0, 0, 10, 3, 0, 0) })]);
+    expect(a.status).toBe('worked');
+    expect(a.text).toContain('cited up');
   });
 
   it('too_early: <7d of post-data', () => {
@@ -134,14 +160,20 @@ describe('computeAttribution', () => {
     expect(a.emoji).toBe('⏳');
   });
 
-  it('no_move: no change after the move', () => {
-    const [a] = computeAttribution([gap({ cited_before: 1, cited_after: 1 })]);
+  it('no_move: neither the mention nor the cited rate lifted', () => {
+    const [a] = computeAttribution([gap({ rate: rateOf('q', 10, 1, 1, 0.05, 10, 1, 1, 0.05) })]);
     expect(a.status).toBe('no_move');
     expect(a.emoji).toBe('➖');
+    expect(a.text).toContain('no lift');
   });
 
   it('skips gaps <7d old', () => {
     expect(computeAttribution([gap({ days_since_injected: 3 })])).toHaveLength(0);
+  });
+
+  it('(e) badges the row by conversion tier', () => {
+    const [a] = computeAttribution([gap({ tier: 'A', rate: rateOf('q', 9, 1, 0, 0, 9, 1, 1, 0.05) })]);
+    expect(a.text).toContain('🎯 conversion');
   });
 });
 
@@ -161,21 +193,21 @@ describe('buildDigest', () => {
       wowDropSummary: '',
     },
     perEngineMention: [{ model: 'claude-haiku-4-5-20251001', mention_rate_pct: 8, cited_rate_pct: 20 }],
+    // (a) full-funnel: mention rose 0→22% while cited flat → worked on the LEADING indicator.
     attributionGaps: [
       {
         query_id: 'agent-signal-api',
-        recommended_action: 'dev.to post',
+        tier: 'contested',
+        recommended_action: 'earned draft',
         injected_at: '2026-06-01T00:00:00Z',
         days_since_injected: 8,
         post_data_days: 8,
-        cited_before: 0,
-        cited_after: 1,
-        mention_before: 0,
-        mention_after: 0,
+        rate: rateOf('agent-signal-api', 9, 0, 0, 0.01, 9, 0, 2, 0.04),
       },
     ],
+    // (b) target-only who's-winning (misfits already filtered by the cron; badged by tier (e)).
     contested: [
-      { query_id: 'best-python-backtester', leader: 'vectorbt', domains: ['github.com', 'vectorbt.dev'], citations: 4 },
+      { query_id: 'agent-signal-api', leader: 'altfins', domains: ['altfins.com', 'g2.com'], citations: 4 },
       { query_id: 'best-mcp-trading', leader: null, domains: [], citations: 0 },
     ],
     topGap: {
@@ -191,9 +223,21 @@ describe('buildDigest', () => {
       { model: 'gemini-2.5-flash', present: true },
       { model: 'sonar', present: true },
     ]),
+    targetSet: {
+      'composite-quant-signal': { tier: 'A', audience: 'T2/T3', target_mode: 'owned' },
+      'ai-agent-trade-signals': { tier: 'B', audience: 'ALL', target_mode: 'owned' },
+      'agent-signal-api': { tier: 'contested', audience: 'T2/T3', target_mode: 'earned' },
+      'best-mcp-trading': { tier: 'contested', audience: 'T3', target_mode: 'earned' },
+    } as TargetSet,
+    // (c) per-query our-action: posted / in-flight / none.
+    ourAction: [
+      { query_id: 'composite-quant-signal', tier: 'A', status: 'posted', posted_date: '2026-06-01', mention_rate_pct: 11, cited_rate_pct: 10, low_confidence: false },
+      { query_id: 'ai-agent-trade-signals', tier: 'B', status: 'in_flight', posted_date: null, mention_rate_pct: 5, cited_rate_pct: 0, low_confidence: false },
+      { query_id: 'agent-signal-api', tier: 'contested', status: 'none', posted_date: null, mention_rate_pct: 0, cited_rate_pct: 0, low_confidence: true },
+    ],
   };
 
-  it('golden: assembles the target format with verdict header + 4 sections + link', () => {
+  it('golden: verdict header + full-funnel attribution + target-only who\'s-winning + our-action + split', () => {
     const out = buildDigest(data).join('\n');
     expect(out).toContain('📊 *GEO Weekly — Mon 9 Jun*');
     expect(out).toContain('🟢 *GAINING'); // citations up + new domain
@@ -202,13 +246,22 @@ describe('buildDigest', () => {
     expect(out).toContain('github awesome-quant ✅');
     expect(out).toContain('8% on claude-web');
     expect(out).toContain("DID LAST WEEK'S MOVE WORK?");
-    expect(out).toContain('✅ agent-signal-api: citations 0→1 after the move → it worked');
-    expect(out).toContain("WHO'S WINNING WHAT WE WANT");
-    expect(out).toContain('best-python-backtester → vectorbt, cited via github.com + vectorbt.dev (4 citations)');
-    expect(out).toContain('best-mcp-trading → no leader yet — OPEN');
+    // (a) full-funnel attribution — mention RATE Δ, worked on the leading indicator, badged
+    expect(out).toContain('agent-signal-api [🤝 earned]');
+    expect(out).toContain('leading indicator (mention) up');
+    expect(out).toContain('mention 0→22%');
+    // (c) our-action section — posted+date + in-flight + badges
+    expect(out).toContain('OUR ACTION PER TARGET QUERY');
+    expect(out).toContain('✅ composite-quant-signal [🎯 conversion]: posted 2026-06-01');
+    expect(out).toContain('🔵 ai-agent-trade-signals [📣 brand-presence]: decision in-flight');
+    // (b) target-only who's-winning + (e) badges
+    expect(out).toContain("*🥊 WHO'S WINNING WHAT WE WANT* (target queries only)");
+    expect(out).toContain('agent-signal-api [🤝 earned] → altfins, cited via altfins.com + g2.com (4 citations)');
+    expect(out).toContain('best-mcp-trading [🤝 earned] → no leader yet — OPEN');
+    // (e) the Tier-B ≠ pipeline guardrail
+    expect(out).toContain('do NOT count as pipeline');
     expect(out).toContain("THIS WEEK'S ONE MOVE");
     expect(out).toContain('best-mcp-trading (head): ChatGPT cites mcp.so');
-    expect(out).toContain('Get AlgoVault a placement/answer on mcp.so');
     expect(out).toContain('Full numbers ↗ https://api.algovault.com/admin/geo-dashboard?key=<admin-key>');
     // R5 — index-presence line present; all ✓ → no blocked banner
     expect(out).toContain('Cited by engine: chatgpt ✓ (Bing) · claude ✓ (Brave) · gemini ✓ (Google) · perplexity ✓');
@@ -238,7 +291,7 @@ describe('buildDigest', () => {
     expect(out).toContain('🟡 *HOLDING');
     expect(out).toContain('no data yet');
     expect(out).toContain('No content moves are ≥7d old yet');
-    expect(out).toContain('every query is OPEN');
+    expect(out).toContain('every target is OPEN');
     expect(out).toContain('No move queued');
     // R5 — index presence graceful pre-first-probe, no banner
     expect(out).toContain('Cited by engine: no data yet — first probe Mon');
@@ -299,6 +352,77 @@ describe('buildDigest', () => {
     const out = buildDigest(data).join('\n'); // `data` carries no `decision`
     expect(out).toContain("THIS WEEK'S ONE MOVE");
     expect(out).not.toContain('DECISION READY');
+  });
+
+  // GEO-TARGET-DIGEST-REDESIGN-W1 (d) — decision-basis: the ranked candidates + scores are auditable.
+  it('(d) renders the decision BASIS — top-N ranked candidates + scores/tier/product-fit', () => {
+    const withBasis: GeoDigestData = {
+      ...data,
+      decision: {
+        priorityTier: 'third_party',
+        gateLabel: 'THIRD-PARTY (gate 2/3)',
+        move: 'earned',
+        candidateCount: 2,
+        briefName: 'geo-decision-2026-06-22',
+        suspects: [],
+        rankedCandidates: [
+          { query_id: 'best-mcp-trading', query_tier: 'head', target_tier: 'contested', move: 'earned', expected_lift: 0.9, product_fit: 1, score: 0.6 },
+          { query_id: 'composite-quant-signal', query_tier: 'branded', target_tier: 'A', move: 'seed_the_answer', expected_lift: 0.85, product_fit: 1, score: 0.51 },
+        ],
+      },
+    };
+    const out = buildDigest(withBasis).join('\n');
+    expect(out).toContain('Basis — ranked candidates');
+    expect(out).toContain('1. best-mcp-trading [🤝 earned] · earned · score 0.60 (lift 0.90 · fit 1.00 · head)');
+    expect(out).toContain('2. composite-quant-signal [🎯 conversion] · seed_the_answer · score 0.51');
+  });
+
+  // (b) target-only who's-winning — a dropped-misfit query never renders even if passed in.
+  it('(b) filters a dropped misfit out of who\'s-winning when it is absent from target_set', () => {
+    const withMisfit: GeoDigestData = {
+      ...data,
+      contested: [
+        { query_id: 'best-python-backtester', leader: 'vectorbt', domains: ['vectorbt.dev'], citations: 9 }, // dropped misfit
+        { query_id: 'agent-signal-api', leader: 'altfins', domains: ['altfins.com'], citations: 4 }, // target
+      ],
+    };
+    const out = buildDigest(withMisfit).join('\n');
+    expect(out).not.toContain('best-python-backtester'); // misfit excluded
+    expect(out).not.toContain('vectorbt'); // no more vectorbt every week
+    expect(out).toContain('agent-signal-api [🤝 earned] → altfins');
+  });
+});
+
+// GEO-TARGET-DIGEST-REDESIGN-W1 (c)(e) — the per-query "our action" section + tier badges.
+describe('buildOurActionSection + tierBadge (our-action + conversion split)', () => {
+  it('tierBadge maps the conversion tiers (Tier-B never masquerades as pipeline)', () => {
+    expect(tierBadge('A')).toBe('🎯 conversion');
+    expect(tierBadge('B')).toBe('📣 brand-presence');
+    expect(tierBadge('contested')).toBe('🤝 earned');
+    expect(tierBadge('measure_only')).toBe('');
+    expect(tierBadge(undefined)).toBe('');
+  });
+
+  it('undefined/empty → no section (back-compat)', () => {
+    expect(buildOurActionSection(undefined)).toEqual([]);
+    expect(buildOurActionSection([])).toEqual([]);
+  });
+
+  it('renders posted / in-flight / none grouped Tier-A → B → contested, each badged + trend', () => {
+    const rows: OurActionRow[] = [
+      { query_id: 'best-mcp-trading', tier: 'contested', status: 'none', posted_date: null, mention_rate_pct: 0, cited_rate_pct: 0, low_confidence: true },
+      { query_id: 'ai-agent-trade-signals', tier: 'B', status: 'in_flight', posted_date: null, mention_rate_pct: 5, cited_rate_pct: 0, low_confidence: false },
+      { query_id: 'composite-quant-signal', tier: 'A', status: 'posted', posted_date: '2026-07-01', mention_rate_pct: 11, cited_rate_pct: 10, low_confidence: false },
+    ];
+    const out = buildOurActionSection(rows);
+    const joined = out.join('\n');
+    expect(joined).toContain('OUR ACTION PER TARGET QUERY');
+    expect(joined).toContain('✅ composite-quant-signal [🎯 conversion]: posted 2026-07-01 — mention 11% · cited 10%');
+    expect(joined).toContain('🔵 ai-agent-trade-signals [📣 brand-presence]: decision in-flight');
+    expect(joined).toContain('⚪ best-mcp-trading [🤝 earned]: no action yet');
+    // grouped Tier-A first, then B, then contested (deterministic order)
+    expect(joined.indexOf('composite-quant-signal')).toBeLessThan(joined.indexOf('ai-agent-trade-signals'));
+    expect(joined.indexOf('ai-agent-trade-signals')).toBeLessThan(joined.indexOf('best-mcp-trading'));
   });
 });
 

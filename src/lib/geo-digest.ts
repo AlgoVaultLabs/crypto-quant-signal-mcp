@@ -12,8 +12,37 @@
  */
 
 import { isSignificantDecline, DEFAULT_ALERT_HYGIENE, type AlertHygieneConfig } from './geo-alert-hygiene.js';
+// GEO-TARGET-DIGEST-REDESIGN-W1 — type-only imports (erased at compile → geo-digest stays a PURE
+// leaf; no DB/Date code lands here). `target_set` classification + the per-query attribution rate.
+import type { TargetSet } from './geo-decide.js';
+import type { QueryAttributionRate } from './geo-rates.js';
 
 export type Verdict = 'gaining' | 'holding' | 'slipping';
+
+/**
+ * GEO-TARGET-DIGEST-REDESIGN-W1 (e) — conversion-tier badge. Keeps Tier-B citation volume visually
+ * distinct from Tier-A pipeline so brand-presence never masquerades as revenue. Projects from the
+ * `target_set` SoT (geo-objective.yaml), threaded in by the cron. Empty for unclassified/measure_only.
+ */
+export function tierBadge(tier?: string): string {
+  return tier === 'A'
+    ? '🎯 conversion'
+    : tier === 'B'
+      ? '📣 brand-presence'
+      : tier === 'contested'
+        ? '🤝 earned'
+        : '';
+}
+
+/** 0..1 rate → integer percent (clamped). */
+function ratePct(r: number): number {
+  return Math.round(Math.max(0, Math.min(1, r)) * 100);
+}
+/** signed integer rate-point delta for display, e.g. "+5" / "−3" / "±0". */
+function signedPct(delta: number): string {
+  const p = Math.round(delta * 100);
+  return p > 0 ? `+${p}` : p < 0 ? `−${Math.abs(p)}` : '±0';
+}
 
 const VERDICT_META: Record<Verdict, { emoji: string; word: string }> = {
   gaining: { emoji: '🟢', word: 'GAINING' },
@@ -130,15 +159,19 @@ const ATTR_EMOJI: Record<AttributionStatus, string> = { worked: '✅', too_early
 
 export interface AttributionGap {
   query_id: string;
+  /** target-set conversion tier (for the badge) — 'A' | 'B' | 'contested'; absent ⇒ no badge. */
+  tier?: string;
   recommended_action: string | null;
   injected_at: string; // ISO
   days_since_injected: number;
   /** days of geo_mentions data AFTER injected_at (0 if no post-probe yet). */
   post_data_days: number;
-  cited_before: number;
-  cited_after: number;
-  mention_before: number;
-  mention_after: number;
+  /**
+   * GEO-TARGET-DIGEST-REDESIGN-W1 (a) — the full-funnel before/after RATE deltas (mention + cited
+   * + SoV, each with Wilson CIs), projected from the shared geo-rates `computeAttributionRates`
+   * (which reuses the same `wilsonInterval` behind getQueryRates — single-derivation, no inline rate).
+   */
+  rate: QueryAttributionRate;
 }
 
 export interface AttributionLine {
@@ -148,33 +181,103 @@ export interface AttributionLine {
   text: string;
 }
 
+/** A move-effect above the LLM-retrieval noise floor (rate points, 0..1). */
+const ATTRIBUTION_EPS = 0.02;
+
 /**
- * R2 — the attribution loop (centerpiece). For each injected gap ≥7d old, compare
- * the query's citation/mention BEFORE vs AFTER injected_at → worked / too-early / no-move.
+ * GEO-TARGET-DIGEST-REDESIGN-W1 (a) — the full-funnel attribution loop (centerpiece). For each
+ * acted-on target query ≥7d old, report the mention-rate Δ + cited-rate Δ + SoV Δ (before→after the
+ * move) with CIs. A move **WORKS if it lifts the LEADING indicator (mention) even while cited is
+ * flat** — fixing the old cited-only false-negative that read "no movement" when mention actually
+ * rose. Rates/CIs come from `computeAttributionRates` (shared `wilsonInterval`); this fn only judges
+ * + renders. too-early while <7d of post-move data.
  */
 export function computeAttribution(gaps: AttributionGap[]): AttributionLine[] {
   const out: AttributionLine[] = [];
   for (const g of gaps) {
     if (g.days_since_injected < 7) continue;
+    const r = g.rate;
+    const b = r.before;
+    const a = r.after;
+    const badge = tierBadge(g.tier);
+    const tag = `${g.query_id}${badge ? ` [${badge}]` : ''}`;
+    const lowConf = a.low_confidence || b.low_confidence ? ' ⚠️ low-confidence' : '';
+    // The full-funnel line: mention (leading) + cited (lagging) + SoV, each before→after with the Δ,
+    // plus the 95% CI on the AFTER mention/cited rate so a small-n move reads honest, not precise-but-wrong.
+    const funnel =
+      `mention ${ratePct(b.mention_rate)}→${ratePct(a.mention_rate)}% (${signedPct(r.mention_delta)}, CI ${ratePct(a.mention_rate_lo)}–${ratePct(a.mention_rate_hi)}%) · ` +
+      `cited ${ratePct(b.cited_rate)}→${ratePct(a.cited_rate)}% (${signedPct(r.cited_delta)}, CI ${ratePct(a.cited_rate_lo)}–${ratePct(a.cited_rate_hi)}%) · ` +
+      `SoV ${b.avg_sov.toFixed(2)}→${a.avg_sov.toFixed(2)} (${r.sov_delta >= 0 ? '+' : '−'}${Math.abs(r.sov_delta).toFixed(2)})`;
+
     let status: AttributionStatus;
     let text: string;
-    if (g.post_data_days < 7) {
+    if (a.total_runs === 0 || g.post_data_days < 7) {
       status = 'too_early';
-      text = `${g.query_id}: shipped, only ${Math.round(g.post_data_days)}d of post-data — too early to call.`;
-    } else if (g.cited_after > g.cited_before || g.mention_after > g.mention_before) {
+      text = `${tag}: shipped, only ${Math.round(g.post_data_days)}d of post-data — too early to call.${lowConf} ${funnel}`;
+    } else if (r.mention_delta > ATTRIBUTION_EPS || r.cited_delta > ATTRIBUTION_EPS) {
       status = 'worked';
-      const what =
-        g.cited_after > g.cited_before
-          ? `citations ${g.cited_before}→${g.cited_after}`
-          : `mentions ${g.mention_before}→${g.mention_after}`;
-      text = `${g.query_id}: ${what} after the move → it worked, do more.`;
+      const lead =
+        r.mention_delta > ATTRIBUTION_EPS
+          ? 'leading indicator (mention) up'
+          : 'cited up';
+      text = `${tag}: ${lead} after the move → it worked, do more.${lowConf} ${funnel}`;
     } else {
       status = 'no_move';
-      text = `${g.query_id}: no movement (cited ${g.cited_before}→${g.cited_after}) → try a different angle.`;
+      text = `${tag}: no lift on the leading indicator → try a different angle.${lowConf} ${funnel}`;
     }
     out.push({ query_id: g.query_id, status, emoji: ATTR_EMOJI[status], text });
   }
   return out;
+}
+
+// ── GEO-TARGET-DIGEST-REDESIGN-W1 (c) — per-query "our action" status ──────────────────────────
+
+export type OurActionStatus = 'posted' | 'in_flight' | 'none';
+const OUR_ACTION_EMOJI: Record<OurActionStatus, string> = { posted: '✅', in_flight: '🔵', none: '⚪' };
+
+/** One target query's "what have WE done + the trend since" row (built by the cron; pure render here). */
+export interface OurActionRow {
+  query_id: string;
+  /** conversion tier ('A' | 'B' | 'contested') for the badge + section grouping. */
+  tier?: string;
+  status: OurActionStatus;
+  /** YYYY-MM-DD the answer was posted/injected (status='posted'), else null. */
+  posted_date: string | null;
+  /** this-week engine-pooled rates (rollupByQuery) — the trend since our action. */
+  mention_rate_pct: number;
+  cited_rate_pct: number;
+  low_confidence: boolean;
+}
+
+/** Deterministic tier order for the our-action + who's-winning sections. */
+const TIER_ORDER: Record<string, number> = { A: 0, B: 1, contested: 2 };
+
+/**
+ * GEO-TARGET-DIGEST-REDESIGN-W1 (c) — the per-query "our action" section: for every target query,
+ * OUR status (posted+date / decision in-flight / no action yet) + the mention/cited trend since.
+ * Fixes the old digest calling a query "OPEN, your best shot" when we had already posted it. Pure;
+ * grouped Tier-A → B → contested, each row badged (e). `undefined`/empty ⇒ section omitted.
+ */
+export function buildOurActionSection(rows: OurActionRow[] | null | undefined): string[] {
+  if (!rows || rows.length === 0) return [];
+  const L: string[] = ['', "*🧭 OUR ACTION PER TARGET QUERY* (what we've shipped + the trend since)"];
+  const sorted = [...rows].sort(
+    (x, y) => (TIER_ORDER[x.tier ?? ''] ?? 9) - (TIER_ORDER[y.tier ?? ''] ?? 9) || x.query_id.localeCompare(y.query_id),
+  );
+  for (const r of sorted) {
+    const badge = tierBadge(r.tier);
+    const status =
+      r.status === 'posted'
+        ? `posted${r.posted_date ? ` ${r.posted_date}` : ''}`
+        : r.status === 'in_flight'
+          ? 'decision in-flight (queued, not yet shipped)'
+          : 'no action yet';
+    const lc = r.low_confidence ? ' ⚠️' : '';
+    L.push(
+      `${OUR_ACTION_EMOJI[r.status]} ${r.query_id}${badge ? ` [${badge}]` : ''}: ${status} — mention ${Math.round(r.mention_rate_pct)}% · cited ${Math.round(r.cited_rate_pct)}%${lc}`,
+    );
+  }
+  return L;
 }
 
 /** Friendly engine name from the stored model string (claude-haiku → claude-web, etc.). */
@@ -286,6 +389,25 @@ export interface DecisionHandoff {
   briefName: string;
   /** look-alike domains cited but not ours (SUSPECT) — the digest watch line. */
   suspects: string[];
+  /**
+   * GEO-TARGET-DIGEST-REDESIGN-W1 (d) — the decision BASIS: the top-N ranked candidates + their
+   * scores/tier/product-fit, so the chosen move is auditable ("why this, not that"). Projected from
+   * the SAME `geo_decisions.ranked_candidates` the cron persists (single-derivation), NOT re-scored.
+   */
+  rankedCandidates?: RankedCandidateBrief[];
+}
+
+/** One ranked candidate as surfaced in the digest decision-basis (projection of a geo-decide Candidate). */
+export interface RankedCandidateBrief {
+  query_id: string | null;
+  /** head/niche/branded (revenue_proximity tier). */
+  query_tier: string | null;
+  /** conversion tier ('A'|'B'|'contested') for the badge, from target_set. */
+  target_tier?: string;
+  move: string; // 'pursue_placement' | 'seed_the_answer' | 'earned' | engine/eligibility label
+  expected_lift: number;
+  product_fit: number;
+  score: number;
 }
 
 // ── OPS-WEEKLY-GROWTH-DIGEST-W1: acquisition by source (folded in) ─────────────
@@ -354,6 +476,17 @@ export interface GeoDigestData {
    * "attribution collecting" state). WoW is DB-derived (no state file).
    */
   bySource?: BySourceData | null;
+  /**
+   * GEO-TARGET-DIGEST-REDESIGN-W1 — the conversion-tier classification SoT (target_set from
+   * geo-objective.yaml), threaded in by the cron. Drives the (e) Tier-A/B badges on who's-winning +
+   * our-action. `undefined` ⇒ no badges (back-compat for pre-wave callers/tests).
+   */
+  targetSet?: TargetSet;
+  /**
+   * GEO-TARGET-DIGEST-REDESIGN-W1 (c) — per-target-query "our action" rows (posted/in-flight/none +
+   * trend). `undefined` ⇒ section omitted (back-compat); a provided value always renders.
+   */
+  ourAction?: OurActionRow[] | null;
 }
 
 /**
@@ -487,20 +620,39 @@ export function buildDigest(data: GeoDigestData): string[] {
     for (const a of attr) L.push(`${a.emoji} ${a.text}`);
   }
 
-  // WHO'S WINNING — competitor placement map
+  // GEO-TARGET-DIGEST-REDESIGN-W1 (c) — per-target-query OUR ACTION status + trend (renders only
+  // when the cron provides data.ourAction; undefined keeps pre-wave callers byte-stable).
+  for (const line of buildOurActionSection(data.ourAction)) L.push(line);
+
+  // WHO'S WINNING — competitor placement map, TARGET-ONLY (b: dropped misfits are filtered upstream
+  // by the cron so vectorbt/backtrader stop showing every week) + each row badged by conversion tier (e).
   L.push('');
-  L.push("*🥊 WHO'S WINNING WHAT WE WANT*");
-  if (data.contested.length === 0) {
-    L.push('• No competitor citations yet — every query is OPEN, your best shot.');
+  L.push("*🥊 WHO'S WINNING WHAT WE WANT* (target queries only)");
+  const ts = data.targetSet;
+  const badgeFor = (qid: string): string => {
+    const b = ts ? tierBadge(ts[qid]?.tier) : '';
+    return b ? ` [${b}]` : '';
+  };
+  // (b) defense-in-depth: when the classification is present, only TARGET queries (A/B/contested)
+  // render — a dropped misfit or measure_only probe can never reappear here even if upstream slips.
+  const shownContested = ts
+    ? data.contested.filter((c) => ts[c.query_id] && ts[c.query_id].tier !== 'measure_only')
+    : data.contested;
+  if (shownContested.length === 0) {
+    L.push('• No competitor citations on a target query yet — every target is OPEN, your best shot.');
   } else {
-    for (const c of data.contested) {
+    for (const c of shownContested) {
       if (!c.leader) {
-        L.push(`• ${c.query_id} → no leader yet — OPEN, your best shot`);
+        L.push(`• ${c.query_id}${badgeFor(c.query_id)} → no leader yet — OPEN, your best shot`);
       } else {
         const via = c.domains.slice(0, 2).join(' + ') || 'multiple sources';
-        L.push(`• ${c.query_id} → ${c.leader}, cited via ${via} (${c.citations} citation${c.citations === 1 ? '' : 's'})`);
+        L.push(`• ${c.query_id}${badgeFor(c.query_id)} → ${c.leader}, cited via ${via} (${c.citations} citation${c.citations === 1 ? '' : 's'})`);
       }
     }
+  }
+  // (e) Keep the split visually honest: Tier-B citation volume is brand-presence, never pipeline.
+  if (ts && Object.values(ts).some((t) => t.tier === 'B')) {
+    L.push('  ⓘ 📣 brand-presence (Tier-B) = citations only — do NOT count as pipeline; 🎯 conversion (Tier-A) is where signups come from.');
   }
 
   // DECISION (GEO-AUTOPILOT-W1) — the scored, priority-gated handoff replaces the
@@ -515,6 +667,19 @@ export function buildDigest(data: GeoDigestData): string[] {
     L.push(
       `Brief: ${dec.briefName} · ${dec.candidateCount} candidate${dec.candidateCount === 1 ? '' : 's'} scored through the priority gate`,
     );
+    // GEO-TARGET-DIGEST-REDESIGN-W1 (d) — the decision BASIS: top-N ranked candidates + scores so the
+    // pick is auditable ("why this move, not that"). Projected from the SAME geo_decisions.ranked_
+    // candidates the cron persists (single-derivation).
+    if (dec.rankedCandidates && dec.rankedCandidates.length > 0) {
+      L.push('Basis — ranked candidates (why this move):');
+      dec.rankedCandidates.forEach((c, i) => {
+        const badge = tierBadge(c.target_tier);
+        const b = badge ? ` [${badge}]` : '';
+        L.push(
+          `  ${i + 1}. ${c.query_id ?? '—'}${b} · ${c.move} · score ${c.score.toFixed(2)} (lift ${c.expected_lift.toFixed(2)} · fit ${c.product_fit.toFixed(2)} · ${c.query_tier ?? '—'})`,
+        );
+      });
+    }
     L.push('→ In Cowork: "write the GEO action from this week\'s brief" → research → approve → dispatch to Code');
     if (dec.suspects.length) {
       L.push(`⚠️ Look-alike watch: ${dec.suspects.join(', ')} cited but NOT ours (SUSPECT, not trusted).`);

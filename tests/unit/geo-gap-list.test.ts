@@ -103,19 +103,24 @@ describe('persistGapBriefs — product_fit + injectable single-derivation canary
   const PF_IDX = 10; // product_fit position in the dbRun call array (call[0] = sql)
   const INJ_IDX = 11; // injectable position
 
-  const MISFIT: GapBrief = { query_id: 'best-python-backtester', query_tier: 'head', model: 'sonar', sov: 0, top_competitor: 'vectorbt', top_competitor_domain: 'vectorbt.dev', recommended_action: 'x', rank_score: 1.0 };
+  // GEO-TARGET-DIGEST-REDESIGN-W1 — best-python-backtester is DROPPED from geo-queries.yaml + its
+  // product_fit entry removed, so this formerly-misfit id now defaults to on-fit (1.0). Kept as a
+  // fixture to prove the write-side still projects product_fit/injectable from the ONE SoT helper.
+  const FORMER_MISFIT: GapBrief = { query_id: 'best-python-backtester', query_tier: 'head', model: 'sonar', sov: 0, top_competitor: 'vectorbt', top_competitor_domain: 'vectorbt.dev', recommended_action: 'x', rank_score: 1.0 };
   const ONFIT: GapBrief = { query_id: 'ai-agent-trade-signals', query_tier: 'head', model: 'sonar', sov: 0, top_competitor: null, top_competitor_domain: null, recommended_action: 'y', rank_score: 1.0 };
 
-  it('(a) a misfit gap is WRITTEN (not dropped) but injectable=false, with product_fit from the SoT', async () => {
+  it('(a) GEO-TARGET-DIGEST-REDESIGN-W1 — the dropped misfit now writes on-fit (product_fit 1.0 · injectable true)', async () => {
     dbQueryMock.mockResolvedValueOnce([{ n: 0 }] as never);
-    const persisted = await persistGapBriefs([MISFIT], 1, new Date('2026-06-02T00:00:00Z'));
-    expect(persisted).toHaveLength(1); // Data Integrity: misfit gaps preserved for analytics
+    const persisted = await persistGapBriefs([FORMER_MISFIT], 1, new Date('2026-06-02T00:00:00Z'));
+    expect(persisted).toHaveLength(1); // Data Integrity: gaps are always WRITTEN (never dropped)
     const sql = String(dbRunMock.mock.calls[0][0]);
     expect(sql).toContain('product_fit');
     expect(sql).toContain('injectable');
     const call = dbRunMock.mock.calls[0];
-    expect(call[PF_IDX]).toBeCloseTo(0.15); // best-python-backtester from geo-objective.yaml
-    expect(call[INJ_IDX]).toBe(false); // 0.15 < inject_threshold 0.5
+    // product_fit map is now empty in the live SoT → default 1.0 → injectable=true. (A real misfit,
+    // if one were re-added, would still write injectable=false; there are none in the SoT today.)
+    expect(call[PF_IDX]).toBeCloseTo(1.0);
+    expect(call[INJ_IDX]).toBe(true);
   });
 
   it('(a2) an on-fit OPEN gap persists injectable=true (default product_fit 1.0)', async () => {
@@ -129,7 +134,7 @@ describe('persistGapBriefs — product_fit + injectable single-derivation canary
   it('(c) write-side product_fit == the scorer’s productFitOf for the same query (ONE SoT, identical projection)', async () => {
     const obj = loadObjective();
     dbQueryMock.mockResolvedValueOnce([{ n: 0 }] as never);
-    await persistGapBriefs([MISFIT], 1, new Date('2026-06-02T00:00:00Z'));
+    await persistGapBriefs([FORMER_MISFIT], 1, new Date('2026-06-02T00:00:00Z'));
     const call = dbRunMock.mock.calls[0];
     expect(call[PF_IDX]).toBe(productFitOf(obj, 'best-python-backtester'));
   });

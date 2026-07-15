@@ -53,16 +53,58 @@ score_formula: "expected_lift * revenue_proximity * product_fit * automatability
 
 # Product-fit multiplier per query_id (0..1) — "can AlgoVault CREDIBLY own this query?".
 # Sourced from brand-facts honest-scope, NOT volume. Default (unmapped) = 1.0 (on-fit).
-# Without this term the scorer rewards high-volume but off-product queries it cannot win
-# (this week it ranked best-python-backtester #1; Mr.1 had to override it). Each <1.0 value
-# traces to the brand-facts honest-scope rule below, so the list is auditable, not arbitrary.
-#   AlgoVault honest-scope (brand-facts): the verifiable call / signal-INTERPRETATION layer an
-#   agent or a backtest CALLS — it returns one composite trade call. It is NOT a backtester and
-#   NOT a full quant framework. So "best backtester" / "python quant framework" queries miscast
-#   the product: we are the signal SOURCE those stacks consume, never the stack itself.
-product_fit:
-  best-python-backtester: 0.15   # honest-scope: AlgoVault is NOT a backtester (it is the signal a backtest calls)
-  python-quant-for-ai: 0.2       # honest-scope: NOT a full quant framework (it is the call/interpretation layer a framework consumes)
+# GEO-TARGET-DIGEST-REDESIGN-W1 (2026-07-15): the two off-product misfits this map used to
+# down-weight (best-python-backtester 0.15 / python-quant-for-ai 0.2 — AlgoVault is the signal a
+# backtest/framework CALLS, never the backtester/framework itself) are now DROPPED from
+# geo-queries.yaml entirely, so no live query is off-fit → the map is empty (every query defaults
+# to 1.0). The mechanism is RETAINED: add a `<query_id>: <0..1>` row to down-weight any FUTURE
+# misfit the scorer would otherwise surface. INVARIANT (geo-gap-list canary): inject_threshold >=
+# open_query.product_fit_threshold (holds trivially while product_fit is empty).
+product_fit: {}
+
+# ── GEO-TARGET-DIGEST-REDESIGN-W1 (2026-07-15) — the conversion-tiered TARGET SET (the SoT) ──
+# The ONE place every query's conversion classification lives. BOTH the scorer's earned-routing
+# (geo-decide.ts::scoreWeek — a `contested`/`earned` query emits an `earned` press/Reddit/listicle
+# move, NEVER a placement on a competitor + NEVER an owned post) AND the digest's Tier-A/B split +
+# target-only "who's-winning" filter (geo-digest.ts, via geo-weekly-cron) PROJECT from it — neither
+# re-derives it (single-derivation). ORTHOGONAL to geo-queries.yaml `tier` (head/niche/branded =
+# revenue_proximity / coverage weight); THIS is the conversion axis:
+#   tier:        A  = CONVERSION     (rank hard; measure on SIGNUPS + AI-referred acquisition)
+#                B  = BRAND-PRESENCE (AI-discovery visibility; measure on CITATIONS only — NEVER pipeline)
+#                contested    = EARNED-ONLY (target via press / Reddit / listicles)
+#                measure_only = probe-only (the presence retrieval check; never a target)
+#   audience:    T1 | T2 | T3 | ALL | META   (ICP tier served — brand-facts tier framework)
+#   target_mode: owned  = seed/own an answer (Tier A + Tier B)
+#                earned = press/Reddit/listicle ONLY — never an owned post, never a competitor
+#                         placement (contested)
+#                measure_only = never a target (the presence probe)
+# Every live geo-queries.yaml id is classified (a C3 canary asserts full coverage). Adjustable —
+# Mr.1 can reword/retier; a drop/add of a query MUST stay in sync with geo-queries.yaml.
+target_set:
+  # ── Tier A — CONVERSION (measure on SIGNUPS + AI-referred acquisition) ──
+  composite-quant-signal:    { tier: A, audience: T2/T3, target_mode: owned }
+  verifiable-track-record:   { tier: A, audience: ALL,   target_mode: owned }
+  market-regime-detection:   { tier: A, audience: T2/T3, target_mode: owned }
+  crewai-trading-tools:      { tier: A, audience: T3,    target_mode: owned }
+  claude-trading-stack:      { tier: A, audience: T3,    target_mode: owned }
+  trade-call-not-data:       { tier: A, audience: T3,    target_mode: owned }
+  verifiable-winrate-api:    { tier: A, audience: T2/T3, target_mode: owned }
+  altfins-alternative:       { tier: A, audience: T2/T3, target_mode: owned }
+  x402-signal-api:           { tier: A, audience: T3,    target_mode: owned }
+  signal-api-pricing:        { tier: A, audience: ALL,   target_mode: owned }
+  retail-signals-verifiable: { tier: A, audience: T1,    target_mode: owned }
+  # ── Tier B — BRAND-PRESENCE (measure on CITATIONS only — never counted as signups) ──
+  ai-agent-trade-signals:       { tier: B, audience: ALL, target_mode: owned }
+  mcp-server-discovery:         { tier: B, audience: T3,  target_mode: owned }
+  build-crypto-agent:           { tier: B, audience: T3,  target_mode: owned }
+  cross-venue-funding:          { tier: B, audience: T2,  target_mode: owned }
+  langchain-crypto-integration: { tier: B, audience: T3,  target_mode: owned }
+  llamaindex-quant-stack:       { tier: B, audience: T3,  target_mode: owned }
+  # ── CONTESTED — EARNED-ONLY (scorer emits `earned`; never a placement, never an owned post) ──
+  best-mcp-trading:  { tier: contested, audience: T3,    target_mode: earned }
+  agent-signal-api:  { tier: contested, audience: T2/T3, target_mode: earned }
+  # ── presence probe (NOT a target; already excluded from every authority aggregate at SQL) ──
+  algovault-exists:  { tier: measure_only, audience: META, target_mode: measure_only }
 
 # OPEN (no-leader) query handling. Most weeks the scorer only emitted "pursue a placement on
 # <leader domain>" moves — so an uncontested query (no leader) was invisible or stranded in the

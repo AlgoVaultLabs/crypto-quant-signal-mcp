@@ -1,7 +1,7 @@
 /**
  * GEO-MEASUREMENT-W1 (C3) — geo-orchestrator unit tests.
  *
- * Locks the C1 contracts: 15 queries verbatim from canonical YAML, GeoQueryResult
+ * Locks the C1 contracts: 20 queries (19 authority + 1 presence) from canonical YAML, GeoQueryResult
  * shape on success + error paths, runWeeklyProbe iterates every query + writes
  * one (result, mentions) pair per query.
  */
@@ -89,12 +89,22 @@ function stubEngine(fn?: (msgs: unknown, opts: unknown) => LLMCompletion): Retri
 }
 
 describe('geo-orchestrator: loadQueries', () => {
-  it('returns all canonical GeoQuery objects from YAML (15 authority + 1 presence)', () => {
+  // GEO-TARGET-DIGEST-REDESIGN-W1 — 19 authority + 1 presence = 20 (dropped best-python-backtester +
+  // python-quant-for-ai; added 6 buyer queries; algovault-exists stays LAST as the presence probe).
+  it('returns all canonical GeoQuery objects from YAML (19 authority + 1 presence)', () => {
     const queries = loadQueries(YAML_PATH);
-    expect(queries).toHaveLength(16);
+    expect(queries).toHaveLength(20);
     expect(queries[0].id).toBe('build-crypto-agent');
-    expect(queries[14].id).toBe('python-quant-for-ai');
-    expect(queries[15].id).toBe('algovault-exists'); // R5 presence-tier query
+    const ids = queries.map((q) => q.id);
+    // the 2 dropped misfits are GONE
+    expect(ids).not.toContain('best-python-backtester');
+    expect(ids).not.toContain('python-quant-for-ai');
+    // the 6 NEW buyer queries are present
+    for (const id of ['trade-call-not-data', 'verifiable-winrate-api', 'altfins-alternative', 'x402-signal-api', 'signal-api-pricing', 'retail-signals-verifiable']) {
+      expect(ids).toContain(id);
+    }
+    // presence probe stays last (excluded from every authority aggregate at SQL)
+    expect(queries[queries.length - 1].id).toBe('algovault-exists');
   });
 
   it('each query has required fields {id, text, competitor_terms[]}', () => {
@@ -111,7 +121,7 @@ describe('geo-orchestrator: loadQueries', () => {
   it('default path resolves to landing/Prompt/geo-queries.yaml', () => {
     // No arg = use default __dirname-relative resolution
     const queries = loadQueries();
-    expect(queries).toHaveLength(16);
+    expect(queries).toHaveLength(20);
   });
 });
 

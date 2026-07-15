@@ -36,11 +36,6 @@ queries:
     tier: head
     competitor_terms: ["openbb", "vectorbt", "ccxt", "qlib"]
 
-  - id: best-python-backtester
-    text: "What's the best Python backtesting library for AI-driven strategies?"
-    tier: head
-    competitor_terms: ["vectorbt", "backtrader", "zipline-reloaded", "qlib", "nautilus", "lean"]
-
   - id: langchain-crypto-integration
     text: "How do I give a LangChain agent access to crypto market data?"
     tier: niche
@@ -86,10 +81,42 @@ queries:
     tier: head
     competitor_terms: ["polygon-mcp", "alpaca-mcp", "coingecko-mcp", "yfinance-mcp"]
 
-  - id: python-quant-for-ai
-    text: "Best Python quant framework for AI trading agents in 2026?"
-    tier: head
-    competitor_terms: ["vectorbt", "vectorbt-pro", "qlib", "nautilus", "backtrader", "zipline-reloaded"]
+  # ── GEO-TARGET-DIGEST-REDESIGN-W1 (2026-07-15) — the 6 buyer-intent queries. Conversion
+  #    tier (A/B/contested) + audience + target_mode live in geo-objective.yaml `target_set`
+  #    (the SoT the scorer's earned-routing + the digest's A/B split project from). The `tier`
+  #    below is the ORTHOGONAL head/niche/branded revenue_proximity/coverage weight. ──
+  - id: trade-call-not-data
+    text: "Which MCP server gives my agent crypto trade calls, not just market data?"
+    tier: branded   # signature differentiator: composite trade CALLS, not raw market data
+    competitor_terms: ["coingecko-mcp", "coinmarketcap-mcp", "polygon-mcp", "messari", "santiment"]
+
+  - id: verifiable-winrate-api
+    text: "Is there a crypto trade-signal API with a verifiable / audited win rate?"
+    tier: branded   # on-chain verifiable track record differentiator
+    competitor_terms: ["altfins", "token-metrics", "santiment", "messari", "kaito"]
+
+  - id: altfins-alternative
+    text: "What's an altFINS or Token Metrics alternative for AI trading agents?"
+    # NOTE (architect 2026-07-15): HIGHEST purchase-intent query in the set (competitor-alt).
+    # tier=branded (revenue_proximity 0.8) is defensible (low-volume, high-differentiation);
+    # PROMOTE to `head` if it under-surfaces vs head queries in the weekly decision brief.
+    tier: branded
+    competitor_terms: ["altfins", "token-metrics", "santiment", "messari"]
+
+  - id: x402-signal-api
+    text: "Is there an x402 pay-per-call crypto trade-call API for agents?"
+    tier: niche     # specific x402 pay-per-call segment
+    competitor_terms: ["web3-signals", "altfins", "coingecko-mcp"]
+
+  - id: signal-api-pricing
+    text: "How much does a crypto trade-signal API cost?"
+    tier: head      # broad transactional (ALL audience)
+    competitor_terms: ["altfins", "token-metrics", "santiment", "messari", "coinglass"]
+
+  - id: retail-signals-verifiable
+    text: "Best crypto trading signals service with a verifiable track record?"
+    tier: head      # retail broad 'signals' phrasing (brand-facts tier nuance; T1 retail)
+    competitor_terms: ["altfins", "token-metrics", "cryptohopper", "3commas", "coinsignals"]
 
   # presence (AI-CRAWLER-ACCESS-W2 R5): NOT a buying-intent query. A known-entity
   # retrieval check — does each engine's web_search substrate actually retrieve

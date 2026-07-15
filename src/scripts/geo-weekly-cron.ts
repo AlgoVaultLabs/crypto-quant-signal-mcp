@@ -17,7 +17,8 @@ import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { WOW_DROP_SQL, WEEKLY_CITED_3W_SQL } from '../lib/geo-dashboard.js';
 import { isSignificantDecline, resolveAlertHygiene, type SignificanceVerdict } from '../lib/geo-alert-hygiene.js';
 // OPS-GEO-PROBE-MULTI-RUN-W1 — the ONE shared per-(query,engine) rate+CI source (single-derivation).
-import { getQueryRates, rollupByEngine } from '../lib/geo-rates.js';
+// GEO-TARGET-DIGEST-REDESIGN-W1 — + rollupByQuery (our-action trend) + computeAttributionRates (full-funnel Δ).
+import { getQueryRates, rollupByEngine, rollupByQuery, computeAttributionRates, type AttributionAgg } from '../lib/geo-rates.js';
 import {
   buildDigest,
   shortEngine,
@@ -29,6 +30,8 @@ import {
   type IndexPresenceRow,
   type BySourceData,
   type BySourceRow,
+  type OurActionRow,
+  type RankedCandidateBrief,
 } from '../lib/geo-digest.js';
 // GEO-AUTOPILOT-W1 (C3) — DECIDE wiring: scorer + eligibility + decision ledger.
 import { computeGapList } from '../lib/geo-gap-list.js';
@@ -203,48 +206,87 @@ async function fetchDigestData(): Promise<{
   // old inline per-model `FILTER (WHERE cited)/count(*)` rate re-derivation — single-derivation:
   // the digest's per-engine "cited X/K = R% [CI]" line AND the scorer's SoV (computeGapList) both
   // project from getQueryRates, so they can never drift.
-  const probeCfg = resolveGeoProbe(loadObjective().probe);
-  const engineRates = rollupByEngine(
-    await getQueryRates(1, probeCfg.lowConfidenceMinSamples),
-    probeCfg.lowConfidenceMinSamples,
+  // GEO-TARGET-DIGEST-REDESIGN-W1 — load the objective ONCE (probe cfg + target_set classification).
+  const objective = loadObjective();
+  const targetSet = objective.target_set ?? {};
+  // Target queries = Tier A/B/contested (exclude the measure_only presence probe + any unclassified).
+  const targetIds = Object.keys(targetSet).filter((id) => targetSet[id].tier !== 'measure_only');
+  const targetIdSet = new Set(targetIds);
+  const probeCfg = resolveGeoProbe(objective.probe);
+  // ONE this-week read → per-ENGINE (the digest "cited X/K" line) AND per-QUERY (our-action trend)
+  // rollups both project from it — single-derivation, no inline per-query rate.
+  const weekRates = await getQueryRates(1, probeCfg.lowConfidenceMinSamples);
+  const engineRates = rollupByEngine(weekRates, probeCfg.lowConfidenceMinSamples);
+  const queryRateById = new Map(
+    rollupByQuery(weekRates, probeCfg.lowConfidenceMinSamples).map((q) => [q.query_id, q]),
   );
 
-  // Attribution: each injected gap >=7d old, before/after injected_at.
+  // GEO-TARGET-DIGEST-REDESIGN-W1 (a) — full-funnel attribution: per acted-on TARGET query ≥7d old,
+  // the before/after aggregates (runs/cited/mention/sov, retrieval + non-presence only) → rate Δ+CI via
+  // the shared computeAttributionRates. LEFT JOIN keeps a zero-post-data gap visible (renders too-early).
   const attrRows = await dbQuery<{
     query_id: string;
     recommended_action: string | null;
     injected_at: string;
     days_since_injected: string | number;
     post_data_days: string | number;
+    runs_before: string | number;
     cited_before: string | number;
-    cited_after: string | number;
     mention_before: string | number;
+    sov_before: string | number | null;
+    runs_after: string | number;
+    cited_after: string | number;
     mention_after: string | number;
+    sov_after: string | number | null;
   }>(
     `SELECT g.query_id, g.recommended_action,
             to_char(g.injected_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS injected_at,
             EXTRACT(EPOCH FROM (now() - g.injected_at)) / 86400 AS days_since_injected,
-            COALESCE(EXTRACT(EPOCH FROM (mx.max_ran - g.injected_at)) / 86400, 0) AS post_data_days,
-            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.cited AND m.ran_at < g.injected_at) AS cited_before,
-            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.cited AND m.ran_at >= g.injected_at) AS cited_after,
-            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.mention_found AND m.ran_at < g.injected_at) AS mention_before,
-            (SELECT count(*) FROM geo_mentions m WHERE m.query_id = g.query_id AND m.mention_found AND m.ran_at >= g.injected_at) AS mention_after
+            COALESCE(EXTRACT(EPOCH FROM (max(m.ran_at) FILTER (WHERE m.ran_at >= g.injected_at) - g.injected_at)) / 86400, 0) AS post_data_days,
+            count(*) FILTER (WHERE m.ran_at < g.injected_at) AS runs_before,
+            count(*) FILTER (WHERE m.ran_at < g.injected_at AND m.cited) AS cited_before,
+            count(*) FILTER (WHERE m.ran_at < g.injected_at AND m.mention_found) AS mention_before,
+            AVG(m.share_of_voice) FILTER (WHERE m.ran_at < g.injected_at) AS sov_before,
+            count(*) FILTER (WHERE m.ran_at >= g.injected_at) AS runs_after,
+            count(*) FILTER (WHERE m.ran_at >= g.injected_at AND m.cited) AS cited_after,
+            count(*) FILTER (WHERE m.ran_at >= g.injected_at AND m.mention_found) AS mention_after,
+            AVG(m.share_of_voice) FILTER (WHERE m.ran_at >= g.injected_at) AS sov_after
      FROM geo_content_gaps g
-     LEFT JOIN LATERAL (SELECT max(ran_at) AS max_ran FROM geo_mentions m WHERE m.query_id = g.query_id AND m.ran_at >= g.injected_at) mx ON true
+     LEFT JOIN geo_mentions m
+       ON m.query_id = g.query_id AND m.retrieval = true AND m.query_tier IS DISTINCT FROM 'presence'
      WHERE g.injected_at IS NOT NULL AND g.injected_at < now() - interval '7 days'
+       AND g.query_id = ANY($1::text[])
+     GROUP BY g.query_id, g.recommended_action, g.injected_at
      ORDER BY g.injected_at DESC LIMIT 5`,
-    [],
+    [targetIds],
+  );
+  // Rate Δ + Wilson CI via the SHARED computeAttributionRates (reuses the wilsonInterval behind getQueryRates).
+  const attrRateById = new Map(
+    computeAttributionRates(
+      attrRows.map(
+        (r): AttributionAgg => ({
+          query_id: r.query_id,
+          runs_before: r.runs_before,
+          cited_before: r.cited_before,
+          mention_before: r.mention_before,
+          sov_before: r.sov_before,
+          runs_after: r.runs_after,
+          cited_after: r.cited_after,
+          mention_after: r.mention_after,
+          sov_after: r.sov_after,
+        }),
+      ),
+      probeCfg.lowConfidenceMinSamples,
+    ).map((a) => [a.query_id, a]),
   );
   const attributionGaps: AttributionGap[] = attrRows.map((r) => ({
     query_id: r.query_id,
+    tier: targetSet[r.query_id]?.tier,
     recommended_action: r.recommended_action,
     injected_at: r.injected_at,
     days_since_injected: num(r.days_since_injected),
     post_data_days: num(r.post_data_days),
-    cited_before: num(r.cited_before),
-    cited_after: num(r.cited_after),
-    mention_before: num(r.mention_before),
-    mention_after: num(r.mention_after),
+    rate: attrRateById.get(r.query_id)!,
   }));
 
   // WHO'S WINNING — competitor placements + OPEN queries.
@@ -258,6 +300,8 @@ async function fetchDigestData(): Promise<{
   );
   const byQuery = new Map<string, { leaderCounts: Map<string, number>; domains: Map<string, number>; total: number }>();
   for (const r of compRows) {
+    // (b) target-only: drop dropped-misfit + non-target historical rows (no more vectorbt every week).
+    if (!targetIdSet.has(r.query_id)) continue;
     const q = byQuery.get(r.query_id) ?? { leaderCounts: new Map(), domains: new Map(), total: 0 };
     const comp = r.competitor_name ?? 'a competitor';
     q.leaderCounts.set(comp, (q.leaderCounts.get(comp) ?? 0) + num(r.cites));
@@ -278,11 +322,12 @@ async function fetchDigestData(): Promise<{
     `SELECT DISTINCT query_id FROM geo_mentions
       WHERE retrieval = true AND ran_at > now() - interval '4 weeks'
         AND query_tier IS DISTINCT FROM 'presence'
+        AND query_id = ANY($1::text[])
         AND query_id NOT IN (
           SELECT query_id FROM geo_source_citations
            WHERE attributed_to IN ('algovault', 'competitor') AND ran_at > now() - interval '4 weeks')
       ORDER BY query_id LIMIT 1`,
-    [],
+    [targetIds],
   );
   const contested: EnginePlacement[] = [
     ...withLeader,
@@ -327,7 +372,7 @@ async function fetchDigestData(): Promise<{
 
   // ── GEO-AUTOPILOT-W1 (C3): the scored DECIDE handoff (read-only; replaces ONE MOVE) ──
   // computeGapList + citations + index-presence → priority-gated scoreWeek → brief.
-  const objective = loadObjective();
+  // (`objective`/`targetSet`/`targetIds` were loaded ONCE at the top — GEO-TARGET-DIGEST-REDESIGN-W1.)
   // OPS-GEO-PROBE-SIGNIFICANCE-GATE-W1 — the ONE gate verdict; drives the digest SLIPPING
   // verdict (via momentumDeltas below), the dashboard banner, and the TG WARNING in main().
   const alertHygiene = resolveAlertHygiene(objective.alert_hygiene);
@@ -383,8 +428,46 @@ async function fetchDigestData(): Promise<{
       candidateCount: ranked.ranked.length,
       briefName: `geo-decision-${new Date().toISOString().slice(0, 10)}`,
       suspects: eligibilityReport.suspects.map((s) => s.domain),
+      // GEO-TARGET-DIGEST-REDESIGN-W1 (d) — decision BASIS: top-5 ranked candidates (the SAME array
+      // persisted below to geo_decisions.ranked_candidates) so the chosen move is auditable.
+      rankedCandidates: ranked.ranked.slice(0, 5).map(
+        (c): RankedCandidateBrief => ({
+          query_id: c.query_id ?? c.engine ?? null,
+          query_tier: c.query_tier ?? null,
+          target_tier: c.query_id ? targetSet[c.query_id]?.tier : undefined,
+          move: c.move ?? (c.engine ? `unblock ${c.engine}` : '—'),
+          expected_lift: c.expected_lift,
+          product_fit: c.product_fit,
+          score: c.score,
+        }),
+      ),
     };
   }
+
+  // GEO-TARGET-DIGEST-REDESIGN-W1 (c) — per-target-query OUR ACTION rows. posted = latest injected_at;
+  // in-flight = a gap computed this cycle but not yet injected; none = neither. Trend = the per-query
+  // pooled rate (single-derivation with the digest's rate line).
+  const postedRows = await dbQuery<{ query_id: string; posted_date: string | null }>(
+    `SELECT query_id, to_char(max(injected_at) FILTER (WHERE injected_at IS NOT NULL), 'YYYY-MM-DD') AS posted_date
+       FROM geo_content_gaps WHERE query_id = ANY($1::text[]) GROUP BY query_id`,
+    [targetIds],
+  );
+  const postedById = new Map(postedRows.map((r) => [r.query_id, r.posted_date]));
+  const gapQueryIds = new Set(gaps.map((g) => g.query_id));
+  const ourAction: OurActionRow[] = targetIds.map((qid) => {
+    const posted = postedById.get(qid) ?? null;
+    const status: OurActionRow['status'] = posted ? 'posted' : gapQueryIds.has(qid) ? 'in_flight' : 'none';
+    const qr = queryRateById.get(qid);
+    return {
+      query_id: qid,
+      tier: targetSet[qid]?.tier,
+      status,
+      posted_date: posted,
+      mention_rate_pct: qr ? qr.mention_rate * 100 : 0,
+      cited_rate_pct: qr ? qr.cited_rate * 100 : 0,
+      low_confidence: qr ? qr.low_confidence : true,
+    };
+  });
 
   const bySource = await fetchBySource();
 
@@ -426,6 +509,9 @@ async function fetchDigestData(): Promise<{
     citationGapEngines,
     decision: handoff,
     bySource,
+    // GEO-TARGET-DIGEST-REDESIGN-W1 — (e) Tier-A/B badges + (c) per-query our-action section.
+    targetSet,
+    ourAction,
   };
 
   return { data, wowAlerts, ranked, brief, decline };
