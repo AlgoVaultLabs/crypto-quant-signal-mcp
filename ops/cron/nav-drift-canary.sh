@@ -46,11 +46,13 @@ fi
 log "DRIFT: served nav region out of sync with the model. ${OUT:0:300}"
 [ -x "$SEND" ] || { log "FAIL_OPEN: send_telegram.sh not executable at $SEND"; exit 0; }
 
-# Pure alert branch — send_telegram.sh owns every gate.
-"$SEND" \
-  --alert-id "$ALERT_ID" \
-  --severity CRITICAL_PERSISTENT \
-  --title "Nav region drift on the live site" \
-  --body "A served landing page's injected nav no longer matches the single-derivation model (dist/lib/site-nav.js renderSiteNav()) or is missing its <!-- NAV:START/END --> markers. Likely a host-side manual edit of the deployed HTML. Recover: redeploy from main (build_nav re-injects) or run \`docker exec $APP_CTR node scripts/build_nav.mjs\`." \
-  --recommended-wave "OPS-NAV-DRIFT-RESTORE-W{NEXT}" 2>>"$LOG" || log "FAIL_OPEN: send_telegram invocation failed"
+# Pure alert branch. send_telegram.sh interface is POSITIONAL: `send_telegram.sh <alert_id>
+# <severity> [body_file|-]`; body (incl the OPS-<CLASS>-W{NEXT} template, resolved at send-time)
+# via stdin. (OPS-DOCS-JSONLD-TOOLCOUNT-W1 R3: the prior --flag form was silently
+# SUPPRESSED_SEVERITY — flags landed in the alert_id/severity slots; fixed here + in docs-drift.)
+BODY="🛑 ${ALERT_ID}
+Nav region drift on the live site — a served landing page's injected nav no longer matches the single-derivation model (dist/lib/site-nav.js renderSiteNav()) or is missing its <!-- NAV:START/END --> markers. Likely a host-side manual edit of the deployed HTML.
+Recover: redeploy from main (build_nav re-injects) or run \`docker exec ${APP_CTR} node scripts/build_nav.mjs\`.
+Recommended wave: OPS-NAV-DRIFT-RESTORE-W{NEXT}"
+printf '%s\n' "$BODY" | "$SEND" "$ALERT_ID" CRITICAL_PERSISTENT - 2>>"$LOG" || log "FAIL_OPEN: send_telegram invocation failed"
 exit 0
