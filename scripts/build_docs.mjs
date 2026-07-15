@@ -110,7 +110,7 @@ function renderBody(flat) {
 
 /** Blank the inner of every downstream-filled marker so a drift compare ignores them. */
 function blankMarkers(html, markerNames) {
-  const pairs = [['<!-- NAV:START -->', '<!-- NAV:END -->'], ['<!-- BUILD:signup-flow:start -->', '<!-- BUILD:signup-flow:end -->']];
+  const pairs = [['<!-- NAV:START -->', '<!-- NAV:END -->'], ['<!-- ANALYTICS:START -->', '<!-- ANALYTICS:END -->'], ['<!-- BUILD:signup-flow:start -->', '<!-- BUILD:signup-flow:end -->']];
   for (const m of markerNames) pairs.push([`<!-- BUILD:${m}:start -->`, `<!-- BUILD:${m}:end -->`]);
   let out = html;
   for (const [s, e] of pairs) {

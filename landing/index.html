@@ -58,12 +58,14 @@ tailwind.config = {
   .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; box-shadow: 0 0 8px rgba(74, 222, 128, 0.6); }
   @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.85); } }
 </style>
+<!-- ANALYTICS:START -->
 <!-- Privacy-friendly analytics by Plausible -->
 <script async src="/js/insights.js"></script>
 <script>
   window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
   plausible.init({endpoint:"/pa/event"})
 </script>
+<!-- ANALYTICS:END -->
 <!-- x402 price SoT = src/lib/x402.ts TOOL_PRICING ($0.01 scan_funding_arb · $0.02 get_trade_call · $0.02 get_market_regime, USDC on Base). These are static constants surfaced in the JSON-LD Offers, the pricing card, llms*.txt + signup; update them there + re-render. Manifest-driving them (like the live track-record numbers) is flagged as OPS-X402-PRICE-SOT-W{NEXT}. WEBSITE-X402-SURFACING-W1. -->
 <script type="application/ld+json" data-algovault-jsonld="Product">
 {

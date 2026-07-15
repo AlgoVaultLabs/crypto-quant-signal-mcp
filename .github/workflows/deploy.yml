@@ -91,6 +91,12 @@ jobs:
       - name: Nav sync + coverage guard (build_nav --check)
         run: node scripts/build_nav.mjs --check
 
+      # OPS-ANALYTICS-TAG-SINGLE-SOURCE-W1 CH4 — every content landing page must carry the
+      # single-source analytics region (src/lib/analytics-snippet.ts) in sync + total coverage.
+      # Fails the push if any page drifted or a new page never got the tag (structural).
+      - name: Analytics tag drift canary (build_analytics --check)
+        run: node scripts/build_analytics.mjs --check
+
       # FEATURE-REGISTRY-SOT-W1 CH4: registry drift canary (STATIC parity). Fails the
       # push BEFORE SSH-deploy if any channel's surface (server.tool registration set /
       # x402 TOOL_PRICING derive / gated route set / capabilities projection) has fallen

@@ -732,12 +732,8 @@ tailwind.config = {
      but the wrapper class is reserved for VERIFY-DEEPLINK-W1 to reveal on ?id= URL param routing) */
   [data-w9-result] { display: none; }
 </style>
-<!-- Privacy-friendly analytics by Plausible -->
-<script async src="/js/insights.js"></script>
-<script>
-  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init({endpoint:"/pa/event"})
-</script>
+<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
 <script type="application/ld+json" data-algovault-jsonld="Product">
 {
   "@context": "https://schema.org",
@@ -1966,12 +1962,8 @@ tailwind.config = {
   @media (max-width: 767px) { .lp-howit-desktop { display: none !important; } }
   @media (min-width: 768px) { .lp-howit-mobile { display: none !important; } }
 </style>
-<!-- Privacy-friendly analytics by Plausible -->
-<script async src="/js/insights.js"></script>
-<script>
-  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init({endpoint:"/pa/event"})
-</script>
+<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
 <!-- track-record-proxy.js hydrates [data-tr-field] spans from /api/performance-public -->
 <script defer src="/js/track-record-proxy.js"></script>
 </head>

@@ -261,12 +261,8 @@ function htmlShell(exchange, bodyHtml) {
 <script type="application/ld+json">
 ${techArticle}
 </script>
-<!-- Privacy-friendly analytics by Plausible (WEBSITE-REFRESH-W1 C6) -->
-<script async src="/js/insights.js"></script>
-<script>
-  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init({endpoint:"/pa/event"})
-</script>
+<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
 <script>
 tailwind.config = {
   theme: {

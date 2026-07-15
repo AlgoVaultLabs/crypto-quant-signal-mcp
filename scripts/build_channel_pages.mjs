@@ -174,6 +174,8 @@ ${JSON.stringify({ '@context': 'https://schema.org', '@id': ORG_ID }, null, 2)}
   .ch-faq p { margin: 12px 0 2px; }
   .ch-cta { display: inline-block; margin-top: 28px; padding: 11px 22px; border-radius: 10px; background: var(--mint, oklch(0.86 0.16 165)); color: #060a14; font-weight: 600; text-decoration: none; font-size: 15px; }
 </style>
+<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
 </head>
 <body>
 ${NAV_START}

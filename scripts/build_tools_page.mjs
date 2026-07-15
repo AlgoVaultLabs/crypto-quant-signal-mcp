@@ -120,7 +120,9 @@ tailwind.config = {
   .tools-card-channels { display: flex; flex-wrap: wrap; gap: 6px; }
   .tools-badge { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 10.5px; letter-spacing: 0.04em; color: var(--fg-3, #9ca3af); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 2px 9px; }
 </style>
-${preservedJsonLd(existingHtml)}</head>
+${preservedJsonLd(existingHtml)}<!-- ANALYTICS:START -->
+<!-- ANALYTICS:END -->
+</head>
 <body>
 ${NAV_START}
 ${renderSiteNav()}
