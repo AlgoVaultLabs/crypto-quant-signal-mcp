@@ -65,6 +65,19 @@
       "replace_all": true
     },
     {
+      "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: general perp count in free-text 'N exchanges' prose/meta descriptions → exchange_count. On landing surfaces 'N exchanges' is always the venue count; data-tr-field spans are non-contiguous ('12</span> exchanges') so they are untouched.",
+      "id": "text-perp-exchange-count",
+      "find_pattern": "\\d+( exchanges)",
+      "replace_template": "{value}$1",
+      "sot": "performance",
+      "accessor": "exchange_count",
+      "format": "integer",
+      "apply_to_files": [
+        "landing/index.html"
+      ],
+      "replace_all": true
+    },
+    {
       "_comment": "OPS-LANDING-FUNDING-VENUE-RECONCILE-W1: index.html eyebrow 'N venues unified behind one MCP' → exchange_count.",
       "id": "eyebrow-venues-unified",
       "find_pattern": "\\d+( venues unified behind one MCP)",
