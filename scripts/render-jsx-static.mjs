@@ -733,10 +733,10 @@ tailwind.config = {
   [data-w9-result] { display: none; }
 </style>
 <!-- Privacy-friendly analytics by Plausible -->
-<script async src="https://plausible.algovault.com/js/pa-gfOGxVcQKNfocPr5V3vR8.js"></script>
+<script async src="/js/insights.js"></script>
 <script>
   window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init()
+  plausible.init({endpoint:"/pa/event"})
 </script>
 <script type="application/ld+json" data-algovault-jsonld="Product">
 {
@@ -1967,10 +1967,10 @@ tailwind.config = {
   @media (min-width: 768px) { .lp-howit-mobile { display: none !important; } }
 </style>
 <!-- Privacy-friendly analytics by Plausible -->
-<script async src="https://plausible.algovault.com/js/pa-gfOGxVcQKNfocPr5V3vR8.js"></script>
+<script async src="/js/insights.js"></script>
 <script>
   window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init()
+  plausible.init({endpoint:"/pa/event"})
 </script>
 <!-- track-record-proxy.js hydrates [data-tr-field] spans from /api/performance-public -->
 <script defer src="/js/track-record-proxy.js"></script>

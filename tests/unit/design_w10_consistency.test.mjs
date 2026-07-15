@@ -284,7 +284,7 @@ for (const ex of INTEGRATIONS) {
     assert.ok(html.includes('data-tr-field="pfe_wr"'), 'pfe_wr live-bind span preserved');
     assert.ok(html.includes('data-tr-field="signal_count"'), 'signal_count live-bind span preserved');
     // Plausible analytics preserved.
-    assert.ok(html.includes('plausible.algovault.com/js/pa-gfOGxVcQKNfocPr5V3vR8.js'), 'Plausible script preserved (self-hosted CE)');
+    assert.ok(html.includes('src="/js/insights.js"'), 'Plausible script preserved (first-party proxy)');
     // Tailwind CDN preserved (was already loaded pre-W10).
     assert.ok(html.includes('https://cdn.tailwindcss.com'), 'Tailwind CDN preserved');
     // Per-exchange utm params on body-embedded links preserved (≥1 instance from markdown).
