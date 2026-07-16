@@ -9,8 +9,30 @@ import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js'
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
 
-const DB_DIR = path.join(os.homedir(), '.crypto-quant-signal');
-const DB_PATH = path.join(DB_DIR, 'performance.db');
+/**
+ * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
+ * load). Resolving here — rather than in a module-level const — is what lets a
+ * redirected $HOME or an explicit override take effect even though every caller
+ * imports this module statically.
+ *
+ * Default (production + normal runtime): the operator's persistent
+ * `~/.crypto-quant-signal/performance.db`, honoring $HOME. That is how
+ * tests/performance-db-migration.test.ts + tests/agent-sessions.test.ts isolate
+ * (set HOME to a mkdtemp dir, then open) — behavior is unchanged for them.
+ *
+ * `PERFORMANCE_DB_PATH` override wins when set. A single vitest test FILE can
+ * point the backend at its OWN temp DB so its WHOLE-TABLE COUNT assertions
+ * (e.g. a pre/post delta on getUsageStats().totalCalls.allTime) can't be
+ * perturbed by another test file's concurrent request_log INSERT — vitest runs
+ * test files in parallel, and several of them write request_log. The env is
+ * NEVER set in production (DATABASE_URL selects Postgres there anyway), so prod
+ * behavior is byte-identical. Used by tests/analytics-external-only.test.ts; see
+ * skills shared-sqlite-test-sentinel-prefix-collision +
+ * sqlite-fresh-db-wal-first-open-race-in-parallel-tests.
+ */
+function resolveSqliteDbPath(): string {
+  return process.env.PERFORMANCE_DB_PATH || path.join(os.homedir(), '.crypto-quant-signal', 'performance.db');
+}
 
 // ── DB Backend Interface ──
 
@@ -30,8 +52,9 @@ class SqliteBackend implements DbBackend {
     // Dynamic import resolved at runtime
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Database = require('better-sqlite3');
-    fs.mkdirSync(DB_DIR, { recursive: true });
-    this.db = new Database(DB_PATH);
+    const dbPath = resolveSqliteDbPath();
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
   }
 
