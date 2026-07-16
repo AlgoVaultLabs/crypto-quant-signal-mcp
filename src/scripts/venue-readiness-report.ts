@@ -21,6 +21,7 @@ import { computeVenueStats } from './evaluate-venues.js';
 import { sendDigest } from '../lib/telegram.js';
 import { dbQuery } from '../lib/performance-db.js';
 import { loadEquityReadinessInput, renderToolReadiness } from './tool-readiness-report.js';
+import { isEquityToolsEnabled } from '../lib/equities/equity-tools-flag.js';
 import type { VenueRecord } from '../types.js';
 
 const PFE_WR_THRESHOLD = 0.80;
@@ -104,12 +105,20 @@ async function main(): Promise<void> {
   // card for the (non-venue) equity tools so it rides THIS digest's single
   // sendDigest() Telegram — no new cron/alert channel. Fail-soft: a DB hiccup on
   // the equity section must never suppress the venue blocks.
-  try {
-    sections.push(renderToolReadiness(await loadEquityReadinessInput(dbQuery)));
-  } catch (e) {
-    console.error(
-      `[tool-readiness] equity section failed (venue digest still sent): ${e instanceof Error ? e.message : e}`,
-    );
+  //
+  // EQUITY-TOOLS-DARK-RETIRE-W1: gated by the SAME flag as the equity tool
+  // registration (single-derivation, in-container `docker exec` so the container
+  // env is authoritative for both). OFF (default) → the equity card is not rendered
+  // and its DB read is skipped; the venue digest + its single sendDigest() below are
+  // otherwise byte-identical.
+  if (isEquityToolsEnabled()) {
+    try {
+      sections.push(renderToolReadiness(await loadEquityReadinessInput(dbQuery)));
+    } catch (e) {
+      console.error(
+        `[tool-readiness] equity section failed (venue digest still sent): ${e instanceof Error ? e.message : e}`,
+      );
+    }
   }
 
   const text = sections.join('\n\n');

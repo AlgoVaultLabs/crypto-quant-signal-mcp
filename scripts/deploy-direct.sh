@@ -124,7 +124,11 @@ set -e
 MCP_CTR=crypto-quant-signal-mcp-mcp-server-1
 PG_CTR=crypto-quant-signal-mcp-postgres-1
 MCP_URL=http://127.0.0.1:3000/mcp
-EXPECTED_TOOLS=9
+# EQUITY-TOOLS-DARK-RETIRE-W1: the live tools/list count tracks EQUITY_TOOLS_ENABLED
+# (default OFF → 7 crypto tools; ON → 9 incl. get_equity_call + get_equity_regime).
+# Derive from the running container's flag so this verify matches whatever is deployed.
+_EQ=$(docker exec crypto-quant-signal-mcp-mcp-server-1 printenv EQUITY_TOOLS_ENABLED 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+if [ "$_EQ" = "1" ] || [ "$_EQ" = "true" ]; then EXPECTED_TOOLS=9; else EXPECTED_TOOLS=7; fi
 FAIL=0
 
 # 1) wait-for-healthy

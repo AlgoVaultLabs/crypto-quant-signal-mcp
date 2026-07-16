@@ -114,6 +114,10 @@ import {
   GET_EQUITY_REGIME_DESCRIPTION,
 } from './tool-descriptions.js';
 import { allToolNames, projectCapabilities } from './lib/feature-registry.js';
+// EQUITY-TOOLS-DARK-RETIRE-W1: the live tools/list set is env-gated (get_equity_call /
+// get_equity_regime dark behind EQUITY_TOOLS_ENABLED, default OFF). allToolNames() stays
+// the DECLARED set (9); liveMcpToolNames() is what actually registers (7 OFF / 9 ON).
+import { liveMcpToolNames } from './lib/equities/equity-tools-flag.js';
 import {
   getKnowledgeBundle,
   getKnowledgeIndex,
@@ -861,7 +865,10 @@ function createServer(): McpServer {
   // handler/schema/annotations/description from toolDefs. Bidirectional parity guard:
   // a registry name with no handler def — or a handler def absent from the registry —
   // throws at boot (drift can't ship silently; the CH4 canary enforces the same live).
-  for (const name of allToolNames()) {
+  // EQUITY-TOOLS-DARK-RETIRE-W1: iterate the ENV-GATED live set (liveMcpToolNames) — OFF
+  // drops the 2 equity tools (9→7). The equity register() calls above stay (harmless,
+  // just not iterated); guard B below still checks toolDefs ⊆ allToolNames (DECLARED set).
+  for (const name of liveMcpToolNames()) {
     const d = toolDefs[name];
     if (!d) throw new Error(`[feature-registry] "${name}" is in FEATURE_REGISTRY but has no handler def in createServer()`);
     (server as { tool: (n: string, desc: string, s: z.ZodRawShape, a: Record<string, unknown>, h: unknown) => void }).tool(
@@ -1208,7 +1215,15 @@ async function startHttp() {
   // FEATURE_REGISTRY) — no hand-maintained per-channel slice. No internal fields.
   app.get('/capabilities', (_req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
-    res.json({ server: 'crypto-quant-signal-mcp', version: PKG_VERSION, ...projectCapabilities() });
+    // EQUITY-TOOLS-DARK-RETIRE-W1: the /capabilities MCP-channel projection tracks the
+    // LIVE tools/list — both derive from liveMcpToolNames() so the two stay self-consistent
+    // (the feature-registry `--live` drift canary asserts tools/list == /capabilities; a
+    // gated tools/list with an ungated /capabilities would be a real MCP-channel drift).
+    // projectCapabilities() itself stays the pristine 9-name registry projection (the
+    // STATIC `--check` canary + feature-registry unit test read it directly).
+    const liveNames = new Set(liveMcpToolNames());
+    const tools = projectCapabilities().tools.filter((t) => liveNames.has(t.name));
+    res.json({ server: 'crypto-quant-signal-mcp', version: PKG_VERSION, tools });
   });
 
   // ── Integration tutorial mirrors ──
