@@ -27,6 +27,43 @@ api.algovault.com {
 }
 
 algovault.com {
+    # OPS-APEX-CADDY-ACCESS-LOG-W1 (2026-07-15) — privacy-safe, auto-rotated access log.
+    # Masks the real client IP (CF-Connecting-IP; apex is CF-orange) to /24 (v4) / /48 (v6)
+    # at WRITE time (GDPR-style, non-reversible) and deletes all other raw-IP-bearing headers.
+    # NO trusted_proxies on purpose: it would flip the apex bare-reverse_proxy req.ip to the
+    # real client IP, changing the CF-edge-based ipHash quota/attribution buckets on
+    # /api/signup-email + the funnel routes (src/lib/client-ip.ts). Built-in rotation
+    # (50MiB roll / keep 10 / ~14d); no external logrotate. See docs/RUNBOOK-APEX-ACCESS-LOG.md.
+    log {
+        output file /var/log/caddy/algovault-access.log {
+            roll_size 50MiB
+            roll_keep 10
+            roll_keep_for 336h
+        }
+        format filter {
+            wrap json
+            fields {
+                request>remote_ip ip_mask {
+                    ipv4 24
+                    ipv6 48
+                }
+                request>client_ip ip_mask {
+                    ipv4 24
+                    ipv6 48
+                }
+                request>headers>Cf-Connecting-Ip ip_mask {
+                    ipv4 24
+                    ipv6 48
+                }
+                request>headers>X-Forwarded-For delete
+                request>headers>True-Client-Ip delete
+                request>headers>X-Real-Ip delete
+                request>headers>Cf-Pseudo-Ipv4 delete
+                request>headers>Cookie delete
+                request>headers>Authorization delete
+            }
+        }
+    }
     handle /track-record {
         reverse_proxy localhost:3000
     }
@@ -116,15 +153,26 @@ algovault.com {
     handle /integrations/* {
         reverse_proxy localhost:3000
     }
-    # SEO-STRIP-TRACKING-PARAMS-W1 — /docs.html is a structural duplicate of the
-    # canonical extensionless /docs (the sitemap + every page's <link rel=canonical>
-    # already point at /docs; nav + llms.txt now link /docs too). 301 the .html
-    # variant to consolidate crawl signals (Google "Consolidate duplicate URLs":
-    # redirect > rel=canonical). No loop: this fires only on the literal /docs.html
-    # URL; the catch-all try_files still serves /docs → docs.html on disk. The
-    # /docs.html file remains for internal serving via /docs; only the direct
-    # /docs.html URL redirects. Applied live via `systemctl reload caddy` (this
-    # Caddyfile is the SoT for /etc/caddy/Caddyfile; NOT auto-synced by deploy.yml).
+    # OPS-PLAUSIBLE-FIRSTPARTY-PROXY-W1 (2026-07-15) — first-party analytics (evade ad-block).
+    # Script served first-party at /js/insights.js -> CE /js/pa-gfOGxVcQKNfocPr5V3vR8.js; cache-eligible.
+    handle /js/insights.js {
+        rewrite * /js/pa-gfOGxVcQKNfocPr5V3vR8.js
+        reverse_proxy 127.0.0.1:8000
+    }
+    # Events POST first-party at /pa/event -> CE /api/event; NEVER cached. Real client IP from
+    # CF-Connecting-IP (apex is CF-orange) for CE bot-filtering + geo.
+    handle /pa/event {
+        rewrite * /api/event
+        reverse_proxy 127.0.0.1:8000 {
+            header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+        }
+    }
+
+    # SEO-STRIP-TRACKING-PARAMS-W1 (2026-07-16) — /docs.html is a structural duplicate of the
+    # canonical extensionless /docs (sitemap + every page <link rel=canonical> + nav + llms.txt
+    # now use /docs). 301 the .html variant to consolidate crawl signals (Google "Consolidate
+    # duplicate URLs": redirect > rel=canonical). No loop: fires only on the literal /docs.html
+    # URL; the catch-all try_files still serves /docs -> docs.html on disk.
     handle /docs.html {
         redir * /docs 301
     }
@@ -139,4 +187,17 @@ algovault.com {
 
         file_server
     }
+}
+
+# --- SELFHOST-PLAUSIBLE-CE-AND-CF-ORIGIN-SHIELD (2026-07-12) ---
+# Self-hosted Plausible CE behind host Caddy -> loopback 127.0.0.1:8000 (compose.override.yml).
+# Caddy issues the LE cert via HTTP-01 (DNS grey-first, then flipped to CF orange).
+# Bare reverse_proxy (matches the apex handle blocks) so Caddy's default X-Forwarded-For
+# append keeps the real visitor IP leftmost for accurate analytics under CF orange.
+# See docs/RUNBOOK-PLAUSIBLE-CE.md.
+plausible.algovault.com {
+	# CVE-2026-8467 / GHSA-55hg-8qxv-qj4p defense-in-depth (v3.2.1 already removes /storybook):
+	@storybook path /storybook /storybook/*
+	respond @storybook "Not Found" 404
+	reverse_proxy 127.0.0.1:8000
 }
