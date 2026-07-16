@@ -167,7 +167,7 @@ tailwind.config = {
     </div>
       <a href="https://algovault.com/how-it-works" class="hover:text-white transition" data-nav-link>How it works</a>
       <a href="https://algovault.com/#pricing" class="hover:text-white transition" data-nav-link>Pricing</a>
-      <a href="https://algovault.com/docs.html" class="hover:text-white transition" data-nav-link>Docs</a>
+      <a href="https://algovault.com/docs" class="hover:text-white transition" data-nav-link>Docs</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition" data-nav-link>Account</a>
       <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition" data-nav-link>Signup</a>
     </div>
@@ -199,7 +199,7 @@ tailwind.config = {
         </div>
         <a href="https://algovault.com/how-it-works" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">How it works</a>
         <a href="https://algovault.com/#pricing" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Pricing</a>
-        <a href="https://algovault.com/docs.html" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
+        <a href="https://algovault.com/docs" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
         <a href="https://api.algovault.com/account" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Account</a>
         <div class="px-6 py-3">
           <a href="https://api.algovault.com/welcome" class="block px-4 py-3 rounded-lg text-sm text-center bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 font-semibold transition">Signup</a>
@@ -295,7 +295,7 @@ tailwind.config = {
 </blockquote>
 <p><strong><span data-tr-field="pfe_wr">90.47%</span> PFE Win Rate · <span data-tr-field="total_calls">96,864</span>+ calls · <span data-tr-field="merkle_batches">38</span>+ Merkle-verified on-chain batches · <span data-tr-field="asset_count">738</span> assets covered.</strong></p>
 <blockquote>
-<p>Don’t trust — <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-llamaindex">verify the track record →</a>
+<p>Don’t trust — <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'llamaindex',campaign:'track-record'}})">verify the track record →</a>
 <em>Snapshot taken 2026-05-18 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a></em></p>
 </blockquote>
 <p>AlgoVault MCP gives your LlamaIndex agent a <strong>composite verdict</strong> in one call — direction, confidence, regime, and cross-venue funding/sentiment context — backed by a publicly auditable record anchored to Base L2 (<a href="https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544">agentId 44544</a>). Drop it into any <code>FunctionAgent</code>, <code>ReActAgent</code>, or custom workflow with <a href="https://pypi.org/project/llama-index-tools-mcp/"><code>llama-index-tools-mcp</code></a> — the canonical MCP bridge maintained by LlamaIndex.</p>
@@ -427,7 +427,7 @@ asyncio.run(run())
 <!-- snapshot: 2026-05-18 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">90.47%</span> PFE Win Rate · <span data-tr-field="total_calls">96,864</span>+ calls · <span data-tr-field="merkle_batches">38</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record?utm_source=tutorial&amp;utm_medium=web&amp;utm_campaign=integration-llamaindex">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">90.47%</span> PFE Win Rate · <span data-tr-field="total_calls">96,864</span>+ calls · <span data-tr-field="merkle_batches">38</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'llamaindex',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
 <p>Run the demo at <code>examples/llamaindex/demo.py</code> · Pair with your LlamaIndex agent at <code>https://api.algovault.com/mcp</code> · Verify the track record on <code>https://algovault.com/track-record</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install (helper plugin)</h2>

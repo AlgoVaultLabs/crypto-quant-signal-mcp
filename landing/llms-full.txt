@@ -141,7 +141,7 @@ AlgoVault accepts **x402 pay-per-call micropayments** — your agent pays per ca
 - **HOLD trade calls are free** (they don't settle).
 - 100 free calls/month first (across all tools); then pay per call.
 
-Docs: https://algovault.com/docs.html#x402 · x402 spec: https://x402.org
+Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 
 ---
 

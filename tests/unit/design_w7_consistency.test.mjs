@@ -222,13 +222,15 @@ test('Cross-page anchor #quickstart target preserved (W6 internal-link contract;
 
 test('Existing live W3 nav preserved (V1Hero nav stripped for cross-page consistency)', async () => {
   const html = await read('landing/index.html');
-  // Live W3 nav: /track-record + /pricing + /integrations + /skills + /docs.html + /verify + /signup
+  // Live W3 nav: /track-record + /pricing + /integrations + /skills + /docs + /verify + /signup
   // V1Hero nav (Product/Verdicts/Track Record/Docs/Pricing) was stripped post-render to preserve
   // cross-page consistency with faq.html + glossary.html etc.
   // NAV-PLATFORM-GENERATOR-W1 (A6): the unified nav uses ABSOLUTE hrefs (one byte-identical region
   // works apex + api-served). The same destinations are preserved — Verify now under the Track
   // Record dropdown (no data-loss).
-  for (const link of ['track-record', 'integrations', 'skills', 'docs.html', 'verify']) {
+  // SEO-STRIP-TRACKING-PARAMS-W1: the Docs nav link is now the canonical extensionless /docs
+  // (the /docs.html duplicate 301s to it); every page's <link rel=canonical> + sitemap already use /docs.
+  for (const link of ['track-record', 'integrations', 'skills', 'docs', 'verify']) {
     const re = new RegExp(`href="https://algovault\\.com/${link.replace(/\./g, '\\.')}"`);
     assert.match(html, re, `existing W3 nav destination https://algovault.com/${link} preserved`);
   }

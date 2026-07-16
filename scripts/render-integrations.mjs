@@ -349,14 +349,32 @@ async function renderOne(exchange) {
   const dstPath = join(TARGET_DIR, `${exchange}.html`);
   let mdSource = await readFile(srcPath, 'utf8');
 
-  // Rewrite UTM channel from `repo` to `web` for the rendered (web) mirror —
-  // so click-attribution distinguishes GitHub views from algovault.com views.
+  // SEO-STRIP-TRACKING-PARAMS-W1: strip the utm_* tracking triple from the
+  // INTERNAL algovault.com/track-record link in the rendered (web) mirror.
+  // An internal utm_source makes Google treat /track-record?utm_… as a
+  // duplicate of the canonical /track-record (crawl-budget waste + mixed
+  // canonical signals; Google "Consolidate duplicate URLs") and makes GA-style
+  // analytics start a NEW acquisition mid-session. The GitHub-facing markdown
+  // KEEPS its ?utm_source=tutorial&utm_medium=repo variant (out of scope — that
+  // renders on github.com, not algovault.com). Idempotent: a link with no query
+  // no longer matches. (Superseded the prior repo→web channel rewrite, which
+  // only relabeled the medium instead of removing the internal tracking param.)
   mdSource = mdSource.replace(
-    /utm_medium=repo&utm_campaign=integration-/g,
-    'utm_medium=web&utm_campaign=integration-'
+    /(https:\/\/algovault\.com\/track-record)\?utm_source=tutorial&utm_medium=(?:repo|web)&utm_campaign=integration-[a-z0-9-]+/g,
+    '$1',
   );
 
   let bodyHtml = md.render(mdSource);
+  // SEO-STRIP-TRACKING-PARAMS-W1: with the utm_campaign removed above, preserve the
+  // per-exchange click attribution on the (now clean) body track-record link(s) via a
+  // Plausible custom event — same pattern as the /integrations index cards
+  // (renderIndexCard). Body links only: md.render emits `<a href="…/track-record">`
+  // with an IMMEDIATE `>`, whereas the nav/drawer /track-record links (injected later
+  // by build_nav) carry class attributes, so they never match this pattern.
+  bodyHtml = bodyHtml.replace(
+    /<a href="https:\/\/algovault\.com\/track-record">/g,
+    `<a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'${exchange}',campaign:'track-record'}})">`,
+  );
   // AUTO-TRACE-W1 (2026-04-30): wrap the literal capability counter "5
   // exchanges" with the live-proxy span so every re-render preserves the
   // auto-update behavior. The upstream MD source is owned by the

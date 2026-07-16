@@ -118,7 +118,7 @@ exports[`CH1 AC-e — model shape is stable (snapshot) > buildNavModel() matches
       "label": "Pricing",
     },
     {
-      "href": "https://algovault.com/docs.html",
+      "href": "https://algovault.com/docs",
       "kind": "link",
       "label": "Docs",
     },

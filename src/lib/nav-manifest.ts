@@ -19,7 +19,14 @@ import { CHANNELS, channelHref, coveredRegistryChannels } from './channel-regist
 //    a relative href would 404 cross-origin on /account. Landing → apex; auth → api. ──
 const APEX = 'https://algovault.com';
 const API = 'https://api.algovault.com';
-const DOCS = `${APEX}/docs.html`;
+// SEO-STRIP-TRACKING-PARAMS-W1: link the nav Docs entry to the CANONICAL
+// extensionless /docs (matches the sitemap + every page's <link rel=canonical>),
+// not the duplicate /docs.html. Kept ABSOLUTE (APEX-prefixed) so it stays
+// cross-host-safe on the api-served /account page — a bare relative /docs would
+// 404 there. Caddy `try_files {path} {path}.html` serves /docs → docs.html; a
+// companion `handle /docs.html { redir * /docs 301 }` in the Caddyfile
+// consolidates any remaining /docs.html references (internal or external).
+const DOCS = `${APEX}/docs`;
 const TG_BOT = 'https://t.me/algovaultofficialbot'; // NAV Build-Rule 4: the real, grepped handle — never invented.
 
 /** How many Tools the Platform mega-menu features before the "See all tools →" link. */

@@ -243,11 +243,12 @@ for (const ex of INTEGRATIONS) {
 
   test(`/integrations/${ex}: Q-W10-7 — Plausible attribution preserved on body links (nav utm retired for single-derivation)`, async () => {
     const html = await read(`landing/integrations/${ex}.html`);
-    // NAV-PLATFORM-GENERATOR-W1: the byte-identical unified nav cannot carry a per-page utm; the
-    // per-exchange Plausible attribution is preserved on the BODY tutorial link(s). The nav
-    // /track-record link is now the clean absolute href.
-    assert.ok(countOcc(html, `utm_campaign=integration-${ex}`) >= 1,
-      `per-page utm attribution must survive on a body link for ${ex}`);
+    // SEO-STRIP-TRACKING-PARAMS-W1: the internal utm_* on body track-record links was stripped
+    // (Google treats /track-record?utm_… as a duplicate — crawl-budget waste). Per-exchange
+    // attribution is now carried by a Plausible custom event (same pattern as the /integrations
+    // index cards), NOT a URL param. The nav /track-record link stays the clean absolute href.
+    assert.ok(countOcc(html, `plausible('CTA Click',{props:{source:'integration_tutorial',slug:'${ex}',campaign:'track-record'}})`) >= 1,
+      `per-exchange Plausible attribution event must survive on a body track-record link for ${ex}`);
     assert.match(html, /<!-- NAV:START -->[\s\S]*href="https:\/\/algovault\.com\/track-record"[\s\S]*<!-- NAV:END -->/,
       `nav /track-record must be the clean absolute href (no utm) for ${ex}`);
   });
@@ -287,9 +288,10 @@ for (const ex of INTEGRATIONS) {
     assert.ok(html.includes('src="/js/insights.js"'), 'Plausible script preserved (first-party proxy)');
     // Tailwind CDN preserved (was already loaded pre-W10).
     assert.ok(html.includes('https://cdn.tailwindcss.com'), 'Tailwind CDN preserved');
-    // Per-exchange utm params on body-embedded links preserved (≥1 instance from markdown).
-    assert.ok(countOcc(html, `utm_campaign=integration-${ex}`) >= 1,
-      `utm_campaign=integration-${ex} must appear on >=1 body link (nav utm retired — NAV-PLATFORM-GENERATOR-W1)`);
+    // SEO-STRIP-TRACKING-PARAMS-W1: internal utm on body track-record links was stripped
+    // (Google duplicate-URL crawl waste); per-exchange attribution now rides a Plausible event.
+    assert.ok(countOcc(html, `plausible('CTA Click',{props:{source:'integration_tutorial',slug:'${ex}',campaign:'track-record'}})`) >= 1,
+      `per-exchange Plausible attribution event must appear on >=1 body track-record link for ${ex}`);
   });
 }
 

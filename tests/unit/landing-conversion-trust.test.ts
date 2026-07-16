@@ -36,11 +36,16 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     expect(stripped).not.toContain('246,980');    // call count is span-bound (zero hardcoded)
   });
 
-  it('band proof link → /track-record?from=landing; per-pricing verify link → ?from=pricing', () => {
+  it('band proof link → clean /track-record (landing-section attribution via Plausible event); pricing verify link → pricing-section event', () => {
+    // SEO-STRIP-TRACKING-PARAMS-W1: the ?from=landing / ?from=pricing URL params were stripped
+    // (Google treats /track-record?from=… as a duplicate URL — crawl-budget waste). The
+    // landing-vs-pricing section attribution now rides a Plausible 'CTA Click' event; the href
+    // is the clean canonical path.
     expect(count('See the live track record →')).toBe(2);
-    expect(count('href="/track-record?from=landing"')).toBe(2);
+    expect(count("plausible('CTA Click',{props:{source:'homepage',medium:'landing',campaign:'track-record'}})")).toBe(2);
     expect(count('Verify our track record →')).toBe(2);
-    expect(count('href="/track-record?from=pricing"')).toBe(2);
+    expect(count("plausible('CTA Click',{props:{source:'homepage',medium:'pricing',campaign:'track-record'}})")).toBe(2);
+    expect(html).not.toContain('/track-record?from=');
   });
 
   it('on-chain + ERC-8004 trust badges deep-link to Basescan (target+rel; agentId live-bound)', () => {
@@ -66,13 +71,18 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     expect(html).not.toContain('href="#free"');
   });
 
-  it('pricing buy buttons wired to /signup with landing_pricing attribution (was dead #anchors)', () => {
+  it('pricing buy buttons wired to /signup (plan= kept; upgrade_from stripped — attribution via Plausible event)', () => {
     for (const plan of ['starter', 'pro', 'enterprise']) {
-      expect(count(`href="https://api.algovault.com/signup?plan=${plan}&amp;upgrade_from=landing_pricing"`)).toBe(2);
+      // SEO-STRIP-TRACKING-PARAMS-W1: upgrade_from=landing_pricing removed (redundant with the
+      // 'Signup Click' Plausible event's source:'pricing-section' prop). plan= kept — it is
+      // functional (selects the plan). href is now the clean canonical signup URL.
+      expect(count(`href="https://api.algovault.com/signup?plan=${plan}"`)).toBe(2);
+      expect(count(`plausible('Signup Click',{props:{plan:'${plan}',source:'pricing-section'}})`)).toBe(2);
       expect(html).not.toContain(`href="#${plan}"`);
     }
     // /signup is routed ONLY on api.algovault.com (algovault.com/signup 404s) — no relative /signup CTAs.
     expect(html).not.toContain('href="/signup?plan=');
+    expect(html).not.toContain('upgrade_from=landing_pricing');
   });
 
   it('LAW: Brain-Layer hero + 4 Stripe card copy + x402 card are byte-unchanged (only hrefs wired)', () => {

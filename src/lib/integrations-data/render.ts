@@ -152,8 +152,15 @@ const EXCHANGE_DEMO_URL: Record<string, string> = {
 };
 
 function renderIndexCard(entry: IntegrationEntry): string {
-  const utmHref = `${entry.fullTutorialUrl}?utm_source=integrations_index&utm_medium=card&utm_campaign=integration-${entry.slug}`;
-  const plausibleProps = `{props:{surface:'${entry.surfaceType}',slug:'${entry.slug}',source:'integrations_index'}}`;
+  // SEO-STRIP-TRACKING-PARAMS-W1: the card links to the CLEAN canonical path
+  // (no utm_* tracking triple). Google treats /integrations/<slug>?utm_… as a
+  // duplicate of the canonical /integrations/<slug>, wasting crawl budget and
+  // sending mixed canonical signals (Google, "Consolidate duplicate URLs"); an
+  // internal utm_source also makes analytics start a NEW acquisition mid-session.
+  // The click-attribution insight is preserved by the Plausible custom event
+  // below — the props carry surface/slug/source/medium, so no data is lost.
+  const cleanHref = entry.fullTutorialUrl;
+  const plausibleProps = `{props:{surface:'${entry.surfaceType}',slug:'${entry.slug}',source:'integrations_index',medium:'card'}}`;
   const logo = EXCHANGE_LOGO_OVERRIDES[entry.slug];
   const headIcon = logo
     ? `<img src="${logo.src}" alt="${entry.displayName} logo" class="${logo.classes}">`
@@ -166,7 +173,7 @@ function renderIndexCard(entry: IntegrationEntry): string {
   const demoLink = demoUrl
     ? `\n          <a href="${demoUrl}" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>`
     : '';
-  return `      <a href="${utmHref}"
+  return `      <a href="${cleanHref}"
          onclick="if(window.plausible)plausible('Integration View',${plausibleProps})"
          class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
         <div class="flex items-center gap-3 mb-3">

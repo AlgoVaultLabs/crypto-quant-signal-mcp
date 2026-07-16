@@ -228,7 +228,7 @@ tailwind.config = {
     </div>
       <a href="https://algovault.com/how-it-works" class="hover:text-white transition" data-nav-link>How it works</a>
       <a href="https://algovault.com/#pricing" class="hover:text-white transition" data-nav-link>Pricing</a>
-      <a href="https://algovault.com/docs.html" class="hover:text-white transition" data-nav-link>Docs</a>
+      <a href="https://algovault.com/docs" class="hover:text-white transition" data-nav-link>Docs</a>
       <a href="https://api.algovault.com/account" class="hover:text-white transition" data-nav-link>Account</a>
       <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition" data-nav-link>Signup</a>
     </div>
@@ -260,7 +260,7 @@ tailwind.config = {
         </div>
         <a href="https://algovault.com/how-it-works" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">How it works</a>
         <a href="https://algovault.com/#pricing" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Pricing</a>
-        <a href="https://algovault.com/docs.html" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
+        <a href="https://algovault.com/docs" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
         <a href="https://api.algovault.com/account" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Account</a>
         <div class="px-6 py-3">
           <a href="https://api.algovault.com/welcome" class="block px-4 py-3 rounded-lg text-sm text-center bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 font-semibold transition">Signup</a>
@@ -353,7 +353,7 @@ tailwind.config = {
     </p>
     <p class="text-gray-500 text-xs mt-3">
       &#x1f517; Every Skill invocation is <strong>Merkle-anchored on Base L2</strong>. Track record:
-      <a href="/track-record?utm_source=skills_page&utm_medium=hero&utm_campaign=track-record-cta" class="text-mint-400 hover:underline">live verification &rarr;</a>
+      <a href="/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'skills_page',medium:'hero',campaign:'track-record-cta'}})" class="text-mint-400 hover:underline">live verification &rarr;</a>
     </p>
   </div>
 </section>
@@ -623,7 +623,8 @@ tailwind.config = {
     </ul>
 
     <div class="mt-10 grid sm:grid-cols-2 gap-4 text-center">
-      <a href="/track-record?utm_source=skills_page&utm_medium=footer&utm_campaign=track-record-cta"
+      <a href="/track-record"
+         onclick="if(window.plausible)plausible('CTA Click',{props:{source:'skills_page',medium:'footer',campaign:'track-record-cta'}})"
          class="bg-mint-500/10 border border-mint-500/30 hover:bg-mint-500/20 rounded-xl p-5 block transition">
         <div class="text-mint-400 text-sm font-semibold">View Live Track Record &rarr;</div>
         <div class="text-gray-500 text-xs mt-1">Public on-chain verification</div>
