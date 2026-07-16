@@ -4,16 +4,30 @@
  * must EXCLUDE rows where `request_log.is_bot_internal = TRUE` (internal
  * loopback like algovault-bot).
  *
- * Tests run against the local SQLite backend (`~/.crypto-quant-signal/
- * performance.db`). Skipped when DATABASE_URL is set (would touch the
- * operator's Postgres test/prod DB). End-to-end PG behavior is verified at
- * R7 deploy gate via /analytics curl probe against api.algovault.com.
+ * Tests run against the local SQLite backend. Skipped when DATABASE_URL is set
+ * (would touch the operator's Postgres test/prod DB). End-to-end PG behavior is
+ * verified at R7 deploy gate via /analytics curl probe against api.algovault.com.
  *
- * Sentinel pattern: every test row carries `tool_name = 'test_dash_ext_w1'`
- * + tier prefix `TESTSENT_W1_*`. beforeEach + afterAll DELETE all sentinel
- * rows so tests are idempotent against the operator's accumulated local DB.
+ * PARALLEL ISOLATION (OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1, 2026-07-16): this
+ * file asserts pre/post DELTAS on WHOLE-TABLE aggregates — getUsageStats()
+ * .totalCalls.allTime and the genuine/automated split — which are only stable
+ * if NO OTHER test file writes request_log between the snapshots. But vitest
+ * runs test files in parallel and pql / subscriber-bridge / funnel-snapshot all
+ * INSERT external request_log rows, so on the shared ~/.crypto-quant-signal/
+ * performance.db those deltas intermittently over-counted (green alone, flaky in
+ * the full suite). Fix: beforeAll points performance-db at this file's OWN temp
+ * DB via PERFORMANCE_DB_PATH, so the whole-table counts see only THIS file's
+ * writes and the deltas are exact. Restored + removed in afterAll.
+ *
+ * Sentinel pattern (defense-in-depth, still used): every test row carries
+ * `tool_name = 'test_dash_ext_w1'` / `test_split_w1` + tier prefix
+ * `TESTSENT_W1_*`; beforeEach + afterAll DELETE them so the file is idempotent
+ * across re-runs of the same worker's persistent temp DB.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import {
   initAnalytics,
   logRequest,
@@ -23,19 +37,44 @@ import {
   getSkillInvocationStats,
 } from '../src/lib/analytics.js';
 import { requestContext } from '../src/lib/license.js';
-import { dbQuery, dbRun } from '../src/lib/performance-db.js';
+import { dbQuery, dbRun, closeDb } from '../src/lib/performance-db.js';
 
 const SENTINEL_TOOL = 'test_dash_ext_w1';
 const SENTINEL_TIER_EXT = 'TESTSENT_W1_external';
 const SENTINEL_TIER_INT = 'TESTSENT_W1_internal';
 const SENTINEL_SKILL_SLUG = 'test-dash-ext-w1-patcha';
 // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: the genuine/automated split tests live in
-// THIS file (the single external-row writer) so they never race the shared SQLite DB.
-// These rows use REAL license tiers ('free'/'pro'/'internal') — the split keys on the
-// literal tier — and a distinct sentinel tool_name for cleanup.
+// THIS file. Their rows use REAL license tiers ('free'/'pro'/'internal') — the split keys
+// on the literal tier — and a distinct sentinel tool_name for cleanup. Their whole-table
+// delta assertions are kept race-free by the private-DB isolation below (see header), NOT
+// by any "single external-row writer" assumption (pql/subscriber-bridge/funnel-snapshot
+// also write request_log).
 const SPLIT_TOOL = 'test_split_w1';
 
 const SKIP = !!process.env.DATABASE_URL;
+
+// ── OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1: private per-file SQLite DB ──
+// A temp DB unique to this test file (keyed by the vitest worker/pid so a
+// hypothetical concurrent run can't collide). Pointing performance-db here via
+// PERFORMANCE_DB_PATH means the whole-table COUNT deltas asserted below see ONLY
+// this file's own request_log writes — immune to other parallel files' inserts.
+const ISOLATED_DB_PATH = path.join(
+  os.tmpdir(),
+  `cqs-analytics-ext-only-${process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? process.pid}.db`,
+);
+let ORIGINAL_PERF_DB_PATH: string | undefined;
+
+// Remove the private DB + its WAL sidecars, so each run starts from an empty
+// table (deltas start at 0) and no temp cruft is left behind.
+function rmIsolatedDb(): void {
+  for (const suffix of ['', '-wal', '-shm']) {
+    try {
+      fs.rmSync(ISOLATED_DB_PATH + suffix, { force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+}
 
 async function cleanSentinels(): Promise<void> {
   // Hit both `is_bot_internal` flavors and both sentinel tiers; idempotent.
@@ -58,6 +97,14 @@ async function cleanSentinels(): Promise<void> {
 
 describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bot_internal rows', () => {
   beforeAll(() => {
+    // Redirect the SQLite backend to this file's private temp DB BEFORE the
+    // first getBackend() (initAnalytics opens it). closeDb() drops any handle a
+    // prior import/test opened at the default path; rmIsolatedDb() guarantees a
+    // clean table so the pre/post whole-table deltas start from zero.
+    ORIGINAL_PERF_DB_PATH = process.env.PERFORMANCE_DB_PATH;
+    process.env.PERFORMANCE_DB_PATH = ISOLATED_DB_PATH;
+    closeDb();
+    rmIsolatedDb();
     initAnalytics();
   });
 
@@ -67,6 +114,13 @@ describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bo
 
   afterAll(async () => {
     await cleanSentinels();
+    // Close + delete the private DB, then RESTORE the env — process.env is
+    // process-global, so leaving PERFORMANCE_DB_PATH set would redirect the next
+    // test file scheduled on this same vitest worker to our (deleted) temp DB.
+    closeDb();
+    rmIsolatedDb();
+    if (ORIGINAL_PERF_DB_PATH === undefined) delete process.env.PERFORMANCE_DB_PATH;
+    else process.env.PERFORMANCE_DB_PATH = ORIGINAL_PERF_DB_PATH;
   });
 
   it('logRequest({isBotInternal:true}) writes is_bot_internal=1 (sqlite) / true (pg)', async () => {
