@@ -16,6 +16,14 @@ on:
       # in the npm tarball. Editing them must not rebuild/restart prod.
       - 'LICENSE'
       - 'glama.json'
+      # OPS-CADDYFILE-BACKPORT-W1: host-level Caddy config — same class as
+      # ops/systemd/** + ops/monitoring/** above. Applied to /etc/caddy/Caddyfile
+      # via SSH + `systemctl reload caddy`; NOT COPYed by the Dockerfile and never
+      # read at runtime, so editing it must not trigger a prod image
+      # rebuild/restart. Route-parity stays gated by the pre-push node:test sweep
+      # (tests/unit/caddy-route-parity.test.mjs) — this workflow's vitest step
+      # never ran it, so ignoring the path costs no CI coverage.
+      - 'Caddyfile'
 
 jobs:
   deploy:
