@@ -67,6 +67,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@buildersgarden/siwa": "^0.0.24",
+    "@circle-fin/x402-batching": "^3.2.0",
     "@coinbase/cdp-sdk": "1.51.0",
     "@coinbase/x402": "^2.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
