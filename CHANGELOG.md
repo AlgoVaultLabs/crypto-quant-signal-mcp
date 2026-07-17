@@ -5,6 +5,11 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.2] - 2026-07-17
+
+### Changed
+- The default MCP tool set is 7 tools (trade calls, market scanner, market regime, funding arbitrage, and knowledge search/Q&A). MCP clients should refresh tools/list to update. Additional tools remain available to self-hosters behind opt-in environment flags — see the repository docs.
+
 ## [1.23.1] - 2026-07-14
 
 ### Added
