@@ -1,6 +1,6 @@
 {
   "name": "crypto-quant-signal-mcp",
-  "version": "1.23.1",
+  "version": "1.23.2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git"
