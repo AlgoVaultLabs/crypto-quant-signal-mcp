@@ -60,6 +60,8 @@ No code. No API key. No install. The server speaks Streamable HTTP at `https://a
 
 Your Claude now has a quant analyst built in. Prefer local? Run `npx -y crypto-quant-signal-mcp`.
 
+> Running locally on npm 12+? npm v12 disables dependency install scripts by default. AlgoVault's optional local SQLite mode uses the native `better-sqlite3` module — if you install it into a project, run `npm approve-scripts` (or `npm install --allow-scripts`) to build it. The hosted HTTP transport (`api.algovault.com/mcp`) needs no local build.
+
 ---
 
 ## What one call returns
