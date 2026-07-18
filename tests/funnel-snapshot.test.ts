@@ -20,6 +20,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateFunnelSnapshot } from '../src/lib/funnel-snapshot.js';
 import { dbQuery, dbRun, recordFunnelEvent } from '../src/lib/performance-db.js';
+import { initAnalytics } from '../src/lib/analytics.js';
 
 const SKIP_REASON = process.env.DATABASE_URL ? 'DATABASE_URL set — skipping local SQLite tests' : '';
 const describeOrSkip = SKIP_REASON ? describe.skip : describe;
@@ -39,6 +40,20 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
   beforeAll(async () => {
     // Touch the DB to trigger getBackend() → ensures funnel_events table exists.
     await dbQuery('SELECT 1');
+    // OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 follow-up: deleteSentinels() below also
+    // DELETEs from request_log, whose schema is owned by analytics.ts — NOT by
+    // performance-db's getBackend(). On a COLD DB (a fresh CI runner) that table
+    // does not exist yet, so the DELETE threw `no such table: request_log` and
+    // failed all 11 tests in this file.
+    //
+    // This file previously got away with it only because deploy.yml's pre-deploy
+    // pre-warm ran analytics-external-only.test.ts first, and THAT file calls
+    // initAnalytics(). Now that analytics-external-only uses its own private DB
+    // (and the pre-warm points here instead), nothing bootstraps request_log on
+    // the shared DB — so this file must be self-sufficient, exactly as its sibling
+    // request_log writers (analytics-external-only, pql, subscriber-bridge) are.
+    // Idempotent: CREATE TABLE IF NOT EXISTS + best-effort ALTERs.
+    initAnalytics();
   });
 
   beforeEach(async () => {
