@@ -3,7 +3,7 @@
   "name": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
   "title": "AlgoVault — Crypto Quant Trade Calls",
   "description": "The Brain Layer for AI Trading Agents — quant calls + cross-venue arb across perp venues via MCP.",
-  "version": "1.23.2",
+  "version": "1.23.3",
   "repository": {
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
     "source": "github"

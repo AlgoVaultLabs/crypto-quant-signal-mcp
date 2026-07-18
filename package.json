@@ -1,6 +1,6 @@
 {
   "name": "crypto-quant-signal-mcp",
-  "version": "1.23.2",
+  "version": "1.23.3",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git"
@@ -10,7 +10,7 @@
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues"
   },
   "mcpName": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
-  "description": "The Brain Layer for AI Trading Agents — one MCP call returns a composite trade verdict (direction, confidence, regime) across 5 perp venues. On-chain Merkle-verified track record.",
+  "description": "The Brain Layer for AI Trading Agents — one MCP call returns a composite trade verdict (direction, confidence, regime) across major crypto perp venues. On-chain Merkle-verified track record.",
   "main": "dist/index.js",
   "module": "src/index.ts",
   "bin": {
