@@ -5,6 +5,11 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.3] - 2026-07-18
+
+### Changed
+- Corrected the package description — the perp-venue coverage is now stated qualitatively so it cannot go stale as venues are added.
+
 ## [1.23.2] - 2026-07-17
 
 ### Changed
