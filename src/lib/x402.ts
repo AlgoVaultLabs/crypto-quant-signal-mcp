@@ -20,6 +20,13 @@ import type { X402ToolPricing } from '../types.js';
 import { createFacilitatorClient, resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { declareBazaarRoute } from './x402-bazaar.js';
 import { FEATURE_REGISTRY, getFeature } from './feature-registry.js';
+import {
+  createGatewayScheme,
+  probeCircleFacilitator,
+  resolveCircleGatewayFromEnv,
+  type CircleGatewayConfig,
+  type GatewayFacilitatorLike,
+} from './circle-gateway.js';
 
 // ── Configuration ──
 
@@ -96,6 +103,16 @@ export const SIGNAL_TIMEFRAME_PRICING: Record<string, number> = {
 let resourceServer: x402ResourceServer | null = null;
 let toolRequirements: Map<string, unknown[]> = new Map();
 let initialized = false;
+/**
+ * Resolved Circle Gateway config when the additive scheme is LIVE on this process, else null.
+ * Null is the default and the fallback for every Gateway failure — see circle-gateway.ts.
+ */
+let gatewayActive: CircleGatewayConfig | null = null;
+
+/** Test seam: which Gateway config (if any) the last initX402() actually wired. */
+export function _getActiveGatewayForTest(): CircleGatewayConfig | null {
+  return gatewayActive;
+}
 
 // ── Result types ──
 
@@ -128,25 +145,12 @@ export async function initX402(): Promise<void> {
     console.warn('x402: Failed to create facilitator client:', err instanceof Error ? err.message : err);
     return;
   }
-  resourceServer = new x402ResourceServer(facilitator);
-
-  // Register the CDP Bazaar discovery extension only on the cdp + discoverable path.
-  // Earns the Bazaar listing when a real settle completes through CDP carrying the
-  // discovery metadata (the EXTENSION-RESPONSES header confirms acceptance).
-  if (resolvedFacilitator.discoveryEnabled) {
-    try {
-      resourceServer.registerExtension(bazaarResourceServerExtension);
-    } catch (err) {
-      console.warn('x402: Failed to register Bazaar discovery extension:', err instanceof Error ? err.message : err);
-    }
-  }
-
   // Register a server-side scheme for USDC price parsing on the target network.
   // The facilitator handles actual cryptographic verification — the server scheme
   // only needs to convert "$0.02" to { amount: "20000", asset: "0x..." }.
   const usdcAddress = USDC_ADDRESS[CAIP2_NETWORK];
   const caip2 = CAIP2_NETWORK as `${string}:${string}`;
-  resourceServer.register(caip2, {
+  const cdpExactScheme = {
     scheme: 'exact',
     async parsePrice(price: string | number | { amount: string; asset: string }) {
       let usdAmount: number;
@@ -164,15 +168,103 @@ export async function initX402(): Promise<void> {
     },
     getAssetDecimals() { return 6; },
     async enhancePaymentRequirements(reqs: unknown) { return reqs; },
-  } as Parameters<typeof resourceServer.register>[1]);
+  };
+
+  // CIRCLE-GATEWAY-MIGRATE-W1 (additive, default OFF). `probeCircleFacilitator` constructs
+  // NOTHING when the flag is off and is fail-open on every error → `gateway` stays null and every
+  // line below behaves exactly as it did pre-wave.
+  const gatewayConfig = resolveCircleGatewayFromEnv();
+  const gatewayProbe = await probeCircleFacilitator(gatewayConfig);
+
+  /**
+   * Build the resource server. `gateway = null` reproduces the pre-wave sequence byte-for-byte
+   * (single facilitator, same registration order) — that exactness is what lets the Q4 fail-open
+   * path below retry CDP-only and land in provably pre-wave state.
+   */
+  const buildResourceServer = (
+    facilitators: unknown,
+    gateway: { config: CircleGatewayConfig; facilitator: GatewayFacilitatorLike } | null,
+  ): x402ResourceServer => {
+    const srv = new x402ResourceServer(facilitators as ConstructorParameters<typeof x402ResourceServer>[0]);
+
+    // Register the CDP Bazaar discovery extension only on the cdp + discoverable path.
+    // Earns the Bazaar listing when a real settle completes through CDP carrying the
+    // discovery metadata (the EXTENSION-RESPONSES header confirms acceptance).
+    if (resolvedFacilitator.discoveryEnabled) {
+      try {
+        srv.registerExtension(bazaarResourceServerExtension);
+      } catch (err) {
+        console.warn('x402: Failed to register Bazaar discovery extension:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    srv.register(caip2, cdpExactScheme as Parameters<typeof srv.register>[1]);
+
+    // Additive: the Gateway scheme registers on its OWN network key (testnet eip155:84532) — the
+    // CDP registration above is on eip155:8453, so there is no collision. GatewayEvmScheme extends
+    // ExactEvmScheme and merges the facilitator's `extra` (verifyingContract / name) through, which
+    // is what makes the buyer's EIP-712 domain resolvable.
+    if (gateway) {
+      srv.register(
+        gateway.config.network as `${string}:${string}`,
+        createGatewayScheme() as unknown as Parameters<typeof srv.register>[1],
+      );
+    }
+    return srv;
+  };
+
+  resourceServer = buildResourceServer(
+    gatewayProbe ? [facilitator, gatewayProbe.facilitator] : facilitator,
+    gatewayProbe ? { config: gatewayConfig, facilitator: gatewayProbe.facilitator } : null,
+  );
+  gatewayActive = gatewayProbe ? gatewayConfig : null;
 
   try {
     await resourceServer.initialize();
   } catch (err) {
-    console.warn('x402: Failed to initialize resource server (facilitator unreachable?):', err instanceof Error ? err.message : err);
-    console.warn('x402: Payments disabled — server will operate on free/API-key tiers only.');
-    resourceServer = null;
-    return;
+    // Q4 fail-open (R0, architect-ratified): initialize() fans getSupported() across EVERY
+    // facilitator, so a Circle fault would otherwise fall through to the CDP-killing path below
+    // and take the LIVE mainnet revenue rail dark (the 2026-07-01 OKX crash-loop shape,
+    // system-map:284). Drop the Gateway and retry CDP-only BEFORE giving up.
+    if (gatewayProbe) {
+      console.warn(
+        'x402: initialize() failed with the Circle Gateway facilitator present — dropping Gateway ' +
+        'and retrying CDP-only:', err instanceof Error ? err.message : err,
+      );
+      gatewayActive = null;
+      resourceServer = buildResourceServer(facilitator, null);
+      try {
+        await resourceServer.initialize();
+      } catch (retryErr) {
+        console.warn('x402: Failed to initialize resource server (facilitator unreachable?):', retryErr instanceof Error ? retryErr.message : retryErr);
+        console.warn('x402: Payments disabled — server will operate on free/API-key tiers only.');
+        resourceServer = null;
+        return;
+      }
+    } else {
+      console.warn('x402: Failed to initialize resource server (facilitator unreachable?):', err instanceof Error ? err.message : err);
+      console.warn('x402: Payments disabled — server will operate on free/API-key tiers only.');
+      resourceServer = null;
+      return;
+    }
+  }
+
+  // The Gateway kind must survive the resource server's own view too — if initialize() didn't
+  // pick it up, advertising it would produce an accepts[] entry no client could satisfy. Dropping
+  // it here leaves the CDP rail exactly as it was.
+  if (gatewayActive) {
+    const gatewaySupported = resourceServer.getSupportedKind(
+      2,
+      gatewayActive.network as `${string}:${string}`,
+      'exact',
+    );
+    if (!gatewaySupported) {
+      console.warn(
+        `x402: Circle Gateway kind (exact on ${gatewayActive.network}) not present after initialize() — ` +
+        'Gateway NOT advertised; CDP rail unaffected.',
+      );
+      gatewayActive = null;
+    }
   }
 
   // Check if the facilitator supports our network
@@ -210,6 +302,30 @@ export async function initX402(): Promise<void> {
         }
       }
       const reqs = await resourceServer.buildPaymentRequirements(resourceConfig);
+
+      // ADDITIVE: append the Gateway option as EXTRA accepts[] entries. The CDP `reqs` above are
+      // untouched, so flag-OFF yields a byte-identical accepts[]. Note there is no second price
+      // source — `price` is the same resolved value from the single TOOL_PRICING SoT, and `extra`
+      // is deliberately NOT hand-set: GatewayEvmScheme.enhancePaymentRequirements merges the
+      // facilitator's own `name`/`verifyingContract` in, which is the only way the buyer can build
+      // the right EIP-712 domain.
+      if (gatewayActive) {
+        try {
+          const gatewayReqs = await resourceServer.buildPaymentRequirements({
+            scheme: 'exact', // Gateway IS `exact`; `GatewayWalletBatched` is extra.name, not a scheme.
+            network: gatewayActive.network as `${string}:${string}`,
+            payTo: gatewayActive.sellerAddress,
+            price: `$${price}`,
+          } as Parameters<typeof resourceServer.buildPaymentRequirements>[0]);
+          reqs.push(...gatewayReqs);
+        } catch (err) {
+          console.warn(
+            `x402: Failed to build Circle Gateway requirements for ${tool} — CDP entry retained:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
       toolRequirements.set(tool, reqs);
     }
   } catch (err) {
@@ -224,6 +340,16 @@ export async function initX402(): Promise<void> {
     `x402 initialized: network=${NETWORK} facilitator=${resolvedFacilitator.effectiveChoice} ` +
     `discovery=${resolvedFacilitator.discoveryEnabled} wallet=${WALLET_ADDRESS.slice(0, 6)}...`,
   );
+  if (gatewayActive) {
+    console.log(
+      `x402: Circle Gateway scheme ACTIVE (additive) — network=${gatewayActive.network} ` +
+      `facilitator=${gatewayActive.facilitatorUrl}${gatewayActive.useStub ? ' [STUB]' : ''} ` +
+      `seller=${gatewayActive.sellerAddress.slice(0, 6)}...`,
+    );
+  } else if (gatewayConfig.reason) {
+    // Never an error: default-OFF is the expected steady state.
+    console.log(`x402: Circle Gateway scheme inactive — ${gatewayConfig.reason}`);
+  }
 }
 
 // ── Verification ──
