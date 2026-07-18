@@ -54,25 +54,32 @@ const SPLIT_TOOL = 'test_split_w1';
 const SKIP = !!process.env.DATABASE_URL;
 
 // ── OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1: private per-file SQLite DB ──
-// A temp DB unique to this test file (keyed by the vitest worker/pid so a
-// hypothetical concurrent run can't collide). Pointing performance-db here via
-// PERFORMANCE_DB_PATH means the whole-table COUNT deltas asserted below see ONLY
-// this file's own request_log writes — immune to other parallel files' inserts.
-const ISOLATED_DB_PATH = path.join(
-  os.tmpdir(),
-  `cqs-analytics-ext-only-${process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? process.pid}.db`,
-);
+// Pointing performance-db here via PERFORMANCE_DB_PATH means the whole-table COUNT
+// deltas asserted below see ONLY this file's own request_log writes.
+//
+// mkdtempSync gives an OS-guaranteed-unique directory PER PROCESS. Do NOT key this
+// on VITEST_POOL_ID/VITEST_WORKER_ID (the first cut did): vitest assigns
+// `process.env.VITEST_POOL_ID = String(workerId)` (vitest/dist/worker.js:74) — a
+// small integer restarting at 1 in EVERY run — so two concurrent vitest processes
+// both resolve to `<tmp>/cqs-analytics-ext-only-1.db` and clobber each other. That
+// is not hypothetical here: CLAUDE.md makes one-worktree-per-session LAW and every
+// push runs the full suite through the pre-push gate, so simultaneous runs are
+// routine (the 2026-07-18 incident happened while a parallel session's suite ran).
+//
+// Measured: with a second process INSERTing external request_log rows, the unfixed
+// file failed 5/5 runs (`expected 6 to be 2`); with this isolation, 0/5.
+const ISOLATED_DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-analytics-ext-only-'));
+const ISOLATED_DB_PATH = path.join(ISOLATED_DB_DIR, 'performance.db');
 let ORIGINAL_PERF_DB_PATH: string | undefined;
 
-// Remove the private DB + its WAL sidecars, so each run starts from an empty
-// table (deltas start at 0) and no temp cruft is left behind.
+// Remove the private DB dir (incl. WAL/SHM sidecars) so no temp cruft is left
+// behind. mkdtemp already guarantees the dir starts empty, so this is afterAll
+// cleanup rather than a precondition.
 function rmIsolatedDb(): void {
-  for (const suffix of ['', '-wal', '-shm']) {
-    try {
-      fs.rmSync(ISOLATED_DB_PATH + suffix, { force: true });
-    } catch {
-      /* best-effort */
-    }
+  try {
+    fs.rmSync(ISOLATED_DB_DIR, { recursive: true, force: true });
+  } catch {
+    /* best-effort */
   }
 }
 
@@ -99,12 +106,11 @@ describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bo
   beforeAll(() => {
     // Redirect the SQLite backend to this file's private temp DB BEFORE the
     // first getBackend() (initAnalytics opens it). closeDb() drops any handle a
-    // prior import/test opened at the default path; rmIsolatedDb() guarantees a
-    // clean table so the pre/post whole-table deltas start from zero.
+    // prior import/test opened at the default path. The mkdtemp dir is already
+    // empty, so the pre/post whole-table deltas start from zero with no pre-clean.
     ORIGINAL_PERF_DB_PATH = process.env.PERFORMANCE_DB_PATH;
     process.env.PERFORMANCE_DB_PATH = ISOLATED_DB_PATH;
     closeDb();
-    rmIsolatedDb();
     initAnalytics();
   });
 
