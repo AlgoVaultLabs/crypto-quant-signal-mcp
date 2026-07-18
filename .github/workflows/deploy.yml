@@ -69,14 +69,10 @@ jobs:
       # job BEFORE the SSH-deploy step below, blocking the deploy.
       - name: Vitest suite (pre-deploy gate)
         run: |
-          # Pre-create the shared local SQLite DB by running ONE DB-touching suite in a
-          # single worker first, so the parallel run never races the first fresh-DB open
+          # Pre-create the local SQLite DB by running ONE DB-touching suite in a single
+          # worker first, so the parallel run never races the first fresh-DB open
           # (funnel-snapshot et al. otherwise flake on a cold DB). Best-effort (|| true).
-          # NB: analytics-external-only.test.ts can NO LONGER pre-warm — OPS-ANALYTICS-EXT-
-          # PARALLEL-FLAKE-W1 points it at its OWN temp DB (PERFORMANCE_DB_PATH) so its
-          # whole-table-COUNT deltas don't race concurrent request_log writers, so it never
-          # touches the shared DB. funnel-snapshot writes the shared DB and passes alone.
-          npx vitest run tests/funnel-snapshot.test.ts >/dev/null 2>&1 || true
+          npx vitest run tests/analytics-external-only.test.ts >/dev/null 2>&1 || true
           npx vitest run
 
       # DOCS-GENERATOR-FROM-NAV-SOT-W1 CH5: docs.html structural drift canary. Fails the push if the
