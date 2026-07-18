@@ -19,10 +19,37 @@ import { defineConfig, configDefaults } from 'vitest/config';
 //
 // NOTE: tests/unit/snapshot-capabilities.test.mjs imports from 'vitest' and is a
 // genuine vitest file — it is deliberately NOT excluded.
+
+// OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 / 2026-07-18 — ANCHOR discovery at tests/.
+//
+// vitest's DEFAULT `include` is `**/*.{test,spec}.?(c|m)[jt]s?(x)` — an unanchored
+// walk from the repo root that does NOT honor .gitignore. This repo's worktree-first
+// workflow (CLAUDE.md: every parallel session gets its own worktree) puts FULL
+// checkouts under `.claude/worktrees/<session>/` via native `claude -w`. They are
+// gitignored (.gitignore:14) but still on disk, so the default glob collected THEIR
+// tests too.
+//
+// Measured from the primary checkout on 2026-07-18: **1779 test files discovered,
+// of which 1480 (83%) were stale duplicates from 5 nested worktrees** — including 5
+// extra copies of tests/analytics-external-only.test.ts. Every copy wrote the SAME
+// sentinel rows to the SAME shared ~/.crypto-quant-signal/performance.db while each
+// copy's beforeEach DELETEd the others' rows, so the suite produced both over-counts
+// (`expected 4 to be 2`) and under-counts (`expected +0 to be 1`). That is a
+// nondeterministic gate by construction, and it silently ran other branches' code.
+//
+// Anchoring at `tests/` makes the leak structurally impossible: a nested checkout's
+// path (`.claude/worktrees/X/tests/…`) cannot match a pattern rooted at `tests/`.
+// Allow-list, not deny-list — a NEW nesting location cannot reintroduce it.
+// Guarded by tests/unit/vitest-discovery-scope.test.ts.
 export default defineConfig({
   test: {
+    include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
     exclude: [
       ...configDefaults.exclude,
+      // Backstop only — the anchored `include` above already makes these
+      // unreachable. Kept so the hazard stays documented and so a future widening
+      // of `include` cannot silently re-open the leak.
+      '**/.claude/worktrees/**',
       'tests/unit/design_w*_consistency.test.mjs',
       'tests/unit/geo_answer_page_invariants.test.mjs',
       'tests/unit/geo_jsonld_consistency.test.mjs',
