@@ -3,10 +3,21 @@ name: Publish to npm
 # Auto-publish to npm on every `v*.*.*` tag push.
 #
 # Wired in NPM-PUBLISH-v1.17.0-W1 (2026-05-22) closing the long-standing manual
-# `npm publish` gap per yesterday's WIS bullet `publish-npm-yml-gha-workflow-promotion-candidate`.
-# Token: `algovault-crypto-quant-signal-mcp-publish-automation-token` minted 2026-05-22
-# (90-day TTL, scoped to crypto-quant-signal-mcp only, Bypass-2FA enabled).
-# Repo secret: `NPM_TOKEN`. Rotation due 2026-08-20 per NPM-TOKEN-ROTATION follow-up.
+# `npm publish` gap per WIS `publish-npm-yml-gha-workflow-promotion-candidate`.
+#
+# AUTH: OIDC trusted publishing (per OPS-NPM-TRUSTED-PUBLISHING-MIGRATION-W1, 2026-07-17).
+# npm detects the GitHub Actions OIDC environment and uses it BEFORE falling back to a
+# token, so this workflow authenticates via short-lived OIDC creds — no long-lived token
+# to leak or rotate. Requires npm >= 11.5.1 + Node >= 22.14.0 (pinned below), a public repo,
+# and `package.json` `repository.url` exactly matching the repo (both true). Provenance
+# auto-generates under OIDC. One-time npmjs.com config: package Settings -> Trusted Publisher
+# -> GitHub Actions (org AlgoVaultLabs / repo crypto-quant-signal-mcp / workflow
+# publish-npm.yml / environment blank / allowed action: npm publish).
+#
+# PHASE 1 (current): `NODE_AUTH_TOKEN` (secret `NPM_TOKEN`) is RETAINED as an automatic
+# fallback so a release can never fail mid-migration. PHASE 2 (OPS-NPM-DROP-PUBLISH-TOKEN-W1,
+# after >=1 clean OIDC release) removes the token env, sets the package to "require 2FA and
+# disallow tokens", and revokes `NPM_TOKEN` — retiring the 2026-08-20 rotation chore.
 #
 # Triggers ONLY on tag push (NOT on every commit to main) — keeps the release wave
 # in control of when npm gets a new version. The daily release-wave does
@@ -31,8 +42,17 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # >= 22.14.0 required for OIDC trusted publishing (Node 22 LTS)
           registry-url: 'https://registry.npmjs.org'
+
+      # npm >= 11.5.1 is required for OIDC trusted publishing. Pin to the latest 11.x
+      # (NOT 12.x): npm 12 disables dependency install scripts by default, which would stop
+      # the native `better-sqlite3` prebuild from building during `npm ci`. 11.18.0 keeps
+      # install-scripts on so `npm ci` builds native deps AND satisfies the OIDC minimum.
+      # Verified in OPS-NPM-TRUSTED-PUBLISHING-MIGRATION-W1: `npm ci` + `require('better-sqlite3')`
+      # succeed on Node 22.23.1 + npm 11.18.0.
+      - name: Pin npm (OIDC trusted-publishing capable, pre-v12 install defaults)
+        run: npm install -g npm@11.18.0
 
       - name: Install deps
         run: npm ci
@@ -49,6 +69,10 @@ jobs:
       - name: Refresh README track-record numbers (snapshot injector)
         run: node scripts/snapshot-landing-data.mjs
 
+      # Phase 1: OIDC-preferred (trusted publishing) with NPM_TOKEN fallback; Phase 2
+      # (OPS-NPM-DROP-PUBLISH-TOKEN-W1) removes this env after >=1 clean OIDC release.
+      # `--provenance` auto-generates under OIDC on a public repo/package; the flag is
+      # harmless + explicit and also drives provenance on the token-fallback path.
       - name: Publish to npm with provenance
         run: npm publish --provenance
         env:
