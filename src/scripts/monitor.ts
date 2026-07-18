@@ -16,6 +16,13 @@ import { getLatestSeedHeartbeatPerVenue } from '../lib/seed-heartbeats.js';
 import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { UpstreamRateLimitError } from '../lib/errors.js';
 import { WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
+import {
+  evaluateGasQuorum,
+  parseGasBalanceResult,
+  GAS_WALLET_MIN_ETH,
+  GAS_LOW_CONFIRMATIONS,
+  type GasRead,
+} from '../lib/gas-wallet-quorum.js';
 
 // ── Config ──
 
@@ -30,14 +37,19 @@ if (!ADMIN_KEY) {
 }
 const API_BASE = 'https://api.algovault.com';
 const GAS_WALLET = '0x804B82544E0B779c69192Ff5FC64a4c5d1017B80';
-// Base RPC endpoints — primary first, then free fallbacks. Both used as
-// a chain of best-effort attempts before alerting. mainnet.base.org is
-// the official endpoint but throttles aggressively (HTTP 503) under
-// load; publicnode.com is a free Allnodes mirror with better uptime
-// during peak hours.
+// Base RPC endpoints, one per INDEPENDENT operator. A low balance must be
+// corroborated by >= GAS_LOW_CONFIRMATIONS of them before it pages, so two
+// hosts from the same provider would not count as independent evidence
+// (base-rpc.publicnode.com is deliberately omitted — same operator as
+// base.publicnode.com). mainnet.base.org is authoritative but throttles
+// aggressively (HTTP 503) under load, which is precisely when a degraded
+// fallback is most likely to serve a pruned `0x0`. All four verified live
+// against the gas wallet on 2026-07-18.
 const BASE_RPCS = [
-  'https://mainnet.base.org',
-  'https://base.publicnode.com',
+  'https://mainnet.base.org',    // Coinbase / Base official
+  'https://base.publicnode.com', // Allnodes
+  'https://base.drpc.org',       // dRPC
+  'https://1rpc.io/base',        // Automata
 ];
 const STATE_FILE = '/tmp/algovault-monitor-state.json';
 const DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
@@ -214,22 +226,32 @@ async function checkGasWallet(): Promise<{ error: string | null; balance: number
   // Public Base RPCs (mainnet.base.org especially) throttle aggressively
   // under load — HTTP 503 is the most common false-positive trigger.
   // Strategy: 3 attempts per endpoint with exponential backoff (1s, 3s),
-  // then walk to the next endpoint in BASE_RPCS. Only alert if EVERY
-  // endpoint fails all attempts — by that point the issue is almost
-  // certainly real and not a transient rate limit on one provider.
+  // then walk to the next endpoint in BASE_RPCS. Only report the check as
+  // FAILED if every endpoint fails all attempts — by that point the issue
+  // is almost certainly real, not a transient rate limit on one provider.
   //
-  // Critical: only ever report "wallet low" from a VALID balance read.
-  // A malformed response (missing `result` field, RPC error body, HTTP
-  // 5xx) must never be silently coerced to 0.
+  // Critical: only ever report "wallet low" from a VALID balance read, and
+  // only once >= GAS_LOW_CONFIRMATIONS independent endpoints agree. A
+  // malformed response (missing `result` field, RPC error body, HTTP 5xx)
+  // must never be silently coerced to 0 — and neither must a well-formed
+  // `0x0` from a single pruned/lagging node, which is what produced 28
+  // false "Gas wallet low: 0.000000 ETH" readings on 2026-07-17 while the
+  // wallet actually held ~0.0471 ETH at every Base block.
+  // Verdict logic + rationale: src/lib/gas-wallet-quorum.ts.
   const RPC_TIMEOUT = 10_000;
   const MAX_ATTEMPTS_PER_RPC = 3;
   const BACKOFF_MS = [1_000, 3_000]; // delay before attempt 2, 3
 
+  const reads: GasRead[] = [];
   let lastError = '';
   let lastEndpoint = '';
+  let sawLow = false;
+
   for (const rpc of BASE_RPCS) {
+    lastEndpoint = rpc;
+    let eth: number | null = null;
+
     for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_RPC; attempt++) {
-      lastEndpoint = rpc;
       try {
         const res = await fetch(rpc, {
           method: 'POST',
@@ -244,22 +266,13 @@ async function checkGasWallet(): Promise<{ error: string | null; balance: number
         if (!res.ok) {
           lastError = `HTTP ${res.status}`;
         } else {
-          const data = await res.json().catch(() => null) as
-            | { result?: string; error?: { message?: string } }
-            | null;
-          if (!data) {
-            lastError = 'RPC returned non-JSON response';
-          } else if (data.error) {
-            lastError = `RPC error: ${data.error.message ?? JSON.stringify(data.error)}`;
-          } else if (typeof data.result !== 'string' || !data.result.startsWith('0x')) {
-            lastError = `Invalid RPC response (no result field): ${JSON.stringify(data).slice(0, 200)}`;
-          } else {
-            // Valid read — only now is it safe to evaluate the balance threshold.
-            const wei = BigInt(data.result);
-            const eth = Number(wei) / 1e18;
-            if (eth < 0.005) return { error: `Gas wallet low: ${eth.toFixed(6)} ETH (< 0.005)`, balance: eth };
-            return { error: null, balance: eth };
+          const parsed = parseGasBalanceResult(await res.json().catch(() => null));
+          if (parsed.ok) {
+            // `=== null` (not falsy) — a genuine 0 balance is a valid read.
+            eth = parsed.eth;
+            break;
           }
+          lastError = parsed.error;
         }
       } catch (err) {
         lastError = (err as Error).message;
@@ -270,13 +283,42 @@ async function checkGasWallet(): Promise<{ error: string | null; balance: number
         await new Promise(r => setTimeout(r, delay));
       }
     }
-    // Endpoint exhausted — try next fallback
-    console.log(`[monitor] gas wallet RPC ${rpc} exhausted after ${MAX_ATTEMPTS_PER_RPC} attempts (${lastError}), trying next endpoint...`);
+
+    if (eth === null) {
+      reads.push({ endpoint: rpc, ok: false, error: lastError });
+      // Endpoint exhausted — try next fallback
+      console.log(`[monitor] gas wallet RPC ${rpc} exhausted after ${MAX_ATTEMPTS_PER_RPC} attempts (${lastError}), trying next endpoint...`);
+      continue;
+    }
+
+    reads.push({ endpoint: rpc, ok: true, eth });
+
+    if (eth < GAS_WALLET_MIN_ETH) {
+      // Never page off one node: poll the rest for independent corroboration.
+      sawLow = true;
+      console.log(`[monitor] gas wallet read ${eth.toFixed(6)} ETH from ${rpc} is below ${GAS_WALLET_MIN_ETH} — polling remaining endpoints for corroboration`);
+    } else if (!sawLow) {
+      // Fast path: first valid read is healthy, so there is nothing to
+      // corroborate and no reason to spend the other endpoints' quota.
+      break;
+    }
   }
-  return {
-    error: `Gas wallet check failed: all ${BASE_RPCS.length} RPC endpoints exhausted (${MAX_ATTEMPTS_PER_RPC} attempts each). Last endpoint: ${lastEndpoint}, last error: ${lastError}`,
-    balance: 0,
-  };
+
+  const quorum = evaluateGasQuorum(reads);
+
+  if (quorum.verdict === 'no-data') {
+    return {
+      error: `Gas wallet check failed: all ${BASE_RPCS.length} RPC endpoints exhausted (${MAX_ATTEMPTS_PER_RPC} attempts each). Last endpoint: ${lastEndpoint}, last error: ${lastError}`,
+      balance: 0,
+    };
+  }
+
+  if (quorum.verdict === 'unconfirmed') {
+    // Forensics only — this is the exact shape of the 2026-07-17 false alert.
+    console.log(`[monitor] gas wallet NOT paging (needs ${GAS_LOW_CONFIRMATIONS} independent confirmations): ${quorum.detail}`);
+  }
+
+  return { error: quorum.error, balance: quorum.balance };
 }
 
 async function checkDatabase(): Promise<string | null> {
