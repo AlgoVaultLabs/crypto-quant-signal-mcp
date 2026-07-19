@@ -63,13 +63,30 @@ const WEIGHTS = {
   volume: 0.20,
 };
 
-// v1.5: Symmetric signal thresholds — both directions require equal conviction
-const BUY_BASE_THRESHOLD = 40;
-const SELL_BASE_THRESHOLD = 40;
+// ⚠️ LIVE BEHAVIOUR (re-verified 2026-07-19 against prod env + signal_performance). The previous
+// comments here claimed "symmetric … equal conviction" and "regime-aware gates" — BOTH WERE FALSE.
+// The actual wiring (the getThresholdForTF calls further down) is, on EVERY timeframe:
+//     BUY  → BUY_BASE_THRESHOLD    (40)   UNCONDITIONALLY
+//     SELL → SELL_THRESHOLD_GATED  (55)   UNCONDITIONALLY
+// `regime` is NEVER consulted for thresholds (it is not in VerdictGateInputs). Net effect: SELL
+// requires ~37.5% more conviction than BUY (confidence ≳62 vs ≳45) ⇒ ~4.9k SELLs suppressed and a
+// ~9.9:1 BUY:SELL population (346,833 vs 35,083).
+//
+// This asymmetry is UNINTENDED but currently LOAD-BEARING — do NOT "restore symmetry" to 40/40
+// without a backtest. Measured PFE WR (canonical definition, performance-db.ts:1174) by regime:
+// SELL-in-RANGING 57.2% vs BUY-in-RANGING 93.2% — the high SELL bar is earning its keep in exactly
+// the regime that would supply most newly-admitted SELLs. Conversely SELL-in-TRENDING_DOWN is
+// 91.3% (≈ BUY's 92.8%) yet is still gated at 55, i.e. good with-trend SELLs ARE being suppressed.
+// Evaluating that is Prompt/EDGE-SELL-GATE-REGIME-W1.md — change nothing here until it lands.
+const BUY_BASE_THRESHOLD = 40;     // WIRED — the live BUY bar, all timeframes
+const SELL_THRESHOLD_GATED = 55;   // WIRED — the live SELL bar, all timeframes
 
-// Regime-aware gates: require higher conviction when trading against the regime
-const BUY_THRESHOLD_GATED = 55;   // BUY in TRENDING_DOWN
-const SELL_THRESHOLD_GATED = 55;   // SELL in TRENDING_UP or RANGING
+// UNWIRED — referenced by NOTHING (grep-verified 2026-07-19: declarations only, zero usages).
+// These two encode the regime-aware design that was specified but never connected: the BASE bar
+// when trading WITH the regime, the GATED bar when trading AGAINST it. Kept deliberately as the
+// executable spec for the V2 backtest; delete only if that wave concludes KEEP-AS-IS.
+const SELL_BASE_THRESHOLD = 40;    // would be: SELL in TRENDING_DOWN (with the regime)
+const BUY_THRESHOLD_GATED = 55;    // would be: BUY in TRENDING_DOWN (against the regime)
 
 // Theoretical max |rawScore| for proper confidence scaling
 // RSI(100)*0.30 + EMA(100)*0.10 + Funding(80)*0.25 + OI(60)*0.15 + Vol(100)*0.20 = 30+10+20+9+20 = 89
@@ -364,7 +381,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // their (structurally-small) z-score bucket but gain an interpretation note.
   const fundingState = fundingAnnotation.fundingStateOverride ?? bucketFundingState(fundingZScore);
 
-  // ── Detect regime FIRST (used for asymmetric thresholds) ──
+  // ── Detect regime — REPORTING + prose ONLY. It is NOT used for thresholds (it is absent from
+  //    VerdictGateInputs below); it is returned in the response and drives regimeProse(). The
+  //    "used for asymmetric thresholds" claim that stood here was false — see the threshold
+  //    block near the top of this file. ──
   let regime: RegimeType = 'RANGING';
   if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) regime = 'TRENDING_UP';
   else if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) regime = 'TRENDING_DOWN';
