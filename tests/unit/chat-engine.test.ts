@@ -256,4 +256,14 @@ describe('ChatEngine live track-record injection (CHAT-LIVE-SOT-INJECTION-W1)', 
     expect(CHAT_ENGINE_SYSTEM_PROMPT).not.toMatch(/\b\d+\s+exchanges\b/);
     expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('major crypto exchanges');
   });
+
+  // The first post-deploy live gate returned STALE_FAIL: the model obeyed the
+  // override but volunteered the retired figures in a contrastive clause
+  // ("...supersede the older 56,375+ at 89.4%"), re-emitting the exact
+  // literals this wave retires onto a public endpoint. Rule 7 now suppresses
+  // that; lock it so the behaviour can't silently regress.
+  it('system prompt forbids restating or contrasting superseded figures', () => {
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('Never restate, quote, or contrast');
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('authoritative figures alone');
+  });
 });

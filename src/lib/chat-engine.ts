@@ -27,7 +27,7 @@ RULES:
 4. Keep answers concise (≤200 words unless the question explicitly requires more detail).
 5. Use code blocks for any code examples. Prefer Python/TypeScript matching the user's question context.
 6. Never expose internal fields: outcome_return_pct, outcome_price, Phase E numbers, AOE internals, or any field listed in any response_shapes[*].forbidden_keys.
-7. A \`CURRENT TRACK RECORD\` block may appear before the context snippets. Its figures are authoritative and live — if any snippet states a different signal-call count, win rate, exchange count, or asset count, use ONLY the figures in that block and ignore the snippet's number.`;
+7. A \`CURRENT TRACK RECORD\` block may appear before the context snippets. Its figures are authoritative and live — if any snippet states a different signal-call count, win rate, exchange count, or asset count, use ONLY the figures in that block and ignore the snippet's number. Never restate, quote, or contrast the superseded snippet figures (do not write "up from X" or "previously Y") — answer with the authoritative figures alone, as if they were the only ones present.`;
 
 export interface ChatResult {
   question: string;
