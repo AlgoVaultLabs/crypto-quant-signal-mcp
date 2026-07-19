@@ -283,7 +283,13 @@ for (const ex of INTEGRATIONS) {
     // Quotable-fact block preserved.
     assert.ok(html.includes('itemtype="https://schema.org/Claim"'), 'quotable-fact Schema.org Claim preserved');
     assert.ok(html.includes('data-tr-field="pfe_wr"'), 'pfe_wr live-bind span preserved');
-    assert.ok(html.includes('data-tr-field="signal_count"'), 'signal_count live-bind span preserved');
+    // OPS-INTEGRATIONS-LIVE-SOT-W1: was `signal_count`, which this assertion
+    // called a "live-bind span" but which track-record-proxy.js has never
+    // hydrated since v1.10.0 (OUTPUT-SANITIZE-W1 C5 retired the key in favour
+    // of `call_count`). The span was frozen at bake time, so the assertion was
+    // guarding a dead hook. Flipped with the hook itself — the pair has to move
+    // together or the test just re-encodes the bug.
+    assert.ok(html.includes('data-tr-field="call_count"'), 'call_count live-bind span preserved');
     // Plausible analytics preserved.
     assert.ok(html.includes('src="/js/insights.js"'), 'Plausible script preserved (first-party proxy)');
     // Tailwind CDN preserved (was already loaded pre-W10).
