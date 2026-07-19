@@ -215,8 +215,20 @@ async function main() {
   });
 }
 
-runAsCaller('backfill', main).catch((err) => {
-  console.error('Fatal:', err);
-  closeDb();
-  process.exit(1);
-});
+// OPS-PFE-MAE-EXTRACTION-W1: main-guard. Without it this module's last statement is a
+// top-level `runAsCaller('backfill', main)`, so merely IMPORTING the file executes a full
+// production backfill that UPDATEs `signals` — a research session that followed a
+// "import the live evaluator" instruction would have mutated prod (EDGE-SELL-GATE-REGIME-W1
+// caught this before it happened). Nothing imports this module — verified against the
+// DEPLOYED dist, where `grep -rl "require(.*backfill-outcomes") /app/dist` returns nothing —
+// and prod invokes it purely as an entrypoint:
+//   2-59/3 * * * * docker exec <ctr> node dist/scripts/backfill-outcomes.js
+// which is byte-identical in shape to how `seed-signals.js` is invoked; that script has
+// carried this same guard for months and keeps writing signals normally.
+if (require.main === module) {
+  runAsCaller('backfill', main).catch((err) => {
+    console.error('Fatal:', err);
+    closeDb();
+    process.exit(1);
+  });
+}
