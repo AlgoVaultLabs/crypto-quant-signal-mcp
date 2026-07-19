@@ -29,23 +29,10 @@ import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, closeDb } 
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
-import type { Candle, ExchangeId, SignalRecord } from '../types.js';
+import type { ExchangeId, SignalRecord } from '../types.js';
+import { computePFEMAE, toSignalOutcomeUpdate, EVAL_CANDLES, TF_MS } from '../lib/pfe-mae.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 300; // polite to HL API
-
-/** Number of candles to evaluate per timeframe */
-const EVAL_CANDLES: Record<string, number> = {
-  '1m': 12, '3m': 12, '5m': 12, '15m': 12,
-  '30m': 8, '1h': 8, '2h': 6, '4h': 6,
-  '8h': 4, '12h': 4, '1d': 3,
-};
-
-/** Timeframe → milliseconds per candle */
-const TF_MS: Record<string, number> = {
-  '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000,
-  '30m': 1_800_000, '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000,
-  '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
-};
 
 function ts(): string {
   return new Date().toISOString();
@@ -53,90 +40,6 @@ function ts(): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
-}
-
-interface PFEMAEResult {
-  outcomePrice: number;
-  outcomeReturnPct: number;
-  return1candle: number;
-  pfePrice: number;
-  pfeReturnPct: number;
-  maePrice: number;
-  maeReturnPct: number;
-  pfeCandles: number;
-}
-
-/**
- * Analyze candles to compute PFE/MAE for a signal.
- */
-function computePFEMAE(
-  signal: SignalRecord,
-  candles: Candle[],
-  evalCount: number
-): PFEMAEResult | null {
-  if (candles.length === 0) return null;
-
-  // Take only the evaluation window's worth of candles. Sort a copy
-  // oldest-first before slicing — slice(0, N) on a newest-first venue payload
-  // would evaluate the wrong end of the window (EdgeX kline-order class).
-  const window = [...candles].sort((a, b) => a.time - b.time).slice(0, evalCount);
-  if (window.length === 0) return null;
-
-  const entryPrice = signal.price_at_signal;
-  const isBuy = signal.signal === 'BUY';
-
-  // Outcome = close of the last candle in the evaluation window
-  const outcomePrice = window[window.length - 1].close;
-  const outcomeReturnPct = ((outcomePrice - entryPrice) / entryPrice) * 100;
-
-  // v1.4.1: 1-candle return — direction-adjusted (positive = correct direction)
-  const firstClose = window[0].close;
-  const raw1c = ((firstClose - entryPrice) / entryPrice) * 100;
-  const return1candle = isBuy ? raw1c : -raw1c;
-
-  // PFE: best price in signal direction
-  // MAE: worst price against signal direction
-  let pfePrice = entryPrice;
-  let maePrice = entryPrice;
-  let pfeCandles = 0;
-
-  for (let i = 0; i < window.length; i++) {
-    const c = window[i];
-    if (isBuy) {
-      // BUY: favorable = up (high), adverse = down (low)
-      if (c.high > pfePrice) {
-        pfePrice = c.high;
-        pfeCandles = i + 1;
-      }
-      if (c.low < maePrice) {
-        maePrice = c.low;
-      }
-    } else {
-      // SELL: favorable = down (low), adverse = up (high)
-      if (c.low < pfePrice) {
-        pfePrice = c.low;
-        pfeCandles = i + 1;
-      }
-      if (c.high > maePrice) {
-        maePrice = c.high;
-      }
-    }
-  }
-
-  // PFE/MAE return percentages — always from entry price perspective
-  const pfeReturnPct = ((pfePrice - entryPrice) / entryPrice) * 100;
-  const maeReturnPct = ((maePrice - entryPrice) / entryPrice) * 100;
-
-  return {
-    outcomePrice: parseFloat(outcomePrice.toFixed(6)),
-    outcomeReturnPct: parseFloat(outcomeReturnPct.toFixed(4)),
-    return1candle: parseFloat(return1candle.toFixed(4)),
-    pfePrice: parseFloat(pfePrice.toFixed(6)),
-    pfeReturnPct: parseFloat(pfeReturnPct.toFixed(4)),
-    maePrice: parseFloat(maePrice.toFixed(6)),
-    maeReturnPct: parseFloat(maeReturnPct.toFixed(4)),
-    pfeCandles,
-  };
 }
 
 async function main() {
@@ -250,16 +153,7 @@ async function main() {
             continue;
           }
 
-          await updateSignalOutcomes(sig.id!, {
-            outcome_price: result.outcomePrice,
-            outcome_return_pct: result.outcomeReturnPct,
-            return_1candle: result.return1candle,
-            pfe_price: result.pfePrice,
-            pfe_return_pct: result.pfeReturnPct,
-            mae_price: result.maePrice,
-            mae_return_pct: result.maeReturnPct,
-            pfe_candles: result.pfeCandles,
-          });
+          await updateSignalOutcomes(sig.id!, toSignalOutcomeUpdate(result));
 
           // Log with P&L perspective
           const isBuy = sig.signal === 'BUY';
