@@ -58,6 +58,15 @@ interface RequestContext {
    * Additive; does NOT touch resolveSessionIdentity. Absent (edge paths) → not stamped.
    */
   source?: string;
+  /**
+   * OPS-HL-INTERACTIVE-PRIORITY-W1: this request opted OUT of the interactive
+   * rate-limit lane (`X-AlgoVault-Priority: background`), so its upstream venue
+   * fetches run in the BATCH lane — waiting politely instead of competing with live
+   * callers for the interactive reserve. Resolved ONCE at the /mcp POST layer where
+   * headers are in scope, then read by the tool handler. Absent → FALSE (fail-safe:
+   * an unrecognized request stays interactive, never silently delayed).
+   */
+  background?: boolean;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
@@ -105,6 +114,33 @@ export function getRequestVerdict(): string | undefined {
  */
 export function getRequestIsAutomated(): boolean {
   return requestContext.getStore()?.isAutomated ?? false;
+}
+
+/**
+ * OPS-HL-INTERACTIVE-PRIORITY-W1 — PURE header resolution, unit-tested.
+ *
+ * A caller may opt into the batch lane with `X-AlgoVault-Priority: background`, but
+ * ONLY an internally-authenticated caller is honoured. The batch lane is allowed to
+ * WAIT up to ~5 minutes to yield the interactive reserve; parking an ordinary public
+ * client there would look like a hang, so the gate is deliberately closed to them.
+ * This is not a security boundary (self-deprioritising harms nobody) — it is a
+ * blast-radius one.
+ */
+export function resolveBackgroundPriority(
+  headers: Record<string, string | undefined>,
+  tier: string,
+): boolean {
+  if (tier !== 'internal') return false;
+  const raw = headers['x-algovault-priority'] ?? headers['X-AlgoVault-Priority'];
+  return typeof raw === 'string' && raw.trim().toLowerCase() === 'background';
+}
+
+/**
+ * Read the per-request background flag. Fail-safe FALSE on every edge path (stdio,
+ * x402, direct calls) — an unknown request keeps today's interactive behaviour.
+ */
+export function getRequestIsBackground(): boolean {
+  return requestContext.getStore()?.background ?? false;
 }
 
 /** Settlement refs from a verified x402 payment, for async settle after response. */

@@ -33,7 +33,7 @@ import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
@@ -688,10 +688,19 @@ function createServer(): McpServer {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
-        const result = await runAsCaller('scan_trade_calls', () => runScanTradeCall(
+        const scan = () => runScanTradeCall(
           { topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis },
           license,
-        ));
+        );
+        // OPS-HL-INTERACTIVE-PRIORITY-W1: a background-priority caller (today: the bot's
+        // weekly scan-showcase cron) runs its venue fan-out in the BATCH lane, so it waits
+        // for capacity instead of consuming HL's interactive reserve. That reserve exists
+        // for LIVE callers; a weekly cron is definitionally background. Measured driver:
+        // 161 of 171 HL interactive throws in a week came from one showcase minute.
+        // Caller tag is unchanged — the digest's i:/b: split already shows the lane.
+        const result = getRequestIsBackground()
+          ? await runAsBatch(scan, 'scan_trade_calls')
+          : await runAsCaller('scan_trade_calls', scan);
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'scan_trade_calls',
@@ -3215,9 +3224,17 @@ async function startHttp() {
       referer: req.headers['referer'],
     }).source;
 
+    // OPS-HL-INTERACTIVE-PRIORITY-W1: resolve the batch-lane opt-in ONCE here, where the
+    // headers and the resolved tier are both in scope (same single-derivation pattern as
+    // isAutomated / source above). Internal callers only — see resolveBackgroundPriority.
+    const backgroundPriority = resolveBackgroundPriority(
+      req.headers as Record<string, string | undefined>,
+      license.tier,
+    );
+
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
-    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, source: attributionSource }, async () => {
+    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, source: attributionSource, background: backgroundPriority }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 

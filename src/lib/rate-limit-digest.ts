@@ -57,6 +57,63 @@ const HL_INTERACTIVE_THROW_TRIGGER = 25;   // "sustained" HL interactive (budget
 
 export interface VenueRl { venue: string; throws: number; waits: number; skips: number; iThrows: number; bThrows: number; }
 
+/**
+ * The SHAPE of a venue's interactive throws across the window — not just how many.
+ *
+ * OPS-HL-INTERACTIVE-PRIORITY-W1: the `hlDenial` trigger below is labelled
+ * "sustained", but it used to test a bare 7-day SUM, which cannot tell chronic
+ * pressure apart from one burst. Live proof: 171 HL interactive throws in a week
+ * looked like sustained demand, but **161 of them (94%) landed in a single minute**
+ * — Monday 13:17 UTC, the weekly `scan-showcase` cron. That is a spike, and the
+ * operator-facing action it recommended ("investigate the interactive driver")
+ * therefore fired every week on a non-problem. Same measurement-shape bug as the
+ * shadow-venue misclassification this file already fixed: the metric did not
+ * measure the thing its label claimed.
+ */
+export interface ThrowShape {
+  total: number;
+  /** Distinct UTC days carrying ≥1 throw. */
+  days: number;
+  /** Largest single-hour count. */
+  peakHour: number;
+  /** Label of the peak hour, for the diagnostic line. */
+  peakHourLabel: string | null;
+  /** peakHour / total — 1.0 means the whole week happened in one hour. */
+  peakShare: number;
+}
+
+/** Minimum distinct days before a throw pattern can be called "sustained". */
+const SUSTAINED_MIN_DAYS = 2;
+/** Above this single-hour share, the week is one burst — not sustained pressure. */
+const BURST_PEAK_SHARE = 0.5;
+
+/**
+ * Summarize hourly throw buckets into a {@link ThrowShape} (pure; unit-tested both
+ * sides of each boundary). `hour` is any stable per-hour label — the day count is
+ * derived from its leading date, so `YYYY-MM-DD HH:00` is the expected form.
+ */
+export function summarizeThrowShape(hourly: { hour: string; n: number }[]): ThrowShape {
+  const total = hourly.reduce((a, h) => a + h.n, 0);
+  const days = new Set(hourly.filter((h) => h.n > 0).map((h) => h.hour.slice(0, 10))).size;
+  let peakHour = 0;
+  let peakHourLabel: string | null = null;
+  for (const h of hourly) {
+    if (h.n > peakHour) { peakHour = h.n; peakHourLabel = h.hour; }
+  }
+  return { total, days, peakHour, peakHourLabel, peakShare: total > 0 ? peakHour / total : 0 };
+}
+
+/**
+ * Is this shape genuinely SUSTAINED (as opposed to one burst)? Requires the throws to
+ * span ≥2 distinct days AND for no single hour to account for >50% of them.
+ * A shape we have no data for is treated as sustained — the filter may only ever
+ * SUPPRESS a noisy alert, never invent silence where we cannot see.
+ */
+export function isSustained(shape: ThrowShape | null | undefined): boolean {
+  if (!shape || shape.total === 0) return true;
+  return shape.days >= SUSTAINED_MIN_DAYS && shape.peakShare <= BURST_PEAK_SHARE;
+}
+
 /** p95 of a sample (backend-agnostic; avoids PG-only percentile_cont so the trigger logic is pure-testable). */
 export function p95(xs: number[]): number {
   if (xs.length === 0) return 0;
@@ -72,13 +129,16 @@ export function p95(xs: number[]): number {
  */
 export function evaluateRateLimitTriggers(
   perVenue: VenueRl[],
+  hlShape?: ThrowShape | null,
 ): { lines: string[]; shadowBudget: boolean; hlDenial: boolean } {
   const lines: string[] = [];
   const shadowHit = perVenue.find((v) => !PROMOTED_VENUE_NAMES.includes(v.venue) && v.throws >= SHADOW_THROW_TRIGGER);
   const hl = perVenue.find((v) => v.venue === HL_VENUE_NAME);
   const hlInteractive = hl?.iThrows ?? 0;
   const shadowBudget = !!shadowHit;
-  const hlDenial = hlInteractive >= HL_INTERACTIVE_THROW_TRIGGER;
+  // BOTH conditions required: enough throws AND a genuinely sustained shape. The count
+  // alone cannot distinguish chronic denial from one weekly cron burst — see ThrowShape.
+  const hlDenial = hlInteractive >= HL_INTERACTIVE_THROW_TRIGGER && isSustained(hlShape);
   if (shadowBudget) {
     lines.push(`⚠️ ${shadowHit!.venue}: ${shadowHit!.throws} throws/7d (≥${SHADOW_THROW_TRIGGER}) — Action: dispatch OPS-SHADOW-BUDGET-W{NEXT} via Cowork → Claude Code`);
   }
@@ -149,9 +209,27 @@ async function buildRateLimitSection(): Promise<string[]> {
         GROUP BY caller`,
       [HL_VENUE_NAME],
     );
+    // Hourly shape of HL's INTERACTIVE throws — feeds the burst-vs-sustained filter.
+    const hlHourly = await dbQuery<{ hour: string; n: string }>(
+      `SELECT to_char(date_trunc('hour', ts), 'YYYY-MM-DD HH24:00') AS hour, COUNT(*)::text AS n
+         FROM rate_limit_events
+        WHERE ts > NOW() - INTERVAL '7 days' AND venue = $1 AND kind = 'throw' AND class = 'interactive'
+        GROUP BY 1 ORDER BY 1`,
+      [HL_VENUE_NAME],
+    );
     const perVenue = aggregateRateLimit(rawCounts.map((c) => ({ ...c, n: Number(c.n) })));
     const hlWaitP95Ms = p95(hlWaits.map((r) => Number(r.wait_ms)));
     const hlTopCallers = aggregateCallers(hlCallerRows.map((c) => ({ caller: c.caller, n: Number(c.n) })));
+    const hlShape = summarizeThrowShape(hlHourly.map((h) => ({ hour: h.hour, n: Number(h.n) })));
+
+    // Always SHOW the shape when there are interactive throws, whether or not the
+    // trigger fires — the operator should be able to see a suppressed burst, not
+    // just be told nothing. A silent suppression is indistinguishable from a broken gate.
+    const shapeLine = hlShape.total > 0
+      ? [`   HL interactive shape: ${hlShape.total} throws over ${hlShape.days} day(s); peak hour ` +
+         `${hlShape.peakHourLabel} = ${hlShape.peakHour} (${(hlShape.peakShare * 100).toFixed(0)}%) → ` +
+         `${isSustained(hlShape) ? 'SUSTAINED' : 'BURST (trigger suppressed)'}`]
+      : [];
 
     const body = perVenue.length === 0
       ? ['   (no rate-limit events — all venues healthy)']
@@ -159,8 +237,9 @@ async function buildRateLimitSection(): Promise<string[]> {
           ...perVenue.map((v) => `   *${v.venue}*: ${v.throws} throws (i:${v.iThrows}/b:${v.bThrows}), ${v.waits} waits, ${v.skips} skips`),
           ...(perVenue.some((v) => v.venue === HL_VENUE_NAME) ? [`   HL batch-wait p95: ${(hlWaitP95Ms / 1000).toFixed(1)}s`] : []),
           ...(hlTopCallers.length ? [`   HL throw drivers (by caller, 7d): ${hlTopCallers.map((c) => `${c.caller} (${c.n})`).join(', ')}`] : []),
+          ...shapeLine,
         ];
-    const { lines } = evaluateRateLimitTriggers(perVenue);
+    const { lines } = evaluateRateLimitTriggers(perVenue, hlShape);
     return [...header, ...body, ...(lines.length ? ['', ...lines] : [])];
   } catch (e) {
     // Fail-open: a telemetry-query failure must never break the weekly digest.
