@@ -125,11 +125,12 @@ describe('AV-CHAT-MCP-W1 — end-to-end knowledge flow (real bundle, stub LLM)',
     expect(['number', 'object'].includes(typeof response._algovault.quota_remaining)).toBe(true);
   });
 
-  it('chat-engine system prompt is locked verbatim (6-rule contract)', () => {
+  it('chat-engine system prompt is locked verbatim (7-rule contract)', () => {
     expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain("AlgoVault's documentation assistant");
     expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('RULES:');
-    // 6 numbered rules in the prompt
-    for (let i = 1; i <= 6; i++) {
+    // 7 numbered rules in the prompt — rule 7 (the CURRENT TRACK RECORD
+    // override) added by CHAT-LIVE-SOT-INJECTION-W1.
+    for (let i = 1; i <= 7; i++) {
       expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain(`${i}.`);
     }
     expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('outcome_return_pct');

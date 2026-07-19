@@ -16,8 +16,9 @@
 import type { SearchEngine, SearchResult } from './search-engine.js';
 import type { LLMProvider } from './llm-provider.js';
 import type { ResultCache } from './result-cache.js';
+import { getLiveTrackRecordBlock } from './chat-track-record.js';
 
-export const CHAT_ENGINE_SYSTEM_PROMPT = `You are AlgoVault's documentation assistant. AlgoVault is the Brain Layer for AI Trading Agents — a composable MCP server providing crypto-quant trade signals, market regime detection, and funding arbitrage scans across 5 exchanges.
+export const CHAT_ENGINE_SYSTEM_PROMPT = `You are AlgoVault's documentation assistant. AlgoVault is the Brain Layer for AI Trading Agents — a composable MCP server providing crypto-quant trade signals, market regime detection, and funding arbitrage scans across major crypto exchanges.
 
 RULES:
 1. Answer using ONLY the provided context snippets below. Do NOT invent tools, parameters, response fields, or integration steps not present in the snippets.
@@ -25,7 +26,8 @@ RULES:
 3. Always cite sources inline using the format [source: <url>] after each factual claim.
 4. Keep answers concise (≤200 words unless the question explicitly requires more detail).
 5. Use code blocks for any code examples. Prefer Python/TypeScript matching the user's question context.
-6. Never expose internal fields: outcome_return_pct, outcome_price, Phase E numbers, AOE internals, or any field listed in any response_shapes[*].forbidden_keys.`;
+6. Never expose internal fields: outcome_return_pct, outcome_price, Phase E numbers, AOE internals, or any field listed in any response_shapes[*].forbidden_keys.
+7. A \`CURRENT TRACK RECORD\` block may appear before the context snippets. Its figures are authoritative and live — if any snippet states a different signal-call count, win rate, exchange count, or asset count, use ONLY the figures in that block and ignore the snippet's number.`;
 
 export interface ChatResult {
   question: string;
@@ -92,13 +94,27 @@ export class ChatEngine {
     // 2. Truncate context if total tokens > maxInputTokens (drop lowest-ranked first)
     const truncatedSnippets = this.truncateContext(snippets);
 
-    // 3. Build user message with context
+    // 3. Build user message with context.
+    //
+    // CHAT-LIVE-SOT-INJECTION-W1: the live track-record block is prepended
+    // AHEAD of the question so it precedes the snippets, whose baked figures
+    // it overrides (system prompt rule 7). `getLiveTrackRecordBlock()` is
+    // itself fail-open, but the await is guarded too — a chat answer must
+    // never be blocked or blanked by track-record trouble.
+    let trackRecordBlock = '';
+    try {
+      trackRecordBlock = await getLiveTrackRecordBlock();
+    } catch {
+      trackRecordBlock = '';
+    }
+    const preamble = trackRecordBlock ? `${trackRecordBlock}\n\n` : '';
+
     const contextBlock = truncatedSnippets
       .map((s) => `[${s.source_url}] ${s.excerpt}`)
       .join('\n\n');
     const userMessage = contextBlock
-      ? `${question}\n\nContext snippets:\n${contextBlock}`
-      : question;
+      ? `${preamble}${question}\n\nContext snippets:\n${contextBlock}`
+      : `${preamble}${question}`;
 
     // 4. Call LLM
     const completion = await this.llm.complete(

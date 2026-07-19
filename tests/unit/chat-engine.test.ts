@@ -9,15 +9,29 @@
  *   - Fix-at-generator LAW: no hand-written if/switch/return shortcut blocks
  *     in chat-engine.ts source (regex canary).
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+
+// CHAT-LIVE-SOT-INJECTION-W1: chat() now reads the in-process track-record SoT.
+// Stub it so this suite stays hermetic (no DB) and the injected figures are
+// deterministic — an unmocked read would attempt a real connection and hang.
+const getSignalPerformanceMock = vi.fn();
+vi.mock('../../src/resources/signal-performance.js', () => ({
+  getSignalPerformance: (...args: unknown[]) => getSignalPerformanceMock(...args),
+}));
+vi.mock('../../src/lib/capabilities.js', () => ({
+  EXCHANGE_COUNT: 12,
+  getAssetCount: async () => 1336,
+}));
+
 import { KnowledgeIndex } from '../../src/lib/knowledge-index.js';
 import { SearchEngine, type SearchResult } from '../../src/lib/search-engine.js';
 import { ResultCache } from '../../src/lib/result-cache.js';
-import { ChatEngine, type ChatResult } from '../../src/lib/chat-engine.js';
+import { ChatEngine, CHAT_ENGINE_SYSTEM_PROMPT, type ChatResult } from '../../src/lib/chat-engine.js';
+import { _resetTrackRecordBlockCache } from '../../src/lib/chat-track-record.js';
 import type { LLMProvider, LLMMessage, LLMCompletionOpts, LLMCompletion } from '../../src/lib/llm-provider.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -76,9 +90,20 @@ async function makeChatStack(): Promise<{
 
 describe('ChatEngine (AV-CHAT-MCP-W1 C3)', () => {
   const cleanups: Array<() => void> = [];
+  beforeEach(() => {
+    // Module-level TTL cache in chat-track-record.ts — reset so each case
+    // observes a fresh read rather than a neighbour's block.
+    _resetTrackRecordBlockCache();
+    getSignalPerformanceMock.mockReset();
+    getSignalPerformanceMock.mockResolvedValue({
+      totalCalls: 382434,
+      overall: { totalCalls: 382434, totalEvaluated: 380412, pfeWinRate: 0.9153759608003954 },
+    });
+  });
   afterEach(() => {
     cleanups.forEach((c) => c());
     cleanups.length = 0;
+    _resetTrackRecordBlockCache();
   });
 
   it('builds context from search results — LLM receives snippets in user message', async () => {
@@ -144,5 +169,91 @@ describe('ChatEngine (AV-CHAT-MCP-W1 C3)', () => {
   it('Fix-at-generator LAW canary — no hand-written question→answer shortcuts in chat-engine.ts source', () => {
     const src = readFileSync(join(REPO_ROOT, 'src', 'lib', 'chat-engine.ts'), 'utf8');
     expect(src).not.toMatch(/\b(if|switch)\b.*question.*(includes|match).*\breturn\b/);
+  });
+
+  // CHAT-LIVE-SOT-INJECTION-W1: the live-track-record builder is part of the
+  // chat answer surface, so it inherits the same LAW.
+  it('Fix-at-generator LAW canary — no question→answer shortcuts in chat-track-record.ts source', () => {
+    const src = readFileSync(join(REPO_ROOT, 'src', 'lib', 'chat-track-record.ts'), 'utf8');
+    expect(src).not.toMatch(/\b(if|switch)\b.*question.*(includes|match).*\breturn\b/);
+  });
+});
+
+describe('ChatEngine live track-record injection (CHAT-LIVE-SOT-INJECTION-W1)', () => {
+  const cleanups: Array<() => void> = [];
+  beforeEach(() => {
+    _resetTrackRecordBlockCache();
+    getSignalPerformanceMock.mockReset();
+    getSignalPerformanceMock.mockResolvedValue({
+      totalCalls: 382434,
+      overall: { totalCalls: 382434, totalEvaluated: 380412, pfeWinRate: 0.9153759608003954 },
+    });
+  });
+  afterEach(() => {
+    cleanups.forEach((c) => c());
+    cleanups.length = 0;
+    _resetTrackRecordBlockCache();
+  });
+
+  it('injects the CURRENT TRACK RECORD block ahead of the context snippets', async () => {
+    const { chat, llm, cleanup } = await makeChatStack();
+    cleanups.push(cleanup);
+
+    await chat.chat('how many signal calls and what win rate');
+    const userMsg = llm.calls[0].messages[0].content;
+
+    expect(userMsg).toContain('CURRENT TRACK RECORD');
+    // Live figures, not the corpus's baked ones.
+    expect(userMsg).toContain('382,434+ signal calls');
+    expect(userMsg).toContain('91.5% PFE win rate');
+    expect(userMsg).toContain('12 exchanges');
+
+    // Ordering is load-bearing: the authoritative block must precede both the
+    // question and the snippets it overrides.
+    const blockAt = userMsg.indexOf('CURRENT TRACK RECORD');
+    const questionAt = userMsg.indexOf('how many signal calls');
+    const snippetsAt = userMsg.indexOf('Context snippets:');
+    expect(blockAt).toBeGreaterThanOrEqual(0);
+    expect(snippetsAt).toBeGreaterThan(-1);
+    expect(blockAt).toBeLessThan(questionAt);
+    expect(questionAt).toBeLessThan(snippetsAt);
+  });
+
+  it('still injects the block when there are no context snippets', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'algovault-chat-nosnip-'));
+    const file = join(dir, 'latest.json');
+    writeFileSync(file, JSON.stringify({ ...FIXTURE_BUNDLE, tools: [], integrations: [] }));
+    const index = new KnowledgeIndex(file);
+    await index.build();
+    cleanups.push(() => index.stopWatching());
+
+    const search = new SearchEngine(index, new ResultCache<SearchResult[]>({ ttlMs: 60_000, max: 100 }));
+    const llm = new CountingStub();
+    const chat = new ChatEngine(search, llm, new ResultCache<ChatResult>({ ttlMs: 60_000, max: 100 }));
+
+    await chat.chat('zzzz no match qqqq');
+    expect(llm.calls[0].messages[0].content).toContain('CURRENT TRACK RECORD');
+  });
+
+  it('a chat answer is never blocked or blanked by track-record trouble', async () => {
+    getSignalPerformanceMock.mockRejectedValue(new Error('db down'));
+    const { chat, llm, cleanup } = await makeChatStack();
+    cleanups.push(cleanup);
+
+    const r = await chat.chat('what tools are available');
+    expect(r.answer).toBe('[stub-answer:1]');
+    // Fails open to the labelled static floor rather than an empty preamble.
+    expect(llm.calls[0].messages[0].content).toContain('[STATIC] CURRENT TRACK RECORD');
+  });
+
+  it('system prompt carries the override rule and no baked exchange count', () => {
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('CURRENT TRACK RECORD');
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('authoritative and live');
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('ignore the snippet');
+    // The stale hardcoded count is gone — and no digit-count of exchanges
+    // may reappear in its place (forward stability).
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).not.toContain('5 exchanges');
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).not.toMatch(/\b\d+\s+exchanges\b/);
+    expect(CHAT_ENGINE_SYSTEM_PROMPT).toContain('major crypto exchanges');
   });
 });
