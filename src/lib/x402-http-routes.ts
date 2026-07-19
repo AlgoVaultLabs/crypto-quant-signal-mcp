@@ -67,8 +67,13 @@ function tolerantJson(req: Request, res: Response, next: NextFunction): void {
 function logCrawl(req: Request, res: Response, next: NextFunction): void {
   res.on('finish', () => {
     const ua = String(req.headers['user-agent'] || '').slice(0, 80);
-    const paid = req.headers['x-payment'] ? 'y' : 'n';
-    console.log(`[x402-route] ${req.method} ${req.path} status=${res.statusCode} xpayment=${paid} ua="${ua}"`);
+    // Count BOTH dialects: v2 clients send `Payment-Signature`, v1 sends `x-payment`.
+    // Reading only v1 logged every real v2 payment as `paid=n` — i.e. as an unpaid crawl,
+    // the observability half of the v1/v2 defect (OPS-X402-V2-PAYMENT-SIGNATURE-HEADER-W1).
+    const v2 = req.headers['payment-signature'];
+    const paid = v2 || req.headers['x-payment'] ? 'y' : 'n';
+    const dialect = v2 ? 'v2' : (req.headers['x-payment'] ? 'v1' : '-');
+    console.log(`[x402-route] ${req.method} ${req.path} status=${res.statusCode} paid=${paid} dialect=${dialect} ua="${ua}"`);
   });
   next();
 }

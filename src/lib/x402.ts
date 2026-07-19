@@ -7,7 +7,8 @@
  * Flow:
  * 1. Agent sends HTTP request without payment
  * 2. Server responds 402 with PaymentRequired (price, asset, network, recipient)
- * 3. Agent signs ERC-3009 transferWithAuthorization, attaches to x-payment header
+ * 3. Agent signs ERC-3009 transferWithAuthorization and attaches the payload to the
+ *    `Payment-Signature` header (x402 v2, canonical) or `x-payment` (v1) — both accepted
  * 4. Server verifies signature via Facilitator (~100ms)
  * 5. Server responds immediately, settles on-chain asynchronously (~2s)
  *
@@ -15,6 +16,7 @@
  * skipped entirely and the server falls through to API key / free tiers.
  */
 import { x402ResourceServer } from '@x402/core/server';
+import { decodePaymentSignatureHeader } from '@x402/core/http';
 import { bazaarResourceServerExtension } from '@x402/extensions/bazaar';
 import type { X402ToolPricing } from '../types.js';
 import { createFacilitatorClient, resolveFacilitatorFromEnv } from './x402-facilitator.js';
@@ -116,10 +118,34 @@ export function _getActiveGatewayForTest(): CircleGatewayConfig | null {
 
 // ── Result types ──
 
+/**
+ * Why a verification attempt did NOT yield `valid: true`.
+ *
+ * OPS-X402-V2-PAYMENT-SIGNATURE-HEADER-W1: the parent wave (Circle Gateway testnet settle)
+ * lost a debugging cycle because every rejection path returned a bare `{ valid: false }` —
+ * making "we never saw a payment header", "the vendor rejected the signature" and "our
+ * credentials are wrong" indistinguishable from the outside. An UNPAID request and a
+ * MALFORMED-dialect request looked identical. Naming each branch is what makes a future
+ * wire-protocol mismatch diagnosable instead of invisible.
+ *
+ * Purely additive — no existing consumer reads this field.
+ */
+export type X402RejectReason =
+  | 'not_configured'        // resource server absent / initX402 never ran
+  | 'no_payment_header'     // neither v2 Payment-Signature nor v1 x-payment present
+  | 'decode_failed'         // header present but neither base64-v2 nor raw-JSON-v1 decoded
+  | 'no_matching_requirement' // decoded, but matched no pre-built requirement for this tool
+  | 'facilitator_invalid'   // facilitator verified and rejected (bad signature, funds, nonce)
+  | 'verify_error';         // unexpected throw
+
 export interface X402VerificationResult {
   valid: boolean;
   paidAmount?: number;
   payer?: string;
+  /** Which dialect the proof arrived in — observability only. */
+  dialect?: 'v2-payment-signature' | 'v1-x-payment';
+  /** Set whenever `valid === false`. Additive; no consumer reads it yet. */
+  rejectReason?: X402RejectReason;
   /** Opaque refs needed for async settlement */
   _settlement?: { paymentPayload: unknown; requirements: unknown };
 }
@@ -355,7 +381,48 @@ export async function initX402(): Promise<void> {
 // ── Verification ──
 
 /**
- * Verify an x402 payment proof from the x-payment header.
+ * Decode an x402 payment header into its PaymentPayload, accepting BOTH wire dialects.
+ *
+ * OPS-X402-V2-PAYMENT-SIGNATURE-HEADER-W1. Two dialects exist in the wild:
+ *
+ *   - **base64** — what `@x402/core`'s own client emits for BOTH versions
+ *     (`encodePaymentSignatureHeader` = `safeBase64Encode(JSON.stringify(p))`); only the
+ *     header NAME differs by version (v2 `PAYMENT-SIGNATURE`, v1 `X-PAYMENT`). Circle's
+ *     `GatewayClient` also base64-encodes. This is the STANDARD.
+ *   - **raw JSON** — the non-standard dialect this server historically required, because
+ *     verification was a bare `JSON.parse`. The live CDP/operator-harness clients emit it
+ *     deliberately to match (see algovault-x402-settle/settle.mjs).
+ *
+ * Dispatching on SHAPE is provably unambiguous, which is what makes accepting both safe:
+ * raw JSON always fails the SDK's `Base64EncodedRegex` (it starts `{`, not a base64 char),
+ * and base64 always fails `JSON.parse`. Neither dialect can be mistaken for the other, so
+ * no currently-accepted input changes path. Pinned by a test in
+ * tests/x402-v2-payment-signature.test.ts so a future SDK change can't silently break it.
+ *
+ * Exported so the dialect logic is unit-testable without booting the server.
+ *
+ * @throws if the value is neither valid base64-wrapped JSON nor raw JSON.
+ */
+export function decodeX402PaymentHeader(raw: string): unknown {
+  try {
+    // Base64 (standard, both versions) — the SDK validates the charset then JSON-parses.
+    return decodePaymentSignatureHeader(raw);
+  } catch {
+    // Raw JSON (the dialect the live rail sends today). Throws on garbage → caller maps
+    // it to `decode_failed` rather than swallowing it as "unpaid".
+    return JSON.parse(raw);
+  }
+}
+
+/**
+ * Verify an x402 payment proof from the payment header.
+ *
+ * Accepts x402 **v2** `Payment-Signature` (canonical — every v2 client, incl. Circle's
+ * `GatewayClient`) and x402 **v1** `x-payment` (back-compat with the live CDP rail).
+ * v2 is read first, per official x402 migration guidance. Node lowercases inbound header
+ * names and both entrypoints pass Express `req.headers`, so the lowercase lookups are the
+ * load-bearing ones; the `X-Payment` variant is kept for non-Express callers.
+ *
  * Returns verification result with settlement refs for async settle.
  */
 export async function verifyX402Payment(
@@ -363,17 +430,31 @@ export async function verifyX402Payment(
   toolName?: string,
 ): Promise<X402VerificationResult> {
   if (!resourceServer || !initialized) {
-    return { valid: false };
+    return { valid: false, rejectReason: 'not_configured' };
   }
 
-  const paymentHeader = headers['x-payment'] || headers['X-Payment'];
+  const v2Header = headers['payment-signature'] || headers['Payment-Signature'];
+  const v1Header = headers['x-payment'] || headers['X-Payment'];
+  const paymentHeader = v2Header || v1Header;
   if (!paymentHeader) {
-    return { valid: false };
+    return { valid: false, rejectReason: 'no_payment_header' };
+  }
+  const dialect = v2Header ? 'v2-payment-signature' as const : 'v1-x-payment' as const;
+
+  let paymentPayload: unknown;
+  try {
+    paymentPayload = decodeX402PaymentHeader(paymentHeader);
+  } catch (err) {
+    // Distinct from `no_payment_header`: a client DID present a proof, we just couldn't
+    // read it. This is the branch that stayed silent through the whole v1/v2 defect.
+    console.warn(
+      `x402 verify: ${dialect} header present but undecodable — ` +
+      `${err instanceof Error ? err.message : err}`,
+    );
+    return { valid: false, dialect, rejectReason: 'decode_failed' };
   }
 
   try {
-    const paymentPayload = JSON.parse(paymentHeader);
-
     // X402-01 (generator-level hardening): when the caller names the target tool,
     // match the proof against ONLY that tool's pre-built requirement — never the
     // flattened cross-tool pool. This binds the proof to the requested route's
@@ -384,31 +465,34 @@ export async function verifyX402Payment(
     const candidateReqs = toolName
       ? (toolRequirements.get(toolName) ?? [])
       : Array.from(toolRequirements.values()).flat();
+    const typedPayload = paymentPayload as Parameters<typeof resourceServer.verifyPayment>[0];
     const matchingReqs = resourceServer.findMatchingRequirements(
       candidateReqs as Parameters<typeof resourceServer.findMatchingRequirements>[0],
-      paymentPayload,
+      typedPayload,
     );
 
     if (!matchingReqs) {
-      return { valid: false };
+      console.warn(`x402 verify: ${dialect} proof matched no requirement for tool=${toolName ?? '(flattened pool)'}`);
+      return { valid: false, dialect, rejectReason: 'no_matching_requirement' };
     }
 
     // Verify via Facilitator (fast, ~100ms)
-    const verifyResult = await resourceServer.verifyPayment(paymentPayload, matchingReqs);
+    const verifyResult = await resourceServer.verifyPayment(typedPayload, matchingReqs);
 
     if (!verifyResult.isValid) {
-      console.warn(`x402 verify failed: ${verifyResult.invalidReason} — ${verifyResult.invalidMessage}`);
-      return { valid: false };
+      console.warn(`x402 verify failed [${dialect}]: ${verifyResult.invalidReason} — ${verifyResult.invalidMessage}`);
+      return { valid: false, dialect, rejectReason: 'facilitator_invalid' };
     }
 
     return {
       valid: true,
+      dialect,
       payer: verifyResult.payer,
       _settlement: { paymentPayload, requirements: matchingReqs },
     };
   } catch (err) {
-    console.error('x402 verify error:', err instanceof Error ? err.message : err);
-    return { valid: false };
+    console.error(`x402 verify error [${dialect}]:`, err instanceof Error ? err.message : err);
+    return { valid: false, dialect, rejectReason: 'verify_error' };
   }
 }
 
