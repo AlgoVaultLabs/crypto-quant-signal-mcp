@@ -31,7 +31,7 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
         '• Total Agent Calls: 1069', // 100 + 965 + 4 (no TG bot in this payload)
         '• 🟢 Recognized clients: 100',
         '• 🔌 Raw API clients: 965   (top IP 22.5%)',
-        '• 💳 Paid (x402 / a2mcp): 4',
+        '• 💳 Paid: 4', // OPS-DIGEST-PAID-RAIL-SPLIT-W1: bare total — no rail split in this payload
         '• Top assets (24h): BTC, ETH, SOL',
         '',
         '👥 *Sessions (24h)*',
@@ -73,7 +73,7 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
     const out = formatAgentActivity(legacy);
     expect(out).toContain('• 🟢 Recognized clients: —');
     expect(out).toContain('• 🔌 Raw API clients: —   (top IP —%)');
-    expect(out).toContain('• 💳 Paid (x402 / a2mcp): —');
+    expect(out).toContain('• 💳 Paid: —');
     expect(out).toContain('• Top assets (24h): BTC');
     expect(out).toContain('👥 *Sessions (24h)*');
   });
@@ -87,8 +87,9 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
     });
     expect(out).toContain('• 🟢 Recognized clients: 0');
     expect(out).toContain('• 🔌 Raw API clients: 0   (top IP 0%)');
-    expect(out).toContain('• 💳 Paid (x402 / a2mcp): 0');
-    expect(out).toContain('• 💳 Paid: 0');
+    // OPS-DIGEST-PAID-RAIL-SPLIT-W1: calls AND sessions lines both render the bare zero
+    // total (this payload carries no rail split) — count them so the two stay distinguishable.
+    expect(out.split('\n').filter((l) => l === '• 💳 Paid: 0')).toHaveLength(2);
     expect(out).toContain('• Top assets (24h): —');
   });
 });

@@ -10,6 +10,10 @@ import { dbExec, dbRun, dbQuery } from './performance-db.js';
 // analytics.ts is a leaf (only performance-db + crypto); license.ts does NOT import
 // analytics → this edge is a DAG, no import cycle (verified in Plan Mode).
 import { getRequestIsAutomated } from './license.js';
+// OPS-DIGEST-PAID-RAIL-SPLIT-W1: the ONE canonical tier→rail map. Pure leaf (type-only
+// import of LicenseTier) → no cycle. The IN-lists below are BUILT from these arrays, so a
+// newly-added paid tier cannot drift out of the split.
+import { SUBSCRIPTION_TIERS, X402_TIERS } from './payment-rail.js';
 
 // ── Table creation ──
 
@@ -507,6 +511,11 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
   const BOT_TRUE = process.env.DATABASE_URL ? true : 1;
   const BOT_FALSE = process.env.DATABASE_URL ? false : 0;
 
+  // OPS-DIGEST-PAID-RAIL-SPLIT-W1: placeholder lists generated from the canonical rail map
+  // (never a hand-written IN-list that could drift from PAYMENT_RAIL_BY_TIER).
+  const subTierPlaceholders = SUBSCRIPTION_TIERS.map(() => '?').join(',');
+  const x402TierPlaceholders = X402_TIERS.map(() => '?').join(',');
+
   const [
     total,
     last24h,
@@ -538,6 +547,11 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     rawTopSessions24h,
     // OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1: the bot's latest daily metric (Option A bridge).
     botDailyMetrics,
+    // OPS-DIGEST-PAID-RAIL-SPLIT-W1: the 💳 Paid bucket split BY PAYMENT RAIL.
+    paidSubscription24h,
+    paidX40224h,
+    paidSubscriptionSessions24h,
+    paidX402Sessions24h,
   ] = await Promise.all([
     // DASH-EXTERNAL-ONLY-W1: every dashboard tile / breakdown counts EXTERNAL
     // calls only (internal loopback like algovault-bot excluded). Per CLAUDE.md
@@ -604,6 +618,15 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       subscribers: string;
       generated_at: string;
     }>('SELECT metric_date, calls_total, calls_watch, calls_scanwatch, calls_scan, subscribers, generated_at FROM bot_daily_metrics ORDER BY metric_date DESC LIMIT 1', []),
+    // OPS-DIGEST-PAID-RAIL-SPLIT-W1: 💳 Paid split by payment RAIL, so the digest stops
+    // labelling Stripe-subscription traffic as "x402 / a2mcp". Same window + same
+    // is_bot_internal filter as `genuinePaid24h`, so the two rails sum to `paid` unless a
+    // paid tier is unclassified — which the renderer surfaces as `other N`, never drops.
+    // Base x402 and OKX a2mcp both resolve to tier='x402' and are NOT separable here.
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND license_tier IN (${subTierPlaceholders})`, [dayAgo, BOT_FALSE, ...SUBSCRIPTION_TIERS]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND license_tier IN (${x402TierPlaceholders})`, [dayAgo, BOT_FALSE, ...X402_TIERS]),
+    dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier IN (${subTierPlaceholders})`, [dayAgo, BOT_FALSE, ...SUBSCRIPTION_TIERS]),
+    dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier IN (${x402TierPlaceholders})`, [dayAgo, BOT_FALSE, ...X402_TIERS]),
   ]);
 
   // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: concentration % of the top talkers
@@ -658,6 +681,14 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       // stays = genuine-total for back-compat.)
       freeSessions: Number(recognizedSessions24h[0]?.count ?? 0),
       paidSessions: Number(paidSessions24h[0]?.count ?? 0),
+      // OPS-DIGEST-PAID-RAIL-SPLIT-W1: ADDITIVE per-rail split of `paid`/`paidSessions`
+      // (the aggregates above are unchanged — add before you remove, per Data Integrity).
+      // Invariant: paidSubscription + paidX402 <= paid; any shortfall is an unclassified
+      // paid tier and renders as `other N` in the digest.
+      paidSubscription: Number(paidSubscription24h[0]?.count ?? 0),
+      paidX402: Number(paidX40224h[0]?.count ?? 0),
+      paidSubscriptionSessions: Number(paidSubscriptionSessions24h[0]?.count ?? 0),
+      paidX402Sessions: Number(paidX402Sessions24h[0]?.count ?? 0),
       last7d: {
         total: Number(genuineFree7d[0]?.count ?? 0) + Number(genuinePaid7d[0]?.count ?? 0),
         free: Number(genuineFree7d[0]?.count ?? 0),

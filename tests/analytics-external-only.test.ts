@@ -358,4 +358,48 @@ describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bo
       d((s) => s.totalCallsExternal.last24h),
     );
   });
+
+  // OPS-DIGEST-PAID-RAIL-SPLIT-W1
+  it('getUsageStats splits the paid bucket by payment RAIL, and the rails account for paid', async () => {
+    type RailSplit = {
+      externalGenuine: {
+        paid: number;
+        paidSubscription: number;
+        paidX402: number;
+        paidSessions: number;
+        paidSubscriptionSessions: number;
+        paidX402Sessions: number;
+      };
+    };
+    const pre = (await getUsageStats()) as unknown as RailSplit;
+
+    // 3 subscription tiers · 2 x402 · 1 free · 1 internal (both excluded from `paid`).
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'starter', responseTimeMs: 10 });
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'pro', responseTimeMs: 10 });
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'enterprise', responseTimeMs: 10 });
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'x402', responseTimeMs: 10 });
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'x402', responseTimeMs: 10 });
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'free', responseTimeMs: 10 });
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'internal', responseTimeMs: 10, isBotInternal: true });
+    await new Promise((r) => setTimeout(r, 120));
+
+    const post = (await getUsageStats()) as unknown as RailSplit;
+    const d = (f: (s: RailSplit) => number) => f(post) - f(pre);
+
+    expect(d((s) => s.externalGenuine.paidSubscription)).toBe(3); // starter + pro + enterprise
+    expect(d((s) => s.externalGenuine.paidX402)).toBe(2);
+    expect(d((s) => s.externalGenuine.paid)).toBe(5);
+
+    // The whole point of the wave: the rails must ACCOUNT for the paid bucket, so a
+    // 100%-subscription bucket can never again be labelled "x402 / a2mcp".
+    expect(
+      d((s) => s.externalGenuine.paidSubscription) + d((s) => s.externalGenuine.paidX402),
+    ).toBe(d((s) => s.externalGenuine.paid));
+
+    // Session-side split exists and is bounded by the paid-session total.
+    expect(d((s) => s.externalGenuine.paidSubscriptionSessions)).toBeGreaterThanOrEqual(0);
+    expect(
+      d((s) => s.externalGenuine.paidSubscriptionSessions) + d((s) => s.externalGenuine.paidX402Sessions),
+    ).toBeLessThanOrEqual(d((s) => s.externalGenuine.paidSessions));
+  });
 });
