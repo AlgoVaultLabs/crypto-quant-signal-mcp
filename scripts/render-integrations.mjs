@@ -32,6 +32,13 @@ const ROOT = resolve(__dirname, '..');
 // createRequire loads the tsc-emitted CJS module from this ESM script.
 const require = createRequire(import.meta.url);
 const { renderBrandFooter } = require(join(ROOT, 'dist', 'lib', 'footer-content.js'));
+// OPS-INTEGRATIONS-LIVE-SOT-W1: the supported-exchange COUNT comes from the one
+// venue SoT (src/lib/capabilities.ts → dist/lib/capabilities.js), never a hand-
+// typed literal, so the page count can't diverge from /api/performance-public.
+// NOTE: imported as SOT_EXCHANGE_COUNT — this file already has its own local
+// `EXCHANGES` const, which is the list of 7 tutorial SLUGS (binance, gemini,
+// kraken, …), a DIFFERENT set from the 12 signal venues. Do not conflate them.
+const { EXCHANGE_COUNT: SOT_EXCHANGE_COUNT } = require(join(ROOT, 'dist', 'lib', 'capabilities.js'));
 // BROKER-PAIRING-CRYPTO-W1 (2026-06-05): +3 crypto agentic-trading kits
 // (Gemini self-hosted MCP / Kraken CLI / Alpaca crypto MCP) extend the
 // exchange-kit tutorial pattern; sources in algovault-skills/docs/integrations/.
@@ -196,13 +203,61 @@ function pageTitle(exchange) {
   return `AlgoVault × ${display} — Build Verifiable AI Trading Agents`;
 }
 
-// WEBSITE-REFRESH-W1 C1 — number snapshot for description meta + initial render.
+// WEBSITE-REFRESH-W1 C1 — number snapshot for the initial render.
 // Live source of truth: /api/performance-public + /api/merkle-batches (proxied
 // at runtime by /js/track-record-proxy.js to update [data-tr-field] elements).
-const SNAPSHOT_DATE = '2026-04-26';
-const SNAPSHOT_PFE_WR = '89.4%';
-const SNAPSHOT_SIGNAL_COUNT = '56,375';
-const SNAPSHOT_BATCH_COUNT = '16';
+//
+// OPS-INTEGRATIONS-LIVE-SOT-W1: these were hand-maintained consts that last
+// moved on 2026-04-26 and rotted (89.4% / 56,375 vs a live 91.5% / 383,785).
+// They are now READ LIVE at regen; the literals below are only a fail-open
+// FLOOR. Monotonic-safe: every rendered count carries a trailing `+`, so a
+// floor understates rather than overstates.
+//
+// TODO: revisit fallback floor by 2026-08-03
+const SNAPSHOT_FALLBACK = Object.freeze({
+  pfeWr: '91.5%',
+  callCount: '383,785',
+  batchCount: '100',
+});
+
+/** Mutated once by `main()` before any page renders. */
+let SNAPSHOT = {
+  ...SNAPSHOT_FALLBACK,
+  date: new Date().toISOString().slice(0, 10),
+  live: false,
+};
+
+/**
+ * Read the live numbers exactly as `scripts/snapshot-landing-data.mjs` does —
+ * native fetch, short timeout, fail-open. A regen must never be blocked by an
+ * unreachable SoT; it just renders the floor.
+ *
+ * Values are validated before use: `pfeWinRate` is a FRACTION (`number | null`)
+ * and a bad/absent count would otherwise render "0.0%" / "0" as public fact.
+ */
+async function fetchSnapshot() {
+  const base = process.env.API_BASE_URL || 'https://api.algovault.com';
+  const out = { ...SNAPSHOT_FALLBACK, date: new Date().toISOString().slice(0, 10), live: false };
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  try {
+    const perf = await fetch(`${base}/api/performance-public`, { signal: AbortSignal.timeout(10000) })
+      .then((r) => (r.ok ? r.json() : null));
+    const calls = num(perf?.totalCalls);
+    const wr = num(perf?.overall?.pfeWinRate);
+    if (calls && wr && wr <= 1) {
+      out.callCount = calls.toLocaleString('en-US');
+      out.pfeWr = `${(wr * 100).toFixed(1)}%`;
+      out.live = true;
+    }
+  } catch { /* fail-open — floor stands */ }
+  try {
+    const merkle = await fetch(`${base}/api/merkle-batches`, { signal: AbortSignal.timeout(10000) })
+      .then((r) => (r.ok ? r.json() : null));
+    const n = Array.isArray(merkle?.batches) ? merkle.batches.length : 0;
+    if (n > 0) out.batchCount = String(n);
+  } catch { /* fail-open — floor stands */ }
+  return out;
+}
 
 function techArticleSchema(exchange, display) {
   // WEBSITE-REFRESH-W1 follow-up: replaced HowTo (deprecated by Google for
@@ -216,11 +271,15 @@ function techArticleSchema(exchange, display) {
     "headline": `AlgoVault × ${display} - Build Verifiable AI Trading Agents`,
     "url": canonical,
     "datePublished": "2026-04-25T00:00:00+00:00",
-    "dateModified": `${SNAPSHOT_DATE}T15:00:00+00:00`,
+    "dateModified": `${SNAPSHOT.date}T15:00:00+00:00`,
     "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
     "publisher": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com", "logo": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 } },
     "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
-    "description": `Pair AlgoVault MCP's composite verdict (${SNAPSHOT_PFE_WR}+ PFE Win Rate, Merkle-anchored on Base L2) with ${display}'s execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.`,
+    // OPS-INTEGRATIONS-LIVE-SOT-W1: crawler-facing prose carries NO volatile
+    // number. Meta + JSON-LD cannot self-heal (no client proxy runs for a
+    // crawler), so a baked figure here rots permanently — the class is killed
+    // by removing the number, not by refreshing it. Body spans keep the numbers.
+    "description": `Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with ${display}'s execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.`,
     "proficiencyLevel": "Intermediate|Advanced",
     "about": { "@type": "Thing", "name": `${display} integration with AlgoVault MCP composite verdict` }
   };
@@ -229,7 +288,7 @@ function techArticleSchema(exchange, display) {
 function htmlShell(exchange, bodyHtml) {
   const title = pageTitle(exchange);
   const display = DISPLAY_NAMES[exchange] ?? (exchange.charAt(0).toUpperCase() + exchange.slice(1));
-  const description = `Pair AlgoVault MCP's composite verdict with ${display}'s agent execution kit. Free testnet demo · ${SNAPSHOT_PFE_WR} PFE Win Rate · ${SNAPSHOT_SIGNAL_COUNT}+ calls · ${SNAPSHOT_BATCH_COUNT}+ Merkle-verified on-chain batches.`;
+  const description = `Pair AlgoVault MCP's verifiable, Merkle-anchored composite verdict across our supported exchanges with ${display}'s agent execution kit. Free testnet demo — zero real-money risk in any code path.`;
   const canonical = `https://algovault.com/integrations/${exchange}`;
   const techArticle = JSON.stringify(techArticleSchema(exchange, display), null, 2);
   return `<!DOCTYPE html>
@@ -246,7 +305,7 @@ function htmlShell(exchange, bodyHtml) {
 <meta property="og:type" content="article">
 <meta property="og:url" content="${canonical}">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="${SNAPSHOT_DATE}">
+<meta name="last-updated" content="${SNAPSHOT.date}">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -321,7 +380,7 @@ ${NAV_REGION_MARKERS}
       <div class="placeholder-cap" style="margin-bottom:14px">· ${exchange} integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT_PFE_WR}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="signal_count">${SNAPSHOT_SIGNAL_COUNT}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">${SNAPSHOT.pfeWr}</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">${SNAPSHOT.callCount}</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -375,17 +434,23 @@ async function renderOne(exchange) {
     /<a href="https:\/\/algovault\.com\/track-record">/g,
     `<a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'${exchange}',campaign:'track-record'}})">`,
   );
-  // AUTO-TRACE-W1 (2026-04-30): wrap the literal capability counter "5
+  // AUTO-TRACE-W1 (2026-04-30): wrap the literal capability counter "N
   // exchanges" with the live-proxy span so every re-render preserves the
   // auto-update behavior. The upstream MD source is owned by the
   // algovault-skills repo; doing the wrap here keeps the post-process
   // localized and means the upstream MD doesn't have to know about the
   // proxy contract. Idempotent: re-running on already-wrapped HTML is a
-  // no-op because the inner literal "5 exchanges" no longer matches the
-  // unwrapped pattern.
+  // no-op because the digits are then followed by "</span>", not " exchanges".
+  //
+  // OPS-INTEGRATIONS-LIVE-SOT-W1: matches ANY digit count, not just the
+  // upstream's hardcoded "5", and NORMALISES it to the venue SoT. Upstream MD
+  // still says "5 exchanges"; rather than requiring an external-repo edit to
+  // correct it, the generator now rewrites whatever number it finds to
+  // SOT_EXCHANGE_COUNT — so an out-of-date upstream can no longer leak a wrong
+  // count onto a public page.
   bodyHtml = bodyHtml.replace(
-    /(?<!data-tr-field="exchange_count">)\b5 exchanges\b/g,
-    '<span data-tr-field="exchange_count">5</span> exchanges',
+    /(?<!data-tr-field="exchange_count">)\b\d+ exchanges\b/g,
+    `<span data-tr-field="exchange_count">${SOT_EXCHANGE_COUNT}</span> exchanges`,
   );
   const html = htmlShell(exchange, bodyHtml);
   await writeFile(dstPath, html);
@@ -394,6 +459,14 @@ async function renderOne(exchange) {
 
 async function main() {
   await mkdir(TARGET_DIR, { recursive: true });
+  // OPS-INTEGRATIONS-LIVE-SOT-W1: read the numbers ONCE, before any page
+  // renders, so all 16 mirrors carry an identical, live snapshot.
+  SNAPSHOT = await fetchSnapshot();
+  console.log(
+    `[render] snapshot ${SNAPSHOT.live ? 'LIVE' : 'FALLBACK (SoT unreachable — rendering floor)'}` +
+    ` pfeWr=${SNAPSHOT.pfeWr} callCount=${SNAPSHOT.callCount} batchCount=${SNAPSHOT.batchCount}` +
+    ` exchanges=${SOT_EXCHANGE_COUNT} date=${SNAPSHOT.date}`,
+  );
   console.log(`[render] source(exchanges + frameworks)=${SOURCE_DIR}`);
   console.log(`[render] source(mcp-clients)=${LOCAL_MCP_CLIENTS_DIR}`);
   console.log(`[render] target=${TARGET_DIR}`);
