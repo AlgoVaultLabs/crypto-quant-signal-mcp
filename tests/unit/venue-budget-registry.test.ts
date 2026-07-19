@@ -10,13 +10,18 @@
 import { describe, it, expect } from 'vitest';
 import { getVenueBudget } from '../../src/lib/venue-budget-registry.js';
 import { WeightBudget } from '../../src/lib/upstream-weight-budget.js';
+import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
 
 describe('venue-budget-registry', () => {
-  it('resolves all five budgeted venues to a WeightBudget', () => {
-    for (const id of ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']) {
+  // Iterates the SoT rather than a literal list, so this test cannot drift out of sync
+  // with a future promotion the way the hardcoded 5-venue version did
+  // (OPS-TELEMETRY-DIGEST-REFRAME-W1).
+  it('resolves EVERY promoted venue to a WeightBudget', () => {
+    expect(PROMOTED_VENUE_IDS.length).toBeGreaterThanOrEqual(12);
+    for (const id of PROMOTED_VENUE_IDS) {
       const entry = getVenueBudget(id);
       expect(entry, id).not.toBeNull();
-      expect(entry!.budget).toBeInstanceOf(WeightBudget);
+      expect(entry!.budget, id).toBeInstanceOf(WeightBudget);
     }
   });
 
@@ -38,15 +43,32 @@ describe('venue-budget-registry', () => {
     }
   });
 
-  it('returns null for delay-paced shadow venues + unknown ids (sparse Map)', () => {
-    for (const id of ['ASTER', 'KUCOIN', 'MEXC', 'PHEMEX', 'BITMART', 'XT', 'NOPE', '']) {
+  // ASTER/KUCOIN/MEXC/PHEMEX were in this list until OPS-TELEMETRY-DIGEST-REFRAME-W1 —
+  // they are PROMOTED (OPS-VENUE-GO-LIVE-2026-06-30) and now correctly resolve non-null.
+  // Only the genuinely-shadow set stays null.
+  it('returns null for delay-paced shadow venues + unknown ids (sparse shadow map)', () => {
+    for (const id of ['BITMART', 'EDGEX', 'WEEX', 'WHITEBIT', 'XT', 'NOPE', '']) {
       expect(getVenueBudget(id), id).toBeNull();
     }
   });
 
+  it('the promoted set and the shadow set are disjoint (no venue is both)', () => {
+    for (const id of ['BITMART', 'EDGEX', 'WEEX', 'WHITEBIT', 'XT']) {
+      expect(PROMOTED_VENUE_IDS as readonly string[], id).not.toContain(id);
+    }
+  });
+
   it('each budgeted venue is a distinct WeightBudget instance', () => {
-    const budgets = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET'].map((id) => getVenueBudget(id)!.budget);
-    expect(new Set(budgets).size).toBe(5);
+    const budgets = PROMOTED_VENUE_IDS.map((id) => getVenueBudget(id)!.budget);
+    expect(new Set(budgets).size).toBe(PROMOTED_VENUE_IDS.length);
+  });
+
+  it('per-endpoint-weight venues cost their documented weight, not a flat 1', () => {
+    // KuCoin klines draw 3 from the public pool; Phemex klines draw 10 from the
+    // "Others" group. A flat 1 would under-model both and invite the exact bans
+    // the budget exists to prevent.
+    expect(getVenueBudget('KUCOIN')!.weightFor({})).toBe(3);
+    expect(getVenueBudget('PHEMEX')!.weightFor({})).toBe(10);
   });
 
   it('a budgeted entry can acquire (vitest ledger is unbounded; never throttles)', async () => {
