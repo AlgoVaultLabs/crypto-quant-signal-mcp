@@ -276,6 +276,10 @@ export interface ClientActivity24h {
     raw_api: number | null;
     raw_api_top1_pct: number | null; // percent (0-100), 1 decimal — top IP's share of the Raw-API bucket
     paid: number | null;
+    // OPS-DIGEST-PAID-RAIL-SPLIT-W1: `paid` broken down by payment RAIL. Base x402 and OKX
+    // a2mcp both resolve to tier='x402', so they share one bucket.
+    paid_subscription: number | null;
+    paid_x402: number | null;
     tg_bot: number | null;
     tg_bot_breakdown: { watch: number | null; scanwatch: number | null; scan: number | null };
   };
@@ -284,6 +288,8 @@ export interface ClientActivity24h {
     recognized: number | null;
     raw_api: number | null;
     paid: number | null;
+    paid_subscription: number | null;
+    paid_x402: number | null;
     tg_bot_subscribers: number | null;
   };
   note: string;
@@ -305,6 +311,8 @@ export function projectClientActivity(u: Record<string, unknown> | null): Client
       raw_api: nestedInt(u, 'externalAutomated', 'total'),
       raw_api_top1_pct: nestedFloat(u, 'rawConcentration', 'top1_pct'),
       paid: nestedInt(u, 'externalGenuine', 'paid'),
+      paid_subscription: nestedInt(u, 'externalGenuine', 'paidSubscription'),
+      paid_x402: nestedInt(u, 'externalGenuine', 'paidX402'),
       tg_bot: tg ? safeCount(tg.calls_total) : null,
       tg_bot_breakdown: {
         watch: tg ? safeCount(tg.calls_watch) : null,
@@ -317,6 +325,8 @@ export function projectClientActivity(u: Record<string, unknown> | null): Client
       recognized: nestedInt(u, 'externalGenuine', 'freeSessions'),
       raw_api: nestedInt(u, 'externalAutomated', 'sessions'),
       paid: nestedInt(u, 'externalGenuine', 'paidSessions'),
+      paid_subscription: nestedInt(u, 'externalGenuine', 'paidSubscriptionSessions'),
+      paid_x402: nestedInt(u, 'externalGenuine', 'paidX402Sessions'),
       tg_bot_subscribers: tg ? safeCount(tg.subscribers) : null,
     },
     note: 'Same source (getUsageStats) + 24h window as the Telegram daily digest — matches it number-for-number; client-TYPE split, distinct from the acquisition-source channels above',

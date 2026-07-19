@@ -343,9 +343,31 @@ describe('projectClientActivity (mirrors the Telegram digest, single-derivation)
     const ca = projectClientActivity(usage);
     expect(ca.calls).toEqual({
       total: 707, recognized: 12, raw_api: 641, raw_api_top1_pct: 10.3, paid: 0,
+      // OPS-DIGEST-PAID-RAIL-SPLIT-W1: null (not 0) — this legacy fixture carries no rail
+      // split, mirroring a /analytics payload from before the split shipped.
+      paid_subscription: null, paid_x402: null,
       tg_bot: 54, tg_bot_breakdown: { watch: 16, scanwatch: 38, scan: 0 },
     });
-    expect(ca.sessions).toEqual({ total: 81, recognized: 10, raw_api: 50, paid: 0, tg_bot_subscribers: 21 });
+    expect(ca.sessions).toEqual({
+      total: 81, recognized: 10, raw_api: 50, paid: 0,
+      paid_subscription: null, paid_x402: null, tg_bot_subscribers: 21,
+    });
+  });
+  // OPS-DIGEST-PAID-RAIL-SPLIT-W1
+  it('projects the per-rail paid split when /analytics supplies it', () => {
+    const ca = projectClientActivity({
+      ...usage,
+      externalGenuine: {
+        free: 340, paid: 162, freeSessions: 43, paidSessions: 47,
+        paidSubscription: 162, paidX402: 0,
+        paidSubscriptionSessions: 47, paidX402Sessions: 0,
+      },
+    });
+    expect(ca.calls.paid).toBe(162);
+    expect(ca.calls.paid_subscription).toBe(162);
+    expect(ca.calls.paid_x402).toBe(0);
+    expect(ca.sessions.paid_subscription).toBe(47);
+    expect(ca.sessions.paid_x402).toBe(0);
   });
   it('preserves the top-IP percent as a float (not truncated)', () => {
     expect(projectClientActivity(usage).calls.raw_api_top1_pct).toBe(10.3);

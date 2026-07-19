@@ -10,7 +10,16 @@
  * (measurement clarity, NOT gating — Mr.1: free traffic stays wide-open):
  *   🟢 Recognized clients = free-tier, not isbot-flagged (externalGenuine.free)
  *   🔌 Raw API clients    = free-tier, isbot-flagged bare-SDK/HTTP UAs (externalAutomated)
- *   💳 Paid (x402/a2mcp)  = any non-free non-internal tier (externalGenuine.paid)
+ *   💳 Paid               = any non-free non-internal tier (externalGenuine.paid), broken
+ *                           down BY PAYMENT RAIL — `subscription` (Stripe starter/pro/
+ *                           enterprise) vs `x402/a2mcp` (pay-per-call). Rails come from the
+ *                           one canonical map in payment-rail.ts. Pre-OPS-DIGEST-PAID-RAIL-
+ *                           SPLIT-W1 this line was labelled "Paid (x402 / a2mcp)" while
+ *                           counting ANY paid tier — it read 162 on 2026-07-19 with the x402
+ *                           rail at zero settlements, i.e. the label named two rails that
+ *                           contributed nothing. The breakdown is OMITTED (bare total) when
+ *                           the split fields are absent, so a digest fired during the
+ *                           rollout window still renders.
  *   🔁 TG bot             = the algovault-bot's OWN daily metric, bridged via shared Postgres
  *                           (`tgBot`, from bot_daily_metrics) — Watch/Scanwatch/Scan + subscribers
  * plus a mirrored per-channel Sessions block. The "top IP %" concentration sits on the
@@ -33,6 +42,17 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
   const num = (v: unknown, fallback: number | string = '—'): number | string =>
     typeof v === 'number' ? v : fallback;
   const genuine = (a.externalGenuine ?? {}) as Record<string, unknown>;
+  // Per-rail breakdown for the 💳 Paid lines. Rendered ONLY when both rail counts are
+  // present (a digest fired before the /analytics deploy lands degrades to the bare
+  // total). An unreconciled remainder surfaces as `other N` rather than vanishing —
+  // a paid tier that is neither rail must be visible, not silently dropped.
+  const railSuffix = (total: unknown, subscription: unknown, x402: unknown): string => {
+    if (typeof subscription !== 'number' || typeof x402 !== 'number') return '';
+    const parts = [`subscription ${subscription}`, `x402/a2mcp ${x402}`];
+    const other = typeof total === 'number' ? total - subscription - x402 : 0;
+    if (other > 0) parts.push(`other ${other}`);
+    return `   (${parts.join(' · ')})`;
+  };
   const automated = (a.externalAutomated ?? {}) as Record<string, unknown>;
   // Concentration re-scoped to the Raw bucket; fall back to the legacy all-external field.
   const rawConc = (a.rawConcentration ?? a.externalConcentration ?? {}) as Record<string, unknown>;
@@ -77,7 +97,7 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
     `• Total Agent Calls: ${totalAgentCalls}`,
     `• 🟢 Recognized clients: ${num(genuine.free)}`,
     `• 🔌 Raw API clients: ${num(automated.total)}   (top IP ${num(rawConc.top1_pct)}%)`,
-    `• 💳 Paid (x402 / a2mcp): ${num(genuine.paid)}`,
+    `• 💳 Paid: ${num(genuine.paid)}${railSuffix(genuine.paid, genuine.paidSubscription, genuine.paidX402)}`,
     ...(tgCallsLine ? [tgCallsLine] : []),
     `• Top assets (24h): ${assetList}`,
     '',
@@ -85,7 +105,7 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
     `• Total Unique Sessions: ${totalUniqueSessions}`,
     `• 🟢 Recognized clients: ${num(genuine.freeSessions)}`,
     `• 🔌 Raw API clients: ${num(automated.sessions)}`,
-    `• 💳 Paid: ${num(genuine.paidSessions)}`,
+    `• 💳 Paid: ${num(genuine.paidSessions)}${railSuffix(genuine.paidSessions, genuine.paidSubscriptionSessions, genuine.paidX402Sessions)}`,
     ...(tgSessionsLine ? [tgSessionsLine] : []),
   ].join('\n');
 }

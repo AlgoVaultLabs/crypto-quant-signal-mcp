@@ -83,7 +83,7 @@ describe('formatAgentActivity — 🔁 TG bot line', () => {
         '• Total Agent Calls: 455', // 5 + 427 + 0 + 23 (TG bot folded in)
         '• 🟢 Recognized clients: 5',
         '• 🔌 Raw API clients: 427   (top IP 19.4%)',
-        '• 💳 Paid (x402 / a2mcp): 0',
+        '• 💳 Paid: 0', // OPS-DIGEST-PAID-RAIL-SPLIT-W1: bare total — this payload carries no rail split
         '• 🔁 TG bot: 23   (Watch 19 · Scanwatch 3 · Scan 1)',
         '• Top assets (24h): BTC',
         '',
