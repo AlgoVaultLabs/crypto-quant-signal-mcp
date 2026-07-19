@@ -42,18 +42,34 @@ describe('resolveCircleGatewayFromEnv — two-flag firewall (outer)', () => {
   });
 });
 
-describe('resolveCircleGatewayFromEnv — mainnet is structurally blocked (R5/AC5)', () => {
-  it('refuses the Circle MAINNET facilitator host', () => {
+/**
+ * FLIPPED by CIRCLE-GATEWAY-MAINNET-ENABLE-W1 (was: "mainnet is structurally blocked (R5/AC5)").
+ *
+ * CIRCLE-GATEWAY-MIGRATE-W1 deliberately scoped itself to testnet and encoded that scope as a test.
+ * This wave lifts it with architect approval, so the assertion is flipped rather than deleted — an
+ * exemption and the test that encodes it are a pair; deleting one half would leave the other a lie.
+ *
+ * What is lifted: the mainnet FACILITATOR HOST.
+ * What is NOT lifted, and is now MORE load-bearing: `eip155:8453` as a Gateway network. On Base the
+ * CDP and Gateway kinds are identical in all three keys the SDK dispatches on, so registering both
+ * silently drops the Gateway scheme (`register()` is first-wins) and advertises an unpayable entry.
+ * Mainnet Gateway therefore lives on OP Mainnet. The second test below is the guard against
+ * re-opening that collision via env alone.
+ */
+describe('resolveCircleGatewayFromEnv — mainnet host allowed, Base network still blocked', () => {
+  it('ACCEPTS the Circle MAINNET facilitator host (lifted by CIRCLE-GATEWAY-MAINNET-ENABLE-W1)', () => {
     const c = resolveCircleGatewayFromEnv({
       ...ON,
       CIRCLE_GATEWAY_SELLER_ADDRESS: SELLER,
       CIRCLE_GATEWAY_FACILITATOR_URL: CIRCLE_MAINNET_FACILITATOR_URL,
+      CIRCLE_GATEWAY_NETWORK: 'eip155:10',
     });
-    expect(c.enabled).toBe(false);
-    expect(c.reason).toMatch(/testnet-only/);
+    expect(c.enabled).toBe(true);
+    expect(c.facilitatorUrl).toBe(CIRCLE_MAINNET_FACILITATOR_URL);
+    expect(c.network).toBe('eip155:10');
   });
 
-  it('refuses a mainnet network (Base mainnet) even with a valid seller', () => {
+  it('STILL refuses Base mainnet as a Gateway network — that would re-open the exact-collision', () => {
     const c = resolveCircleGatewayFromEnv({
       ...ON,
       CIRCLE_GATEWAY_SELLER_ADDRESS: SELLER,

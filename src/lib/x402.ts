@@ -23,6 +23,8 @@ import { createFacilitatorClient, resolveFacilitatorFromEnv } from './x402-facil
 import { declareBazaarRoute } from './x402-bazaar.js';
 import { FEATURE_REGISTRY, getFeature } from './feature-registry.js';
 import {
+  GATEWAY_EIP712_DOMAIN_NAME,
+  gatewayRequirementsCarryDomain,
   createGatewayScheme,
   probeCircleFacilitator,
   resolveCircleGatewayFromEnv,
@@ -343,7 +345,23 @@ export async function initX402(): Promise<void> {
             payTo: gatewayActive.sellerAddress,
             price: `$${price}`,
           } as Parameters<typeof resourceServer.buildPaymentRequirements>[0]);
-          reqs.push(...gatewayReqs);
+
+          // CIRCLE-GATEWAY-MAINNET-ENABLE-W1 R1b — structural backstop. A successful build is NOT
+          // proof the Gateway scheme served it: if GatewayEvmScheme was silently dropped (which is
+          // what `register()`'s first-wins guard does whenever Gateway shares a network with CDP),
+          // this call still returns entries — plain CDP-shaped payments to the seller address with
+          // `extra = {}`, unpayable by any Gateway client. Only the EIP-712 domain distinguishes
+          // the two, so assert it and fail-open rather than advertise an unpayable rail.
+          if (!gatewayRequirementsCarryDomain(gatewayReqs)) {
+            console.warn(
+              `x402: Circle Gateway requirements for ${tool} lack the ${GATEWAY_EIP712_DOMAIN_NAME} ` +
+              `EIP-712 domain (network=${gatewayActive.network}) — the Gateway scheme did NOT serve ` +
+              'this build (scheme collision?). Gateway entry DROPPED; CDP entry retained.',
+            );
+            gatewayActive = null; // stop claiming ACTIVE in the startup log + later 402s
+          } else {
+            reqs.push(...gatewayReqs);
+          }
         } catch (err) {
           console.warn(
             `x402: Failed to build Circle Gateway requirements for ${tool} — CDP entry retained:`,

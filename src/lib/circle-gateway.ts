@@ -37,24 +37,61 @@ import { BatchFacilitatorClient, GatewayEvmScheme } from '@circle-fin/x402-batch
 
 /** Circle Gateway testnet facilitator. Live-probed 2026-07-17 → HTTP 200. */
 export const CIRCLE_TESTNET_FACILITATOR_URL = 'https://gateway-api-testnet.circle.com';
-/** Circle Gateway mainnet facilitator. NOT reachable from this wave — see MAINNET_BLOCKED. */
+/** Circle Gateway mainnet facilitator. Live-probed 2026-07-19 → 200, 11 networks. */
 export const CIRCLE_MAINNET_FACILITATOR_URL = 'https://gateway-api.circle.com';
 
 /**
- * Facilitator hosts this wave is ALLOWED to talk to. Allow-list, never deny-list.
+ * Facilitator hosts we are ALLOWED to talk to. Allow-list, never deny-list.
  *
  * Two live traps this closes:
  *  1. `BatchFacilitatorConfig.url` is OPTIONAL and the SDK defaults it to MAINNET
  *     (`gateway-api.circle.com`) — `new BatchFacilitatorClient()` with no args silently points at
- *     mainnet, contradicting "mainnet stays OFF". We always pass `url` explicitly AND verify it.
+ *     mainnet. We always pass `url` explicitly AND verify it against this list.
  *  2. Circle's own `BatchFacilitatorClient` JSDoc example cites `https://gateway.circle.com`,
  *     which is NXDOMAIN (probed). Copying it verbatim yields a dead facilitator.
+ *
+ * CIRCLE-GATEWAY-MAINNET-ENABLE-W1 adds mainnet. Membership here is NOT sufficient to go live —
+ * the outer `CIRCLE_GATEWAY_ENABLED` flag still defaults OFF.
  */
-const ALLOWED_FACILITATOR_URLS: readonly string[] = [CIRCLE_TESTNET_FACILITATOR_URL];
+const ALLOWED_FACILITATOR_URLS: readonly string[] = [
+  CIRCLE_TESTNET_FACILITATOR_URL,
+  CIRCLE_MAINNET_FACILITATOR_URL,
+];
 
-/** CAIP-2 networks this wave is ALLOWED to advertise. Testnet only (architect R0 Q5a). */
+/**
+ * CAIP-2 networks the Gateway scheme may advertise on.
+ *
+ * >>> WHY MAINNET GATEWAY IS ON OPTIMISM AND *NOT* ON BASE. <<<
+ *
+ * Our CDP rail registers `exact` on `eip155:8453`. Circle Gateway is ALSO `exact` (see the module
+ * header — `GatewayWalletBatched` is the EIP-712 domain name, not a scheme id). On Base mainnet the
+ * two are therefore identical in all three keys the SDK dispatches on — `(x402Version=2, scheme
+ * 'exact', network 'eip155:8453')` — and they CANNOT coexist on one `x402ResourceServer`. Two
+ * independent layers break, both SILENTLY (probed against the real SDK, 2026-07-19):
+ *
+ *   1. `x402ResourceServer.register()` is `Map<network, Map<scheme, server>>` guarded by
+ *      `if (!serverByScheme.has(server.scheme))` — FIRST-WINS, silent no-op. CDP registers first
+ *      (x402.ts), so `GatewayEvmScheme` would simply never be registered.
+ *   2. `getSupportedKind(x402Version, network, scheme)` takes no `extra` argument, so two kinds
+ *      that differ ONLY by `extra.name` are indistinguishable; first match wins.
+ *
+ * Measured consequence with production registration order: the Gateway `accepts[]` entry comes out
+ * with `extra = {}` — no `GatewayWalletBatched`, no `verifyingContract` — because the CDP scheme's
+ * `enhancePaymentRequirements` is a pass-through. Circle's `GatewayClient` picks its option by
+ * `extra.name === 'GatewayWalletBatched'`, finds none, and cannot pay.
+ *
+ * Optimism keeps the topology that the Base-Sepolia settle already PROVED: Gateway on its own
+ * network key, so neither collision layer is reachable. Circle's mainnet facilitator advertises 11
+ * networks; Coinbase CDP serves only Base/Polygon/Arbitrum/World, so `eip155:10` is collision-free
+ * by construction. Gateway balances are unified + chain-agnostic (Circle docs), so the buyer is
+ * not disadvantaged by paying on a non-Base chain.
+ *
+ * ⚠️ Adding `eip155:8453` here would re-open the silent collision. `assertGatewayDomainPresent()`
+ * below is the structural backstop that turns that mistake into a loud, fail-open drop.
+ */
 const ALLOWED_GATEWAY_NETWORKS: readonly string[] = [
-  'eip155:84532', // Base Sepolia — our x402.ts already maps base-sepolia + holds the matching USDC
+  'eip155:84532', // Base Sepolia — testnet; proven end-to-end by OPS-CIRCLE-GATEWAY-TESTNET-SETTLE-W1
+  'eip155:10',    // OP Mainnet — collision-free vs the CDP `exact`/eip155:8453 registration
 ];
 
 /** The `extra.name` Circle stamps on every Gateway kind — the EIP-712 domain name. */
@@ -117,16 +154,24 @@ export function resolveCircleGatewayFromEnv(
   const facilitatorUrl = env.CIRCLE_GATEWAY_FACILITATOR_URL || CIRCLE_TESTNET_FACILITATOR_URL;
   if (!ALLOWED_FACILITATOR_URLS.includes(facilitatorUrl)) {
     return DISABLED(
-      `facilitator ${facilitatorUrl} is not testnet-allow-listed. This wave is testnet-only; ` +
-        `enabling mainnet (${CIRCLE_MAINNET_FACILITATOR_URL}) is a separate dispatch after a real ` +
-        `testnet settle + operator go.`,
+      `facilitator ${facilitatorUrl} is not allow-listed ` +
+        `(allowed: ${ALLOWED_FACILITATOR_URLS.join(', ')}). Note Circle's own SDK JSDoc cites ` +
+        `https://gateway.circle.com, which is NXDOMAIN.`,
     );
   }
 
-  // ── Network ── testnet only.
+  // ── Network ── allow-listed only. `eip155:8453` is deliberately ABSENT: Gateway there would
+  // collide with the CDP `exact` registration and be silently dropped. See ALLOWED_GATEWAY_NETWORKS.
   const network = env.CIRCLE_GATEWAY_NETWORK || ALLOWED_GATEWAY_NETWORKS[0];
   if (!ALLOWED_GATEWAY_NETWORKS.includes(network)) {
-    return DISABLED(`network ${network} is not testnet-allow-listed (allowed: ${ALLOWED_GATEWAY_NETWORKS.join(', ')})`);
+    return DISABLED(
+      `network ${network} is not testnet-allow-listed (allowed: ${ALLOWED_GATEWAY_NETWORKS.join(', ')})` +
+        (network === 'eip155:8453'
+          ? ' — Base mainnet is EXCLUDED ON PURPOSE: it collides with the CDP `exact` scheme on the ' +
+            'same (version, scheme, network) triple, so the Gateway scheme would be silently dropped. ' +
+            'Mainnet Gateway runs on eip155:10 (OP Mainnet).'
+          : ''),
+    );
   }
 
   // ── Inner flag: config-present ── absent → Stub (R2: the wave ships regardless of Circle
@@ -275,4 +320,30 @@ export async function probeCircleFacilitator(
     );
     return null;
   }
+}
+
+/**
+ * Structural backstop: are these built requirements ACTUALLY Gateway requirements?
+ * (CIRCLE-GATEWAY-MAINNET-ENABLE-W1 R1b)
+ *
+ * A Gateway `accepts[]` entry is only payable if it carries the `GatewayWalletBatched` EIP-712
+ * domain — that is how Circle's `GatewayClient` finds its option, and how the buyer builds a
+ * signable domain. `GatewayEvmScheme.enhancePaymentRequirements` merges it in from the facilitator.
+ *
+ * WHY THIS EXISTS. If `GatewayEvmScheme` is ever NOT the scheme that served the build — most
+ * plausibly because someone puts Gateway back on `eip155:8453`, where `register()` silently
+ * first-wins in favour of the CDP scheme — the build still SUCCEEDS and still returns entries. They
+ * are just plain CDP-shaped payments to the Gateway seller address, with `extra = {}` (measured).
+ * Nothing throws. The pre-existing `getSupportedKind(2, net, 'exact')` liveness check cannot catch
+ * it either, because on a shared network that predicate answers TRUE from the CDP kind — so the
+ * server would log "Circle Gateway scheme ACTIVE" while advertising an unpayable rail.
+ *
+ * This predicate is the only thing that distinguishes the two, so the caller must drop the Gateway
+ * entries (fail-open, CDP untouched) when it returns false. Pure + total: never throws.
+ */
+export function gatewayRequirementsCarryDomain(reqs: unknown): boolean {
+  if (!Array.isArray(reqs) || reqs.length === 0) return false;
+  return reqs.every(
+    (r) => (r as { extra?: { name?: unknown } } | null)?.extra?.name === GATEWAY_EIP712_DOMAIN_NAME,
+  );
 }
