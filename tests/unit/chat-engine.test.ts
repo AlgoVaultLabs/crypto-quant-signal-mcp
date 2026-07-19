@@ -24,6 +24,14 @@ vi.mock('../../src/resources/signal-performance.js', () => ({
 }));
 vi.mock('../../src/lib/capabilities.js', () => ({
   EXCHANGE_COUNT: 12,
+  EXCHANGES: [
+    { id: 'HL', label: 'Hyperliquid' }, { id: 'BINANCE', label: 'Binance' },
+    { id: 'BYBIT', label: 'Bybit' }, { id: 'OKX', label: 'OKX' },
+    { id: 'BITGET', label: 'Bitget' }, { id: 'ASTER', label: 'Aster' },
+    { id: 'BINGX', label: 'BingX' }, { id: 'GATE', label: 'Gate.io' },
+    { id: 'HTX', label: 'HTX' }, { id: 'KUCOIN', label: 'KuCoin' },
+    { id: 'MEXC', label: 'MEXC' }, { id: 'PHEMEX', label: 'Phemex' },
+  ],
   getAssetCount: async () => 1336,
 }));
 

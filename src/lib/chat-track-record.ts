@@ -18,7 +18,7 @@
  * avoids. It IS the reference fail-open discipline mirrored here
  * (`STATIC_FALLBACK` + never throw).
  */
-import { EXCHANGE_COUNT, getAssetCount } from './capabilities.js';
+import { EXCHANGE_COUNT, EXCHANGES, getAssetCount } from './capabilities.js';
 import { getSignalPerformance } from '../resources/signal-performance.js';
 
 export interface TrackRecordBlockInput {
@@ -26,6 +26,14 @@ export interface TrackRecordBlockInput {
   pfeWinRatePct: number;
   exchangeCount: number;
   assetCount: number;
+  /**
+   * Names of the supported signal venues. Single-derivation with
+   * `exchangeCount`: both come from the ONE frozen `EXCHANGES` array, so the
+   * count and the list can never disagree. Naming them stops the chat from
+   * implying the execution-kit-only venues (Gemini / Kraken / Alpaca, which
+   * have no adapter and appear in no venue SoT) are signal venues.
+   */
+  venueNames: readonly string[];
   asOfISO: string;
   live: boolean;
 }
@@ -43,8 +51,11 @@ export interface TrackRecordBlockInput {
 export const STATIC_FALLBACK: Omit<TrackRecordBlockInput, 'live'> = {
   totalCalls: 381618,
   pfeWinRatePct: 91.5,
-  exchangeCount: 12,
+  exchangeCount: EXCHANGE_COUNT,
   assetCount: 1334,
+  // Read from the same frozen array as the live path — a static fallback that
+  // hand-listed venues would be one more place to drift.
+  venueNames: EXCHANGES.map((e) => e.label),
   asOfISO: '2026-07-19',
 };
 
@@ -68,7 +79,7 @@ function groupThousands(n: number): string {
  * Fix-at-generator LAW).
  */
 export function formatTrackRecordBlock(input: TrackRecordBlockInput): string {
-  const { totalCalls, pfeWinRatePct, exchangeCount, assetCount, asOfISO, live } = input;
+  const { totalCalls, pfeWinRatePct, exchangeCount, assetCount, venueNames, asOfISO, live } = input;
   const prefix = live ? '' : '[STATIC] ';
   const freshness = live ? 'live as of' : 'as of';
   const asOfDate = asOfISO.slice(0, 10);
@@ -78,6 +89,7 @@ export function formatTrackRecordBlock(input: TrackRecordBlockInput): string {
     `${pfeWinRatePct.toFixed(1)}% PFE win rate · ` +
     `${groupThousands(exchangeCount)} exchanges · ` +
     `${groupThousands(assetCount)} assets. ` +
+    `Signal venues: ${venueNames.join(', ')}. ` +
     `These figures are canonical.`
   );
 }
@@ -135,6 +147,7 @@ export async function getLiveTrackRecordBlock(): Promise<string> {
         pfeWinRatePct: (wrFraction as number) * 100,
         exchangeCount: EXCHANGE_COUNT,
         assetCount,
+        venueNames: EXCHANGES.map((e) => e.label),
         asOfISO: new Date().toISOString(),
         live: true,
       });

@@ -19,8 +19,19 @@ vi.mock('../../src/resources/signal-performance.js', () => ({
   getSignalPerformance: (...args: unknown[]) => getSignalPerformanceMock(...args),
 }));
 
+// vi.mock factories are hoisted above module-level consts, so the venue
+// fixture has to be hoisted too or the factory sees a TDZ ReferenceError.
+const MOCK_VENUES = vi.hoisted(() => [
+  { id: 'HL', label: 'Hyperliquid' }, { id: 'BINANCE', label: 'Binance' },
+  { id: 'BYBIT', label: 'Bybit' }, { id: 'OKX', label: 'OKX' },
+  { id: 'BITGET', label: 'Bitget' }, { id: 'ASTER', label: 'Aster' },
+  { id: 'BINGX', label: 'BingX' }, { id: 'GATE', label: 'Gate.io' },
+  { id: 'HTX', label: 'HTX' }, { id: 'KUCOIN', label: 'KuCoin' },
+  { id: 'MEXC', label: 'MEXC' }, { id: 'PHEMEX', label: 'Phemex' },
+]);
 vi.mock('../../src/lib/capabilities.js', () => ({
-  EXCHANGE_COUNT: 12,
+  EXCHANGE_COUNT: MOCK_VENUES.length,
+  EXCHANGES: MOCK_VENUES,
   getAssetCount: (...args: unknown[]) => getAssetCountMock(...args),
 }));
 
@@ -49,6 +60,7 @@ describe('formatTrackRecordBlock (pure)', () => {
       pfeWinRatePct: 91.53759608003954,
       exchangeCount: 12,
       assetCount: 1336,
+      venueNames: ['Hyperliquid', 'Binance'],
       asOfISO: '2026-07-19T04:05:06.000Z',
       live: true,
     });
@@ -76,6 +88,7 @@ describe('formatTrackRecordBlock (pure)', () => {
       pfeWinRatePct: 89.96,
       exchangeCount: 1,
       assetCount: 1,
+      venueNames: ['Hyperliquid', 'Binance'],
       asOfISO: '2026-07-19',
       live: true,
     });
@@ -88,6 +101,7 @@ describe('formatTrackRecordBlock (pure)', () => {
       pfeWinRatePct: 50,
       exchangeCount: 12,
       assetCount: 999,
+      venueNames: ['Hyperliquid', 'Binance'],
       asOfISO: '2026-07-19',
       live: true,
     });
@@ -226,6 +240,59 @@ describe('getLiveTrackRecordBlock (fail-open)', () => {
       expect(out).toContain('400,000+ signal calls');
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('venue naming (OPS-INTEGRATIONS-LIVE-SOT-W1)', () => {
+  beforeEach(() => {
+    _resetTrackRecordBlockCache();
+    getSignalPerformanceMock.mockReset();
+    getAssetCountMock.mockReset();
+  });
+  afterEach(() => _resetTrackRecordBlockCache());
+
+  it('formatTrackRecordBlock lists the venue names', () => {
+    const out = formatTrackRecordBlock({
+      totalCalls: 383789, pfeWinRatePct: 91.5, exchangeCount: 3, assetCount: 1330,
+      venueNames: ['Hyperliquid', 'Binance', 'KuCoin'], asOfISO: '2026-07-19', live: true,
+    });
+    expect(out).toContain('Signal venues: Hyperliquid, Binance, KuCoin.');
+  });
+
+  it('the live block names all 12 venues, and count === names.length', async () => {
+    getSignalPerformanceMock.mockResolvedValue(statsFixture(383789, 0.915));
+    getAssetCountMock.mockResolvedValue(1338);
+
+    const out = await getLiveTrackRecordBlock();
+    for (const v of MOCK_VENUES) expect(out).toContain(v.label);
+    expect(out).toContain('12 exchanges');
+    // Single derivation: the rendered count must equal the rendered list length.
+    // NB: a venue label can itself contain a period ("Gate.io"), so the list
+    // must be bounded by the trailing sentence, not by the first `.`.
+    const listed = out
+      .split('Signal venues: ')[1]
+      .replace(/\. These figures are canonical\.$/, '')
+      .split(', ');
+    expect(listed).toHaveLength(MOCK_VENUES.length);
+    expect(listed).toHaveLength(Number(out.match(/(\d+) exchanges/)![1]));
+  });
+
+  it('the STATIC fallback also names the venues (never an empty list)', () => {
+    expect(STATIC_FALLBACK.venueNames.length).toBe(MOCK_VENUES.length);
+    const out = formatTrackRecordBlock({ ...STATIC_FALLBACK, live: false });
+    expect(out).toContain('Signal venues: Hyperliquid, Binance');
+    expect(out).toContain('[STATIC]');
+  });
+
+  // Gemini/Kraken/Alpaca have integration pages but no adapter and appear in
+  // no venue SoT — the chat must never present them as signal venues.
+  it('does not name execution-kit-only venues as signal venues', async () => {
+    getSignalPerformanceMock.mockResolvedValue(statsFixture(383789, 0.915));
+    getAssetCountMock.mockResolvedValue(1338);
+    const out = await getLiveTrackRecordBlock();
+    for (const notAVenue of ['Gemini', 'Kraken', 'Alpaca']) {
+      expect(out).not.toContain(notAVenue);
     }
   });
 });
