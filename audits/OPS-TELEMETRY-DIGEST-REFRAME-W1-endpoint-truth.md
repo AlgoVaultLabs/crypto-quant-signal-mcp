@@ -38,9 +38,35 @@ All 7 have a published public-market-data limit. **Nothing inferred from an anal
 | HTX | 800 req/s per IP (market data) | primary docs via `htx.ts:20`, PILOT-ADAPTERS-W3A | 48000 | 24000 | 8000 | `() => 1` |
 | KUCOIN | 2000 req/30s public pool | kucoin.com/docs-new/rate-limit | 4000 | 2000 | 700 | **`() => 3`** |
 | MEXC | tightest endpoint 10/2s (depth/ticker) | mexc.com/api-docs/futures/market-endpoints | 300 | 150 | 50 | `() => 1` |
-| PHEMEX | "Others" group 100/min | `github.com/phemex/phemex-api-docs` | 100 | 50 | 15 | **`() => 10`** |
+| PHEMEX | overall per-IP 5,000/5min | `github.com/phemex/phemex-api-docs` | 1000 | 500 | 150 | `() => 1` |
 
-KuCoin klines self-declare weight 3; Phemex klines weight 10. A flat `() => 1` would under-model our real draw by 3× and 10×.
+KuCoin klines self-declare weight 3; a flat `() => 1` would under-model our real draw by 3×.
+
+> ⚠️ **PHEMEX row CORRECTED same-day — the original shipped value was wrong and caused a
+> real regression.** It first shipped as ceiling **50** / reserve **15** / `weightFor: () => 10`,
+> modelled on Phemex's documented *"Others" API-group* cap (100/min) with kline's documented
+> weight 10 — i.e. ~5 calls/min. That starved the seed lane within the hour: **60 batch SKIPS
+> in 35 minutes** on a PROMOTED venue, against just **11 raw 429s in the entire preceding
+> week when Phemex had no budget at all**. A skip is dropped work, so the guard was
+> discarding fetches the venue was demonstrably willing to serve — strictly worse than the
+> problem it was added to solve.
+>
+> Two errors produced it. (a) Our dominant Phemex call is `/md/v2/ticker/24hr` (per-symbol —
+> `getAssetContext` + the universe fetch), **not** kline. (b) Phemex does not publish that
+> endpoint's weight, so applying kline's 10 to every call **fabricated precision we never
+> had** — the exact failure this document's caveat section exists to prevent, committed in
+> the same document that warns about it.
+>
+> Now modelled on the overall per-IP cap that unambiguously applies. Post-correction: Phemex
+> skips **0**, waits **0** (budget no longer binds), seed attempts fresh (<1 min), signals
+> flowing. Measured cost of the error: roughly one hour of partial Phemex + MEXC seed
+> suppression, self-detected and corrected before it reached a digest.
+>
+> **Generalized lesson: `kind='skip'` is the leading indicator that a budget is strangling
+> its venue.** Throws mean the venue refused us; skips mean *we* refused ourselves. A new or
+> retuned budget must be watched on skips, not just on throws — and when a venue's real call
+> mix is not the endpoint whose weight is published, model the cap you can actually verify
+> applies rather than the tightest one you can find.
 
 ### Recorded caveats — do not let these silently harden into fact
 
@@ -80,7 +106,7 @@ KuCoin klines self-declare weight 3; Phemex klines weight 10. A flat `() => 1` w
 
 | Shape match | Venues | Expected C2 effect |
 |---|---|---|
-| ✅ per-minute — budget is the right shape | ASTER (2400/min), PHEMEX (100/min), HL, BINANCE | Should genuinely collapse raw 429s → replaced by `BUDGET_CEILING` self-throttles |
+| ✅ per-minute — budget is the right shape | ASTER (2400/min), PHEMEX (5000/5min overall), HL, BINANCE | Should genuinely collapse raw 429s → replaced by `BUDGET_CEILING` self-throttles |
 | ⚠️ sub-minute — sustained-rate protection only | BITGET (20-50/s), GATE (300/s), HTX (800/s), MEXC (10/2s), BINGX (500/10s), KUCOIN (2000/30s) | Helps sustained overrun; a sub-second burst can still breach |
 
 This is why **Aster is the honest success metric for C2** — its published limit is per-minute, so the budget shape matches. Do not read a residual Bitget/MEXC 429 trickle as C2 having failed.
