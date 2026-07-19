@@ -1,5 +1,16 @@
 # Shadow-Seed Decision Runbook (1m + 3m)
 
+> ⚠️ **HISTORICAL — this decision is CLOSED on both sides. Do not action this runbook.**
+> **3m: LAUNCHED.** Public since before 2026-06-01 via `SHADOW_REVEAL_TIMEFRAMES=3m`; it
+> serves ~97k signals at ~93% PFE WR on `/api/performance-public`.
+> **1m: RETIRED.** `OPS-1M-SEED-DECOM-W1` (2026-06-01) removed the every-minute seed cron
+> as the box's highest-cadence load contributor. Only the on-demand `tf=1m` API path
+> remains (~2 samples/week), so 1m can never reach the 3,000-sample gate below.
+> The weekly digest this runbook describes no longer computes a 1m/3m verdict — it was
+> reframed to pure rate-limit telemetry and renamed `rate-limit-digest-weekly`
+> (OPS-TELEMETRY-DIGEST-REFRAME-W1, 2026-07-19). Commands below referencing
+> `shadow-digest-weekly.js` will not resolve. Kept for provenance only.
+
 **Wave**: SHADOW-SEED-W1 (live since 2026-04-30)
 **Decision day**: ~2026-05-14 (after 2 weekly digests)
 
