@@ -7,7 +7,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { recordRateLimitEvent } from '../../src/lib/rate-limit-events.js';
 import { recordRateLimitEventImpl } from '../../src/lib/performance-db.js';
 import { currentCaller, runAsCaller, runAsBatch } from '../../src/lib/upstream-weight-budget.js';
-import { p95, aggregateRateLimit, aggregateCallers, evaluateRateLimitTriggers } from '../../src/scripts/shadow-digest-weekly.js';
+import { p95, aggregateRateLimit, aggregateCallers, evaluateRateLimitTriggers } from '../../src/lib/rate-limit-digest.js';
 
 describe('recordRateLimitEvent — fail-open', () => {
   afterEach(() => {
@@ -70,21 +70,29 @@ describe('evaluateRateLimitTriggers — both sides of every threshold', () => {
     ({ venue, throws: 0, iThrows: 0, bThrows: 0, waits: 0, skips: 0, ...o });
 
   it('all-healthy → no trigger lines', () => {
-    const r = evaluateRateLimitTriggers([venue('Hyperliquid'), venue('Aster')]);
+    const r = evaluateRateLimitTriggers([venue('Hyperliquid'), venue('Bitmart')]);
     expect(r.lines).toHaveLength(0);
     expect(r.shadowBudget).toBe(false);
     expect(r.hlDenial).toBe(false);
   });
 
+  // Fixture is Bitmart, NOT Aster: Aster was promoted by OPS-VENUE-GO-LIVE-2026-06-30 and
+  // PROMOTED_VENUE_NAMES now derives from capabilities.ts, so Aster no longer counts as shadow
+  // (OPS-TELEMETRY-DIGEST-REFRAME-W1). Bitmart/edgeX/WEEX/WhiteBIT/XT are the real shadow set.
   it('shadow throws: 2 = silent, 3 = OPS-SHADOW-BUDGET trigger', () => {
-    expect(evaluateRateLimitTriggers([venue('Aster', { throws: 2 })]).shadowBudget).toBe(false);
-    const hit = evaluateRateLimitTriggers([venue('Aster', { throws: 3 })]);
+    expect(evaluateRateLimitTriggers([venue('Bitmart', { throws: 2 })]).shadowBudget).toBe(false);
+    const hit = evaluateRateLimitTriggers([venue('Bitmart', { throws: 3 })]);
     expect(hit.shadowBudget).toBe(true);
     expect(hit.lines.join('\n')).toContain('OPS-SHADOW-BUDGET-W{NEXT}');
   });
 
   it('promoted-venue throws do NOT trip the shadow trigger (only non-promoted venues are "shadow")', () => {
     expect(evaluateRateLimitTriggers([venue('Bybit', { throws: 99 })]).shadowBudget).toBe(false);
+    // The 7 promoted by OPS-VENUE-GO-LIVE-2026-06-30 must be treated the same as the original 5.
+    // 'Gate' (not 'Gate.io') is the venueName the events table actually carries — the derivation trap.
+    for (const v of ['Aster', 'BingX', 'Gate', 'HTX', 'KuCoin', 'MEXC', 'Phemex']) {
+      expect(evaluateRateLimitTriggers([venue(v, { throws: 2466 })]).shadowBudget, v).toBe(false);
+    }
   });
 
   it('HL interactive throws (denial): 24 = silent, 25 = trigger with the driver-agnostic action', () => {
@@ -109,7 +117,7 @@ describe('evaluateRateLimitTriggers — both sides of every threshold', () => {
   });
 
   it('trigger lines use the W{NEXT} template — NEVER a literal wave number', () => {
-    const r = evaluateRateLimitTriggers([venue('Aster', { throws: 9 }), venue('Hyperliquid', { iThrows: 99, throws: 99 })]);
+    const r = evaluateRateLimitTriggers([venue('Bitmart', { throws: 9 }), venue('Hyperliquid', { iThrows: 99, throws: 99 })]);
     const joined = r.lines.join('\n');
     expect(joined).toMatch(/W\{NEXT\}/);
     expect(joined).not.toMatch(/-W\d/); // no OPS-...-W1 / -W2 / etc.
