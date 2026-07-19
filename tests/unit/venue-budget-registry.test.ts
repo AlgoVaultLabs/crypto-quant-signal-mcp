@@ -63,12 +63,19 @@ describe('venue-budget-registry', () => {
     expect(new Set(budgets).size).toBe(PROMOTED_VENUE_IDS.length);
   });
 
-  it('per-endpoint-weight venues cost their documented weight, not a flat 1', () => {
-    // KuCoin klines draw 3 from the public pool; Phemex klines draw 10 from the
-    // "Others" group. A flat 1 would under-model both and invite the exact bans
-    // the budget exists to prevent.
+  it('KuCoin costs its documented kline weight, not a flat 1', () => {
+    // KuCoin klines draw 3 from the 2000/30s public pool; a flat 1 would under-model
+    // our real draw by 3x and invite the exact bans the budget exists to prevent.
     expect(getVenueBudget('KUCOIN')!.weightFor({})).toBe(3);
-    expect(getVenueBudget('PHEMEX')!.weightFor({})).toBe(10);
+  });
+
+  it('Phemex is request-counted, NOT kline-weighted — a budget must not out-throttle the venue', () => {
+    // Regression guard. Modelling Phemex on its "Others" group cap (ceiling 50 x weight 10
+    // = ~5 calls/min) starved the seed lane with 55 batch skips in 35 minutes, against 11
+    // raw 429s in the whole preceding UNBUDGETED week. Our dominant call is the 24hr
+    // ticker, whose weight Phemex does not publish, so weight-10 was fabricated precision.
+    expect(getVenueBudget('PHEMEX')!.weightFor({})).toBe(1);
+    expect(getVenueBudget('PHEMEX')!.weightFor({ weightHint: 999 })).toBe(1);
   });
 
   it('a budgeted entry can acquire (vitest ledger is unbounded; never throttles)', async () => {

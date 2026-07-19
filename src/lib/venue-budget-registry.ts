@@ -295,16 +295,29 @@ export const mexcWeightBudget = new WeightBudget({
   log: MEXC_VITEST ? () => {} : undefined,
 });
 
-// Phemex stacks TWO limits (github.com/phemex/phemex-api-docs Generic-API-Info): a
-// 5000-req/5min per-IP overall cap AND a per-API-GROUP capacity. Public contract
-// market-data falls in the "Others" group, capped at 100/MINUTE — that group cap, not
-// the 1000/min overall, is the binding constraint. Kline self-declares weight 10, so
-// `weightFor: () => 10` models the real draw (≈5 klines/min at our ceiling). This is
-// genuinely the tightest venue in the fleet; live 7d shows only 11 Phemex throws, so
-// it is not currently binding, but the model must be honest about the headroom.
-// Ceiling 50 = 50%-of-verified group cap; reserve 15.
-export const PHEMEX_REQ_CEILING = 50;
-export const PHEMEX_INTERACTIVE_RESERVE = 15;
+// Phemex stacks TWO documented limits (github.com/phemex/phemex-api-docs
+// Generic-API-Info): an overall 5,000 req / 5 min per-IP cap (= 1000/min) AND a
+// per-API-GROUP capacity, where public contract market-data nominally sits in the
+// "Others" group at 100/min with kline self-declaring weight 10.
+//
+// We deliberately model the OVERALL cap, NOT the group cap. This wave first shipped the
+// group-cap reading (ceiling 50 + weightFor 10 ⇒ ~5 calls/min) and it immediately starved
+// the seed lane: 55 batch SKIPS in 35 minutes on a PROMOTED venue, against just 11 raw
+// 429s in the entire preceding week when Phemex had NO budget at all. The venue was
+// plainly serving our real load; a budget stricter than the venue itself was dropping
+// work Phemex would have answered. Two things made that first reading wrong: our dominant
+// Phemex call is `/md/v2/ticker/24hr` (per-symbol — `getAssetContext` + the universe
+// fetch), NOT kline; and that endpoint's weight is NOT published, so applying kline's 10
+// to every call fabricated precision we do not have.
+//
+// Ceiling 500 = 50%-of-verified overall cap; reserve 150; `weightFor: () => 1`
+// (request-count, same as BYBIT/OKX/BITGET). Still a genuine runaway guard — just no
+// longer tighter than the venue.
+// // TODO: revisit by 2026-08-02 — if raw 429s reappear on Phemex, the group cap DOES
+// bind for our call mix, and the correct fix is per-endpoint weights, not a lower flat
+// ceiling. Watch `kind='skip'` as the leading indicator: skips mean we are dropping work.
+export const PHEMEX_REQ_CEILING = 500;
+export const PHEMEX_INTERACTIVE_RESERVE = 150;
 const PHEMEX_VITEST = process.env.VITEST === 'true';
 const phemexLedgerSuffix = PHEMEX_VITEST ? `.test-${process.pid}` : '';
 export const phemexWeightBudget = new WeightBudget({
@@ -332,7 +345,7 @@ const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry> = {
   HTX: { budget: htxWeightBudget, weightFor: () => 1 },
   KUCOIN: { budget: kucoinWeightBudget, weightFor: () => 3 },   // klines weight 3 (docs)
   MEXC: { budget: mexcWeightBudget, weightFor: () => 1 },
-  PHEMEX: { budget: phemexWeightBudget, weightFor: () => 10 },  // klines weight 10 (docs)
+  PHEMEX: { budget: phemexWeightBudget, weightFor: () => 1 },   // request-count; see the PHEMEX block
 };
 
 /**
