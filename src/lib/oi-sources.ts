@@ -20,7 +20,7 @@
  */
 
 import type { ExchangeId } from '../types.js';
-import { fetchVenueUniverse, OI_PROXY_VENUES } from './exchange-universe.js';
+import { fetchVenueUniverse, OI_PROXY_VENUES, type ExchangeAsset } from './exchange-universe.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './adapters/_upstream-fetch.js';
 import { getAdapter } from './exchange-adapter.js';
 import { bucketHour } from './oi-snapshots.js';
@@ -74,14 +74,27 @@ async function binanceOiHistUsd(
 /**
  * Current USD-notional OI for the top-`poolSize` perps on `exchange`.
  * 4 venues read from the universe directly; Binance fans out per-symbol.
+ *
+ * OPS-STRUCTURAL-FEATURE-ACCRUAL-W1: `universeOverride` is an OPTIONAL TRAILING param (TS
+ * bivariance — no signature cascade for existing callers) so a caller that ALREADY holds this
+ * venue's universe passes it instead of forcing a second fetch. The sampler needs the universe
+ * anyway for the structural fields, and re-fetching here was BOTH a doubled upstream call and a
+ * correctness bug: two fetches of a LIVE-REORDERING ranking return two different top-N slices, so
+ * the union of "OI coins" and "pool coins" could exceed the pool and a same-bucket re-run inserted
+ * genuinely-new rows (measured 2026-07-21: ASTER + MEXC each landed a 61st row for one bucket).
+ * One snapshot in, one pool out, deterministic.
  */
-export async function fetchCurrentOiUsd(exchange: ExchangeId, poolSize: number): Promise<CurrentOi[]> {
+export async function fetchCurrentOiUsd(
+  exchange: ExchangeId,
+  poolSize: number,
+  universeOverride?: ExchangeAsset[],
+): Promise<CurrentOi[]> {
   // OPS-SCAN-UNIVERSE-EXPAND-W1: proxy venues (Aster/BingX) expose no real OI — their
   // fetchVenueUniverse `notionalOI_usd` is a 24h-VOLUME proxy, so NEVER sample them as OI (it would
   // pollute the oi_change lens + snapshots with volume). Binance is a proxy too but has its own
   // openInterestHist real-OI path below, so it is exempt from the skip.
   if (OI_PROXY_VENUES.has(exchange) && exchange !== 'BINANCE') return [];
-  const universe = await fetchVenueUniverse(exchange);
+  const universe = universeOverride ?? (await fetchVenueUniverse(exchange));
   const pool = universe.slice(0, poolSize);
   if (exchange === 'BINANCE') {
     const results = await mapLimit(pool, 6, async (a) => {

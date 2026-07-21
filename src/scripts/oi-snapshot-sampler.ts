@@ -28,7 +28,7 @@
 import type { ExchangeId } from '../types.js';
 import { runScript } from '../lib/script-lifecycle.js';
 import { fetchCurrentOiUsd } from '../lib/oi-sources.js';
-import { fetchStructuralGaps, type StructuralPatch } from '../lib/structural-sources.js';
+import { fetchStructuralGaps } from '../lib/structural-sources.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import {
   recordOiSnapshots,
@@ -84,37 +84,33 @@ function countCoverage(rows: OiSnapshotInput[]): VenueCoverage {
  * with basis but no OI still gets a row (Aster/BingX), and vice versa.
  */
 async function buildVenueRows(venue: ExchangeId, bucket: number): Promise<OiSnapshotInput[]> {
-  // fetchCurrentOiUsd and fetchVenueUniverse hit the same venue payload; the gap call is separate.
-  const [oiRows, universe, gaps] = await Promise.all([
-    fetchCurrentOiUsd(venue, POOL),
-    fetchVenueUniverse(venue),
+  // ONE universe fetch per venue per run, threaded into the OI fetcher. Fetching it in both places
+  // (the obvious shape) doubled the upstream call AND broke same-bucket determinism: two fetches of
+  // a live-reordering ranking yield two different top-N slices, so a re-run inserted genuinely-new
+  // rows for a bucket already written. `pool` is therefore the ONE authority on which coins this
+  // run covers — no union, no second opinion.
+  const universe = await fetchVenueUniverse(venue);
+  const pool = universe.slice(0, POOL);
+  const [oiRows, gaps] = await Promise.all([
+    fetchCurrentOiUsd(venue, POOL, universe),
     fetchStructuralGaps(venue),
   ]);
-  const pool = universe.slice(0, POOL);
-  const inline = new Map<string, StructuralPatch>(
-    pool.map((a) => [a.coin, { markPx: a.markPx, indexPx: a.indexPx, bidPx: a.bidPx, askPx: a.askPx }]),
-  );
   const oiByCoin = new Map(oiRows.map((r) => [r.coin, r]));
-  // Union: every coin in the ranked pool, plus any OI row the pool slice missed.
-  const coins = new Set<string>([...pool.map((a) => a.coin), ...oiByCoin.keys()]);
-  const rows: OiSnapshotInput[] = [];
-  for (const coin of coins) {
-    const oi = oiByCoin.get(coin);
-    const s = inline.get(coin) ?? {};
-    const g = gaps.get(coin) ?? {};
-    rows.push({
-      symbol: coin,
+  return pool.map((a) => {
+    const oi = oiByCoin.get(a.coin);
+    const g = gaps.get(a.coin) ?? {};
+    return {
+      symbol: a.coin,
       ts: bucket,
       oi: oi?.oi,
       contracts: oi?.contracts,
       // Inline (already-paid-for) value wins; the gap call only fills what the payload lacked.
-      mark: s.markPx ?? g.markPx,
-      index: s.indexPx ?? g.indexPx,
-      bid: s.bidPx ?? g.bidPx,
-      ask: s.askPx ?? g.askPx,
-    });
-  }
-  return rows;
+      mark: a.markPx ?? g.markPx,
+      index: a.indexPx ?? g.indexPx,
+      bid: a.bidPx ?? g.bidPx,
+      ask: a.askPx ?? g.askPx,
+    };
+  });
 }
 
 export async function runOiSnapshotSampler(
