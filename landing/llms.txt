@@ -62,6 +62,7 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions.
 - [Gemini × AlgoVault](https://algovault.com/integrations/gemini): Composite verdict + Gemini self-hosted MCP execution kit.
 - [Kraken × AlgoVault](https://algovault.com/integrations/kraken): Composite verdict + Kraken CLI execution kit.
 - [Alpaca × AlgoVault](https://algovault.com/integrations/alpaca): Composite verdict + Alpaca crypto MCP paper-trading execution kit.
+- [Gate.io × AlgoVault](https://algovault.com/integrations/gateio): Composite verdict + Gate.io futures testnet (contracts-aware sizing; SDK's default testnet host is stale).
 <!-- /BUILD:LLMS_INTEGRATIONS_LIST -->
 
 ## Key Skills (catalog of 20 at /skills)

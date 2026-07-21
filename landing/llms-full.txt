@@ -248,6 +248,15 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 - **Demo execution:** ALPACA_PAPER=true
 - **Recipes:** regime gated entries / confidence filtered entry / paper trading validation.
 - **Status:** LIVE · **Launched:** 2026-03-03
+
+### Gate.io × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/gateio
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** gate-api (7.2.100)
+- **Demo execution:** GATEIO_TESTNET=true
+- **Recipes:** size in contracts not coins / direction is sign of size / hmac sha512 five line signature.
+- **Status:** LIVE · **Launched:** 2026-03-03
 <!-- /BUILD:LLMS_FULL_INTEGRATIONS -->
 
 ---

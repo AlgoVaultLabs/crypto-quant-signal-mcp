@@ -174,6 +174,7 @@ Each demo is runnable as `python examples/<framework>/demo.py BTC 4h` — gets a
 | 09 | Gemini | [`docs/integrations/gemini.md`](docs/integrations/gemini.md) | [`examples/gemini/demo.mjs`](examples/gemini/demo.mjs) | [algovault.com/docs/integrations/gemini](https://algovault.com/integrations/gemini) |
 | 10 | Kraken | [`docs/integrations/kraken.md`](docs/integrations/kraken.md) | [`examples/kraken/demo.mjs`](examples/kraken/demo.mjs) | [algovault.com/docs/integrations/kraken](https://algovault.com/integrations/kraken) |
 | 11 | Alpaca | [`docs/integrations/alpaca.md`](docs/integrations/alpaca.md) | [`examples/alpaca/demo.mjs`](examples/alpaca/demo.mjs) | [algovault.com/docs/integrations/alpaca](https://algovault.com/integrations/alpaca) |
+| 12 | Gate.io | [`docs/integrations/gateio.md`](docs/integrations/gateio.md) | [`examples/gateio/demo.mjs`](examples/gateio/demo.mjs) | [algovault.com/docs/integrations/gateio](https://algovault.com/integrations/gateio) |
 <!-- /BUILD:README_INTEGRATIONS_TABLE -->
 
 ---
