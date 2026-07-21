@@ -1356,7 +1356,6 @@ export async function updateSignalMerkleProof(signalId: number, batchId: number,
   }
 }
 
-/** Get all Merkle batches (most recent first). */
 /**
  * OPS-MERKLE-BATCH-IDENTITY-W1 — the batch IDENTITY + true total, derived ONCE
  * server-side so no consumer computes them from a paginated array.
@@ -1392,7 +1391,29 @@ export async function getMerkleBatchSummary(): Promise<{
   };
 }
 
-export async function getMerkleBatches(limit = 100): Promise<any[]> {
+/** Default page size for the public /api/merkle-batches listing. */
+export const MERKLE_BATCHES_PAGE_SIZE = 100;
+
+/**
+ * OPS-CAPPED-COLLECTION-GUARD-W1 — a PAGE of Merkle batches, newest first.
+ *
+ * Renamed from `getMerkleBatches`, whose docstring literally read "Get ALL Merkle
+ * batches" while returning a `LIMIT`-capped page, and whose `limit = 100` default
+ * meant no call site ever typed a number. Two public figures were computed by
+ * reducing over the result and were wrong for two days: the batch count (100 vs a
+ * true 102) and "calls verified" (386,038 vs a true 387,834).
+ *
+ * `limit` is REQUIRED so truncation is a conscious act at every call site, and the
+ * name now matches this repo's convention for truncating accessors (`getTopAssetsByOI`,
+ * `listRecentLedger`, `topReferrers`, `getSampleSignalsFromLatestBatch`,
+ * `listPendingNotifications`, `drainEmailNotifications` — every one names its cap;
+ * this function was the lone misnomer, and it is the one that shipped wrong numbers).
+ *
+ * NEVER aggregate over the result. For totals use `getMerkleBatchSummary()`, which
+ * derives MAX/COUNT/SUM in SQL over the whole table. Enforced by
+ * tests/unit/capped-collection-guard.test.ts.
+ */
+export async function getRecentMerkleBatches(limit: number): Promise<any[]> {
   const safeLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
   const b = getBackend();
   if (isPg && b instanceof PgBackend) {

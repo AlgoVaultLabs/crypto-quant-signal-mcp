@@ -169,14 +169,19 @@
       // so its length is NOT the batch count and its size is NEVER the batch number.
       // Prefer the explicitly-served truth; fall back to the array only so the page
       // still renders against an older server mid-deploy (never to a hardcoded value).
-      var arrayLen = data && Array.isArray(data.batches) ? data.batches.length : null;
-      var n = data && typeof data.batch_count === 'number' ? data.batch_count : arrayLen;
-      setField('batch_count', formatCount(n));
+      // OPS-CAPPED-COLLECTION-GUARD-W1: the server-derived COUNT(*) is the ONLY
+      // source. The previous array-length fallback was the wrong-number shape kept
+      // alive: `data.batches` is a LIMIT-capped page, so its length pins at the cap
+      // (100) once more batches exist — exactly the bug this replaced. If the field
+      // is absent (an older server mid-deploy) we leave the baked fallback in the
+      // markup rather than overwrite it with a value we know to be short.
+      var n = data && typeof data.batch_count === 'number' ? data.batch_count : null;
+      if (n !== null) setField('batch_count', formatCount(n));
       // OPS-WEBSITE-COPY-DRIFT-CLEANUP-W1 (2026-05-25): pages use BOTH `batch_count`
       // and `merkle_batch_count` span keys (per OPS-DASHBOARD-DRIFT-CANARY-W1 first-fire
       // surfacing). Populate both for backward compat; canary expects `merkle_batch_count`
       // on / and /how-it-works. Without this, those Class A spans never hydrate.
-      setField('merkle_batch_count', formatCount(n));
+      if (n !== null) setField('merkle_batch_count', formatCount(n));
       // OPS-WEBSITE-COPY-DRIFT-CLEANUP-W1: verify-page latest-batch hydration.
       // Closes VERIFY_LATEST_BATCH_FRESH drift (static fallback "2026-05-09 18:00 UTC"
       // was 16d stale because no hydrator existed for these keys).

@@ -21,7 +21,7 @@ import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { renderBrandFooter } from './lib/footer-content.js';
-import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
 import { startDeliveryWorker } from './lib/webhook-delivery.js';
@@ -2476,7 +2476,13 @@ async function startHttp() {
 
   app.get('/api/merkle-batches', async (_req, res) => {
     try {
-      const [batches, summary] = await Promise.all([getMerkleBatches(), getMerkleBatchSummary()]);
+      // OPS-CAPPED-COLLECTION-GUARD-W1: the page size is now explicit at the call
+      // site. `batches` is a PAGE — every total on this response comes from
+      // `summary` (SQL MAX/COUNT/SUM over the whole table), never from the array.
+      const [batches, summary] = await Promise.all([
+        getRecentMerkleBatches(MERKLE_BATCHES_PAGE_SIZE),
+        getMerkleBatchSummary(),
+      ]);
       res.json({
         batches: batches.map((b: any) => ({
           ...b,
@@ -4374,18 +4380,22 @@ async function load() {
       var md = await mr.json();
       if (md.batches && md.batches.length > 0) {
         document.getElementById('onchain-badge').style.display = 'flex';
-        // OPS-MERKLE-SOT-UNIFY-W1: derive from the SERVER-SIDE SoT, never from the
-        // LIMIT-capped \`batches\` array. This block rendered "100 batches published"
-        // (array length) five lines above a span rendering "102" (latest.batch_id) —
-        // the same page contradicting itself — and under-reported calls verified by
-        // the oldest batches' signals (386,038 vs a true 387,834). Row-derived
-        // fallbacks keep an older server rendering sanely, but never a hardcode.
-        var batchCount = typeof md.batch_count === 'number' ? md.batch_count : md.batches.length;
-        var totalVerified = typeof md.total_signals === 'number'
-          ? md.total_signals
-          : md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
+        // OPS-MERKLE-SOT-UNIFY-W1 / OPS-CAPPED-COLLECTION-GUARD-W1: derive ONLY from
+        // the server-side SoT, never from the LIMIT-capped \`batches\` page. This block
+        // rendered "100 batches published" (array length) five lines above a span
+        // rendering "102" (latest.batch_id), and under-reported calls verified by the
+        // oldest batches' signals (386,038 vs a true 387,834).
+        //
+        // NO array fallback: this inline script and /api/merkle-batches ship in the
+        // SAME deploy, so version skew is impossible here — a fallback would be dead
+        // weight that keeps the wrong-number shape alive. If the fields are somehow
+        // absent we render nothing rather than a figure we know to be short, on the
+        // page whose entire purpose is verifiability.
         var latest = md.batches[0];
-        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + batchCount + ' batch' + (batchCount>1?'es':'') + ' published · ' + totalVerified.toLocaleString() + ' calls verified · <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan →</a>';
+        if (typeof md.batch_count === 'number' && typeof md.total_signals === 'number') {
+          var batchCount = md.batch_count;
+          document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + batchCount + ' batch' + (batchCount>1?'es':'') + ' published · ' + md.total_signals.toLocaleString() + ' calls verified · <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan →</a>';
+        }
         // DESIGN-W8-FIX / C3 (2026-05-11): hydrate Verify card's latest batch
         // number + timestamp. Batch # from latest.batch_id; timestamp formatted
         // as "YYYY-MM-DD HH:MM UTC" (matches canonical track-record-2.jsx).

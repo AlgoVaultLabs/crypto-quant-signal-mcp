@@ -75,12 +75,11 @@ async function fetchSnapshot() {
   try {
     const merkle = await fetch(`${base}/api/merkle-batches`, { signal: AbortSignal.timeout(10000) })
       .then((r) => (r.ok ? r.json() : null));
-    // OPS-MERKLE-SOT-UNIFY-W1: `batches` is LIMIT-capped (100) — its length is NOT
-    // the batch count. Prefer the server-derived COUNT(*); fall back to the array
-    // only against an older server.
-    const n = typeof merkle?.batch_count === 'number'
-      ? merkle.batch_count
-      : Array.isArray(merkle?.batches) ? merkle.batches.length : 0;
+    // OPS-CAPPED-COLLECTION-GUARD-W1: server-derived COUNT(*) ONLY. `batches` is a
+    // LIMIT-capped page, so its length pins at the cap once more batches exist — the
+    // array fallback was the wrong-number shape kept alive. Absent field → floor
+    // stands (this function's existing fail-open idiom), never a short count.
+    const n = typeof merkle?.batch_count === 'number' ? merkle.batch_count : 0;
     if (n > 0) out.batchCount = String(n);
   } catch { /* floor stands */ }
   return out;
