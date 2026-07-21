@@ -139,8 +139,8 @@ describe('integrations-data: cross-surface invariants', () => {
     }
   });
 
-  it('EXCHANGE_KITS contains exactly 11 entries all with hasDedicatedPage:true', () => {
-    expect(EXCHANGE_KITS.entries).toHaveLength(11);
+  it('EXCHANGE_KITS contains exactly 12 entries all with hasDedicatedPage:true', () => {
+    expect(EXCHANGE_KITS.entries).toHaveLength(12);
     for (const e of EXCHANGE_KITS.entries) {
       expect(e.hasDedicatedPage, `${e.slug}`).toBe(true);
     }

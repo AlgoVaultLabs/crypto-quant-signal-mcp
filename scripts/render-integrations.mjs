@@ -46,7 +46,10 @@ const { EXCHANGE_COUNT: SOT_EXCHANGE_COUNT } = require(join(ROOT, 'dist', 'lib',
 // HTX / MEXC / Phemex / Gate.io were verified and HALTed — see
 // audits/OPS-INTEGRATIONS-VENUE-PAGES-W1-endpoint-truth.md for why.
 const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alpaca',
-  'hyperliquid', 'aster', 'bingx', 'kucoin'];
+  'hyperliquid', 'aster', 'bingx', 'kucoin',
+  // OPS-INTEGRATIONS-VENUE-PAGES-W2 (2026-07-21): Gate.io. MEXC/HTX/Phemex are
+  // CLOSED, not pending — see audits/OPS-INTEGRATIONS-VENUE-PAGES-W2-endpoint-truth.md.
+  'gateio'];
 // AI-AGENT-FRAMEWORK-TUTORIALS-W1 (2026-05-18): 4 framework integration mirrors
 // extend the same render pipeline. Same template — eyebrow shows `<slug> integration`,
 // canonical URL = /integrations/<slug>, page title = AlgoVault × <Display>.
@@ -103,6 +106,7 @@ const DISPLAY_NAMES = {
   'claude-desktop': 'Claude Desktop',
   'claude-code': 'Claude Code',
   // OPS-INTEGRATIONS-VENUE-PAGES-W1 — labels VERBATIM from capabilities.ts EXCHANGES.
+  gateio: 'Gate.io',   // NOT the title-cased fallback "Gateio"
   hyperliquid: 'Hyperliquid',
   aster: 'Aster',
   bingx: 'BingX',

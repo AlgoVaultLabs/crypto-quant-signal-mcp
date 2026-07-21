@@ -1,7 +1,7 @@
 /**
  * OPS-INTEGRATIONS-LIVE-SOT-W1 — drift guard for landing/integrations/*.html.
  *
- * These 16 pages are COMMITTED static HTML served from the container, and the
+ * These 21 pages are COMMITTED static HTML served from the container, and the
  * deploy-time snapshot injector (scripts/snapshot-landing-data.mjs) does not
  * reach them — so a number baked here rots silently until someone notices. It
  * did: `89.4%` / `56,375` sat live from 2026-04-26 to 2026-07-19, and the
@@ -52,7 +52,7 @@ const DEAD_HOOKS: Array<[string, string]> = [
 
 describe('landing/integrations/*.html — stale-number drift guard', () => {
   it('finds the expected page set (guards against a silent glob miss)', () => {
-    expect(PAGES.length).toBe(20);
+    expect(PAGES.length).toBe(21);
     // Execution-kit tutorials for non-signal venues are intentional — kept, not
     // deleted, per Mr.1 2026-07-20. Their presence is asserted so a future
     // cleanup wave can't quietly drop them.

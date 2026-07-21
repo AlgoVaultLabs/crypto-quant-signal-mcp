@@ -22,7 +22,7 @@ describe('indexnow-ping buildIndexNowPayload', () => {
     // assertion that encoded it flip together: these are real 200s now and
     // SHOULD be submitted. Leaving the old assertion would have quietly kept
     // four live pages out of the crawl-submission set.
-    for (const slug of ['hyperliquid', 'aster', 'bingx', 'kucoin']) {
+    for (const slug of ['hyperliquid', 'aster', 'bingx', 'kucoin', 'gateio']) {
       expect(
         p.urlList.some((u: string) => u.includes(`/integrations/${slug}`)),
         `/integrations/${slug} should be submitted to IndexNow`,

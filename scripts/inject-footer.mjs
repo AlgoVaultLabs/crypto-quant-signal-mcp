@@ -55,6 +55,7 @@ const TARGETS = [
   'landing/integrations/aster.html',
   'landing/integrations/bingx.html',
   'landing/integrations/kucoin.html',
+  'landing/integrations/gateio.html',
 ];
 
 // Match a BRAND <footer>…</footer> (opening tag carries the oklch bg signature). Non-greedy

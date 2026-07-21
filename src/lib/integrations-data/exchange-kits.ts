@@ -1,5 +1,7 @@
 /**
- * Exchange Kit integrations — 4 entries (Binance · OKX · Bybit · Bitget).
+ * Exchange Kit integrations — 12 entries: the 4 original (Binance · OKX · Bybit ·
+ * Bitget), 3 execution-kit pairings (Gemini · Kraken · Alpaca), and 5 signal
+ * venues (Hyperliquid · Aster · BingX · KuCoin · Gate.io).
  *
  * Used to add the "Connect Your Exchange Kit" H3 to
  * docs.html#integration. Per-slug landing pages already shipped (4
@@ -263,6 +265,28 @@ POST https://api-futures.kucoin.com/api/v1/orders/test
       <p>Every legacy per-language KuCoin SDK is archived &mdash; and several archived repos carry more stars than the live one.</p>
       <p><a href="/integrations/kucoin" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>`,
       fullTutorialUrl: '/integrations/kucoin',
+      hasDedicatedPage: true,
+    },
+    // OPS-INTEGRATIONS-VENUE-PAGES-W2 (2026-07-21) — the last verifiable venue.
+    // Gate's testnet moved to api-testnet.gateapi.io; the SDK's default host is stale.
+    {
+      slug: 'gateio',
+      displayName: 'Gate.io',
+      surfaceType: 'exchange-kit',
+      setupSummary:
+        '<code class="text-xs bg-navy-800 px-1 rounded">pip install gate-api</code> &middot; official SDK 7.2.100 (PyPI + npm)',
+      whatYouGet:
+        "Composite verdict + Gate.io's futures testnet. Keyless demo converts coins to CONTRACTS from the live quanto_multiplier and prints the order \u2014 nothing is signed or sent.",
+      walkthroughHtml: `      <p>Gate moved its futures testnet &mdash; and <code class="text-xs bg-navy-800 px-1 rounded">gate-api</code> 7.2.100 still ships the old host as its default, so set the base URL explicitly:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">import gate_api
+cfg = gate_api.Configuration(
+    host="https://api-testnet.gateapi.io/api/v4",   # NOT the SDK default
+)</code></pre>
+      </div>
+      <p><code class="text-xs">size</code> is a CONTRACT count, not a coin quantity &mdash; 0.001 BTC is 10 contracts at <code class="text-xs">quanto_multiplier</code> 0.0001. Direction is the sign of <code class="text-xs">size</code>.</p>
+      <p><a href="/integrations/gateio" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>`,
+      fullTutorialUrl: '/integrations/gateio',
       hasDedicatedPage: true,
     },
   ],
