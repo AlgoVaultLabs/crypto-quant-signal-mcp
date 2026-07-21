@@ -42,7 +42,11 @@ const { EXCHANGE_COUNT: SOT_EXCHANGE_COUNT } = require(join(ROOT, 'dist', 'lib',
 // BROKER-PAIRING-CRYPTO-W1 (2026-06-05): +3 crypto agentic-trading kits
 // (Gemini self-hosted MCP / Kraken CLI / Alpaca crypto MCP) extend the
 // exchange-kit tutorial pattern; sources in algovault-skills/docs/integrations/.
-const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alpaca'];
+// OPS-INTEGRATIONS-VENUE-PAGES-W1 (2026-07-21): +4 signal-venue tutorials.
+// HTX / MEXC / Phemex / Gate.io were verified and HALTed — see
+// audits/OPS-INTEGRATIONS-VENUE-PAGES-W1-endpoint-truth.md for why.
+const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alpaca',
+  'hyperliquid', 'aster', 'bingx', 'kucoin'];
 // AI-AGENT-FRAMEWORK-TUTORIALS-W1 (2026-05-18): 4 framework integration mirrors
 // extend the same render pipeline. Same template — eyebrow shows `<slug> integration`,
 // canonical URL = /integrations/<slug>, page title = AlgoVault × <Display>.
@@ -98,6 +102,11 @@ const DISPLAY_NAMES = {
   // INTEGRATIONS-FULL-STACK-W1 C4 MCP clients
   'claude-desktop': 'Claude Desktop',
   'claude-code': 'Claude Code',
+  // OPS-INTEGRATIONS-VENUE-PAGES-W1 — labels VERBATIM from capabilities.ts EXCHANGES.
+  hyperliquid: 'Hyperliquid',
+  aster: 'Aster',
+  bingx: 'BingX',
+  kucoin: 'KuCoin',
   cursor: 'Cursor',
   cline: 'Cline (VSCode)',
   smithery: 'Smithery',
@@ -218,6 +227,7 @@ const SNAPSHOT_FALLBACK = Object.freeze({
   pfeWr: '91.5%',
   callCount: '383,785',
   batchCount: '100',
+  assetCount: '1330',
 });
 
 /** Mutated once by `main()` before any page renders. */
@@ -249,6 +259,10 @@ async function fetchSnapshot() {
       out.pfeWr = `${(wr * 100).toFixed(1)}%`;
       out.live = true;
     }
+    // Floor-rounded to the nearest 10 — mirrors formatAssetCount() in
+    // track-record-proxy.js exactly, so the baked floor equals what the proxy paints.
+    const assets = num(perf?.asset_count);
+    if (assets) out.assetCount = String(Math.floor(assets / 10) * 10);
   } catch { /* fail-open — floor stands */ }
   try {
     const merkle = await fetch(`${base}/api/merkle-batches`, { signal: AbortSignal.timeout(10000) })
@@ -256,6 +270,47 @@ async function fetchSnapshot() {
     const n = Array.isArray(merkle?.batches) ? merkle.batches.length : 0;
     if (n > 0) out.batchCount = String(n);
   } catch { /* fail-open — floor stands */ }
+  return out;
+}
+
+/**
+ * Live-proxy hooks that `landing/js/track-record-proxy.js` actually calls
+ * setField() for. A `data-tr-field` outside this set NEVER hydrates — its
+ * literal is frozen at bake time. Keep in sync with that file.
+ *
+ * The retired keys map to their live successors: `signal_count` was dropped in
+ * v1.10.0 (OUTPUT-SANITIZE-W1 C5) in favour of `call_count`.
+ */
+const RETIRED_TR_HOOKS = Object.freeze({
+  signal_count: 'call_count',
+  total_calls: 'call_count',
+  merkle_batches: 'merkle_batch_count',
+});
+
+/**
+ * Normalise track-record hooks + numbers in upstream-authored body HTML.
+ *
+ * Mirrors `scripts/refresh-integrations-numbers.mjs` (the committed-page
+ * refresher) so both paths agree byte-for-byte — a page is identical whether it
+ * was re-rendered from source or refreshed in place. Single-derivation: both
+ * read the same SNAPSHOT + venue SoT.
+ */
+function normaliseTrackRecordBody(bodyHtml) {
+  let out = bodyHtml;
+  for (const [dead, live] of Object.entries(RETIRED_TR_HOOKS)) {
+    out = out.replaceAll(`data-tr-field="${dead}"`, `data-tr-field="${live}"`);
+  }
+  const setField = (key, value) =>
+    (out = out.replace(
+      new RegExp(`(<span data-tr-field="${key}">)[^<]*(</span>)`, 'g'),
+      `$1${value}$2`,
+    ));
+  setField('pfe_wr', SNAPSHOT.pfeWr);
+  setField('call_count', SNAPSHOT.callCount);
+  setField('batch_count', SNAPSHOT.batchCount);
+  setField('merkle_batch_count', SNAPSHOT.batchCount);
+  setField('exchange_count', String(SOT_EXCHANGE_COUNT));
+  if (SNAPSHOT.assetCount) setField('asset_count', SNAPSHOT.assetCount);
   return out;
 }
 
@@ -452,6 +507,24 @@ async function renderOne(exchange) {
     /(?<!data-tr-field="exchange_count">)\b\d+ exchanges\b/g,
     `<span data-tr-field="exchange_count">${SOT_EXCHANGE_COUNT}</span> exchanges`,
   );
+
+  // OPS-INTEGRATIONS-VENUE-PAGES-W1 — body-content normalisation (the
+  // structural half of the fix).
+  //
+  // Everything above normalises only what THIS generator authors. The tutorial
+  // BODY comes from the algovault-skills repo, and it used to pass through raw
+  // — so an upstream `.md` carrying a retired literal or a dead live-proxy hook
+  // leaked it straight onto a public page. That is exactly how `89.4%` /
+  // `56,375` / `data-tr-field="signal_count"` survived from 2026-04-26 to
+  // 2026-07-19, and re-running this generator would have re-introduced them
+  // even after the rendered pages were corrected.
+  //
+  // Now the generator is the single normalisation point: whatever the upstream
+  // says, the rendered page carries live-hydrating hooks and live numbers. The
+  // upstream sources were corrected in the same wave, but this makes the class
+  // structurally unable to return the next time someone edits a tutorial there.
+  bodyHtml = normaliseTrackRecordBody(bodyHtml);
+
   const html = htmlShell(exchange, bodyHtml);
   await writeFile(dstPath, html);
   console.log(`[render] ${exchange}.md -> landing/integrations/${exchange}.html (${html.length} bytes)`);
@@ -465,7 +538,7 @@ async function main() {
   console.log(
     `[render] snapshot ${SNAPSHOT.live ? 'LIVE' : 'FALLBACK (SoT unreachable — rendering floor)'}` +
     ` pfeWr=${SNAPSHOT.pfeWr} callCount=${SNAPSHOT.callCount} batchCount=${SNAPSHOT.batchCount}` +
-    ` exchanges=${SOT_EXCHANGE_COUNT} date=${SNAPSHOT.date}`,
+    ` assetCount=${SNAPSHOT.assetCount} exchanges=${SOT_EXCHANGE_COUNT} date=${SNAPSHOT.date}`,
   );
   console.log(`[render] source(exchanges + frameworks)=${SOURCE_DIR}`);
   console.log(`[render] source(mcp-clients)=${LOCAL_MCP_CLIENTS_DIR}`);
