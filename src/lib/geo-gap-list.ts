@@ -184,6 +184,41 @@ export async function computeGapList(windowWeeks = 4): Promise<GapBrief[]> {
 }
 
 /**
+ * Is this query allowed to be AUTO-INJECTED into the editorial calendar?
+ *
+ * Gates on `target_set` MEMBERSHIP first, not on `product_fit` alone.
+ *
+ * `productFitOf` returns 1.0 for any query ABSENT from `product_fit`. So once
+ * GEO-TARGET-DIGEST-REDESIGN-W1 emptied that map (misfits were DROPPED rather than
+ * down-weighted), every query scored `1.0 >= inject_threshold` and became auto-injectable —
+ * including the very queries that wave had just dropped. `best-python-backtester` was written
+ * `injectable=true` for 2026-W30 and would have been auto-injected into the calendar,
+ * git-pushed, and published.
+ *
+ * This mirrors what that same wave already did at `geo-decide.ts::scoreWeek`: when a
+ * `target_set` SoT is present, a query ABSENT from it is not a target and must not be acted on.
+ * Encoding it HERE too means a future dropped query cannot silently re-arm the injection path,
+ * instead of depending on someone remembering to re-add a down-weight.
+ *
+ * Exported so the invariant is directly assertable without standing up the DB.
+ */
+export function isInjectable(
+  objective: ReturnType<typeof loadObjective>,
+  queryId: string,
+  injectThreshold: number,
+): boolean {
+  const productFit = productFitOf(objective, queryId);
+  if (!objective.target_set) {
+    // No target_set SoT ⇒ back-compat: fall through to product_fit alone.
+    return productFit >= injectThreshold;
+  }
+  const classified = objective.target_set[queryId];
+  if (!classified) return false; // absent from the SoT ⇒ not a target ⇒ never auto-inject
+  if (classified.tier === 'measure_only' || classified.target_mode === 'measure_only') return false;
+  return productFit >= injectThreshold;
+}
+
+/**
  * Persist the top gap brief(s) for the current ISO week to geo_content_gaps —
  * the hand-off table C6 reads. Hard cap of `max` rows per ISO week + UNIQUE
  * (iso_week, query_id) dedup => a second call the same week is a no-op.
@@ -215,7 +250,7 @@ export async function persistGapBriefs(
     const persisted: GapBrief[] = [];
     for (const b of toPersist) {
       const productFit = productFitOf(objective, b.query_id);
-      const injectable = productFit >= injectThreshold;
+      const injectable = isInjectable(objective, b.query_id, injectThreshold);
       dbRun(
         `INSERT INTO geo_content_gaps
            (iso_week, query_id, query_tier, model, sov, top_competitor, top_competitor_domain, recommended_action, rank_score, product_fit, injectable)
