@@ -17,6 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import { dbQuery } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 
 export interface Step { name: string; args: string[] }
 
@@ -95,5 +96,9 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 if (require.main === module) {
-  main(process.argv.slice(2)).then((code) => process.exit(code));
+  // OPS-SCRIPT-EXIT-LIFECYCLE-W1: this tail already exited on the success path,
+  // yet still produced zombies (observed 1d00h elapsed at 0:00 CPU) because
+  // `main()` itself never settled — no tail fix can catch that. runScript's
+  // watchdog bounds the process regardless. Numeric resolve is kept as exit code.
+  void runScript('nightly-carry-labeler', () => main(process.argv.slice(2)));
 }

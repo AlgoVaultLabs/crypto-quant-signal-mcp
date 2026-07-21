@@ -10,6 +10,7 @@
  * CJS/Node16.
  */
 import { makeEquityPool } from '../lib/equities/equity-store.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { computePfeOutcome, type OutcomeBar } from '../lib/equities/equity-outcomes.js';
 import { PFE_HORIZON_SESSIONS } from '../lib/equities/equity-constants.js';
 
@@ -60,7 +61,8 @@ export async function backfillEquityOutcomes(): Promise<{ filled: number; pendin
 }
 
 if (require.main === module) {
-  backfillEquityOutcomes()
-    .then((r) => { log(`DONE filled=${r.filled} scanned=${r.pending}`); process.exit(0); })
-    .catch((e) => { console.error(`[backfill-equity-outcomes] FATAL ${e?.message ?? e}`); process.exit(1); });
+  void runScript('backfill-equity-outcomes', async () => {
+    const r = await backfillEquityOutcomes();
+    log(`DONE filled=${r.filled} scanned=${r.pending}`);
+  }); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

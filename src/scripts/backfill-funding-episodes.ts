@@ -18,6 +18,7 @@
  * transport's banStatuses NEVER retry a 418.
  */
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fetch.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { buildPoolConfig } from '../lib/performance-db.js';
@@ -363,7 +364,7 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().then(() => process.exit(0)).catch((e) => { console.error('[backfill] FATAL', e); process.exit(1); });
+  void runScript('backfill-funding-episodes', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }
 
 export { buildManifest, fetchVenueFunding, META, halfSpread, mondayOf, SCHEMA_SQL, phaseRaw, phaseEpisodes };

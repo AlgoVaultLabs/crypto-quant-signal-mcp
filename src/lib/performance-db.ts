@@ -42,6 +42,13 @@ interface DbBackend {
   run(sql: string, ...params: unknown[]): void;
   all(sql: string, ...params: unknown[]): SignalRecord[];
   close(): void;
+  /**
+   * OPS-SCRIPT-EXIT-LIFECYCLE-W1: awaitable close. Resolves only once in-flight
+   * writes have drained AND the underlying handle/pool is released, so a
+   * short-lived script can `await` it before `process.exit` without losing a
+   * write. Optional — a synchronous backend may omit it and `close()` is used.
+   */
+  closeAsync?(): Promise<void>;
 }
 
 // ── SQLite Backend ──
@@ -263,9 +270,23 @@ class PgBackend implements DbBackend {
   }
 
   close(): void {
-    // Drain in-flight (possibly retrying) writes before ending the pool, so a
+    // Fire-and-forget shape kept BYTE-COMPATIBLE for existing callers: drain
+    // in-flight (possibly retrying) writes before ending the pool, so a
     // short-lived seed/backfill process can't exit mid-write and lose the signal.
-    void Promise.allSettled([...this.pending]).then(() => this.pool.end().catch(() => {}));
+    void this.closeAsync();
+  }
+
+  /**
+   * OPS-SCRIPT-EXIT-LIFECYCLE-W1: the awaitable form of `close()`.
+   *
+   * `close()` cannot be awaited, so `closeDb(); process.exit(0)` would kill the
+   * process mid-drain and silently drop the very INSERTs `pending` exists to
+   * protect — the same ~90% seed-signal loss that made `allowExitOnIdle` unsafe
+   * (see buildPoolConfig). Scripts MUST `await` this (via runScript) before exit.
+   */
+  async closeAsync(): Promise<void> {
+    await Promise.allSettled([...this.pending]);
+    await this.pool.end().catch(() => {});
   }
 
   async query(sql: string, params: unknown[] = []): Promise<SignalRecord[]> {
@@ -851,6 +872,21 @@ export function closeDb(): void {
     backend.close();
     backend = null;
   }
+}
+
+/**
+ * OPS-SCRIPT-EXIT-LIFECYCLE-W1: awaitable `closeDb()`.
+ *
+ * Resolves once in-flight writes have drained and the pool is released. The
+ * module-level `backend` is cleared BEFORE awaiting so a concurrent caller can
+ * never double-close the same handle. Safe to call when no backend is open.
+ */
+export async function closeDbAsync(): Promise<void> {
+  const b = backend;
+  backend = null;
+  if (!b) return;
+  if (typeof b.closeAsync === 'function') await b.closeAsync();
+  else b.close();
 }
 
 // ── Generic DB access for other modules (analytics) ──

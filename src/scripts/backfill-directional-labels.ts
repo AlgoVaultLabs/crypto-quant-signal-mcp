@@ -25,7 +25,8 @@
  *   node dist/scripts/backfill-directional-labels.js --venue BINANCE --coin BTC --limit-groups 20
  */
 
-import { dbQuery, dbExec, closeDb } from '../lib/performance-db.js';
+import { dbQuery, dbExec } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
@@ -336,11 +337,8 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  runAsCaller('dwr-backfill', main)
-    .then(() => closeDb())
-    .catch((err) => {
-      console.error('Fatal:', err);
-      closeDb();
-      process.exit(1);
-    });
+  // OPS-SCRIPT-EXIT-LIFECYCLE-W1: the success path called closeDb() but never
+  // exited — and closeDb() is fire-and-forget, so the drain could not be awaited
+  // either. runScript awaits the drain, then exits.
+  void runScript('backfill-directional-labels', () => runAsCaller('dwr-backfill', main));
 }

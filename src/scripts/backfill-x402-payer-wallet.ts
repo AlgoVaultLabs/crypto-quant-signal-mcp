@@ -17,6 +17,7 @@
  * a ±RANGE window (< 10k). No web3 WRITE deps (Data-Integrity LAW) — viem read client only.
  */
 import { createPublicClient, http, parseAbiItem } from 'viem';
+import { runScript } from '../lib/script-lifecycle.js';
 import { base } from 'viem/chains';
 import { dbQuery } from '../lib/performance-db.js';
 
@@ -89,8 +90,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch((e) => {
-    console.error('[backfill-x402-payer] fatal:', e instanceof Error ? e.message : e);
-    process.exit(1);
-  });
+  void runScript('backfill-x402-payer-wallet', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

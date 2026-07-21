@@ -11,6 +11,7 @@
  */
 
 import type { ExchangeId } from '../types.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { fetchOiHistoryUsd } from '../lib/oi-sources.js';
 import { recordOiSnapshots, bucketHour, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
@@ -63,13 +64,8 @@ export async function runOiSnapshotBackfill(): Promise<BackfillResult> {
 }
 
 if (require.main === module) {
-  runOiSnapshotBackfill()
-    .then((r) => {
-      console.log('[oi-backfill] done', JSON.stringify(r));
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error('[oi-backfill] fatal:', err);
-      process.exit(1);
-    });
+  void runScript('oi-snapshot-backfill', async () => {
+    const r = await runOiSnapshotBackfill();
+    console.log('[oi-backfill] done', JSON.stringify(r));
+  }); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

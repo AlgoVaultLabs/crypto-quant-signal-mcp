@@ -46,6 +46,7 @@
 import { getTradeSignal } from '../tools/get-trade-call.js';
 import { InsufficientCandlesError } from '../lib/errors.js';
 import { hasRecentSignalAsync, closeDb, bulkWarmFundingCache } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { classifyAsset, warmTierCaches, isKnownTradFi } from '../lib/asset-tiers.js';
 import { getTicker24hrFullCoalesced } from '../lib/adapters/binance.js';
 import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
@@ -1071,9 +1072,8 @@ async function main() {
 // invokes it directly, so require.main === module holds and behavior is
 // unchanged.
 if (require.main === module) {
-  main().catch((err) => {
-    console.error('Fatal:', err);
-    closeDb();
-    process.exit(1);
-  });
+  // OPS-SCRIPT-EXIT-LIFECYCLE-W1: drain-then-exit on EVERY path (success, throw,
+  // or a leaked handle) — the prior `.catch()`-only tail cleaned up solely on
+  // failure, so successful runs never exited and pinned Postgres connections.
+  void runScript('seed-signals', main);
 }

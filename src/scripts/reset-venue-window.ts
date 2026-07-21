@@ -24,6 +24,7 @@
  * artifact — vs a one-off SQL).
  */
 import { getVenue, resetSeedingStarted } from '../lib/venue-store.js';
+import { runScript } from '../lib/script-lifecycle.js';
 
 const EPOCH_SEC_RE = /^\d{10}$/;
 const EPOCH_MS_RE = /^\d{13}$/;
@@ -128,5 +129,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
+  void runScript('reset-venue-window', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

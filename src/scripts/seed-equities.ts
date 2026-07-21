@@ -10,6 +10,7 @@
  * CJS/Node16.
  */
 import pLimit from 'p-limit';
+import { runScript } from '../lib/script-lifecycle.js';
 import { DatabentoEquityBarsProvider } from '../lib/equities/equity-bars-provider.js';
 import { computeVerdictsForUniverse } from '../lib/equities/equity-verdict.js';
 import { isValidSession } from '../lib/equities/equity-indicators.js';
@@ -82,7 +83,8 @@ export async function seedEquities(): Promise<{ session: string; bars: number; v
 }
 
 if (require.main === module) {
-  seedEquities()
-    .then((r) => { log(`DONE session=${r.session} bars=${r.bars} verdicts=${r.verdicts} noop=${r.noop}`); process.exit(0); })
-    .catch((e) => { console.error(`[seed-equities] FATAL ${e?.code ?? ''} ${e?.message ?? e}`); process.exit(1); });
+  void runScript('seed-equities', async () => {
+    const r = await seedEquities();
+    log(`DONE session=${r.session} bars=${r.bars} verdicts=${r.verdicts} noop=${r.noop}`);
+  }); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

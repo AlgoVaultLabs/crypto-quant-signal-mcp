@@ -13,6 +13,7 @@
  * Run: docker exec <ctr> node dist/scripts/oiscore-shadow-measure.js [windowDays=30]
  */
 import { summarizeOiScoreShadow } from '../lib/oiscore-shadow.js';
+import { runScript } from '../lib/script-lifecycle.js';
 
 export async function runOiScoreShadowMeasure(windowDays = 30, nowMs: number = Date.now()): Promise<void> {
   const s = await summarizeOiScoreShadow(windowDays * 24 * 60 * 60 * 1000, nowMs);
@@ -31,10 +32,5 @@ export async function runOiScoreShadowMeasure(windowDays = 30, nowMs: number = D
 // exported + test-importable.
 if (require.main === module) {
   const windowDays = Number(process.argv[2] ?? 30) || 30;
-  runOiScoreShadowMeasure(windowDays)
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error('[oiscore-shadow-measure] fatal:', err);
-      process.exit(1);
-    });
+  void runScript('oiscore-shadow-measure', () => runOiScoreShadowMeasure(windowDays)); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

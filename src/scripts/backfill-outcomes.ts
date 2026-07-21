@@ -26,6 +26,7 @@
  */
 
 import { getSignalsNeedingUnifiedBackfillAsync, updateSignalOutcomes, closeDb } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import { getDexForCoin } from '../lib/asset-tiers.js';
 import { runAsBatch, runAsCaller, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
@@ -226,9 +227,8 @@ async function main() {
 // which is byte-identical in shape to how `seed-signals.js` is invoked; that script has
 // carried this same guard for months and keeps writing signals normally.
 if (require.main === module) {
-  runAsCaller('backfill', main).catch((err) => {
-    console.error('Fatal:', err);
-    closeDb();
-    process.exit(1);
-  });
+  // OPS-SCRIPT-EXIT-LIFECYCLE-W1: drain-then-exit on EVERY path. `runAsCaller`
+  // (weight-budget attribution) stays wrapped INSIDE main so the caller tag still
+  // covers all async work it spawns.
+  void runScript('backfill-outcomes', () => runAsCaller('backfill', main));
 }

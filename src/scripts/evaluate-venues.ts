@@ -41,6 +41,7 @@
  */
 
 import { dbQuery } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import {
   listVenues,
   recordEval,
@@ -273,5 +274,7 @@ async function main(): Promise<void> {
 // CJS heuristic: require.main === module. Under ts-node/tsx we check
 // process.argv[1].
 if (require.main === module) {
-  main().then(() => process.exit(0));
+  // OPS-SCRIPT-EXIT-LIFECYCLE-W1: also gains error handling — the prior tail had
+  // no .catch(), so a rejection surfaced as an unhandled rejection.
+  void runScript('evaluate-venues', main);
 }

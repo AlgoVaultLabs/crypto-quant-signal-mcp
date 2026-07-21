@@ -11,6 +11,7 @@
  * CJS/Node16 (__dirname-safe; never import.meta).
  */
 import { DatabentoEquityBarsProvider } from '../lib/equities/equity-bars-provider.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { buildUniverse, median } from '../lib/equities/equity-universe-rank.js';
 import { makeEquityPool, freezeUniverse } from '../lib/equities/equity-store.js';
 import {
@@ -99,7 +100,8 @@ export async function buildEquityUniverse(): Promise<{ active: number }> {
 }
 
 if (require.main === module) {
-  buildEquityUniverse()
-    .then((r) => { log(`DONE active=${r.active}`); process.exit(0); })
-    .catch((e) => { console.error(`[build-equity-universe] FATAL ${e?.code ?? ''} ${e?.message ?? e}`); process.exit(1); });
+  void runScript('build-equity-universe', async () => {
+    const r = await buildEquityUniverse();
+    log(`DONE active=${r.active}`);
+  }); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

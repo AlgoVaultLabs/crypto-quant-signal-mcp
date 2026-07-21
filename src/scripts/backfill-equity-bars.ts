@@ -9,6 +9,7 @@
  * CJS/Node16.
  */
 import pLimit from 'p-limit';
+import { runScript } from '../lib/script-lifecycle.js';
 import { DatabentoEquityBarsProvider } from '../lib/equities/equity-bars-provider.js';
 import { makeEquityPool, getActiveUniverse, upsertBars, countBars } from '../lib/equities/equity-store.js';
 import { BACKFILL_DAYS, DATABENTO_HISTORY_START } from '../lib/equities/equity-constants.js';
@@ -75,7 +76,8 @@ export async function backfillEquityBars(): Promise<{ bars: number; batches: num
 }
 
 if (require.main === module) {
-  backfillEquityBars()
-    .then((r) => { log(`DONE bars=${r.bars} batches=${r.batches}`); process.exit(0); })
-    .catch((e) => { console.error(`[backfill-equity-bars] FATAL ${e?.code ?? ''} ${e?.message ?? e}`); process.exit(1); });
+  void runScript('backfill-equity-bars', async () => {
+    const r = await backfillEquityBars();
+    log(`DONE bars=${r.bars} batches=${r.batches}`);
+  }); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

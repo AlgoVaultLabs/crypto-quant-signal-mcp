@@ -9,7 +9,8 @@
  *   node dist/scripts/dwr-baseline-report.js > /tmp/dwr-baseline.json
  */
 
-import { dbQuery, closeDb } from '../lib/performance-db.js';
+import { dbQuery } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { benjaminiHochberg, bonferroni } from './edge-stats.js';
 import { computeCellStats, ptOverRows, type LabelRow, type Side } from './dwr-baseline.js';
 
@@ -155,5 +156,5 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().then(() => closeDb()).catch((e) => { console.error('Fatal:', e); closeDb(); process.exit(1); });
+  void runScript('dwr-baseline-report', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

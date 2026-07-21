@@ -11,6 +11,7 @@
  * net_carry / net_apr are INTERNAL (never exposed). Deterministic bootstrap (seeded LCG).
  */
 import { buildPoolConfig } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { annualizeFunding } from '../lib/rank-constants.js';
 import { getAdapter } from '../lib/exchange-adapter.js';
 import type { ExchangeId } from '../types.js';
@@ -197,5 +198,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().then(() => process.exit(0)).catch((e) => { console.error('[report] FATAL', e); process.exit(1); });
+  void runScript('funding-baseline-report', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

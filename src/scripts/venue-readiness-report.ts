@@ -17,6 +17,7 @@
  * to print to stdout without sending.
  */
 import { listVenues } from '../lib/venue-store.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { computeVenueStats } from './evaluate-venues.js';
 import { sendDigest } from '../lib/telegram.js';
 import { dbQuery } from '../lib/performance-db.js';
@@ -133,5 +134,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().then(() => process.exit(0)).catch((err) => { console.error('Fatal:', err); process.exit(1); });
+  void runScript('venue-readiness-report', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

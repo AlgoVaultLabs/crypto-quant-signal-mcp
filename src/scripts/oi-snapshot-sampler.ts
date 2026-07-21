@@ -17,6 +17,7 @@
  */
 
 import type { ExchangeId } from '../types.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { fetchCurrentOiUsd } from '../lib/oi-sources.js';
 import { recordOiSnapshots, bucketHour, pruneOiSnapshots } from '../lib/oi-snapshots.js';
 import { PROMOTED_VENUE_IDS } from '../lib/capabilities.js';
@@ -67,13 +68,11 @@ export async function runOiSnapshotSampler(nowMs: number = Date.now()): Promise<
 
 // require.main guard (CJS, target ES2022) — cron invokes this directly.
 if (require.main === module) {
-  runOiSnapshotSampler()
-    .then((r) => {
-      console.log('[oi-sampler] done', JSON.stringify(r));
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error('[oi-sampler] fatal:', err);
-      process.exit(1);
-    });
+  // OPS-SCRIPT-EXIT-LIFECYCLE-W1: the prior tail exited WITHOUT draining, which
+  // could abort in-flight fire-and-forget writes (dbExec/dbRun are
+  // fire-and-forget on PG). runScript drains first, then exits.
+  void runScript('oi-snapshot-sampler', async () => {
+    const r = await runOiSnapshotSampler();
+    console.log('[oi-sampler] done', JSON.stringify(r));
+  });
 }

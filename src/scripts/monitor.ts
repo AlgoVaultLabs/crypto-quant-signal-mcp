@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
 import { formatAgentActivity } from '../lib/agent-activity-format.js';
 import { getPerformanceStatsAsync, dbQuery } from '../lib/performance-db.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { evaluatePfeWinRate, internalPerfPublicUrl } from './monitor-pfe.js';
 import { evaluateSeedFreshness, buildSeedFreshnessRows, formatSeedOutagePage } from './monitor-seed-freshness.js';
 import { listVenues } from '../lib/venue-store.js';
@@ -717,4 +718,10 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// OPS-SCRIPT-EXIT-LIFECYCLE-W1: was a bare `main()` — no guard, no cleanup, no
+// exit on success, running 720x/day. The guard also makes this module
+// test-importable (see agent-activity-format.ts, which only exists because
+// importing monitor.ts used to fire main() on load).
+if (require.main === module) {
+  void runScript('monitor', main);
+}

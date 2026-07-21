@@ -24,6 +24,7 @@
  *       npx tsx src/scripts/acp-graduation-buyer.ts --execute --max-jobs 10  # full graduation run
  */
 import { normalizeOfferingName } from '../channels/acp/offerings.js';
+import { runScript } from '../lib/script-lifecycle.js';
 
 // ─────────────── minimal seller-facing types (no ESM-only SDK type-import → avoids TS1541) ───────────────
 /** The subset of the SDK `AcpAgentOffering` the driver reads (a real offering is assignable). */
@@ -377,8 +378,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch((e) => {
-    console.error('[ACP-BUYER] fatal:', e instanceof Error ? e.message : e);
-    process.exit(1);
-  });
+  void runScript('acp-graduation-buyer', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

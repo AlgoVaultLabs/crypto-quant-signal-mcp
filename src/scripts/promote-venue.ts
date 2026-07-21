@@ -18,6 +18,7 @@
  * a shadow venue goes live, keeping Mr.1 in the loop.
  */
 import { getVenue, setStatus } from '../lib/venue-store.js';
+import { runScript } from '../lib/script-lifecycle.js';
 import { computeVenueStats } from './evaluate-venues.js';
 import { sendVenueStatusChange } from '../lib/telegram.js';
 
@@ -98,5 +99,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
+  void runScript('promote-venue', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

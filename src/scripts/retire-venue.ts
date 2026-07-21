@@ -12,6 +12,7 @@
  * to drop a venue). No public surface change (retired venues were never public).
  */
 import { getVenue, setStatus } from '../lib/venue-store.js';
+import { runScript } from '../lib/script-lifecycle.js';
 
 export async function retireVenue(exchangeId: string, now: Date = new Date()): Promise<number> {
   const venue = await getVenue(exchangeId);
@@ -44,5 +45,5 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
+  void runScript('retire-venue', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }

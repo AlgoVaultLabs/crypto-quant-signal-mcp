@@ -26,6 +26,7 @@
 // (EDGE-DWR-METRIC-SOT-W1). Imported for internal use and re-exported below so this
 // module's public interface — and its shipped tests — remain byte-identical.
 import { normalCdf, wilsonInterval, excessZP, benjaminiHochberg, bonferroni } from './edge-stats.js';
+import { runScript } from '../lib/script-lifecycle.js';
 export { normalCdf, wilsonInterval, excessZP, benjaminiHochberg, bonferroni };
 
 // ── Row shape (asset-agnostic) ───────────────────────────────────────────────
@@ -597,11 +598,6 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main()
-    .then(() => process.exit(0))
-    .catch((e) => {
-      console.error(`[calibration-audit] FATAL ${e?.message ?? e}`);
-      process.exit(1);
-    });
+  void runScript('calibration-audit', main); // OPS-SCRIPT-EXIT-LIFECYCLE-W1
 }
 /* c8 ignore stop */
