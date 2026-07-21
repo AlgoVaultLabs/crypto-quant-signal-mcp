@@ -2489,6 +2489,10 @@ async function startHttp() {
         // "#100" for exactly that reason once batch 101 crossed the cap).
         latest_batch_id: summary.latest_batch_id,
         batch_count: summary.batch_count,
+        // OPS-MERKLE-SOT-UNIFY-W1: SUM(signal_count) over ALL batches. The capped
+        // `batches` array cannot produce this — reducing over it under-reported
+        // "calls verified" by the oldest batches' signals (386,038 vs 387,834).
+        total_signals: summary.total_signals,
         contractAddress: MERKLE_CONTRACT_ADDR,
         chain: 'Base (8453)',
         // OPS-PUBLIC-API-CONVERT-NUDGE-W1: additive machine-readable conversion
@@ -4370,14 +4374,27 @@ async function load() {
       var md = await mr.json();
       if (md.batches && md.batches.length > 0) {
         document.getElementById('onchain-badge').style.display = 'flex';
-        var totalVerified = md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
+        // OPS-MERKLE-SOT-UNIFY-W1: derive from the SERVER-SIDE SoT, never from the
+        // LIMIT-capped \`batches\` array. This block rendered "100 batches published"
+        // (array length) five lines above a span rendering "102" (latest.batch_id) —
+        // the same page contradicting itself — and under-reported calls verified by
+        // the oldest batches' signals (386,038 vs a true 387,834). Row-derived
+        // fallbacks keep an older server rendering sanely, but never a hardcode.
+        var batchCount = typeof md.batch_count === 'number' ? md.batch_count : md.batches.length;
+        var totalVerified = typeof md.total_signals === 'number'
+          ? md.total_signals
+          : md.batches.reduce(function(a,b){return a+(parseInt(b.signal_count)||0);},0);
         var latest = md.batches[0];
-        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + md.batches.length + ' batch' + (md.batches.length>1?'es':'') + ' published · ' + totalVerified.toLocaleString() + ' calls verified · <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan →</a>';
+        document.getElementById('merkle-stats').innerHTML = 'On-Chain Proof: ' + batchCount + ' batch' + (batchCount>1?'es':'') + ' published · ' + totalVerified.toLocaleString() + ' calls verified · <a href="https://basescan.org/address/' + md.contractAddress + '" target="_blank" style="color:#58a6ff">View on Basescan →</a>';
         // DESIGN-W8-FIX / C3 (2026-05-11): hydrate Verify card's latest batch
         // number + timestamp. Batch # from latest.batch_id; timestamp formatted
         // as "YYYY-MM-DD HH:MM UTC" (matches canonical track-record-2.jsx).
-        if (latest.batch_id != null) {
-          document.querySelectorAll('[data-tr-field="merkle_batch_count"]').forEach(function(el){ el.textContent = latest.batch_id; });
+        // OPS-MERKLE-SOT-UNIFY-W1: ONE derivation for the batch identity, projected
+        // to every surface on this page (previously this read latest.batch_id while
+        // the merkle-stats line above independently read batches.length).
+        var latestId = typeof md.latest_batch_id === 'number' ? md.latest_batch_id : latest.batch_id;
+        if (latestId != null) {
+          document.querySelectorAll('[data-tr-field="merkle_batch_count"]').forEach(function(el){ el.textContent = latestId; });
         }
         if (latest.published_at) {
           var dt = new Date(latest.published_at);

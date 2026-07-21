@@ -75,7 +75,12 @@ async function fetchSnapshot() {
   try {
     const merkle = await fetch(`${base}/api/merkle-batches`, { signal: AbortSignal.timeout(10000) })
       .then((r) => (r.ok ? r.json() : null));
-    const n = Array.isArray(merkle?.batches) ? merkle.batches.length : 0;
+    // OPS-MERKLE-SOT-UNIFY-W1: `batches` is LIMIT-capped (100) — its length is NOT
+    // the batch count. Prefer the server-derived COUNT(*); fall back to the array
+    // only against an older server.
+    const n = typeof merkle?.batch_count === 'number'
+      ? merkle.batch_count
+      : Array.isArray(merkle?.batches) ? merkle.batches.length : 0;
     if (n > 0) out.batchCount = String(n);
   } catch { /* floor stands */ }
   return out;

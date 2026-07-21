@@ -1373,15 +1373,22 @@ export async function updateSignalMerkleProof(signalId: number, batchId: number,
 export async function getMerkleBatchSummary(): Promise<{
   latest_batch_id: number | null;
   batch_count: number;
+  total_signals: number;
 }> {
-  const rows = (await dbQuery<{ latest_batch_id: string | number | null; batch_count: string | number }>(
-    `SELECT MAX(batch_id) AS latest_batch_id, COUNT(*) AS batch_count FROM merkle_batches`,
-  )) as Array<{ latest_batch_id: string | number | null; batch_count: string | number }>;
+  type Row = {
+    latest_batch_id: string | number | null;
+    batch_count: string | number;
+    total_signals: string | number | null;
+  };
+  const rows = (await dbQuery<Row>(
+    `SELECT MAX(batch_id) AS latest_batch_id, COUNT(*) AS batch_count, COALESCE(SUM(signal_count), 0) AS total_signals FROM merkle_batches`,
+  )) as Row[];
   const row = rows[0];
   const latest = row?.latest_batch_id;
   return {
     latest_batch_id: latest === null || latest === undefined ? null : Number(latest),
     batch_count: Number(row?.batch_count ?? 0),
+    total_signals: Number(row?.total_signals ?? 0),
   };
 }
 

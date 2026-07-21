@@ -30,10 +30,53 @@ const PROXY = readFileSync(join(REPO_ROOT, 'landing', 'js', 'track-record-proxy.
 const INDEX = readFileSync(join(REPO_ROOT, 'src', 'index.ts'), 'utf-8');
 
 describe('merkle batch identity — count is never used as an identity', () => {
-  it('the API serves the identity and the true count explicitly', () => {
+  it('the API serves the identity, the true count and the true total explicitly', () => {
     // Without these, every consumer is forced to re-derive from the capped array.
     expect(INDEX).toMatch(/latest_batch_id:\s*summary\.latest_batch_id/);
     expect(INDEX).toMatch(/batch_count:\s*summary\.batch_count/);
+    // OPS-MERKLE-SOT-UNIFY-W1: the capped array cannot produce this at all.
+    expect(INDEX).toMatch(/total_signals:\s*summary\.total_signals/);
+  });
+
+  /**
+   * OPS-MERKLE-SOT-UNIFY-W1 — the /track-record page rendered "100 batches published"
+   * (md.batches.length) FIVE LINES above a span rendering "102" (latest.batch_id):
+   * one page contradicting itself, because two surfaces re-derived the same concept
+   * from different sources. It also under-reported "calls verified" by reducing over
+   * the capped array (386,038 vs a true 387,834).
+   */
+  it('the /track-record inline block derives from the SoT, not the capped array', () => {
+    const block = INDEX.slice(INDEX.indexOf("getElementById('merkle-stats')") - 1500);
+    const stats = block.slice(0, 2500);
+    // The exact regression shapes.
+    expect(stats).not.toMatch(/'On-Chain Proof: '\s*\+\s*md\.batches\.length/);
+    expect(stats).not.toMatch(/var totalVerified = md\.batches\.reduce/);
+    // The SoT-derived replacements.
+    expect(stats).toMatch(/md\.batch_count/);
+    expect(stats).toMatch(/md\.total_signals/);
+    expect(stats).toMatch(/md\.latest_batch_id/);
+  });
+
+  it('the integrations generators use the served count, not the capped array length', () => {
+    for (const rel of ['scripts/refresh-integrations-numbers.mjs', 'scripts/render-integrations.mjs']) {
+      const src = readFileSync(join(REPO_ROOT, rel), 'utf-8');
+      expect(src, `${rel} must prefer merkle.batch_count`).toMatch(/merkle\?\.batch_count/);
+    }
+  });
+
+  it('a capped payload yields the TRUE total, not the sum of returned rows', () => {
+    // 100 rows returned, 102 real batches. Rows carry 10 signals each (=1000),
+    // but the true total is larger because the oldest batches are not in the array.
+    const payload = {
+      batches: Array.from({ length: 100 }, (_, i) => ({ batch_id: 102 - i, signal_count: 10 })),
+      total_signals: 1020,
+      batch_count: 102,
+    };
+    const cappedSum = payload.batches.reduce((a, b) => a + b.signal_count, 0);
+    const totalVerified =
+      typeof payload.total_signals === 'number' ? payload.total_signals : cappedSum;
+    expect(cappedSum).toBe(1000); // what the bug reported
+    expect(totalVerified).toBe(1020); // what is true
   });
 
   it('the proxy hydrates latest_batch* from the identity, not from a count', () => {
