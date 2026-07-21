@@ -16,7 +16,18 @@ describe('indexnow-ping buildIndexNowPayload', () => {
     // homepage present; verified-404 pages must NOT be submitted
     expect(p.urlList).toContain('https://algovault.com/');
     expect(p.urlList.some((u: string) => u.includes('/pricing'))).toBe(false);
-    expect(p.urlList.some((u: string) => u.includes('/integrations/hyperliquid'))).toBe(false);
+    // OPS-INTEGRATIONS-VENUE-PAGES-W1: /integrations/hyperliquid was asserted
+    // ABSENT here because it was a verified 404 — the venue had no page. This
+    // wave shipped it (plus aster/bingx/kucoin), so the exemption and the
+    // assertion that encoded it flip together: these are real 200s now and
+    // SHOULD be submitted. Leaving the old assertion would have quietly kept
+    // four live pages out of the crawl-submission set.
+    for (const slug of ['hyperliquid', 'aster', 'bingx', 'kucoin']) {
+      expect(
+        p.urlList.some((u: string) => u.includes(`/integrations/${slug}`)),
+        `/integrations/${slug} should be submitted to IndexNow`,
+      ).toBe(true);
+    }
     // every URL is an https apex URL (no www, no http)
     for (const u of p.urlList) {
       expect(u.startsWith('https://algovault.com/')).toBe(true);

@@ -35,6 +35,7 @@
     "snapshot:capabilities:live": "tsc && node scripts/snapshot_capabilities.mjs --live",
     "snapshot:capabilities:check": "tsc && node scripts/snapshot_capabilities.mjs --check",
     "registry:drift:check": "tsc && node scripts/check-feature-registry-drift.mjs --check",
+    "integrations:lockstep:check": "node scripts/check-integrations-registry-lockstep.mjs --check",
     "registry:drift:live": "node scripts/check-feature-registry-drift.mjs --live https://api.algovault.com",
     "rank:parity:check": "tsc && node scripts/check-rank-metrics-parity.mjs --check",
     "rank:parity:live": "node scripts/check-rank-metrics-parity.mjs --live",

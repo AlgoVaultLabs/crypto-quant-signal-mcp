@@ -45,6 +45,16 @@ const TARGETS = [
   'landing/integrations/okx.html',
   'landing/integrations/bybit.html',
   'landing/integrations/bitget.html',
+  // OPS-INTEGRATIONS-VENUE-PAGES-W1: TARGETS was stale — it listed only the
+  // original 4 exchange pages, so gemini/kraken/alpaca never received the
+  // single-source brand footer. Now every rendered exchange page.
+  'landing/integrations/gemini.html',
+  'landing/integrations/kraken.html',
+  'landing/integrations/alpaca.html',
+  'landing/integrations/hyperliquid.html',
+  'landing/integrations/aster.html',
+  'landing/integrations/bingx.html',
+  'landing/integrations/kucoin.html',
 ];
 
 // Match a BRAND <footer>…</footer> (opening tag carries the oklch bg signature). Non-greedy

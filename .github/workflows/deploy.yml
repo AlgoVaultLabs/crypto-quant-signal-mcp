@@ -117,6 +117,9 @@ jobs:
       - name: Feature-registry drift canary (check-feature-registry-drift --check)
         run: node scripts/check-feature-registry-drift.mjs --check
 
+      - name: Integrations registry lockstep canary (check-integrations-registry-lockstep --check)
+        run: node scripts/check-integrations-registry-lockstep.mjs --check
+
       # SCAN-RANKBY-W1 CH2: cross-venue rank-field parity canary (STATIC). Fails the
       # push if a venue stops returning a rank field, the funding APR unit drifts, or
       # /capabilities stops advertising the rankBy lens set. Network-free (fixture-
