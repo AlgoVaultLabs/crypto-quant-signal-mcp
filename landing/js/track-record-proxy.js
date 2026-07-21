@@ -165,7 +165,12 @@
     });
 
     fetchJson(MERKLE_URL).then(function (data) {
-      var n = data && Array.isArray(data.batches) ? data.batches.length : null;
+      // OPS-MERKLE-BATCH-IDENTITY-W1: `data.batches` is LIMIT-capped (100) server-side,
+      // so its length is NOT the batch count and its size is NEVER the batch number.
+      // Prefer the explicitly-served truth; fall back to the array only so the page
+      // still renders against an older server mid-deploy (never to a hardcoded value).
+      var arrayLen = data && Array.isArray(data.batches) ? data.batches.length : null;
+      var n = data && typeof data.batch_count === 'number' ? data.batch_count : arrayLen;
       setField('batch_count', formatCount(n));
       // OPS-WEBSITE-COPY-DRIFT-CLEANUP-W1 (2026-05-25): pages use BOTH `batch_count`
       // and `merkle_batch_count` span keys (per OPS-DASHBOARD-DRIFT-CANARY-W1 first-fire
@@ -190,8 +195,15 @@
             setField('latest_batch_at', ymd + ' ' + hm);
           }
         }
-        setField('latest_batch_n', formatCount(n));        // batch count (same as batch_count, different span key)
-        setField('latest_batch', '#' + formatCount(n));    // batch number with # prefix (matches verify-page "#N" shape)
+        // OPS-MERKLE-BATCH-IDENTITY-W1: these two are the batch IDENTITY, not a count.
+        // They previously reused `n` (a row count) — correct only while fewer batches
+        // existed than the LIMIT. Batch 101 crossed it and /verify froze at "#100"
+        // while the sibling timestamp above kept updating.
+        var latestId = data && typeof data.latest_batch_id === 'number'
+          ? data.latest_batch_id
+          : (latest && latest.batch_id != null ? Number(latest.batch_id) : null);
+        setField('latest_batch_n', formatCount(latestId));
+        setField('latest_batch', '#' + formatCount(latestId));
       }
     }).catch(function (err) {
       if (typeof console !== 'undefined' && console.debug) {

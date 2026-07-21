@@ -1357,6 +1357,34 @@ export async function updateSignalMerkleProof(signalId: number, batchId: number,
 }
 
 /** Get all Merkle batches (most recent first). */
+/**
+ * OPS-MERKLE-BATCH-IDENTITY-W1 — the batch IDENTITY + true total, derived ONCE
+ * server-side so no consumer computes them from a paginated array.
+ *
+ * `getMerkleBatches()` is capped (LIMIT 100). Consumers were deriving both the
+ * displayed batch NUMBER and the batch COUNT from `batches.length`, which is
+ * only equal to the truth while fewer than `limit` batches exist. Batch 101
+ * (2026-07-20) crossed that line and the /verify page pinned at "#100"
+ * permanently while its sibling timestamp kept updating — a half-live badge on
+ * the page whose entire purpose is verifiability.
+ *
+ * `latest_batch_id` is MAX(batch_id) — an identity, never a row count.
+ */
+export async function getMerkleBatchSummary(): Promise<{
+  latest_batch_id: number | null;
+  batch_count: number;
+}> {
+  const rows = (await dbQuery<{ latest_batch_id: string | number | null; batch_count: string | number }>(
+    `SELECT MAX(batch_id) AS latest_batch_id, COUNT(*) AS batch_count FROM merkle_batches`,
+  )) as Array<{ latest_batch_id: string | number | null; batch_count: string | number }>;
+  const row = rows[0];
+  const latest = row?.latest_batch_id;
+  return {
+    latest_batch_id: latest === null || latest === undefined ? null : Number(latest),
+    batch_count: Number(row?.batch_count ?? 0),
+  };
+}
+
 export async function getMerkleBatches(limit = 100): Promise<any[]> {
   const safeLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
   const b = getBackend();

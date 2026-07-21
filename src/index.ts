@@ -21,7 +21,7 @@ import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { renderBrandFooter } from './lib/footer-content.js';
-import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
+import { closeDb, getConfidenceBands, getHoldStats, getMerkleBatches, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
 import { startDeliveryWorker } from './lib/webhook-delivery.js';
@@ -2476,12 +2476,19 @@ async function startHttp() {
 
   app.get('/api/merkle-batches', async (_req, res) => {
     try {
-      const batches = await getMerkleBatches();
+      const [batches, summary] = await Promise.all([getMerkleBatches(), getMerkleBatchSummary()]);
       res.json({
         batches: batches.map((b: any) => ({
           ...b,
           basescanUrl: `https://basescan.org/tx/${b.tx_hash}`,
         })),
+        // OPS-MERKLE-BATCH-IDENTITY-W1: additive, existing fields byte-unchanged.
+        // `batches` is LIMIT-capped, so its length is NOT the batch count and its
+        // first element's id is the only safe identity. Serve both explicitly so
+        // no consumer re-derives them from the array (the /verify page pinned at
+        // "#100" for exactly that reason once batch 101 crossed the cap).
+        latest_batch_id: summary.latest_batch_id,
+        batch_count: summary.batch_count,
         contractAddress: MERKLE_CONTRACT_ADDR,
         chain: 'Base (8453)',
         // OPS-PUBLIC-API-CONVERT-NUDGE-W1: additive machine-readable conversion
