@@ -36,12 +36,14 @@
     "snapshot:capabilities:check": "tsc && node scripts/snapshot_capabilities.mjs --check",
     "registry:drift:check": "tsc && node scripts/check-feature-registry-drift.mjs --check",
     "integrations:lockstep:check": "node scripts/check-integrations-registry-lockstep.mjs --check",
+    "assets:version": "node scripts/build_asset_versions.mjs",
+    "assets:version:check": "node scripts/build_asset_versions.mjs --check",
     "registry:drift:live": "node scripts/check-feature-registry-drift.mjs --live https://api.algovault.com",
     "rank:parity:check": "tsc && node scripts/check-rank-metrics-parity.mjs --check",
     "rank:parity:live": "node scripts/check-rank-metrics-parity.mjs --live",
     "scan:digest:parity:check": "tsc && node scripts/check-scan-digest-parity.mjs --check",
     "scan:digest:parity:live": "node scripts/check-scan-digest-parity.mjs --live",
-    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check"
+    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check"
   },
   "keywords": [
     "mcp",

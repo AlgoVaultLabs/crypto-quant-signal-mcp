@@ -94,6 +94,17 @@ jobs:
       - name: Landing-page sync guard (build_landing --check; incl. tools + channel pages)
         run: node scripts/build_landing.mjs --check
 
+      # OPS-LANDING-ASSET-CACHE-BUST-W1: first-party landing JS must carry its content hash
+      # (`?v=<sha256[:8]>`). Caddy serves assets max-age=60 but CLOUDFLARE rewrites that to
+      # max-age=14400 (4h), so a correct deploy stays invisible to returning visitors for up
+      # to 4h — and because track-record-proxy.js refreshes on an interval, the stale copy
+      # ACTIVELY re-writes hydrated spans back to the old value (that is how /verify kept
+      # showing merkle batch "#100" against an on-chain "#102" after a correct deploy).
+      # Failing here makes "changed the JS, forgot to re-stamp" a build failure instead of a
+      # silent 4h regression that also defeats post-deploy visual verification.
+      - name: Landing asset cache-bust guard (build_asset_versions --check)
+        run: node scripts/build_asset_versions.mjs --check
+
       # NAV-PLATFORM-GENERATOR-W1 CH5: unified-nav drift canary (STATIC parity). Fails the push
       # if any landing page's injected nav region has fallen out of sync with the ONE model
       # (src/lib/site-nav.ts renderSiteNav() ← nav-manifest.ts) OR a nav-bearing page is missing

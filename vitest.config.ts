@@ -64,6 +64,9 @@ export default defineConfig({
       // FOOTER-UNIFY-W1 — node:test footer-drift canary (canonical runner is node:test;
       // exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/footer-unify-canary.test.mjs',
+      // OPS-LANDING-ASSET-CACHE-BUST-W1 — node:test asset-version stamp canary (canonical
+      // runner is node:test; exclude from vitest so it doesn't false-fail "No test suite found").
+      'tests/unit/asset-version-stamp.test.mjs',
       // LANDING-DUAL-RENDER-PARITY-W1 — node:test dual-render copy-drift canary (canonical
       // runner is node:test; exclude from vitest so it doesn't false-fail "No test suite found").
       'tests/unit/landing-dual-render-parity.test.mjs',
