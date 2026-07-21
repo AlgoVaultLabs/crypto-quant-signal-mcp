@@ -52,7 +52,7 @@ const DEAD_HOOKS: Array<[string, string]> = [
 
 describe('landing/integrations/*.html — stale-number drift guard', () => {
   it('finds the expected page set (guards against a silent glob miss)', () => {
-    expect(PAGES.length).toBe(16);
+    expect(PAGES.length).toBe(20);
     // Execution-kit tutorials for non-signal venues are intentional — kept, not
     // deleted, per Mr.1 2026-07-20. Their presence is asserted so a future
     // cleanup wave can't quietly drop them.

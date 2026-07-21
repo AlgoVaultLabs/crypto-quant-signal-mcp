@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlgoVault × BingX — Build Verifiable AI Trading Agents</title>
+<meta name="description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with BingX&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
+<link rel="canonical" href="https://algovault.com/integrations/bingx">
+<link rel="icon" type="image/png" href="/logo.png">
+<meta property="og:title" content="AlgoVault × BingX — Build Verifiable AI Trading Agents">
+<meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with BingX&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://algovault.com/integrations/bingx">
+<!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
+<meta name="last-updated" content="2026-07-21">
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/_design/algovault-design.css">
+<!-- END: AlgoVault canonical design loader -->
+<script defer src="/js/track-record-proxy.js"></script>
+<!-- WEBSITE-REFRESH-W1 C7 — Schema.org TechArticle for Google rich-results
+     eligibility (replaced HowTo which Google deprecated for SERP rich
+     results in Aug 2023; TechArticle is current rich-result-eligible). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "AlgoVault × BingX - Build Verifiable AI Trading Agents",
+  "url": "https://algovault.com/integrations/bingx",
+  "datePublished": "2026-04-25T00:00:00+00:00",
+  "dateModified": "2026-07-21T15:00:00+00:00",
+  "author": {
+    "@type": "Organization",
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "AlgoVault Labs",
+    "url": "https://algovault.com",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://algovault.com/logo.png",
+      "width": 512,
+      "height": 512
+    }
+  },
+  "image": {
+    "@type": "ImageObject",
+    "url": "https://algovault.com/logo.png",
+    "width": 512,
+    "height": 512
+  },
+  "description": "Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with BingX's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.",
+  "proficiencyLevel": "Intermediate|Advanced",
+  "about": {
+    "@type": "Thing",
+    "name": "BingX integration with AlgoVault MCP composite verdict"
+  }
+}
+</script>
+<!-- ANALYTICS:START -->
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="/js/insights.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init({endpoint:"/pa/event"})
+</script>
+<!-- ANALYTICS:END -->
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: { 900: '#060a14', 800: '#0a0e1a', 700: '#0f1526', 600: '#161d30' },
+        mint: { 50: 'oklch(0.97 0.03 165)', 100: 'oklch(0.94 0.06 165)', 200: 'oklch(0.91 0.09 165)', 300: 'oklch(0.89 0.13 165)', 400: 'oklch(0.86 0.16 165)', 500: 'oklch(0.78 0.18 165)', 600: 'oklch(0.66 0.18 165)', 700: 'oklch(0.54 0.16 165)', 800: 'oklch(0.42 0.12 165)', 900: 'oklch(0.32 0.08 165)' },
+        steel: { 400: '#8b9bb5', 500: '#7b8ca0', 600: '#5e6d82' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  /* DESIGN-W10 / C3 / Q-W10-10 cascade: use canonical CSS variables for body background.
+     algovault-design.css defines --bg / --fg / --fg-2 / --fg-3 / --line / --mint tokens. */
+  body { background: var(--bg); color: var(--fg-2, #d1d5db); font-family: var(--font-text, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); margin: 0; padding: 0; }
+  /* Inline code + pre code — neutral colors preserved (no gold per DESIGN-W10 swap).
+     Build Rule 8 exemption applies to syntax-highlighting inline color spans inside
+     code blocks (preserved if present in markdown source). */
+  code { font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
+  pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; color: var(--fg); }
+  /* DESIGN-W10 / C3: article headings — gold (#d4b255 / #c4a34a) → var(--fg) neutral. */
+  article h1 { font-size: 2.25rem; font-weight: 700; margin: 0 0 0.5em; color: var(--fg); }
+  article h2 { font-size: 1.6rem; font-weight: 600; margin: 0 0 0.5em; color: var(--fg); padding-top: 0; border-top: none; }
+  article h3 { font-size: 1.2rem; font-weight: 600; margin: 1.25em 0 0.4em; color: var(--fg-2); }
+  article p { margin: 0.75em 0; line-height: 1.7; }
+  article ul, article ol { margin: 0.75em 0; padding-left: 1.5em; line-height: 1.7; }
+  article li { margin: 0.25em 0; }
+  /* DESIGN-W10 / C3: article links — gold → var(--mint). */
+  article a { color: var(--mint); text-decoration: underline; }
+  article a:hover { filter: brightness(1.1); }
+  article strong { color: var(--fg); font-weight: 600; }
+  /* DESIGN-W10 / C3: blockquote — gold accent → mint. */
+  article blockquote { border-left: 3px solid var(--mint); padding-left: 16px; margin: 1em 0; color: var(--fg-3); font-style: italic; background: oklch(0.86 0.16 165 / 0.05); padding: 12px 16px; border-radius: 0 4px 4px 0; }
+  article table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  article th, article td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  article th { color: var(--fg); font-weight: 600; }
+  article hr { border: none; border-top: 1px solid var(--line); margin: 2em 0; }
+</style>
+</head>
+<body>
+<!-- NAV-PLATFORM-GENERATOR-W1 (A1): unified nav region — scripts/build_nav.mjs injects the
+     shared renderSiteNav() here (single-derivation; retires the old per-page canonicalNavHtml). -->
+<!-- NAV:START -->
+<nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+    <a href="https://algovault.com/" class="flex items-center gap-2.5" aria-label="AlgoVault home">
+      <img src="/logo.png" alt="AlgoVault Logo" class="w-7 h-7 rounded-md">
+      <span class="text-white font-semibold text-sm">AlgoVault Labs</span>
+    </a>
+    <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+      <div class="relative" data-nav-dropdown>
+      <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-platform-panel" class="inline-flex items-center gap-1 hover:text-white transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+      <div id="nav-platform-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
+        <div class="w-[640px] grid grid-cols-3 gap-6 rounded-xl border border-white/10 p-4" style="background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tools</div>
+          <div class="text-[11px] text-gray-500 mb-2.5">What the brain does</div>
+          <a href="https://algovault.com/tools#get-trade-call" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call</span></a>
+          <a href="https://algovault.com/tools#get-market-regime" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Market Regime</span></a>
+          <a href="https://algovault.com/tools#scan-funding-arb" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Funding Arbitrage</span></a>
+          <a href="https://algovault.com/tools#scan-trade-calls" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Trade Call Scanner</span></a>
+          <a href="https://algovault.com/tools#chat-knowledge" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Knowledge Chat</span></a>
+          <a href="https://algovault.com/tools" class="inline-block mt-2 text-xs font-medium text-mint-400 hover:text-mint-300 transition">See all tools →</a>
+        </div>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Channels</div>
+          <div class="text-[11px] text-gray-500 mb-2.5">How you connect</div>
+          <a href="https://algovault.com/mcp" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">MCP Server</span><span class="block text-[11px] text-gray-500 leading-snug">Native Model Context Protocol endpoint</span></a>
+          <a href="https://algovault.com/rest-api" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">REST API</span><span class="block text-[11px] text-gray-500 leading-snug">Call over HTTP — keyless x402 or API key</span></a>
+          <a href="https://algovault.com/webhooks" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Webhooks</span><span class="block text-[11px] text-gray-500 leading-snug">Push trade calls + regime shifts to your endpoint</span></a>
+          <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Telegram Bot</span><span class="block text-[11px] text-gray-500 leading-snug">Trade calls delivered in Telegram</span></a>
+        </div>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Ecosystem</div>
+          <div class="text-[11px] text-gray-500 mb-2.5">Extend &amp; explore</div>
+          <a href="https://algovault.com/integrations" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Integrations</span><span class="block text-[11px] text-gray-500 leading-snug">Exchanges + AI clients</span></a>
+          <a href="https://algovault.com/skills" class="block py-1.5 group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Skills</span><span class="block text-[11px] text-gray-500 leading-snug">Prebuilt agent skills</span></a>
+        </div>
+        </div>
+      </div>
+    </div>
+      <div class="relative" data-nav-dropdown>
+      <button type="button" data-nav-dropdown-toggle aria-haspopup="true" aria-expanded="false" aria-controls="nav-track-record-panel" class="inline-flex items-center gap-1 hover:text-white transition">Track Record <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+      <div id="nav-track-record-panel" data-nav-dropdown-panel class="hidden absolute left-0 top-full pt-3 z-50">
+        <div class="w-60 rounded-xl border border-white/10 p-4" style="background:rgba(10,14,26,0.98);backdrop-filter:blur(16px);box-shadow:0 20px 60px -12px rgba(0,0,0,0.7)">
+        <a href="https://algovault.com/track-record" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Live Dashboard</span><span class="block text-[11px] text-gray-500">Real-time PFE win rate</span></a>
+        <a href="https://algovault.com/verify" class="block px-3 py-2 rounded-lg hover:bg-white/5 transition group/i"><span class="block text-sm text-gray-200 group-hover/i:text-mint-400 transition">Verify</span><span class="block text-[11px] text-gray-500">On-chain Merkle proofs</span></a>
+        </div>
+      </div>
+    </div>
+      <a href="https://algovault.com/how-it-works" class="hover:text-white transition" data-nav-link>How it works</a>
+      <a href="https://algovault.com/#pricing" class="hover:text-white transition" data-nav-link>Pricing</a>
+      <a href="https://algovault.com/docs" class="hover:text-white transition" data-nav-link>Docs</a>
+      <a href="https://api.algovault.com/account" class="hover:text-white transition" data-nav-link>Account</a>
+      <a href="https://api.algovault.com/welcome" class="px-3 py-1 bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 rounded-full text-xs font-semibold transition" data-nav-link>Signup</a>
+    </div>
+      <button type="button" data-mobile-nav-toggle id="mobile-nav-toggle" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false" class="sm:hidden inline-flex items-center justify-center w-11 h-11 -mr-2 text-gray-400 hover:text-white transition">
+        <svg data-mobile-nav-icon-open class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg data-mobile-nav-icon-close class="w-6 h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+  </div>
+      <div id="mobile-menu" data-mobile-nav-panel class="hidden sm:hidden border-t border-white/5" style="background:rgba(6,10,20,0.97);backdrop-filter:blur(12px)">
+        <button type="button" data-nav-accordion-toggle aria-expanded="false" aria-controls="nav-m-platform-panel" class="w-full flex items-center justify-between px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Platform <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+        <div id="nav-m-platform-panel" data-nav-accordion-panel class="hidden">
+          <a href="https://algovault.com/tools#get-trade-call" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call</a>
+          <a href="https://algovault.com/tools#get-market-regime" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Market Regime</a>
+          <a href="https://algovault.com/tools#scan-funding-arb" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Funding Arbitrage</a>
+          <a href="https://algovault.com/tools#scan-trade-calls" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Trade Call Scanner</a>
+          <a href="https://algovault.com/tools#chat-knowledge" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Knowledge Chat</a>
+          <a href="https://algovault.com/tools" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">See all tools</a>
+          <a href="https://algovault.com/mcp" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">MCP Server</a>
+          <a href="https://algovault.com/rest-api" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">REST API</a>
+          <a href="https://algovault.com/webhooks" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Webhooks</a>
+          <a href="https://t.me/algovaultofficialbot" target="_blank" rel="noopener noreferrer" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Telegram Bot</a>
+          <a href="https://algovault.com/integrations" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Integrations</a>
+          <a href="https://algovault.com/skills" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Skills</a>
+        </div>
+        <button type="button" data-nav-accordion-toggle aria-expanded="false" aria-controls="nav-m-track-record-panel" class="w-full flex items-center justify-between px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Track Record <svg class="w-3.5 h-3.5 opacity-70" data-nav-chevron fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
+        <div id="nav-m-track-record-panel" data-nav-accordion-panel class="hidden">
+          <a href="https://algovault.com/track-record" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Live Dashboard</a>
+          <a href="https://algovault.com/verify" class="block pl-9 pr-6 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 transition">Verify</a>
+        </div>
+        <a href="https://algovault.com/how-it-works" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">How it works</a>
+        <a href="https://algovault.com/#pricing" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Pricing</a>
+        <a href="https://algovault.com/docs" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Docs</a>
+        <a href="https://api.algovault.com/account" class="block px-6 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition">Account</a>
+        <div class="px-6 py-3">
+          <a href="https://api.algovault.com/welcome" class="block px-4 py-3 rounded-lg text-sm text-center bg-mint-500/15 border border-mint-500/30 text-mint-400 hover:bg-mint-500/25 font-semibold transition">Signup</a>
+        </div>
+      </div>
+</nav>
+<script>
+/* NAV-PLATFORM-GENERATOR-W1 controller (shared, identical across all surfaces) */
+(function(){
+  var mToggle = document.querySelector('[data-mobile-nav-toggle]');
+  var mPanel = document.getElementById('mobile-menu');
+  var navEl = mToggle ? mToggle.closest('nav') : document.querySelector('nav');
+  function mIsOpen(){ return mPanel && !mPanel.classList.contains('hidden'); }
+  function mSet(open){
+    if(!mPanel||!mToggle) return;
+    mPanel.classList.toggle('hidden', !open);
+    mToggle.setAttribute('aria-expanded', open ? 'true':'false');
+    mToggle.setAttribute('aria-label', open ? 'Close menu':'Open menu');
+    var io=mToggle.querySelector('[data-mobile-nav-icon-open]'), ic=mToggle.querySelector('[data-mobile-nav-icon-close]');
+    if(io) io.classList.toggle('hidden', open);
+    if(ic) ic.classList.toggle('hidden', !open);
+  }
+  if(mToggle&&mPanel){
+    mToggle.addEventListener('click', function(e){ e.stopPropagation(); mSet(!mIsOpen()); });
+  }
+  // desktop dropdowns
+  var dropdowns = [].slice.call(document.querySelectorAll('[data-nav-dropdown]'));
+  function ddClose(dd){
+    var b=dd.querySelector('[data-nav-dropdown-toggle]'), p=dd.querySelector('[data-nav-dropdown-panel]');
+    if(p) p.classList.add('hidden'); if(b) b.setAttribute('aria-expanded','false');
+  }
+  function ddSet(dd, open){
+    var b=dd.querySelector('[data-nav-dropdown-toggle]'), p=dd.querySelector('[data-nav-dropdown-panel]');
+    if(!b||!p) return;
+    dropdowns.forEach(function(o){ if(o!==dd) ddClose(o); });
+    p.classList.toggle('hidden', !open); b.setAttribute('aria-expanded', open?'true':'false');
+  }
+  dropdowns.forEach(function(dd){
+    var b=dd.querySelector('[data-nav-dropdown-toggle]'), p=dd.querySelector('[data-nav-dropdown-panel]');
+    if(!b||!p) return;
+    b.addEventListener('click', function(e){ e.stopPropagation(); ddSet(dd, p.classList.contains('hidden')); });
+    dd.addEventListener('mouseenter', function(){ ddSet(dd, true); });
+    dd.addEventListener('mouseleave', function(){ ddClose(dd); });
+    dd.addEventListener('focusout', function(e){ if(!dd.contains(e.relatedTarget)) ddClose(dd); });
+  });
+  // mobile accordions
+  [].slice.call(document.querySelectorAll('[data-nav-accordion-toggle]')).forEach(function(b){
+    var p=document.getElementById(b.getAttribute('aria-controls'));
+    if(!p) return;
+    b.addEventListener('click', function(){ var open=p.classList.contains('hidden'); p.classList.toggle('hidden', !open); b.setAttribute('aria-expanded', open?'true':'false'); });
+  });
+  // global close
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ dropdowns.forEach(ddClose); if(mIsOpen()) mSet(false); } });
+  document.addEventListener('click', function(e){
+    dropdowns.forEach(function(dd){ if(!dd.contains(e.target)) ddClose(dd); });
+    if(mIsOpen() && navEl && !navEl.contains(e.target)) mSet(false);
+  });
+  if(mPanel) mPanel.addEventListener('click', function(e){ if(e.target.closest('a')) mSet(false); });
+  // client-side current-page highlight (byte-identical HTML on every page; JS marks active)
+  try {
+    var here = location.origin + location.pathname.replace(/\/$/, '');
+    [].slice.call(document.querySelectorAll('nav [data-nav-link]')).forEach(function(a){
+      var h = (a.getAttribute('href')||'').split('#')[0].replace(/\/$/, '');
+      if(h && h === here){ a.classList.remove('text-gray-400'); a.classList.add('text-mint-400','font-medium'); }
+    });
+  } catch(_){}
+})();
+</script>
+<!-- NAV:END -->
+
+<!-- DESIGN-W10 / C3: canonical hero scaffolding (artboard + 3 bg layers + VEyebrow). -->
+<main class="lp-integrations-desktop">
+  <div class="artboard" style="padding:100px 24px 64px;max-width:1024px;margin:0 auto;width:100%">
+    <div class="bg-grid"></div>
+    <div class="bg-radial-accent"></div>
+    <div class="bg-noise"></div>
+    <div style="position:relative;z-index:1">
+      <div class="placeholder-cap" style="margin-bottom:14px">· bingx integration</div>
+      <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
+      <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">388,297</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+      </p>
+      <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
+           (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
+           "I means remove this section, not the section cards" — referring to the
+           TL;DR section content, not the visual card structure. wrapH2InTierStatCard()
+           wraps each h2 section + intro in a card; stripTLDRSection() removes the
+           redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
+      <article>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault × BingX — Build Verifiable AI Trading Agents</h1>
+<p>AlgoVault MCP gives your agent a <strong>composite verdict</strong> in one call — direction, confidence, regime, and cross-venue funding/sentiment context — backed by a publicly auditable record anchored to Base L2. Pair it with BingX’s VST demo-trading environment and your agent has both the analytics brain and the execution venue.</p>
+<blockquote>
+<p><strong>Provenance:</strong> BingX publishes <strong>no official client SDK</strong> — its GitHub org (<a href="https://github.com/BingX-API"><code>BingX-API</code></a>) contains documentation repos and an AI-skills bundle, not a client library, and no BingX-published package exists on npm. The demo below therefore uses plain <code>fetch</code> + Node’s built-in <code>crypto</code>, with zero third-party dependencies. Demo execution runs against BingX’s <strong>VST (Virtual Simulated Trading)</strong> host <code>https://open-api-vst.bingx.com</code>, documented in BingX’s own org repo as <em>“Production Simulated (Testnet) … use <code>prod-vst</code> for paper trading / testing without real funds”</em>, with <code>BINGX_TESTNET=true</code> + <code>MAINNET_BLOCKED=true</code> wrapper guards. Verified 2026-07-21.</p>
+</blockquote></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>What you’ll build (90s read)</h2>
+<p>A runnable Node.js agent that:</p>
+<ol>
+<li>Calls AlgoVault MCP for a composite verdict on a chosen asset + timeframe.</li>
+<li>Reads the verdict’s <code>call</code>, <code>confidence</code>, <code>regime</code>, and <code>reasoning</code> fields.</li>
+<li>Hands the verdict to BingX’s VST demo environment, which validates a small order via the dedicated dry-run endpoint when the agent’s pre-configured policy fires.</li>
+</ol>
+<p>The whole loop runs against BingX’s VST demo host — <strong>zero real-money risk in any code path</strong>.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Prerequisites (4 items)</h2>
+<ol>
+<li><strong>Node.js ≥ 22</strong> (<code>node --version</code> to check).</li>
+<li><strong>AlgoVault skills plugin</strong> installed:<pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
+</code></pre>
+</li>
+<li><strong>BingX account</strong> (free signup at <a href="https://bingx.com">https://bingx.com</a>). API key + secret from the <a href="https://bingx.com/en/accounts/api">API management console</a>. Keys are <strong>read-only by default</strong> — enable trade permission explicitly, and IP-allowlist them.</li>
+<li><strong>No SDK to install.</strong> The demo runs read-only out of the box with no keys at all; supplying keys unlocks the authenticated dry-run step.</li>
+</ol></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Demo: Confidence-filtered entry validator on BTC (≤80 lines)</h2>
+<pre><code class="language-javascript">// examples/bingx/demo.mjs (excerpt — see file for full source)
+import crypto from 'node:crypto';
+import { getAlgoVaultVerdict } from '../_shared/algovault-helper.mjs';
+
+const MAINNET_BLOCKED = true;
+const BINGX_VST_BASE = 'https://open-api-vst.bingx.com';
+
+if (process.env.BINGX_TESTNET !== 'true') {
+  throw new Error('BINGX_TESTNET=true required — demo refuses to run against mainnet.');
+}
+
+const verdict = await getAlgoVaultVerdict({ coin: 'BTC', timeframe: '1h' });
+
+if (verdict.call === 'BUY' &amp;&amp; verdict.confidence &gt; 70) {
+  // Dry-run: validates signature + params, places nothing.
+  await signedPost('/openApi/swap/v2/trade/order/test', {
+    symbol: 'BTC-USDT', side: 'BUY', positionSide: 'LONG',
+    type: 'MARKET', quantity: 0.001,
+  });
+}
+</code></pre>
+<p>Run it:</p>
+<pre><code class="language-bash">BINGX_TESTNET=true node examples/bingx/demo.mjs
+</code></pre>
+<p>Expected output (last 3 lines):</p>
+<pre><code>[bingx vst | contracts HTTP 200 | BTC-USDT tradable on the demo host]
+[policy | fires=false (call===BUY &amp;&amp; confidence&gt;70)]
+=== NO REAL ORDERS PLACED ===
+</code></pre></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Walkthrough (line-by-line — neutral narration)</h2>
+<p>The script does three things in order:</p>
+<ol>
+<li>
+<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers up to 20 calls/day per IP — plenty for development.</p>
+</li>
+<li>
+<p><strong>Apply the agent’s policy.</strong> When the verdict satisfies a pre-configured policy (e.g. <em>the agent’s policy fires when <code>confidence &gt; 70</code> AND <code>call === 'BUY'</code></em>), the script proceeds to the execution branch. The policy lives entirely in your code — AlgoVault returns the analytics; the agent decides.</p>
+</li>
+<li>
+<p><strong>Hand the order to BingX.</strong> The signed request goes to <code>POST /openApi/swap/v2/trade/order/test</code>, which validates the signature and parameters without placing a trade. The script aborts immediately if <code>BINGX_TESTNET</code> is not set — a hard guard against accidentally running against mainnet.</p>
+</li>
+</ol></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>3 Recipes</h2>
+<h3>Recipe 1 — Regime-gated entries</h3>
+<p>Call <code>get_market_regime</code> before acting. When the regime is <code>RANGING</code>, a trend-following agent can skip the entry rather than paying the spread on a chop signal. The regime arrives in the same composite response — no second provider, no extra call.</p>
+<h3>Recipe 2 — Validate before you place</h3>
+<p>BingX exposes <code>POST /openApi/swap/v2/trade/order/test</code> alongside the real <code>POST /openApi/swap/v2/trade/order</code>. Route every order through the test endpoint first and only submit on a clean response. It is the cheapest possible guard against a malformed signature or a bad <code>positionSide</code>, and it costs nothing.</p>
+<h3>Recipe 3 — Top up demo funds from code</h3>
+<p>The VST balance is adjustable via the API itself: <code>POST /openApi/swap/v2/trade/getVst</code> takes <code>adjustType</code> (<code>0</code> increase / <code>1</code> decrease) and <code>amount</code>, rate-limited to 5/s per UID. A long-running backtest harness can therefore reset its own demo balance between runs without touching the web console.</p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>⚠️ Production setup (real-money)</h2>
+<p>The demo above runs on the VST demo host only. Real-money setup requires:</p>
+<ul>
+<li>KYC completion on BingX.</li>
+<li>Production API keys with <strong>only</strong> the permissions your agent needs (no withdrawals, IP-allowlisted). Keys are read-only until you explicitly grant trade permission.</li>
+<li>Risk controls: per-order size cap, daily loss limit, kill switch.</li>
+<li>Position monitoring: a separate agent or watchdog that tracks open positions independently.</li>
+<li>Awareness of the order rate limit — 10/s per UID and 3/s per IP on the place-order endpoint.</li>
+</ul>
+<p>See <code>examples/bingx/README.md</code> for the full real-money checklist. <strong>AlgoVault provides analytics; your agent and your risk policy decide what (if anything) to execute.</strong></p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Why AlgoVault?</h2>
+<ul>
+<li><strong>Composite verdict, not raw indicators.</strong> One JSON response replaces 26-indicator vote-counting.</li>
+<li><strong>Cross-venue intelligence.</strong> Funding spreads, regime, and sentiment fused across <span data-tr-field="exchange_count">12</span> exchanges — not derivable from any single-venue API.</li>
+<li><strong>Publicly verified.</strong> Every signal anchored to Base L2 via Merkle proof. Verify before you subscribe.</li>
+<li>
+<!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
+</li>
+</ul>
+<p><strong><span data-tr-field="pfe_wr">91.5%</span> PFE Win Rate · <span data-tr-field="call_count">388,297</span>+ calls · <span data-tr-field="batch_count">100</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'bingx',campaign:'track-record'}})">view live track record</a></p></div>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
+<pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
+</code></pre>
+<p>Once installed, every Skill in the <a href="https://github.com/AlgoVaultLabs/algovault-skills">pack</a> is one-line invokable from Claude Code, Cowork, or any MCP-compatible client.</p>
+<hr>
+<p><em>Tutorial © AlgoVault Labs · MIT licensed · Provenance verified 2026-07-21 · BingX publishes no official client SDK; demo uses plain fetch + node:crypto</em></p></div>
+      </article>
+    </div>
+  </div>
+</main>
+
+<!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
+     REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
+<footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
+</body>
+</html>

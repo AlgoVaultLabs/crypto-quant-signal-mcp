@@ -1238,7 +1238,7 @@ async function startHttp() {
   // ── Integration tutorial mirrors ──
   // Static HTML pre-rendered from algovault-skills/docs/integrations/<x>.md
   // by scripts/render-integrations.mjs. Allowlist-only: anything outside the
-  // 4-exchange + 4-framework set 404s (no path traversal risk; no fs lookups
+  // 11-exchange + 4-framework + 5-mcp-client set 404s (no path traversal risk; no fs lookups
   // for unknown slugs). Caddy routes /integrations/* AND /docs/integrations/*
   // here ahead of the static catch-all (see Caddyfile algovault.com block).
   //
@@ -1254,7 +1254,12 @@ async function startHttp() {
   // into INTEGRATION_HTML so per-request overhead is a Map.get(), no fs hit.
   // BROKER-PAIRING-CRYPTO-W1 (2026-06-05): +3 crypto agentic-trading kit pages
   // (gemini/kraken/alpaca). Allow-list gates /integrations/:slug → 404 otherwise.
-  const INTEGRATION_EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alpaca'] as const;
+  // OPS-INTEGRATIONS-VENUE-PAGES-W1 (2026-07-21): +4 signal-venue pages
+  // (hyperliquid/aster/bingx/kucoin). Each mirror is read into
+  // INTEGRATION_HTML at startup, so the HTML must exist in the image before
+  // a slug is listed here — a missing file only console.warns, then 404s.
+  const INTEGRATION_EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gemini', 'kraken', 'alpaca',
+    'hyperliquid', 'aster', 'bingx', 'kucoin'] as const;
   const INTEGRATION_FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'] as const;
   // INTEGRATIONS-FULL-STACK-W1 C4 (2026-05-19): 5 MCP-client landing pages
   // (Plain HTTP/curl stays inline-only per Q-PLAIN-HTTP=NO; not in allow-list).
