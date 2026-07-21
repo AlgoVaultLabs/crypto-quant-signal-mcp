@@ -46,8 +46,24 @@
  */
 import { closeDbAsync } from './performance-db.js';
 
-/** Hard ceiling on total process lifetime. Generous: real runs finish in seconds. */
-const DEFAULT_WATCHDOG_MS = 10 * 60_000;
+/**
+ * Hard ceiling on total process lifetime — a BACKSTOP, not a scheduler.
+ *
+ * Deliberately generous (6h). Legitimate runs can be long by design: the seed
+ * orchestrator's own overrun threshold is 0.8x cadence (~48min for an hourly
+ * lane, ~19h for a daily one) and upstream weight-budget backpressure adds
+ * multi-second `batch_wait`s per venue. A tight watchdog would kill real work
+ * and silently lose seeding — strictly worse than the bug it guards.
+ *
+ * It does not need to be tight: the lifecycle fix stops accumulation and the
+ * host-side `flock -n` per lane stops pile-up. This only has to bound the
+ * pathological case (observed zombies lived 1h-30h, so 6h still catches them).
+ * Override per-invocation with SCRIPT_WATCHDOG_MS or the `watchdogMs` option.
+ *
+ * TODO: revisit by 2026-09-21 — once orphan count has held at 0 for a full
+ * cycle, tighten toward the longest OBSERVED legitimate run (measure first).
+ */
+const DEFAULT_WATCHDOG_MS = 6 * 60 * 60_000;
 /** Bounded wait for in-flight writes to drain before exiting. */
 const DEFAULT_DRAIN_GRACE_MS = 15_000;
 /** Exit code for a watchdog-forced exit — distinct from app failure (1). */
