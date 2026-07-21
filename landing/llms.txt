@@ -51,10 +51,17 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions.
 ## Integrations (Brain + Execution pairings)
 
 <!-- BUILD:LLMS_INTEGRATIONS_LIST -->
-- [Binance × AlgoVault](https://algovault.com/integrations/binance): Composite verdict + official Binance Skills Hub for Spot Testnet execution.
-- [OKX × AlgoVault](https://algovault.com/integrations/okx): Composite verdict + 83 OKX execution tools across spot, swap, futures, options, grid bots.
-- [Bybit × AlgoVault](https://algovault.com/integrations/bybit): Composite verdict + Bybit's official MCP for Linear Perpetual + conditional orders.
-- [Bitget × AlgoVault](https://algovault.com/integrations/bitget): Composite verdict + GetClaw agent-native execution inside a dedicated AI account.
+- [Binance × AlgoVault](https://algovault.com/docs/integrations/binance): Composite verdict + official Binance Skills Hub for Spot Testnet execution.
+- [OKX × AlgoVault](https://algovault.com/docs/integrations/okx): Composite verdict + 83 OKX execution tools across spot, swap, futures, options, grid bots.
+- [Bybit × AlgoVault](https://algovault.com/docs/integrations/bybit): Composite verdict + Bybit's official MCP for Linear Perpetual + conditional orders.
+- [Bitget × AlgoVault](https://algovault.com/docs/integrations/bitget): Composite verdict + GetClaw agent-native execution inside a dedicated AI account.
+- [Hyperliquid × AlgoVault](https://algovault.com/integrations/hyperliquid): Composite verdict + Hyperliquid testnet perps (official Python SDK; no official npm SDK).
+- [Aster × AlgoVault](https://algovault.com/integrations/aster): Composite verdict + Aster futures testnet (V3 EIP-712; V1 keys closed 2026-03-25).
+- [BingX × AlgoVault](https://algovault.com/integrations/bingx): Composite verdict + BingX VST demo trading (dry-run order/test + API faucet).
+- [KuCoin × AlgoVault](https://algovault.com/integrations/kucoin): Composite verdict + KuCoin Futures order VALIDATION (no sandbox: retired 2023-07-10).
+- [Gemini × AlgoVault](https://algovault.com/integrations/gemini): Composite verdict + Gemini self-hosted MCP execution kit.
+- [Kraken × AlgoVault](https://algovault.com/integrations/kraken): Composite verdict + Kraken CLI execution kit.
+- [Alpaca × AlgoVault](https://algovault.com/integrations/alpaca): Composite verdict + Alpaca crypto MCP paper-trading execution kit.
 <!-- /BUILD:LLMS_INTEGRATIONS_LIST -->
 
 ## Key Skills (catalog of 20 at /skills)

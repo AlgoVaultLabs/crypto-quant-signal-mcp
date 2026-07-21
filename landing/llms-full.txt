@@ -152,7 +152,7 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 <!-- BUILD:LLMS_FULL_INTEGRATIONS -->
 ### Binance × AlgoVault
 
-- **Tutorial:** https://algovault.com/integrations/binance
+- **Tutorial:** https://algovault.com/docs/integrations/binance
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
 - **Pairs with:** binance/binance-skills-hub (verified-2026-04-25)
 - **Demo execution:** BINANCE_TESTNET=true
@@ -161,7 +161,7 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 
 ### OKX × AlgoVault
 
-- **Tutorial:** https://algovault.com/integrations/okx
+- **Tutorial:** https://algovault.com/docs/integrations/okx
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/okx
 - **Pairs with:** @okx_ai/okx-trade-mcp (1.3.1)
 - **Demo execution:** OKX_DEMO=true (or --demo CLI flag)
@@ -170,7 +170,7 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 
 ### Bybit × AlgoVault
 
-- **Tutorial:** https://algovault.com/integrations/bybit
+- **Tutorial:** https://algovault.com/docs/integrations/bybit
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bybit
 - **Pairs with:** bybit-official-trading-server (2.0.9)
 - **Demo execution:** BYBIT_TESTNET=true
@@ -179,12 +179,75 @@ Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 
 ### Bitget × AlgoVault
 
-- **Tutorial:** https://algovault.com/integrations/bitget
+- **Tutorial:** https://algovault.com/docs/integrations/bitget
 - **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/bitget
 - **Pairs with:** bitget-mcp-server (1.1.0)
 - **Demo execution:** BITGET_DEMO=true (wrapper-enforced; MCP server has no built-in demo flag)
 - **Recipes:** nlp verdict getclaw / five bitget skills complement / agent native rebalance.
 - **Status:** LIVE · **Launched:** 2026-02-13
+
+### Hyperliquid × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/hyperliquid
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** hyperliquid-dex/hyperliquid-python-sdk (0.24.0)
+- **Demo execution:** HYPERLIQUID_TESTNET=true
+- **Recipes:** regime gated entries btc / confidence tiered sizing / python sdk submission.
+- **Status:** LIVE · **Launched:** 2026-03-03
+
+### Aster × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/aster
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** asterdex/aster-connector-python (git-only (not published to PyPI))
+- **Demo execution:** ASTER_TESTNET=true
+- **Recipes:** regime gated entries / binance shaped client port / v3 eip712 signing.
+- **Status:** LIVE · **Launched:** 2026-03-03
+
+### BingX × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/bingx
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** (no official SDK — plain fetch + node:crypto) (n/a)
+- **Demo execution:** BINGX_TESTNET=true
+- **Recipes:** regime gated entries / validate before place / vst faucet from code.
+- **Status:** LIVE · **Launched:** 2026-03-03
+
+### KuCoin × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/kucoin
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** kucoin-universal-sdk (1.3.1)
+- **Demo execution:** KUCOIN_DRY_RUN=true
+- **Recipes:** regime gated entries / kc api header family / validation to live promotion.
+- **Status:** LIVE · **Launched:** 2026-03-03
+
+### Gemini × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/gemini
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** (self-hosted MCP) (n/a)
+- **Demo execution:** GEMINI_SANDBOX=true
+- **Recipes:** regime gated entries / confidence filtered entry / sandbox validation.
+- **Status:** LIVE · **Launched:** 2026-03-03
+
+### Kraken × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/kraken
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** (CLI kit) (n/a)
+- **Demo execution:** KRAKEN_TESTNET=true
+- **Recipes:** regime gated entries / confidence filtered entry / demo validation.
+- **Status:** LIVE · **Launched:** 2026-03-03
+
+### Alpaca × AlgoVault
+
+- **Tutorial:** https://algovault.com/integrations/alpaca
+- **Demo:** https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/binance
+- **Pairs with:** (crypto MCP) (n/a)
+- **Demo execution:** ALPACA_PAPER=true
+- **Recipes:** regime gated entries / confidence filtered entry / paper trading validation.
+- **Status:** LIVE · **Launched:** 2026-03-03
 <!-- /BUILD:LLMS_FULL_INTEGRATIONS -->
 
 ---
