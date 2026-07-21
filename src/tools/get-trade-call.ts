@@ -10,6 +10,9 @@ import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRO
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
 import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
+// OPS-PFE-METRIC-INTEGRITY-W1 R2/R3: emit-time book-liveness gate + its fail-open counter.
+import { assessBookLiveness, getBookLivenessMode, BOOK_LIVENESS_WINDOW, BOOK_LIVENESS_MIN_GENUINE_BARS } from '../lib/book-liveness.js';
+import { recordEmitSuppression } from '../lib/emit-suppressions.js';
 import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
 import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { computeOiDelta, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
@@ -106,6 +109,16 @@ export interface VerdictGateInputs {
   r4Thresholds: ReturnType<typeof getR4Thresholds>;
   buyThreshold: number;
   sellThreshold: number;
+  /**
+   * OPS-PFE-METRIC-INTEGRITY-W1 R2: false ⇒ the book is not trading, so no directional call
+   * may be emitted into it (the verdict collapses to HOLD).
+   *
+   * OPTIONAL and defaulting to live-when-absent, deliberately: `deriveVerdict` is a pure
+   * exported function with several test call sites, and per CLAUDE.md an optional TRAILING
+   * field keeps every existing caller assignable instead of forcing an N-site cascade. Absent
+   * ⇒ legacy behaviour, byte-identical.
+   */
+  bookLive?: boolean;
 }
 export interface VerdictOutcome {
   signal: SignalVerdict;
@@ -164,6 +177,25 @@ export function deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs): Verd
   } else {
     signal = absScore > g.sellThreshold ? 'SELL' : 'HOLD';
   }
+
+  // OPS-PFE-METRIC-INTEGRITY-W1 R2: book-liveness gate. A book that is not trading has no
+  // counterparty, so a directional call into it is unactionable regardless of how good the
+  // score is — and it is scored later on zero-volume synthetic flat candles, which the PFE
+  // evaluator records as a LOSS (a shut market booked as a wrong call).
+  //
+  // Applied AFTER the threshold comparison, deliberately: `rawScore` and `confidence` stay the
+  // true computed values, so diagnostics, the oiScore shadow and any downstream confidence
+  // consumer see what the engine actually thought. Only the ACTION is withheld.
+  //
+  // `bookLive === false` is the only suppressing value — `undefined` (legacy callers, tests)
+  // and `true` both pass through untouched.
+  if (g.bookLive === false && signal !== 'HOLD') {
+    scoreAdjustments.push(
+      `Book not trading — fewer than ${BOOK_LIVENESS_MIN_GENUINE_BARS} of the last ${BOOK_LIVENESS_WINDOW} bars carried volume. ${signal} suppressed to HOLD (no counterparty to act against).`,
+    );
+    signal = 'HOLD';
+  }
+
   const confidence = Math.min(Math.round((absScore / MAX_RAW_SCORE) * 100), 100);
   return { signal, confidence, rawScore, scoreAdjustments };
 }
@@ -296,6 +328,17 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       suggestedAction: suggestedActionFor(suggestedTimeframes),
     });
   }
+
+  // ── OPS-PFE-METRIC-INTEGRITY-W1 R2: MEASURE book liveness here, immediately after the
+  //    REQUIRED_CANDLES guard, where `candles` is sorted ascending and length-validated.
+  //    The DECISION happens inside `deriveVerdict` (below) — never as an early return here,
+  //    which would bypass ~130 lines of envelope construction AND the `recordHoldCount` write,
+  //    making the suppressed emission vanish from `totalGenerated` and shrink the published
+  //    hold-rate denominator. Measure early, decide once, in the pure function. ──
+  const bookLivenessMode = getBookLivenessMode();
+  const bookLiveness = bookLivenessMode === 'off'
+    ? null
+    : assessBookLiveness(candles);
 
   // ── Underlying-market session + TradFi funding interpretation
   //    (TRADIFI-SIGNAL-HARDENING-W1). Best-effort; resolveAssetClass never
@@ -434,6 +477,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   const sellThreshold = getThresholdForTF(timeframe, 'sell', SELL_THRESHOLD_GATED);
   const verdictGates: VerdictGateInputs = {
     fundingZScore, fundingRateAnnualized, hurstVal, squeezeActive, r4Thresholds, buyThreshold, sellThreshold,
+    // Only `enforce` may change a verdict. In `shadow` the measurement still runs and is still
+    // counted below, but `bookLive` is left undefined so the emitted call is byte-identical to
+    // legacy — that is what makes the shadow-compare report trustworthy.
+    bookLive: bookLivenessMode === 'enforce' ? (bookLiveness?.live ?? true) : undefined,
   };
 
   // oiScore_price = the priceChange-derived score computed above (gated on openInterest>0).
@@ -464,6 +511,23 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   const liveVerdict = getOiScoreSource() === 'oi' && oiVerdict ? oiVerdict : priceVerdict;
   const signal: SignalVerdict = liveVerdict.signal;
   const confidence = liveVerdict.confidence;
+
+  // ── OPS-PFE-METRIC-INTEGRITY-W1 R3: count the suppression. C3 — "the rate is MEASURED, not
+  //    argued". Fires in BOTH shadow and enforce, so the shadow-compare report and the live
+  //    rate are produced by the SAME code path and cannot disagree.
+  //
+  //    In `shadow` the verdict was NOT gated, so "would have been suppressed" is exactly
+  //    `!bookLiveness.live && liveVerdict.signal !== 'HOLD'`. In `enforce` the verdict already
+  //    collapsed to HOLD, so that second clause would never fire — hence the mode split.
+  //    Internal callers (scan cells, grid warmers) are excluded: they don't mature into
+  //    outcomes, and counting them would inflate the rate against a denominator of real
+  //    emissions. Fire-and-forget; `recordEmitSuppression` can never throw into this path. ──
+  if (!input.internal && bookLiveness && !bookLiveness.live) {
+    const wouldSuppress = bookLivenessMode === 'enforce'
+      ? liveVerdict.scoreAdjustments.some((a) => a.startsWith('Book not trading'))
+      : liveVerdict.signal !== 'HOLD';
+    if (wouldSuppress) recordEmitSuppression(exchange, timeframe, coin);
+  }
 
   // SHADOW divergence log — fire-and-forget + try/catch-isolated (NEVER blocks/fails the
   // verdict — Data Integrity). Real signals only (skip internal scan cells; they don't
