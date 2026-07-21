@@ -445,6 +445,34 @@ const CREATE_HOLD_COUNTS_SQL = process.env.DATABASE_URL
       PRIMARY KEY (date, timeframe, coin)
     );`;
 
+// OPS-PFE-METRIC-INTEGRITY-W1 R3: emit_suppressions — the ONLY record of a call the
+// book-liveness gate stopped us emitting.
+//
+// Shaped after hold_counts (daily aggregate, UPSERT-increment) rather than rate_limit_events
+// (row-per-event): suppressions are a subset of the ~660k/day evaluation firehose, not a rare
+// event. It carries `exchange`, which hold_counts does NOT — freeze is venue-specific (ASTER
+// 5.93% of evaluated rows vs 0.000% on BINANCE/BYBIT/OKX/KUCOIN/MEXC), so a counter without a
+// venue column could not answer the question it exists to answer.
+const CREATE_EMIT_SUPPRESSIONS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS emit_suppressions (
+      date DATE NOT NULL,
+      exchange VARCHAR(20) NOT NULL,
+      timeframe VARCHAR(10) NOT NULL,
+      coin VARCHAR(20) NOT NULL,
+      reason VARCHAR(32) NOT NULL,
+      suppress_count INTEGER DEFAULT 0,
+      PRIMARY KEY (date, exchange, timeframe, coin, reason)
+    );`
+  : `CREATE TABLE IF NOT EXISTS emit_suppressions (
+      date TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      timeframe TEXT NOT NULL,
+      coin TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      suppress_count INTEGER DEFAULT 0,
+      PRIMARY KEY (date, exchange, timeframe, coin, reason)
+    );`;
+
 // v1.9.0 L3 (2026-04-15): agent_sessions cohort table.
 // Persisted on every tool call (when sessionId is present, i.e. HTTP transport).
 const CREATE_AGENT_SESSIONS_SQL = `
@@ -763,6 +791,10 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_TABLE_SQL);
   backend.exec(CREATE_FUNDING_HISTORY_SQL);
   backend.exec(CREATE_HOLD_COUNTS_SQL);
+  // OPS-PFE-METRIC-INTEGRITY-W1 R3. Idempotent via IF NOT EXISTS; on live PG the table is
+  // pre-applied via SSH BEFORE this commit lands, so the deploy is a no-op against a prepared
+  // DB (CLAUDE.md: pre-apply schema, then ship schema-as-code).
+  backend.exec(CREATE_EMIT_SUPPRESSIONS_SQL);
   backend.exec(CREATE_MERKLE_BATCHES_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_SQL);
   backend.exec(CREATE_AGENT_SESSIONS_INDEX_SQL);
@@ -1011,6 +1043,47 @@ export function recordHoldCount(coin: string, timeframe: string): void {
        DO UPDATE SET hold_count = hold_count + 1`,
       today, timeframe, coin
     );
+  }
+}
+
+/**
+ * OPS-PFE-METRIC-INTEGRITY-W1 R3: increment the emit-suppression counter for one
+ * (day, venue, timeframe, coin, reason). Mirrors `recordHoldCount` — daily UPSERT-increment,
+ * one row per combo — but carries `exchange`, which `hold_counts` lacks.
+ *
+ * Fail-open by construction: the sole caller is the fire-and-forget wrapper in
+ * `emit-suppressions.ts`, and this body swallows its own errors. Telemetry must never break or
+ * delay an emission.
+ */
+export function recordEmitSuppressionImpl(
+  exchange: string,
+  timeframe: string,
+  coin: string,
+  reason: string,
+): void {
+  try {
+    const b = getBackend();
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    if (isPg) {
+      b.run(
+        `INSERT INTO emit_suppressions (date, exchange, timeframe, coin, reason, suppress_count)
+         VALUES (?, ?, ?, ?, ?, 1)
+         ON CONFLICT (date, exchange, timeframe, coin, reason)
+         DO UPDATE SET suppress_count = emit_suppressions.suppress_count + 1`,
+        today, exchange, timeframe, coin, reason
+      );
+    } else {
+      b.run(
+        `INSERT INTO emit_suppressions (date, exchange, timeframe, coin, reason, suppress_count)
+         VALUES (?, ?, ?, ?, ?, 1)
+         ON CONFLICT (date, exchange, timeframe, coin, reason)
+         DO UPDATE SET suppress_count = suppress_count + 1`,
+        today, exchange, timeframe, coin, reason
+      );
+    }
+  } catch (e) {
+    // Fail-open: a counter that can fail an emission is worse than no counter.
+    console.warn(`[emit-suppressions] record failed (fail-open): ${(e as Error).message}`);
   }
 }
 
