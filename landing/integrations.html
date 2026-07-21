@@ -669,6 +669,58 @@ tailwind.config = {
           <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/examples/alpaca" class="text-steel-400 hover:text-mint-400" onclick="event.stopPropagation()">Demo &rarr;</a>
         </div>
       </a>
+      <a href="/integrations/hyperliquid"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'hyperliquid',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">Hyperliquid &times; AlgoVault</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Composite verdict + Hyperliquid's testnet perps API. Keyless demo builds the exact EIP-712 order action and prints it — nothing is signed or sent.</p>
+        <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install hyperliquid-python-sdk</code> &middot; official Python SDK (no official npm SDK)</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
+      <a href="/integrations/aster"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'aster',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">Aster &times; AlgoVault</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Composite verdict + Aster's futures testnet on BNB Chain Testnet. V3 EIP-712 auth; V1 API-key creation closed 2026-03-25.</p>
+        <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install git+https://github.com/asterdex/aster-connector-python.git</code> &middot; git-install only</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
+      <a href="/integrations/bingx"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'bingx',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">BingX &times; AlgoVault</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Composite verdict + BingX's VST demo-trading environment. Dry-run order validation plus an API-callable demo-funds faucet.</p>
+        <p class="text-gray-600 text-xs mb-3">No SDK to install &middot; plain <code class="text-xs bg-navy-800 px-1 rounded">fetch</code> + <code class="text-xs">node:crypto</code> against the VST demo host</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
+      <a href="/integrations/kucoin"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'kucoin',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">KuCoin &times; AlgoVault</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Composite verdict + KuCoin Futures order VALIDATION. KuCoin retired its sandbox in 2023, so this validates payloads rather than simulating fills.</p>
+        <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">npm install kucoin-universal-sdk</code> &middot; the only non-archived official SDK</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
       <!-- BUILD:INTEGRATIONS_INDEX_EXCHANGE_KITS:end -->
     </div>
 

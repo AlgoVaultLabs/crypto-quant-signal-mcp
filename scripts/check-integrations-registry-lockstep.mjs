@@ -2,7 +2,7 @@
 /**
  * check-integrations-registry-lockstep.mjs — OPS-INTEGRATIONS-VENUE-PAGES-W1
  *
- * An integration page's slug has to be listed in FIVE independent places or the
+ * An integration page's slug has to be listed in SIX independent places or the
  * page is silently broken in a different way at each one:
  *
  *   1. `src/lib/integrations-data/exchange-kits.ts`  — the card on /integrations
@@ -10,6 +10,9 @@
  *   3. `src/index.ts` INTEGRATION_EXCHANGES          — whether the route 404s
  *   4. `landing/integrations/<slug>.html`            — the artifact Express loads at boot
  *   5. `landing/sitemap.xml`                         — whether crawlers ever see it
+ *   6. `landing/integrations.html` + `landing/docs.html` — generated index blocks
+ *      (these are emitted from the registry by `scripts/build_landing.mjs`; a new
+ *      kit entry leaves them stale until that generator is re-run)
  *
  * Nothing previously tied these together, and they had already drifted: the
  * gemini/kraken/alpaca pages shipped in BROKER-PAIRING-CRYPTO-W1 (2026-06-05)
@@ -41,7 +44,7 @@ function arrayLiteral(src, name) {
   return [...m[1].matchAll(/'([a-z0-9-]+)'/g)].map((x) => x[1]);
 }
 
-// ── The five sources ──
+// ── The sources ──
 const kitsSrc = read('src/lib/integrations-data/exchange-kits.ts');
 const kits = [...kitsSrc.matchAll(/slug:\s*'([a-z0-9-]+)'/g)].map((m) => m[1]);
 
@@ -102,13 +105,30 @@ for (const slug of sitemap) {
   }
 }
 
+// ── 4. Generated index blocks must already list every kit slug ──
+// `scripts/build_landing.mjs` renders the kit cards into landing/integrations.html
+// (and a docs.html block) from the registry. Adding a registry entry without
+// re-running that generator leaves the index silently missing the new venue —
+// which is how this canary's own wave first failed CI. Checking it here means
+// the drift surfaces locally, before a push.
+{
+  const idx = read('landing/integrations.html');
+  const missing = kits.filter((slug) => !idx.includes(`/integrations/${slug}`));
+  if (missing.length) {
+    note(
+      `landing/integrations.html is missing kit slug(s): ${missing.join(', ')}\n` +
+      `    → run \`npm run build:landing\` and commit the regenerated index`,
+    );
+  }
+}
+
 // ── Report ──
 console.log(
   `[lockstep] exchange-kits=${kits.length} render=${renderExchanges.length} ` +
   `route=${routeExchanges.length} rendered=${rendered.length} sitemap=${sitemap.length}`,
 );
 if (problems.length === 0) {
-  console.log('✓ check-integrations-registry-lockstep: all five slug sources agree.');
+  console.log('✓ check-integrations-registry-lockstep: all six slug surfaces agree.');
   process.exit(0);
 }
 console.error(`\n✗ check-integrations-registry-lockstep found ${problems.length} drift(s):\n`);
