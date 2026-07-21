@@ -19,10 +19,14 @@
  * Q4 (architect): mfe/mae are REUSED from signals.pfe_return_pct / mae_return_pct (identical
  * eval window); the kline-derived excursions are recomputed only for a non-fatal sanity WARN.
  *
- *   node dist/scripts/backfill-directional-labels.js                 (all specs, all groups)
+ *   node dist/scripts/backfill-directional-labels.js                 (all specs, all groups, full depth)
  *   node dist/scripts/backfill-directional-labels.js --check         (audit only, zero writes)
  *   node dist/scripts/backfill-directional-labels.js --barrier-spec tau1.0-floor0.30-v1
  *   node dist/scripts/backfill-directional-labels.js --venue BINANCE --coin BTC --limit-groups 20
+ *   node dist/scripts/backfill-directional-labels.js --venue HTX --timeframe 5m   (triage slice)
+ *   node dist/scripts/backfill-directional-labels.js --lookback-days 21 \
+ *        --time-budget-min 210 --venue-budget-min 45   (the nightly freshness form —
+ *        staleness-first venue rotation + clean-exit budgets; OPS-DIRECTIONAL-LABEL-HALT-W1)
  */
 
 import { dbQuery, dbExec } from '../lib/performance-db.js';
@@ -51,12 +55,19 @@ const ALL_SPECS = [
   { tau: 2.0, spec: 'tau2.0-floor0.30-v1' },
 ] as const;
 
-interface Cli {
+export interface Cli {
   check: boolean;
   specs: { tau: number; spec: string }[];
   venue?: string;
   coin?: string;
+  timeframe?: string;
   limitGroups?: number;
+  /** Nightly recency window (days). UNSET = full-depth (backfill semantics unchanged). */
+  lookbackDays?: number;
+  /** Whole-run wall-clock budget (minutes). UNSET = unbounded (backfill semantics). */
+  timeBudgetMin?: number;
+  /** Per-venue wall-clock slice cap (minutes). UNSET = unbounded. */
+  venueBudgetMin?: number;
 }
 
 interface SignalRow {
@@ -91,6 +102,8 @@ const cov: Coverage = {
   sanityWarn: 0, budgetSkips: 0, errors: 0,
 };
 const noKlinesByVenue = new Map<string, number>();
+/** Per-venue newest labeled signal created_at (s) written THIS run — the frontier evidence. */
+const frontierByVenue = new Map<string, number>();
 
 function ts(): string {
   return new Date().toISOString();
@@ -99,22 +112,33 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function parseCli(argv: string[]): Cli {
+export function parseCli(argv: string[]): Cli {
   const has = (f: string) => argv.includes(f);
   const val = (f: string): string | undefined => {
     const i = argv.indexOf(f);
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
+  const posInt = (f: string): number | undefined => {
+    const raw = val(f);
+    if (raw === undefined) return undefined;
+    const n = parseInt(raw, 10);
+    // default-deny: a malformed bound must not silently mean "unbounded"
+    if (!Number.isFinite(n) || n <= 0) throw new Error(`invalid ${f} '${raw}' (positive integer required)`);
+    return n;
+  };
   const specSel = val('--barrier-spec');
   const specs = specSel ? ALL_SPECS.filter((s) => s.spec === specSel) : ALL_SPECS.slice();
   if (specSel && specs.length === 0) throw new Error(`unknown --barrier-spec '${specSel}'`);
-  const lim = val('--limit-groups');
   return {
     check: has('--check'),
     specs,
     venue: val('--venue'),
     coin: val('--coin'),
-    limitGroups: lim ? parseInt(lim, 10) : undefined,
+    timeframe: val('--timeframe'),
+    limitGroups: posInt('--limit-groups'),
+    lookbackDays: posInt('--lookback-days'),
+    timeBudgetMin: posInt('--time-budget-min'),
+    venueBudgetMin: posInt('--venue-budget-min'),
   };
 }
 
@@ -138,6 +162,11 @@ function ensureTable(): void {
   `);
 }
 
+/** Epoch-seconds lower bound for the nightly recency window; 0 = full depth. */
+export function lookbackCutoff(cli: Pick<Cli, 'lookbackDays'>, nowMs: number): number {
+  return cli.lookbackDays ? Math.floor(nowMs / 1000) - cli.lookbackDays * 86_400 : 0;
+}
+
 async function loadGroups(cli: Cli): Promise<{ exchange: string; coin: string; timeframe: string }[]> {
   const where: string[] = [
     "signal IN ('BUY','SELL')",
@@ -147,12 +176,112 @@ async function loadGroups(cli: Cli): Promise<{ exchange: string; coin: string; t
   const params: unknown[] = [];
   if (cli.venue) { params.push(cli.venue); where.push(`exchange = $${params.length}`); }
   if (cli.coin) { params.push(cli.coin); where.push(`coin = $${params.length}`); }
+  if (cli.timeframe) { params.push(cli.timeframe); where.push(`timeframe = $${params.length}`); }
+  const cutoff = lookbackCutoff(cli, Date.now());
+  if (cutoff > 0) { params.push(cutoff); where.push(`created_at > $${params.length}`); }
   const rows = await dbQuery<{ exchange: string; coin: string; timeframe: string }>(
     `SELECT exchange, coin, timeframe FROM signals WHERE ${where.join(' AND ')}
      GROUP BY exchange, coin, timeframe ORDER BY exchange, coin, timeframe`,
     params,
   );
   return cli.limitGroups ? rows.slice(0, cli.limitGroups) : rows;
+}
+
+/**
+ * OPS-DIRECTIONAL-LABEL-HALT-W1 F1 — staleness-first venue rotation.
+ *
+ * The incident: groups ran in fixed alphabetical venue order and no nightly run
+ * ever finished (25,960-group full pass ≈ 15–36h vs deploy-recreate lifetimes),
+ * so every venue past the death frontier (HTX…XT) starved DETERMINISTICALLY for
+ * 16 days. Ordering venues most-starved-first makes starvation self-correcting:
+ * whatever a run fails to reach is at the FRONT of the next run.
+ */
+export function orderVenuesByStaleness(
+  venues: string[],
+  frontier: Map<string, number>, // venue → MAX(labeled created_at), 0/absent = never labeled
+): string[] {
+  return [...venues].sort((a, b) => (frontier.get(a) ?? 0) - (frontier.get(b) ?? 0) || a.localeCompare(b));
+}
+
+export function partitionByVenue<T extends { exchange: string }>(groups: T[]): Map<string, T[]> {
+  const by = new Map<string, T[]>();
+  for (const g of groups) {
+    const arr = by.get(g.exchange);
+    if (arr) arr.push(g); else by.set(g.exchange, [g]);
+  }
+  return by;
+}
+
+/**
+ * F2 — wall-clock budgets with injectable clock (unit-testable). A budgeted run
+ * EXITS CLEANLY at expiry: unfinished venues are the stalest → front of the next
+ * rotation. TODO: revisit by 2026-08-04 — tighten/loosen from measured nightly
+ * timings (defensive-reductions-to-revisit.md carries the row).
+ */
+export function makeBudget(
+  cli: Pick<Cli, 'timeBudgetMin' | 'venueBudgetMin'>,
+  now: () => number = Date.now,
+): { globalExpired: () => boolean; venueExpired: (venueStartMs: number) => boolean; startMs: number } {
+  const startMs = now();
+  return {
+    startMs,
+    globalExpired: () => cli.timeBudgetMin !== undefined && now() - startMs >= cli.timeBudgetMin * 60_000,
+    venueExpired: (venueStartMs: number) =>
+      cli.venueBudgetMin !== undefined && now() - venueStartMs >= cli.venueBudgetMin * 60_000,
+  };
+}
+
+export interface VenueRunSummary {
+  venue: string;
+  groupsDone: number;
+  groupsTotal: number;
+  outcome: 'complete' | 'venue-budget' | 'global-budget' | 'venue-error';
+  elapsedS: number;
+}
+
+/**
+ * F4 — the venue-rotation loop with per-venue isolation. Pure orchestration over
+ * an injectable per-group processor; one venue's failure can never abort or
+ * starve a successor (per-venue try/catch + continue; per-group catch stays in
+ * the processor). Emits the load-bearing per-venue success-path summary.
+ */
+export async function runVenueRotation<G extends { exchange: string; coin: string; timeframe: string }>(
+  venueOrder: string[],
+  groupsByVenue: Map<string, G[]>,
+  budget: ReturnType<typeof makeBudget>,
+  processOne: (g: G) => Promise<void>,
+  log: (line: string) => void = console.log,
+  now: () => number = Date.now,
+  extra?: (venue: string) => string,
+): Promise<VenueRunSummary[]> {
+  const summaries: VenueRunSummary[] = [];
+  for (const venue of venueOrder) {
+    const groups = groupsByVenue.get(venue) ?? [];
+    const venueStart = now();
+    let done = 0;
+    let outcome: VenueRunSummary['outcome'] = 'complete';
+    try {
+      for (const g of groups) {
+        if (budget.globalExpired()) { outcome = 'global-budget'; break; }
+        if (budget.venueExpired(venueStart)) { outcome = 'venue-budget'; break; }
+        await processOne(g);
+        done++;
+      }
+    } catch (err) {
+      outcome = 'venue-error';
+      log(`[venue-summary] ${venue}: VENUE-LEVEL ERROR after ${done}/${groups.length} groups: ${String((err as Error).message ?? err).slice(0, 200)} — continuing with next venue`);
+    }
+    const elapsedS = Math.round((now() - venueStart) / 1000);
+    summaries.push({ venue, groupsDone: done, groupsTotal: groups.length, outcome, elapsedS });
+    if (outcome !== 'venue-error') {
+      log(`[venue-summary] ${venue}: groups ${done}/${groups.length} outcome=${outcome} elapsed=${elapsedS}s${extra ? ` ${extra(venue)}` : ''}`);
+    }
+    if (outcome === 'global-budget') {
+      log(`[budget] global time budget reached — clean exit; unreached venues lead the next rotation`);
+      break;
+    }
+  }
+  return summaries;
 }
 
 /** Paginated ranged fetch [startMs, endMs] via the shared transport; stops at venue horizon. */
@@ -189,13 +318,17 @@ async function processGroup(cli: Cli, g: { exchange: string; coin: string; timef
   const tfMs = TF_MS[g.timeframe];
   if (!W || !tfMs) return; // unknown/retired timeframe — already filtered, defensive
 
+  // F3: the nightly recency window bounds the per-group scan too — aged-out
+  // unlabelable signals (the noKlines re-attempt swamp) leave the nightly forever.
+  const cutoff = lookbackCutoff(cli, Date.now());
   const sigs = await dbQuery<SignalRow>(
     `SELECT id, created_at, price_at_signal, signal, pfe_return_pct, mae_return_pct
      FROM signals
      WHERE exchange = $1 AND coin = $2 AND timeframe = $3
        AND signal IN ('BUY','SELL') AND pfe_return_pct IS NOT NULL
+       AND created_at > $4
      ORDER BY created_at ASC`,
-    [g.exchange, g.coin, g.timeframe],
+    [g.exchange, g.coin, g.timeframe, cutoff],
   );
   if (sigs.length === 0) return;
 
@@ -280,6 +413,7 @@ async function processGroup(cli: Cli, g: { exchange: string; coin: string; timef
         s.id, sp.spec, race.label, race.ambiguousCandle, lowVol,
         race.tHitCandles, storedMfe, storedMae, bpSpec,
       ]);
+      frontierByVenue.set(g.exchange, Math.max(frontierByVenue.get(g.exchange) ?? 0, s.created_at));
       cov.labeled++;
       if (lowVol) cov.lowVolHistory++;
       if (race.ambiguousCandle) cov.ambiguous++;
@@ -311,26 +445,71 @@ async function processGroup(cli: Cli, g: { exchange: string; coin: string; timef
   }
 }
 
+/** Per-venue label frontier (MAX labeled created_at) — the F1 rotation key. */
+async function loadVenueFrontier(): Promise<Map<string, number>> {
+  const rows = await dbQuery<{ exchange: string; frontier: string | number | null }>(
+    `SELECT s.exchange, MAX(s.created_at) FILTER (WHERE d.signal_id IS NOT NULL) AS frontier
+     FROM signals s
+     LEFT JOIN directional_labels d ON d.signal_id = s.id AND d.barrier_spec = 'tau1.0-floor0.30-v1'
+     WHERE s.signal IN ('BUY','SELL') AND s.pfe_return_pct IS NOT NULL AND s.timeframe <> '1m'
+     GROUP BY 1`,
+  );
+  return new Map(rows.map((r) => [r.exchange, Number(r.frontier ?? 0)]));
+}
+
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2));
   ensureTable();
   const groups = await loadGroups(cli);
-  console.log(`[${ts()}] DWR backfill start — ${groups.length} groups, specs=[${cli.specs.map((s) => s.spec).join(', ')}]${cli.check ? ' (CHECK — no writes)' : ''}`);
+  const frontier = await loadVenueFrontier();
+  const byVenue = partitionByVenue(groups);
+  const venueOrder = orderVenuesByStaleness([...byVenue.keys()], frontier);
+  const budget = makeBudget(cli);
+  console.log(
+    `[${ts()}] DWR backfill start — ${groups.length} groups over ${venueOrder.length} venues ` +
+    `(rotation: ${venueOrder.join('>')}), specs=[${cli.specs.map((s) => s.spec).join(', ')}]` +
+    `${cli.lookbackDays ? ` lookback=${cli.lookbackDays}d` : ''}` +
+    `${cli.timeBudgetMin ? ` budget=${cli.timeBudgetMin}m/venue≤${cli.venueBudgetMin ?? '∞'}m` : ''}` +
+    `${cli.check ? ' (CHECK — no writes)' : ''}`,
+  );
+
+  // Per-venue counter snapshots feed the load-bearing summary line (F4).
+  let snap = { ...cov };
+  const venueDelta = (venue: string): string => {
+    const d = {
+      written: cov.written - snap.written,
+      labeled: cov.labeled - snap.labeled,
+      noKlines: cov.noKlines - snap.noKlines,
+      budgetSkips: cov.budgetSkips - snap.budgetSkips,
+      errors: cov.errors - snap.errors,
+    };
+    snap = { ...cov };
+    const fr = frontierByVenue.get(venue);
+    return `written=${d.written} labeled=${d.labeled} noKlines=${d.noKlines} budgetSkips=${d.budgetSkips} errors=${d.errors} frontier=${fr ? new Date(fr * 1000).toISOString() : 'unchanged'}`;
+  };
 
   await runAsBatch(async () => {
-    for (const g of groups) {
-      cov.groups++;
-      try {
-        await processGroup(cli, g);
-      } catch (err) {
-        cov.errors++;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[${ts()}] group ${g.exchange}:${g.coin}:${g.timeframe} error: ${msg}`);
-      }
-      if (cov.groups % 200 === 0) {
-        console.log(`[${ts()}] ${cov.groups}/${groups.length} groups | labeled ${cov.labeled} | written ${cov.written} | noKlines ${cov.noKlines} | budgetSkips ${cov.budgetSkips}`);
-      }
-    }
+    await runVenueRotation(
+      venueOrder,
+      byVenue,
+      budget,
+      async (g) => {
+        cov.groups++;
+        try {
+          await processGroup(cli, g);
+        } catch (err) {
+          cov.errors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[${ts()}] group ${g.exchange}:${g.coin}:${g.timeframe} error: ${msg}`);
+        }
+        if (cov.groups % 200 === 0) {
+          console.log(`[${ts()}] ${cov.groups}/${groups.length} groups | labeled ${cov.labeled} | written ${cov.written} | noKlines ${cov.noKlines} | budgetSkips ${cov.budgetSkips}`);
+        }
+      },
+      console.log,
+      Date.now,
+      venueDelta,
+    );
   });
 
   console.log(`[${ts()}] DONE ${JSON.stringify({ ...cov, noKlinesByVenue: Object.fromEntries(noKlinesByVenue) })}`);

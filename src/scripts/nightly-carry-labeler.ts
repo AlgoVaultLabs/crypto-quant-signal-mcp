@@ -26,6 +26,19 @@ export type Spawner = (cmd: string, args: string[], opts: { stdio: 'inherit' }) 
 
 const dist = (f: string): string => path.resolve(__dirname, f);
 
+/**
+ * OPS-DIRECTIONAL-LABEL-HALT-W1 — nightly bounds for the DWR step. The incident:
+ * the unbounded alphabetical full pass (15–36h) never survived to the venue tail;
+ * 8 venues starved silently for 16 days. The nightly is a FRESHNESS lane now:
+ * staleness-first rotation + clean-exit budgets + a recency window (deep/backfill
+ * runs invoke backfill-directional-labels.js directly WITHOUT these flags).
+ * Env-overridable; TODO: revisit by 2026-08-04 against measured nightly timings
+ * (defensive-reductions-to-revisit.md rows).
+ */
+const NIGHTLY_LOOKBACK_DAYS = process.env.LABELER_LOOKBACK_DAYS ?? '21';
+const NIGHTLY_TIME_BUDGET_MIN = process.env.LABELER_TIME_BUDGET_MIN ?? '210';
+const NIGHTLY_VENUE_BUDGET_MIN = process.env.LABELER_VENUE_BUDGET_MIN ?? '45';
+
 export function buildSteps(argv: string[]): Step[] {
   const check = argv.includes('--check');
   const venue = argv.find((a) => a.startsWith('--venue='))?.split('=')[1];
@@ -42,6 +55,9 @@ export function buildSteps(argv: string[]): Step[] {
     ...(venue ? ['--venue', venue] : []),
     ...(limitGroups ? ['--limit-groups', limitGroups] : []),
     ...(check ? ['--check'] : []),
+    '--lookback-days', NIGHTLY_LOOKBACK_DAYS,
+    '--time-budget-min', NIGHTLY_TIME_BUDGET_MIN,
+    '--venue-budget-min', NIGHTLY_VENUE_BUDGET_MIN,
   ];
 
   return [
