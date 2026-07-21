@@ -53,6 +53,27 @@ export interface ExchangeAsset {
    *  SKIP proxy assets (never record volume as OI); the default / oi + volume lenses still rank them,
    *  labeled "open interest / liquidity". Honest-labeling contract — never silently mislabeled. */
   oiIsProxy?: boolean;
+  // ── OPS-STRUCTURAL-FEATURE-ACCRUAL-W1: structural microstructure fields ──
+  //    Read from the SAME bulk payload each fetcher ALREADY pulls — zero extra venue calls.
+  //    5 venues (HL/BYBIT/BITGET/GATE/MEXC) carry all four inline; the rest carry some or none
+  //    and are closed by `structural-sources.ts` with one targeted bulk call per venue.
+  //    `undefined` ⇔ the venue's payload omits it → the snapshot column is NULL, counted.
+  //    NEVER substituted from another venue or another field (Factuality > Completeness).
+  /** Perp mark price (venue-native: markPx / markPrice / fairPrice / markPriceRp). */
+  markPx?: number;
+  /** Index / oracle price — the SPOT reference for basis. There is no spot-price path in this
+   *  repo (all 17 adapters are perps-only); basis is venue-native index, never a spot lookup. */
+  indexPx?: number;
+  /** Best bid (top of book). */
+  bidPx?: number;
+  /** Best ask (top of book). */
+  askPx?: number;
+}
+
+/** Coerce a venue field → strictly-positive finite number, else undefined ("absent", never 0). */
+function pos(x: unknown): number | undefined {
+  const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 // OPS-SCAN-UNIVERSE-EXPAND-W1: the promoted-venue union, DERIVED from EXCHANGES (capabilities.ts) —
@@ -92,7 +113,8 @@ async function fetchHL(limit: number): Promise<ExchangeAsset[]> {
   // direct fetch bypassing the adapter chokepoint).
   const raw = await hlInfoPost<[
     { universe: { name: string }[] },
-    { openInterest?: string; markPx?: string; dayNtlVlm?: string; prevDayPx?: string; funding?: string }[],
+    { openInterest?: string; markPx?: string; dayNtlVlm?: string; prevDayPx?: string; funding?: string;
+      oraclePx?: string; impactPxs?: [string, string] | string[] }[],
   ]>({ type: 'metaAndAssetCtxs' });
   const meta = raw[0];
   const ctxs = raw[1];
@@ -101,6 +123,10 @@ async function fetchHL(limit: number): Promise<ExchangeAsset[]> {
       const oi = parseFloat(ctxs[i]?.openInterest || '0');
       const px = parseFloat(ctxs[i]?.markPx || '0');
       const vol = parseFloat(ctxs[i]?.dayNtlVlm || '0');
+      // W1: HL ships all four inline. `oraclePx` IS the spot index (HL's own basis reference);
+      // `impactPxs` is [impactBid, impactAsk] — HL's top-of-book proxy, the only book HL exposes
+      // on this call. Native `premium` is deliberately NOT read: one derivation for every venue.
+      const impact = ctxs[i]?.impactPxs;
       return {
         coin: a.name.toUpperCase(),
         notionalOI_usd: oi * px,
@@ -110,6 +136,10 @@ async function fetchHL(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: pctChange24h(px, parseFloat(ctxs[i]?.prevDayPx || '0')),
         fundingRate: parseFunding(ctxs[i]?.funding),
         fundingIntervalHours: HL_FUNDING_INTERVAL_H,
+        markPx: pos(ctxs[i]?.markPx),
+        indexPx: pos(ctxs[i]?.oraclePx),
+        bidPx: Array.isArray(impact) ? pos(impact[0]) : undefined,
+        askPx: Array.isArray(impact) ? pos(impact[1]) : undefined,
       };
     })
     .filter((a) => a.notionalOI_usd > 0);
@@ -158,7 +188,8 @@ async function fetchBybit(limit: number): Promise<ExchangeAsset[]> {
   // non-adapter Bybit caller inherits the cross-process budget + typed 403/ban handling.
   const json = await upstreamFetch<{
     result: { list: Array<{ symbol: string; openInterest?: string; lastPrice?: string; turnover24h?: string;
-      prevPrice24h?: string; fundingRate?: string; fundingIntervalHour?: number | string }> };
+      prevPrice24h?: string; fundingRate?: string; fundingIntervalHour?: number | string;
+      markPrice?: string; indexPrice?: string; bid1Price?: string; ask1Price?: string }> };
   }>(VENUE_FETCH_CONFIGS.BYBIT, { url: 'https://api.bybit.com/v5/market/tickers?category=linear' });
   const assets: ExchangeAsset[] = json.result.list
     .filter((t) => t.symbol.endsWith('USDT'))
@@ -175,6 +206,13 @@ async function fetchBybit(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: pctChange24h(px, parseFloat(t.prevPrice24h || '0')),
         fundingRate: parseFunding(t.fundingRate),
         fundingIntervalHours: Number.isFinite(interval) && interval > 0 ? interval : DEFAULT_FUNDING_INTERVAL_H,
+        // W1: all four inline. Bybit also ships native `basis`/`basisRate`, deliberately NOT read —
+        // one derivation applied uniformly across venues (single-derivation LAW); the native field
+        // serves only as the cross-check recorded in the wave's endpoint-truth audit.
+        markPx: pos(t.markPrice),
+        indexPx: pos(t.indexPrice),
+        bidPx: pos(t.bid1Price),
+        askPx: pos(t.ask1Price),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -195,7 +233,8 @@ async function fetchOKX(limit: number): Promise<ExchangeAsset[]> {
   const [oiData, tickersData] = await Promise.all([
     upstreamFetch<{ data: Array<{ instId: string; oiCcy?: string }> }>(
       VENUE_FETCH_CONFIGS.OKX, { url: 'https://www.okx.com/api/v5/public/open-interest?instType=SWAP' }),
-    upstreamFetch<{ data: Array<{ instId: string; last?: string; markPx?: string; volCcy24h?: string; open24h?: string }> }>(
+    upstreamFetch<{ data: Array<{ instId: string; last?: string; markPx?: string; volCcy24h?: string; open24h?: string;
+      bidPx?: string; askPx?: string }> }>(
       VENUE_FETCH_CONFIGS.OKX, { url: 'https://www.okx.com/api/v5/market/tickers?instType=SWAP' }),
   ]);
   const tickerMap = new Map(tickersData.data.map((t) => [t.instId, t]));
@@ -215,6 +254,12 @@ async function fetchOKX(limit: number): Promise<ExchangeAsset[]> {
         // funding filled by rank-metrics.ts per-instId over the bounded pool; interval default 8h.
         changePct24h: pctChange24h(px, parseFloat(ticker?.open24h || '0')),
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        // W1: `market/tickers` carries ONLY bid/ask — live `jq keys` 2026-07-21 confirms it has NO
+        // `markPx` (the `ticker?.markPx` read above has always fallen through to `last`; harmless,
+        // left as-is to keep `px` byte-identical). mark + index come from structural-sources'
+        // two gap calls (`public/mark-price`, `market/index-tickers`).
+        bidPx: pos(ticker?.bidPx),
+        askPx: pos(ticker?.askPx),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -229,7 +274,8 @@ async function fetchBitget(limit: number): Promise<ExchangeAsset[]> {
   // OPS-ADAPTER-RATELIMIT-UNIFY-W1: routed through upstreamFetch (budget + typed ban/body-code).
   const json = await upstreamFetch<{
     data: Array<{ symbol: string; holdingAmount?: string; markPrice?: string; quoteVolume?: string;
-      open24h?: string; lastPr?: string; fundingRate?: string }>;
+      open24h?: string; lastPr?: string; fundingRate?: string;
+      indexPrice?: string; bidPr?: string; askPr?: string }>;
   }>(VENUE_FETCH_CONFIGS.BITGET, { url: 'https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES' });
   const assets: ExchangeAsset[] = json.data
     .filter((t) => t.symbol.endsWith('USDT'))
@@ -246,6 +292,10 @@ async function fetchBitget(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: pctChange24h(last, parseFloat(t.open24h || '0')),
         fundingRate: parseFunding(t.fundingRate),
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        markPx: pos(t.markPrice), // W1: all four inline
+        indexPx: pos(t.indexPrice),
+        bidPx: pos(t.bidPr),
+        askPx: pos(t.askPr),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -272,7 +322,8 @@ function num(x: unknown): number {
  *  OI; × mark_price = notional. volume_24h_quote = USDT vol; change_percentage is already a %. */
 async function fetchGate(limit: number): Promise<ExchangeAsset[]> {
   const data = await upstreamFetch<Array<{ contract?: string; total_size?: string; quanto_multiplier?: string;
-    mark_price?: string; volume_24h_quote?: string; funding_rate?: string; change_percentage?: string }>>(
+    mark_price?: string; volume_24h_quote?: string; funding_rate?: string; change_percentage?: string;
+    index_price?: string; highest_bid?: string; lowest_ask?: string }>>(
     VENUE_FETCH_CONFIGS.GATE, { url: 'https://api.gateio.ws/api/v4/futures/usdt/tickers' });
   const assets: ExchangeAsset[] = (Array.isArray(data) ? data : [])
     .filter((t) => typeof t.contract === 'string' && t.contract.endsWith('_USDT'))
@@ -287,6 +338,10 @@ async function fetchGate(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: Number.isFinite(chgRaw) ? chgRaw : undefined,
         fundingRate: parseFunding(t.funding_rate),
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        markPx: pos(t.mark_price), // W1: all four inline
+        indexPx: pos(t.index_price),
+        bidPx: pos(t.highest_bid),
+        askPx: pos(t.lowest_ask),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -298,7 +353,8 @@ async function fetchGate(limit: number): Promise<ExchangeAsset[]> {
 async function fetchMexc(limit: number): Promise<ExchangeAsset[]> {
   const [tickerData, detailData] = await Promise.all([
     upstreamFetch<{ data?: Array<{ symbol?: string; lastPrice?: number; holdVol?: number; amount24?: number;
-      fundingRate?: number; riseFallRate?: number }> }>(
+      fundingRate?: number; riseFallRate?: number;
+      fairPrice?: number; indexPrice?: number; bid1?: number; ask1?: number }> }>(
       VENUE_FETCH_CONFIGS.MEXC, { url: 'https://contract.mexc.com/api/v1/contract/ticker' }),
     upstreamFetch<{ data?: Array<{ symbol?: string; contractSize?: number }> }>(
       VENUE_FETCH_CONFIGS.MEXC, { url: 'https://contract.mexc.com/api/v1/contract/detail' }),
@@ -318,6 +374,10 @@ async function fetchMexc(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: typeof rf === 'number' && Number.isFinite(rf) ? rf * 100 : undefined,
         fundingRate: typeof t.fundingRate === 'number' && Number.isFinite(t.fundingRate) ? t.fundingRate : undefined,
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        markPx: pos(t.fairPrice), // W1: all four inline — MEXC calls its mark price `fairPrice`
+        indexPx: pos(t.indexPrice),
+        bidPx: pos(t.bid1),
+        askPx: pos(t.ask1),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -330,7 +390,7 @@ async function fetchMexc(limit: number): Promise<ExchangeAsset[]> {
 async function fetchKucoin(limit: number): Promise<ExchangeAsset[]> {
   const json = await upstreamFetch<{ data?: Array<{ baseCurrency?: string; quoteCurrency?: string; type?: string;
     openInterest?: string; multiplier?: number; markPrice?: number; turnoverOf24h?: number; priceChgPct?: number;
-    fundingFeeRate?: number }> }>(
+    fundingFeeRate?: number; indexPrice?: number }> }>(
     VENUE_FETCH_CONFIGS.KUCOIN, { url: 'https://api-futures.kucoin.com/api/v1/contracts/active' });
   const assets: ExchangeAsset[] = (json.data ?? [])
     .filter((c) => c.quoteCurrency === 'USDT' && c.type === 'FFWCSX' && typeof c.baseCurrency === 'string')
@@ -345,6 +405,10 @@ async function fetchKucoin(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: typeof chg === 'number' && Number.isFinite(chg) ? chg * 100 : undefined,
         fundingRate: typeof c.fundingFeeRate === 'number' && Number.isFinite(c.fundingFeeRate) ? c.fundingFeeRate : undefined,
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        // W1: `contracts/active` carries mark+index but NO book — bid/ask come from the
+        // structural-sources gap call (`api/v1/allTickers` → bestBidPrice/bestAskPrice).
+        markPx: pos(c.markPrice),
+        indexPx: pos(c.indexPrice),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -359,10 +423,12 @@ async function fetchHtx(limit: number): Promise<ExchangeAsset[]> {
     upstreamFetch<{ data?: Array<{ contract_code?: string; amount?: number; value?: number }> }>(
       VENUE_FETCH_CONFIGS.HTX, { url: 'https://api.hbdm.com/linear-swap-api/v1/swap_open_interest' }),
     upstreamFetch<{ ticks?: Array<{ contract_code?: string; close?: number | string;
-      trade_turnover?: number | string; open?: number | string }> }>(
+      trade_turnover?: number | string; open?: number | string;
+      bid?: Array<number | string>; ask?: Array<number | string> }> }>(
       VENUE_FETCH_CONFIGS.HTX, { url: 'https://api.hbdm.com/linear-swap-ex/market/detail/batch_merged' }),
   ]);
-  const tickMap = new Map<string, { close?: number | string; trade_turnover?: number | string; open?: number | string }>();
+  const tickMap = new Map<string, { close?: number | string; trade_turnover?: number | string; open?: number | string;
+    bid?: Array<number | string>; ask?: Array<number | string> }>();
   for (const t of tickData.ticks ?? []) if (t.contract_code) tickMap.set(t.contract_code, t);
   const assets: ExchangeAsset[] = (oiData.data ?? [])
     .filter((o) => typeof o.contract_code === 'string' && o.contract_code.endsWith('-USDT'))
@@ -377,6 +443,11 @@ async function fetchHtx(limit: number): Promise<ExchangeAsset[]> {
         volume24h_usd: num(tk?.trade_turnover),
         changePct24h: pctChange24h(px, num(tk?.open)),
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        // W1: HTX `batch_merged` ships bid/ask as [price, size] tuples (live-probed 2026-07-21:
+        // "bid":[59.53,183]). Index comes from the structural-sources gap call (`swap_index`);
+        // HTX exposes NO bulk mark-price endpoint → markPx stays undefined ⇒ NULL, counted.
+        bidPx: Array.isArray(tk?.bid) ? pos(tk?.bid[0]) : undefined,
+        askPx: Array.isArray(tk?.ask) ? pos(tk?.ask[0]) : undefined,
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -388,7 +459,7 @@ async function fetchHtx(limit: number): Promise<ExchangeAsset[]> {
  *  USDT perps = symbol ending "USDT". */
 async function fetchPhemex(limit: number): Promise<ExchangeAsset[]> {
   const json = await upstreamFetch<{ result?: Array<{ symbol?: string; openInterestRv?: string; markPriceRp?: string;
-    turnoverRv?: string; openRp?: string; closeRp?: string; fundingRateRr?: string }> }>(
+    turnoverRv?: string; openRp?: string; closeRp?: string; fundingRateRr?: string; indexPriceRp?: string }> }>(
     VENUE_FETCH_CONFIGS.PHEMEX, { url: 'https://api.phemex.com/md/v2/ticker/24hr/all' });
   const assets: ExchangeAsset[] = (json.result ?? [])
     .filter((t) => typeof t.symbol === 'string' && t.symbol.endsWith('USDT'))
@@ -402,6 +473,11 @@ async function fetchPhemex(limit: number): Promise<ExchangeAsset[]> {
         changePct24h: pctChange24h(num(t.closeRp), num(t.openRp)),
         fundingRate: parseFunding(t.fundingRateRr),
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        // W1: v2 carries mark+index but NO book — bid/ask come from the structural-sources gap
+        // call (`md/v3/ticker/24hr/all` → bidRp/askRp). The universe stays on v2 deliberately:
+        // migrating this hot path to v3 is a separate, wider change than this wave's scope.
+        markPx: pos(t.markPriceRp),
+        indexPx: pos(t.indexPriceRp),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
@@ -438,7 +514,7 @@ async function fetchAster(limit: number): Promise<ExchangeAsset[]> {
  *  notionalOI_usd = quoteVolume). symbol "<COIN>-USDT"; priceChangePercent = 24h%. */
 async function fetchBingx(limit: number): Promise<ExchangeAsset[]> {
   const json = await upstreamFetch<{ data?: Array<{ symbol?: string; quoteVolume?: string;
-    priceChangePercent?: string }> }>(
+    priceChangePercent?: string; bidPrice?: string | number; askPrice?: string | number }> }>(
     VENUE_FETCH_CONFIGS.BINGX, { url: 'https://open-api.bingx.com/openApi/swap/v2/quote/ticker' });
   const assets: ExchangeAsset[] = (json.data ?? [])
     .filter((t) => typeof t.symbol === 'string' && t.symbol.endsWith('-USDT'))
@@ -452,6 +528,10 @@ async function fetchBingx(limit: number): Promise<ExchangeAsset[]> {
         volume24h_usd: qv,
         changePct24h: Number.isFinite(pcp) ? pcp : undefined,
         fundingIntervalHours: DEFAULT_FUNDING_INTERVAL_H,
+        // W1: BingX ships the book inline; mark+index come from the structural-sources gap call
+        // (`swap/v2/quote/premiumIndex`). OI stays a volume proxy — structural ≠ OI (Q4).
+        bidPx: pos(t.bidPrice),
+        askPx: pos(t.askPrice),
       };
     });
   assets.sort((a, b) => b.notionalOI_usd - a.notionalOI_usd);
