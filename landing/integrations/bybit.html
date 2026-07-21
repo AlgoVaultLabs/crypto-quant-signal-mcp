@@ -12,7 +12,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/bybit">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-07-19">
+<meta name="last-updated" content="2026-07-21">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   "headline": "AlgoVault × Bybit - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/bybit",
   "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-07-19T15:00:00+00:00",
+  "dateModified": "2026-07-21T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -114,9 +114,8 @@ tailwind.config = {
 </style>
 </head>
 <body>
-<!-- DESIGN-W10 / C3 / Q-W10-1 + Q-W10-2 + Q-W10-7 OPTION B: canonical Nav (Integrations
-     active-link + per-page utm-injected /track-record link). REPLACES the pre-W10
-     legacy header block per Q-W10-8 ratification. -->
+<!-- NAV-PLATFORM-GENERATOR-W1 (A1): unified nav region — scripts/build_nav.mjs injects the
+     shared renderSiteNav() here (single-derivation; retires the old per-page canonicalNavHtml). -->
 <!-- NAV:START -->
 <nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -280,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· bybit integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">383,789</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">388,297</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -297,7 +296,7 @@ tailwind.config = {
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>What you’ll build (90s read)</h2>
 <p>A runnable Node.js agent that:</p>
 <ol>
-<li>Calls AlgoVault MCP for <code>get_trade_signal</code> on ETH at two timeframes (<code>15m</code> and <code>1h</code>).</li>
+<li>Calls AlgoVault MCP for <code>get_trade_call</code> on ETH at two timeframes (<code>15m</code> and <code>1h</code>).</li>
 <li>Confirms multi-timeframe consensus — both timeframes return the same <code>signal</code> direction.</li>
 <li>Hands the consensus signal to Bybit Linear Perpetual testnet, which validates a small order (<code>POST /v5/order/create</code> against <code>api-testnet.bybit.com</code>) when the agent’s pre-configured policy fires.</li>
 </ol>
@@ -355,7 +354,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch AlgoVault verdicts on multiple timeframes.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code> and calls <code>get_trade_signal</code> for <code>ETH</code> on <code>15m</code> and <code>1h</code> (both free-tier supported). The agent receives two independent reads from the same composite-verdict pipeline — different windows of price action, same model.</p>
+<p><strong>Fetch AlgoVault verdicts on multiple timeframes.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code> and calls <code>get_trade_call</code> for <code>ETH</code> on <code>15m</code> and <code>1h</code> (both free-tier supported). The agent receives two independent reads from the same composite-verdict pipeline — different windows of price action, same model.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s consensus policy.</strong> When both timeframes return the same <code>signal</code> direction (and that direction is not <code>HOLD</code>), the agent’s pre-configured policy fires its execution branch. Disagreement between timeframes — or any <code>HOLD</code> — skips execution entirely. The threshold of “all timeframes agree” is the agent’s choice; you might use 2-of-3 or weighted voting in production.</p>
@@ -366,11 +365,11 @@ console.log('=== NO REAL ORDERS PLACED ===');
 </ol></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>3 Recipes</h2>
 <h3>Recipe 1 — Multi-timeframe consensus → Bybit perp entry</h3>
-<p>This is the recipe <code>examples/bybit/demo.mjs</code> implements. The agent calls AlgoVault <code>get_trade_signal</code> for <code>ETH</code> on <code>15m</code> and <code>1h</code> (extend to <code>5m</code> once on Starter+ for the original 3-timeframe consensus the spec describes). The agent’s pre-configured policy fires its execution branch only when <strong>all queried timeframes agree</strong> on the same direction (<code>BUY</code> or <code>SELL</code>; <code>HOLD</code> always blocks). On execution, a small <code>LIMIT</code> order goes to Bybit Linear Perpetual testnet via <code>POST /v5/order/create</code>. The threshold of “all agree” is the agent’s choice — you might run 2-of-3 weighted voting in production.</p>
+<p>This is the recipe <code>examples/bybit/demo.mjs</code> implements. The agent calls AlgoVault <code>get_trade_call</code> for <code>ETH</code> on <code>15m</code> and <code>1h</code> (extend to <code>5m</code> once on Starter+ for the original 3-timeframe consensus the spec describes). The agent’s pre-configured policy fires its execution branch only when <strong>all queried timeframes agree</strong> on the same direction (<code>BUY</code> or <code>SELL</code>; <code>HOLD</code> always blocks). On execution, a small <code>LIMIT</code> order goes to Bybit Linear Perpetual testnet via <code>POST /v5/order/create</code>. The threshold of “all agree” is the agent’s choice — you might run 2-of-3 weighted voting in production.</p>
 <h3>Recipe 2 — Volatility breakout watch with conditional orders</h3>
-<p>The agent calls AlgoVault <code>get_market_regime</code> (or reads <code>regime</code> off the <code>get_trade_signal</code> payload) for the asset of interest. The agent’s pre-configured policy fires its execution branch when the returned regime is <code>VOLATILE</code> and confidence exceeds a configured floor. On execution, a Bybit testnet <strong>conditional order</strong> (Bybit’s specialty — combines a trigger price, a take-profit, and a stop-loss in one API call via <code>POST /v5/order/create</code> with <code>triggerPrice</code>, <code>takeProfit</code>, <code>stopLoss</code>) goes against the breakout direction. The TP/SL distances come from the agent’s risk-policy config; AlgoVault returns the regime classification.</p>
+<p>The agent calls AlgoVault <code>get_market_regime</code> (or reads <code>regime</code> off the <code>get_trade_call</code> payload) for the asset of interest. The agent’s pre-configured policy fires its execution branch when the returned regime is <code>VOLATILE</code> and confidence exceeds a configured floor. On execution, a Bybit testnet <strong>conditional order</strong> (Bybit’s specialty — combines a trigger price, a take-profit, and a stop-loss in one API call via <code>POST /v5/order/create</code> with <code>triggerPrice</code>, <code>takeProfit</code>, <code>stopLoss</code>) goes against the breakout direction. The TP/SL distances come from the agent’s risk-policy config; AlgoVault returns the regime classification.</p>
 <h3>Recipe 3 — Hedge-aware DCA on existing position</h3>
-<p>The agent already holds a long position. It calls AlgoVault <code>get_market_regime</code> and <code>get_trade_signal</code> for the same asset. When <strong>both</strong> indicators are bearish (regime ∈ <code>{TRENDING_DOWN, VOLATILE}</code> AND signal == <code>SELL</code> with high confidence), the agent’s pre-configured hedge policy opens an offsetting short on Bybit testnet (notional-only — never leverage above the existing long). When indicators flip back to neutral or bullish, the agent’s policy closes the hedge. <strong>Multi-position state management is the agent’s responsibility — AlgoVault returns the current read; the agent tracks position, cost basis, and hedge ratio.</strong></p></div>
+<p>The agent already holds a long position. It calls AlgoVault <code>get_market_regime</code> and <code>get_trade_call</code> for the same asset. When <strong>both</strong> indicators are bearish (regime ∈ <code>{TRENDING_DOWN, VOLATILE}</code> AND signal == <code>SELL</code> with high confidence), the agent’s pre-configured hedge policy opens an offsetting short on Bybit testnet (notional-only — never leverage above the existing long). When indicators flip back to neutral or bullish, the agent’s policy closes the hedge. <strong>Multi-position state management is the agent’s responsibility — AlgoVault returns the current read; the agent tracks position, cost basis, and hedge ratio.</strong></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>⚠️ Production setup (real-money)</h2>
 <p>The demo above runs on Bybit testnet only. Real-money setup requires:</p>
 <ul>
@@ -386,10 +385,10 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <li><strong>Cross-venue intelligence.</strong> Funding spreads, regime, and sentiment fused across <span data-tr-field="exchange_count">12</span> exchanges — not derivable from any single-venue API.</li>
 <li><strong>Publicly verified.</strong> Every signal anchored to Base L2 via Merkle proof. Verify before you subscribe.</li>
 <li>
-<!-- snapshot: 2026-07-19 — live source of truth: /api/performance-public + /api/merkle-batches -->
+<!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.5%</span> PFE Win Rate · <span data-tr-field="call_count">383,789</span>+ calls · <span data-tr-field="batch_count">100</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'bybit',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.5%</span> PFE Win Rate · <span data-tr-field="call_count">388,297</span>+ calls · <span data-tr-field="batch_count">100</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'bybit',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
 <pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
 </code></pre>
@@ -404,6 +403,5 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
      REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
 <footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
-
 </body>
 </html>

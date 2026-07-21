@@ -12,7 +12,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/okx">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-07-19">
+<meta name="last-updated" content="2026-07-21">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   "headline": "AlgoVault × OKX - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/okx",
   "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-07-19T15:00:00+00:00",
+  "dateModified": "2026-07-21T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -114,9 +114,8 @@ tailwind.config = {
 </style>
 </head>
 <body>
-<!-- DESIGN-W10 / C3 / Q-W10-1 + Q-W10-2 + Q-W10-7 OPTION B: canonical Nav (Integrations
-     active-link + per-page utm-injected /track-record link). REPLACES the pre-W10
-     legacy header block per Q-W10-8 ratification. -->
+<!-- NAV-PLATFORM-GENERATOR-W1 (A1): unified nav region — scripts/build_nav.mjs injects the
+     shared renderSiteNav() here (single-derivation; retires the old per-page canonicalNavHtml). -->
 <!-- NAV:START -->
 <nav class="fixed top-0 w-full z-50 border-b border-white/5" style="background:rgba(6,10,20,0.85);backdrop-filter:blur(12px)">
   <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -280,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· okx integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">383,789</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.5%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">388,297</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -357,7 +356,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch AlgoVault regime reads in parallel.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_signal</code> for <code>BTC</code> / <code>ETH</code> / <code>SOL</code> on the <code>4h</code> timeframe (each call returns <code>regime</code> alongside the signal/confidence), and returns the parsed payloads. Free tier covers 20 calls/day per IP — three regime reads per scan is ample for development.</p>
+<p><strong>Fetch AlgoVault regime reads in parallel.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> for <code>BTC</code> / <code>ETH</code> / <code>SOL</code> on the <code>4h</code> timeframe (each call returns <code>regime</code> alongside the signal/confidence), and returns the parsed payloads. Free tier covers 20 calls/day per IP — three regime reads per scan is ample for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> The agent’s grid-bot policy fires only when at least one asset in the scan returns a <code>RANGING</code> regime (grid bots only profit in range-bound markets — running them in <code>TRENDING_*</code> or <code>VOLATILE</code> regimes destroys capital). The policy lives in your code — AlgoVault returns the regime classifications; the agent decides.</p>
@@ -368,11 +367,11 @@ console.log('=== NO REAL ORDERS PLACED ===');
 </ol></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>3 Recipes</h2>
 <h3>Recipe 1 — Multi-asset regime scan + grid-bot trigger</h3>
-<p>This is the recipe <code>examples/okx/demo.mjs</code> implements. The agent calls AlgoVault <code>get_market_regime</code> (or <code>get_trade_signal</code> which carries <code>regime</code> as a field) across <code>BTC</code>, <code>ETH</code>, and <code>SOL</code> on the <code>4h</code> timeframe. For any asset whose regime is <code>RANGING</code>, the agent’s pre-configured policy hands the candidate to the OKX Agent Trade Kit’s grid-bot creator (<code>POST /api/v5/tradingBot/grid/order-algo</code>) in OKX demo mode. The grid bounds, leverage, and grid count come from the agent’s own configuration — AlgoVault returns the regime; the agent tunes the bot.</p>
+<p>This is the recipe <code>examples/okx/demo.mjs</code> implements. The agent calls AlgoVault <code>get_market_regime</code> (or <code>get_trade_call</code> which carries <code>regime</code> as a field) across <code>BTC</code>, <code>ETH</code>, and <code>SOL</code> on the <code>4h</code> timeframe. For any asset whose regime is <code>RANGING</code>, the agent’s pre-configured policy hands the candidate to the OKX Agent Trade Kit’s grid-bot creator (<code>POST /api/v5/tradingBot/grid/order-algo</code>) in OKX demo mode. The grid bounds, leverage, and grid count come from the agent’s own configuration — AlgoVault returns the regime; the agent tunes the bot.</p>
 <h3>Recipe 2 — Funding-arb pair on options</h3>
 <p>The agent calls AlgoVault <code>scan_funding_arb</code> to retrieve the top funding-spread opportunities. When the top spread exceeds 12 bps and OKX is one of the two indicated venues, the agent’s pre-configured policy can route the long leg through OKX options (<code>POST /api/v5/trade/order</code> with <code>instType=OPTION</code>) in OKX demo mode and the short leg through the counterparty venue. <strong>Multi-venue execution is out of scope for this single-exchange tutorial — readers are advised to extend the demo with their own cross-venue routing layer once the policy thresholds are dialled in.</strong></p>
 <h3>Recipe 3 — Risk-gated entry with confidence floor</h3>
-<p>The agent calls AlgoVault <code>get_trade_signal</code> for the asset of interest. The agent’s pre-configured policy fires only when the returned <code>confidence</code> exceeds 75% — a deliberately tight floor that filters out mid-conviction signals. On execution, a small spot order goes to OKX demo via <code>POST /api/v5/trade/order</code> with <code>instType=SPOT</code>. The threshold of 75% is the agent’s choice, not AlgoVault’s recommendation — you tune it to your strategy’s risk appetite.</p></div>
+<p>The agent calls AlgoVault <code>get_trade_call</code> for the asset of interest. The agent’s pre-configured policy fires only when the returned <code>confidence</code> exceeds 75% — a deliberately tight floor that filters out mid-conviction signals. On execution, a small spot order goes to OKX demo via <code>POST /api/v5/trade/order</code> with <code>instType=SPOT</code>. The threshold of 75% is the agent’s choice, not AlgoVault’s recommendation — you tune it to your strategy’s risk appetite.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>⚠️ Production setup (real-money)</h2>
 <p>The demo above runs in OKX demo trading only. Real-money setup requires:</p>
 <ul>
@@ -388,10 +387,10 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <li><strong>Cross-venue intelligence.</strong> Funding spreads, regime, and sentiment fused across <span data-tr-field="exchange_count">12</span> exchanges — not derivable from any single-venue API.</li>
 <li><strong>Publicly verified.</strong> Every signal anchored to Base L2 via Merkle proof. Verify before you subscribe.</li>
 <li>
-<!-- snapshot: 2026-07-19 — live source of truth: /api/performance-public + /api/merkle-batches -->
+<!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.5%</span> PFE Win Rate · <span data-tr-field="call_count">383,789</span>+ calls · <span data-tr-field="batch_count">100</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'okx',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.5%</span> PFE Win Rate · <span data-tr-field="call_count">388,297</span>+ calls · <span data-tr-field="batch_count">100</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'okx',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
 <pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
 </code></pre>
@@ -406,6 +405,5 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <!-- DESIGN-W10 / C3: canonical Footer (verbatim from live algovault.com line 493).
      REPLACES the pre-W10 legacy footer block per Q-W10-8 ratification. -->
 <footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
-
 </body>
 </html>
