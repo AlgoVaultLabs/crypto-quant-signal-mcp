@@ -10,7 +10,15 @@ describe('OPS-PERFSTATS-SQL-PUSHDOWN-W1 CH2 — SQL shape + flag', () => {
 
   it('groups SQL: grouping + win/eval predicates + max_ca/max_id + coalesce; NO time-window/confidence/outcome', () => {
     expect(groupsSql).toMatch(/GROUP BY coalesce\(exchange,\s*'HL'\),\s*coin,\s*timeframe,\s*signal/i);
-    expect(groupsSql).toMatch(/count\(\*\)\s+FILTER\s*\(WHERE pfe_return_pct IS NOT NULL\)/i);   // pfe_eval
+    // OPS-PFE-METRIC-INTEGRITY-W1 R5 CHANGED THIS PREDICATE — deliberately, and this
+    // assertion was flipped with it (exemption + its test are a pair, per CLAUDE.md).
+    // `pfe_eval` (the DENOMINATOR) now also excludes S2 frozen-book rows: `pfe = 0 AND
+    // mae = 0` means price did not move in EITHER direction, i.e. the market was shut, not
+    // that the call was wrong. S1 (`pfe = 0`, `mae != 0`) is a GENUINE loss and stays in.
+    expect(groupsSql).toMatch(/count\(\*\)\s+FILTER\s*\(WHERE pfe_return_pct IS NOT NULL AND NOT \(pfe_return_pct = 0 AND mae_return_pct = 0\)\)\s+AS pfe_eval/i);
+    // Non-vacuity: the frozen exclusion must appear in BOTH the denominator and the
+    // numerator. Applying it to only one silently skews the rate instead of the cohort.
+    expect(groupsSql.match(/NOT \(pfe_return_pct = 0 AND mae_return_pct = 0\)/g) ?? []).toHaveLength(2);
     expect(groupsSql).toMatch(/signal\s*=\s*'BUY'\s+AND\s+pfe_return_pct\s*>\s*0/i);             // BUY win
     expect(groupsSql).toMatch(/signal\s*=\s*'SELL'\s+AND\s+pfe_return_pct\s*<\s*0/i);            // SELL win
     expect(groupsSql).toMatch(/max\(created_at\)/i);                                              // Q1 ordering

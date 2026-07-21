@@ -81,6 +81,25 @@ export function isPfeWinRow(row: PfeScorable): boolean {
 }
 
 /**
+ * The SQL projection of `isFrozenEvaluation`, for the PG GROUP-BY pushdown path.
+ *
+ * ⚠️ THERE ARE TWO DERIVATIONS OF THIS RULE AND THEY MUST AGREE. `getPerformanceStatsAsync`
+ * has a SQL pushdown (`PERF_STATS_SQL_PUSHDOWN`, **ON in prod**) that aggregates in Postgres
+ * and never materialises rows, so the TypeScript predicates above are simply not on the live
+ * path. A change applied to only one of them is a silent no-op on the published number —
+ * which is exactly what happened on the first attempt at this wave, and was caught only
+ * because the post-deploy headline moved +0.0004pp instead of the expected +0.29pp.
+ *
+ * Keep these two in lockstep. `tests/unit/pfe-scoring-eligibility.test.ts` pins them against
+ * each other over a fixture matrix, so a change to one that is not mirrored in the other fails
+ * the suite rather than the production metric.
+ */
+export const SQL_NOT_FROZEN = 'NOT (pfe_return_pct = 0 AND mae_return_pct = 0)';
+
+/** The SQL projection of `isPfeEligible` (minus the HOLD clause, which the caller groups on). */
+export const SQL_PFE_ELIGIBLE = `pfe_return_pct IS NOT NULL AND ${SQL_NOT_FROZEN}`;
+
+/**
  * Win rate over a row set, applying the canonical eligibility rule. Returns `null` on an empty
  * eligible set rather than `0` — "no data" and "everything lost" must never render alike.
  */

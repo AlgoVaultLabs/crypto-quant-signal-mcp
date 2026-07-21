@@ -8,7 +8,7 @@ import os from 'node:os';
 import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js';
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
-import { isPfeEligible } from './pfe-scoring.js';
+import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
 
 /**
  * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
@@ -1822,7 +1822,11 @@ export async function hasRecentSignalAsync(coin: string, timeframe: string, with
  * Public API + response shape unchanged. No version bump.
  */
 const PERF_STATS_TTL_MS = 60 * 1000;
-const STATS_COL_PROJECTION = 'id, coin, signal, timeframe, confidence, created_at, pfe_return_pct, exchange';
+// OPS-PFE-METRIC-INTEGRITY-W1: mae_return_pct is REQUIRED here — the S2 frozen-book
+// predicate is `pfe = 0 AND mae = 0`, so without this column `isFrozenEvaluation` sees
+// `undefined === 0` (false) and silently excludes NOTHING. Projecting it is what makes the
+// eligibility rule real on the row-scan path.
+const STATS_COL_PROJECTION = 'id, coin, signal, timeframe, confidence, created_at, pfe_return_pct, mae_return_pct, exchange';
 
 const perfStatsCache = new Map<string, { stats: PerformanceStats; computedAt: number }>();
 const perfStatsInflight = new Map<string, Promise<PerformanceStats>>();
@@ -2353,12 +2357,16 @@ function perfStatsSqlPushdownEnabled(): boolean {
  * + max(id) per group drive rollup's deterministic byAsset/byExchange order (Q1).
  */
 export function buildStatsAggregateSql(): { groupsSql: string; periodSql: string; recentSql: string } {
-  const winFilter = "WHERE pfe_return_pct IS NOT NULL AND ((signal = 'BUY' AND pfe_return_pct > 0) OR (signal = 'SELL' AND pfe_return_pct < 0))";
+  // OPS-PFE-METRIC-INTEGRITY-W1: both filters below carry the S2 frozen-book exclusion via the
+  // SHARED fragment from pfe-scoring.ts. This path is the LIVE one in prod
+  // (PERF_STATS_SQL_PUSHDOWN=1), so a rule applied only to the TypeScript predicates would be a
+  // silent no-op on the published number.
+  const winFilter = `WHERE ${SQL_PFE_ELIGIBLE} AND ((signal = 'BUY' AND pfe_return_pct > 0) OR (signal = 'SELL' AND pfe_return_pct < 0))`;
   return {
     groupsSql:
       "SELECT coalesce(exchange, 'HL') AS exchange, coin, timeframe, signal, " +
       'count(*) AS cnt, ' +
-      'count(*) FILTER (WHERE pfe_return_pct IS NOT NULL) AS pfe_eval, ' +
+      `count(*) FILTER (WHERE ${SQL_PFE_ELIGIBLE}) AS pfe_eval, ` +
       `count(*) FILTER (${winFilter}) AS pfe_win, ` +
       'max(created_at) AS max_ca, max(id) AS max_id ' +
       "FROM signals GROUP BY coalesce(exchange, 'HL'), coin, timeframe, signal",

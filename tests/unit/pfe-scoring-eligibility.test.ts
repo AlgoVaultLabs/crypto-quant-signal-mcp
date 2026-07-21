@@ -141,6 +141,57 @@ describe('single-derivation: every surface projects from ONE rule', () => {
     expect(r.rate).toBeCloseTo(manual.filter(isPfeWinRow).length / manual.length, 12);
   });
 
+  it('the SQL pushdown path applies the SAME rule as the TS predicate', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, resolve } = await import('node:path');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(resolve(here, '../../src/lib/performance-db.ts'), 'utf8');
+
+    // ⚠️ THE DEFECT THIS PINS. getPerformanceStatsAsync has a PG GROUP-BY pushdown
+    // (PERF_STATS_SQL_PUSHDOWN, ON in prod) that aggregates in Postgres and never
+    // materialises rows — so the TS predicates are simply NOT on the live path. The first
+    // attempt at this wave changed only the TS side and was a silent no-op on the published
+    // number; it surfaced only because the post-deploy headline moved +0.0004pp instead of
+    // the expected +0.29pp. Both the numerator filter AND the denominator must carry it.
+    const sqlFn = src.slice(src.indexOf('export function buildStatsAggregateSql'));
+    const body = sqlFn.slice(0, sqlFn.indexOf('\n}'));
+    expect(body).toMatch(/SQL_PFE_ELIGIBLE/);
+    // the DENOMINATOR (pfe_eval) is the half that is easy to forget
+    expect(body).toMatch(/pfe_eval/);
+    expect(body).not.toMatch(/FILTER \(WHERE pfe_return_pct IS NOT NULL\) AS pfe_eval/);
+  });
+
+  it('the shared SQL fragment expresses exactly isFrozenEvaluation', async () => {
+    const { SQL_NOT_FROZEN, SQL_PFE_ELIGIBLE } = await import('../../src/lib/pfe-scoring.js');
+    expect(SQL_NOT_FROZEN).toBe('NOT (pfe_return_pct = 0 AND mae_return_pct = 0)');
+    expect(SQL_PFE_ELIGIBLE).toContain('pfe_return_pct IS NOT NULL');
+    expect(SQL_PFE_ELIGIBLE).toContain(SQL_NOT_FROZEN);
+
+    // Evaluate the SQL semantics in JS over the fixture matrix and require the two
+    // derivations to agree row-for-row. A change to one that is not mirrored fails HERE.
+    const sqlEligible = (r: PfeScorable) =>
+      r.pfe_return_pct != null && !(r.pfe_return_pct === 0 && r.mae_return_pct === 0);
+    for (const r of [S3_BUY_WIN, S3_SELL_WIN, S1_BUY_LOSS, S1_SELL_LOSS, S2_FROZEN_BUY, S2_FROZEN_SELL, NEVER_EVALUATED]) {
+      expect(sqlEligible(r), `divergence on ${JSON.stringify(r)}`).toBe(isPfeEligible(r));
+    }
+  });
+
+  it('mae_return_pct is PROJECTED — without it the predicate silently excludes nothing', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, resolve } = await import('node:path');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(resolve(here, '../../src/lib/performance-db.ts'), 'utf8');
+    const proj = src.slice(src.indexOf('const STATS_COL_PROJECTION'));
+    expect(proj.slice(0, proj.indexOf('\n'))).toContain('mae_return_pct');
+
+    // Prove WHY: a row missing mae_return_pct is NOT detected as frozen.
+    const projectionless = { signal: 'BUY', pfe_return_pct: 0 } as PfeScorable;
+    expect(isFrozenEvaluation(projectionless)).toBe(false);
+    expect(isPfeEligible(projectionless)).toBe(true);   // ← silently counted, as a loss
+  });
+
   it('performance-db.ts has NO bare `pfe_return_pct != null` eligibility filter left', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
@@ -149,6 +200,6 @@ describe('single-derivation: every surface projects from ONE rule', () => {
     const src = readFileSync(resolve(here, '../../src/lib/performance-db.ts'), 'utf8');
     // Eleven parallel copies of the eligibility rule is exactly the drift this replaced.
     expect(src).not.toMatch(/\.filter\([^)]*pfe_return_pct\s*!=\s*null/);
-    expect(src).toMatch(/import \{ isPfeEligible \} from '\.\/pfe-scoring\.js'/);
+    expect(src).toMatch(/import \{[^}]*isPfeEligible[^}]*\} from '\.\/pfe-scoring\.js'/);
   });
 });
