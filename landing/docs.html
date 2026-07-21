@@ -1275,10 +1275,15 @@ with MCPServerAdapter(server_params) as tools:
           <td class="text-gray-300 text-sm px-4 py-3">No SDK to install &middot; plain <code class="text-xs bg-navy-800 px-1 rounded">fetch</code> + <code class="text-xs">node:crypto</code> against the VST demo host</td>
           <td class="text-gray-400 text-sm px-4 py-3">Composite verdict + BingX's VST demo-trading environment. Dry-run order validation plus an API-callable demo-funds faucet.</td>
         </tr>
-        <tr>
+        <tr class="border-b border-white/10">
           <td class="text-white text-sm px-4 py-3 font-medium">KuCoin</td>
           <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">npm install kucoin-universal-sdk</code> &middot; the only non-archived official SDK</td>
           <td class="text-gray-400 text-sm px-4 py-3">Composite verdict + KuCoin Futures order VALIDATION. KuCoin retired its sandbox in 2023, so this validates payloads rather than simulating fills.</td>
+        </tr>
+        <tr>
+          <td class="text-white text-sm px-4 py-3 font-medium">Gate.io</td>
+          <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install gate-api</code> &middot; official SDK 7.2.100 (PyPI + npm)</td>
+          <td class="text-gray-400 text-sm px-4 py-3">Composite verdict + Gate.io's futures testnet. Keyless demo converts coins to CONTRACTS from the live quanto_multiplier and prints the order — nothing is signed or sent.</td>
         </tr>
       </tbody>
     </table>
@@ -1452,6 +1457,21 @@ POST https://api-futures.kucoin.com/api/v1/orders/test
       </div>
       <p>Every legacy per-language KuCoin SDK is archived &mdash; and several archived repos carry more stars than the live one.</p>
       <p><a href="/integrations/kucoin" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Gate.io &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Gate moved its futures testnet &mdash; and <code class="text-xs bg-navy-800 px-1 rounded">gate-api</code> 7.2.100 still ships the old host as its default, so set the base URL explicitly:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">import gate_api
+cfg = gate_api.Configuration(
+    host="https://api-testnet.gateapi.io/api/v4",   # NOT the SDK default
+)</code></pre>
+      </div>
+      <p><code class="text-xs">size</code> is a CONTRACT count, not a coin quantity &mdash; 0.001 BTC is 10 contracts at <code class="text-xs">quanto_multiplier</code> 0.0001. Direction is the sign of <code class="text-xs">size</code>.</p>
+      <p><a href="/integrations/gateio" class="text-mint-400 hover:underline">Full tutorial + runnable demo &rarr;</a></p>
     </div>
   </details>
 

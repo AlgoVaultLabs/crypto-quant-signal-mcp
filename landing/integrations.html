@@ -721,6 +721,19 @@ tailwind.config = {
           <span class="text-mint-400">View tutorial &rarr;</span>
         </div>
       </a>
+      <a href="/integrations/gateio"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'exchange-kit',slug:'gateio',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">Gate.io &times; AlgoVault</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Composite verdict + Gate.io's futures testnet. Keyless demo converts coins to CONTRACTS from the live quanto_multiplier and prints the order — nothing is signed or sent.</p>
+        <p class="text-gray-600 text-xs mb-3"><code class="text-xs bg-navy-800 px-1 rounded">pip install gate-api</code> &middot; official SDK 7.2.100 (PyPI + npm)</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
       <!-- BUILD:INTEGRATIONS_INDEX_EXCHANGE_KITS:end -->
     </div>
 
