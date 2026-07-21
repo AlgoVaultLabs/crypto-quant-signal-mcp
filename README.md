@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <span data-tr-field="pfe_wr">91.3</span>% PFE win rate across <span data-tr-field="total_calls">134,276</span>+ verified calls. Merkle-verified on Base L2. Don't trust — verify. <!-- SNAPSHOT-LINE -->
+  <span data-tr-field="pfe_wr">91.3%</span> PFE win rate across <span data-tr-field="total_calls">134,276</span>+ verified calls. Merkle-verified on Base L2. Don't trust — verify. <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
@@ -110,9 +110,14 @@ The `_algovault` block makes outputs composable: downstream risk and backtest to
 <!-- SoT: this README is the single canonical source. The data-tr-field numbers below are
      auto-injected from live /api/performance-public + /api/merkle-batches by
      scripts/snapshot-landing-data.mjs at npm-publish + Hetzner-deploy. Do NOT hand-edit the
-     numbers; edit "What's new" by hand. Wired by OPS-NPM-README-SINGLE-SOT-W1 (2026-05-31). -->
+     numbers; edit "What's new" by hand. Wired by OPS-NPM-README-SINGLE-SOT-W1 (2026-05-31).
+     PERCENT RULE (Design.md §6 data-tr-field-percent-suffix-discipline): for percentage fields
+     (pfe_wr / hold_rate / any *_pct|*_rate|*_wr) the "%" lives INSIDE the span, because the
+     manifest's replace_template is "$1{value}%$2" — the injector supplies it. Writing
+     `>91.3</span>%` renders "91.6%%" once injected. Guarded by
+     tests/unit/snapshot-injection-percent-suffix.test.ts. -->
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">91.3</span>% PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">134,276</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">50</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">98.9</span>% HOLD rate</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">91.3%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">134,276</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">50</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">98.9%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
