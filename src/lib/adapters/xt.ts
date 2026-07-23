@@ -34,6 +34,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://fapi.xt.com';
 const MAX_RETRIES = 1;
@@ -44,6 +45,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '1h': '1h', '4h': '4h', '1d': '1d',
   '3m': '5m', '2h': '1h', '8h': '4h', '12h': '4h',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms XT fetches for `tf` (single-derivation from INTERVAL_MAP). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // XT.COM uses lowercase + underscore. Stocks/commodities route DIRECT via
 // identity-lowercase. Only 3 aliases needed (where XT uses cryptic ticker).

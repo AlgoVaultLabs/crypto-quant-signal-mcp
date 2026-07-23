@@ -24,6 +24,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api-contract.weex.com';
 const MAX_RETRIES = 1;
@@ -34,6 +35,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '1h': '1h', '4h': '4h', '1d': '1d',
   '3m': '5m', '2h': '1h', '8h': '4h', '12h': '4h',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms WEEX fetches for `tf`. 3m→5m (1.67×), 30m→15m/8h→4h finer. */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 export const TRADFI_ALIASES: Record<string, string> = {
   SILVER: 'XAG', PLATINUM: 'XPT', PALLADIUM: 'XPD', USOIL: 'CL',

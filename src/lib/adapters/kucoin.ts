@@ -31,6 +31,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api-futures.kucoin.com';
 const MAX_RETRIES = 1;
@@ -40,6 +41,9 @@ const INTERVAL_MAP: Record<string, number> = {
   '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
   '1h': 60, '2h': 120, '4h': 240, '8h': 480, '12h': 720, '1d': 1440,
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms KuCoin fetches for `tf` (INTERVAL_MAP is MINUTES; fully native). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP, 'minutes');
 
 // AlgoVault-canonical → KuCoin-native base symbol for TradFi assets.
 // Per Plan-Mode probe rev 2 + semantic-fingerprint price-probe 2026-05-19.

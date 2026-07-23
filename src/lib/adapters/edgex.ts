@@ -27,6 +27,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://pro.edgex.exchange';
 const MAX_RETRIES = 1;
@@ -45,6 +46,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '12h': 'HOUR_12',
   '1d':  'DAY_1',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms edgeX fetches for `tf` (MINUTE_N/HOUR_N/DAY_N; native). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // Bar-length lookup (ms) for kline `from` window calculation when caller
 // passes startTime in ms.

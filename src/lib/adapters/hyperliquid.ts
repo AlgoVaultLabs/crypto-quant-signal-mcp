@@ -17,6 +17,7 @@ import { UpstreamRateLimitError } from '../errors.js';
 import { type WeightClass } from '../upstream-weight-budget.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { coalescedCache } from '../coalesced-cache.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.hyperliquid.xyz/info';
 const MAX_RETRIES = 1;
@@ -72,6 +73,9 @@ const INTERVAL_MS: Record<string, number> = {
   '1w': 604_800_000,
   '1M': 2_592_000_000,
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms HL fetches for `tf` (INTERVAL_MS is already ms). Fully native. */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MS, 'ms');
 
 export function expectedCandleItems(
   interval: string,

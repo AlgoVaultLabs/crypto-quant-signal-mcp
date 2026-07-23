@@ -38,6 +38,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://whitebit.com';
 const MAX_RETRIES = 1;
@@ -51,6 +52,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '5m': '15m',   // no 5m
   '2h': '1h', '8h': '4h', '12h': '4h',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms WhiteBIT fetches for `tf`. 3m/5m→15m coarsen (≥2×). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 export const TRADFI_ALIASES: Record<string, string> = {
   GOLD: 'XAU',

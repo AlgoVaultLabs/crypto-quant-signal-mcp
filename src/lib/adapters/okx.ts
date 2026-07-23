@@ -12,6 +12,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://www.okx.com';
 const MAX_RETRIES = 1;
@@ -51,6 +52,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H',
   '8h': '8H', '12h': '12H', '1d': '1D',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms OKX fetches for `tf` (1H/1D notation; fully native). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // Bar duration in ms — used to detect the historical-coverage gap and page the history endpoint.
 const BAR_MS: Record<string, number> = {

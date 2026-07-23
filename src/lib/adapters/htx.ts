@@ -43,6 +43,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.hbdm.com';
 const MAX_RETRIES = 1;
@@ -64,6 +65,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '8h':   '4hour',
   '12h':  '4hour',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms HTX fetches for `tf` (Nmin/Nhour/Nday). 3m→5m (1.67×), rest finer. */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // AlgoVault-canonical → HTX-native base symbol for TradFi.
 // Per PILOT-ADAPTERS-W3A Plan-Mode probe 2026-05-20: HTX lists META, USOIL,

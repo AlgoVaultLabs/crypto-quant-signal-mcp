@@ -48,6 +48,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.phemex.com';
 const MAX_RETRIES = 1;
@@ -67,6 +68,9 @@ const INTERVAL_MAP: Record<string, number> = {
   '12h':  86400, // Phemex has no 12h; fall back to 1d
   '1d':   86400,
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Phemex fetches for `tf` (map is SECONDS). 12h→1d coarsens (2×). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP, 'seconds');
 
 // Phemex kline endpoint accepts `limit` as a FIXED ENUM (probed 2026-05-20
 // post-deploy R7 verification gate):

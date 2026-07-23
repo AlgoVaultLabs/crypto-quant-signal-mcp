@@ -37,6 +37,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://open-api.bingx.com';
 const MAX_RETRIES = 1;
@@ -58,6 +59,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '12h': '12h',
   '1d':  '1d',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms BingX fetches for `tf` (fully native, incl. 3m/6h). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // AlgoVault-canonical → BingX-native base symbol for TradFi.
 // Per PILOT-ADAPTERS-W3A Plan-Mode probe 2026-05-20: BingX has only 2 TradFi

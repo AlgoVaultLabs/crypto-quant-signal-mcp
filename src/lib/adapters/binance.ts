@@ -12,6 +12,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://fapi.binance.com';
 const MAX_RETRIES = 1;
@@ -85,6 +86,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '30m': '30m', '1h': '1h', '2h': '2h', '4h': '4h',
   '8h': '8h', '12h': '12h', '1d': '1d',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Binance fetches for `tf` (fully native). */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // Some Binance symbols use 1000-prefix for low-price coins
 const SYMBOL_OVERRIDES: Record<string, string> = {

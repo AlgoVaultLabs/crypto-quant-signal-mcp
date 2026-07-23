@@ -37,6 +37,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://contract.mexc.com';
 const MAX_RETRIES = 1;
@@ -56,6 +57,9 @@ const INTERVAL_MAP: Record<string, string> = {
   '2h':  'Min60',
   '12h': 'Hour8',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms MEXC fetches for `tf` (MinN/HourN/DayN). 3m→5m (1.67×), 2h/12h finer. */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // AlgoVault-canonical → MEXC-native base symbol for TradFi assets
 // (per PILOT-ADAPTERS-W2 Plan-Mode semantic-fingerprint probe 2026-05-19).

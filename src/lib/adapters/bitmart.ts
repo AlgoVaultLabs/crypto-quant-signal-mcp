@@ -33,6 +33,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api-cloud-v2.bitmart.com';
 const MAX_RETRIES = 1; // TIMEOUT_MS now lives in VENUE_FETCH_CONFIGS.BITMART (timeoutMs: 4000)
@@ -46,6 +47,9 @@ const STEP_MAP: Record<string, number> = {
   '12h': 720,  // 720 minutes = 12h
   '1d': 720,   // Bitmart has no 1440 minute step; 12h is closest valid
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms BitMart fetches for `tf` (STEP_MAP is MINUTES). 3m native. */
+export const servedIntervalMs = makeServedIntervalMs(STEP_MAP, 'minutes');
 
 // AlgoVault-canonical → Bitmart-native base symbol for TradFi.
 // Bitmart has BOTH XAU + XAUT (both ~$4505); prefer XAU spot.

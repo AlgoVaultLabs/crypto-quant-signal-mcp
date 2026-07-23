@@ -55,6 +55,7 @@ import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fe
 import type { LicenseInfo, ExchangeId, VenueStatus } from '../types.js';
 import { listVenues, stampSeedingStarted } from '../lib/venue-store.js';
 import { recordSeedHeartbeat } from '../lib/seed-heartbeats.js';
+import { isTimeframeFaithful, servedTimeframeLabel } from '../lib/tf-support.js';
 import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { BINANCE_OVERRIDES } from '../lib/coin-overrides.js';
 
@@ -894,6 +895,16 @@ export async function runVenueSeed(
 ): Promise<VenueSeedResult> {
   const { timeframe, top, idempotencyWindow, restrictedCoins } = opts;
   const startedAt = Date.now();
+  // OPS-SEED-UNSUPPORTED-TF-SKIP-W1 — proactive skip of any (venue, tf) the adapter can only serve by
+  // COARSER substitution (a `<tf>` WR built on `>tf` candles is resolution-inflated on the Merkle-anchored
+  // byTimeframe surface — Factuality is THE LAW). Data-driven from each adapter's own interval map
+  // (tf-support.isTimeframeFaithful), NOT a crontab --exclude. Placed BEFORE recordSeedHeartbeat so a skipped
+  // unfaithful TF does not stamp a freshness heartbeat that would mask the 45-min SLA on the venue's real
+  // (faithful) fast lines. seedExchange's InsufficientCandles/not-found catch stays as defence in depth.
+  if (!isTimeframeFaithful(venueId, timeframe)) {
+    console.log(`[${ts()}] [${venueId}] tf=${timeframe} SKIP — unfaithful (adapter would coarsen ${timeframe}→${servedTimeframeLabel(venueId, timeframe)}); not seeded.`);
+    return { venueId, seeded: 0, skipped: 0, errors: 0, durationMs: Date.now() - startedAt, failed: false };
+  }
   // OPS-SEED-ORCHESTRATOR-W1 V2-RESUME (CH3-PRE) — attempt-recency heartbeat: the
   // cron fired + reached this venue+TF (regardless of HOLD/seeded outcome). The
   // true seeding-health signal (immune to the HOLD filter); feeds the V5(ii)

@@ -28,6 +28,7 @@ import type {
   DexType,
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.gateio.ws';
 const MAX_RETRIES = 1;
@@ -39,6 +40,9 @@ const INTERVAL_MAP: Record<string, string> = {
   // Gate.io does NOT support 3m, 2h, 12h — fall back to nearest available
   '3m': '5m', '2h': '1h', '12h': '8h',
 };
+
+/** OPS-SEED-UNSUPPORTED-TF-SKIP-W1: finest base-candle ms Gate fetches for `tf`. 3m→5m (1.67×), 2h→1h/12h→8h finer. */
+export const servedIntervalMs = makeServedIntervalMs(INTERVAL_MAP);
 
 // AlgoVault-canonical → Gate.io-native base symbol for TradFi assets
 // (per PILOT-ADAPTERS-W2 Plan-Mode semantic-fingerprint probe 2026-05-19).
