@@ -51,19 +51,29 @@ TOP_5M="${SEED_RAMP_TOP_5M:-30}"
 # the ceiling is the exchanges' per-IP rate-limits (Bybit 10006 at c=3+top-50), NOT box CPU.
 CONC="${SEED_RAMP_CONCURRENCY:-2}"
 NEW_SEL='--status promoted --exclude HL'
+# OPS-VENUE-GO-LIVE-15-W1 (Q2-B): WhiteBIT's public kline supports only {1m,15m,30m,1h,4h,1d}; its
+# 3m/5m substitute to 15m (5×/3× coarser) — a sub-15m WR built on 15m candles cannot resolve sub-15m
+# PFE (Factuality). So WhiteBIT is excluded from the TIGHT (3m + 5m) lines ONLY; it keeps 15m+ (its
+# native cadences). Extendable to any future coarse-substitution venue via SEED_RAMP_TIGHT_EXCLUDE.
+TIGHT_EXCLUDE="${SEED_RAMP_TIGHT_EXCLUDE:-HL,WHITEBIT}"
+TIGHT_SEL="--status promoted --exclude $TIGHT_EXCLUDE"
 BACKUP_DIR="${SEED_RAMP_BACKUP_DIR:-/opt}"
 
 cur() { crontab -l 2>/dev/null || true; }
 
 transform() {
-  awk -v newsel="$NEW_SEL" -v top3m="$TOP_3M" -v top5m="$TOP_5M" -v conc="$CONC" '
+  # OPS-VENUE-GO-LIVE-15-W1: the TIGHT 3m + 5m lines carry TIGHT_SEL (excludes WhiteBIT — Q2-B);
+  # 15m+ keep NEW_SEL. 5m is split out of the orch group so it inherits the tight selector.
+  awk -v newsel="$NEW_SEL" -v tightsel="$TIGHT_SEL" -v top3m="$TOP_3M" -v top5m="$TOP_5M" -v conc="$CONC" '
   {
     line = $0
     if (line ~ /seed-3m-standard\.log/ && line ~ /--timeframe 3m --top 50/) {
-      sub(/--timeframe 3m --top 50/, "--timeframe 3m --top " top3m " " newsel " --concurrency " conc, line)
-    } else if (line ~ /seed-orch-(5m|15m|30m|1h|2h|4h|8h|12h)\.log/ && line ~ /--exchange-list BINANCE,BYBIT,OKX,BITGET/) {
+      sub(/--timeframe 3m --top 50/, "--timeframe 3m --top " top3m " " tightsel " --concurrency " conc, line)
+    } else if (line ~ /seed-orch-5m\.log/ && line ~ /--exchange-list BINANCE,BYBIT,OKX,BITGET/) {
+      sub(/--exchange-list BINANCE,BYBIT,OKX,BITGET/, tightsel, line)
+      sub(/--top 50/, "--top " top5m, line); sub(/--concurrency 1/, "--concurrency " conc, line)
+    } else if (line ~ /seed-orch-(15m|30m|1h|2h|4h|8h|12h)\.log/ && line ~ /--exchange-list BINANCE,BYBIT,OKX,BITGET/) {
       sub(/--exchange-list BINANCE,BYBIT,OKX,BITGET/, newsel, line)
-      if (line ~ /seed-orch-5m\.log/) { sub(/--top 50/, "--top " top5m, line); sub(/--concurrency 1/, "--concurrency " conc, line) }
     }
     print line
   }'
