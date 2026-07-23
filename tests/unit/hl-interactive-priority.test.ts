@@ -129,7 +129,8 @@ describe('evaluateRateLimitTriggers — count AND shape', () => {
   });
 
   it('the shadow trigger is unaffected by HL shape', () => {
-    const r = evaluateRateLimitTriggers([venue('Bitmart', { throws: 389 })], burst);
+    // edgeX (not Bitmart): Bitmart promoted by OPS-VENUE-GO-LIVE-15-W1 → no longer shadow.
+    const r = evaluateRateLimitTriggers([venue('edgeX', { throws: 389 })], burst);
     expect(r.shadowBudget).toBe(true);
   });
 });

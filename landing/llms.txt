@@ -2,7 +2,7 @@
 
 > The Brain Layer for AI Trading Agents. One composite trade call
 > (direction + confidence + regime + factors) for crypto perpetuals across
-> 12 exchanges — leading CEX & perp-DEX venues. Every call  # SNAPSHOT-LINE
+> 15 exchanges — leading CEX & perp-DEX venues. Every call  # SNAPSHOT-LINE
 > is Merkle-anchored on Base L2. MCP-native. Buyers are AI agents.
 
 Last updated: 2026-06-08
@@ -13,7 +13,7 @@ Live source of truth: https://algovault.com/api/performance-public
 - PFE (directional-accuracy) win rate published live across the full tracked-call history — current value at /track-record.
 - Every trade call Merkle-anchored on Base L2; daily batches published on-chain — verify any call at /verify.
 - MCP tools include `get_trade_call`, `scan_trade_calls`, `get_market_regime`, and `scan_funding_arb` (full set via `tools/list`).
-- 12 exchanges analysed — leading CEX & perp-DEX venues.  # SNAPSHOT-LINE
+- 15 exchanges analysed — leading CEX & perp-DEX venues.  # SNAPSHOT-LINE
 - 11 timeframes supported (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d).  # SNAPSHOT-LINE
 - 4 pricing tiers: Free ($0), Starter ($9.99/mo), Pro ($49/mo), Enterprise ($299/mo). HOLD calls always free.
 - Pay-per-call: x402 micropayments (USDC on Base), from $0.01/call — no signup, no API key. HOLD trade calls free.

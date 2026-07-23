@@ -739,7 +739,7 @@ tailwind.config = {
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "AlgoVault",
-  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 12 crypto perp venues. Market regime classification and cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite BUY/SELL/HOLD trade calls for AI trading agents. 15 crypto perp venues. Market regime classification and cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "image": "https://algovault.com/logo.png",
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
@@ -776,7 +776,7 @@ tailwind.config = {
   "serviceType": "Composite trade-call API for AI trading agents",
   "provider": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "url": "https://algovault.com",
-  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 12 crypto perp venues. Every signal Merkle-anchored on Base L2 and verifiable at /verify.",
+  "description": "Composite BUY/SELL/HOLD trade calls with confidence, market regime classification, and cross-venue funding-rate arbitrage. 15 crypto perp venues. Every signal Merkle-anchored on Base L2 and verifiable at /verify.",
   "areaServed": "Worldwide",
   "audience": { "@type": "Audience", "audienceType": "AI trading agents, algorithmic trading systems, MCP-compatible clients" },
   "hasOfferCatalog": {
@@ -798,7 +798,7 @@ tailwind.config = {
   "name": "AlgoVault",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Any (MCP-compatible)",
-  "description": "Composite trade calls for AI trading agents. 12 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
+  "description": "Composite trade calls for AI trading agents. 15 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
@@ -1921,7 +1921,7 @@ const HOW_IT_WORKS_HEAD_AND_NAV = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>How AlgoVault Works — The Trading Model API for AI Agents</title>
-<meta name="description" content="AlgoVault is a self-tuning quant ML model served as an MCP API. One call returns a composite verdict — direction, confidence, regime — across 12 perp venues. Every call Merkle-anchored on Base L2.">
+<meta name="description" content="AlgoVault is a self-tuning quant ML model served as an MCP API. One call returns a composite verdict — direction, confidence, regime — across 15 perp venues. Every call Merkle-anchored on Base L2.">
 <meta name="last-updated" content="2026-05-14">
 <link rel="canonical" href="https://algovault.com/how-it-works">
 <link rel="icon" type="image/png" href="/logo.png">

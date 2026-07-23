@@ -4182,9 +4182,12 @@ var LB_SMALL_N = 30;          // muted "small sample" tag bar (single source w/ 
 // OPS-VENUE-GO-LIVE-2026-06-30: promoted 5→12. The 7 appended alphabetically after
 // the original 5 (display order). Brand colors: BINGX/GATE/HTX/KUCOIN/MEXC are exact
 // brand hex; ASTER/PHEMEX brand-aligned (official hex not publicly retrievable).
-var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex' };
-var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8' };
-var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX'];
+// OPS-VENUE-GO-LIVE-15-W1 (2026-07-23): 12→15. WhiteBIT lime #A3E635 / BitMart red #F6465D /
+// XT pink #EC4899 — chosen pairwise-distinct from the 12 (unused red/lime/magenta hues; Design.md
+// "no two venues share a colour"), brand hues being too crowded (blue/teal) to stay distinct.
+var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex', WHITEBIT: 'WhiteBIT', BITMART: 'BitMart', XT: 'XT' };
+var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8', WHITEBIT: '#A3E635', BITMART: '#F6465D', XT: '#EC4899' };
+var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'BITMART', 'XT'];
 
 // Build the row set for the active dimension from cachedData. Each row = {label, wr, n, [color], [tier]}.
 function lbRows() {

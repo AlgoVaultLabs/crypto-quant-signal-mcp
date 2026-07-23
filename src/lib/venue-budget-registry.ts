@@ -329,6 +329,61 @@ export const phemexWeightBudget = new WeightBudget({
   log: PHEMEX_VITEST ? () => {} : undefined,
 });
 
+// ── WhiteBIT: consumer, OPS-VENUE-GO-LIVE-15-W1 (2026-07-23) ──
+// WhiteBIT public limit 2000 req/10s (= 12000/min) on futures/kline (docs.whitebit.com/api-reference/
+// rate-limits, re-verified 2026-07-23). LOOSE — this budget is a runaway guard, not a binding
+// constraint: ceiling = 50% = 6000/min, reserve 1000. weightFor = () => 1.
+export const WHITEBIT_REQ_CEILING = 6000;
+export const WHITEBIT_INTERACTIVE_RESERVE = 1000;
+const WHITEBIT_VITEST = process.env.VITEST === 'true';
+const whitebitLedgerSuffix = WHITEBIT_VITEST ? `.test-${process.pid}` : '';
+export const whitebitWeightBudget = new WeightBudget({
+  venue: 'WhiteBIT',
+  ledgerPath: process.env.WHITEBIT_WEIGHT_LEDGER ?? `/tmp/algovault-whitebit-weight${whitebitLedgerSuffix}.json`,
+  lockPath: process.env.WHITEBIT_WEIGHT_LOCK ?? `/tmp/algovault-whitebit-weight${whitebitLedgerSuffix}.lock`,
+  ceilingPerMin: WHITEBIT_VITEST ? 1_000_000_000 : WHITEBIT_REQ_CEILING,
+  interactiveReserve: WHITEBIT_VITEST ? 0 : WHITEBIT_INTERACTIVE_RESERVE,
+  log: WHITEBIT_VITEST ? () => {} : undefined,
+});
+
+// ── BitMart: consumer, OPS-VENUE-GO-LIVE-15-W1 — the fleet's TIGHTEST limiter ──
+// BitMart Futures V2 public limit 12 req/2s (= 360/min) per IP; open-interest endpoint 2 req/2s;
+// 429→418 IP-ban escalation (developer-pro.bitmart.com/en/futuresv2/#rate-limit, re-verified
+// 2026-07-23). This cross-process ledger is the MECHANISM that makes the uncapped 1h+ promoted pass
+// (~1200 perps) safe — it serializes ALL BitMart seed lines to ≤ ceiling. As a SHADOW venue BitMart
+// had NO budget (SHADOW_VENUE_BUDGETS empty) → concurrent lines burst past 12/2s → 523 raw 429s in a
+// 2026-07-20/21 window (0×418 ever). Ceiling = 50% of 360 = 180/min; reserve 40. weightFor = () => 1.
+// // TODO: revisit by 2026-08-23 — if the C4 24h ban-watch still surfaces 429s on the uncapped 1h+,
+// tighten toward the 2 req/2s OI-endpoint cap (or give BitMart HL-class isolated seed lines).
+export const BITMART_REQ_CEILING = 180;
+export const BITMART_INTERACTIVE_RESERVE = 40;
+const BITMART_VITEST = process.env.VITEST === 'true';
+const bitmartLedgerSuffix = BITMART_VITEST ? `.test-${process.pid}` : '';
+export const bitmartWeightBudget = new WeightBudget({
+  venue: 'Bitmart',
+  ledgerPath: process.env.BITMART_WEIGHT_LEDGER ?? `/tmp/algovault-bitmart-weight${bitmartLedgerSuffix}.json`,
+  lockPath: process.env.BITMART_WEIGHT_LOCK ?? `/tmp/algovault-bitmart-weight${bitmartLedgerSuffix}.lock`,
+  ceilingPerMin: BITMART_VITEST ? 1_000_000_000 : BITMART_REQ_CEILING,
+  interactiveReserve: BITMART_VITEST ? 0 : BITMART_INTERACTIVE_RESERVE,
+  log: BITMART_VITEST ? () => {} : undefined,
+});
+
+// ── XT: consumer, OPS-VENUE-GO-LIVE-15-W1 ──
+// XT global 1000 req/min per IP; breach = 10-MINUTE ACCOUNT LOCK (doc.xt.com futures Basic
+// Information of the Interface, re-verified 2026-07-23). Ceiling = 50% = 500/min; reserve 100.
+export const XT_REQ_CEILING = 500;
+export const XT_INTERACTIVE_RESERVE = 100;
+const XT_VITEST = process.env.VITEST === 'true';
+const xtLedgerSuffix = XT_VITEST ? `.test-${process.pid}` : '';
+export const xtWeightBudget = new WeightBudget({
+  venue: 'XT',
+  ledgerPath: process.env.XT_WEIGHT_LEDGER ?? `/tmp/algovault-xt-weight${xtLedgerSuffix}.json`,
+  lockPath: process.env.XT_WEIGHT_LOCK ?? `/tmp/algovault-xt-weight${xtLedgerSuffix}.lock`,
+  ceilingPerMin: XT_VITEST ? 1_000_000_000 : XT_REQ_CEILING,
+  interactiveReserve: XT_VITEST ? 0 : XT_INTERACTIVE_RESERVE,
+  log: XT_VITEST ? () => {} : undefined,
+});
+
 // ── The registry ──
 // EXHAUSTIVE over PromotedVenueId (derived from capabilities.ts EXCHANGES, the one
 // promoted-venue SoT). Omitting a key here is a COMPILE ERROR — that is the whole
@@ -346,6 +401,11 @@ const VENUE_BUDGETS: Record<PromotedVenueId, VenueBudgetEntry> = {
   KUCOIN: { budget: kucoinWeightBudget, weightFor: () => 3 },   // klines weight 3 (docs)
   MEXC: { budget: mexcWeightBudget, weightFor: () => 1 },
   PHEMEX: { budget: phemexWeightBudget, weightFor: () => 1 },   // request-count; see the PHEMEX block
+  // OPS-VENUE-GO-LIVE-15-W1 — all request-count. BitMart's ledger (180/min) is the binding one; it
+  // serializes the uncapped 1h+ pass so the shadow-era 429 burst can't recur. See each block above.
+  WHITEBIT: { budget: whitebitWeightBudget, weightFor: () => 1 },
+  BITMART: { budget: bitmartWeightBudget, weightFor: () => 1 },
+  XT: { budget: xtWeightBudget, weightFor: () => 1 },
 };
 
 /**

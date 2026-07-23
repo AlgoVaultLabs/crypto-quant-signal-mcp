@@ -58,6 +58,13 @@ export const EXCHANGES = Object.freeze([
   { id: 'KUCOIN',  label: 'KuCoin' },
   { id: 'MEXC',    label: 'MEXC' },
   { id: 'PHEMEX',  label: 'Phemex' },
+  // OPS-VENUE-GO-LIVE-15-W1 (2026-07-23): promoted set 12→15. All three cleared C1's force floor
+  // (WR≥0.70 ∧ day≥7 ∧ pfe_wr≠null): BITMART (WR 93.9%, sample 108%) + WHITEBIT (89.9%, 144%)
+  // promoted clean; XT (91.8%, sample 96% — 392 short) with pre-authorised --force. Vendor-cased
+  // labels verified vs each venue's own site (WhiteBIT / BitMart / XT). EXCHANGE_COUNT → 15 here.
+  { id: 'WHITEBIT', label: 'WhiteBIT' },
+  { id: 'BITMART',  label: 'BitMart' },
+  { id: 'XT',       label: 'XT' },
 ] as const) satisfies readonly ExchangeEntry[];
 
 export const EXCHANGE_COUNT: number = EXCHANGES.length;

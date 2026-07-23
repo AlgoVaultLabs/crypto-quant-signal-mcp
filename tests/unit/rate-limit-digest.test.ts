@@ -35,7 +35,7 @@ describe('buildDigest — rate-limit telemetry section', () => {
   it('renders the per-venue section + BOTH trigger lines when thresholds trip', async () => {
     routeQueries(
       [
-        { venue: 'Bitmart', kind: 'throw', class: 'batch', n: '4' },             // shadow ≥3 → SHADOW-BUDGET
+        { venue: 'edgeX', kind: 'throw', class: 'batch', n: '4' },               // shadow ≥3 → SHADOW-BUDGET (edgeX still shadow post-W1)
         { venue: 'Hyperliquid', kind: 'throw', class: 'interactive', n: '30' },  // HL ≥25 interactive throws → DENIAL trigger
         { venue: 'Hyperliquid', kind: 'wait', class: 'batch', n: '3' },          // by-design batch waits (diagnostics only, NOT a trigger)
       ],
@@ -43,7 +43,7 @@ describe('buildDigest — rate-limit telemetry section', () => {
     );
     const { text } = await buildDigest();
     expect(text).toContain('⚡ *Rate-limit telemetry (7d)*');
-    expect(text).toContain('*Bitmart*: 4 throws (i:0/b:4)');
+    expect(text).toContain('*edgeX*: 4 throws (i:0/b:4)');
     expect(text).toContain('HL batch-wait p95: 30.0s');                          // p95 stays in the diagnostic section
     expect(text).toContain('OPS-SHADOW-BUDGET-W{NEXT}');
     // OPS-RATELIMIT-DIGEST-THRESHOLD-RECAL-W1: HL trigger is denial-only (fires on the 30

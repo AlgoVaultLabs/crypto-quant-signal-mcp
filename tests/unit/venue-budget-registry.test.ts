@@ -43,17 +43,17 @@ describe('venue-budget-registry', () => {
     }
   });
 
-  // ASTER/KUCOIN/MEXC/PHEMEX were in this list until OPS-TELEMETRY-DIGEST-REFRAME-W1 —
-  // they are PROMOTED (OPS-VENUE-GO-LIVE-2026-06-30) and now correctly resolve non-null.
-  // Only the genuinely-shadow set stays null.
+  // ASTER/KUCOIN/MEXC/PHEMEX were in this list until OPS-TELEMETRY-DIGEST-REFRAME-W1; BITMART/
+  // WHITEBIT/XT until OPS-VENUE-GO-LIVE-15-W1 — all PROMOTED now and correctly resolve non-null.
+  // Only the genuinely-shadow set (EDGEX/WEEX) stays null.
   it('returns null for delay-paced shadow venues + unknown ids (sparse shadow map)', () => {
-    for (const id of ['BITMART', 'EDGEX', 'WEEX', 'WHITEBIT', 'XT', 'NOPE', '']) {
+    for (const id of ['EDGEX', 'WEEX', 'NOPE', '']) {
       expect(getVenueBudget(id), id).toBeNull();
     }
   });
 
   it('the promoted set and the shadow set are disjoint (no venue is both)', () => {
-    for (const id of ['BITMART', 'EDGEX', 'WEEX', 'WHITEBIT', 'XT']) {
+    for (const id of ['EDGEX', 'WEEX']) {
       expect(PROMOTED_VENUE_IDS as readonly string[], id).not.toContain(id);
     }
   });
