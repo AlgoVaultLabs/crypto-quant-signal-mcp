@@ -363,6 +363,17 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   { table: 'signals', column: 'signal_hash', type: 'VARCHAR(66)' },
   { table: 'signals', column: 'merkle_batch_id', type: 'INTEGER' },
   { table: 'signals', column: 'merkle_proof', type: 'JSONB' },
+  // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 (2026-07-24): failure-classified
+  // subscription lifecycle (additive). `BIGINT` is accepted by both backends
+  // (SQLite gives it INTEGER affinity), so one type string serves both. On live
+  // PG these are pre-applied via SSH before this commit → idempotent no-op here.
+  { table: 'webhook_subscriptions', column: 'delivery_state', type: "TEXT NOT NULL DEFAULT 'active'" },
+  { table: 'webhook_subscriptions', column: 'failure_class', type: 'TEXT' },
+  { table: 'webhook_subscriptions', column: 'quarantined_at', type: 'BIGINT' },
+  { table: 'webhook_subscriptions', column: 'next_probe_at', type: 'BIGINT' },
+  { table: 'webhook_subscriptions', column: 'last_probe_at', type: 'BIGINT' },
+  { table: 'webhook_subscriptions', column: 'last_success_at', type: 'BIGINT' },
+  { table: 'webhook_subscriptions', column: 'disabled_reason', type: 'TEXT' },
 ];
 
 /**
@@ -737,7 +748,14 @@ const CREATE_WEBHOOK_SUBSCRIPTIONS_SQL = process.env.DATABASE_URL
       cadence TEXT NULL,
       timeframe TEXT NULL,
       exchange TEXT NULL,
-      top_n INTEGER NULL
+      top_n INTEGER NULL,
+      delivery_state TEXT NOT NULL DEFAULT 'active',
+      failure_class TEXT NULL,
+      quarantined_at BIGINT NULL,
+      next_probe_at BIGINT NULL,
+      last_probe_at BIGINT NULL,
+      last_success_at BIGINT NULL,
+      disabled_reason TEXT NULL
     );`
   : `CREATE TABLE IF NOT EXISTS webhook_subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -756,7 +774,14 @@ const CREATE_WEBHOOK_SUBSCRIPTIONS_SQL = process.env.DATABASE_URL
       cadence TEXT NULL,
       timeframe TEXT NULL,
       exchange TEXT NULL,
-      top_n INTEGER NULL
+      top_n INTEGER NULL,
+      delivery_state TEXT NOT NULL DEFAULT 'active',
+      failure_class TEXT NULL,
+      quarantined_at INTEGER NULL,
+      next_probe_at INTEGER NULL,
+      last_probe_at INTEGER NULL,
+      last_success_at INTEGER NULL,
+      disabled_reason TEXT NULL
     );`;
 
 const CREATE_WEBHOOK_SUBSCRIPTIONS_ACTIVE_INDEX_SQL = `
@@ -847,6 +872,24 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_WEBHOOK_DELIVERIES_SQL);
   backend.exec(CREATE_WEBHOOK_DELIVERIES_STATUS_INDEX_SQL);
   runMigrations(backend, isPg);
+  // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 (2026-07-24): one-time idempotent
+  // backfill of legacy one-way-disabled subs (active=false but still at the
+  // DEFAULT delivery_state='active') → 'quarantined' so C4's health-probe sweep
+  // re-adjudicates them LIVE rather than force-churning a paying subscriber
+  // (Mr.1 Q2). Runs AFTER runMigrations so the columns exist (SQLite sync; PG
+  // pre-applied via SSH before this commit / fresh-created above). Guarded WHERE
+  // ⇒ no-op once converted; single tiny UPDATE. The store's
+  // backfillLegacyWebhookLifecycle() is the byte-equivalent testable twin.
+  {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const falseLit = isPg ? 'FALSE' : '0';
+    backend.exec(
+      `UPDATE webhook_subscriptions
+          SET delivery_state = 'quarantined', failure_class = 'legacy',
+              quarantined_at = ${nowSec}, next_probe_at = ${nowSec}
+        WHERE active = ${falseLit} AND delivery_state = 'active';`,
+    );
+  }
   // OPS-POSTGRES-RECAUDIT-W1 (2026-05-22): create idempotency-check index AFTER
   // migrations so that the `exchange` column (added by v1.5 migration) exists
   // before the index is created on (coin, timeframe, exchange, created_at).
