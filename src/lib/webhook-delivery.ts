@@ -26,13 +26,45 @@ import {
   pendingDeliveries,
   markDelivery,
   bumpFailureAndMaybeDisable,
+  recordFailureAndTransition,
   recordDeliverySuccess,
   getSubscription,
   type WebhookDelivery,
   type WebhookEventData,
   type WebhookEventType,
   type DeliveryStatus,
+  type DeliveryState,
 } from './webhooks-store.js';
+import { classifyDeliveryFailure, extractErrorCode } from './webhook-failure-class.js';
+
+/** Owner-facing hint per post-failure lifecycle state (call-voice, no secrets). */
+function transitionSuggestedAction(
+  state: DeliveryState,
+  failureClass: string,
+  attempts: number,
+  lastCode: number | null,
+  timeoutMs: number,
+): string {
+  if (state === 'disabled') {
+    return `endpoint permanently disabled (${failureClass}) — restore the endpoint, then re-register the subscription`;
+  }
+  if (state === 'quarantined') {
+    return `endpoint quarantined after repeated failures (${failureClass}) — deliveries are paused and auto-resume once a health-probe gets a 2xx; no action needed for a transient outage`;
+  }
+  return `delivery failed (${failureClass}) after ${attempts} attempts (last status ${lastCode ?? 'network error / timeout'}); ensure your endpoint returns a 2xx within ${timeoutMs}ms`;
+}
+
+/**
+ * OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1: the auto-recovery firewall. New
+ * failure-classified lifecycle behavior (C3 transition + C4 sweep) is gated here.
+ * Default ON when the delivery service is on; flip `WEBHOOK_AUTO_RECOVERY_ENABLED`
+ * to `0`/`false` for an instant revert to the legacy one-way `bumpFailureAndMaybeDisable`.
+ */
+export function isAutoRecoveryEnabled(): boolean {
+  const v = process.env.WEBHOOK_AUTO_RECOVERY_ENABLED;
+  if (v !== undefined) return v !== '0' && v.toLowerCase() !== 'false';
+  return process.env.WEBHOOK_DELIVERY_ENABLED === 'true';
+}
 
 const WEBHOOK_DOCS_URL = 'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/docs/WEBHOOKS.md';
 
@@ -312,12 +344,23 @@ export async function deliverOne(
   } catch (err) {
     if (err instanceof EgressBlockedError) {
       await markDelivery(delivery.id, 'dead', { attempts: delivery.attempts, responseCode: null });
+      // C3: per-delivery row stays 'dead' (0 quota, 0 retries — unchanged). The
+      // SUBSCRIPTION advances on the block, TRANSIENT per Q1 (a rebind/NXDOMAIN blip
+      // must not permanently kill a paying sub) → degraded→quarantine; C4's probe
+      // re-runs the SAME guard, so a genuine internal/rebind target rides back-off to
+      // quarantine_expired. Forensic log only, NO Telegram.
+      let subscriptionDisabled = false;
+      if (isAutoRecoveryEnabled()) {
+        const t = await recordFailureAndTransition(sub.id, classifyDeliveryFailure({ egressBlocked: true }), Math.floor(Date.now() / 1000));
+        console.log(`[webhook-delivery] sub ${sub.id} egress-block(${err.reason}) → ${t.state} (consecutive=${t.consecutiveFailures})`);
+        subscriptionDisabled = t.disabled;
+      }
       return {
         deliveryId: delivery.id,
         status: 'dead',
         attempts: delivery.attempts,
         responseCode: null,
-        subscriptionDisabled: false,
+        subscriptionDisabled,
         suggested_action: `url resolves to a disallowed/internal address (${err.reason}); use a public https endpoint`,
       };
     }
@@ -369,6 +412,7 @@ export async function deliverOne(
 
   let attempts = 0;
   let lastCode: number | null = null;
+  let lastErrorCode: string | undefined; // captured from the caught network error (C3)
 
   for (let i = 0; i < cfg.maxAttempts; i++) {
     attempts = i + 1;
@@ -388,19 +432,38 @@ export async function deliverOne(
         trackCallByKey(sub.owner_key, sub.tier as LicenseTier, quotaUnits);
         return { deliveryId: delivery.id, status: 'delivered', attempts, responseCode: status, subscriptionDisabled: false };
       }
-    } catch {
+    } catch (err) {
       lastCode = null; // network error / timeout / abort
+      lastErrorCode = extractErrorCode(err); // C3: preserve the code for classification
     }
     if (i < cfg.maxAttempts - 1) {
       await sleep(cfg.baseBackoffMs * 2 ** i);
     }
   }
 
-  // Exhausted all attempts → the delivery has permanently failed.
+  // Exhausted all attempts → the per-delivery row is permanently failed.
   await markDelivery(delivery.id, 'failed', { attempts, responseCode: lastCode });
+
+  if (isAutoRecoveryEnabled()) {
+    // NEW (C3): classify + transition the SUBSCRIPTION lifecycle. Transient (every
+    // class but http_410) → degraded→quarantine (C4 probes it back); http_410 →
+    // disabled immediately. Forensic log only, NO Telegram (recovery is silent).
+    const failureClass = classifyDeliveryFailure({ httpStatus: lastCode ?? undefined, errorCode: lastErrorCode });
+    const t = await recordFailureAndTransition(sub.id, failureClass, Math.floor(Date.now() / 1000));
+    console.log(`[webhook-delivery] sub ${sub.id} failure(${failureClass}) → ${t.state} (consecutive=${t.consecutiveFailures})`);
+    return {
+      deliveryId: delivery.id,
+      status: 'failed',
+      attempts,
+      responseCode: lastCode,
+      subscriptionDisabled: t.disabled,
+      suggested_action: transitionSuggestedAction(t.state, failureClass, attempts, lastCode, cfg.timeoutMs),
+    };
+  }
+
+  // LEGACY (WEBHOOK_AUTO_RECOVERY_ENABLED=0 → instant rollback): one-way disable.
   const { disabled, consecutiveFailures } = await bumpFailureAndMaybeDisable(sub.id, cfg.disableAfter);
   if (disabled) {
-    // Silent recovery: forensic log only, NO Telegram (alert contract). No URL/secret in the log.
     console.warn(`[webhook-delivery] subscription ${sub.id} auto-disabled after ${consecutiveFailures} consecutive failures`);
   }
   return {
