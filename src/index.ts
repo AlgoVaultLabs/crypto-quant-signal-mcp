@@ -24,7 +24,7 @@ import { renderBrandFooter } from './lib/footer-content.js';
 import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
-import { startDeliveryWorker } from './lib/webhook-delivery.js';
+import { startDeliveryWorker, startHealthProbeSweep } from './lib/webhook-delivery.js';
 import { startScanDigestScheduler, stopScanDigestScheduler } from './lib/scan-digest-scheduler.js';
 import { PKG_VERSION } from './lib/pkg-version.js';
 import { buildErc8004ReputationBody } from './lib/erc8004-reputation.js';
@@ -3428,6 +3428,10 @@ async function startHttp() {
       // FEATURE-PARITY-CHANNELS-W1 CH2: the scheduled scan-digest producer rides the
       // same flag — it enqueues scan_digest deliveries that the worker above drains.
       startScanDigestScheduler();
+      // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 C4: the health-probe sweep re-adjudicates
+      // quarantined subs and auto-resumes recovered endpoints. Self-gated on
+      // WEBHOOK_AUTO_RECOVERY_ENABLED (default-on here; flip 0 = legacy, no sweep).
+      startHealthProbeSweep();
     }
 
     // LATENCY-W1 C3: background grid warmer.

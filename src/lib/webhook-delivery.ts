@@ -29,13 +29,18 @@ import {
   recordFailureAndTransition,
   recordDeliverySuccess,
   getSubscription,
+  getQuarantinedDue,
+  recordProbeResult,
+  setDeliveryState,
+  loadLifecycleConfig,
   type WebhookDelivery,
+  type WebhookSubscription,
   type WebhookEventData,
   type WebhookEventType,
   type DeliveryStatus,
   type DeliveryState,
 } from './webhooks-store.js';
-import { classifyDeliveryFailure, extractErrorCode } from './webhook-failure-class.js';
+import { classifyDeliveryFailure, extractErrorCode, type WebhookFailureClass } from './webhook-failure-class.js';
 
 /** Owner-facing hint per post-failure lifecycle state (call-voice, no secrets). */
 function transitionSuggestedAction(
@@ -518,5 +523,135 @@ export function stopDeliveryWorker(): void {
   if (workerHandle) {
     clearInterval(workerHandle);
     workerHandle = null;
+  }
+}
+
+// ── C4: health-probe sweep + auto-resume (the automation-first core) ──
+
+/**
+ * The canonical sample event — the SINGLE source reused by the `/test` route
+ * (webhook-api) and the health-probe sweep (Mr.1 Q5, single-derivation; kept here
+ * because webhook-api already imports from webhook-delivery, so exporting it the
+ * other way would form an init cycle). A benign trade_call snapshot; the recipient
+ * distinguishes a probe from a real delivery via the `X-AlgoVault-Event` header.
+ */
+export function buildSampleEvent(nowEpoch = Math.floor(Date.now() / 1000)): WebhookEventData {
+  return {
+    type: 'trade_call',
+    coin: 'BTC',
+    timeframe: '1h',
+    exchange: 'HL',
+    call: 'BUY',
+    confidence: 72,
+    regime: 'TRENDING_UP',
+    price_at_call: 50000,
+    signal_hash: `0xtest${nowEpoch}`,
+    created_at: nowEpoch,
+  };
+}
+
+export interface ProbeSweepResult { probed: number; resumed: number; disabled: number; backedOff: number; }
+
+/**
+ * Probe ONE quarantined subscription: an SSRF-guarded, HMAC-signed POST of the
+ * sample event tagged `X-AlgoVault-Event: health_probe`, pinned to the validated
+ * egress IP (same guard as a real delivery, so a now-internal/rebind target is
+ * still blocked). Returns ok=true on 2xx, else the classified failure. Draws NO
+ * owner quota (a probe is synthetic, not a delivered event).
+ */
+async function probeOne(sub: WebhookSubscription, deps: DeliveryDeps, cfg: DeliveryConfig): Promise<{ ok: boolean; failureClass?: WebhookFailureClass }> {
+  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as typeof fetch);
+  let pin: PinnedAddress;
+  try {
+    pin = await resolveAndAssertEgress(sub.url, { lookup: deps.lookup });
+  } catch (err) {
+    if (err instanceof EgressBlockedError) return { ok: false, failureClass: 'egress_block' };
+    return { ok: false, failureClass: classifyDeliveryFailure({ errorCode: extractErrorCode(err) }) };
+  }
+  const payload = buildPayload(buildSampleEvent(), `probe-${sub.id}`);
+  const body = JSON.stringify(payload);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = signPayload(body, sub.secret, timestamp);
+  const headers = { ...buildHeaders(payload, signature, timestamp), 'X-AlgoVault-Event': 'health_probe' };
+  const dispatcher = pinnedDispatcher(pin);
+  try {
+    const { ok, status } = await postWithTimeout(fetchImpl, sub.url, headers, body, cfg.timeoutMs, dispatcher);
+    if (ok) return { ok: true };
+    return { ok: false, failureClass: classifyDeliveryFailure({ httpStatus: status }) };
+  } catch (err) {
+    return { ok: false, failureClass: classifyDeliveryFailure({ errorCode: extractErrorCode(err) }) };
+  }
+}
+
+/**
+ * One health-probe sweep tick. For every quarantined sub whose `next_probe_at` is
+ * due: (1) expire to `disabled(quarantine_expired)` if quarantined longer than
+ * WEBHOOK_QUARANTINE_MAX_SEC; else probe — 2xx → AUTO-RESUME `active`; `http_410`
+ * → `disabled(permanent_http_410)`; any other (transient) → exponential back-off
+ * of `next_probe_at`. All transitions forensic-logged; NO Telegram (silent per the
+ * alert contract). Quarantined subs are never enqueued for real events — recovery
+ * is probe-driven only, so no stale-signal delivery and no hammering.
+ */
+export async function runHealthProbeSweep(deps: DeliveryDeps = {}, cfg: DeliveryConfig = loadDeliveryConfig(), limit = 25): Promise<ProbeSweepResult> {
+  const lc = loadLifecycleConfig();
+  const now = Math.floor(Date.now() / 1000);
+  const due = await getQuarantinedDue(now, limit);
+  const out: ProbeSweepResult = { probed: due.length, resumed: 0, disabled: 0, backedOff: 0 };
+  for (const sub of due) {
+    if (sub.quarantined_at != null && now - sub.quarantined_at > lc.quarantineMaxSec) {
+      await setDeliveryState(sub.id, 'disabled', { disabled_reason: 'quarantine_expired', next_probe_at: null, last_probe_at: now });
+      console.log(`[webhook-probe] sub ${sub.id} quarantine_expired (>${lc.quarantineMaxSec}s no recovery) → disabled`);
+      out.disabled += 1;
+      continue;
+    }
+    const r = await probeOne(sub, deps, cfg);
+    if (r.ok) {
+      await recordProbeResult(sub.id, true, now);
+      console.log(`[webhook-probe] sub ${sub.id} probe 2xx → resumed active`);
+      out.resumed += 1;
+    } else if (r.failureClass === 'http_410') {
+      await setDeliveryState(sub.id, 'disabled', { disabled_reason: 'permanent_http_410', next_probe_at: null, last_probe_at: now });
+      console.log(`[webhook-probe] sub ${sub.id} probe http_410 → disabled`);
+      out.disabled += 1;
+    } else {
+      // Exponential back-off, seeded at base, doubling each failed probe, capped at max.
+      const prevInterval = sub.last_probe_at != null ? Math.max(lc.probeBackoffBaseSec, now - sub.last_probe_at) : lc.probeBackoffBaseSec;
+      const nextInterval = Math.min(prevInterval * 2, lc.probeBackoffMaxSec);
+      await setDeliveryState(sub.id, 'quarantined', { next_probe_at: now + nextInterval, last_probe_at: now });
+      console.log(`[webhook-probe] sub ${sub.id} probe ${r.failureClass} → back-off ${nextInterval}s`);
+      out.backedOff += 1;
+    }
+  }
+  return out;
+}
+
+let sweepHandle: ReturnType<typeof setInterval> | null = null;
+
+export function isSweepRunning(): boolean {
+  return sweepHandle !== null;
+}
+
+/**
+ * Start the health-probe sweep. Idempotent. No-op (and logs) when auto-recovery is
+ * disabled, so booting it unconditionally under WEBHOOK_DELIVERY_ENABLED is safe —
+ * flipping WEBHOOK_AUTO_RECOVERY_ENABLED=0 means no sweep, no resume (legacy).
+ */
+export function startHealthProbeSweep(intervalMs = envInt('WEBHOOK_PROBE_SWEEP_INTERVAL_MS', 60_000)): void {
+  if (sweepHandle) return;
+  if (!isAutoRecoveryEnabled()) {
+    console.log('[webhook-probe] WEBHOOK_AUTO_RECOVERY_ENABLED off — health-probe sweep NOT started (legacy terminal-disable)');
+    return;
+  }
+  console.log(`[webhook-probe] health-probe sweep started — scanning every ${intervalMs}ms`);
+  sweepHandle = setInterval(() => {
+    runHealthProbeSweep().catch((err) => console.error('[webhook-probe] sweep tick error:', err instanceof Error ? err.message : err));
+  }, intervalMs);
+  if (typeof sweepHandle.unref === 'function') sweepHandle.unref();
+}
+
+export function stopHealthProbeSweep(): void {
+  if (sweepHandle) {
+    clearInterval(sweepHandle);
+    sweepHandle = null;
   }
 }

@@ -37,7 +37,7 @@ import {
   type WebhookEventData,
   type WebhookDelivery,
 } from './webhooks-store.js';
-import { deliverOne } from './webhook-delivery.js';
+import { deliverOne, buildSampleEvent } from './webhook-delivery.js';
 import { assertEgressAllowed, EgressBlockedError } from './webhook-ssrf.js';
 
 /**
@@ -354,18 +354,9 @@ export function registerWebhookRoutes(app: Express): void {
       }
 
       const ts = nowSec();
-      const sampleEvent: WebhookEventData = {
-        type: 'trade_call',
-        coin: 'BTC',
-        timeframe: '1h',
-        exchange: 'HL',
-        call: 'BUY',
-        confidence: 72,
-        regime: 'TRENDING_UP',
-        price_at_call: 50000,
-        signal_hash: `0xtest${ts}`,
-        created_at: ts,
-      };
+      // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 C4 (Q5): the sample event is now the
+      // ONE shared builder reused by the C4 health-probe sweep — byte-identical shape.
+      const sampleEvent: WebhookEventData = buildSampleEvent(ts);
       const eventId = `test:${id}:${ts}`;
       const enq = await enqueueDelivery({ subscriptionId: id, eventId, eventType: 'trade_call', eventData: sampleEvent });
       const deliveryId = enq.deliveryId ?? -1;
