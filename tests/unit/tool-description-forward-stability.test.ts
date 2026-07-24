@@ -18,7 +18,7 @@
  * "<number> <exchanges|assets|venues|timeframes>" and "NN%" specifically.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as descriptions from '../../src/tool-descriptions.js';
@@ -167,5 +167,94 @@ describe('OPS-RELEASE-TEMPLATE-AND-CANARY-HARDENING-W1 — published manifest de
       );
     }
     expect(m).toBeNull();
+  });
+});
+
+/**
+ * OPS-VENUE-COPY-LIVEBIND-W1 (2026-07-24) — extend the guard to the landing/docs COPY SOURCES.
+ *
+ * The stale-venue-count bug survived the entire 12→15 growth on the LANDING copy because no canary scanned
+ * it: a hardcoded "5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget)" sat in
+ * `landing/_jsonld/product.json.template`, which `scripts/generate_jsonld.mjs` renders into the inline ld+json
+ * of ~11 pages. This closes that gap at the SOURCE.
+ */
+
+// The JSON-LD SOURCE templates (generate_jsonld.mjs is their single owner) — where the "5 crypto perp venues"
+// bug lived. Scanned with the VENUE-count rule below (not the broad VOLATILE_COUNT_RE): the templates also
+// carry a pre-existing hardcoded "11 timeframes" in an offer line — a stable, out-of-scope count this wave
+// does not touch — which the broad rule would over-fire on.
+const JSONLD_TEMPLATES: Array<[string, string]> = readdirSync(join(REPO_ROOT, 'landing', '_jsonld'))
+  .filter((f) => f.endsWith('.json.template') || f.endsWith('.json'))
+  .map((f) => [`landing/_jsonld/${f}`, readFileSync(join(REPO_ROOT, 'landing', '_jsonld', f), 'utf8')]);
+
+// The exact documented bug PHRASE: "N [crypto] perp[etual][-futures] venues", or the frozen 5-venue list.
+// NARROWER than VOLATILE_COUNT_RE on purpose: the templates + hand-authored pages + docs-src carry many
+// pre-existing, out-of-scope hardcoded numbers — asset/timeframe/win-rate counts, "N exchange ADAPTERS"
+// (a codebase floor, not a coverage claim), and accurate-but-baked "N exchanges" hero stats (consistent with
+// the current 15, tracked as a forward-stability follow-up) — that the broad rule would over-fire on. A
+// data-tr-field/injector span breaks digit↔phrase adjacency, so a live-bound count is not flagged.
+const VENUE_COUNT_RE =
+  /\b\d+\+?\s*(?:crypto\s+)?perp\w*[\s-]*(?:futures\s+)?venues?\b|Hyperliquid,\s*Binance,\s*Bybit,\s*OKX,\s*Bitget/i;
+
+// Copy sources to scan for a VENUE-count re-stale: docs-src + the top-level hand-authored landing pages.
+// EXEMPT landing/integrations/** — those subpages render from the EXTERNAL algovault-skills repo
+// (render-integrations.mjs), out of this repo's edit scope (tracked by OPS-SKILLS-MAF-COPY-W1); readdirSync
+// of landing/ (non-recursive) naturally excludes that subdirectory.
+const LANDING_VENUE_COPY: Array<[string, string]> = [
+  ['docs-src/template.html', readFileSync(join(REPO_ROOT, 'docs-src', 'template.html'), 'utf8')],
+  ...readdirSync(join(REPO_ROOT, 'landing'))
+    .filter((f) => f.endsWith('.html'))
+    .map((f) => [`landing/${f}`, readFileSync(join(REPO_ROOT, 'landing', f), 'utf8')] as [string, string]),
+];
+
+describe('OPS-VENUE-COPY-LIVEBIND-W1 — JSON-LD templates carry no baked count', () => {
+  it('loaded the _jsonld templates (non-vacuity)', () => {
+    expect(JSONLD_TEMPLATES.length).toBeGreaterThanOrEqual(3); // product + service + application, at minimum
+  });
+  it.each(JSONLD_TEMPLATES)('%s contains no baked venue/exchange count', (name, value) => {
+    const m = value.match(VENUE_COUNT_RE);
+    if (m) {
+      throw new Error(
+        `${name}: baked venue/exchange count "${m[0]}" — the JSON-LD templates feed every landing page's ` +
+          `ld+json; use {{exchange_count}} / qualitative copy ("major crypto perpetual-futures venues"). This is ` +
+          `exactly the product.json.template "5 crypto perp venues" bug that OPS-VENUE-COPY-LIVEBIND-W1 fixed.`,
+      );
+    }
+    expect(m).toBeNull();
+  });
+});
+
+describe('OPS-VENUE-COPY-LIVEBIND-W1 — landing/docs copy carries no baked VENUE count', () => {
+  it('loaded the landing copy sources (non-vacuity)', () => {
+    expect(LANDING_VENUE_COPY.length).toBeGreaterThanOrEqual(10);
+  });
+  it.each(LANDING_VENUE_COPY)('%s contains no baked "N perp venues" count', (name, value) => {
+    const m = value.match(VENUE_COUNT_RE);
+    if (m) {
+      throw new Error(
+        `${name}: baked venue count "${m[0]}" — public copy carries NO venue count (standing rule); use ` +
+          `"major crypto perpetual-futures venues" or a live-bound data-tr-field span.`,
+      );
+    }
+    expect(m).toBeNull();
+  });
+});
+
+describe('OPS-VENUE-COPY-LIVEBIND-W1 — VENUE_COUNT_RE self-test', () => {
+  it.each([
+    '5 perp venues',
+    '15 crypto perp venues',
+    '12 crypto perpetual-futures venues',
+    'across 5 crypto perp venues (Hyperliquid, Binance, Bybit, OKX, Bitget)',
+  ])('MUST flag a baked venue count: %s', (s) => {
+    expect(VENUE_COUNT_RE.test(s)).toBe(true);
+  });
+  it.each([
+    'major crypto perpetual-futures venues',
+    'across perp venues',
+    'cross-venue funding-rate arbitrage',
+    '<span data-tr-field="exchange_count">15</span> crypto perp venues', // live-bound span breaks adjacency
+  ])('MUST NOT flag qualitative / live-bound copy: %s', (s) => {
+    expect(VENUE_COUNT_RE.test(s)).toBe(false);
   });
 });
