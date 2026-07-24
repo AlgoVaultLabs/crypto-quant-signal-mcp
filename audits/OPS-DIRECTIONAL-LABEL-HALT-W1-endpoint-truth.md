@@ -74,3 +74,46 @@ for it by construction; matrix v2 (post-backfill) measures the realized loss.
   3rd consumer triggers the shared-extraction rule.
 - `ops/label-backfill/run-triage.sh` is committed as the wave's reusable artifact; the
   host copy is the executed instance.
+
+## 6. Final backfill ledger (measured 2026-07-24 09:30Z — `TRIAGE BACKFILL DONE` 09:15:36Z)
+
+**Incident-window recovery** (signals created 2026-07-04 → 07-21, tau1.0; the other two specs
+ride the same klines):
+
+| venue | eligible | labeled | recovered % | permanently lost |
+|---|---|---|---|---|
+| OKX | 3,944 | 3,905 | **99.0%** | 39 |
+| KUCOIN | 6,737 | 6,614 | **98.2%** | 123 |
+| MEXC | 5,311 | 4,613 | 86.9% | 698 |
+| WHITEBIT | 1,738 | 1,316 | 75.7% | 422 |
+| XT | 3,300 | 2,451 | 74.3% | 849 |
+| PHEMEX | 3,870 | 2,846 | 73.5% | 1,024 |
+| HTX | 1,823 | 932 | 51.1% | 891 |
+| HL | 1,330 | 591 | 44.4% | 739 |
+| WEEX | 1,157 | 403 | 34.8% | 754 |
+| **TOTAL** | **29,210** | **23,671** | **81.0%** | **5,539 (19.0%)** |
+
+**The 16-day detection delay cost 5,539 incident-window rows (19.0%)** — concentrated exactly
+where matrix v1 predicted: the 3.5d-kline-horizon venues' short TFs (WEEX/HL/HTX worst). The
+losses are permanent physics (klines aged out before anyone knew to fetch them), which is the
+number that justifies the canary forever.
+
+**Residual characterization (why the post-convergence `--check` counts are NOT losses):**
+OKX's 6,038 all-time residual = 1,962 pre-incident **delisted-coin archaeology** (TON 1,486 ·
+IP 313 — klines unfetchable despite OKX's 50d depth) + 39 incident + ~9 recent eval-window-open;
+KUCOIN's 700 same shape. The recent-only venues' large all-time residuals (PHEMEX 18.5k ·
+MEXC 26.0k) are pre-incident history that predates their kline horizons — never recoverable by
+anyone, now measured and retired from the nightly by the 21d window (F3).
+
+## 7. Successor-wave reconciliation (the pipeline closing its own loop)
+
+The canary's first REAL page (2026-07-23 06:41 `FIRED: HTTP 200`, BINANCE 53.4h, consecutive=2,
+body naming `OPS-LABEL-FRESHNESS-W1`) led to that wave being dispatched to a parallel session,
+which shipped `cd3ff60` (2026-07-24 07:52): **SLO-deadline rotation** (confirmed my
+staleness-first ordering minimised max-staleness but whack-a-moled the majors' 24h SLO across
+3 nights — the correct objective is time-to-SLO-breach, majors-first), a **shared tier SoT**
+(`src/lib/venue-slo-tiers.ts` — retiring this wave's 2-copy tier-constants caveat, §5), a
+**poison-venue circuit-breaker** (the BITMART 2,546-error class), **graceful-stop SIGTERM in
+deploy.yml** (structurally closing the deploy-kill mechanism §2.3), and canary auto-recovery.
+Incident wave → canary page → dispatch → hardening wave: the operator-action-required contract
+worked end-to-end in production within 24h of the canary going live.

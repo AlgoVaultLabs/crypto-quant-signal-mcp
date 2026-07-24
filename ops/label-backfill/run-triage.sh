@@ -12,7 +12,12 @@
 # a container recreate mid-slice (the incident's killer) just means rerun.
 # --check's would-write count includes permanently-unlabelable signals
 # (expired klines), so "remaining == 0" is unreachable for expired cohorts —
-# convergence = remaining STOPS DECREASING across attempts.
+# convergence = remaining STOPS MATERIALLY DECREASING across attempts.
+# EPSILON, not equality (observed 2026-07-23): a live venue keeps EMITTING —
+# signals whose eval windows close DURING a long attempt shave remaining by
+# ~tens, so exact remaining==prev never fires and a dead slice grinds 2h
+# attempts forever. Fresh-arrival drift is tens/attempt; real backfill progress
+# is hundreds+. CONVERGE_EPS=50 separates the two regimes cleanly.
 #
 # Pacing: every kline fetch goes through the container's shared weight-budget
 # batch lane (418/429 typed, never blind-retried) — the riders are inherited.
@@ -21,6 +26,7 @@ CTR=crypto-quant-signal-mcp-mcp-server-1
 LOG=/var/log/label-backfill-triage.log
 LOCK=/var/lock/algovault-label-backfill.lock
 MAX_ATTEMPTS=6
+CONVERGE_EPS=50   # |prev−remaining| ≤ EPS ⇒ converged (fresh-arrival drift, not progress)
 
 exec 9>"$LOCK"
 flock -n 9 || { echo "another triage run holds $LOCK — exiting" >&2; exit 1; }
@@ -37,18 +43,31 @@ check_remaining() { # venue [tf] → would-write count via --check (zero-write)
 run_slice() {
   local venue=$1 tf=${2:-}
   local flags=(--venue "$venue"); [ -n "$tf" ] && flags+=(--timeframe "$tf")
-  local prev=-1 rem attempt
-  for attempt in $(seq 1 $MAX_ATTEMPTS); do
+  local prev=-1 rem attempt=1 err_waits=0
+  while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
     log "slice $venue ${tf:-ALL} attempt=$attempt START"
     docker exec "$CTR" node dist/scripts/backfill-directional-labels.js "${flags[@]}" >> "$LOG" 2>&1
     rem=$(check_remaining "$venue" "$tf"); rem=${rem:-ERR}
     log "slice $venue ${tf:-ALL} attempt=$attempt end remaining=$rem (prev=$prev)"
-    if [ "$rem" = "ERR" ]; then continue; fi
-    if [ "$rem" -eq 0 ] || [ "$rem" -eq "$prev" ]; then
-      log "slice $venue ${tf:-ALL} CONVERGED remaining=$rem"
+    if [ "$rem" = "ERR" ]; then
+      # deploy-flap guard: an instant docker-exec failure must not BURN attempts
+      # (observed 2026-07-21: 6 ERR-attempts in <1s abandoned whole venues while
+      # the container was mid-recreate). Wait for the stack; bounded separately.
+      err_waits=$((err_waits + 1))
+      if [ "$err_waits" -gt 20 ]; then
+        log "slice $venue ${tf:-ALL} 20 ERR-waits (~30min) — container not coming back; moving on (resumable)"
+        return 1
+      fi
+      log "slice $venue ${tf:-ALL} ERR — waiting 90s for a healthy container (attempt NOT burned; err_wait=$err_waits/20)"
+      sleep 90
+      continue
+    fi
+    if [ "$rem" -eq 0 ] || { [ "$prev" -ge 0 ] && [ $((prev - rem)) -le "$CONVERGE_EPS" ] && [ $((prev - rem)) -ge $((0 - CONVERGE_EPS)) ]; }; then
+      log "slice $venue ${tf:-ALL} CONVERGED remaining=$rem (delta=$((prev - rem)) ≤ eps=$CONVERGE_EPS)"
       return 0
     fi
     prev=$rem
+    attempt=$((attempt + 1))
   done
   log "slice $venue ${tf:-ALL} MAX_ATTEMPTS reached remaining=$rem — moving on (resumable)"
 }
