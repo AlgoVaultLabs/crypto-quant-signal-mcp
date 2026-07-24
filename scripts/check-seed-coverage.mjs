@@ -35,7 +35,7 @@ function csv(v) {
  * Given ONE crontab line + the promoted set, return the set of promoted venues it
  * seeds at a FAST timeframe (empty if the line is not a fast seed line). Pure.
  */
-export function fastCoverageForLine(line, promoted) {
+export function fastCoverageForLine(line, promoted, faithfulFast = null) {
   if (!/seed-signals(\.js|\.ts)?\b/.test(line)) return [];
   const tf = (line.match(/--timeframe\s+(\S+)/) || [])[1];
   if (!tf || !FAST_TFS.has(tf)) return [];
@@ -60,19 +60,27 @@ export function fastCoverageForLine(line, promoted) {
     covered = [...promotedSet];
   }
 
-  return covered.filter((v) => promotedSet.has(v) && !exclude.has(v));
+  let scheduled = covered.filter((v) => promotedSet.has(v) && !exclude.has(v));
+  // OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 (R4): crontab PRESENCE ≠ real coverage — the deployed faithful-skip
+  // predicate can runtime-skip a venue's fast TF (WhiteBIT 3m/5m→15m). When the caller supplies the
+  // per-venue faithful-FAST map (computed from the in-container predicate), a venue counts as covered on
+  // THIS line only if the predicate KEEPS it at this TF. Absent the map, fall back to presence-only.
+  if (faithfulFast) {
+    scheduled = scheduled.filter((v) => (faithfulFast[v] || faithfulFast[v.toUpperCase()] || []).includes(tf));
+  }
+  return scheduled;
 }
 
 /**
  * Return the promoted venues NOT covered by any fast (<45min) seed line. Pure.
  * @returns {{ uncovered: string[], covered: string[] }}
  */
-export function findUncoveredPromoted(crontabText, promoted) {
+export function findUncoveredPromoted(crontabText, promoted, faithfulFast = null) {
   const promotedU = promoted.map((v) => v.toUpperCase());
   const coveredSet = new Set();
   for (const line of crontabText.split('\n')) {
     if (line.trimStart().startsWith('#')) continue; // skip comments
-    for (const v of fastCoverageForLine(line, promotedU)) coveredSet.add(v);
+    for (const v of fastCoverageForLine(line, promotedU, faithfulFast)) coveredSet.add(v);
   }
   const uncovered = promotedU.filter((v) => !coveredSet.has(v));
   return { uncovered, covered: [...coveredSet].sort() };
@@ -91,6 +99,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error('ERROR: --promoted "<CSV of promoted venue ids>" is required (from the venues table).');
     process.exit(2);
   }
+  // OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 (R4): optional per-venue faithful-FAST map (JSON {VENUE:[tf,…]}),
+  // computed by the box wrapper from the IN-CONTAINER predicate, so coverage = scheduled AND runtime-faithful.
+  let faithfulFast = null;
+  const ff = arg('--faithful-fast');
+  if (ff) {
+    try { faithfulFast = JSON.parse(ff); }
+    catch { console.error('WARN: --faithful-fast is not valid JSON; falling back to presence-only coverage.'); }
+  }
   let crontabText;
   const file = arg('--crontab-file');
   if (file) {
@@ -100,14 +116,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const { execSync } = await import('node:child_process');
     crontabText = execSync('crontab -l', { encoding: 'utf8' });
   }
-  const { uncovered, covered } = findUncoveredPromoted(crontabText, promoted);
+  const { uncovered, covered } = findUncoveredPromoted(crontabText, promoted, faithfulFast);
   if (uncovered.length > 0) {
     console.error(
-      `SEED COVERAGE FAIL: ${uncovered.length} promoted venue(s) have NO fast (<45min) seed line: ` +
+      `SEED COVERAGE FAIL: ${uncovered.length} promoted venue(s) have NO fast (<45min)${faithfulFast ? ' runtime-FAITHFUL' : ''} seed line: ` +
         `[${uncovered.join(', ')}]. Producer↔monitor SoT divergence — a promoted venue is not being seeded ` +
-        `within the 45m freshness SLA (the "Seed OUTAGE" bug class). Covered: [${covered.join(', ')}].`,
+        `within the 45m freshness SLA (the "Seed OUTAGE" bug class)` +
+        `${faithfulFast ? ' — either no fast line, or every fast line is runtime-skipped by the faithful-skip predicate' : ''}. ` +
+        `Covered: [${covered.join(', ')}].`,
     );
     process.exit(1);
   }
-  console.log(`seed-coverage OK: all ${promoted.length} promoted venues covered by a fast seed line [${covered.join(', ')}]`);
+  console.log(`seed-coverage OK: all ${promoted.length} promoted venues covered by a fast${faithfulFast ? ' runtime-faithful' : ''} seed line [${covered.join(', ')}]`);
 }

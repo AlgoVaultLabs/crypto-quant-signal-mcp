@@ -895,22 +895,26 @@ export async function runVenueSeed(
 ): Promise<VenueSeedResult> {
   const { timeframe, top, idempotencyWindow, restrictedCoins } = opts;
   const startedAt = Date.now();
-  // OPS-SEED-UNSUPPORTED-TF-SKIP-W1 — proactive skip of any (venue, tf) the adapter can only serve by
-  // COARSER substitution (a `<tf>` WR built on `>tf` candles is resolution-inflated on the Merkle-anchored
-  // byTimeframe surface — Factuality is THE LAW). Data-driven from each adapter's own interval map
-  // (tf-support.isTimeframeFaithful), NOT a crontab --exclude. Placed BEFORE recordSeedHeartbeat so a skipped
-  // unfaithful TF does not stamp a freshness heartbeat that would mask the 45-min SLA on the venue's real
-  // (faithful) fast lines. seedExchange's InsufficientCandles/not-found catch stays as defence in depth.
+  // OPS-SEED-ORCHESTRATOR-W1 V2-RESUME (CH3-PRE) — attempt-recency heartbeat: the cron fired + REACHED this
+  // venue+TF (regardless of HOLD / seeded / faithful-SKIP outcome). Liveness = "the pipeline reached the
+  // venue", stamped at attempt-time BEFORE any conditional work (CLAUDE.md producer-liveness contract).
+  // Best-effort: never fails the seed. Feeds the V5(ii) coverage gate + the 45-min freshness pager.
+  try { await recordSeedHeartbeat(venueId, timeframe); }
+  catch (e) { console.debug(`[seed-heartbeat] stamp skipped ${venueId}/${timeframe}: ${e instanceof Error ? e.message : e}`); }
+  // OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 (H2 fix) — faithful-skip guard AFTER the attempt heartbeat. A per-tf
+  // skip of any (venue,tf) the adapter can only serve by COARSER substitution (a `<tf>` WR built on `>tf`
+  // candles is resolution-inflated on the Merkle-anchored byTimeframe surface — Factuality is THE LAW)
+  // records LIVENESS (venue reached) and suppresses only the seed WORK. Output-freshness ("is the venue
+  // accruing faithful signals?") is seed-coverage-canary's job, NOT the heartbeat's — attempt-stamping a
+  // skipped tf is truthful, not a mask. Stamping BEFORE this guard (this hotfix; the original wave had it
+  // AFTER) keeps a venue whose only fast lines are skipped — e.g. WhiteBIT (3m/5m→15m) — on its 3m liveness
+  // cadence instead of a thin 15m floor a deploy-churn gap can false-page. Kill switch
+  // ALGOVAULT_TF_SKIP_ENABLED=false disables the skip (isTimeframeFaithful → all true). seedExchange's own
+  // InsufficientCandles/not-found catch stays as defence in depth.
   if (!isTimeframeFaithful(venueId, timeframe)) {
     console.log(`[${ts()}] [${venueId}] tf=${timeframe} SKIP — unfaithful (adapter would coarsen ${timeframe}→${servedTimeframeLabel(venueId, timeframe)}); not seeded.`);
     return { venueId, seeded: 0, skipped: 0, errors: 0, durationMs: Date.now() - startedAt, failed: false };
   }
-  // OPS-SEED-ORCHESTRATOR-W1 V2-RESUME (CH3-PRE) — attempt-recency heartbeat: the
-  // cron fired + reached this venue+TF (regardless of HOLD/seeded outcome). The
-  // true seeding-health signal (immune to the HOLD filter); feeds the V5(ii)
-  // coverage gate + the future heartbeat pager. Best-effort: never fails the seed.
-  try { await recordSeedHeartbeat(venueId, timeframe); }
-  catch (e) { console.debug(`[seed-heartbeat] stamp skipped ${venueId}/${timeframe}: ${e instanceof Error ? e.message : e}`); }
   try {
     let coins: string[];
     if (restrictedCoins) {

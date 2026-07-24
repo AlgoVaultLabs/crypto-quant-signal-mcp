@@ -51,11 +51,24 @@ const SERVED_INTERVAL_MS: Record<ExchangeId, (tf: string) => number | null> = {
 export const FAITHFUL_MAX_RATIO = 2;
 
 /**
+ * OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 (R3) — kill switch (default ON). `ALGOVAULT_TF_SKIP_ENABLED=false`
+ * makes `isTimeframeFaithful` return true for every (venue,tf), instantly restoring pre-wave seeding
+ * (WhiteBIT 3m/5m + PHEMEX 12h resume) via an env flip + container restart — no code revert. Read per-call
+ * so a flip takes effect on the next short-lived seeder fire and is unit-testable. Two-flag firewall: a
+ * future predicate bug becomes a flag flip, not a redeploy.
+ */
+function tfSkipEnabled(): boolean {
+  return process.env.ALGOVAULT_TF_SKIP_ENABLED !== 'false';
+}
+
+/**
  * Does `venue` serve `tf` faithfully (no coarser-than-2× substitution)? Pure; the seeder's proactive skip.
  * Fails OPEN (returns true) on an unknown `tf` or an unmapped pair — the seeder's existing
  * InsufficientCandles/not-found error-path skip is the defence-in-depth complement for genuinely-absent data.
+ * With the kill switch OFF (`ALGOVAULT_TF_SKIP_ENABLED=false`) returns true unconditionally (pre-wave).
  */
 export function isTimeframeFaithful(venue: ExchangeId, tf: string): boolean {
+  if (!tfSkipEnabled()) return true;
   const requestedMs = TF_MS[tf];
   if (requestedMs == null) return true;
   const servedMs = SERVED_INTERVAL_MS[venue]?.(tf);

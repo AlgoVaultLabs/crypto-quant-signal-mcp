@@ -90,3 +90,46 @@ describe('seed-coverage canary — findUncoveredPromoted', () => {
     expect(uncovered).toEqual(['NEWVENUE']);
   });
 });
+
+describe('seed-coverage canary — runtime-faithful gate (OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 R4)', () => {
+  // Closes the exact gap the incident exposed: the canary checked crontab PRESENCE, never the runtime skip.
+  // WhiteBIT is on every fast line but the deployed predicate runtime-skips its 3m/5m (→15m); it stays
+  // covered via 15m/30m. A venue runtime-skipped on ALL its fast lines must now read UNCOVERED.
+  const WB_FAITHFUL = { WHITEBIT: ['15m', '30m'], BINANCE: ['3m', '5m', '15m', '30m'] };
+
+  it('a venue runtime-faithful only on 15m/30m is STILL covered (its 15m line keeps it in-SLA)', () => {
+    const covered = fastCoverageForLine(
+      '* * * * * seed-signals.js --timeframe 15m --status promoted --exclude HL',
+      ['WHITEBIT', 'BINANCE', 'HL'], WB_FAITHFUL,
+    );
+    expect(covered).toContain('WHITEBIT');
+  });
+
+  it('a venue on the 3m/5m lines but runtime-skipped there is NOT counted as covered on those lines', () => {
+    for (const tf of ['3m', '5m']) {
+      const covered = fastCoverageForLine(
+        `* * * * * seed-signals.js --timeframe ${tf} --status promoted --exclude HL`,
+        ['WHITEBIT', 'BINANCE', 'HL'], WB_FAITHFUL,
+      );
+      expect(covered, `${tf} runtime-skips WHITEBIT`).not.toContain('WHITEBIT');
+      expect(covered, `${tf} keeps BINANCE`).toContain('BINANCE');
+    }
+  });
+
+  it('a venue runtime-skipped on EVERY fast line it is scheduled on is flagged UNCOVERED (the real stranding)', () => {
+    const cron = ['3m', '5m', '15m', '30m']
+      .map((tf) => `* * * * * seed-signals.js --timeframe ${tf} --status promoted --exclude HL`)
+      .join('\n');
+    const ff = { BINANCE: ['3m', '5m', '15m', '30m'], STRANDED: [] };
+    const { uncovered } = findUncoveredPromoted(cron, ['BINANCE', 'STRANDED'], ff);
+    expect(uncovered).toEqual(['STRANDED']);
+  });
+
+  it('without the faithful map, coverage falls back to presence-only (prior behaviour, fail-open)', () => {
+    const covered = fastCoverageForLine(
+      '* * * * * seed-signals.js --timeframe 3m --status promoted --exclude HL',
+      ['WHITEBIT', 'BINANCE', 'HL'], // no faithful map passed
+    );
+    expect(covered).toContain('WHITEBIT'); // presence-only — WhiteBIT counted (unaware of runtime skip)
+  });
+});

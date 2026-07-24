@@ -55,8 +55,20 @@ export function parseIntervalToken(tok: string): number | null {
  */
 export function makeServedIntervalMs(
   map: Record<string, string | number>,
-  unit: 'minutes' | 'seconds' | 'ms' = 'minutes',
+  unit?: 'minutes' | 'seconds' | 'ms',
 ): (tf: string) => number | null {
+  // OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 (R1) — structural anti-ambiguity invariant. A NUMBER map value is
+  // dimensionless (`300` could be min/sec/ms), so a number-typed map MUST declare its unit at the call site.
+  // This runs at MODULE LOAD (when an adapter's `export const servedIntervalMs = makeServedIntervalMs(MAP[, unit])`
+  // is imported), so a future number-map adapter that forgets the unit throws immediately — it can never
+  // silently default. String tokens are self-describing (parseIntervalToken) and need no unit, so bybit's
+  // bare `'1'/'60'/'D'` stay valid. A permanent correctness invariant, not a revisit-later threshold.
+  if (unit === undefined && Object.values(map).some((v) => typeof v === 'number')) {
+    throw new Error(
+      "served-interval: a number-typed interval map requires an explicit unit ('minutes' | 'seconds' | 'ms') — " +
+        'a bare numeric token is dimensionally ambiguous. Pass makeServedIntervalMs(map, <unit>).',
+    );
+  }
   const mult = unit === 'seconds' ? 1_000 : unit === 'ms' ? 1 : 60_000;
   return (tf) => {
     const v = map[tf];

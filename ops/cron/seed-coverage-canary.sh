@@ -37,7 +37,17 @@ PROM=$(docker exec "$PG_CTR" psql -U algovault -d signal_performance -tAc \
 [ -r "$CANARY" ] || { log "FAIL_OPEN: canary script not found at $CANARY"; exit 0; }
 [ -x "$NODE_BIN" ] || { log "FAIL_OPEN: node not executable at $NODE_BIN"; exit 0; }
 
-OUT=$("$NODE_BIN" "$CANARY" --promoted "$PROM" 2>&1); RC=$?
+# OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 (R4): crontab PRESENCE != real coverage — the deployed faithful-skip
+# predicate can runtime-skip a venue's fast TF (WhiteBIT 3m/5m->15m). Ask the IN-CONTAINER predicate (the
+# runtime SoT — it honours ALGOVAULT_TF_SKIP_ENABLED) for each promoted venue's faithful FAST TFs and pass
+# the map so coverage = scheduled AND runtime-faithful. Fail-open: container/predicate unreachable => empty
+# map => presence-only (the prior behaviour).
+APP_CTR="${SEED_COV_APP_CTR:-crypto-quant-signal-mcp-mcp-server-1}"
+FF=$(docker exec "$APP_CTR" node -e 'const{isTimeframeFaithful}=require("./dist/lib/tf-support.js");const p=(process.argv[1]||"").split(",").filter(Boolean);const f=["3m","5m","15m","30m"];const o={};for(const v of p)o[v]=f.filter(t=>isTimeframeFaithful(v,t));process.stdout.write(JSON.stringify(o));' "$PROM" 2>>"$LOG") || FF=""
+FF_ARGS=(); [ -n "$FF" ] && FF_ARGS=(--faithful-fast "$FF")
+[ -n "$FF" ] && log "faithful-fast map: $FF" || log "faithful-fast map unavailable (presence-only fallback)"
+
+OUT=$("$NODE_BIN" "$CANARY" --promoted "$PROM" "${FF_ARGS[@]}" 2>&1); RC=$?
 
 if [ "$RC" -eq 0 ]; then log "OK: $OUT"; exit 0; fi
 if [ "$RC" -ne 1 ]; then log "FAIL_OPEN: canary rc=$RC (not a coverage verdict) out=$OUT"; exit 0; fi

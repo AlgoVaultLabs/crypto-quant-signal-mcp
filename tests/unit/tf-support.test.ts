@@ -6,7 +6,7 @@
  * `audits/OPS-SEED-UNSUPPORTED-TF-SKIP-W1-endpoint-truth.md`. Ratified rule (B′):
  * faithful ⇔ servedIntervalMs(tf) < 2 × TF_MS[tf].
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   isTimeframeFaithful,
   faithfulTimeframes,
@@ -15,6 +15,7 @@ import {
 } from '../../src/lib/tf-support.js';
 import { parseIntervalToken, makeServedIntervalMs } from '../../src/lib/served-interval.js';
 import { PROMOTED_VENUE_IDS } from '../../src/lib/capabilities.js';
+import { TF_MS } from '../../src/lib/pfe-mae.js';
 
 describe('parseIntervalToken — every venue notation → ms (never silently null)', () => {
   it('canonical lowercase', () => {
@@ -157,5 +158,75 @@ describe('the predicate genuinely rejects (cannot silently return all-true)', ()
   });
   it('FAITHFUL_MAX_RATIO is the ratified 2×', () => {
     expect(FAITHFUL_MAX_RATIO).toBe(2);
+  });
+});
+
+// ── OPS-SEED-TF-SKIP-STRAND-HOTFIX-W1 ──────────────────────────────────────────────────────────────
+
+describe('R1 — a NUMBER-typed interval map requires an explicit unit (structural anti-ambiguity invariant)', () => {
+  it('throws when a number map is built with NO unit (a future number-map adapter that forgets)', () => {
+    expect(() => makeServedIntervalMs({ '5m': 300 })).toThrow(/explicit unit/i);
+    expect(() => makeServedIntervalMs({ '1m': 60, '5m': 300 })).toThrow(/ambiguous/i);
+  });
+  it('accepts a number map WITH a unit and converts correctly', () => {
+    expect(makeServedIntervalMs({ '5m': 300 }, 'seconds')('5m')).toBe(300_000);
+    expect(makeServedIntervalMs({ '5m': 5 }, 'minutes')('5m')).toBe(300_000);
+    expect(makeServedIntervalMs({ '5m': 300_000 }, 'ms')('5m')).toBe(300_000);
+  });
+  it('accepts a STRING map with NO unit — self-describing tokens; bybit bare-minutes stay valid', () => {
+    expect(() => makeServedIntervalMs({ '1m': '1', '1h': '60', '1d': 'D' })).not.toThrow();
+    expect(makeServedIntervalMs({ '1h': '60' })('1h')).toBe(3_600_000); // bybit bare '60' = 60min = 1h
+    expect(makeServedIntervalMs({ '1d': 'D' })('1d')).toBe(86_400_000);
+  });
+  it('every real adapter already satisfies the invariant (all 17 servedIntervalMs imported clean at load)', () => {
+    // tf-support.ts imports all 17 adapter servedIntervalMs at module load; a number-map adapter that omitted
+    // its unit would have THROWN before this file loaded. Reaching here (and PHEMEX=seconds/BITMART=minutes
+    // classifying correctly) proves the four number-map adapters declared their unit.
+    expect(isTimeframeFaithful('PHEMEX', '12h')).toBe(false); // PHEMEX map SECONDS + unit → loaded clean
+    expect(isTimeframeFaithful('BITMART', '3m')).toBe(true);  // BITMART map MINUTES + unit → loaded clean
+  });
+});
+
+describe('R3 — ALGOVAULT_TF_SKIP_ENABLED kill switch (default ON)', () => {
+  const KEY = 'ALGOVAULT_TF_SKIP_ENABLED';
+  const orig = process.env[KEY];
+  afterEach(() => { if (orig === undefined) delete process.env[KEY]; else process.env[KEY] = orig; });
+
+  it('default (unset) → skip ENABLED: WHITEBIT 5m + PHEMEX 12h are unfaithful', () => {
+    delete process.env[KEY];
+    expect(isTimeframeFaithful('WHITEBIT', '5m')).toBe(false);
+    expect(isTimeframeFaithful('PHEMEX', '12h')).toBe(false);
+  });
+  it('=false → skip DISABLED: EVERY (venue,tf) faithful (pre-wave seeding restored, no code revert)', () => {
+    process.env[KEY] = 'false';
+    for (const tf of ['3m', '5m', '15m', '12h', '1d']) {
+      expect(isTimeframeFaithful('WHITEBIT', tf), `WHITEBIT ${tf} skip-off`).toBe(true);
+      expect(isTimeframeFaithful('PHEMEX', tf), `PHEMEX ${tf} skip-off`).toBe(true);
+    }
+  });
+  it('only the literal "false" disables — "true"/"1" keep the skip ENABLED', () => {
+    process.env[KEY] = 'true';
+    expect(isTimeframeFaithful('WHITEBIT', '5m')).toBe(false);
+    process.env[KEY] = '1';
+    expect(isTimeframeFaithful('WHITEBIT', '5m')).toBe(false);
+  });
+});
+
+describe('R4 — the no-stranded invariant self-validates (FAILS on a synthetic stranded venue)', () => {
+  // The live no-stranded test proves every REAL promoted venue keeps a faithful fast lane. This proves the
+  // CHECK has teeth: a synthetic venue whose every fast TF coarsens ≥2× MUST read as stranded, else the
+  // invariant is vacuous. (H1 taught us a green gate that cannot fail is worthless.)
+  const FAST = ['3m', '5m', '15m', '30m'];
+  const faithfulFast = (served: (tf: string) => number | null) =>
+    FAST.filter((tf) => { const s = served(tf); return s != null && s < FAITHFUL_MAX_RATIO * TF_MS[tf]; });
+
+  it('a synthetic venue serving ALL fast TFs from a ≥2× coarser candle is caught (0 faithful fast)', () => {
+    const stranded = makeServedIntervalMs({ '3m': '1h', '5m': '1h', '15m': '1h', '30m': '1h' });
+    expect(faithfulFast(stranded)).toEqual([]); // STRANDED — the invariant fires
+  });
+  it('a synthetic venue with even ONE native fast TF is NOT stranded (invariant does not over-fire)', () => {
+    const ok = makeServedIntervalMs({ '3m': '1h', '5m': '1h', '15m': '15m', '30m': '1h' }); // 15m native
+    expect(faithfulFast(ok)).toContain('15m');
+    expect(faithfulFast(ok).length).toBeGreaterThan(0);
   });
 });
