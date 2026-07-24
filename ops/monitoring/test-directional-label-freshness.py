@@ -48,6 +48,7 @@ def run(tmp: Path, rows: list[tuple[str, int, int | None]], *, state=None, argv=
         "LF_STATE_FILE": str(state_file),
         "LF_DIGEST_FILE": str(tmp / "digest.txt"),
         "LF_NOW_EPOCH": str(NOW),
+        "LF_RECOVERY_ENABLED": "0",  # hermetic by default; recovery cases opt in via env_extra
     } | (env_extra or {})
     out = subprocess.run([sys.executable, str(CANARY), *argv], capture_output=True, text=True, env=env)
     calls = (tmp / "wrapper.sh.calls").read_text() if (tmp / "wrapper.sh.calls").exists() else ""
@@ -144,5 +145,61 @@ with tempfile.TemporaryDirectory() as d:
     out = subprocess.run([sys.executable, str(CANARY)], capture_output=True, text=True, env=env)
     check("fail-open: exit 0 on psql error", out.returncode == 0 and "FAIL_OPEN" in out.stdout, out.stdout)
     check("fail-open: no state written", not (tmp / "s.json").exists())
+
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # 11. R2 single-derivation — the canary reads the tier set from the SoT mirror (LF_TIERS_FILE),
+    #     not a hardcoded set. A custom mirror renames the majors; classification must follow it.
+    tiers = tmp / "tiers.json"
+    tiers.write_text(json.dumps({"majors": ["ZED"], "major_slo_hours": 24,
+                                 "longtail_slo_hours": 72, "barrier_spec": "tau1.0-floor0.30-v1"}))
+    out, calls, _, digest, _ = run(tmp, [("ZED", fresh(0.5), fresh(30)), ("BINANCE", fresh(0.5), fresh(30))],
+                                   env_extra={"LF_TIERS_FILE": str(tiers)})
+    zed_line = next(l for l in digest.splitlines() if l.startswith("ZED"))
+    bnb_line = next(l for l in digest.splitlines() if l.startswith("BINANCE"))
+    check("tiers: custom major ZED → major + BREACH (read from mirror)", "major" in zed_line and "BREACH" in zed_line, zed_line)
+    check("tiers: BINANCE follows mirror → long-tail + ok (NOT hardcoded)", "long-tail" in bnb_line and bnb_line.rstrip().endswith("ok"), bnb_line)
+    check("tiers: no page day1", calls == "")
+
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # 12. R3 recovery DRY_RUN (autopilot first-fire gate) — a breaching major logs the intended
+    #     targeted re-label WITHOUT running it, and (dry-run heals nothing) still pages at day 2.
+    out, calls, _, _, _ = run(tmp, [("OKX", fresh(0.5), fresh(30))],
+                              state={"consecutive": {"OKX": 1}},
+                              env_extra={"LF_RECOVERY_ENABLED": "1", "LF_RECOVERY_DRY_RUN": "1"})
+    check("recovery: DRY_RUN logs the intended re-label", "RECOVERY_DRY_RUN would run" in out.stdout and "--venue OKX" in out.stdout, out.stdout)
+    check("recovery: dry-run heals nothing → still pages", "DIRECTIONAL_LABEL_FRESHNESS_BREACH" in calls, calls)
+
+with tempfile.TemporaryDirectory() as d:
+    tmp = Path(d)
+    # 13. R3 recovery HEALS → silent (Detect→Recover→Verify→no page). Stateful psql stub returns
+    #     OKX breaching on the 1st census, healthy on the re-census; the recovery cmd (seam) exits 0.
+    stub = tmp / "psql_stub.sh"
+    stub.write_text(
+        "#!/bin/bash\n"
+        f'CNT="{tmp}/cnt"; n=$(cat "$CNT" 2>/dev/null || echo 0); echo $((n+1)) > "$CNT"\n'
+        "echo 'SET'\n"
+        f'if [ "$n" -eq 0 ]; then echo "OKX|{fresh(0.5)}|{fresh(30)}"; else echo "OKX|{fresh(0.5)}|{fresh(3)}"; fi\n'
+    )
+    stub.chmod(0o755)
+    rec = tmp / "rec.sh"
+    rec.write_text('#!/bin/bash\necho "recovered $1" >> "$0.log"\nexit 0\n')
+    rec.chmod(0o755)
+    wrapper = tmp / "wrapper.sh"
+    wrapper.write_text('#!/bin/bash\nprintf "%s %s\\n" "$1" "$2" >> "$0.calls"\ncat >> "$0.body"\n')
+    wrapper.chmod(0o755)
+    state_file = tmp / "state.json"
+    state_file.write_text(json.dumps({"consecutive": {"OKX": 1}}))
+    env = os.environ | {
+        "LF_PSQL_CMD": str(stub), "LF_WRAPPER": str(wrapper), "LF_STATE_FILE": str(state_file),
+        "LF_DIGEST_FILE": str(tmp / "digest.txt"), "LF_NOW_EPOCH": str(NOW),
+        "LF_RECOVERY_ENABLED": "1", "LF_RECOVERY_CMD": str(rec),
+    }
+    out = subprocess.run([sys.executable, str(CANARY)], capture_output=True, text=True, env=env)
+    calls = (tmp / "wrapper.sh.calls").read_text() if (tmp / "wrapper.sh.calls").exists() else ""
+    check("recovery-heal: targeted re-label invoked", (tmp / "rec.sh.log").exists() and "recovered OKX" in (tmp / "rec.sh.log").read_text())
+    check("recovery-heal: re-census shows healed", "RECOVERY_HEALED" in out.stdout and "OKX" in out.stdout, out.stdout)
+    check("recovery-heal: SILENT — no page after heal", calls == "", calls)
 
 print(f"\nALL {PASSED} ASSERTIONS PASSED")

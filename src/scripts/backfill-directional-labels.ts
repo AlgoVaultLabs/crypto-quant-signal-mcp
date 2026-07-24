@@ -43,6 +43,8 @@ import {
   barrierPct,
   runTripleBarrier,
 } from './directional-labeler.js';
+import { sloHoursFor as defaultSloHoursFor } from '../lib/venue-slo-tiers.js';
+import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 250;
 const FETCH_BUFFER_CANDLES = 2; // pad each fetched range slightly
@@ -110,6 +112,12 @@ function ts(): string {
 }
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Module-level positive-int env override (default-deny on NaN/≤0). */
+function envPosInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 export function parseCli(argv: string[]): Cli {
@@ -203,6 +211,32 @@ export function orderVenuesByStaleness(
   return [...venues].sort((a, b) => (frontier.get(a) ?? 0) - (frontier.get(b) ?? 0) || a.localeCompare(b));
 }
 
+/**
+ * OPS-LABEL-FRESHNESS-W1 R2 — SLO-DEADLINE venue rotation (replaces staleness-first
+ * for the multi-venue freshness run).
+ *
+ * The H1 incident: staleness-first minimises MAX-staleness, so a long-tail venue at
+ * 57h (72h SLO, 15h of headroom) sorts AHEAD of a major at 56h (24h SLO, 32h PAST its
+ * deadline). A 210-min budget only reaches ~6–7 of 17 venues, so the sacrificed majors
+ * breach — and because a just-served major sinks to the back, the breaching-major SET
+ * whack-a-moles nightly (observed 07-22 {BITGET,BYBIT} → 07-23 {BINANCE,OKX,HL} → 07-24
+ * {BITGET,BYBIT}). Ordering by TIME-TO-BREACH (slo − lag, ascending) — using each
+ * venue's OWN tier SLO from the shared SoT (venue-slo-tiers.ts, single-derivation with
+ * the canary) — serves the most-overdue-relative-to-its-own-SLO venue first, so a
+ * truncated run protects the strict-SLO majors. Never-labeled (frontier 0/absent) →
+ * lag huge → most negative time-to-breach → first. Deterministic alphabetical tie-break.
+ */
+export function orderVenuesBySloDeadline(
+  venues: string[],
+  frontier: Map<string, number>, // venue → MAX(labeled created_at) sec; 0/absent = never labeled
+  nowSec: number,
+  sloHoursFor: (venue: string) => number = defaultSloHoursFor,
+): string[] {
+  const timeToBreachSec = (v: string): number =>
+    sloHoursFor(v) * 3600 - (nowSec - (frontier.get(v) ?? 0));
+  return [...venues].sort((a, b) => timeToBreachSec(a) - timeToBreachSec(b) || a.localeCompare(b));
+}
+
 export function partitionByVenue<T extends { exchange: string }>(groups: T[]): Map<string, T[]> {
   const by = new Map<string, T[]>();
   for (const g of groups) {
@@ -235,8 +269,29 @@ export interface VenueRunSummary {
   venue: string;
   groupsDone: number;
   groupsTotal: number;
-  outcome: 'complete' | 'venue-budget' | 'global-budget' | 'venue-error';
+  outcome: 'complete' | 'venue-budget' | 'global-budget' | 'venue-error' | 'venue-circuit-break' | 'stopped';
   elapsedS: number;
+}
+
+/**
+ * A2 poison-venue circuit-breaker config. A venue whose errors dominate its writes
+ * (e.g. BITMART on 07-23: 2,546 errors, 30 writes, burning the full 45m venue-budget)
+ * yields its remaining budget early rather than starving the venues behind it. Omitted
+ * → disabled (deep-backfill / unit-test parity). Env-overridable; TODO revisit 2026-08-07.
+ */
+export interface CircuitBreakerCfg {
+  minGroupsBeforeTrip: number; // warm-up: never trip before this many groups attempted
+  maxErrors: number;           // trip only once venue errors reach this floor ...
+  errorToWriteRatio: number;   // ... AND errors dominate writes (errors > ratio × writes)
+}
+
+export interface RotationOpts {
+  /** Polled at every venue/group boundary; true → clean 'stopped' exit (A1 graceful checkpoint). */
+  stopRequested?: () => boolean;
+  /** Cumulative run counters — used to derive per-venue deltas for the circuit-breaker. */
+  progress?: () => { written: number; errors: number };
+  /** A2 poison-venue circuit-breaker; omitted → disabled. */
+  circuit?: CircuitBreakerCfg;
 }
 
 /**
@@ -244,6 +299,11 @@ export interface VenueRunSummary {
  * an injectable per-group processor; one venue's failure can never abort or
  * starve a successor (per-venue try/catch + continue; per-group catch stays in
  * the processor). Emits the load-bearing per-venue success-path summary.
+ *
+ * OPS-LABEL-FRESHNESS-W1 R2 adds two OPTIONAL, trailing-param behaviours (defaults
+ * preserve the shipped semantics exactly, so deep-backfill + existing tests are
+ * unchanged): a graceful-stop boundary check (A1 — a SIGTERM checkpoints cleanly at a
+ * venue/group boundary, resumable via DB state) and a poison-venue circuit-breaker (A2).
  */
 export async function runVenueRotation<G extends { exchange: string; coin: string; timeframe: string }>(
   venueOrder: string[],
@@ -253,17 +313,35 @@ export async function runVenueRotation<G extends { exchange: string; coin: strin
   log: (line: string) => void = console.log,
   now: () => number = Date.now,
   extra?: (venue: string) => string,
+  opts: RotationOpts = {},
 ): Promise<VenueRunSummary[]> {
   const summaries: VenueRunSummary[] = [];
+  let stopped = false;
   for (const venue of venueOrder) {
+    if (opts.stopRequested?.()) { stopped = true; break; } // checkpoint before starting a venue
     const groups = groupsByVenue.get(venue) ?? [];
     const venueStart = now();
+    const base = opts.progress?.() ?? { written: 0, errors: 0 };
     let done = 0;
     let outcome: VenueRunSummary['outcome'] = 'complete';
     try {
       for (const g of groups) {
+        if (opts.stopRequested?.()) { outcome = 'stopped'; stopped = true; break; }
         if (budget.globalExpired()) { outcome = 'global-budget'; break; }
         if (budget.venueExpired(venueStart)) { outcome = 'venue-budget'; break; }
+        // A2: a poison venue (errors dominate, no real write progress) yields its
+        // remaining venue-budget early. Never trips a venue that is writing labels.
+        if (opts.circuit && opts.progress) {
+          const cur = opts.progress();
+          const vErr = cur.errors - base.errors;
+          const vWrote = cur.written - base.written;
+          if (done >= opts.circuit.minGroupsBeforeTrip && vErr >= opts.circuit.maxErrors &&
+              vErr > vWrote * opts.circuit.errorToWriteRatio) {
+            outcome = 'venue-circuit-break';
+            log(`[circuit-breaker] ${venue}: ${vErr} errors vs ${vWrote} writes after ${done} groups — yielding remaining venue-budget (freeing it for the queue)`);
+            break;
+          }
+        }
         await processOne(g);
         done++;
       }
@@ -280,8 +358,47 @@ export async function runVenueRotation<G extends { exchange: string; coin: strin
       log(`[budget] global time budget reached — clean exit; unreached venues lead the next rotation`);
       break;
     }
+    if (stopped) {
+      log(`[graceful-stop] checkpointed at the ${venue} boundary — remaining venues resume from DB state next run`);
+      break;
+    }
   }
   return summaries;
+}
+
+/**
+ * OPS-LABEL-FRESHNESS-W1 R2 — capacity-honesty. After an SLO-ordered run, quantify whether
+ * a venue was left UNREACHED that will breach its OWN tier SLO before the next nightly. If
+ * so the budget structurally cannot keep every venue in-SLO — fire the signal AT the shortfall
+ * (Objective #2), not two days later via a downstream page. Estimated shortfall = unreached-in-
+ * danger count × the median reached-venue minutes (a lower bound; real backlogs are larger).
+ */
+export interface CapacityShortfall {
+  shortfall: boolean;
+  unreachedInDanger: string[];
+  estVenueMinShort: number;
+}
+export function detectCapacityShortfall(
+  summaries: VenueRunSummary[],
+  venueOrder: string[],
+  frontier: Map<string, number>,
+  nowSec: number,
+  sloHoursFor: (venue: string) => number = defaultSloHoursFor,
+  nextRunIntervalH = 24,
+): CapacityShortfall {
+  const reached = new Set(summaries.map((s) => s.venue));
+  const unreached = venueOrder.filter((v) => !reached.has(v));
+  const inDanger = unreached.filter((v) => {
+    const projectedLagH = (nowSec - (frontier.get(v) ?? 0)) / 3600 + nextRunIntervalH;
+    return projectedLagH > sloHoursFor(v);
+  });
+  const durations = summaries.map((s) => s.elapsedS / 60).filter((m) => m > 0).sort((a, b) => a - b);
+  const median = durations.length ? durations[Math.floor(durations.length / 2)] : 45;
+  return {
+    shortfall: inDanger.length > 0,
+    unreachedInDanger: inDanger,
+    estVenueMinShort: Math.round(inDanger.length * median),
+  };
 }
 
 /** Paginated ranged fetch [startMs, endMs] via the shared transport; stops at venue horizon. */
@@ -463,7 +580,8 @@ async function main(): Promise<void> {
   const groups = await loadGroups(cli);
   const frontier = await loadVenueFrontier();
   const byVenue = partitionByVenue(groups);
-  const venueOrder = orderVenuesByStaleness([...byVenue.keys()], frontier);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const venueOrder = orderVenuesBySloDeadline([...byVenue.keys()], frontier, nowSec);
   const budget = makeBudget(cli);
   console.log(
     `[${ts()}] DWR backfill start — ${groups.length} groups over ${venueOrder.length} venues ` +
@@ -488,8 +606,19 @@ async function main(): Promise<void> {
     return `written=${d.written} labeled=${d.labeled} noKlines=${d.noKlines} budgetSkips=${d.budgetSkips} errors=${d.errors} frontier=${fr ? new Date(fr * 1000).toISOString() : 'unchanged'}`;
   };
 
+  // A2 circuit-breaker only in the bounded freshness run — deep backfill must sweep
+  // every venue to completion, so it never trips (undefined → disabled).
+  const circuit = cli.venueBudgetMin !== undefined
+    ? {
+        minGroupsBeforeTrip: envPosInt('LABELER_CB_MIN_GROUPS', 25),
+        maxErrors: envPosInt('LABELER_CB_MAX_ERRORS', 150),
+        errorToWriteRatio: envPosInt('LABELER_CB_ERR_WRITE_RATIO', 8),
+      }
+    : undefined;
+
+  let summaries: VenueRunSummary[] = [];
   await runAsBatch(async () => {
-    await runVenueRotation(
+    summaries = await runVenueRotation(
       venueOrder,
       byVenue,
       budget,
@@ -509,13 +638,32 @@ async function main(): Promise<void> {
       console.log,
       Date.now,
       venueDelta,
+      { stopRequested: isStopRequested, progress: () => ({ written: cov.written, errors: cov.errors }), circuit },
     );
   });
+
+  // Capacity-honesty (Objective #2): if an SLO-ordered run still left a venue UNREACHED that
+  // will breach its own tier SLO before the next nightly, the budget structurally cannot fit —
+  // emit the signal AT the shortfall (freshness runs only). A host consumer (the freshness
+  // canary) forwards it via send_telegram.sh with the severity/cooldown/DRY_RUN gates.
+  if (cli.timeBudgetMin !== undefined) {
+    const cap = detectCapacityShortfall(summaries, venueOrder, frontier, nowSec);
+    if (cap.shortfall) {
+      console.log(
+        `[capacity-shortfall] unreached_in_danger=${cap.unreachedInDanger.join(',')} ` +
+        `count=${cap.unreachedInDanger.length} est_venue_min_short=${cap.estVenueMinShort} ` +
+        `budget_min=${cli.timeBudgetMin} venues=${venueOrder.length} recommended_wave=OPS-LABEL-CAPACITY-W{NEXT}`,
+      );
+    }
+  }
 
   console.log(`[${ts()}] DONE ${JSON.stringify({ ...cov, noKlinesByVenue: Object.fromEntries(noKlinesByVenue) })}`);
 }
 
 if (require.main === module) {
+  // OPS-LABEL-FRESHNESS-W1 R2 (A1): SIGTERM/SIGINT → checkpoint at the next venue/group
+  // boundary (resumable via DB state) instead of a mid-venue decapitation on deploy recreate.
+  installGracefulStop();
   // OPS-SCRIPT-EXIT-LIFECYCLE-W1: the success path called closeDb() but never
   // exited — and closeDb() is fire-and-forget, so the drain could not be awaited
   // either. runScript awaits the drain, then exits.

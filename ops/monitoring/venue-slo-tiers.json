@@ -1,0 +1,13 @@
+{
+  "_generator": "src/lib/venue-slo-tiers.ts — OPS-LABEL-FRESHNESS-W1; regen: node scripts/emit-venue-slo-tiers.mjs --write",
+  "majors": [
+    "BINANCE",
+    "BYBIT",
+    "OKX",
+    "BITGET",
+    "HL"
+  ],
+  "major_slo_hours": 24,
+  "longtail_slo_hours": 72,
+  "barrier_spec": "tau1.0-floor0.30-v1"
+}

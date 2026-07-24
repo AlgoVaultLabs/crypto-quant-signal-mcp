@@ -8,8 +8,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  detectCapacityShortfall,
   lookbackCutoff,
   makeBudget,
+  orderVenuesBySloDeadline,
   orderVenuesByStaleness,
   parseCli,
   partitionByVenue,
@@ -183,5 +185,134 @@ describe('nightly orchestrator passthrough (F3 wiring)', () => {
       expect(s.args).not.toContain('--lookback-days');
       expect(s.args).not.toContain('--time-budget-min');
     }
+  });
+});
+
+// ─────────────────── OPS-LABEL-FRESHNESS-W1 R2 — SLO-deadline rotation ───────────────────
+describe('orderVenuesBySloDeadline (R2 — the H1 fix)', () => {
+  const NOW = 1_800_000_000; // sec
+  const h = (hrs: number) => NOW - hrs * 3600; // a frontier `hrs` hours old
+  // majors 24h / long-tail 72h come from the shared SoT (venue-slo-tiers.ts) default.
+
+  it('schedules a breaching MAJOR before a MORE-stale but in-SLO long-tail', () => {
+    const frontier = new Map<string, number>([
+      ['BINANCE', h(30)], // major: 30h old → 6h PAST its 24h SLO (t2b = −6h)
+      ['ASTER', h(57)],   // long-tail: 57h → 15h of headroom under 72h (t2b = +15h)
+      ['BINGX', h(55)],   // long-tail: 55h → +17h
+    ]);
+    // Raw staleness would order ASTER>BINGX>BINANCE (the incident); SLO-deadline flips it.
+    expect(orderVenuesBySloDeadline(['ASTER', 'BINGX', 'BINANCE'], frontier, NOW)[0]).toBe('BINANCE');
+  });
+
+  it('orders purely by time-to-breach across mixed tiers', () => {
+    const frontier = new Map<string, number>([
+      ['BYBIT', h(20)], // major: t2b = 24−20 = +4h
+      ['OKX', h(26)],   // major: t2b = −2h
+      ['MEXC', h(70)],  // long-tail: t2b = 72−70 = +2h
+      ['HTX', h(80)],   // long-tail: t2b = −8h
+    ]);
+    expect(orderVenuesBySloDeadline(['BYBIT', 'OKX', 'MEXC', 'HTX'], frontier, NOW))
+      .toEqual(['HTX', 'OKX', 'MEXC', 'BYBIT']);
+  });
+
+  it('never-labeled (frontier absent) sorts first; ties break alphabetically', () => {
+    const frontier = new Map<string, number>([['OKX', h(5)]]);
+    const order = orderVenuesBySloDeadline(['OKX', 'ZED', 'ABE'], frontier, NOW);
+    expect(order.slice(0, 2)).toEqual(['ABE', 'ZED']); // both never-labeled → before OKX, alpha tie
+    expect(order[2]).toBe('OKX');
+  });
+});
+
+describe('runVenueRotation circuit-breaker (R2 A2 — poison venue yields budget)', () => {
+  it('trips a venue whose errors dominate writes, freeing budget for the next venue', async () => {
+    let written = 0, errors = 0;
+    const seen: string[] = [];
+    const s = await runVenueRotation(
+      ['POISON', 'HEALTHY'],
+      partitionByVenue([
+        ...Array.from({ length: 40 }, (_, i) => G('POISON', `c${i}`)),
+        G('HEALTHY', 'H'),
+      ]),
+      makeBudget({}),
+      async (g) => {
+        seen.push(g.exchange);
+        if (g.exchange === 'POISON') errors += 10; else written += 5; // poison only errors
+      },
+      () => {},
+      Date.now,
+      undefined,
+      { progress: () => ({ written, errors }), circuit: { minGroupsBeforeTrip: 5, maxErrors: 50, errorToWriteRatio: 8 } },
+    );
+    expect(s[0]).toMatchObject({ venue: 'POISON', outcome: 'venue-circuit-break' });
+    expect(s[0].groupsDone).toBeLessThan(40); // yielded early, did NOT burn the whole venue
+    expect(s[1]).toMatchObject({ venue: 'HEALTHY', outcome: 'complete', groupsDone: 1 });
+    expect(seen).toContain('HEALTHY');
+  });
+
+  it('never trips a venue that is writing labels (progress ⇒ healthy)', async () => {
+    let written = 0, errors = 0;
+    const s = await runVenueRotation(
+      ['BUSY'],
+      partitionByVenue(Array.from({ length: 40 }, (_, i) => G('BUSY', `c${i}`))),
+      makeBudget({}),
+      async () => { written += 5; errors += 1; }, // writes dominate errors
+      () => {},
+      Date.now,
+      undefined,
+      { progress: () => ({ written, errors }), circuit: { minGroupsBeforeTrip: 5, maxErrors: 10, errorToWriteRatio: 8 } },
+    );
+    expect(s[0]).toMatchObject({ venue: 'BUSY', outcome: 'complete', groupsDone: 40 });
+  });
+});
+
+describe('runVenueRotation graceful-stop (R2 A1 — SIGTERM checkpoint at boundary)', () => {
+  it('stops cleanly at the next group boundary and marks the venue "stopped"', async () => {
+    let stop = false;
+    const seen: string[] = [];
+    const s = await runVenueRotation(
+      ['V1', 'V2'],
+      partitionByVenue([G('V1', 'A'), G('V1', 'B'), G('V1', 'C'), G('V2', 'D')]),
+      makeBudget({}),
+      async (g) => { seen.push(g.coin); if (g.coin === 'B') stop = true; }, // request stop after B
+      () => {},
+      Date.now,
+      undefined,
+      { stopRequested: () => stop },
+    );
+    expect(seen).toEqual(['A', 'B']); // C skipped (stop checked before it), V2 never started
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ venue: 'V1', outcome: 'stopped', groupsDone: 2 });
+  });
+});
+
+describe('detectCapacityShortfall (R2 — capacity signal fires at the shortfall)', () => {
+  const NOW = 1_800_000_000;
+  const h = (hrs: number) => NOW - hrs * 3600;
+  it('flags an UNREACHED venue that will breach before the next nightly', () => {
+    const frontier = new Map<string, number>([
+      ['BINANCE', h(2)],  // reached, fresh
+      ['BITGET', h(20)],  // UNREACHED major: 20h + 24h next-run = 44h > 24h SLO → in danger
+      ['MEXC', h(10)],    // UNREACHED long-tail: 10 + 24 = 34h < 72h → safe
+    ]);
+    const summaries = [{ venue: 'BINANCE', groupsDone: 5, groupsTotal: 5, outcome: 'complete' as const, elapsedS: 600 }];
+    const cap = detectCapacityShortfall(summaries, ['BINANCE', 'BITGET', 'MEXC'], frontier, NOW);
+    expect(cap.shortfall).toBe(true);
+    expect(cap.unreachedInDanger).toEqual(['BITGET']);
+    expect(cap.estVenueMinShort).toBeGreaterThan(0);
+  });
+
+  it('no shortfall when every unreached venue stays in-SLO until the next run', () => {
+    const frontier = new Map<string, number>([['HL', h(1)], ['GATE', h(5)]]);
+    const summaries = [{ venue: 'HL', groupsDone: 1, groupsTotal: 1, outcome: 'complete' as const, elapsedS: 60 }];
+    const cap = detectCapacityShortfall(summaries, ['HL', 'GATE'], frontier, NOW);
+    expect(cap.shortfall).toBe(false);
+    expect(cap.unreachedInDanger).toEqual([]);
+  });
+});
+
+describe('orderVenuesByStaleness (legacy utility retained)', () => {
+  it('still orders most-starved-first for the deep-backfill / historical callers', () => {
+    const f = new Map([['B', 5], ['A', 5], ['C', 5]]);
+    expect(orderVenuesByStaleness(['B', 'A', 'C'], f)).toEqual(['A', 'B', 'C']);
   });
 });

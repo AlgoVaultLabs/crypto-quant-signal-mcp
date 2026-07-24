@@ -283,6 +283,19 @@ jobs:
               fi
             done
 
+            # OPS-LABEL-FRESHNESS-W1 R2 (A1): gracefully checkpoint an in-flight nightly labeler
+            # at a venue boundary (per-group committed + DB-state resumable) BEFORE the recreate
+            # decapitates it mid-venue — the same deploy-kill that truncated the 07-23 run at
+            # venue 4 (03:49 OPS-VENUE-GO-LIVE-15-W1 recreate). Best-effort + bounded (≤30s);
+            # NEVER blocks the deploy; only bites during the 02:23–05:53 UTC nightly window
+            # (finds nothing otherwise). The SIGTERM handler ships in this same image.
+            if docker exec crypto-quant-signal-mcp-mcp-server-1 pkill -TERM -f 'dist/scripts/backfill-directional-labels' 2>/dev/null; then
+              echo "[deploy] SIGTERM → in-flight labeler; waiting up to 30s for a boundary checkpoint"
+              for _ in $(seq 1 30); do docker exec crypto-quant-signal-mcp-mcp-server-1 pkill -0 -f 'dist/scripts/backfill-directional-labels' 2>/dev/null || break; sleep 1; done
+            else
+              echo "[deploy] no in-flight labeler to checkpoint"
+            fi
+
             # --force-recreate defends against env_file race: docker compose
             # only auto-recreates if image OR compose-config mtime changed,
             # which loses host-side `.env` appends made simultaneously with
