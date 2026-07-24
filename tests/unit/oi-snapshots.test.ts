@@ -15,6 +15,7 @@ vi.mock('../../src/lib/performance-db.js', () => ({ dbQuery }));
 import {
   oiDeltaFromSnapshots,
   recordOiSnapshots,
+  recordRetroBasisSnapshots,
   computeOiDelta,
   computeOiDeltaForPool,
   pruneOiSnapshots,
@@ -209,6 +210,55 @@ describe('recordOiSnapshots (SQL/param contract)', () => {
     ]);
     expect(n).toBe(0);
     expect(dbQuery).not.toHaveBeenCalled(); // not even ensureTable
+  });
+});
+
+describe('recordRetroBasisSnapshots (OPS-BASIS-RETRO-BACKFILL-W1 — the retro writer)', () => {
+  beforeEach(() => {
+    dbQuery.mockReset();
+    dbQuery.mockResolvedValue([]);
+    _resetOiSnapshotsEnsure();
+  });
+
+  it('ensures the NEW source column + a source-exposing view (fresh-box convergence)', async () => {
+    await recordRetroBasisSnapshots('BINANCE', [{ symbol: 'BTC', ts: NOW, mark: 101, index: 100 }]);
+    const ddl = dbQuery.mock.calls.map((c) => c[0] as string);
+    expect(ddl.some((s) => /ADD COLUMN IF NOT EXISTS source\s+TEXT/.test(s))).toBe(true);
+    expect(ddl.some((s) => /CREATE OR REPLACE VIEW structural_snapshots[\s\S]*\bsource\b/.test(s))).toBe(true);
+  });
+
+  it('inserts 10 cols: mark/index/basis set; oi/contracts/spread NULL; source=retro-basis; DO NOTHING', async () => {
+    const n = await recordRetroBasisSnapshots('OKX', [{ symbol: 'eth', ts: NOW, mark: 101, index: 100 }]);
+    expect(n).toBe(1);
+    const insert = dbQuery.mock.calls.find((c) => /INSERT INTO oi_snapshots/.test(c[0] as string))!;
+    expect(insert[0]).toMatch(
+      /INSERT INTO oi_snapshots \(exchange, symbol, ts, oi, contracts_oi, mark_price, index_price, basis_bps, spread_bps, source\)/,
+    );
+    expect(insert[0]).toMatch(/ON CONFLICT \(exchange, symbol, ts\) DO NOTHING/);
+    const p = insert[1] as unknown[];
+    // oi + contracts NULL (retro carries no OI); mark/index real; source tagged.
+    expect(p.slice(0, 7)).toEqual(['OKX', 'ETH', NOW, null, null, 101, 100]);
+    expect(p[7]).toBeCloseTo(100, 6); // basis_bps = (101-100)/100 * 1e4
+    expect(p[8]).toBeNull(); // spread NULL — order books are not reconstructible
+    expect(p[9]).toBe('retro-basis');
+  });
+
+  it('skips rows where basis cannot be computed (BOTH mark and index strictly-positive required)', async () => {
+    const n = await recordRetroBasisSnapshots('GATE', [
+      { symbol: 'A', ts: NOW, mark: 100 }, // no index → skip
+      { symbol: 'B', ts: NOW, index: 100 }, // no mark → skip
+      { symbol: 'C', ts: NOW, mark: 0, index: 100 }, // mark non-positive → skip
+      { symbol: 'D', ts: NOW, mark: 101, index: 100 }, // ok
+    ]);
+    expect(n).toBe(1);
+    const insert = dbQuery.mock.calls.find((c) => /INSERT INTO oi_snapshots/.test(c[0] as string))!;
+    expect((insert[1] as unknown[])[1]).toBe('D');
+  });
+
+  it('no-ops (zero dbQuery) when nothing has a valid basis', async () => {
+    const n = await recordRetroBasisSnapshots('MEXC', [{ symbol: 'X', ts: NOW, mark: 100 }]);
+    expect(n).toBe(0);
+    expect(dbQuery).not.toHaveBeenCalled();
   });
 });
 

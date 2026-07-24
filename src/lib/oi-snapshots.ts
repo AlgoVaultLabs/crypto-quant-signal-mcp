@@ -66,6 +66,7 @@ const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS oi_snapshots (
   index_price   DOUBLE PRECISION,
   basis_bps     DOUBLE PRECISION,
   spread_bps    DOUBLE PRECISION,
+  source        TEXT,
   PRIMARY KEY (exchange, symbol, ts)
 )`;
 // OPS-STRUCTURAL-FEATURE-ACCRUAL-W1 (Q2b): `computeOiDeltaForPool` filters `exchange = $1 AND
@@ -91,13 +92,17 @@ const ALTER_COL_SQLS = [
   `ALTER TABLE oi_snapshots ADD COLUMN IF NOT EXISTS index_price DOUBLE PRECISION`,
   `ALTER TABLE oi_snapshots ADD COLUMN IF NOT EXISTS basis_bps   DOUBLE PRECISION`,
   `ALTER TABLE oi_snapshots ADD COLUMN IF NOT EXISTS spread_bps  DOUBLE PRECISION`,
+  // OPS-BASIS-RETRO-BACKFILL-W1: provenance. NULL ⇔ live/native sampler (the ~397k pre-source rows +
+  // every future :17 write); 'retro-basis' ⇔ reconstructed from historical mark/index klines. The
+  // live `recordOiSnapshots` insert stays 9-col (source omitted → NULL) — byte-unchanged.
+  `ALTER TABLE oi_snapshots ADD COLUMN IF NOT EXISTS source      TEXT`,
   `ALTER TABLE oi_snapshots ALTER COLUMN oi DROP NOT NULL`,
 ];
 // The spec's contract name for the FUTURE consumers (B-DIR v3, carry ranker v2, AVS examples).
 // A VIEW, not a second table: one physical stream, one derivation, zero consumer breakage (Q6).
 const CREATE_VIEW_SQL = `CREATE OR REPLACE VIEW structural_snapshots AS
   SELECT exchange AS venue, symbol, ts, oi AS open_interest, contracts_oi AS oi_contracts,
-         mark_price, index_price, basis_bps, spread_bps
+         mark_price, index_price, basis_bps, spread_bps, source
   FROM oi_snapshots`;
 
 let _ensured = false;
@@ -230,6 +235,68 @@ export async function recordOiSnapshots(exchange: string, rows: OiSnapshotInput[
     });
     await dbQuery(
       `INSERT INTO oi_snapshots (exchange, symbol, ts, oi, contracts_oi, mark_price, index_price, basis_bps, spread_bps) ` +
+        `VALUES ${tuples.join(', ')} ON CONFLICT (exchange, symbol, ts) DO NOTHING`,
+      params,
+    );
+  }
+  return valid.length;
+}
+
+/** OPS-BASIS-RETRO-BACKFILL-W1: one reconstructed hour — mark + index from historical klines. */
+export interface RetroBasisInput {
+  symbol: string;
+  /** Epoch ms, hour-floored by the caller. */
+  ts: number;
+  /** Reconstructed mark (fair) price at the hour close. */
+  mark?: number;
+  /** Reconstructed index/oracle price at the hour close. */
+  index?: number;
+}
+
+const RETRO_INSERT_COLS = 10;
+
+/**
+ * OPS-BASIS-RETRO-BACKFILL-W1 — the RETRO writer. Distinct from `recordOiSnapshots` (which stays
+ * byte-unchanged) so the live write path is untouched. Writes `source='retro-basis'` rows carrying
+ * mark/index/basis ONLY; `oi`, `contracts_oi`, `spread_bps` are NULL by construction (OI history is
+ * capped at ~30d per venue and order books are not reconstructible — never fabricated, always NULL).
+ *
+ * A row is written iff it has a symbol, a finite ts, AND a computable basis (BOTH mark and index
+ * strictly-positive — `basisBps` is the single derivation, never a venue's native premium). ON
+ * CONFLICT (exchange, symbol, ts) DO NOTHING ⇒ a live/native row ALWAYS wins at any boundary hour,
+ * and re-runs are idempotent. Returns rows written (== attempted after filtering).
+ */
+export async function recordRetroBasisSnapshots(
+  exchange: string,
+  rows: RetroBasisInput[],
+): Promise<number> {
+  const valid = rows.filter(
+    (r) => r.symbol && Number.isFinite(r.ts) && basisBps(r.mark, r.index) !== null,
+  );
+  if (valid.length === 0) return 0;
+  await ensureTable();
+  for (let i = 0; i < valid.length; i += INSERT_CHUNK) {
+    const chunk = valid.slice(i, i + INSERT_CHUNK);
+    const tuples: string[] = [];
+    const params: unknown[] = [];
+    chunk.forEach((r, j) => {
+      const b = j * RETRO_INSERT_COLS;
+      tuples.push(`(${Array.from({ length: RETRO_INSERT_COLS }, (_, k) => `$${b + k + 1}`).join(', ')})`);
+      params.push(
+        exchange,
+        r.symbol.toUpperCase(),
+        r.ts,
+        null, // oi — retro carries no OI
+        null, // contracts_oi
+        posOrNull(r.mark),
+        posOrNull(r.index),
+        basisBps(r.mark, r.index),
+        null, // spread_bps — order books not reconstructible
+        'retro-basis',
+      );
+    });
+    await dbQuery(
+      `INSERT INTO oi_snapshots (exchange, symbol, ts, oi, contracts_oi, mark_price, index_price, basis_bps, spread_bps, source) ` +
         `VALUES ${tuples.join(', ')} ON CONFLICT (exchange, symbol, ts) DO NOTHING`,
       params,
     );
