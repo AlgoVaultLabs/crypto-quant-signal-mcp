@@ -198,11 +198,16 @@ export interface VerifyReport {
  */
 export async function verifyVenue(venue: ReconstructVenue, nowMs: number): Promise<VerifyReport> {
   const coin = 'BTC';
+  // Compare only CLOSED hours: the current in-progress hour is not yet served by the venues'
+  // HISTORICAL kline endpoints (Bitget's history-candles, notably, omits the forming candle), so
+  // including it would false-fail a correct reconstruction. `lastClosed` = the last fully-closed hour.
+  const lastClosed = bucketHour(nowMs) - BAR;
   const live = await dbQuery<{ ts: number | string; mark_price: number | string; basis_bps: number | string }>(
     `SELECT ts, mark_price, basis_bps FROM oi_snapshots
      WHERE exchange = $1 AND symbol = $2 AND source IS NULL AND mark_price IS NOT NULL AND basis_bps IS NOT NULL
+       AND ts <= $3
      ORDER BY ts DESC LIMIT 3`,
-    [venue, coin],
+    [venue, coin, lastClosed],
   );
   if (live.length === 0) return { venue, checks: [], pass: false, note: 'no live BTC basis rows to check against' };
   const tss = live.map((r) => Number(r.ts));
