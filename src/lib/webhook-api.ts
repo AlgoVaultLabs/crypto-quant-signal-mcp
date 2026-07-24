@@ -146,12 +146,22 @@ function serializeSubscription(s: WebhookSubscription, opts: { includeSecret: bo
     consecutive_failures: s.consecutive_failures,
     created_at: s.created_at,
     last_delivered_at: s.last_delivered_at,
+    // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 (Q5): owner-visible lifecycle. Additive,
+    // allow-listed (no forbidden Phase-E key); the enqueue gate stays the `active`
+    // projection. delivery_state ∈ active|degraded|quarantined|disabled.
+    delivery_state: s.delivery_state,
   };
   // scan_digest params echo back only when set — signal-sub serialization stays byte-identical.
   if (s.cadence != null) out.cadence = s.cadence;
   if (s.timeframe != null) out.timeframe = s.timeframe;
   if (s.exchange != null) out.exchange = s.exchange;
   if (s.top_n != null) out.top_n = s.top_n;
+  // Lifecycle scratch echoes back only when set (quarantined/disabled subs) so a
+  // healthy-sub response stays lean; call-voice/neutral ops terms only.
+  if (s.failure_class != null) out.failure_class = s.failure_class;
+  if (s.next_probe_at != null) out.next_probe_at = s.next_probe_at;
+  if (s.last_success_at != null) out.last_success_at = s.last_success_at;
+  if (s.disabled_reason != null) out.disabled_reason = s.disabled_reason;
   if (opts.includeSecret) out.secret = s.secret;
   return out;
 }

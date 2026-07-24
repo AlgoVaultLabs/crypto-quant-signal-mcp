@@ -33,6 +33,8 @@ const ALL_SIGNAL_COLS = [
   // FUNNEL-FIX-ATTRIBUTION-W1: agent_sessions first/last-touch source (the mock returns these
   // for every table introspect, so "all present" covers both tables).
   'first_touch_source', 'last_touch_source',
+  // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1: webhook_subscriptions lifecycle (3rd table).
+  'delivery_state', 'failure_class', 'quarantined_at', 'next_probe_at', 'last_probe_at', 'last_success_at', 'disabled_reason',
 ];
 
 interface MockPgBackend {
@@ -64,7 +66,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(0);
     // Exactly one introspect query fired (NOT 13 individual ALTERs)
-    expect(b.query).toHaveBeenCalledTimes(2); // 2 distinct tables now: signals + agent_sessions
+    expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
     expect(b.execAsync).toHaveBeenCalledTimes(0);
   });
 
@@ -78,7 +80,7 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
     expect(alterCount).toBe(3);
-    expect(b.query).toHaveBeenCalledTimes(2); // 2 distinct tables now: signals + agent_sessions
+    expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
     expect(b.execAsync).toHaveBeenCalledTimes(3);
 
     // Verify the ALTER calls target ONLY the missing columns
@@ -92,14 +94,15 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
   });
 
   // ── Test 3: Empty schema → all SIGNAL_MIGRATIONS run ──
-  it('empty schema (no migration columns present) → all 15 ALTERs fire', async () => {
+  it('empty schema (no migration columns present) → all 22 ALTERs fire', async () => {
     const b = mockPg([]); // No migration columns in the table
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
-    // SIGNAL_MIGRATIONS.length is 15 (13 signals + 2 agent_sessions; drift guard — update if list grows)
-    expect(alterCount).toBe(15);
-    expect(b.query).toHaveBeenCalledTimes(2); // 2 distinct tables now: signals + agent_sessions
-    expect(b.execAsync).toHaveBeenCalledTimes(15);
+    // SIGNAL_MIGRATIONS.length is 22 (13 signals + 2 agent_sessions + 7 webhook_subscriptions;
+    // drift guard — update if list grows).
+    expect(alterCount).toBe(22);
+    expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
+    expect(b.execAsync).toHaveBeenCalledTimes(22);
   });
 
   // ── Test 4: ALTER calls use `IF NOT EXISTS` defense-in-depth ──

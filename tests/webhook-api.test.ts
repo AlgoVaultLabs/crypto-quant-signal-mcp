@@ -127,6 +127,12 @@ describe('/api/webhooks: CRUD lifecycle', () => {
     const j = await res.json() as any;
     expect(j.subscriptions.length).toBe(1);
     expect('secret' in j.subscriptions[0]).toBe(false);
+    // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 C6 (Q5): owner sees delivery_state (a fresh
+    // sub is 'active'); no forbidden Phase-E key leaks into the owner list response.
+    expect(j.subscriptions[0].delivery_state).toBe('active');
+    for (const k of ['outcome_return_pct', 'outcome_price', 'pfe_', 'mae_', 'price_after_']) {
+      expect(JSON.stringify(j.subscriptions[0]).includes(k), `forbidden key ${k}`).toBe(false);
+    }
     // A different key sees none.
     const other = await (await fetch(`${baseUrl}/api/webhooks`, { headers: authHeaders(OTHER_KEY) })).json() as any;
     expect(other.subscriptions.length).toBe(0);

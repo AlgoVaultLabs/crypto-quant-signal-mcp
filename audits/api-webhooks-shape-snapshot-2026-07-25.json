@@ -1,0 +1,35 @@
+{
+  "endpoint": "GET /api/webhooks (owner-scoped list) + POST /api/webhooks (create) — serializeSubscription()",
+  "wave": "OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 C6",
+  "snapshot_date": "2026-07-25",
+  "supersedes": "audits/api-webhooks-shape-snapshot-2026-06-04.json (additive — old file retained; only the failure-classified lifecycle fields are new)",
+  "scope": "OWNER-SCOPED (API-key authenticated; not a public/landing surface). PII-free; no owner_key/secret in the list response.",
+  "naming_law": "Owner-visible lifecycle uses neutral ops terms (delivery_state, quarantined, disabled). Public event fields use price_at_call / call, never price_at_signal / signal. No outcome_* / pfe_* / mae_* ever (Data Integrity).",
+  "new_in_this_wave": {
+    "delivery_state": "ALWAYS present — the subscription lifecycle SoT ∈ [active, degraded, quarantined, disabled]. The legacy `active` boolean is now PROJECTED from it (active := delivery_state IN (active,degraded)) and remains in the response byte-unchanged.",
+    "failure_class": "present ONLY when set — granular last-failure cause ∈ [http_410, http_5xx, http_4xx, timeout, conn, egress_block, tls, other, legacy].",
+    "next_probe_at": "present ONLY when set (quarantined subs) — epoch seconds of the next health-probe.",
+    "last_success_at": "present ONLY when set — epoch seconds of the last 2xx (probe OR real delivery).",
+    "disabled_reason": "present ONLY when set (disabled subs) — ∈ [permanent_http_410, quarantine_expired]."
+  },
+  "allowed_keys": [
+    "id", "url", "events", "assets", "timeframes", "min_confidence", "tier",
+    "active", "consecutive_failures", "created_at", "last_delivered_at",
+    "delivery_state", "failure_class", "next_probe_at", "last_success_at", "disabled_reason",
+    "cadence", "timeframe", "exchange", "top_n",
+    "secret (POST create only, includeSecret=true — returned ONCE)"
+  ],
+  "forbidden_keys": ["outcome_return_pct", "outcome_price", "price_at_signal", "pfe_", "mae_", "return_pct_", "price_after_"],
+  "lifecycle_contract": {
+    "states": "active → (transient failures) → degraded → (>= WEBHOOK_QUARANTINE_AFTER_FAILURES) → quarantined → (health-probe 2xx) → active | (7d no-recovery) → disabled",
+    "permanent": "http_410 → disabled(permanent_http_410) immediately (the ONLY instant hard-disable).",
+    "projection": "active is derived from delivery_state in the SAME write (single-derivation); the enqueue `WHERE active` hot-path is byte-unchanged.",
+    "flag": "new behavior gated WEBHOOK_AUTO_RECOVERY_ENABLED (default-on when WEBHOOK_DELIVERY_ENABLED=true; flip 0 = legacy one-way disable, no delivery_state transitions, no sweep)."
+  },
+  "consumers": [
+    "subscription owners via GET /api/webhooks (serializeSubscription, includeSecret=false)",
+    "webhook-delivery-canary.py (reads delivery_state='disabled' → TERMINAL-DISABLE page; quarantined/degraded = silent)",
+    "the in-process health-probe sweep (getQuarantinedDue → probe → auto-resume/back-off/expire)"
+  ],
+  "drift_check_command": "curl -s https://api.algovault.com/api/webhooks -H 'Authorization: Bearer <key>' | jq '.subscriptions[0] | keys'  # expect delivery_state present; NO outcome_*/pfe_*/mae_* keys"
+}
