@@ -94,7 +94,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.23.0",
+    "version": "1.24.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -252,7 +252,14 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 ---
 
-## What's new in v1.23.1
+## What's new in v1.24.0
+
+- **🌐 Three new exchanges: WhiteBIT, BitMart, XT.** AlgoVault's signal engine now spans 15 perpetual-futures venues. Point any tool at the new venues via the `exchange` parameter.
+- **🔌 New venue integration pages.** Per-venue connect guides at [algovault.com/integrations](https://algovault.com/integrations).
+
+> The `exchange` parameter now accepts 15 venues — MCP clients cache `tools/list` at session start, so toggle the connector off/on (or restart the MCP connection) to pick up the new options.
+
+### v1.23.1 highlights (recap)
 
 - **🔗 A dedicated page for every way to connect.** New hub pages walk through each access channel end-to-end, with copy-paste code and a quick FAQ: [MCP](https://algovault.com/mcp), [REST API](https://algovault.com/rest-api), and [webhooks](https://algovault.com/webhooks).
 - **🧭 Tools index + unified navigation.** Browse all public tools at [algovault.com/tools](https://algovault.com/tools); a new Platform menu makes the whole site easier to navigate.
@@ -266,26 +273,10 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 ### v1.22.0 highlights (recap)
 
 - **🌐 <span data-tr-field="exchange_count">12</span> exchanges live.** **ASTER, BingX, Gate, HTX, KuCoin, MEXC, and Phemex** join Hyperliquid, Binance, Bybit, OKX, and Bitget on the verified, Merkle-anchored public track record — composite trade calls, market-regime detection, and the per-venue PFE leaderboard now span every promoted venue.
-- **🏆 12-venue leaderboard.** The live [track-record leaderboard](https://algovault.com/track-record) now ranks per-venue PFE win rate across all 12 — filter to any newly-added venue.
+- **🏆 Per-venue leaderboard.** The live [track-record leaderboard](https://algovault.com/track-record) ranks per-venue PFE win rate across every venue — filter to any newly-added one.
 - **🔁 Forward-stable coverage.** The venue count reads live everywhere it appears, so coverage stays accurate as we keep adding venues.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
-
-### v1.21.0 highlights (recap)
-
-- **📊 `scan_trade_calls` ranking lenses (`rankBy`)** — rank the scan universe 9 ways (funding, gainers/losers, volume, open interest, volatility, 24h OI change) + aliases.
-- **🧾 Verdict receipts (`_receipts`)** — inline conviction, top factors, live track record, and a verify link on every verdict.
-- **🔌 Gemini, Kraken & Alpaca pairings** · **🏆 live track-record leaderboard** · **🎁 referral program** · **💸 pay-per-call** on the trade-call & scanner routes.
-- **🔒 Security hardening** — x402 per-route price binding + replay protection; webhook egress-IP pinning + timestamped HMAC signatures. *Breaking for webhook subscribers* — update per [docs/WEBHOOKS.md](https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/docs/WEBHOOKS.md).
-
-### v1.20.0 highlights (recap)
-
-- **📡 `scan_trade_calls` — market-wide scanner.** One call scans the top-N perps (1–100, ranked by open interest) on your chosen venue and returns every actionable BUY/SELL with confidence and regime. HOLDs stay free — quota counts only actionable calls.
-- **🔔 Webhooks: dynamic `top:N` watchlists.** Subscribe with `assets: ["top:25"]` and your webhook follows the venue's top perps automatically. No manual list upkeep.
-- **🏛️ TradFi-aware analysis.** Both core tools now report the underlying market session (`underlying_session`, with weekend/holiday caveats), interpret fixed pre-IPO funding correctly, and aggregate cross-venue funding sentiment for stocks, indices, commodities, and FX across all 5 venues.
-- **🧭 Smarter errors on young listings.** Insufficient history returns a structured `INSUFFICIENT_CANDLES` error with `suggested_timeframes` instead of a plain string.
-
-> MCP clients cache `tools/list` at session start — toggle the connector off/on (or restart the MCP connection) to see `scan_trade_calls`.
 
 ---
 
