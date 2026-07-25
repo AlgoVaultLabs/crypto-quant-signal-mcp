@@ -337,6 +337,19 @@
       "replace_all": true
     },
     {
+      "id": "jsonld-skills-pfe-wr-merkle-verified",
+      "_comment": "skills.html JSON-LD description phrases PFE WR as 'N.N%+ Merkle-verified PFE Win Rate' — a form the lowercase 'N.N% PFE win rate' row above does not match, so its 89.4% rotted (CRYPTO-PERF-COPY-REMEDIATION follow-up). Deploy-injected from the live SoT so it follows the same value the visible pfe_wr spans already show.",
+      "find_pattern": "(\\d+\\.\\d)(%\\+ Merkle-verified PFE Win Rate)",
+      "replace_template": "{value}$2",
+      "sot": "performance",
+      "accessor": "overall.pfeWinRate*100",
+      "format": "float_1dp",
+      "apply_to_files": [
+        "landing/skills.html"
+      ],
+      "replace_all": true
+    },
+    {
       "id": "dtrf-readme-total-calls",
       "find_pattern": "(data-tr-field=\"total_calls\"[^>]*>)[^<]+(<)",
       "replace_template": "$1{value}$2",

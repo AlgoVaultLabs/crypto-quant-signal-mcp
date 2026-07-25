@@ -70,6 +70,32 @@ describe('numerical-claim-live-bind canary — venue/exchange counts are single-
     });
   }
 
+  // CRYPTO-PERF-COPY-REMEDIATION follow-up: a PFE-WR % in a crawler-facing JSON-LD description
+  // cannot self-heal (no client proxy runs for a crawler), so it MUST be deploy-time injected —
+  // i.e. covered by a snapshot-manifest find_pattern. skills.html's "N.N%+ Merkle-verified PFE
+  // Win Rate" rotted at 89.4% precisely because no row matched its phrasing (the lowercase
+  // "N.N% PFE win rate" row did not). Reading the manifest here makes the injector row the single
+  // source: drop it — or drift the phrasing off the pattern — and this canary fails.
+  const PFE_RATE_RE = /(\d+\.\d)%\+?\s+Merkle-verified PFE Win Rate/g;
+  for (const file of ['landing/skills.html']) {
+    it(`${file}: the "N.N%+ Merkle-verified PFE Win Rate" claim exists and is snapshot-injected`, () => {
+      const html = read(file);
+      const matches = [...html.matchAll(PFE_RATE_RE)];
+      expect(
+        matches.length,
+        `${file}: expected a "N.N%+ Merkle-verified PFE Win Rate" claim — did the phrasing change? (this canary must not go vacuous)`,
+      ).toBeGreaterThan(0);
+      const ranges = injectorRanges(html);
+      const offenders = matches
+        .filter((m) => !ranges.some(([a, b]) => m.index! >= a && m.index! + m[0].length <= b))
+        .map((m) => `${file} @${m.index}: "${m[0]}" — not covered by any snapshot-manifest find_pattern`);
+      expect(
+        offenders,
+        `\nUNBOUND PFE-WR claim in crawler-facing prose (add a snapshot-manifest row so the deploy injector keeps it live):\n${offenders.join('\n')}`,
+      ).toEqual([]);
+    });
+  }
+
   it('generator carries no "N (crypto perp) venues" claim != EXCHANGE_COUNT (Q5: kills 12->5 re-render regression)', () => {
     const gen = read('scripts/render-jsx-static.mjs');
     const bad = [...gen.matchAll(/(\d+)\s+(?:crypto perp |perp )venues?\b/g)]
