@@ -32,6 +32,7 @@ import { buildPublicCtaBlock } from './lib/public-cta.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
+import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
@@ -3877,7 +3878,11 @@ ${renderSiteNav()}
   <!-- Exchange Logo Strip -->
   <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap">
     <span style="color:#6e7681;font-size:12px;text-transform:uppercase;letter-spacing:1px">Analyzing</span>
-    <span id="analyzing-chips">${EXCHANGES.map(e => '<span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:#8b949e">' + e.label + '</span>').join('')}</span>
+    <!-- TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: each ANALYZING chip projects its
+         colour from the VENUE_BRAND_COLORS SoT (src/lib/venue-brand-colors.ts).
+         The client-side re-render below (search "VENUE_BRAND_COLORS") projects
+         from the SAME map, injected once — single derivation across both surfaces. -->
+    <span id="analyzing-chips">${EXCHANGES.map(e => '<span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:' + venueBrandColor(e.id) + '">' + e.label + '</span>').join('')}</span>
   </div>
   <!-- Cross-Venue Intelligence Callout -->
   <div style="background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.15);border-radius:10px;padding:12px 18px;margin-bottom:16px;font-size:13px;color:#c9d1d9">
@@ -4192,6 +4197,12 @@ var LB_SMALL_N = 30;          // muted "small sample" tag bar (single source w/ 
 var LB_EX_LABEL = { HL: 'Hyperliquid', BINANCE: 'Binance', BYBIT: 'Bybit', OKX: 'OKX', BITGET: 'Bitget', ASTER: 'Aster', BINGX: 'BingX', GATE: 'Gate.io', HTX: 'HTX', KUCOIN: 'KuCoin', MEXC: 'MEXC', PHEMEX: 'Phemex', WHITEBIT: 'WhiteBIT', BITMART: 'BitMart', XT: 'XT' };
 var LB_EX_COLOR = { HL: '#4ade80', BINANCE: '#F0B90B', BYBIT: '#F7A600', OKX: '#ffffff', BITGET: '#00C8BC', ASTER: '#A855F7', BINGX: '#0058FB', GATE: '#17E6A1', HTX: '#0091D4', KUCOIN: '#23AF91', MEXC: '#1972E2', PHEMEX: '#818CF8', WHITEBIT: '#A3E635', BITMART: '#F6465D', XT: '#EC4899' };
 var LB_EX_ORDER = ['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'BINGX', 'GATE', 'HTX', 'KUCOIN', 'MEXC', 'PHEMEX', 'WHITEBIT', 'BITMART', 'XT'];
+// TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: server-side VENUE_BRAND_COLORS SoT
+// (src/lib/venue-brand-colors.ts) injected once so the ANALYZING chip row's
+// client re-render and its server-rendered chips share ONE derivation. This is
+// the exchange BRAND palette (for the venue-badge strip) — deliberately distinct
+// from LB_EX_COLOR above, which stays the chart-distinct LEADERBOARD-bar palette.
+var VENUE_BRAND_COLORS = ${JSON.stringify(VENUE_BRAND_COLORS)};
 
 // Build the row set for the active dimension from cachedData. Each row = {label, wr, n, [color], [tier]}.
 function lbRows() {
@@ -4369,10 +4380,13 @@ async function load() {
       return '<div class="tab'+(isActive?' active':'')+'" data-ex="'+ex.id+'" style="font-size:13px" onclick="setExchangeFilter(\\''+ex.id+'\\')">'+ex.label+'</div>';
     }).join('');
 
-    // OPS-VENUE-GO-LIVE Phase B (R3b-TR): Analyzing chip row — same LB_EX_ORDER SoT (12 now, auto-grows to 17)
+    // OPS-VENUE-GO-LIVE Phase B (R3b-TR): Analyzing chip row — same LB_EX_ORDER SoT (auto-grows with EXCHANGES)
+    // TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: colour projects from VENUE_BRAND_COLORS
+    // (the injected brand SoT), NOT LB_EX_COLOR — so the chip strip shows each venue's
+    // official brand colour while the leaderboard bars keep their chart-distinct palette.
     var chipsEl = document.getElementById('analyzing-chips');
     if (chipsEl) chipsEl.innerHTML = LB_EX_ORDER.map(function(ex){
-      return '<span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:'+(LB_EX_COLOR[ex]||'#c9d1d9')+'">'+(LB_EX_LABEL[ex]||ex)+'</span>';
+      return '<span style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:'+(VENUE_BRAND_COLORS[ex]||'#c9d1d9')+'">'+(LB_EX_LABEL[ex]||ex)+'</span>';
     }).join('');
 
     // DESIGN-W8 / C4 (2026-05-11): #tf-tabs population REMOVED — DOM target
