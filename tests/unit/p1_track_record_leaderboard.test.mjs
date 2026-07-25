@@ -28,6 +28,22 @@ const REPO = resolve(__dirname, '..', '..');
 async function readSrc() {
   return readFile(resolve(REPO, 'src/index.ts'), 'utf8');
 }
+
+// TRACK-RECORD-EXCHANGE-BRAND-COLORS-W1: the controller now interpolates the
+// server-side VENUE_BRAND_COLORS SoT (var VENUE_BRAND_COLORS = ${JSON.stringify(...)})
+// to colour the ANALYZING chip row. Re-rendering the controller (below) needs that
+// object in scope, so read the REAL palette from its SoT module (no duplication /
+// drift — same values the server ships). The object literal's `KEY: '#hex'` entries
+// are parsed; the prose/JSDoc above the `export const` is excluded by slicing from it.
+async function readBrandColors() {
+  const t = await readFile(resolve(REPO, 'src/lib/venue-brand-colors.ts'), 'utf8');
+  const start = t.indexOf('export const VENUE_BRAND_COLORS');
+  const body = t.slice(start, t.indexOf('};', start));
+  const obj = {};
+  for (const m of body.matchAll(/(\w+):\s*'(#[0-9A-Fa-f]{6})'/g)) obj[m[1]] = m[2];
+  assert.ok(Object.keys(obj).length >= 15, 'brand-colour SoT parsed (>=15 entries)');
+  return obj;
+}
 function perfFunc(src) {
   return src.slice(src.indexOf('function getPerformanceDashboardHtml'), src.indexOf('// ── Smithery sandbox export'));
 }
@@ -44,10 +60,10 @@ function extractInlineScript(src) {
 // carries template-literal escapes (e.g. \\' -> \') + ${perfEndpoint}. Evaluate it
 // exactly as the server does to get the real browser JS, then run THAT (no logic
 // duplication — we execute the shipped controller verbatim).
-function renderControllerJs(src) {
+function renderControllerJs(src, brandColors) {
   const raw = extractInlineScript(src);
-  const fn = new Function('perfEndpoint', 'cbEndpoint', 'return `' + raw + '`');
-  return fn('/api/performance-public', '/api/confidence-bands-public');
+  const fn = new Function('perfEndpoint', 'cbEndpoint', 'VENUE_BRAND_COLORS', 'return `' + raw + '`');
+  return fn('/api/performance-public', '/api/confidence-bands-public', brandColors);
 }
 
 const FIXTURE = {
@@ -100,7 +116,7 @@ const SCAFFOLD = `<!DOCTYPE html><html><body>
 </body></html>`;
 
 async function freshWindow() {
-  const script = renderControllerJs(await readSrc());
+  const script = renderControllerJs(await readSrc(), await readBrandColors());
   const dom = new JSDOM(SCAFFOLD, { runScripts: 'outside-only' });
   const w = dom.window;
   w.fetch = () => new Promise(() => {}); // load()'s fetch never settles → no async noise
