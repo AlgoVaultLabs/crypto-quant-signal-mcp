@@ -24,6 +24,7 @@ import {
   GAS_LOW_CONFIRMATIONS,
   type GasRead,
 } from '../lib/gas-wallet-quorum.js';
+import { effectiveFailThreshold, classifyProbeFailure } from '../lib/probe-failure-class.js';
 
 // ── Config ──
 
@@ -530,7 +531,13 @@ async function runCritical(): Promise<void> {
 
   for (const [key, check] of checks) {
     const error = await check();
-    const threshold = FAIL_THRESHOLDS[key] ?? 1;
+    // OPS-MONITOR-TRANSIENT-CLASSIFY-W1 — the single chokepoint every check flows
+    // through. A transient / ambiguous failure (ECONNRESET, HTTP 429/5xx, a DB
+    // socket reset during a container recreate) is floored to >= TRANSIENT_MIN_CYCLES
+    // consecutive cycles so a single blip can NEVER page cycle-1, for every current
+    // and future check. A CONFIRMED breach (queue depth > 50k, WR drop) keeps its
+    // configured threshold — incl. the intended cycle-1 visibility for slow signals.
+    const threshold = effectiveFailThreshold(FAIL_THRESHOLDS[key] ?? 1, error);
 
     if (error) {
       // Increment consecutive-fail counter and decide whether to alert.
@@ -543,7 +550,7 @@ async function runCritical(): Promise<void> {
         // not yet exhausted autonomous recovery, so no Telegram fire.
         suppressedCount++;
         console.log(
-          `[monitor] auto-recovery window (${consecutive}/${threshold}): ${key}: ${error}`,
+          `[monitor] auto-recovery window (${consecutive}/${threshold}, ${classifyProbeFailure(error)}): ${key}: ${error}`,
         );
       } else if (shouldAlert(state, key)) {
         // Threshold met AND outside dedup window — fire.

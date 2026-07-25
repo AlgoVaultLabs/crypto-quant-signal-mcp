@@ -23,6 +23,17 @@ import { dbExec, dbQuery, dbRun } from './performance-db.js';
 
 const IS_PG = Boolean(process.env.DATABASE_URL);
 
+/**
+ * Reason prefix that tags a self-audit verify failure as TRANSIENT / indeterminate
+ * (could-not-verify — HTTP 429 / 5xx / network, classified by probe-failure-class),
+ * as opposed to a CONFIRMED drop (`drift-detected-on-self-audit: ...`). Indeterminate
+ * markers are excluded from `hasUnrecoveredFailure`'s "known-broken" set (so the post
+ * is re-verified next audit) and are counted separately for the sustained-indeterminate
+ * escalation. OPS-MONITOR-TRANSIENT-CLASSIFY-W1.
+ */
+export const INDETERMINATE_REASON_PREFIX = 'indeterminate-verify: ';
+const INDETERMINATE_LIKE = 'indeterminate-verify:%';
+
 // ── Schema init (idempotent) ────────────────────────────────────────────
 
 // PG dialect — matches schema/migrations/2026-04-15-forum-post-failures.sql.
@@ -165,11 +176,15 @@ export async function recordFailure(
 }
 
 /**
- * Check if a specific post already has an unrecovered failure recorded.
- * Used by the self-audit to avoid re-recording the same drift failure
- * every day for known-broken posts (e.g. Moltbook is_spam=true legacy
- * posts, Hashnode anti-spam deletions). Without this, the drift count
- * inflates by N every day for N known-broken posts, drowning real signals.
+ * Check if a specific post already has an unrecovered CONFIRMED-drift failure
+ * recorded. Used by the self-audit to avoid re-recording the same drift failure
+ * every day for known-broken posts (e.g. Moltbook is_spam=true legacy posts,
+ * Hashnode anti-spam deletions). Without this, the drift count inflates by N
+ * every day for N known-broken posts, drowning real signals.
+ *
+ * Indeterminate markers (INDETERMINATE_REASON_PREFIX — a transient could-not-verify
+ * such as HTTP 429) are EXCLUDED: a post we merely failed to reach is NOT
+ * "known-broken", so it must be re-verified on the next audit rather than skipped.
  */
 export async function hasUnrecoveredFailure(
   platform: string,
@@ -179,12 +194,78 @@ export async function hasUnrecoveredFailure(
   try {
     const rows = await dbQuery<{ n: number | string }>(
       `SELECT COUNT(*) AS n FROM forum_post_failures
-       WHERE platform = ? AND post_id = ? AND recovered = false`,
-      [platform, postId]
+       WHERE platform = ? AND post_id = ? AND recovered = false
+         AND failure_reason NOT LIKE ?`,
+      [platform, postId, INDETERMINATE_LIKE]
     );
     return Number(rows[0]?.n ?? 0) > 0;
   } catch {
     return false; // Err on the side of re-recording if query fails
+  }
+}
+
+/**
+ * How many consecutive daily audits a post has been UNVERIFIABLE (an unrecovered
+ * indeterminate marker per audit). The self-audit uses this to escalate a
+ * genuinely-stuck verification (platform rate-limiting our probe for days) with
+ * honest framing — distinct from a "silently dropped" confirmed drop.
+ * `clearIndeterminate` resets it the moment the post verifies again.
+ */
+export async function countUnrecoveredIndeterminate(
+  platform: string,
+  postId: string,
+): Promise<number> {
+  ensureSchema();
+  try {
+    const rows = await dbQuery<{ n: number | string }>(
+      `SELECT COUNT(*) AS n FROM forum_post_failures
+       WHERE platform = ? AND post_id = ? AND recovered = false
+         AND failure_reason LIKE ?`,
+      [platform, postId, INDETERMINATE_LIKE]
+    );
+    return Number(rows[0]?.n ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Clear a post's indeterminate markers (verify succeeded ⇒ the transient cleared)
+ * WITHOUT touching any confirmed-drift rows — resets the sustained-indeterminate
+ * streak to zero. Scoped to INDETERMINATE_REASON_PREFIX via a LIKE param.
+ */
+export async function clearIndeterminate(
+  platform: string,
+  postId: string,
+): Promise<void> {
+  ensureSchema();
+  try {
+    if (IS_PG) {
+      dbRun(
+        `UPDATE forum_post_failures
+           SET recovered = TRUE, recovered_at = NOW()
+         WHERE platform = ? AND post_id = ? AND recovered = FALSE
+           AND failure_reason LIKE ?`,
+        platform,
+        postId,
+        INDETERMINATE_LIKE
+      );
+    } else {
+      dbRun(
+        `UPDATE forum_post_failures
+           SET recovered = 1, recovered_at = datetime('now')
+         WHERE platform = ? AND post_id = ? AND recovered = 0
+           AND failure_reason LIKE ?`,
+        platform,
+        postId,
+        INDETERMINATE_LIKE
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[forum-post-failures] clearIndeterminate(${platform}, ${postId}) error:`,
+      (err as Error).message
+    );
   }
 }
 

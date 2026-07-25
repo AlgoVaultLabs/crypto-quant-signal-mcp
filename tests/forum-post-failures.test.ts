@@ -67,11 +67,16 @@ vi.mock('../src/lib/performance-db.js', () => ({
       return;
     }
     if (/UPDATE forum_post_failures/i.test(sql)) {
-      // markRecovered(platform, post_id)
+      // markRecovered(platform, post_id) clears ALL unrecovered rows for the
+      // post; clearIndeterminate adds a `failure_reason LIKE ?` param and clears
+      // ONLY the indeterminate markers (leaving confirmed drift rows alone).
       const platform = params[0] as string;
       const postId = params[1] as string;
+      const likeParam = params[2] as string | undefined;
+      const prefix = likeParam != null ? String(likeParam).replace(/%$/, '') : null;
       for (const row of store.failures) {
         if (row.platform === platform && row.post_id === postId && row.recovered === 0) {
+          if (prefix != null && /like/i.test(sql) && !row.failure_reason.startsWith(prefix)) continue;
           row.recovered = 1;
           row.recovered_at = new Date().toISOString();
         }
@@ -81,12 +86,27 @@ vi.mock('../src/lib/performance-db.js', () => ({
   }),
   dbQuery: vi.fn(async (sql: string, params: unknown[] = []) => {
     if (/SELECT COUNT\(\*\)[\s\S]*FROM forum_post_failures/i.test(sql)) {
-      // countRecentFailures — our mock ignores the time window and just
-      // counts all rows for the platform (sufficient for a round-trip
-      // smoke test — deeper clock math is tested via the prod backend).
+      // Predicate-aware count. countRecentFailures ignores the time window and
+      // counts by platform; the per-post variants (hasUnrecoveredFailure /
+      // countUnrecoveredIndeterminate) honour post_id + recovered + the
+      // indeterminate-prefix LIKE / NOT LIKE, so the backstop logic is real-tested.
       const platform = params[0] as string;
-      const n = store.failures.filter((r) => r.platform === platform).length;
-      return [{ n }];
+      let rows = store.failures.filter((r) => r.platform === platform);
+      if (/post_id\s*=\s*\?/i.test(sql)) {
+        const postId = params[1] as string;
+        rows = rows.filter((r) => r.post_id === postId);
+        if (/recovered\s*=\s*(false|0)/i.test(sql)) {
+          rows = rows.filter((r) => r.recovered === 0);
+        }
+        const likeParam = params[2] as string | undefined;
+        if (likeParam != null) {
+          const prefix = String(likeParam).replace(/%$/, '');
+          rows = /not\s+like/i.test(sql)
+            ? rows.filter((r) => !r.failure_reason.startsWith(prefix))
+            : rows.filter((r) => r.failure_reason.startsWith(prefix));
+        }
+      }
+      return [{ n: rows.length }];
     }
     if (/SELECT [\s\S]*FROM forum_post_audit_log/i.test(sql)) {
       const platform = params[0] as string;
@@ -112,6 +132,10 @@ import {
   markRecovered,
   recordPublished,
   getRecentPublished,
+  hasUnrecoveredFailure,
+  countUnrecoveredIndeterminate,
+  clearIndeterminate,
+  INDETERMINATE_REASON_PREFIX,
   __resetInitForTests,
 } from '../src/lib/forum-post-failures.js';
 
@@ -158,5 +182,65 @@ describe('forum-post-failures', () => {
     const devtoRows = await getRecentPublished('devto', 7, 10);
     expect(devtoRows).toHaveLength(1);
     expect(devtoRows[0].post_id).toBe('1234');
+  });
+});
+
+/**
+ * OPS-MONITOR-TRANSIENT-CLASSIFY-W1 — the forum self-audit sustained-indeterminate
+ * backstop. A transient verify failure (HTTP 429 / 5xx / network) is recorded
+ * with the INDETERMINATE_REASON_PREFIX so it (a) is NOT counted as drift, (b) does
+ * NOT mark the post "known broken" (so it is re-verified next audit), and (c)
+ * escalates only after a sustained streak with honest framing.
+ */
+describe('forum-post-failures — indeterminate (transient) backstop', () => {
+  beforeEach(() => {
+    store.failures = [];
+    store.audit = [];
+    store.nextId = 1;
+    __resetInitForTests();
+  });
+
+  it('countUnrecoveredIndeterminate counts only unrecovered indeterminate markers for the post', async () => {
+    // The real 2026-07-24 case: dev.to post 4223682 came back http-429.
+    await recordFailure('devto', 'market-insight', `${INDETERMINATE_REASON_PREFIX}devto-http-429`, '4223682');
+    expect(await countUnrecoveredIndeterminate('devto', '4223682')).toBe(1);
+
+    // A second daily audit still transient → the streak grows.
+    await recordFailure('devto', 'market-insight', `${INDETERMINATE_REASON_PREFIX}devto-http-429`, '4223682');
+    expect(await countUnrecoveredIndeterminate('devto', '4223682')).toBe(2);
+
+    // A CONFIRMED drift row for the same post is NOT an indeterminate marker.
+    await recordFailure('devto', 'market-insight', 'drift-detected-on-self-audit: devto-not-published', '4223682');
+    expect(await countUnrecoveredIndeterminate('devto', '4223682')).toBe(2);
+
+    // Other posts are independent.
+    expect(await countUnrecoveredIndeterminate('devto', '9999999')).toBe(0);
+  });
+
+  it('clearIndeterminate resets the streak (verify recovered) but leaves drift + other posts alone', async () => {
+    await recordFailure('devto', 'market-insight', `${INDETERMINATE_REASON_PREFIX}devto-http-429`, '4223682');
+    await recordFailure('devto', 'market-insight', 'drift-detected-on-self-audit: devto-not-published', '4223682');
+    await recordFailure('devto', 'market-insight', `${INDETERMINATE_REASON_PREFIX}devto-http-503`, 'other-post');
+
+    await clearIndeterminate('devto', '4223682');
+
+    expect(await countUnrecoveredIndeterminate('devto', '4223682')).toBe(0); // streak reset
+    // The confirmed drift row for that post is untouched.
+    const drift = store.failures.find(
+      (r) => r.post_id === '4223682' && r.failure_reason.startsWith('drift-detected'),
+    );
+    expect(drift?.recovered).toBe(0);
+    // A different post's indeterminate marker is untouched.
+    expect(await countUnrecoveredIndeterminate('devto', 'other-post')).toBe(1);
+  });
+
+  it('hasUnrecoveredFailure IGNORES indeterminate markers (transient ⇒ re-verify next audit, not "known broken")', async () => {
+    await recordFailure('devto', 'market-insight', `${INDETERMINATE_REASON_PREFIX}devto-http-429`, '4223682');
+    expect(await hasUnrecoveredFailure('devto', '4223682')).toBe(false);
+  });
+
+  it('hasUnrecoveredFailure still returns true for a real (confirmed) drift failure', async () => {
+    await recordFailure('devto', 'market-insight', 'drift-detected-on-self-audit: devto-not-published', '5555555');
+    expect(await hasUnrecoveredFailure('devto', '5555555')).toBe(true);
   });
 });

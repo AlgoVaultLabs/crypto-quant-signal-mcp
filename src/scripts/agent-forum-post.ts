@@ -30,9 +30,17 @@ import {
   recordFailure,
   countRecentFailures,
   hasUnrecoveredFailure,
+  countUnrecoveredIndeterminate,
+  clearIndeterminate,
+  INDETERMINATE_REASON_PREFIX,
   recordPublished,
   getRecentPublished,
 } from '../lib/forum-post-failures.js';
+import {
+  classifyProbeFailure,
+  shouldEscalateIndeterminate,
+  INDETERMINATE_ESCALATE_STREAK,
+} from '../lib/probe-failure-class.js';
 import { sendAlert } from '../lib/telegram.js';
 
 const API_BASE = 'https://api.algovault.com';
@@ -983,6 +991,10 @@ async function runSelfAudit(ts: string): Promise<number> {
   const SELF_AUDIT_DAYS = 7;
   const SELF_AUDIT_LIMIT = 5;
   let totalDrift = 0;
+  // OPS-MONITOR-TRANSIENT-CLASSIFY-W1: posts unverifiable for a sustained streak
+  // (a platform rate-limiting our probe for days) — escalated with honest framing,
+  // separate from the "silently dropped" confirmed-drift alert.
+  const sustainedIndeterminate: Array<{ platform: string; postId: string; reason: string; days: number }> = [];
 
   for (const p of platforms) {
     const recent = await getRecentPublished(p.name, SELF_AUDIT_DAYS, SELF_AUDIT_LIMIT);
@@ -1000,7 +1012,9 @@ async function runSelfAudit(ts: string): Promise<number> {
 
     let verifiedCount = 0;
     let skippedKnownBroken = 0;
+    let indeterminateCount = 0;
     const driftReasons: string[] = [];
+    const indeterminateReasons: string[] = [];
     for (const row of recent) {
       try {
         // Skip posts that already have an unrecovered failure recorded —
@@ -1015,7 +1029,28 @@ async function runSelfAudit(ts: string): Promise<number> {
         const v = await p.verify(row.post_id);
         if (v.verified) {
           verifiedCount += 1;
+          // A prior transient reading cleared — reset the sustained-indeterminate streak.
+          await clearIndeterminate(p.name, row.post_id);
+        } else if (classifyProbeFailure(v.reason) === 'transient') {
+          // OPS-MONITOR-TRANSIENT-CLASSIFY-W1: a rate-limited / unreachable verify
+          // probe (HTTP 429, 5xx, network) does NOT mean the post was dropped — it
+          // means we could not confirm it. Record an INDETERMINATE marker (re-tried
+          // next audit, NEVER counted as drift); escalate only on a sustained streak.
+          indeterminateCount += 1;
+          indeterminateReasons.push(`${row.post_id}:${v.reason}`);
+          await recordFailure(
+            p.name,
+            row.post_type,
+            `${INDETERMINATE_REASON_PREFIX}${v.reason}`,
+            row.post_id,
+            row.post_url ?? undefined,
+          );
+          const streak = await countUnrecoveredIndeterminate(p.name, row.post_id);
+          if (shouldEscalateIndeterminate(streak)) {
+            sustainedIndeterminate.push({ platform: p.name, postId: row.post_id, reason: v.reason, days: streak });
+          }
         } else {
+          // Confirmed absence (404 / not-published / is_spam / is_deleted) = real drift.
           totalDrift += 1;
           driftReasons.push(`${row.post_id}:${v.reason}`);
           await recordFailure(p.name, row.post_type, `drift-detected-on-self-audit: ${v.reason}`, row.post_id, row.post_url ?? undefined);
@@ -1026,12 +1061,33 @@ async function runSelfAudit(ts: string): Promise<number> {
       }
     }
 
-    console.log(`SELF-AUDIT: platform=${p.name} verified=${verifiedCount}/${recent.length} skipped_known_broken=${skippedKnownBroken} failures_7d=${failures7d}${driftReasons.length ? ' drift=' + driftReasons.join(',') : ''}`);
+    console.log(
+      `SELF-AUDIT: platform=${p.name} verified=${verifiedCount}/${recent.length} ` +
+      `skipped_known_broken=${skippedKnownBroken} indeterminate=${indeterminateCount} ` +
+      `failures_7d=${failures7d}` +
+      `${driftReasons.length ? ' drift=' + driftReasons.join(',') : ''}` +
+      `${indeterminateReasons.length ? ' indeterminate_reasons=' + indeterminateReasons.join(',') : ''}`,
+    );
   }
 
   if (totalDrift > 0) {
     try {
       await sendAlert(`Forum post self-audit drift: ${totalDrift} post(s) silently dropped across platforms.`, 'warning');
+    } catch { /* Telegram optional */ }
+  }
+
+  // Honest sustained-indeterminate escalation — distinct from a "silently dropped"
+  // drop. Fires only when a post stayed unverifiable for >= the streak, i.e. the
+  // platform has been rate-limiting / blocking our verification probe for days.
+  if (sustainedIndeterminate.length > 0) {
+    const detail = sustainedIndeterminate
+      .map((s) => `${s.platform} ${s.postId} (${s.days}d, last ${s.reason})`)
+      .join('; ');
+    try {
+      await sendAlert(
+        `Forum self-audit could NOT verify ${sustainedIndeterminate.length} post(s) for ≥${INDETERMINATE_ESCALATE_STREAK} consecutive daily audits — likely the platform rate-limiting our verification probe, NOT a drop. Manual check advised: ${detail}`,
+        'warning',
+      );
     } catch { /* Telegram optional */ }
   }
 
