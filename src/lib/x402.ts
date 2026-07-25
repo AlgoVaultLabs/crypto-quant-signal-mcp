@@ -755,6 +755,24 @@ function reqFields(req: unknown): {
 }
 
 /**
+ * Does the buyer's matched requirement bind to THIS server's identity (asset+network+payTo) on
+ * ANY of the tool's advertised rails? A priced tool can advertise the CDP rail (`eip155:8453`)
+ * AND the Circle Gateway rail (`eip155:10`) — comparing only `expected[0]` (CDP) 402'd every valid
+ * Gateway proof (CIRCLE-GATEWAY-FLIP-SMOKE-W1). Identity never varies by the buyer's payment and
+ * never distinguishes TOOLS (all share one payTo/asset per rail); the per-tool PRICE floor does —
+ * so binding to any advertised rail's identity is safe.
+ */
+function proofBindsToAnyRail(
+  expected: unknown[],
+  got: { asset?: string; network?: string; payTo?: string },
+): boolean {
+  return expected.some((e) => {
+    const exp = reqFields(e);
+    return got.asset === exp.asset && got.network === exp.network && got.payTo === exp.payTo;
+  });
+}
+
+/**
  * X402-01 route-level binding (defense-in-depth on top of the per-tool
  * `verifyX402Payment(headers, tool)` path). Asserts that a verified settlement's
  * matched requirement actually belongs to `toolName`'s route AND covers its
@@ -785,21 +803,16 @@ export function paymentMatchesToolRoute(
   // The settlement's matched requirement (may be a single req or a 1-element array).
   const matchedRaw = settlement.requirements;
   const matched = Array.isArray(matchedRaw) ? matchedRaw[0] : matchedRaw;
-  const exp = reqFields(expected[0]);
   const got = reqFields(matched);
 
-  // (1) Route/identity binding: asset, network, and recipient MUST equal THIS
-  // server's pre-built requirement for the tool. These never vary by the buyer's
-  // payment, so an exact match binds the proof to our wallet/chain/token (and
-  // independently catches the cross-network / wrong-asset / wrong-payTo cases).
-  // The AMOUNT is deliberately NOT required to be byte-equal here — over-payment
-  // and premium-timeframe amounts legitimately differ from the base requirement;
-  // the amount floor is enforced in (2).
-  if (
-    got.asset !== exp.asset ||
-    got.network !== exp.network ||
-    got.payTo !== exp.payTo
-  ) {
+  // (1) Route/identity binding (MULTI-RAIL): asset, network, and recipient MUST equal THIS
+  // server's pre-built requirement on ONE of the tool's advertised rails — the CDP rail
+  // (`eip155:8453`) OR the Circle Gateway rail (`eip155:10`). Comparing only `expected[0]` (CDP)
+  // 402'd every valid Gateway proof (CIRCLE-GATEWAY-FLIP-SMOKE-W1). Identity never varies by the
+  // buyer's payment and never distinguishes TOOLS (all share one payTo/asset per rail), so this
+  // binds the proof to our wallet/chain/token (and catches cross-network / wrong-asset /
+  // wrong-payTo); the cross-tool DOWNGRADE is caught by the price floor in (2)/(3).
+  if (!proofBindsToAnyRail(expected, got)) {
     return false;
   }
 
@@ -860,12 +873,12 @@ export function classifyToolRouteMismatch(
 
   const matchedRaw = settlement.requirements;
   const matched = Array.isArray(matchedRaw) ? matchedRaw[0] : matchedRaw;
-  const exp = reqFields(expected[0]);
   const got = reqFields(matched);
 
-  // Identity binding (asset/network/payTo) — a mismatch means the proof matched a
-  // DIFFERENT tool's route (or wrong chain/token/recipient): cross-tool.
-  if (got.asset !== exp.asset || got.network !== exp.network || got.payTo !== exp.payTo) {
+  // Identity binding (MULTI-RAIL — mirror paymentMatchesToolRoute (1)): a proof that binds to NONE
+  // of the tool's advertised rails (CDP or Circle Gateway) matched a different route / wrong
+  // chain/token/recipient → cross-tool.
+  if (!proofBindsToAnyRail(expected, got)) {
     return 'cross_tool';
   }
 
