@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AlgoVault — The Brain Layer for AI Trading Agents</title>
-<meta name="description" content="Composite trade calls across 15 exchanges — leading CEX &amp; perp-DEX venues. Multi-factor scoring engine with regime-aware filtering. MCP-native."> <!-- SNAPSHOT-LINE -->
+<meta name="description" content="Composite trade calls across 15 exchanges — leading CEX &amp; perp-DEX venues. Multi-factor scoring engine with market-regime context on every call. MCP-native."> <!-- SNAPSHOT-LINE -->
 <meta name="keywords" content="crypto trade calls, MCP server, Hyperliquid perps, funding rate arbitrage, AI trading agent, market regime, x402, USDC payments, composite trade call, Model Context Protocol">
 <link rel="canonical" href="https://algovault.com">
 <meta property="og:title" content="AlgoVault — The Brain Layer for AI Trading Agents">
@@ -665,7 +665,7 @@ tailwind.config = {
       "name": "How does the trade call scoring work?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The scoring engine combines multiple orthogonal factors — momentum, trend structure, derivatives positioning, open interest dynamics, and volume conviction — into a single weighted composite score. Trade calls pass through regime-aware filters and adaptive post-processing gates before a final verdict is emitted."
+        "text": "Each call is a multi-factor composite of trend persistence, breakout pressure, funding state, and volatility regime — scored on the same scale across crypto and TradFi. We only fire BUY/SELL when conviction clears the threshold; otherwise the call is HOLD (and HOLDs are free)."
       }
     },
     {

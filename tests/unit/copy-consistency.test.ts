@@ -255,4 +255,64 @@ describe('Copy consistency — free-tier unlock + 11-timeframe canonical claim',
       }
     });
   });
+
+  // ── CRYPTO-PERF-COPY-REMEDIATION-W1 (2026-07-25) — PFE-copy factuality bans ──
+  // Mr.1-approved pack: the public copy must tell the same story as the DB.
+  //   S1/S7/Q2 — "directional accuracy" may not describe the PFE metric on any
+  //              public surface (card sub-label removed; llms.txt + JSON-LD
+  //              Dataset desc scrubbed deletion-only).
+  //   S4/S7    — the "improved monotonically" PFE-WR overclaim is deleted from
+  //              the /how-it-works flywheel lead.
+  //   S6/S7/Q3 — "regime-aware filters|gating" overclaim scrubbed (JSON-LD FAQ →
+  //              visible twin; meta description reframed; skills.html desc).
+  // Concept-level + fleet-wide + both-directions self-tested per the Q3 ruling.
+  describe('CRYPTO-PERF-COPY-REMEDIATION-W1 — banned PFE-copy phrases (fleet-wide)', () => {
+    const stripHtmlComments = (s: string): string => s.replace(/<!--[\s\S]*?-->/g, '');
+    const BAN_DIRECTIONAL_ACCURACY = /directional[-\s]accuracy/i;
+    const BAN_IMPROVED_MONOTONIC = /improved\s+monotonic/i;
+    const BAN_REGIME_AWARE_FILTER = /regime-aware\s+(filter\w*|gating)/i; // Q3-specified
+
+    const BANS = [
+      { re: BAN_DIRECTIONAL_ACCURACY, description: '"directional accuracy" as a PFE descriptor (S1/S7/Q2)' },
+      { re: BAN_IMPROVED_MONOTONIC,   description: '"improved monotonically" PFE-WR overclaim (S4/S7)' },
+      { re: BAN_REGIME_AWARE_FILTER,  description: '"regime-aware filters/gating" overclaim (S6/S7/Q3)' },
+    ];
+
+    // how-it-works.html is a baked public surface carrying the flywheel lead (the
+    // S4 target), so it joins the fleet scan alongside LANDING_FILES.
+    const BAN_FILES = [...LANDING_FILES, 'landing/how-it-works.html'];
+
+    for (const f of BAN_FILES) {
+      const raw = read(f);
+      if (raw === null) continue;
+      const txt = stripHtmlComments(raw);
+      for (const { re, description } of BANS) {
+        it(`${f} does NOT contain banned phrase: ${description}`, () => {
+          expect(txt).not.toMatch(re);
+        });
+      }
+    }
+
+    // Both-directions self-test: the bans must still MATCH their forbidden phrasing
+    // (guards against a regex silently rotting into a no-op) and must NOT match the
+    // benign near-misses that legitimately remain on the surfaces.
+    it('ban regexes match the forbidden phrasings (positive control)', () => {
+      expect('PFE directional accuracy and excursion analysis').toMatch(BAN_DIRECTIONAL_ACCURACY);
+      expect('PFE (directional-accuracy) win rate').toMatch(BAN_DIRECTIONAL_ACCURACY);
+      expect('Our PFE win rate has improved monotonically since launch').toMatch(BAN_IMPROVED_MONOTONIC);
+      expect('scoring engine with regime-aware filtering').toMatch(BAN_REGIME_AWARE_FILTER);
+      expect('pass through regime-aware filters and adaptive gates').toMatch(BAN_REGIME_AWARE_FILTER);
+      expect('regime-aware gating before a verdict').toMatch(BAN_REGIME_AWARE_FILTER);
+    });
+
+    it('ban regexes do NOT match the benign phrasings that remain (negative control)', () => {
+      // "called direction" (JSON-LD variableMeasured), "market regime" (kept copy),
+      // "Regime-Aware Trading" (skill NAME, not a filter claim), and the legit
+      // "Batch IDs increment monotonically" (llms-full.txt) must all survive.
+      expect('price moved in the called direction').not.toMatch(BAN_DIRECTIONAL_ACCURACY);
+      expect('Batch IDs increment monotonically').not.toMatch(BAN_IMPROVED_MONOTONIC);
+      expect('Every call reports market regime — trending, ranging, or volatile').not.toMatch(BAN_REGIME_AWARE_FILTER);
+      expect('Regime-Aware Trading').not.toMatch(BAN_REGIME_AWARE_FILTER);
+    });
+  });
 });

@@ -3840,7 +3840,7 @@ tailwind.config = {
      nodes — NO hardcoded metric values, forward-stable). No aggregateRating
      (Data Integrity + Google rich-results policy). Server-rendered raw HTML. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Dataset","name":"AlgoVault trade-call track record","description":"Per-segment directional accuracy (PFE win rate) and sample size for AlgoVault trade calls, broken down by venue, asset, timeframe, and asset tier. Every call is Merkle-anchored on Base L2 for independent on-chain verification.","url":"https://algovault.com/track-record","isAccessibleForFree":true,"creator":{"@type":"Organization","name":"AlgoVault Labs","url":"https://algovault.com"},"measurementTechnique":"Peak Favorable Excursion (PFE) within each timeframe's evaluation window; confidence of at least 60% trade calls only","variableMeasured":[{"@type":"PropertyValue","name":"PFE Win Rate","description":"Share of trade calls where price moved in the called direction at any point during the evaluation window."},{"@type":"PropertyValue","name":"Sample Size","description":"Number of evaluated BUY/SELL trade calls in the segment (n)."}]}
+{"@context":"https://schema.org","@type":"Dataset","name":"AlgoVault trade-call track record","description":"Per-segment PFE win rate and sample size for AlgoVault trade calls, broken down by venue, asset, timeframe, and asset tier. Every call is Merkle-anchored on Base L2 for independent on-chain verification.","url":"https://algovault.com/track-record","isAccessibleForFree":true,"creator":{"@type":"Organization","name":"AlgoVault Labs","url":"https://algovault.com"},"measurementTechnique":"Peak Favorable Excursion (PFE) within each timeframe's evaluation window; confidence of at least 60% trade calls only","variableMeasured":[{"@type":"PropertyValue","name":"PFE Win Rate","description":"Share of trade calls where price moved in the called direction at any point during the evaluation window."},{"@type":"PropertyValue","name":"Sample Size","description":"Number of evaluated BUY/SELL trade calls in the segment (n)."}]}
 </script>
 </head>
 <body>
@@ -3904,7 +3904,7 @@ ${renderSiteNav()}
   <!-- KPI Cards (4) -->
   <div class="grid">
     <div class="card"><div class="label">Total Trade Calls</div><div class="value" id="total"></div><div class="sub" id="period"></div></div>
-    <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div><div class="sub">Directional Accuracy</div></div>
+    <div class="card"><div class="label">PFE Win Rate</div><div class="value hero" id="pfe-wr"></div></div>
   </div>
   <div id="eval-indicator" style="text-align:center;color:#8b949e;font-size:13px;margin:-8px 0 12px 0"></div>
 

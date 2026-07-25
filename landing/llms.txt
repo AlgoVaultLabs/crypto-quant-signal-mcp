@@ -10,7 +10,7 @@ Live source of truth: https://algovault.com/api/performance-public
 
 ## Key facts
 
-- PFE (directional-accuracy) win rate published live across the full tracked-call history — current value at /track-record.
+- PFE win rate published live across the full tracked-call history — current value at /track-record.
 - Every trade call Merkle-anchored on Base L2; daily batches published on-chain — verify any call at /verify.
 - MCP tools include `get_trade_call`, `scan_trade_calls`, `get_market_regime`, and `scan_funding_arb` (full set via `tools/list`).
 - 15 exchanges analysed — leading CEX & perp-DEX venues.  # SNAPSHOT-LINE

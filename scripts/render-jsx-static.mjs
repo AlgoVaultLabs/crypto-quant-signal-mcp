@@ -1636,7 +1636,7 @@ function applyHowItWorksExternalLinkRel(html) {
 const FW_STEP_LABELS = {
   '01': 'Agent calls get_trade_call',
   '02': 'Outcome lands in the dataset',
-  '03': 'AOE updates model weights',
+  '03': 'AOE retrains and re-tests the model',
   '04': 'Next call uses the sharper model',
 };
 

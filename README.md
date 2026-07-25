@@ -68,7 +68,7 @@ Your Claude now has a quant analyst built in. Prefer local? Run `npx -y crypto-q
 
 One API call. One verdict. Not 8 raw indicators. `get_trade_call` returns a directional **BUY / SELL / HOLD** with a confidence score and the detected market regime — a composite verdict, not a data dump for your agent to interpret.
 
-Under the hood, a self-tuning model fuses momentum, trend structure, derivatives positioning, open interest, and volume into one weighted call. Weights are calibrated from live trade outcomes, not textbook defaults. Regime filters suppress low-edge setups, so the engine stays silent unless the signal is clear.
+Under the hood, a self-tuning model fuses momentum, trend structure, derivatives positioning, open interest, and volume into one weighted call. Every call reports market regime — trending, ranging, or volatile — alongside direction and confidence. Directional calls fire only when conviction clears the threshold; roughly 99% of evaluations return HOLD.
 
 ```json
 {
