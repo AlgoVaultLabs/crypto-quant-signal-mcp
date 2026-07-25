@@ -18,8 +18,13 @@ name: Publish to npm
 # `registry-url` writes `.npmrc` with `_authToken=${NODE_AUTH_TOKEN}`; with that env SET on the
 # publish step, npm authenticates with the token and NEVER performs the OIDC exchange — a present
 # token WINS over OIDC. The "OIDC-preferred, token-fallback on the same step" model was invalid.
-# Fix = delete the token env (done here). `NPM_TOKEN` secret retained as rollback until OIDC is
-# proven; revoked + secret deleted in R4 once a run logs the OIDC exchange + no bypass-2FA notice.
+# Fix = delete the token env. **OIDC PROVEN by the tokenless v1.24.1 publish (run 30152218097).**
+# The `NPM_TOKEN` secret has been REVOKED on npmjs.com + deleted from repo settings; the package is
+# set to "require 2FA and disallow tokens". There is no token rollback — OIDC is the only path now.
+# OIDC-proof signal (corrected): read the publish step's `NODE_AUTH_TOKEN` env echo — `***` = a real
+# secret (token auth), `XXXXX-XXXXX-XXXXX-XXXXX` = setup-node placeholder (no secret → OIDC). The
+# `npm notice ...tokens that bypass 2FA...` line is a generic deprecation notice printed on EVERY
+# publish and is NOT an auth-path discriminator.
 #
 # Triggers ONLY on tag push (NOT on every commit to main) — keeps the release wave
 # in control of when npm gets a new version. The daily release-wave does
@@ -74,7 +79,7 @@ jobs:
       # OIDC trusted publishing: NO `NODE_AUTH_TOKEN` here — a present token makes npm skip the
       # OIDC exchange (see the Phase-1 design-flaw note in the header). With no token, npm
       # authenticates via OIDC against the verified trusted-publisher config, and `--provenance`
-      # auto-generates. Rollback if OIDC ever fails: re-add `env: NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`.
+      # auto-generates. (The NPM_TOKEN secret has been revoked + deleted; OIDC is the only path.)
       - name: Publish to npm with provenance
         run: npm publish --provenance
 
