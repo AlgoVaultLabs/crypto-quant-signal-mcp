@@ -5,6 +5,11 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.1] - 2026-07-25
+
+### Internal
+- npm publishing now authenticates via OIDC trusted publishing (no long-lived token). No package-code change.
+
 ## [1.24.0] - 2026-07-24
 
 ### Added
