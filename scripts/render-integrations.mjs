@@ -516,6 +516,24 @@ async function renderOne(exchange) {
     `<span data-tr-field="exchange_count">${SOT_EXCHANGE_COUNT}</span> exchanges`,
   );
 
+  // OPS-SKILLS-MAF-COPY-W1 (2026-07-25): sibling to the "N exchanges" wrap above,
+  // for the hardcoded VENUE count the tutorials also carried ("5 crypto perp
+  // venues" / "the 5 venues"). Unlike the exchange count there is NO live-bind
+  // hook for venues, so the fix is to describe coverage qualitatively rather than
+  // enumerate it — exactly what the forward-stability rule requires. The upstream
+  // .md sources were corrected in the same wave (algovault-skills 01b11cb); this
+  // generator rule makes the class structurally unable to return if a future
+  // tutorial edit reintroduces a venue count (e.g. binance.md still says "the 5
+  // venues"). The `(?<!">)` guard + the required whitespace after the digits mean
+  // a live-bind span (`…">15</span> venues`) can never match. Idempotent:
+  // count-free output leaves no digit to re-match.
+  bodyHtml = bodyHtml
+    .replace(
+      /(?<!">)\b\d+\s+crypto\s+perp(?:etual)?(?:[-\s]futures)?\s+venues\b/gi,
+      'major crypto perpetual-futures venues',
+    )
+    .replace(/(?<!">)\b\d+\s+venues\b/gi, 'venues');
+
   // OPS-INTEGRATIONS-VENUE-PAGES-W1 — body-content normalisation (the
   // structural half of the fix).
   //
