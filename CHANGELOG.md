@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.0] - 2026-07-24
+
+### Added
+- Three new exchanges live: **WhiteBIT, BitMart, and XT** — AlgoVault's signal engine now covers 15 perpetual-futures venues. `get_trade_call`, `get_market_regime`, and `scan_trade_calls` accept the new venues via the `exchange` parameter (enum widened — refresh tools/list).
+
+### Internal
+- Structural-feature accrual, PFE-metric integrity, seed/label hardening, and ops. No MCP tool-count change (tools/list = 7).
+
 ## [1.23.3] - 2026-07-18
 
 ### Changed
