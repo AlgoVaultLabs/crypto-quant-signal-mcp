@@ -5,19 +5,21 @@ name: Publish to npm
 # Wired in NPM-PUBLISH-v1.17.0-W1 (2026-05-22) closing the long-standing manual
 # `npm publish` gap per WIS `publish-npm-yml-gha-workflow-promotion-candidate`.
 #
-# AUTH: OIDC trusted publishing (per OPS-NPM-TRUSTED-PUBLISHING-MIGRATION-W1, 2026-07-17).
-# npm detects the GitHub Actions OIDC environment and uses it BEFORE falling back to a
-# token, so this workflow authenticates via short-lived OIDC creds — no long-lived token
-# to leak or rotate. Requires npm >= 11.5.1 + Node >= 22.14.0 (pinned below), a public repo,
-# and `package.json` `repository.url` exactly matching the repo (both true). Provenance
-# auto-generates under OIDC. One-time npmjs.com config: package Settings -> Trusted Publisher
-# -> GitHub Actions (org AlgoVaultLabs / repo crypto-quant-signal-mcp / workflow
-# publish-npm.yml / environment blank / allowed action: npm publish).
+# AUTH: OIDC trusted publishing — Phase 2 DONE (OPS-NPM-DROP-PUBLISH-TOKEN-W1, 2026-07-25).
+# The publish step carries NO `NODE_AUTH_TOKEN`, so `npm publish` authenticates via short-lived
+# GitHub-Actions OIDC creds against the trusted-publisher config — no long-lived token to leak
+# or rotate. Requires npm >= 11.5.1 + Node >= 22.14.0 (pinned below), a public repo,
+# `package.json` `repository.url` exactly matching the repo, and `id-token: write` (all true).
+# Provenance auto-generates under OIDC. npmjs.com config (VERIFIED CORRECT 2026-07-25, do not
+# touch): package Settings -> Trusted Publisher -> GitHub Actions (org AlgoVaultLabs /
+# repo crypto-quant-signal-mcp / workflow publish-npm.yml / environment blank / npm publish).
 #
-# PHASE 1 (current): `NODE_AUTH_TOKEN` (secret `NPM_TOKEN`) is RETAINED as an automatic
-# fallback so a release can never fail mid-migration. PHASE 2 (OPS-NPM-DROP-PUBLISH-TOKEN-W1,
-# after >=1 clean OIDC release) removes the token env, sets the package to "require 2FA and
-# disallow tokens", and revokes `NPM_TOKEN` — retiring the 2026-08-20 rotation chore.
+# ⚠️ PHASE-1 DESIGN FLAW (why v1.23.3 + v1.24.0 fell back to the token): setup-node's
+# `registry-url` writes `.npmrc` with `_authToken=${NODE_AUTH_TOKEN}`; with that env SET on the
+# publish step, npm authenticates with the token and NEVER performs the OIDC exchange — a present
+# token WINS over OIDC. The "OIDC-preferred, token-fallback on the same step" model was invalid.
+# Fix = delete the token env (done here). `NPM_TOKEN` secret retained as rollback until OIDC is
+# proven; revoked + secret deleted in R4 once a run logs the OIDC exchange + no bypass-2FA notice.
 #
 # Triggers ONLY on tag push (NOT on every commit to main) — keeps the release wave
 # in control of when npm gets a new version. The daily release-wave does
@@ -69,14 +71,12 @@ jobs:
       - name: Refresh README track-record numbers (snapshot injector)
         run: node scripts/snapshot-landing-data.mjs
 
-      # Phase 1: OIDC-preferred (trusted publishing) with NPM_TOKEN fallback; Phase 2
-      # (OPS-NPM-DROP-PUBLISH-TOKEN-W1) removes this env after >=1 clean OIDC release.
-      # `--provenance` auto-generates under OIDC on a public repo/package; the flag is
-      # harmless + explicit and also drives provenance on the token-fallback path.
+      # OIDC trusted publishing: NO `NODE_AUTH_TOKEN` here — a present token makes npm skip the
+      # OIDC exchange (see the Phase-1 design-flaw note in the header). With no token, npm
+      # authenticates via OIDC against the verified trusted-publisher config, and `--provenance`
+      # auto-generates. Rollback if OIDC ever fails: re-add `env: NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`.
       - name: Publish to npm with provenance
         run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify dist-tag
         run: |
