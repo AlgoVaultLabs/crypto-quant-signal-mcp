@@ -10,14 +10,28 @@
  * Modes:
  *   node scripts/generate_jsonld.mjs           — WRITE: regenerate + write all files
  *   node scripts/generate_jsonld.mjs --check   — CHECK: compute would-be output;
- *                                                exit 1 if any file drifts.
- *                                                Used as a CI canary in deploy.yml.
+ *                                                exit 1 if any file drifts. LOCAL
+ *                                                pre-commit developer canary only —
+ *                                                NOT a CI gate (see below).
  *
  * Per the live-data-template-with-generator-and-canary skill (BINANCE-SKILLS-HUB-
- * SUBMISSION-W1) and Plan Mode D3: developer runs WRITE locally + commits the
- * output; CI runs --check parallel to scripts/build_landing.mjs --check and
- * fail-closes the deploy on drift. No cheerio dep — regex strip-and-inject is
- * byte-stable and idempotent.
+ * SUBMISSION-W1): the developer runs WRITE locally + commits the output. No cheerio
+ * dep — regex strip-and-inject is byte-stable and idempotent.
+ *
+ * WHY --check IS NOT WIRED FAIL-CLOSE INTO deploy.yml (OPS-JSONLD-DEPLOY-GATE-W1,
+ * 2026-07-25): this generator LIVE-FETCHES the two /api endpoints above, so its
+ * numeric output (total_calls, pfe_wr, batch_count, period.to = today's date) moves
+ * every few minutes. --check byte-compares live-now against the committed snapshot,
+ * so it can NEVER be durably green in CI — wiring it as a gate would fail-close every
+ * deploy. Instead: (1) structural correctness is gated in CI network-free, by
+ * tests/unit/geo_jsonld_consistency.test.mjs + geo_answer_page_invariants.test.mjs
+ * (the deploy.yml step "JSON-LD structural integrity (unit tests)") — asserting block
+ * presence, no placeholder leakage, no forbidden phrases, WITHOUT byte-pinning live
+ * numbers; (2) live numbers are reconciled at deploy on the host by
+ * scripts/snapshot-landing-data.mjs (fail-open injection into the committed
+ * fallbacks). So --check stays a developer aid; the deploy is protected by (1) + (2),
+ * not by this script. (Deferred option if a dedicated structural deploy gate is ever
+ * wanted: a network-free `--check-structure` mode — today it would duplicate (1).)
  *
  * Preserves any non-AlgoVault JSON-LD blocks (e.g. FAQPage on /faq, DefinedTermSet
  * on /glossary, schema.org/Claim itemtype on hero) by stripping ONLY blocks
