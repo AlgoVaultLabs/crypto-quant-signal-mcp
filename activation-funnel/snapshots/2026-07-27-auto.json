@@ -1,0 +1,117 @@
+{
+  "generated_at": "2026-07-27T10:12:28.069Z",
+  "window": {
+    "from": "2026-07-13T10:12:27.166Z",
+    "to": "2026-07-27T10:12:27.166Z"
+  },
+  "sessions": {
+    "total": 211,
+    "unique_ips": 211,
+    "new_in_window": 211
+  },
+  "funnel": {
+    "install": 1807,
+    "first_call": 211,
+    "second_call": 165,
+    "fifth_plus_call": 101,
+    "first_non_hold_verdict": 40,
+    "track_record_viewed": 27,
+    "landing_cta_clicked": 22,
+    "paid_upgrade": 45,
+    "mcp_tools_list": 583,
+    "quota_hit_soft": 7,
+    "quota_hit_hard": 7,
+    "quota_hit_block": 13,
+    "upgrade_cta_clicked": 0,
+    "stripe_checkout_started": 0,
+    "tg_bot_start": 14,
+    "tg_bot_first_command": 1,
+    "tg_bot_watchlist_add": null,
+    "tg_bot_quota_hit": 2,
+    "tg_bot_upgrade_clicked": null
+  },
+  "conversion": {
+    "install_to_first_call": 0.11676812396236856,
+    "first_to_second": 0.7819905213270142,
+    "second_to_fifth": 0.6121212121212121,
+    "fifth_to_paid": 0.44554455445544555
+  },
+  "stage_retentions": {
+    "install_to_mcp_tools_list": 0.32263420033204204,
+    "mcp_tools_list_to_first_call": 0.36192109777015435,
+    "first_call_to_quota_hit_soft": 0.03317535545023697,
+    "quota_hit_soft_to_quota_hit_hard": 1,
+    "quota_hit_hard_to_quota_hit_block": 1.8571428571428572,
+    "quota_hit_block_to_upgrade_cta_clicked": 0,
+    "upgrade_cta_clicked_to_stripe_checkout_started": null,
+    "stripe_checkout_started_to_paid_upgrade": null,
+    "paid_upgrade_to_tg_bot_start": 0.3111111111111111,
+    "tg_bot_start_to_tg_bot_first_command": 0.07142857142857142,
+    "tg_bot_first_command_to_tg_bot_watchlist_add": null,
+    "tg_bot_watchlist_add_to_tg_bot_quota_hit": null,
+    "tg_bot_quota_hit_to_tg_bot_upgrade_clicked": null
+  },
+  "weakest_stage_transition": {
+    "from": "quota_hit_block",
+    "to": "upgrade_cta_clicked",
+    "retention": 0
+  },
+  "stick_rate": 0.7819905213270142,
+  "time_to_first_call_ms": {
+    "p50": 56100681,
+    "p90": 243289926
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 122,
+    "get_market_regime": 1222,
+    "scan_funding_arb": 88,
+    "other": 69116
+  },
+  "hold_rate_get_trade_signal": 0.9918032786885246,
+  "tier_cohort_sizes": {
+    "free": 192,
+    "starter": 69,
+    "pro": 0,
+    "enterprise": 0,
+    "x402": 0
+  },
+  "by_source": [
+    {
+      "source": "unknown",
+      "connects": 836,
+      "deterministic": 0,
+      "first_call": 117,
+      "conversion": 28
+    },
+    {
+      "source": "claude",
+      "connects": 61,
+      "deterministic": 0,
+      "first_call": 18,
+      "conversion": 17
+    },
+    {
+      "source": "docs",
+      "connects": 4,
+      "deterministic": 4,
+      "first_call": 3,
+      "conversion": 0
+    }
+  ],
+  "identity_coverage": {
+    "identified": 0,
+    "fallback": 901,
+    "anonymous": 0,
+    "coverage_pct": 0
+  },
+  "by_authenticity": {
+    "raw_denominator": 901,
+    "human_denominator": 122,
+    "automated_count": 779,
+    "human_first_call_pct": 0.08196721311475409
+  },
+  "warnings": [
+    "unknown license_tier 'internal' in request_log — ignored",
+    "bot SQLite watchlists count failed: Command failed: sqlite3 -readonly /var/lib/algovault-bot/state.db \"SELECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-07-13T10:12:27.166Z' AND created_at <= '2026-07-27T10:12:27.166Z';\"\nError: in prepare, no such column: created_at\n  ECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-07-13T10\n                                      error here ---^\n"
+  ]
+}
