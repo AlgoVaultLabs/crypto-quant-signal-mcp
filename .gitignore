@@ -6,6 +6,9 @@ dist/
 .smithery/
 *.mcpb
 
+# ops/scripts host-map — keeps the private AOE IP out of this PUBLIC repo (OPS-HETZNER-DISK-RECLAIM-W1)
+ops/scripts/.disk-forensics-hosts
+
 # MCP registry publishing tokens (local-only, never commit)
 .mcpregistry_github_token
 .mcpregistry_registry_token
