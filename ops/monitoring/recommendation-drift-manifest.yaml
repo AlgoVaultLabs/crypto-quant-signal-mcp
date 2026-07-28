@@ -1,0 +1,36 @@
+# Manifest for recommendation-drift-canary.py
+# Each row enumerates a monitoring script/manifest to audit for hardcoded
+# OPS-X-Y-W<N> references that drift behind highest GREEN W<N> in status.md.
+#
+# IMPORTANT: hardcoded_template_regex MUST anchor on actionable context
+# ('Action: dispatch ...' OR 'recommended_wave: ...') so it doesn't false-positive
+# on historical attribution / comment references / wave name citations.
+#
+# Adding new rows when shipping new monitoring scripts.
+# Reference: OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1
+
+rows:
+  - alert_class: POSTGRES_RECAUDIT
+    script_path: /opt/algovault-monitoring/postgres-cpu-snapshot.sh
+    hardcoded_template_regex: 'Action: dispatch OPS-POSTGRES-RECAUDIT-W([0-9]+)'
+    status_md_completion_regex: '^### .* — OPS-POSTGRES-RECAUDIT-W([0-9]+) — .*GREEN'
+    recommended_wave: 'OPS-POSTGRES-RECAUDIT-W{NEXT}'
+
+  - alert_class: WEBSITE_DRIFT_CONSUMERS
+    script_path: /opt/algovault-monitoring/website-drift-manifest.yaml
+    hardcoded_template_regex: 'recommended_wave: OPS-[A-Z0-9-]+-W([0-9]+)'
+    status_md_completion_regex: '^### .* — OPS-[A-Z0-9-]+-W([0-9]+) — .*GREEN'
+    recommended_wave: 'OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}'
+
+  - alert_class: AOE_SHADOW_WRITER_STALL
+    # NOTE: cross-host scan target (AOE host = 178.104.200.44); current
+    # recommendation-drift-canary scans LOCAL files only. Row added per
+    # OPS-AOE-CANARY-AND-GATE-WATCHER-REACTIVATE-W1 C2 Phase 3 to capture
+    # the monitoring obligation; cross-host fetch deferred to
+    # OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}. Canary ships with
+    # OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W{NEXT} template form on day 0,
+    # so no immediate drift risk to monitor.
+    script_path: <AOE-host>:/opt/algovault-monitoring/aoe-shadow-writer-stall-manifest.yaml
+    hardcoded_template_regex: OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W([0-9]+)
+    status_md_completion_regex: "^### .* — OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W([0-9]+) — .*GREEN"
+    recommended_wave: "OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}"

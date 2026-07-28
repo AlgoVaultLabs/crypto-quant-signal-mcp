@@ -1,0 +1,32 @@
+{
+  "wave": "OPS-SEED-ORCHESTRATOR-W1",
+  "chapter": "CH3",
+  "captured_at_utc": "2026-06-05T14:42:43Z",
+  "window_hours": 24,
+  "psql": "docker exec crypto-quant-signal-mcp-postgres-1 psql -U algovault -d signal_performance",
+  "purpose": "Pre-cutover per-venue x TF signal counts (BUY/SELL recorded only; the signals table excludes HOLD/low-confidence). The CH4 48h gate compares post-cutover 24h counts against these per-venue totals with FLOOR semantics (>= 0.8x baseline). Migrated to the orchestrator: 5m,15m (CH3) + 30m,1h,2h,4h,8h,12h,1d (CH4). 1m/3m are the shadow + 3m-all17 crons, NOT migrated (control series). HL is intrinsically sparse (38/24h) due to the HOLD/confidence filter, so the gate is FLOOR-relative (vs each venue's own baseline), never absolute.",
+  "by_venue_total_24h": {
+    "BINANCE": 339,
+    "BITGET": 243,
+    "BYBIT": 664,
+    "HL": 38,
+    "OKX": 300
+  },
+  "floor_0_8x_by_venue_total": {
+    "BINANCE": 271,
+    "BITGET": 194,
+    "BYBIT": 531,
+    "HL": 30,
+    "OKX": 240
+  },
+  "by_venue_tf_24h": {
+    "BINANCE": { "1m": 2, "3m": 186, "5m": 96, "15m": 24, "30m": 20, "1h": 5, "2h": 2, "4h": 4 },
+    "BITGET":  { "3m": 120, "5m": 44, "15m": 29, "30m": 18, "1h": 1, "2h": 13, "8h": 9, "12h": 9 },
+    "BYBIT":   { "3m": 342, "5m": 203, "15m": 56, "30m": 42, "1h": 10, "2h": 10, "4h": 1 },
+    "HL":      { "3m": 9, "5m": 18, "15m": 8, "30m": 1, "1h": 1, "2h": 1 },
+    "OKX":     { "3m": 98, "5m": 110, "15m": 50, "30m": 23, "1h": 3, "2h": 8, "12h": 8 }
+  },
+  "migrated_tfs_ch3": ["5m", "15m"],
+  "migrated_tfs_ch4": ["30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+  "not_migrated_control": ["1m", "3m"]
+}

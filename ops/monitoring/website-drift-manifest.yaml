@@ -1,0 +1,485 @@
+# website-drift-manifest.yaml
+# OPS-DASHBOARD-DRIFT-CANARY-W1 — Whole-website data congruency canary
+# Architect-ratified at Plan-Mode 2026-05-24 (Q-A approved 28 rows as-is).
+#
+# Per-metric-class drift contract (THE LAW):
+#   FLOOR    -> page-claim <= SoT-API (monotonic counts with "+")            -> tg_fires:false
+#   EXACT    -> page-claim == SoT-API (exact count without "+")              -> tg_fires:true
+#   BAND     -> |page-claim - SoT-API| <= tolerance_value (percentage points) -> tg_fires:true
+#   EXACT_SET -> set(page-extracted) == set(SoT-API-keys), order-insensitive  -> tg_fires:true
+#   EXACT_SUBSTRING_LOWER -> sot.lower() appears in page-extracted set        -> tg_fires:true
+#   FRESH    -> (now - page-date) <= tolerance_value (days)                   -> tg_fires:true
+#
+# MONOTONIC-COUNTER LAW (OPS-MERKLE-DRIFT-TOLERANCE-W1, 2026-06-29):
+#   A cumulative counter that physically only ever GROWS (trade calls .totalCalls,
+#   Merkle batches .batches|length) renders on the page as a deploy-baked static
+#   fallback that NECESSARILY lags the live SoT between deploys. EXACT/BAND on such a
+#   counter false-fires on the normal lag (page understating a growing number is not
+#   data loss). Such rows MUST be tolerance_type: FLOOR — fires only when the SoT
+#   REGRESSES below the page's claimed floor (a real over-claim / data-integrity event).
+#   website-drift-canary.py's monotonic-counter guard AUTO-CORRECTS this: any REGISTERED
+#   monotonic accessor (MONOTONIC_SOT_SIGNATURES, host-/whitespace-agnostic) or any row
+#   with `monotonic: true` that is tagged non-FLOOR is coerced to FLOOR at load + raises a
+#   CONFIG_VIOLATION alert. NOTE — this is an ALLOWLIST guard, not a universal detector: a
+#   brand-new cumulative accessor left EXACT still false-fires on the normal lag (fails
+#   toward NOISE, so it self-announces) until registered. Adding a NEW cumulative-counter
+#   accessor => add its (sot_endpoint, sot_jq) to MONOTONIC_SOT_SIGNATURES OR set
+#   `monotonic: true` on the row.
+#
+# CROSS-RUN DETECTORS (OPS-DRIFT-CANARY-MONOTONIC-DETECTOR-W1, 2026-06-29) — close the
+# two gaps the W1 adversarial review found. State persists in
+# `/opt/algovault-monitoring/.drift-canary-state/monotonic-state.json` (NOT CACHE_DIR, which
+# is wiped). BOTH ship REPORT-ONLY first (DRY_RUN-first); promote to TG via env when stable.
+#   - HIGH-WATER-MARK: per (endpoint,jq) peak SoT across runs. A registered counter whose
+#     live SoT stays BELOW its recorded peak for REGRESSION_CONFIRM_RUNS consecutive runs
+#     (a single transient read never fires) emits `WEBSITE_DRIFT_MONOTONIC_REGRESSION`
+#     once-per-incident — real data-loss caught independent of the lagging deploy-baked page
+#     floor (the "blind window"). Deduped vs a same-run FLOOR break. Observed even when the
+#     page row's extract fails (direct SoT fetch). MONOTONIC_REGRESSION_TG=1 to promote to TG.
+#     Legitimate baseline drop => reset the peak (rm the state file).
+#   - GROWTH-HISTORY: an UNREGISTERED EXACT INTEGER counter that grows monotonically over
+#     SUSPECT_MIN_RUNS raises a REPORT-ONLY `SUSPECTED_UNREGISTERED_MONOTONIC` nudge
+#     (MONOTONIC_SUSPECT_TG=1 to promote) → register it. Catches the (N+1)th counter the
+#     allowlist can't. Constants (net-growth 0) + percentages (non-integer) are excluded.
+#   - HARDENING shipped by OPS-DRIFT-CANARY-MONOTONIC-PROMOTE-W1 (2026-06-29): single-run
+#     SPIKE REJECTION (a new high locks only after a 1-run confirmation, so a transient HIGH/
+#     LOW can't poison the peak); operator-ack reset via `MONOTONIC_HWM_RESET='<jq-substr>'|
+#     'all'` (matched against the JQ accessor only); a wiped/corrupt state file restores from a
+#     rotated `.bak` + raises `WEBSITE_DRIFT_MONOTONIC_STATE_RESET`; sig-collision guard over
+#     CANONICAL hosts; stale entries (> STATE_PRUNE_DAYS) pruned; non-independent re-runs
+#     (cached SoT) skipped so the 2-run confirmation can't be satisfied by one read.
+#   - HONEST SCOPE (3-round adversarial review): the HWM has an inherent spike-vs-lag
+#     tradeoff — for a strictly-growing counter the confirmed peak lags by ~1 step, so a
+#     regression smaller than one growth-step at a fresh peak / a flapping counter are NOT
+#     caught. It reliably catches the realistic threat (a LARGE sustained drop in an
+#     append-only counter). RECOMMENDATION: keep the regression channel REPORT-ONLY as a
+#     forensic backstop; the PRIMARY regression controls are the FLOOR over-claim check + the
+#     on-chain↔dashboard equality canary. Promote to live TG (`MONOTONIC_REGRESSION_TG=1`)
+#     only with eyes open to those documented blind spots.
+#
+# All TG-fire alerts inherit OPS-MONITORING-TELEGRAM-INTEGRATION-W1's contract:
+#   severity=CRITICAL_PERSISTENT; 24h cooldown per alert_id; body includes recommended wave ID.
+
+# ── CADENCE DECLARATIONS (OPS-FRESHNESS-SOURCE-TRUTH-W1, 2026-07-28) ──
+# Read by lint_freshness_rows() to assert cadence coherence on every freshness_source: sot
+# row. These are DECLARATIONS OF THE INSTALLED CRONTAB, not configuration — if you move
+# either cron, update the matching value here or the canary fail-CLOSED refuses to run
+# (exit 3). That is the point: a cron move can no longer silently blind a freshness alarm.
+#   producer_fire_minute_utc — merkle publish, crontab `5 0 * * *`
+#   canary_run_minute_utc    — this canary,    crontab `57 0 * * *`
+# (Between them, ops/cron/snapshot-landing-daily.sh re-bakes at `39 0 * * *`. Minutes :09
+#  and :39/:57 were chosen because :13 and :23 — the original spec defaults — are both
+#  occupied on 204; only :09, :39, :57 are free in hour 00.)
+producer_fire_minute_utc: 5
+canary_run_minute_utc: 57
+
+rows:
+
+  # ============================ HOMEPAGE (https://algovault.com/) ============================
+
+  - alert_id: HOMEPAGE_VENUE_COUNT_EXACT
+    page_url: https://algovault.com/
+    claim_pattern: '([0-9]+)\s+(?:exchanges?|venues?)'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .exchange_count
+    tolerance_type: FLOOR
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_VENUE_LIST_ENUM_EXACT_SET
+    page_url: https://algovault.com/
+    claim_pattern: '(Hyperliquid|Binance|Bybit|OKX|Bitget)'
+    extract_method: regex_all_matches_set_upper
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .byExchange | keys
+    tolerance_type: EXACT_SET
+    tg_fires: false
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_TIMEFRAME_COUNT_EXACT
+    page_url: https://algovault.com/
+    claim_pattern: '([0-9]+)\s+timeframes?'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .timeframe_count
+    tolerance_type: EXACT
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_ASSET_FLOOR
+    page_url: https://algovault.com/
+    claim_pattern: '([0-9]+)\+\s+assets?'
+    extract_method: regex_max_match
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .asset_count
+    tolerance_type: FLOOR
+    tg_fires: false
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_CALL_COUNT_DTRF_EXACT
+    page_url: https://algovault.com/
+    claim_pattern: 'data-tr-field="call_count"[^>]*>([0-9,]+)'
+    extract_method: regex_first_match
+    transform: 'int(match.replace(",",""))'
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .totalCalls
+    tolerance_type: FLOOR  # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): EXACT->FLOOR for monotonic-grow counter; fires only on SoT regression
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_VERIFIED_CALLS_PROSE_EXACT
+    page_url: https://algovault.com/
+    claim_pattern: 'across\s+([0-9]+)\s+verified\s+calls'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .totalCalls
+    tolerance_type: FLOOR  # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): EXACT->FLOOR for monotonic-grow counter; fires only on SoT regression
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  # NOTE: HOMEPAGE_MERKLE_COUNT_HERO_EXACT removed — the "29 Merkle batches on-chain" hero
+  # text on / is rendered as <span data-tr-field="merkle_batch_count">29</span><div>Merkle batches on-chain</div>
+  # (split across nested divs). The DTRF row below catches the same value via the data-tr-field selector,
+  # so the hero-prose row is redundant.
+
+  - alert_id: HOMEPAGE_MERKLE_COUNT_DTRF_EXACT
+    page_url: https://algovault.com/
+    claim_pattern: 'data-tr-field="merkle_batch_count"[^>]*>([0-9]+)'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/merkle-batches
+    sot_jq: .batch_count  # OPS-FRESHNESS-SOURCE-TRUTH-W1 C3.6 (2026-07-28): was `.batches | length`, which counts a 100-row CAPPED projection — batch_count was 109 while both page and SoT read 100, so the row was structurally blind to a monotonically diverging under-report. `.batch_count` is registered in MONOTONIC_SOT_SIGNATURES in the same change, so the FLOOR coercion below is preserved (dropping the old accessor without registering the new one would have re-introduced the 2026-06-29 false-fire class).
+    tolerance_type: FLOOR  # OPS-MERKLE-DRIFT-TOLERANCE-W1 (2026-06-29): EXACT->FLOOR for monotonic-grow counter (batches only ever added); deploy-baked static fallback necessarily lags the live SoT between deploys, so EXACT false-fired on the normal +1 gap (the 2026-06-29 79-vs-80 alert). Missed by OPS-LANDING-AUTO-ALIGN-W1's .totalCalls sweep. Now enforced by the monotonic-counter guard in website-drift-canary.py.
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_PFE_DTRF_BAND
+    page_url: https://algovault.com/
+    claim_pattern: 'data-tr-field="pfe_wr"[^>]*>([0-9.]+)%'
+    extract_method: regex_first_match
+    transform: float(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .overall.pfeWinRate * 100
+    tolerance_type: BAND
+    tolerance_value: 3
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HOMEPAGE_HOLD_RATE_DTRF_BAND
+    page_url: https://algovault.com/
+    claim_pattern: 'data-tr-field="hold_rate"[^>]*>([0-9.]+)%'
+    extract_method: regex_first_match
+    transform: float(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .hold_rate
+    tolerance_type: BAND
+    tolerance_value: 3
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
+  # ============================ /track-record ============================
+
+  - alert_id: TRACKRECORD_TF_RENDER_LIST_EXACT_SET
+    page_url: https://algovault.com/track-record
+    claim_pattern: '<td>([0-9]+[mhd])</td>'
+    extract_method: regex_all_matches_set
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .byTimeframe | keys
+    tolerance_type: EXACT_SET
+    tg_fires: true
+    recommended_wave: OPS-DASHBOARD-TF-DISPLAY-W{NEXT}
+
+  # RETIRED 2026-06-22 (OPS-DASHBOARD-VENUE-DISPLAY follow-up): TRACKRECORD_EVALUATED_COUNT_EXACT.
+  # The "N evaluated timeframes" prose no longer exists on /track-record — the page now frames
+  # evaluation in terms of trade calls (totalEvaluated), not a timeframe count. The metric is
+  # unrepointable (nothing on the page to match) and was logging a silent EXTRACT_NONE every run.
+  # Timeframe identity congruency is already covered (strictly stronger) by
+  # TRACKRECORD_TF_RENDER_LIST_EXACT_SET above, which set-compares the rendered TF table against
+  # .byTimeframe|keys. Restore from website-drift-manifest.yaml.bak-2026-06-22-pre-followups if
+  # a numeric evaluated-timeframe claim is ever re-added to the page.
+
+  - alert_id: TRACKRECORD_VENUE_DTRF_SET
+    page_url: https://algovault.com/track-record
+    claim_pattern: '(Hyperliquid|Binance|Bybit|OKX|Bitget)'  # OPS-DASHBOARD-VENUE-DISPLAY (2026-06-22): unified onto robust prose extractor; data-tr-field="ex_X_n" attrs removed when venue render moved to JS array
+    extract_method: regex_all_matches_set_upper
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .byExchange | keys
+    tolerance_type: EXACT_SET
+    tg_fires: false
+    recommended_wave: OPS-DASHBOARD-VENUE-DISPLAY-W{NEXT}
+
+  - alert_id: TRACKRECORD_ASSET_DTRF_FLOOR
+    page_url: https://algovault.com/track-record
+    claim_pattern: 'data-tr-field="asset_count"[^>]*>([0-9,]+)'
+    extract_method: regex_first_match
+    transform: 'int(match.replace(",",""))'
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .asset_count
+    tolerance_type: FLOOR
+    tg_fires: false
+    recommended_wave: OPS-DASHBOARD-COPY-REFRESH-W{NEXT}
+
+  - alert_id: TRACKRECORD_EXCHANGE_COUNT_DTRF_EXACT
+    page_url: https://algovault.com/track-record
+    claim_pattern: 'data-tr-field="exchange_count"[^>]*>([0-9]+)'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .exchange_count
+    tolerance_type: FLOOR
+    tg_fires: true
+    recommended_wave: OPS-DASHBOARD-COPY-REFRESH-W{NEXT}
+
+  # ============================ /verify ============================
+
+  - alert_id: VERIFY_VERIFIED_CALLS_PROSE_EXACT
+    page_url: https://algovault.com/verify
+    claim_pattern: 'across\s+([0-9]+)\s+verified\s+calls'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .totalCalls
+    tolerance_type: FLOOR  # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): EXACT->FLOOR for monotonic-grow counter; fires only on SoT regression
+    tg_fires: true
+    recommended_wave: OPS-VERIFY-COPY-REFRESH-W{NEXT}
+
+  - alert_id: VERIFY_ASSET_FLOOR
+    page_url: https://algovault.com/verify
+    claim_pattern: '([0-9]+)\+\s+assets?'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .asset_count
+    tolerance_type: FLOOR
+    tg_fires: false
+    recommended_wave: OPS-VERIFY-COPY-REFRESH-W{NEXT}
+
+  - alert_id: VERIFY_PFE_PROSE_BAND
+    page_url: https://algovault.com/verify
+    claim_pattern: '([0-9.]+)%\s+PFE\s+win\s+rate'
+    extract_method: regex_first_match
+    transform: float(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .overall.pfeWinRate * 100
+    tolerance_type: BAND
+    tolerance_value: 3
+    tg_fires: true
+    recommended_wave: OPS-VERIFY-COPY-REFRESH-W{NEXT}
+
+  - alert_id: VERIFY_CONTRACT_ADDRESS_EXACT
+    page_url: https://algovault.com/verify
+    claim_pattern: '(0x[0-9a-fA-F]{40})'
+    extract_method: regex_all_matches_set_lower
+    sot_endpoint: https://api.algovault.com/api/merkle-batches
+    sot_jq: .contractAddress
+    tolerance_type: EXACT_SUBSTRING_LOWER
+    tg_fires: true
+    recommended_wave: OPS-CONTRACT-ROTATE-AWARE-W{NEXT}
+
+  # ── OPS-FRESHNESS-SOURCE-TRUTH-W1 (2026-07-28) ──────────────────────────────
+  # VERIFY_LATEST_BATCH_FRESH is RETIRED and split into the two rows below.
+  #
+  # What it did wrong: tolerance_type FRESH derived its measured value from
+  # claim_pattern (a page scrape) while naming the merkle PUBLISHER. The scraped
+  # literal is a deploy-time bake, so the row actually measured
+  # max(deploy_gap, publish_gap) > 2d and had ZERO power to discriminate "we did not
+  # deploy for 3 days" (benign) from "the publisher died" (P0). Its sot_endpoint /
+  # sot_jq were declared and never read — the FRESH branch discarded sot_value.
+  # It fired 2026-07-27 12:00:04Z at days_since=2.50d and sent the operator to
+  # investigate a publisher with a 100/100 record. Same mis-attribution was already
+  # noted in the May-2026 audit and never acted on.
+  #
+  # Do NOT reintroduce a page-sourced FRESH row: website-drift-canary.py now
+  # fail-CLOSED rejects any FRESH row lacking freshness_source (exit 3).
+
+  # The publish-liveness alarm. Reads the PRODUCER. Never a page.
+  - alert_id: MERKLE_PUBLISH_LIVENESS
+    page_url: https://algovault.com/verify   # fetched only to keep the row loop uniform; NOT the measured value
+    claim_pattern: 'data-tr-field="latest_batch_at"[^>]*>([^<]+)'
+    extract_method: regex_first_match
+    freshness_source: sot
+    sot_endpoint: https://api.algovault.com/api/merkle-batches
+    # max_by, not .batches[0]: [0] IS newest today, but relying on server-side array
+    # order would let a future ordering change silently INVERT the alarm with no test
+    # coverage. max_by is lexicographic-safe on fixed-width ISO-8601 Z strings. The
+    # sub() strips fractional seconds — `fromdateiso8601` THROWS on "…04.390Z"
+    # (live-reproduced), which is itself proof the old row's sot_jq never executed.
+    sot_jq: '.batches | max_by(.published_at) | .published_at | sub("\\.[0-9]+Z$";"Z") | fromdateiso8601 | (now - .) / 86400'
+    tolerance_type: FRESH
+    tolerance_value: 0.5
+    producer_cadence_hours: 24
+    tg_fires: true
+    recommended_wave: OPS-MERKLE-PUBLISH-RESTORE-W{NEXT}
+    notes: >
+      Merkle batches publish daily at 00:05 UTC (crontab `5 0 * * *`); observed tail
+      00:05:15.823. This canary runs 00:57 UTC -> run_offset 0.867h. Healthy reading
+      ~0.036d; ONE missed batch ~1.036d -> fires the same morning, ~52min after the miss.
+      Threshold must stay inside the cadence-coherence band
+      (run_offset_h/24, (24+run_offset_h)/24) = (0.0361, 1.0361); 0.5 sits mid-band.
+      MOVING EITHER CRON REQUIRES MOVING THIS THRESHOLD — the load-time coherence assert
+      enforces it against canary_run_minute_utc / producer_fire_minute_utc above.
+      Single-fire (no consecutive_breaches_required): a missed publish IS the incident.
+
+  # The page-copy alarm. Honestly named, honestly attributed.
+  - alert_id: VERIFY_BAKED_BATCH_COPY_DRIFT
+    page_url: https://algovault.com/verify
+    claim_pattern: 'data-tr-field="latest_batch_at"[^>]*>([^<]+)'
+    extract_method: regex_first_match
+    sot_endpoint: https://api.algovault.com/api/merkle-batches
+    sot_jq: '.batches | max_by(.published_at) | .published_at'
+    tolerance_type: EXACT_ISO_MINUTE   # normalises "2026-07-25 00:05 UTC" vs "2026-07-25T00:05:04.390Z"
+    consecutive_breaches_required: 2
+    tg_fires: true
+    recommended_wave: OPS-SNAPSHOT-INJECTOR-RESTORE-W{NEXT}
+    notes: >
+      Guards the daily re-bake (ops/cron/snapshot-landing-daily.sh, 00:39 UTC). A fire means
+      the RE-BAKE stopped, NOT that publishing stopped — distinct alert_id so the two can
+      never conflate again. Requires 2 CONSECUTIVE breaches: the injector self-heals every
+      day, so a one-day transient must not page (same sustain principle as
+      REGRESSION_CONFIRM_RUNS). Streak state lives in .drift-canary-state/, not the TTL'd
+      cache, so a cache wipe cannot reset it.
+
+  # The producer-liveness alarm for the daily re-bake itself (C4/R4.1).
+  # C2 added a SCHEDULED producer that is FAIL-OPEN by design (unreachable SoT -> exit 0).
+  # Unwatched, that is a new silent-failure surface: "the thing that keeps everything fresh
+  # died quietly". This row is what makes the fail-open safe.
+  # No page_url — a producer-liveness row measures the producer, never a rendered artifact.
+  - alert_id: SNAPSHOT_INJECTOR_HEARTBEAT_FRESH
+    freshness_source: sot
+    # Attempt-recency stamp written at job START by ops/cron/snapshot-landing-daily.sh.
+    # ATTEMPT, not output: a day when the SoT is unreachable legitimately produces no
+    # change, and an output-recency probe would page for a fault that never happened
+    # (CLAUDE.md producer-liveness rule). A missing file = never stamped = bootstrap
+    # report-not-page, not a fire.
+    sot_endpoint: file:///var/lib/algovault-monitoring/snapshot-landing-heartbeat
+    sot_jq: '(now - .) / 86400'
+    tolerance_type: FRESH
+    tolerance_value: 1.5
+    producer_cadence_hours: 24
+    producer_fire_minute_utc: 39     # the injector's minute, NOT the merkle publish :05
+    missed_cycles_tolerated: 2       # self-healing producer: one missed day is not an incident
+    tg_fires: true
+    recommended_wave: OPS-SNAPSHOT-INJECTOR-RESTORE-W{NEXT}
+    notes: >
+      Injector fires 00:39, this canary 00:57 -> run_offset 0.3h. Healthy reading ~0.0125d.
+      With missed_cycles_tolerated: 2 the coherence band is (0.0125, 2.0125), so 1.5d fires
+      only after the producer has skipped a full day AND is well into the next — one missed
+      run self-heals at the next fire and must not page. Declaring the tolerance (rather than
+      just picking 1.5) is what keeps the band assert meaningful.
+
+  # ============================ /how-it-works ============================
+
+  - alert_id: HIW_VERIFIED_CALLS_PROSE_EXACT
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: 'across\s+([0-9]+)\s+verified\s+calls'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .totalCalls
+    tolerance_type: FLOOR  # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): EXACT->FLOOR for monotonic-grow counter; fires only on SoT regression
+    tg_fires: true
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HIW_CALL_COUNT_DTRF_EXACT
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: 'data-tr-field="call_count"[^>]*>([0-9,]+)'
+    extract_method: regex_first_match
+    transform: 'int(match.replace(",",""))'
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .totalCalls
+    tolerance_type: FLOOR  # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): EXACT->FLOOR for monotonic-grow counter; fires only on SoT regression
+    tg_fires: true
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HIW_PFE_DTRF_BAND
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: 'data-tr-field="pfe_wr"[^>]*>([0-9.]+)%'
+    extract_method: regex_first_match
+    transform: float(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .overall.pfeWinRate * 100
+    tolerance_type: BAND
+    tolerance_value: 3
+    tg_fires: true
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HIW_MERKLE_DTRF_EXACT
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: 'data-tr-field="merkle_batch_count"[^>]*>([0-9]+)'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/merkle-batches
+    sot_jq: .batch_count  # OPS-FRESHNESS-SOURCE-TRUTH-W1 C3.6 (2026-07-28): was `.batches | length`, which counts a 100-row CAPPED projection — batch_count was 109 while both page and SoT read 100, so the row was structurally blind to a monotonically diverging under-report. `.batch_count` is registered in MONOTONIC_SOT_SIGNATURES in the same change, so the FLOOR coercion below is preserved (dropping the old accessor without registering the new one would have re-introduced the 2026-06-29 false-fire class).
+    tolerance_type: FLOOR  # OPS-MERKLE-DRIFT-TOLERANCE-W1 (2026-06-29): EXACT->FLOOR for monotonic-grow counter (batches only ever added); deploy-baked static fallback necessarily lags the live SoT between deploys, so EXACT false-fired on the normal +1 gap (the 2026-06-29 79-vs-80 alert). Missed by OPS-LANDING-AUTO-ALIGN-W1's .totalCalls sweep. Now enforced by the monotonic-counter guard in website-drift-canary.py.
+    tg_fires: true
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HIW_VENUE_LIST_ENUM_EXACT_SET
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: '(Hyperliquid|Binance|Bybit|OKX|Bitget)'
+    extract_method: regex_all_matches_set_upper
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .byExchange | keys
+    tolerance_type: EXACT_SET
+    tg_fires: false
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HIW_TIMEFRAME_COUNT_EXACT
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: '([0-9]+)\s+timeframes?'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .timeframe_count
+    tolerance_type: EXACT
+    tg_fires: true
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  - alert_id: HIW_ASSET_FLOOR
+    page_url: https://algovault.com/how-it-works
+    claim_pattern: '([0-9]+)\s?\+\s+assets?'
+    extract_method: regex_min_match
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .asset_count
+    tolerance_type: FLOOR
+    tg_fires: false
+    recommended_wave: OPS-HIW-COPY-REFRESH-W{NEXT}
+
+  # ============================ /skills ============================
+
+  - alert_id: SKILLS_HERO_VS_CARDS_SELF_REF_EXACT
+    page_url: https://algovault.com/skills
+    claim_pattern: 'All\s+([0-9]+)\s+Skills?'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: SELF_REFERENCE
+    sot_jq: 'count(<h3 class="text-white font-semibold text-sm flex-1">)'
+    tolerance_type: EXACT
+    tg_fires: true
+    recommended_wave: OPS-SKILLS-INVENTORY-REFRESH-W{NEXT}
+
+  - alert_id: SKILLS_VERIFIED_CALLS_PROSE_EXACT
+    page_url: https://algovault.com/skills
+    claim_pattern: 'across\s+([0-9]+)\s+verified\s+calls'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .totalCalls
+    tolerance_type: FLOOR  # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): EXACT->FLOOR for monotonic-grow counter; fires only on SoT regression
+    tg_fires: true
+    recommended_wave: OPS-SKILLS-COPY-REFRESH-W{NEXT}
+
+  - alert_id: SKILLS_ASSET_FLOOR
+    page_url: https://algovault.com/skills
+    claim_pattern: '([0-9]+)\+\s+assets?'
+    extract_method: regex_first_match
+    transform: int(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .asset_count
+    tolerance_type: FLOOR
+    tg_fires: false
+    recommended_wave: OPS-SKILLS-COPY-REFRESH-W{NEXT}

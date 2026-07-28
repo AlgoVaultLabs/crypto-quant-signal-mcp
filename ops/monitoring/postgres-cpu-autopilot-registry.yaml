@@ -1,0 +1,54 @@
+classes:
+- name: matview-stale
+  classifier_type: pg_query_regex
+  classifier_regex: funding_stats_14d|REFRESH MATERIALIZED VIEW.*funding|AVG\(funding_rate.*GROUP
+    BY
+  recovery_action: psql_refresh_matview
+  recovery_action_args:
+    matview_name: funding_stats_14d
+    concurrently: true
+  expected_max_duration_s: 30
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
+- name: runaway-cron
+  classifier_type: process_count
+  classifier_args:
+    pattern: /bin/sh -c.*seed-signals|/bin/sh -c.*matview-refresh
+    max_concurrent: 6
+  recovery_action: escalate
+  recovery_action_args: {}
+  expected_max_duration_s: 5
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
+  _w1_note: W1 ships diagnose-only (recovery=escalate); kill_term_excess_pids requires
+    registry expansion W2 with stable PID classification (host wrappers vs container-internal
+    vs docker exec)
+- name: cron-daemon-hung
+  classifier_type: systemctl_status
+  classifier_args:
+    unit: cron.service
+  recovery_action: systemctl_restart_cron
+  recovery_action_args:
+    unit: cron.service
+  expected_max_duration_s: 10
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
+- name: log-fills-disk
+  classifier_type: disk_usage
+  classifier_args:
+    path: /var/log
+    threshold_pct: 90
+  recovery_action: logrotate_force_plus_tmp_cleanup
+  recovery_action_args:
+    logrotate_conf: /etc/logrotate.conf
+    tmp_max_age_days: 7
+  expected_max_duration_s: 30
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
+- name: UNKNOWN
+  classifier_type: catchall
+  recovery_action: escalate
+  recovery_action_args: {}
+  expected_max_duration_s: 0
+  tg_fires_on_failure: true
+  recommended_wave_template: OPS-POSTGRES-AUTOPILOT-MANIFEST-EXPAND-W{NEXT}
