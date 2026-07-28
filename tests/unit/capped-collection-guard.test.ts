@@ -229,6 +229,51 @@ describe('capped-collection guard', () => {
     ).toEqual([]);
   });
 
+  // ── R3 (OPS-FRESHNESS-SOURCE-TRUTH-W1, 2026-07-28) ──────────────────────────────────
+  // R1 scans CODE. The same violation shipped anyway, in two places, because both express
+  // the accessor as DATA:
+  //
+  //   scripts/snapshot-landing-manifest.json               "accessor": "batches.length"  (4 rows)
+  //   /opt/algovault-monitoring/website-drift-manifest.yaml  sot_jq: .batches | length    (2 rows)
+  //
+  // Consequence, live on 2026-07-28: the public site claimed "100 merkle batches" while
+  // batch_count was 109 — and the canary could not see it, because BOTH the page literal and
+  // the canary's SoT read the same capped array (`page floor 100 vs SoT 100; floor HOLDS`).
+  // Identical to the incident in this file's header (100 vs true 102), and monotonically
+  // diverging: +1/day, forever, once the cap binds.
+  //
+  // A `.length` written in JSON/YAML is the same defect as one written in TypeScript. This
+  // rule closes the data-expressed half so the class cannot return through a manifest row.
+  // (The YAML half lives on the monitoring host, which has no repo copy at all; it is gated
+  // by website-drift-canary.py's own --self-test + its runtime array-length cap lint.)
+  it('R3 — no DATA-expressed accessor counts a capped collection', () => {
+    const manifestPath = join(REPO_ROOT, 'scripts', 'snapshot-landing-manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+      claims: { id: string; accessor?: string }[];
+    };
+
+    // `<collection>.length` as a VALUE. Mirrors R1's intent: an emptiness guard is legitimate
+    // in code, but a manifest accessor is only ever read FOR its value.
+    const CAPPED_DATA_ACCESSOR_RE = /^([A-Za-z_][A-Za-z0-9_]*)\.length$/;
+    const offenders = manifest.claims
+      .filter((c) => CAPPED_DATA_ACCESSOR_RE.test(c.accessor ?? ''))
+      .map((c) => `${c.id} → accessor "${c.accessor}"`);
+
+    expect(
+      offenders,
+      `A snapshot-manifest claim derives a PUBLIC number from an array's .length. The served ` +
+        `array is a capped projection (/api/merkle-batches caps .batches at 100 while ` +
+        `batch_count was 109), so the baked literal under-reports and diverges further every ` +
+        `day. Use the payload's scalar count field (batch_count / total_signals).\n` +
+        `${offenders.join('\n')}`,
+    ).toEqual([]);
+
+    // Self-test BOTH directions, so the rule cannot silently stop matching.
+    expect(CAPPED_DATA_ACCESSOR_RE.test('batches.length')).toBe(true);
+    expect(CAPPED_DATA_ACCESSOR_RE.test('batch_count')).toBe(false);
+    expect(CAPPED_DATA_ACCESSOR_RE.test('batches.latest.published_at')).toBe(false);
+  });
+
   it('the summary accessor remains the only source of merkle totals', () => {
     const db = readFileSync(join(REPO_ROOT, 'src', 'lib', 'performance-db.ts'), 'utf-8');
     expect(db).toMatch(/MAX\(batch_id\)/);

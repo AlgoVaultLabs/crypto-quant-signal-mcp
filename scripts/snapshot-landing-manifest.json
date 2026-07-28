@@ -108,7 +108,7 @@
       "find_pattern": "(data-tr-field=\"merkle_batch_count\"[^>]*>)[^<]+(<)",
       "replace_template": "$1{value}$2",
       "sot": "merkle",
-      "accessor": "batches.length",
+      "accessor": "batch_count",
       "format": "integer",
       "apply_to_files": [
         "landing/index.html",
@@ -121,7 +121,7 @@
       "find_pattern": "(data-tr-field=\"batch_count\"[^>]*>)[^<]+(<)",
       "replace_template": "$1{value}$2",
       "sot": "merkle",
-      "accessor": "batches.length",
+      "accessor": "batch_count",
       "format": "integer",
       "apply_to_files": [
         "landing/skills.html"
@@ -296,7 +296,7 @@
       "find_pattern": "(\"name\":\\s*\"Merkle batches on Base L2\",\\s*\"value\":\\s*\")\\d+(\")",
       "replace_template": "$1{value}$2",
       "sot": "merkle",
-      "accessor": "batches.length",
+      "accessor": "batch_count",
       "format": "integer",
       "apply_to_files": [
         "landing/index.html",
@@ -366,7 +366,7 @@
       "find_pattern": "(data-tr-field=\"merkle_batches\"[^>]*>)[^<]+(<)",
       "replace_template": "$1{value}$2",
       "sot": "merkle",
-      "accessor": "batches.length",
+      "accessor": "batch_count",
       "format": "integer",
       "apply_to_files": [
         "README.md"
