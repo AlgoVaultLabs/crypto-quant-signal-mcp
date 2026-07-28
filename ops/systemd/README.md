@@ -10,6 +10,8 @@ Currently shipping:
 | ------------------------------------- | ----------------------------------------------------------------------- |
 | `algovault-funnel-snapshot.service`   | One-shot runner for the weekly activation-funnel snapshot + git commit. |
 | `algovault-funnel-snapshot.timer`     | Weekly schedule: Monday 10:00 UTC, 15-minute randomized delay.          |
+| `docker-builder-gc.service`           | One-shot size-capped `docker builder prune` (buildkit cache only; image-safe). See §8. |
+| `docker-builder-gc.timer`             | Weekly: Sun 04:23 UTC + up to 1h randomized delay, `Persistent=true`.   |
 
 The actual snapshot logic lives in `scripts/write-funnel-snapshot.ts` (owned
 by Teammate 2's scope in this same PR); the commit wrapper is at
@@ -291,3 +293,56 @@ sudo rmdir /etc/algovault 2>/dev/null || true
 The repo-side files (`ops/systemd/*.service`, `ops/systemd/*.timer`,
 `scripts/commit-funnel-snapshot.sh`) can be left in place — they are
 inert until re-registered.
+
+---
+
+## 8. Docker buildkit cache GC (`OPS-BUILDER-GC-TIMER-W1`)
+
+Weekly, size-capped `docker builder prune` on **both** Hetzner hosts so the
+buildkit cache from daily deploys can never silently re-climb to ~50 GB (the
+driver behind `OPS-HETZNER-DISK-RECLAIM-W1`'s one-time 36 GB sweep). Runs on
+the **containerd snapshotter** both boxes use.
+
+**Image-safe by construction:** `docker builder prune` removes **only** build
+cache — never image layers (held by running images), volumes, or containers.
+It is NOT `docker system prune`. `--max-used-space` LRU-evicts cache records
+until the cache is under the cap, keeping the hot/most-recent working set warm.
+
+**Per-host cap** via `/etc/algovault/docker-builder-gc.env` (mode 644):
+
+| Host | `GC_MAX_USED_SPACE` | Warm ≤7-day set at install | Rationale |
+| ---- | ------------------- | -------------------------- | --------- |
+| 204 (CPX42, signal-MCP) | `15GB` | 9.92 GB (`docker buildx du`) | ~1.5× warm; first run LRU-evicts the cold >7-day tail |
+| 178 (CPX22, AOE)        | `6GB`  | 2.21 GB | generous forward ceiling; already under cap (backstop only) |
+
+Cap sizing is **measured, not guessed** — re-run `docker buildx du` before
+changing a cap; never set below one week's warm working set or the next deploy
+rebuilds cold.
+
+### Install (per host)
+
+```bash
+sudo mkdir -p /etc/algovault
+echo 'GC_MAX_USED_SPACE=15GB' | sudo tee /etc/algovault/docker-builder-gc.env  # 6GB on 178
+sudo chmod 644 /etc/algovault/docker-builder-gc.env
+sudo cp /opt/<repo>/ops/systemd/docker-builder-gc.service /etc/systemd/system/
+sudo cp /opt/<repo>/ops/systemd/docker-builder-gc.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start docker-builder-gc.service            # dry-run once; check journald + `docker buildx du` <= cap
+sudo systemctl enable --now docker-builder-gc.timer
+systemctl list-timers docker-builder-gc.timer
+```
+
+**Silent** (journald only, no Telegram — routine GC is not an operator alert).
+Fail-open: a failed run (docker down) is harmless and retries next week. This
+is the **Recover** primitive for the build-cache-growth class, wireable into
+the planned `disk-fill` autopilot (detector `ops/scripts/disk-forensics.sh`).
+
+### Uninstall (per host)
+
+```bash
+sudo systemctl disable --now docker-builder-gc.timer
+sudo rm /etc/systemd/system/docker-builder-gc.{service,timer}
+sudo systemctl daemon-reload
+# optional: sudo rm /etc/algovault/docker-builder-gc.env
+```

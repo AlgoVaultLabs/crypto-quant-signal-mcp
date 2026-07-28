@@ -1,0 +1,19 @@
+[Unit]
+Description=AlgoVault weekly buildkit cache GC — size-capped, image-safe [OPS-BUILDER-GC-TIMER-W1]
+Documentation=https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/blob/main/ops/systemd/README.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/algovault/docker-builder-gc.env
+# Image-SAFE: prunes ONLY buildkit build cache — never image layers (held by
+# images), volumes, or containers. LRU-evicts cache records until the build
+# cache is <= GC_MAX_USED_SPACE, so the hot/most-recent working set stays warm
+# and the next deploy is not cold. This is `docker builder prune` (cache-only),
+# NOT `docker system prune`. Silent by design (journald only, no Telegram) —
+# routine GC is not an operator alert. Fail-open: a failed run (e.g. docker
+# down) is harmless and simply retries on the next weekly fire.
+Nice=15
+IOSchedulingClass=idle
+ExecStart=/usr/bin/docker builder prune -f --max-used-space=${GC_MAX_USED_SPACE}

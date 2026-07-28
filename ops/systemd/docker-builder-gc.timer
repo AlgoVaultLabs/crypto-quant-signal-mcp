@@ -1,0 +1,14 @@
+[Unit]
+Description=Weekly buildkit cache GC — keeps build cache from re-bloating [OPS-BUILDER-GC-TIMER-W1]
+
+[Timer]
+# Off the :00 / Monday-noon boundaries used by deploys + the website-drift
+# canary. Persistent=true runs a missed fire on next boot; RandomizedDelaySec
+# jitters so multiple hosts never fire in lockstep.
+OnCalendar=Sun *-*-* 04:23:00
+RandomizedDelaySec=1h
+Persistent=true
+Unit=docker-builder-gc.service
+
+[Install]
+WantedBy=timers.target
