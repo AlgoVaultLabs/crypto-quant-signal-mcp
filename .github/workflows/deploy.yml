@@ -162,6 +162,24 @@ jobs:
       - name: JSON-LD structural integrity (unit tests)
         run: node --test tests/unit/geo_jsonld_consistency.test.mjs tests/unit/geo_answer_page_invariants.test.mjs
 
+      # ── OPS-AUDIT-REMEDIATION-CRITICAL-W1 — the two generator gates ────────────────
+      # Both run BEFORE the SSH-deploy step and are FAIL-CLOSED (no `|| true`): a
+      # committed credential or an unescaped URL param can no longer reach public main.
+      # This wiring is the half that was missing — security-canary.mjs shipped in the
+      # June audit but was invoked by nothing, which is why the leaked Postgres password
+      # (SEC-02) sat in a PUBLIC repo for 7 weeks with every gate green.
+      # Each script self-tests its own matcher first and exits non-zero if the detector
+      # is broken, so neither can degrade into a silent always-pass.
+      - name: Secret-scan gate (security-canary Gate B — fail-closed)
+        run: |
+          node scripts/security-canary.mjs --self-test
+          node scripts/security-canary.mjs --check=pii
+
+      - name: Landing escape-lint (URL param → innerHTML — fail-closed)
+        run: |
+          node scripts/check-landing-escaping.mjs --self-test
+          node scripts/check-landing-escaping.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
