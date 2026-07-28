@@ -65,17 +65,30 @@ verified to confirm 5432/tcp remains closed externally.
 
 Create the env file that the systemd unit loads via `EnvironmentFile=`:
 
+Read the password from the app env file rather than typing it — **never paste a
+credential into this repo, which is public** (see the warning below):
+
 ```bash
 sudo mkdir -p /etc/algovault
-sudo tee /etc/algovault/funnel-snapshot.env >/dev/null <<'EOF'
-DATABASE_URL=postgres://algovault:algovault_signal_2024@127.0.0.1:5432/signal_performance
+# shellcheck disable=SC1091
+POSTGRES_PASSWORD=$(sudo grep -m1 '^POSTGRES_PASSWORD=' /opt/crypto-quant-signal-mcp/.env | cut -d= -f2-)
+sudo tee /etc/algovault/funnel-snapshot.env >/dev/null <<EOF
+DATABASE_URL=postgres://algovault:${POSTGRES_PASSWORD}@127.0.0.1:5432/signal_performance
 EOF
+unset POSTGRES_PASSWORD
 sudo chmod 600 /etc/algovault/funnel-snapshot.env
 sudo chown root:root /etc/algovault/funnel-snapshot.env
 ```
 
+> ⚠️ **Never commit the literal password here.** An earlier revision of this file
+> hardcoded it; because this repo is public and the value stayed in git history,
+> the only real remediation was rotating the secret
+> (`OPS-AUDIT-REMEDIATION-CRITICAL-W1`). `scripts/security-canary.mjs` now fails
+> the build on a DSN-embedded password, so a repeat cannot reach `main`.
+
 The credentials here are the same ones the mcp-server container uses
-(they're already in the `docker-compose.yml` for the mcp-server service).
+(sourced from `/opt/crypto-quant-signal-mcp/.env`, which `docker-compose.yml`
+passes through as `${POSTGRES_PASSWORD}` — never a literal).
 The difference is the host — `127.0.0.1` instead of `postgres` — because
 the host can't resolve the docker network's internal DNS name.
 
