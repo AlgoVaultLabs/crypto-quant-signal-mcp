@@ -36,8 +36,31 @@ const REPO_ROOT = pathResolve(__dirname, "..");
 const MANIFEST_PATH = pathResolve(__dirname, "snapshot-landing-manifest.json");
 
 const args = process.argv.slice(2);
-const DRY_RUN = args.includes("--dry-run");
+// OPS-FRESHNESS-SOURCE-TRUTH-W1 (2026-07-28): --check is --dry-run plus a MEANINGFUL EXIT
+// CODE — 0 when every managed literal already matches the SoT, 1 when a run WOULD change
+// something. That is what lets `ops/cron/snapshot-landing-daily.sh --check` gate on "the
+// bake is current" without mutating a file. --check implies --dry-run (never writes).
+// NOTE: --check deliberately keeps the fail-OPEN contract for an unreachable SoT (exit 0,
+// "cannot tell" is not "drifted") — only a CONFIRMED would-change returns 1.
+const CHECK = args.includes("--check");
+const DRY_RUN = args.includes("--dry-run") || CHECK;
 const VERBOSE = args.includes("--verbose") || DRY_RUN;
+
+// --only=<substr>[,<substr>...] restricts the run to claims whose id contains one of the
+// substrings. Exists because an UNFILTERED --check can never be clean: the manifest mixes
+// cadence classes, and `call_count` (SoT .totalCalls) grows every few minutes — measured
+// 417,673 baked vs 417,687 live two minutes after a successful re-bake. So "the bake is
+// current" is only globally true for seconds, which makes an unfiltered --check useless as a
+// standing gate while still being a fine "is a run due?" signal.
+// Gating therefore scopes the check to claims whose PRODUCER cadence makes staleness
+// meaningful — e.g. `--only=batch` covers the daily merkle claims this wave is about.
+// Same principle as the canary's per-metric-class tolerance contract: continuously-growing
+// counters are FLOOR-tolerant, scheduled values are exact.
+const ONLY = (args.find((a) => a.startsWith("--only=")) || "")
+  .replace("--only=", "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 function log(level, msg) {
   const line = `[${new Date().toISOString()}] [${level}] ${msg}`;
@@ -204,7 +227,7 @@ function applyClaimToContent(content, claim, value) {
 
 async function main() {
   const startTime = Date.now();
-  const mode = DRY_RUN ? "DRY_RUN" : "LIVE";
+  const mode = CHECK ? "CHECK" : DRY_RUN ? "DRY_RUN" : "LIVE";
   logInfo(`START algovault-snapshot-landing mode=${mode} manifest=${MANIFEST_PATH}`);
 
   // Load manifest
@@ -240,6 +263,10 @@ async function main() {
   let claimsResolved = 0;
   let claimsSkipped = 0;
   for (const claim of manifest.claims) {
+    if (ONLY.length && !ONLY.some((f) => claim.id.includes(f))) {
+      logDebug(`CLAIM_FILTERED id=${claim.id} reason=not_in_--only`);
+      continue;
+    }
     if (!dataMap[claim.sot]) {
       logWarn(
         `CLAIM_SKIPPED id=${claim.id} reason=sot_${claim.sot}_not_fetched`,
@@ -342,6 +369,16 @@ async function main() {
   logInfo(
     `END mode=${mode} files_touched=${filesTouched} files_unchanged=${filesUnchanged} total_replacements=${totalReplacements} elapsed_ms=${elapsedMs}`,
   );
+  if (CHECK) {
+    // filesTouched under --check counts files that WOULD have been written.
+    if (filesTouched > 0) {
+      logWarn(
+        `CHECK_DRIFT files_would_change=${filesTouched} replacements=${totalReplacements} — the baked literals are STALE vs the live SoT; a run is due. EXIT_CODE=1`,
+      );
+      process.exit(1);
+    }
+    logInfo(`CHECK_CLEAN files_unchanged=${filesUnchanged} — every managed literal already matches the SoT`);
+  }
   process.exit(0);
 }
 
