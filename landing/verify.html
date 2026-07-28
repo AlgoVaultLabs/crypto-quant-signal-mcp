@@ -322,6 +322,22 @@ function fmtDate(d) {
          dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false }) + ' UTC';
 }
 
+// OPS-AUDIT-REMEDIATION-CRITICAL-W1 (SEC-01): every value interpolated into the innerHTML
+// strings below goes through escapeHtml. The `id` echo was a reflected DOM XSS — ?signalId=
+// auto-invokes verifySignal() on load and the raw param was concatenated into the NOT FOUND
+// template. Identical helper to landing/index.html:338 — single pattern, not a new one.
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c;
+  });
+}
+// href values get scheme-validated on top of escaping — an attribute-safe string can still be
+// `javascript:…`. Anything not http(s) collapses to '#'.
+function safeUrl(u){
+  var v = String(u == null ? '' : u);
+  return /^https?:\/\//i.test(v) ? escapeHtml(v) : '#';
+}
+
 // DESIGN-W9 dual-render adapter: keep desktop+mobile signal-id inputs synced so verifySignal()
 // always sees the typed value regardless of which artboard is visible at the user's viewport.
 document.addEventListener('input', function(e) {
@@ -362,7 +378,7 @@ async function verifySignal() {
       setAll(
         '<div style="padding:20px 0">' +
           '<div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:7px;height:7px;border-radius:50%;background:oklch(0.7 0.18 25)"></span><span style="font-family:var(--font-mono);font-size:11px;color:oklch(0.7 0.18 25);letter-spacing:0.14em;font-weight:700">NOT FOUND</span></div>' +
-          '<p style="font-size:14px;color:var(--fg-3);margin:0">No call with ID ' + id + ' exists.</p>' +
+          '<p style="font-size:14px;color:var(--fg-3);margin:0">No call with ID ' + escapeHtml(id) + ' exists.</p>' +
         '</div>'
       );
       return;
@@ -372,7 +388,7 @@ async function verifySignal() {
         '<div style="padding:20px 0">' +
           '<div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:7px;height:7px;border-radius:50%;background:oklch(0.78 0.13 220)"></span><span style="font-family:var(--font-mono);font-size:11px;color:oklch(0.78 0.13 220);letter-spacing:0.14em;font-weight:700">PENDING</span></div>' +
           '<p style="font-size:14px;color:var(--fg-3);margin:0 0 8px">Call recorded, awaiting next daily batch (00:05 UTC).</p>' +
-          '<div style="font-family:var(--font-mono);font-size:11.5px;color:var(--fg-4)">' + data.signal.coin + ' &middot; ' + data.signal.direction + ' &middot; ' + data.signal.confidence + '% confidence</div>' +
+          '<div style="font-family:var(--font-mono);font-size:11.5px;color:var(--fg-4)">' + escapeHtml(data.signal.coin) + ' &middot; ' + escapeHtml(data.signal.direction) + ' &middot; ' + escapeHtml(data.signal.confidence) + '% confidence</div>' +
         '</div>'
       );
       return;
@@ -388,20 +404,20 @@ async function verifySignal() {
         '<span style="width:7px;height:7px;border-radius:50%;background:var(--accent, var(--mint));box-shadow:0 0 8px var(--accent, var(--mint))"></span>' +
         '<span style="font-family:var(--font-mono);font-size:11px;color:var(--accent, var(--mint));letter-spacing:0.14em;font-weight:700">VERIFIED ON-CHAIN</span>' +
       '</div>' +
-      '<div style="font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-0.018em;color:var(--fg);margin-bottom:6px">Call #' + s.id + '</div>' +
-      '<p style="font-family:var(--font-mono);font-size:12.5px;color:var(--fg-3);margin:0 0 22px">' + s.coin + ' &middot; ' + s.direction + ' &middot; ' + s.confidence + '% confidence' + (s.timeframe ? ' &middot; ' + s.timeframe : '') + '</p>' +
+      '<div style="font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-0.018em;color:var(--fg);margin-bottom:6px">Call #' + escapeHtml(s.id) + '</div>' +
+      '<p style="font-family:var(--font-mono);font-size:12.5px;color:var(--fg-3);margin:0 0 22px">' + escapeHtml(s.coin) + ' &middot; ' + escapeHtml(s.direction) + ' &middot; ' + escapeHtml(s.confidence) + '% confidence' + (s.timeframe ? ' &middot; ' + escapeHtml(s.timeframe) : '') + '</p>' +
       // 2-col stats row
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">' +
         '<div><div style="' + labelStyle + ';margin-bottom:5px">Price at Call</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">$' + Number(s.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6}) + '</div></div>' +
-        '<div><div style="' + labelStyle + ';margin-bottom:5px">Timestamp</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">' + fmtDate(s.timestamp) + '</div></div>' +
-        '<div><div style="' + labelStyle + ';margin-bottom:5px">Batch</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">#' + b.id + ' &middot; ' + b.signalCount + ' calls</div></div>' +
-        '<div><div style="' + labelStyle + ';margin-bottom:5px">Published</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">' + fmtDate(b.publishedAt) + '</div></div>' +
+        '<div><div style="' + labelStyle + ';margin-bottom:5px">Timestamp</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">' + escapeHtml(fmtDate(s.timestamp)) + '</div></div>' +
+        '<div><div style="' + labelStyle + ';margin-bottom:5px">Batch</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">#' + escapeHtml(b.id) + ' &middot; ' + escapeHtml(b.signalCount) + ' calls</div></div>' +
+        '<div><div style="' + labelStyle + ';margin-bottom:5px">Published</div><div style="font-family:var(--font-mono);font-size:13.5px;color:var(--fg)">' + escapeHtml(fmtDate(b.publishedAt)) + '</div></div>' +
       '</div>' +
       // Hashes + tx
-      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Call Hash</span><span style="' + valueStyle + '">' + s.hash + '</span></div>' +
-      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Merkle Root</span><span style="' + valueStyle + '">' + b.root + '</span></div>' +
-      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Tx Hash</span><span style="' + valueStyle + '">' + truncHash(b.txHash) + ' <a href="' + b.basescanUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent, var(--mint));text-decoration:none;margin-left:6px">View on Basescan &rarr;</a></span></div>' +
-      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Contract</span><span style="' + valueStyle + '">' + truncHash(data.contractAddress) + ' <a href="https://basescan.org/address/' + data.contractAddress + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent, var(--mint));text-decoration:none;margin-left:6px">View on Basescan &rarr;</a></span></div>' +
+      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Call Hash</span><span style="' + valueStyle + '">' + escapeHtml(s.hash) + '</span></div>' +
+      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Merkle Root</span><span style="' + valueStyle + '">' + escapeHtml(b.root) + '</span></div>' +
+      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Tx Hash</span><span style="' + valueStyle + '">' + escapeHtml(truncHash(b.txHash)) + ' <a href="' + safeUrl(b.basescanUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent, var(--mint));text-decoration:none;margin-left:6px">View on Basescan &rarr;</a></span></div>' +
+      '<div style="' + rowStyle + '"><span style="' + labelStyle + '">Contract</span><span style="' + valueStyle + '">' + escapeHtml(truncHash(data.contractAddress)) + ' <a href="https://basescan.org/address/' + encodeURIComponent(String(data.contractAddress == null ? '' : data.contractAddress)) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent, var(--mint));text-decoration:none;margin-left:6px">View on Basescan &rarr;</a></span></div>' +
       '<div style="' + rowStyle + ';border-bottom:none"><span style="' + labelStyle + '">Chain</span><span style="' + valueStyle + '">Base (8453)</span></div>'
     );
   } catch (err) {
