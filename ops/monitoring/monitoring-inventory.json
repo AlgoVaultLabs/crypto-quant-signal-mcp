@@ -1,0 +1,601 @@
+{
+  "_comment": "OPS-MONITORING-INVENTORY-PARITY-W1 (2026-07-28). SoT for every host-installed monitoring artifact. Reconciled daily by ops/monitoring/monitoring-inventory-reconcile.py (HASH_DRIFT / ORPHAN / DARK / SCHEDULE_DRIFT / PENDING_STALE). A wave that installs, edits, or retires a host monitoring artifact updates its row IN THE SAME COMMIT. Zero-deletion: retired rows are kept, never removed \u2014 a retired row is how you prove something was INTENTIONALLY stopped rather than silently lost.",
+  "_kind_semantics": {
+    "executable": "standard drift semantics",
+    "config": "drift EXPECTED during a wave, suspicious between waves",
+    "test": "standard",
+    "baseline-data": "HASH_DRIFT is SEVERE \u2014 regenerating the comparison basis silently redefines what the gate considers normal"
+  },
+  "_install_state_semantics": {
+    "installed": "live",
+    "pending": "declared debt; reported not alerted; escalates past 30d",
+    "unclassified": "present on host, owner unknown, decision required; reported EVERY run",
+    "retired": "intentionally stopped, with evidence"
+  },
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "id": "monitoring-inventory-reconcile",
+      "artifact": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/monitoring-inventory-reconcile.py",
+      "criticality": "load-bearing",
+      "schedule": "57 6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "0e14b7d4f9d7071bfa924359ddff1ffc7fd26980e01c5f4239ef5a69b580b2ad",
+      "alert_ids": [
+        "MONITORING_INVENTORY_DRIFT"
+      ],
+      "owner_wave": "OPS-MONITORING-INVENTORY-PARITY-W1"
+    },
+    {
+      "id": "monitoring-inventory",
+      "artifact": "ops/monitoring/monitoring-inventory.json",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/monitoring-inventory.json",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:monitoring-inventory-reconcile",
+      "install_state": "installed",
+      "sha256": null,
+      "alert_ids": [],
+      "owner_wave": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "notes": "Self-referential: a file cannot contain its own hash, so sha256 is null and HASH_DRIFT skips it by design (null-sha rows are not compared)."
+    },
+    {
+      "id": "send-telegram-wrapper",
+      "artifact": "ops/monitoring/send_telegram.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/send_telegram.sh",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:*",
+      "install_state": "installed",
+      "sha256": "243ba4a760365df6bc734c1883ed7f3128dddaea1360f491234b878836c9739d",
+      "alert_ids": [],
+      "owner_wave": "OPS-MONITORING-TELEGRAM-INTEGRATION-W1",
+      "divergent_copies": [
+        {
+          "host": "178.104.200.44",
+          "sha256": "938d6b6f7104a8c1802c506d11c4cabefb0d9e392d13743a487530cc305169c5",
+          "state": "unreconciled",
+          "classification": "BEHAVIORAL",
+          "detail": "178 is a STALE FORK missing (1) log() '|| true' fail-open [OPS-AUTOPUB-FULL-REVIEW-FIX-W1 C5] and (2) the ENTIRE test-context gate [OPS-AUTOPUB-TEST-ALERT-LEAK-W1 2026-07-22]. Consequence: ALGOVAULT_TG_TEST_INERT=1 is a NO-OP on 178, so any gate/test run there fires a REAL page AND writes a REAL 24h cooldown marker, silencing the next genuine AOE alert.",
+          "follow_up": "OPS-TELEGRAM-WRAPPER-SINGLE-SOT-W{NEXT}",
+          "priority": "P1"
+        }
+      ],
+      "notes": "The single alert contract; consumers MUST NOT re-implement its gates. Host copy CHANGED mid-wave at 2026-07-28T14:09:12Z (7144->7713 B) with no backup \u2014 the prior revision is unrecoverable. Baseline captured is the post-change running revision."
+    },
+    {
+      "id": "website-drift-canary",
+      "artifact": "ops/monitoring/website-drift-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/website-drift-canary.py",
+      "criticality": "load-bearing",
+      "schedule": "57 0 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "1a1e3daf0e541ed40580498d385cbfe11d9bd548752b1bf22cd2bbd9383570f8",
+      "alert_ids": [
+        "WEBSITE_DRIFT_FRESHNESS_SOURCE_INVALID",
+        "WEBSITE_DRIFT_MANIFEST_CONFIG_VIOLATION",
+        "WEBSITE_DRIFT_MONOTONIC_REGRESSION",
+        "WEBSITE_DRIFT_MONOTONIC_STATE_RESET",
+        "WEBSITE_DRIFT_SUSPECTED_UNREGISTERED_MONOTONIC",
+        "MERKLE_PUBLISH_LIVENESS",
+        "VERIFY_BAKED_BATCH_COPY_DRIFT",
+        "SNAPSHOT_INJECTOR_HEARTBEAT_FRESH"
+      ],
+      "owner_wave": "OPS-FRESHNESS-SOURCE-TRUTH-W1"
+    },
+    {
+      "id": "website-drift-manifest",
+      "artifact": "ops/monitoring/website-drift-manifest.yaml",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/website-drift-manifest.yaml",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:website-drift-canary",
+      "install_state": "installed",
+      "sha256": "b2abb972549f586929d44e35aea096ba7a77eaf1f24ce742a4bcf5d37fd71fa5",
+      "alert_ids": [],
+      "owner_wave": "OPS-FRESHNESS-SOURCE-TRUTH-W1"
+    },
+    {
+      "id": "test-website-drift-canary",
+      "artifact": "ops/monitoring/test-website-drift-canary.py",
+      "kind": "test",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/test-website-drift-canary.py",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "installed",
+      "sha256": "a87f62670249190a0e00c705ac22bfa73a742acf1e9114a1975d9bb291bf73d9",
+      "alert_ids": [],
+      "owner_wave": "OPS-DASHBOARD-DRIFT-CANARY-W1",
+      "notes": "One of only two test files covering ~1180 lines of live alerting."
+    },
+    {
+      "id": "postgres-cpu-snapshot",
+      "artifact": "ops/monitoring/postgres-cpu-snapshot.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/postgres-cpu-snapshot.sh",
+      "criticality": "load-bearing",
+      "schedule": "47 */6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "f516fbb619005afbc51f74b7a7876b455ea06afbe3922514fc02ad8b6a4a8a1f",
+      "alert_ids": [
+        "POSTGRES_CPU_DRIFT_UNIFIED",
+        "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS"
+      ],
+      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
+    },
+    {
+      "id": "postgres-cpu-autopilot",
+      "artifact": "ops/monitoring/postgres-cpu-autopilot.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/postgres-cpu-autopilot.py",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:postgres-cpu-snapshot",
+      "install_state": "installed",
+      "sha256": "9fc2725d5c1725802d9bb4cdab5a68c2267e106458c4f90f25b38ee852a2d1dc",
+      "alert_ids": [],
+      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
+    },
+    {
+      "id": "postgres-cpu-autopilot-registry",
+      "artifact": "ops/monitoring/postgres-cpu-autopilot-registry.yaml",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/postgres-cpu-autopilot-registry.yaml",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:postgres-cpu-autopilot",
+      "install_state": "installed",
+      "sha256": "7f63c9e7346f6bc082293d02d9000ae984b9a28c698cf17325407645aa1f8a50",
+      "alert_ids": [],
+      "owner_wave": "OPS-POSTGRES-CPU-AUTOPILOT-W1"
+    },
+    {
+      "id": "recommendation-drift-canary",
+      "artifact": "ops/monitoring/recommendation-drift-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/recommendation-drift-canary.py",
+      "criticality": "load-bearing",
+      "schedule": "0 12 * * 2",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "8608cf0962cf1df11c61aeeaa979228e543ed7dd0664e4df8dc427673d78d1ac",
+      "alert_ids": [],
+      "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1"
+    },
+    {
+      "id": "recommendation-drift-manifest",
+      "artifact": "ops/monitoring/recommendation-drift-manifest.yaml",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/recommendation-drift-manifest.yaml",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:recommendation-drift-canary",
+      "install_state": "installed",
+      "sha256": "9a0bb01c3034385dbdfba323ce26f6b563747066329fe4ae19c41af1a11ea3eb",
+      "alert_ids": [],
+      "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1"
+    },
+    {
+      "id": "registry-conformance-canary",
+      "artifact": "ops/monitoring/registry-conformance-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/registry-conformance-canary.py",
+      "criticality": "load-bearing",
+      "schedule": "23 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "beee8c6d4860d577c2e02cf9f29ffa9ad3977d24596b100d79897316bf952bac",
+      "alert_ids": [
+        "REGISTRY_SCHEMA_CONFORMANCE_BREAK"
+      ],
+      "owner_wave": "OPS-REGISTRY-CONFORMANCE-CANARY-W1"
+    },
+    {
+      "id": "test-registry-conformance-canary",
+      "artifact": "ops/monitoring/test-registry-conformance-canary.py",
+      "kind": "test",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/test-registry-conformance-canary.py",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "installed",
+      "sha256": "ea42a0e1055531314e6ea7294c6eeaec8ea43ed2d28c287ac8b3b951e5487609",
+      "alert_ids": [],
+      "owner_wave": "OPS-REGISTRY-CONFORMANCE-CANARY-W1"
+    },
+    {
+      "id": "llm-spend-monitor",
+      "artifact": "ops/monitoring/llm-spend-monitor.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/llm-spend-monitor.py",
+      "criticality": "load-bearing",
+      "schedule": "23 12 * * 4",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "1163e70e6a42da60c97c22ffdf8a71c1e80f19f11fe36023ed3f0cb9c140ec71",
+      "alert_ids": [
+        "LLM_SPEND_OVER_THRESHOLD"
+      ],
+      "owner_wave": "OPS-LLM-SPEND-MONITOR-W1"
+    },
+    {
+      "id": "stripe-webhook-events-canary",
+      "artifact": "ops/monitoring/stripe-webhook-events-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/stripe-webhook-events-canary.sh",
+      "criticality": "load-bearing",
+      "schedule": "19 8 1 * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "b5fa8403fabedaa666d846050a06a281e012ccb2a4c776a2ea7ca897269dd209",
+      "alert_ids": [
+        "STRIPE_WEBHOOK_EVENT_DRIFT"
+      ],
+      "owner_wave": "OPS-STRIPE-WEBHOOK-EVENTS-W1"
+    },
+    {
+      "id": "check-stripe-webhook-events",
+      "artifact": "ops/monitoring/check-stripe-webhook-events.mjs",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/check-stripe-webhook-events.mjs",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "called-by:stripe-webhook-events-canary",
+      "install_state": "installed",
+      "sha256": "8a05eb42008d54fab6fda03a2046fdd7baac3b5aafdd38d7e1e26f78ae83c6c7",
+      "alert_ids": [],
+      "owner_wave": "OPS-STRIPE-WEBHOOK-EVENTS-W1"
+    },
+    {
+      "id": "funnel-leak-detector",
+      "artifact": "ops/monitoring/funnel-leak-detector.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/funnel-leak-detector.py",
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "systemd:algovault-funnel-leak-detector.timer",
+      "install_state": "installed",
+      "sha256": "fae17f47c33e6a22aee70fa36dae2fa44a60f62ca7a43db5105105accaaf36b1",
+      "alert_ids": [
+        "ACTIVATION_FUNNEL_LEAK_DETECTED"
+      ],
+      "owner_wave": "ACTIVATION-FUNNEL-W1"
+    },
+    {
+      "id": "webhook-delivery-canary",
+      "artifact": "ops/monitoring/webhook-delivery-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/webhook-delivery-canary.py",
+      "criticality": "load-bearing",
+      "schedule": "13,28,43,58 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "c715c64f66794fee3d7c5977b9a9cf59497672b8bc82fcd05f8e54950325e7c6",
+      "alert_ids": [
+        "WEBHOOK_DELIVERY_DRIFT"
+      ],
+      "owner_wave": "OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1"
+    },
+    {
+      "id": "directional-label-freshness",
+      "artifact": "ops/monitoring/directional-label-freshness.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/directional-label-freshness.py",
+      "criticality": "load-bearing",
+      "schedule": "41 6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "b89d27277ef3d9ca2d6000ff59374f3ee4c46be9424bc4b8a54fbeb507653619",
+      "alert_ids": [
+        "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
+        "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
+      ],
+      "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
+    },
+    {
+      "id": "test-directional-label-freshness",
+      "artifact": "ops/monitoring/test-directional-label-freshness.py",
+      "kind": "test",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/test-directional-label-freshness.py",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "installed",
+      "sha256": "2cac4f59ce3e8f521c3b159768a080e64f98446fa1195148b722bc279caeeaa4",
+      "alert_ids": [],
+      "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
+    },
+    {
+      "id": "tier-misclassification-canary",
+      "artifact": "ops/monitoring/tier-misclassification-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/tier-misclassification-canary.sh",
+      "criticality": "advisory",
+      "schedule": "23 13 * * 1",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "fed783bce5c52e4d522e05d32282637ed1a603a4660d8d47357bc6823a9fb523",
+      "alert_ids": [
+        "OPS_TIER_MISCLASSIFICATION"
+      ],
+      "owner_wave": "OPS-TIER-CLASSIFIER-XVENUE-W1"
+    },
+    {
+      "id": "venue-slo-tiers-drift-canary",
+      "artifact": "ops/monitoring/venue-slo-tiers-drift-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh",
+      "criticality": "advisory",
+      "schedule": "0 12 * * 1",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "68d026ea595091c2cc5a689484068229f112d152246e04e244fa017c4001d90d",
+      "alert_ids": [
+        "VENUE_SLO_TIER_DRIFT"
+      ],
+      "owner_wave": "OPS-VENUE-SLO-TIERS-W1"
+    },
+    {
+      "id": "venue-slo-tiers",
+      "artifact": "ops/monitoring/venue-slo-tiers.json",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/venue-slo-tiers.json",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "called-by:venue-slo-tiers-drift-canary",
+      "install_state": "installed",
+      "sha256": "f0f9575fcf62dd99e94f71dd5e12e9f9769c211ae9b7a7c9fc3f72715dfad01e",
+      "alert_ids": [],
+      "owner_wave": "OPS-VENUE-SLO-TIERS-W1"
+    },
+    {
+      "id": "x402-bazaar-canary",
+      "artifact": "ops/monitoring/x402-bazaar-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/x402-bazaar-canary.py",
+      "criticality": "advisory",
+      "schedule": "17 12 * * 3",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "07f57efe7e7dd221c61182db7f2eec6b18edc4da65c6cd46841c8ef0198ac902",
+      "alert_ids": [],
+      "owner_wave": "X402-CDP-BAZAAR-DISCOVERY-W1"
+    },
+    {
+      "id": "seed-orchestrator-gate-48h",
+      "artifact": "ops/monitoring/seed-orchestrator-gate-48h.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/seed-orchestrator-gate-48h.sh",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "retired",
+      "sha256": "5b4ad0c1270fe84c5827331262724e9cac0f977930c38a6203564b5162f3394c",
+      "alert_ids": [
+        "SEED_ORCHESTRATOR_GATE_RED"
+      ],
+      "owner_wave": "OPS-SEED-ORCHESTRATOR-W1",
+      "notes": "Transient systemd-run --on-active=48h one-shot from 2026-06-07; window long expired, no armed timer."
+    },
+    {
+      "id": "seed-orchestrator-baseline",
+      "artifact": "ops/monitoring/OPS-SEED-ORCHESTRATOR-W1-baseline.json",
+      "kind": "baseline-data",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/OPS-SEED-ORCHESTRATOR-W1-baseline.json",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "called-by:seed-orchestrator-gate-48h",
+      "install_state": "retired",
+      "sha256": "75386b4d7421b8589ed2ee97df162280a066a3ee20ba30232910a2c0928969c8",
+      "alert_ids": [],
+      "owner_wave": "OPS-SEED-ORCHESTRATOR-W1",
+      "notes": "Comparison basis for the expired 48h gate. HASH_DRIFT on baseline-data is SEVERE: regenerating it silently redefines what the gate considers normal."
+    },
+    {
+      "id": "shadow-cpu-gate-48h",
+      "artifact": "ops/monitoring/shadow-cpu-gate-48h.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/shadow-cpu-gate-48h.sh",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "retired",
+      "sha256": "5a1346c52db7294eb58731ed51a7dc20f751430642c85b293e3383f36b572f8e",
+      "alert_ids": [
+        "gate-shadow-cpu"
+      ],
+      "owner_wave": "OPS-SHADOW-PIPELINE-W1",
+      "notes": "Transient systemd-run --on-active=48h one-shot armed 2026-06-05; window expired ~2026-06-07, no armed timer. Host/repo hashes differ but the delta is 100% COMMENTS (executable body byte-identical, verified comment-stripped); the REPO copy is retained because it is RICHER \u2014 it carries the systemd-run install command and the rollback crontab path the host copy dropped. Historical, not live drift."
+    },
+    {
+      "id": "book-liveness-canary",
+      "artifact": "ops/monitoring/book-liveness-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/book-liveness-canary.py",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "sha256": "a9b849e54f42b12fa9afe090f71bbb051daa53df05f805eb3dba9f707f4dfa95",
+      "alert_ids": [
+        "book_liveness_ceiling"
+      ],
+      "owner_wave": "OPS-PFE-METRIC-INTEGRITY-W1",
+      "pending_since": "2026-07-21",
+      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot \u2014 so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true. Fired once at 2026-07-21T04:02Z (install-time smoke)."
+    },
+    {
+      "id": "nav-drift-canary",
+      "artifact": "ops/cron/nav-drift-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/nav-drift-canary.sh",
+      "criticality": "advisory",
+      "schedule": "39 8 * * 2",
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "sha256": "67cc4386e2f3dfcee3d6e6e1f270db4a24ab0327e1b102d872779710231ed7d1",
+      "alert_ids": [
+        "NAV_REGION_DRIFT"
+      ],
+      "owner_wave": "NAV-PLATFORM-GENERATOR-W1",
+      "notes": "BLOCKED, not neglected \u2014 the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_nav.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_nav --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
+      "pending_since": "2026-07-12"
+    },
+    {
+      "id": "analytics-drift-canary",
+      "artifact": "ops/cron/analytics-drift-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/analytics-drift-canary.sh",
+      "criticality": "advisory",
+      "schedule": "9 7 * * 4",
+      "invoked_by": "crontab:root",
+      "install_state": "pending",
+      "sha256": "ac4bb1bac4cf1f03e96a853b84ba1c46d08a06d95acd860593037639e43d8e80",
+      "alert_ids": [
+        "ANALYTICS_REGION_DRIFT"
+      ],
+      "owner_wave": "OPS-ANALYTICS-TAG-SINGLE-SOURCE-W1",
+      "notes": "BLOCKED, not neglected \u2014 the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_analytics.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_analytics --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
+      "pending_since": "2026-07-15"
+    },
+    {
+      "id": "docs-drift-canary",
+      "artifact": "ops/cron/docs-drift-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/docs-drift-canary.sh",
+      "criticality": "advisory",
+      "schedule": "29 6 * * 1",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "3af8df187ee2751214a927c9072997b7f2a4ab057c7f4bfffe1205b812c8b575",
+      "alert_ids": [
+        "DOCS_STRUCTURE_DRIFT"
+      ],
+      "owner_wave": "OPS-DOCS-JSONLD-TOOLCOUNT-W1"
+    },
+    {
+      "id": "seed-coverage-canary",
+      "artifact": "ops/cron/seed-coverage-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/seed-coverage-canary.sh",
+      "criticality": "load-bearing",
+      "schedule": "37 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "650b368048041fcd8eeda8c54d26fa204b85796cac49fe559572530b1b5913d4",
+      "alert_ids": [
+        "SEED_COVERAGE_GAP"
+      ],
+      "owner_wave": "OPS-SEED-COVERAGE-CANARY-CRON-W1",
+      "repo_resident": true
+    },
+    {
+      "id": "snapshot-landing-daily",
+      "artifact": "ops/cron/snapshot-landing-daily.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/snapshot-landing-daily.sh",
+      "criticality": "load-bearing",
+      "schedule": "39 0 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "ebdf89c919bf8984b05da111876cecf95b848062adbc24d5b397d7e9f2168b69",
+      "alert_ids": [],
+      "owner_wave": "OPS-FRESHNESS-SOURCE-TRUTH-W1",
+      "repo_resident": true,
+      "notes": "Watched by SNAPSHOT_INJECTOR_HEARTBEAT_FRESH via its heartbeat file."
+    },
+    {
+      "id": "seed-promoted-ramp",
+      "artifact": "ops/cron/seed-promoted-ramp.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/seed-promoted-ramp.sh",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "installed",
+      "sha256": "b5787cea92121ac12063aea429f1460ab242e7144a0493f5d089e49e7cf33137",
+      "alert_ids": [],
+      "owner_wave": "OPS-SEED-PROMOTED-RAMP-W1",
+      "repo_resident": true,
+      "notes": "Operator-run venue ramp; never scheduled by design."
+    },
+    {
+      "id": "equity-launch-readiness",
+      "artifact": "ops/monitoring/equity-launch-readiness.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/equity-launch-readiness.sh",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "retired",
+      "sha256": "5df60c2e3746664ddb75e52e11aaf7df8e52af1065da00528ff8f3dc06ea369c",
+      "alert_ids": [
+        "EQUITY_LAUNCH_READINESS"
+      ],
+      "owner_wave": "OPS-EQUITY-RETIRE-W1",
+      "notes": "Disabled on host 2026-07-16 as equity-launch-readiness.sh.disabled-equity-retire-20260716T040525Z."
+    },
+    {
+      "id": "equity-verdict-watch",
+      "artifact": "ops/monitoring/equity-verdict-watch.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/equity-verdict-watch.sh",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "manual",
+      "install_state": "retired",
+      "sha256": "ea4c49b10b7d15dc53ff792b92e3061d85aa21f122cb5982c4c1f1cc964e45e3",
+      "alert_ids": [
+        "OPS_EQUITY_ZERO_VERDICT"
+      ],
+      "owner_wave": "OPS-EQUITY-RETIRE-W1",
+      "notes": "Disabled on host 2026-07-16 as equity-verdict-watch.sh.disabled-equity-retire-20260716T040525Z."
+    }
+  ]
+}
