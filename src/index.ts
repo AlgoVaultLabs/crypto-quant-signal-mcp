@@ -1165,6 +1165,32 @@ async function startHttp() {
     next();
   });
 
+  // Security headers (OPS-AUDIT-REMEDIATION-CRITICAL-W1, SEC-38).
+  // Covers api.algovault.com AND the apex pages Caddy reverse-proxies here
+  // (/referral, /join, /track-record, /referral-terms). The apex STATIC pages
+  // — /verify included — are served by Caddy's file_server and never reach
+  // Express, so they carry the mirrored header set in the Caddyfile instead.
+  // Keep the two in sync: a policy added here without the Caddy twin silently
+  // leaves every static apex page uncovered, which is how SEC-01 stayed exposed.
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // 'unsafe-inline' mirrors the Caddy policy: the function-rendered pages emit
+    // inline <script> hydration and inline style="" attributes.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com data:; " +
+        "img-src 'self' data: https:; " +
+        "connect-src 'self' https://api.algovault.com https://plausible.algovault.com; " +
+        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    );
+    next();
+  });
+
   // Rate limiting
   app.use('/mcp', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
   app.use('/analytics', rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false }));

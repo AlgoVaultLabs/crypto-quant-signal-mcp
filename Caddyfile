@@ -185,6 +185,18 @@ algovault.com {
         # 60s max-age = browsers revalidate within 1 minute of a deploy.
         header Cache-Control "public, max-age=60, must-revalidate"
 
+        # OPS-AUDIT-REMEDIATION-CRITICAL-W1 (SEC-01 defence-in-depth + SEC-38).
+        # These MUST live here, not in the Express middleware: /verify and every
+        # other apex page is served by this static file_server, so Express never
+        # touches the response and cannot set a header on it.
+        # 'unsafe-inline' is required for script-src AND style-src — these are static
+        # files with inline <script> hydration (data-tr-field) and inline style=""
+        # attributes, and file_server cannot mint per-request nonces.
+        header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://api.algovault.com https://plausible.algovault.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+        header X-Content-Type-Options "nosniff"
+        header X-Frame-Options "DENY"
+        header Referrer-Policy "strict-origin-when-cross-origin"
+
         file_server
     }
 }
