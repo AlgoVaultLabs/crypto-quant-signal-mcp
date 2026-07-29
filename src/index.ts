@@ -1864,6 +1864,48 @@ async function startHttp() {
       return isValidAdminSession(req.headers.cookie);
     }
 
+    /**
+     * OPS-SEC-CLIENT-IP-VERIFY-W1 — permanent client-IP echo (admin-gated).
+     *
+     * SEC-07 shipped a proxy-header change whose end-to-end effect could not be confirmed,
+     * because it was INFERRED from `ipHash` values instead of read from the header. The follow-up
+     * then nearly repeated the mistake from the other side: a Caddy access log reported
+     * `Cf-Connecting-Ip` masked to /24 while `X-Forwarded-For` in the SAME log line was unmasked
+     * — the signature of a log formatter, not of the wire value.
+     *
+     * So this route makes "what address does the app actually see?" a ONE-REQUEST question,
+     * answered at the layer that consumes it with no log formatter in between. Admin-auth'd
+     * (never an open info leak), and it echoes VALUES rather than hashes — hashing is precisely
+     * what made the two previous attempts unfalsifiable.
+     */
+    app.get('/debug/client-ip', (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const raw = (n: string) => req.headers[n] ?? null;
+      const resolved = clientIp(req);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({
+        _note: 'OPS-SEC-CLIENT-IP-VERIFY-W1 — raw wire values as Express sees them. Admin-only.',
+        headers: {
+          'cf-connecting-ip': raw('cf-connecting-ip'),
+          'x-forwarded-for': raw('x-forwarded-for'),
+          'x-real-ip': raw('x-real-ip'),
+          'true-client-ip': raw('true-client-ip'),
+          'cf-ray': raw('cf-ray'),
+        },
+        express: {
+          reqIp: req.ip ?? null,
+          reqIps: req.ips ?? [],           // parsed XFF chain, left→right
+          socketRemote: req.socket?.remoteAddress ?? null,
+        },
+        derived: {
+          clientIp: resolved,
+          ipHash: hashIp(resolved || 'unknown'),
+        },
+      });
+    });
+
     // JSON API
     app.get('/analytics', async (req, res) => {
       if (!isAdminAuthorized(req)) {
