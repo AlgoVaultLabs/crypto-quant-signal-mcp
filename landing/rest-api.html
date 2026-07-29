@@ -297,7 +297,11 @@ const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
 const wallet  = createWalletClient({ account, chain: base, transport: http() });
 const fetchWithPay = wrapFetchWithPayment(fetch, wallet);
 
-// Pays automatically on the 402, then returns the verdict
+// Pays automatically on the 402, then returns the verdict.
+// content-type: set it EXACTLY once. x402-fetch wraps raw fetch, which would send a string
+// body as text/plain — so here you must set it. Circle's GatewayClient.pay() is the opposite:
+// it sets Content-Type itself, so passing your own merges into "application/json,
+// application/json" and the server replies 400 invalid_content_type (you are not charged).
 const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", {
   method: "POST",
   headers: { "content-type": "application/json" },

@@ -297,34 +297,49 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // schema defaults even on a failing validation — reading the count afterwards would
       // report a body that "has keys" when the caller actually sent none.
       const rawBodyKeys = Object.keys((req.body ?? {}) as Record<string, unknown>).length;
+
+      // A DROPPED body is checked BEFORE — and independently of — schema validation.
+      //
+      // OPS-X402-TRADE-CALL-CONTENT-TYPE-W1: the previous wave nested this inside the
+      // `!validate(input)` branch, which only catches routes whose schema has a REQUIRED field.
+      // On `scan_funding_arb`, `scan_trade_calls` and `get_equity_regime` every field is optional,
+      // so an unparsed body validates clean as `{}` — the route then served a DEFAULTS-ONLY result
+      // and CHARGED for it, silently discarding every parameter the caller paid to specify. That is
+      // strictly worse than the 400. Found by this wave's route × content-type matrix on its first
+      // run; 3 of 7 payable routes were affected.
+      const droppedBody = rawBodyKeys === 0
+        ? explainDroppedBody(req.headers['content-type'], req.headers['content-length'])
+        : null;
+      if (droppedBody) {
+        console.warn(
+          `[x402-route] dropped-body REJECT for ${routePath} paid=y ` +
+          `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
+          `content-length=${JSON.stringify(req.headers['content-length'] ?? null)} ` +
+          `reason=${JSON.stringify(droppedBody)}`,
+        );
+        // Never a schema error here — the body never reached the validator. No settlement is
+        // attempted: this precedes tryClaimPayment and settleX402Async, so the caller is not charged.
+        return res.status(400).json({
+          error: 'invalid_content_type',
+          code: 'X402_HTTP_INVALID_CONTENT_TYPE',
+          message: `Payment verified, but the request body could not be read: ${droppedBody}`,
+          suggested_fix:
+            'Send the body as JSON under a single `content-type: application/json` header, then ' +
+            'retry. You were NOT charged — no settlement was attempted for this request.',
+        });
+      }
+
       const input: Record<string, unknown> = { ...(req.body ?? {}) };
       if (!validate(input)) {
         // A PAID, VERIFIED request that we then refuse must NEVER be silent. Both 2026-07-29
         // Circle Gateway failures were invisible here — the only trace was `status=400 paid=y`
         // with no reason (OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1).
-        const droppedBody = rawBodyKeys === 0
-          ? explainDroppedBody(req.headers['content-type'], req.headers['content-length'])
-          : null;
         console.warn(
           `[x402-route] input-validation REJECT for ${routePath} paid=y ` +
           `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
           `body-keys=${rawBodyKeys}` +
-          (droppedBody ? ` dropped-body=${JSON.stringify(droppedBody)}` : '') +
           ` errors=${JSON.stringify((validate.errors ?? []).slice(0, 3))}`,
         );
-        if (droppedBody) {
-          // The schema error would be a LIE here — the body never reached the validator. Say what
-          // actually went wrong. No settlement was attempted: this runs BEFORE tryClaimPayment
-          // and before settleX402Async, so the caller genuinely was not charged.
-          return res.status(400).json({
-            error: 'invalid_content_type',
-            code: 'X402_HTTP_INVALID_CONTENT_TYPE',
-            message: `Payment verified, but the request body could not be read: ${droppedBody}`,
-            suggested_fix:
-              'Send the body as JSON under a single `content-type: application/json` header, then ' +
-              'retry. You were NOT charged — no settlement was attempted for this request.',
-          });
-        }
         return res.status(400).json({
           error: 'invalid_input',
           code: 'X402_HTTP_INVALID_INPUT',
