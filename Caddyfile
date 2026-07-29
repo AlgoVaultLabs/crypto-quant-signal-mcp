@@ -17,10 +17,20 @@ api.algovault.com {
         root * /var/www/algovault
         file_server
     }
+    # OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-07) — {remote_host} is the CLOUDFLARE EDGE, not the
+    # client: api. is CF-orange (cf-ray on every response). With `trust proxy 1`, Express read
+    # that edge IP as req.ip, so the free-tier `free:${ipHash}` meter and every
+    # express-rate-limit bucket were keyed on the PoP — strangers shared one counter, and a
+    # single caller could exhaust or bypass the limit for everyone behind the same PoP.
+    # CF-Connecting-IP is the real client (same pattern as /pa/event on the apex); Cloudflare
+    # overwrites a client-supplied CF-Connecting-IP at its edge, so it is not spoofable here.
+    # SCOPE: api. vhost ONLY. The apex block deliberately keeps edge-based bucketing — its own
+    # comment records that flipping it moves the funnel/attribution buckets on
+    # /api/signup-email, which this wave is not scoped to touch.
     handle {
         reverse_proxy localhost:3000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
+            header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+            header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
             header_up X-Forwarded-Proto {scheme}
         }
     }

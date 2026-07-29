@@ -138,7 +138,7 @@ import { formatSearchKnowledgeResponse } from './lib/search-knowledge-formatter.
 // against the new `chat_usage_monthly` Postgres table.
 import { getLLMProvider, type LLMProvider, type LLMProviderName } from './lib/llm-provider.js';
 import { ChatEngine, type ChatResult } from './lib/chat-engine.js';
-import { ChatRateLimit, ensureChatUsageTable, type ChatTier } from './lib/chat-rate-limit.js';
+import { ChatRateLimit, ensureChatUsageTable, chatQuotaApiKey, type ChatTier } from './lib/chat-rate-limit.js';
 import { formatChatKnowledgeResponse } from './lib/chat-knowledge-formatter.js';
 // CHAT-USAGE-ANALYTICS-W1 (2026-05-18) — single recording middleware for both
 // chat surfaces (MCP tool + HTTP route). PII-safe (SHA256 hash + length only).
@@ -303,11 +303,8 @@ function chatTierFor(licenseTier: string): ChatTier {
   return 'enterprise';
 }
 
-function chatQuotaApiKey(licenseKey: string | null, ipHash: string | null): string {
-  // Free-tier callers have no api_key — bucket by ip_hash so anonymous
-  // traffic doesn't share a single global counter.
-  return licenseKey ?? `ip:${ipHash ?? 'unknown'}`;
-}
+// chatQuotaApiKey moved to src/lib/chat-rate-limit.ts by OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-03):
+// index.ts boots the server at import, so a resolver defined here cannot be unit-tested.
 
 /**
  * OPS-MCP-SESSION-RESILIENCE-W1: single shared session-correlation resolver
@@ -2977,13 +2974,20 @@ async function startHttp() {
         _analyticsModel = model;
       }
 
-      const license = getRequestLicense();
+      // OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-03): resolve the caller FROM THE REQUEST.
+      // getRequestLicense()/getRequestIpHash() read the AsyncLocalStorage store, which is only
+      // entered for /mcp (see the note at the /signup handler) — so on this route they returned
+      // the env fallback and `undefined`, collapsing every anonymous caller into one shared
+      // `ip:unknown` quota bucket AND metering paying customers as free. Resolving here (the
+      // same helpers /mcp uses) fixes the quota key and the tier together.
+      const { license } = await resolveLicense(req.headers as Record<string, string | undefined>);
+      const ipHash = hashIp(clientIp(req) || 'unknown');
       const { index, chatEngine, rateLimit, llm } = await getChatStack();
       _analyticsProvider = llm.name;
       const tier = chatTierFor(license.tier);
       _analyticsApiKey = license.key;
       _analyticsTier = tier;
-      const quotaKey = chatQuotaApiKey(license.key, getRequestIpHash() ?? null);
+      const quotaKey = chatQuotaApiKey(license.key, ipHash);
       const check = await rateLimit.check(quotaKey, tier);
       if (!check.allowed) {
         const days = Math.max(1, Math.ceil((check.resetAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));

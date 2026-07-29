@@ -16,9 +16,34 @@
  * BEFORE engine.chat() — separate concern from `express-rate-limit` which
  * does burst protection on the HTTP path.
  */
+import { randomUUID } from 'node:crypto';
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
 
 export type ChatTier = 'free' | 'starter' | 'pro' | 'enterprise';
+
+/**
+ * Resolve the per-caller quota bucket for the chat surface.
+ *
+ * OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-03). This previously lived in `src/index.ts` and ended
+ * `` `ip:${ipHash ?? 'unknown'}` ``, so a null ipHash collapsed EVERY anonymous caller into one
+ * literal `ip:unknown` bucket — a single global 10/month counter that any one visitor could
+ * exhaust for the entire internet. The original comment said the bucketing existed "so anonymous
+ * traffic doesn't share a single global counter", which is exactly what that fallback defeated.
+ *
+ * GENERATOR RULE: **a quota key may never be a constant.** With neither a license key nor an
+ * ipHash we cannot identify the caller, so we fail closed onto a per-request random key: the
+ * request is metered against itself (never pooled, never shared) instead of silently joining a
+ * global bucket. Callers that legitimately have no identity degrade to "unmetered for this one
+ * request" rather than "one shared counter for everybody".
+ *
+ * It lives here, not in index.ts, because index.ts boots the server at import — a resolver
+ * defined there cannot be unit-tested.
+ */
+export function chatQuotaApiKey(licenseKey: string | null, ipHash: string | null): string {
+  if (licenseKey) return licenseKey;
+  if (ipHash) return `ip:${ipHash}`;
+  return `unidentified:${randomUUID()}`;
+}
 
 export interface ChatRateLimitOpts {
   freeQuotaPerMonth: number;
