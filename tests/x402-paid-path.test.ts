@@ -296,3 +296,64 @@ describe('free tool unaffected', () => {
     expect(res.status).toBe(402);
   });
 });
+
+/**
+ * OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1 — a PAID request whose body never parsed.
+ *
+ * 2026-07-29: a Circle Gateway payment VERIFIED, then the route returned a bare `400
+ * invalid_input` and the client surfaced `Payment failed: invalid_input`. The body had never
+ * reached the validator — the caller passed its own `content-type` to an SDK that already sets
+ * `Content-Type`, both case-different keys survived the SDK's header spread, and fetch COMBINED
+ * them into `application/json, application/json`, which express.json() will not parse. The
+ * JSON-Schema error therefore blamed the wrong thing entirely.
+ *
+ * The predicate is unit-tested in x402-rejection-diagnostics.test.ts; only THESE prove the
+ * wiring — including that the body-key count is read BEFORE ajv applies its schema defaults
+ * (`useDefaults` mutates the object even on a failing validation, which would otherwise make an
+ * empty body look populated).
+ */
+describe('paid request whose content-type prevents body parsing', () => {
+  /** Repeated header keys are combined by fetch — exactly what the SDK's header spread produces. */
+  async function postDupContentType(tool: string, body: Record<string, unknown>) {
+    return fetch(`${baseUrl}/x402/${tool}`, {
+      method: 'POST',
+      headers: [
+        ['content-type', 'application/json'],
+        ['content-type', 'application/json'],
+        ['x-payment', 'present'],
+      ] as unknown as HeadersInit,
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('SANITY: two case-different content-type keys really do combine on the wire', () => {
+    const h = new Headers([['Content-Type', 'application/json'], ['content-type', 'application/json']]);
+    expect(h.get('content-type')).toBe('application/json, application/json');
+  });
+
+  it('→ 400 invalid_content_type naming the duplication, not a misleading schema error', async () => {
+    setProof(req(0.02), freshNonce());
+    const res = await postDupContentType('get_market_regime', { coin: 'BTC', timeframe: '1h' });
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error?: string; code?: string; message?: string; suggested_fix?: string };
+    expect(body.error).toBe('invalid_content_type');
+    expect(body.code).toBe('X402_HTTP_INVALID_CONTENT_TYPE');
+    expect(body.message).toContain('2 media types');
+    // The caller must be told they keep their money — validation runs before claim + settle.
+    expect(body.suggested_fix).toContain('NOT charged');
+  });
+
+  it('a clean content-type with a genuinely invalid body still returns invalid_input (contract unchanged)', async () => {
+    setProof(req(0.02), freshNonce());
+    const res = await post('get_market_regime', {}); // missing required `coin`
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error?: string }).error).toBe('invalid_input');
+  });
+
+  it('a clean content-type with a valid body is still served (happy path unchanged)', async () => {
+    setProof(req(0.02), freshNonce());
+    const res = await post('get_market_regime', { coin: 'BTC', timeframe: '1h' });
+    expect(res.status).toBe(200);
+    expect((await res.json() as { regime?: string }).regime).toBe('RANGING');
+  });
+});

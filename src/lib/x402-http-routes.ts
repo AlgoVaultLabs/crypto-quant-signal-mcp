@@ -63,6 +63,51 @@ function tolerantJson(req: Request, res: Response, next: NextFunction): void {
   });
 }
 
+/** Media types express.json() will parse: application/json and any `+json` structured suffix. */
+const JSON_MEDIA_TYPE = /^application\/([\w.+-]+\+)?json$/i;
+
+/**
+ * Explain a body that arrived EMPTY on a request which DECLARED one — i.e. `express.json()`
+ * silently declined to parse it, rather than the caller genuinely omitting it.
+ *
+ * WHY THIS EXISTS. `tolerantJson` above swallows *parse errors*, but a content-type that doesn't
+ * match isn't an error at all: express.json() simply skips the body and leaves it empty. The
+ * caller then fails the JSON Schema with a generic "must have required property" — **after their
+ * payment has already verified** — which points at the wrong thing entirely.
+ *
+ * The live instance (2026-07-29, Circle Gateway): a client passed its own
+ * `headers: { 'content-type': 'application/json' }` to an SDK that already sets
+ * `Content-Type: application/json`. Both case-different keys survive the SDK's
+ * `{...defaults, ...options.headers}` spread, and `fetch` COMBINES them into
+ * `"application/json, application/json"`, which no media-type matcher accepts. Measured, not
+ * theorised — and a mainstream SDK's own merge produces it, so other agents will hit it too.
+ *
+ * Returns null when the content-type is fine (the caller really did send an empty body) or when
+ * no body was declared — in both cases the schema error is the honest answer. Pure + total.
+ */
+export function explainDroppedBody(
+  contentType: string | undefined,
+  contentLength: string | undefined,
+): string | null {
+  const declared = Number(contentLength);
+  // No declared body (or chunked, where we can't tell) → don't claim a problem we can't prove.
+  if (!Number.isFinite(declared) || declared <= 0) return null;
+
+  const raw = (contentType ?? '').trim();
+  if (raw === '') return 'the request declared a body but sent no content-type header';
+
+  const mediaTypes = raw.split(',').map((p) => p.trim()).filter(Boolean);
+  if (mediaTypes.length > 1) {
+    return `content-type "${raw}" lists ${mediaTypes.length} media types; send exactly one. ` +
+      'This is usually a client adding its own content-type on top of an SDK that already sets ' +
+      'one — the two case-different header keys get combined into a single comma-joined value.';
+  }
+  if (!JSON_MEDIA_TYPE.test(mediaTypes[0].split(';')[0].trim())) {
+    return `content-type "${raw}" is not a JSON media type`;
+  }
+  return null;
+}
+
 /** Log every /x402 request's method + final status + UA (so the Bazaar crawler's probe is observable). */
 function logCrawl(req: Request, res: Response, next: NextFunction): void {
   res.on('finish', () => {
@@ -248,8 +293,38 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // Validate body against the SAME schema declared to the Bazaar (defaults applied).
       // Done BEFORE the price-binding check so the (defaults-applied) timeframe is known
       // for the per-timeframe premium assertion (X402-03).
+      // Counted BEFORE validate(): ajv runs with `useDefaults`, so it MUTATES `input` with
+      // schema defaults even on a failing validation — reading the count afterwards would
+      // report a body that "has keys" when the caller actually sent none.
+      const rawBodyKeys = Object.keys((req.body ?? {}) as Record<string, unknown>).length;
       const input: Record<string, unknown> = { ...(req.body ?? {}) };
       if (!validate(input)) {
+        // A PAID, VERIFIED request that we then refuse must NEVER be silent. Both 2026-07-29
+        // Circle Gateway failures were invisible here — the only trace was `status=400 paid=y`
+        // with no reason (OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1).
+        const droppedBody = rawBodyKeys === 0
+          ? explainDroppedBody(req.headers['content-type'], req.headers['content-length'])
+          : null;
+        console.warn(
+          `[x402-route] input-validation REJECT for ${routePath} paid=y ` +
+          `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
+          `body-keys=${rawBodyKeys}` +
+          (droppedBody ? ` dropped-body=${JSON.stringify(droppedBody)}` : '') +
+          ` errors=${JSON.stringify((validate.errors ?? []).slice(0, 3))}`,
+        );
+        if (droppedBody) {
+          // The schema error would be a LIE here — the body never reached the validator. Say what
+          // actually went wrong. No settlement was attempted: this runs BEFORE tryClaimPayment
+          // and before settleX402Async, so the caller genuinely was not charged.
+          return res.status(400).json({
+            error: 'invalid_content_type',
+            code: 'X402_HTTP_INVALID_CONTENT_TYPE',
+            message: `Payment verified, but the request body could not be read: ${droppedBody}`,
+            suggested_fix:
+              'Send the body as JSON under a single `content-type: application/json` header, then ' +
+              'retry. You were NOT charged — no settlement was attempted for this request.',
+          });
+        }
         return res.status(400).json({
           error: 'invalid_input',
           code: 'X402_HTTP_INVALID_INPUT',

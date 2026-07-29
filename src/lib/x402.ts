@@ -22,6 +22,9 @@ import type { X402ToolPricing } from '../types.js';
 import { createFacilitatorClient, resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { declareBazaarRoute } from './x402-bazaar.js';
 import { FEATURE_REGISTRY, getFeature } from './feature-registry.js';
+// Diagnostics only (verify-failure logging). ONE payer extractor across the codebase — the HTTP
+// route already uses this for wallet attribution; a second copy here would be free to drift.
+import { extractPayerWallet } from './x402-idempotency-store.js';
 import {
   GATEWAY_EIP712_DOMAIN_NAME,
   gatewayRequirementsCarryDomain,
@@ -498,7 +501,22 @@ export async function verifyX402Payment(
     const verifyResult = await resourceServer.verifyPayment(typedPayload, matchingReqs);
 
     if (!verifyResult.isValid) {
-      console.warn(`x402 verify failed [${dialect}]: ${verifyResult.invalidReason} — ${verifyResult.invalidMessage}`);
+      // Log the facilitator's DECISION INPUTS, not just its verdict. On 2026-07-29 a Circle
+      // Gateway payment was rejected `self_transfer — undefined` — Circle's code for
+      // "sender == recipient", naming NEITHER address. From our side that is indistinguishable
+      // from a credential fault or a vendor outage, and it cost a full diagnostic cycle to
+      // establish that the payer had simply signed with the wrong key. Identity fields ONLY —
+      // never the signature, never key material. (OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1: the
+      // 2026-07-18 "instrument every rejection path before debugging a payment 402" lesson,
+      // applied to the facilitator's inputs rather than only to our own rejections.)
+      const matched = Array.isArray(matchingReqs) ? matchingReqs[0] : matchingReqs;
+      const m = reqFields(matched);
+      const payer = verifyResult.payer ?? extractPayerWallet(paymentPayload) ?? 'unknown';
+      console.warn(
+        `x402 verify failed [${dialect}]: ${verifyResult.invalidReason} — ${verifyResult.invalidMessage} ` +
+        `(tool=${toolName ?? '(flattened pool)'} payer=${payer} rail=${railName(matched)} ` +
+        `network=${m.network} payTo=${m.payTo} amount=${m.amount})`,
+      );
       return { valid: false, dialect, rejectReason: 'facilitator_invalid' };
     }
 
@@ -752,6 +770,16 @@ function reqFields(req: unknown): {
     network: typeof r.network === 'string' ? r.network : undefined,
     payTo: typeof r.payTo === 'string' ? r.payTo : undefined,
   };
+}
+
+/**
+ * Which rail a matched requirement belongs to — DIAGNOSTICS ONLY, never a gate.
+ * `extra.name` is the canonical discriminator: both rails are scheme `exact`, and only the
+ * EIP-712 domain name distinguishes them (Gateway `GatewayWalletBatched` vs CDP `USD Coin`).
+ */
+function railName(req: unknown): string {
+  const r = (req ?? {}) as { extra?: { name?: unknown } };
+  return typeof r.extra?.name === 'string' ? r.extra.name : 'unknown';
 }
 
 /**
