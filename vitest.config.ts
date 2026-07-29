@@ -74,6 +74,11 @@ export default defineConfig({
       // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
       // "No test suite found").
       'tests/unit/p1_track_record_leaderboard.test.mjs',
+      // OPS-AOE-MONITORING-PARITY-W1 — node:test shared-primitive registry/parity canary
+      // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
+      // "No test suite found"). The pre-push gate detects node:test files by CONTENT, so it
+      // picks this up automatically.
+      'tests/unit/monitoring-primitive-parity.test.mjs',
       // OPS-VITEST-MAIN-RED-FIX-W1: check-system-map.test.ts drives
       // scripts/check_system_map.sh against throwaway temp git repos. It passes on
       // macOS (local dev + the pre-push gate) but fails on ubuntu CI — a BSD-vs-GNU
