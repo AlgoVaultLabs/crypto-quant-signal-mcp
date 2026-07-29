@@ -26,6 +26,7 @@ import { renderBrandFooter } from './footer-content.js';
 import { renderSiteNav } from './site-nav.js';
 import { renderSigninComponent } from './signin-component.js';
 import { isUnifiedSigninEnabled, isNewSignupEnabled, getAuthProvider } from './auth-providers.js';
+import { resolveLicense } from './license.js';
 
 // DESIGN-W10 / C2 / Q-W10-10: REPLACED body-flex-centering with var(--bg) layout.
 // Existing .tabs/.tab/.panel/.subtitle/.footer/.error/.success class blocks PRESERVED
@@ -343,12 +344,35 @@ async function loadReferralStatsView(
   };
 }
 
+/**
+ * Does this API key actually EXIST?
+ *
+ * OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-08). Reuses the canonical resolver rather than adding a
+ * second lookup: `resolveLicense` returns `key: null` for a key that does not resolve — an
+ * unknown `av_free_` misses the free-keys store, and an `av_live_` that Stripe rejects
+ * default-denies. A resolved, non-null key is therefore the single source of truth for
+ * existence, and it stays correct automatically if key issuance ever changes.
+ */
+async function apiKeyExists(apiKey: string): Promise<boolean> {
+  const { license } = await resolveLicense({ authorization: `Bearer ${apiKey}` });
+  return license.key !== null;
+}
+
 // REFERRAL-LIGHT-W1 (C4): paste-key → the caller's own referral dashboard.
 export async function accountReferralsHandler(req: Request, res: Response): Promise<void> {
   try {
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : '';
     if (!/^av_(live|free)_[a-f0-9]{24}$/.test(apiKey)) {
       res.status(400).send(getAccountErrorPageHtml('Please paste a valid AlgoVault API key (av_live_… or av_free_…).'));
+      return;
+    }
+    // SEC-08: format validation is NOT existence validation. Previously any well-formed but
+    // NONEXISTENT key fell straight through to loadReferralStatsView → ensureUserCode, which
+    // INSERTs a referral_codes row — an unauthenticated write that let anyone grow the referral
+    // source-of-truth (and, via the payout-address route, attach a payout wallet to a phantom
+    // code). Verify the principal exists BEFORE any mint.
+    if (!(await apiKeyExists(apiKey))) {
+      res.status(404).send(getAccountErrorPageHtml('That API key was not found. Check the key, or start free at https://algovault.com/join.'));
       return;
     }
     const { renderReferralStatsPage } = await import('./referral-pages.js');
@@ -372,6 +396,13 @@ export async function accountPayoutAddressHandler(req: Request, res: Response): 
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : '';
     if (!/^av_(live|free)_[a-f0-9]{24}$/.test(apiKey)) {
       res.status(400).send(getAccountErrorPageHtml('Please paste a valid AlgoVault API key (av_live_… or av_free_…).'));
+      return;
+    }
+    // SEC-08: same guard as accountReferralsHandler — this path ALSO mints via ensureUserCode,
+    // and additionally attaches an attacker-chosen Base USDC payout address to the row. Verify
+    // the principal exists before any write.
+    if (!(await apiKeyExists(apiKey))) {
+      res.status(404).send(getAccountErrorPageHtml('That API key was not found. Check the key, or start free at https://algovault.com/join.'));
       return;
     }
     const { ensureUserCode, setPayoutAddress } = await import('./referral-store.js');

@@ -34,14 +34,14 @@ d('free-keys ephemeral + merge', () => {
   });
 
   it('mintEphemeralKey issues an av_free_ key with NO email (value before email)', async () => {
-    const key = await mintEphemeralKey('REF1'); created.push(key);
+    const key = await mintEphemeralKey('REF1', 'iphash_lifecycle_1'); created.push(key);
     expect(key.startsWith('av_free_')).toBe(true);
     expect(await emailOf(key)).toBeNull();
     expect(await isEphemeralKey(key)).toBe(true);
   });
 
   it('merge with a NEW email PROMOTES the ephemeral in place (same key, now claimed)', async () => {
-    const eph = await mintEphemeralKey(); created.push(eph);
+    const eph = await mintEphemeralKey(null, 'iphash_lifecycle_2'); created.push(eph);
     const email = `promote${TEST_EMAIL_DOM}`;
     const key = await mergeEphemeralIntoEmail(eph, email);
     expect(key).toBe(eph); // promoted in place
@@ -52,7 +52,7 @@ d('free-keys ephemeral + merge', () => {
   it('merge into an EXISTING email keeps the existing key + deletes the ephemeral (NO double key)', async () => {
     const email = `existing${TEST_EMAIL_DOM}`;
     const existing = await mintFreeKey(email); created.push(existing);
-    const eph = await mintEphemeralKey(); created.push(eph);
+    const eph = await mintEphemeralKey(null, 'iphash_lifecycle_3'); created.push(eph);
     const key = await mergeEphemeralIntoEmail(eph, email);
     expect(key).toBe(existing); // returns the existing key
     // the ephemeral row is gone → no double key for this identity
@@ -64,7 +64,7 @@ d('free-keys ephemeral + merge', () => {
 
   it('merge is IDEMPOTENT — re-running yields the same key, still one row', async () => {
     const email = `idem${TEST_EMAIL_DOM}`;
-    const eph = await mintEphemeralKey(); created.push(eph);
+    const eph = await mintEphemeralKey(null, 'iphash_lifecycle_4'); created.push(eph);
     const k1 = await mergeEphemeralIntoEmail(eph, email);
     const k2 = await mergeEphemeralIntoEmail(eph, email); // re-run (eph already claimed/promoted)
     expect(k2).toBe(k1);
@@ -76,7 +76,7 @@ d('free-keys ephemeral + merge', () => {
     const stale = `av_free_stale${Date.now().toString(16)}`; created.push(stale);
     const old = new Date(Date.now() - 10 * 86400_000).toISOString();
     dbRun('INSERT INTO free_keys (api_key, email, created_at, last_used_at) VALUES (?, ?, ?, ?)', stale, null, old, old);
-    const fresh = await mintEphemeralKey(); created.push(fresh); // last_used_at NULL, created now
+    const fresh = await mintEphemeralKey(null, 'iphash_lifecycle_5'); created.push(fresh); // last_used_at NULL, created now
     const claimed = await mintFreeKey(`claimed${TEST_EMAIL_DOM}`); created.push(claimed);
     await expireIdleEphemeralKeys(7);
     expect(await dbQuery('SELECT 1 FROM free_keys WHERE api_key = ?', [stale])).toHaveLength(0); // reaped

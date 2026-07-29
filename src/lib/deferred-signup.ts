@@ -10,7 +10,7 @@
  */
 import { mintEphemeralKey, mergeEphemeralIntoEmail } from './free-keys-store.js';
 import { recordSignupAttribution } from './subscriber-attribution.js';
-import { getTradeSignal } from '../tools/get-trade-call.js';
+import { getGridSnapshot } from './cross-asset-grid.js';
 
 export interface StartFreeAttribution {
   src?: string | null;
@@ -38,21 +38,34 @@ export interface StartFreeResult {
 }
 
 export interface DeferredSignupDeps {
-  mintEphemeral: (ref?: string | null) => Promise<string>;
+  mintEphemeral: (ref?: string | null, ipHash?: string | null) => Promise<string>;
   recordAttribution: (input: Parameters<typeof recordSignupAttribution>[0]) => void;
   getSignal: () => Promise<StartFreeSignal>;
   merge: (ephemeralKey: string, email: string, ref?: string | null) => Promise<string>;
 }
 
+/**
+ * The "value" a first-time human sees before any email.
+ *
+ * OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-05): this used to run a LIVE `getTradeSignal('BTC','1h')`
+ * on every unauthenticated POST /api/start-free — venue REST fetches against the shared weight
+ * budget plus DB writes, driven by an anonymous caller. It is served from the warmed cross-asset
+ * grid instead: the same numbers the rest of the surface shows, at zero marginal upstream cost.
+ *
+ * The grid is a warmed cache, so a cold process can legitimately return no BTC/1h cell. That is
+ * reported as an absent signal (the route still returns the key) rather than silently falling
+ * back to a live call, which would re-open the amplification path under exactly the load that
+ * empties the cache.
+ */
 async function defaultGetSignal(): Promise<StartFreeSignal> {
-  // One real BTC/1h call — the "value" a first-time human sees before any email.
-  // TradeCallResult exposes the BUY/SELL/HOLD verdict as `call` (not `verdict`).
-  const r = (await getTradeSignal({ coin: 'BTC', timeframe: '1h' })) as unknown as { call?: string; verdict?: string; confidence?: number | null };
-  return { asset: 'BTC', timeframe: '1h', verdict: r?.call ?? r?.verdict ?? null, confidence: r?.confidence ?? null };
+  const grid = await getGridSnapshot();
+  const cell = grid.find((c) => c.coin === 'BTC' && c.timeframe === '1h');
+  if (!cell) return { asset: 'BTC', timeframe: '1h', verdict: null, confidence: null };
+  return { asset: 'BTC', timeframe: '1h', verdict: cell.signal ?? null, confidence: cell.confidence ?? null };
 }
 
 export const defaultDeferredSignupDeps: DeferredSignupDeps = {
-  mintEphemeral: (ref) => mintEphemeralKey(ref),
+  mintEphemeral: (ref, ipHash) => mintEphemeralKey(ref, ipHash),
   recordAttribution: (input) => recordSignupAttribution(input),
   getSignal: defaultGetSignal,
   merge: (ephemeralKey, email, ref) => mergeEphemeralIntoEmail(ephemeralKey, email, ref),
@@ -63,7 +76,8 @@ export async function startFree(
   attr: StartFreeAttribution,
   deps: DeferredSignupDeps = defaultDeferredSignupDeps,
 ): Promise<StartFreeResult> {
-  const key = await deps.mintEphemeral(attr.ref ?? null);
+  // SEC-05: the caller identity the issuance cap bounds on. Never mint unbounded.
+  const key = await deps.mintEphemeral(attr.ref ?? null, attr.ip_hash ?? null);
   // Stamp first-touch attribution against the KEY (so a later merge/conversion joins). This
   // CLOSES the free-flow ?src/utm gap (only /signup captured it before). Fail-open.
   try {

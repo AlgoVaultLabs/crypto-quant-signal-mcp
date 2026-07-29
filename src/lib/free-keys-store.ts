@@ -148,9 +148,69 @@ export function lookupFreeKeyCached(key: string): FreeKeyRow | null {
 // every lookupFreeKey). ENTITLEMENT INVARIANT untouched — resolveFromApiKeyAsync +
 // existing keys resolve identically; this only ADDS an issuance path.
 
-/** Mint an ephemeral (email-less) free key. Reaps idle ephemerals lazily first. */
-export async function mintEphemeralKey(refCode?: string | null): Promise<string> {
+// ── OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-05): bounded issuance ────────────────────
+//
+// A credential-issuing helper MUST bound on a caller identity. `mintEphemeralKey` took only a
+// ref code, so POST /api/start-free (unauthenticated, unrate-limited) minted unlimited av_free_
+// keys — each carrying its own 100-call/month quota, i.e. unbounded free quota by loop. Every
+// mint also drives a full free_keys scan+delete via expireIdleEphemeralKeys(), so the same loop
+// was a DB amplification vector.
+//
+// The per-window cap mirrors the equity-misses idiom (bounded map, evict-expired, hard size cap)
+// rather than adding an ip_hash column + migration. It is process-local, which is the correct
+// layering: this is the ISSUANCE bound, and the per-IP HTTP limiter on the route is the separate
+// burst bound. Together they are defense-in-depth; alone, either leaves a hole.
+const EPHEMERAL_WINDOW_SEC = 3600;
+const EPHEMERAL_PER_IP_CAP = 5;      // ephemeral keys per ipHash per hour
+const EPHEMERAL_MAP_MAX = 5000;      // hard bound on the tracking map itself
+const ephemeralMints = new Map<string, { count: number; windowStart: number }>();
+
+/** Test seam — reset the per-ipHash issuance window. */
+export function _resetEphemeralMintBoundForTest(): void {
+  ephemeralMints.clear();
+}
+
+/** Thrown when a caller exceeds the per-identity ephemeral-key issuance cap. */
+export class EphemeralMintQuotaError extends Error {
+  readonly code = 'EPHEMERAL_MINT_CAP';
+  constructor(public readonly ipHash: string) {
+    super(`ephemeral key issuance cap reached (${EPHEMERAL_PER_IP_CAP}/${EPHEMERAL_WINDOW_SEC}s)`);
+    this.name = 'EphemeralMintQuotaError';
+  }
+}
+
+/** True when this identity may mint another ephemeral key; records the mint when it may. */
+function claimEphemeralMintSlot(ipHash: string): boolean {
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const [k, v] of ephemeralMints) {
+    if (nowSec - v.windowStart >= EPHEMERAL_WINDOW_SEC) ephemeralMints.delete(k);
+  }
+  if (ephemeralMints.size >= EPHEMERAL_MAP_MAX && !ephemeralMints.has(ipHash)) {
+    const oldest = ephemeralMints.keys().next().value;
+    if (oldest !== undefined) ephemeralMints.delete(oldest);
+  }
+  const entry = ephemeralMints.get(ipHash);
+  if (!entry || nowSec - entry.windowStart >= EPHEMERAL_WINDOW_SEC) {
+    ephemeralMints.set(ipHash, { count: 1, windowStart: nowSec });
+    return true;
+  }
+  if (entry.count >= EPHEMERAL_PER_IP_CAP) return false;
+  entry.count += 1;
+  return true;
+}
+
+/**
+ * Mint an ephemeral (email-less) free key. Reaps idle ephemerals lazily first.
+ *
+ * `ipHash` is the CALLER IDENTITY this helper bounds on (SEC-05). It is required — an
+ * unidentifiable caller cannot be bounded, so it is refused rather than granted an unbounded
+ * mint. Throws `EphemeralMintQuotaError` past the cap; the caller maps that to HTTP 429.
+ */
+export async function mintEphemeralKey(refCode?: string | null, ipHash?: string | null): Promise<string> {
   ensureFreeKeysSchema();
+  const identity = ipHash && ipHash.trim() ? ipHash : null;
+  if (!identity) throw new EphemeralMintQuotaError('unidentified');
+  if (!claimEphemeralMintSlot(identity)) throw new EphemeralMintQuotaError(identity);
   await expireIdleEphemeralKeys().catch(() => { /* never block issuance on a reap */ });
   const apiKey = generateFreeKey();
   dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', apiKey, null, refCode ?? null);

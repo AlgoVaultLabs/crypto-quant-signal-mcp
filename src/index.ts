@@ -2823,7 +2823,16 @@ async function startHttp() {
   // The legacy email-first flow above stays intact. MCP/TG surfaces untouched.
 
   // Value BEFORE email: mint an ephemeral key + return a real signal, no email required.
-  app.post('/api/start-free', express.json({ limit: '2kb' }), async (req, res) => {
+  // OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-05): burst bound on an UNAUTHENTICATED credential-issuing
+  // route. Same shape as signupEmailLimiter, tighter max — this one hands out API keys.
+  const startFreeLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'rate_limited' },
+  });
+  app.post('/api/start-free', startFreeLimiter, express.json({ limit: '2kb' }), async (req, res) => {
     const { isNewSignupEnabled } = await import('./lib/auth-providers.js');
     if (!isNewSignupEnabled()) return res.status(404).json({ ok: false, error: 'not_found' });
     try {
@@ -2837,10 +2846,18 @@ async function startHttp() {
         utm_source: str(q.utm_source) ?? str(b.utm_source),
         utm_campaign: str(q.utm_campaign) ?? str(b.utm_campaign),
         landing_path: str(q.landing_path),
+        // SEC-05: caller identity the ISSUANCE cap bounds on (the limiter above is the separate
+        // burst bound). Was never passed, so mintEphemeralKey had nothing to bound against.
+        ip_hash: hashIp(clientIp(req) || 'unknown'),
+        user_agent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'].slice(0, 300) : null,
       });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json({ ok: true, ...result });
     } catch (err) {
+      if (err instanceof Error && (err as { code?: string }).code === 'EPHEMERAL_MINT_CAP') {
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(429).json({ ok: false, error: 'rate_limited' });
+      }
       console.error(`[/api/start-free] internal error: ${err instanceof Error ? err.message : err}`);
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }

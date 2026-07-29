@@ -81,7 +81,9 @@ describe('deferred-signup — value BEFORE email (AC1) + attribution survives (A
     expect(r.key).toBe('av_free_ephemeral1');
     expect(r.ephemeral).toBe(true);
     expect(r.signal).toEqual({ asset: 'BTC', timeframe: '1h', verdict: 'BUY', confidence: 72 });
-    expect(d.mintEphemeral).toHaveBeenCalledWith('REF9'); // referral carried, no email
+    // OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-05): mintEphemeral now also receives the caller
+    // identity it bounds issuance on — null here because this case supplies no ip_hash.
+    expect(d.mintEphemeral).toHaveBeenCalledWith('REF9', null); // referral carried, no email
   });
   it('stamps attribution against the KEY with ?src as utmSource (closes the free-flow gap)', async () => {
     const rec = vi.fn();
