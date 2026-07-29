@@ -121,6 +121,7 @@ interface KucoinContract {
   fundingFeeRate: number | null;
   predictedFundingFeeRate: number | null;
   nextFundingRateTime: number | null;
+  fundingRateGranularity?: number | null;  // funding period in MS (live-probed 2026-07-29)
   openInterest: string;
   markPrice: number | null;
   indexPrice?: number;
@@ -228,6 +229,10 @@ export class KuCoinAdapter implements ExchangeAdapter {
             // nextFundingRateTime on KuCoin is "ms until next funding" (relative);
             // convert to absolute timestamp at read time.
             nextFundingTime: c.nextFundingRateTime ? Date.now() + c.nextFundingRateTime : 0,
+            // SEC-06: per-CONTRACT funding period. KuCoin publishes fundingRateGranularity in
+            // MILLISECONDS and is majority-NOT-8h (live 2026-07-29: 413x 4h, 256x 8h, 5x 1h of
+            // 675 — plus 1 contract publishing 0, which self-skips rather than inheriting 8h).
+            intervalHours: c.fundingRateGranularity ? c.fundingRateGranularity / 3_600_000 : undefined,
           }],
         }));
     } catch {

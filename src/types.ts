@@ -82,7 +82,27 @@ export interface AssetContext {
 
 export interface FundingData {
   coin: string;
-  venues: { venue: string; fundingRate: number; nextFundingTime: number }[];
+  venues: {
+    venue: string;
+    fundingRate: number;
+    nextFundingTime: number;
+    /**
+     * Funding period for THIS contract, in hours.
+     *
+     * OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-06). The engine read a single per-VENUE constant, which
+     * is wrong wherever a venue mixes cadences: live-probed 2026-07-29, 39.5% of Gate's 860 USDT
+     * contracts and 62.1% of KuCoin's 675 fund on 4h or 1h, not 8h. A 4h contract annualized as
+     * 8h understates that leg ~2x (1h ~8x), and because only ONE leg is mis-scaled the spread's
+     * sign — and therefore the chosen long/short legs — can invert on a paid, Merkle-anchored
+     * surface.
+     *
+     * Optional because it is genuinely unpublished on some venues (Aster exposes only
+     * nextFundingTime). ABSENT → the consumer falls back to the venue's DECLARED fixed cadence in
+     * FUNDING_VENUE_META. PRESENT-BUT-INVALID (0 / NaN / negative) → that ROW self-skips rather
+     * than inheriting a guess.
+     */
+    intervalHours?: number;
+  }[];
 }
 
 export interface ExchangeAdapter {

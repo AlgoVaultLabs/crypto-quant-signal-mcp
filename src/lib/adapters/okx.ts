@@ -134,6 +134,19 @@ interface OKXFundingRate {
   nextFundingTime: string;
 }
 
+/**
+ * SEC-06: funding period in hours, derived from the two stamps OKX returns. Returns undefined on
+ * anything implausible so the consumer falls back to the declared cadence instead of trusting a
+ * garbage value; a 0/negative gap would otherwise divide-by-zero into an infinite annualization.
+ */
+function okxIntervalHours(fundingTime?: string, nextFundingTime?: string): number | undefined {
+  const a = parseInt(fundingTime || '0', 10);
+  const b = parseInt(nextFundingTime || '0', 10);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= a) return undefined;
+  const hours = (b - a) / 3_600_000;
+  return hours > 0 && hours <= 24 ? hours : undefined;
+}
+
 interface OKXFundingHistory {
   instId: string;
   fundingRate: string;
@@ -259,6 +272,10 @@ export class OKXAdapter implements ExchangeAdapter {
             venue: 'OKXPerp',
             fundingRate: rate,
             nextFundingTime: parseInt(fr.nextFundingTime || '0', 10),
+            // SEC-06: OKX publishes no interval field, but the period is the gap between the
+            // current and next funding stamps — derived, not assumed. Live-probed 2026-07-29:
+            // BTC-USDT-SWAP yields exactly 8h this way.
+            intervalHours: okxIntervalHours(fr.fundingTime, fr.nextFundingTime),
           }],
         });
       } catch {

@@ -184,6 +184,9 @@ export class GateAdapter implements ExchangeAdapter {
             venue: 'GatePerp',
             fundingRate: parseFloat(c.funding_rate || '0'),
             nextFundingTime: (c.funding_next_apply || 0) * 1000, // seconds → ms
+            // SEC-06: per-CONTRACT funding period. Gate publishes funding_interval in SECONDS
+            // and genuinely mixes cadences (live 2026-07-29: 520x 8h, 336x 4h, 4x 1h of 860).
+            intervalHours: c.funding_interval ? c.funding_interval / 3600 : undefined,
           }],
         }));
     } catch {

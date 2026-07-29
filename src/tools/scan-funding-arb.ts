@@ -284,7 +284,19 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
         ? _liquidityOverride(meta.exchangeId, coin)
         : (liquidityByExchange.get(meta.exchangeId)?.get(coin) ?? 0);
       if (legLiquidity < MIN_LIQUIDITY_USD) continue;
-      const annualized = annualizeFunding(v.fundingRate, meta.intervalHours);
+      // OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-06): prefer THIS CONTRACT's own funding period over the
+      // per-venue constant. Gate and KuCoin genuinely mix cadences (live-probed 2026-07-29: 39.5%
+      // and 62.1% of their contracts fund on 4h/1h, not 8h), and mis-scaling a single leg can
+      // invert the spread's sign — i.e. quote the wrong long/short pair on a paid, Merkle-anchored
+      // tool.
+      //
+      // ABSENT → fall back to the venue's DECLARED fixed cadence (Aster/Binance/Bybit 8h, HL 1h):
+      // a published constant, not a guess. PRESENT-BUT-INVALID (0/NaN/negative) → skip this ROW; a
+      // venue that answered with a broken period has forfeited the right to a default.
+      const rowInterval = v.intervalHours;
+      if (rowInterval !== undefined && !(Number.isFinite(rowInterval) && rowInterval > 0)) continue;
+      const intervalHours = rowInterval ?? meta.intervalHours;
+      const annualized = annualizeFunding(v.fundingRate, intervalHours);
       if (annualized === null) continue;
       rates[v.venue] = v.fundingRate;
       hourlyRates[v.venue] = annualized / HOURS_PER_YEAR;
