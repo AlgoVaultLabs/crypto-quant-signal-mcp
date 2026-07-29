@@ -1,5 +1,9 @@
 import { getAdapter } from '../lib/exchange-adapter.js';
-import { rsi, emaLast, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
+// `emaLast` dropped (SIGNAL-CLOSEDBAR-SHADOW-W1 CH2): its only two call sites assigned
+// `ema9Val`/`ema21Val`, which nothing ever read — dead on origin/main, so that was two
+// full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
+// The extraction surfaced it; the golden fixture proves removing it changed no output.
+import { rsi, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { hashSignal } from '../lib/merkle.js';
@@ -13,7 +17,10 @@ import { tradfiFundingAnnotation } from '../lib/tradfi-funding.js';
 // OPS-PFE-METRIC-INTEGRITY-W1 R2/R3: emit-time book-liveness gate + its fail-open counter.
 import { assessBookLiveness, getBookLivenessMode, BOOK_LIVENESS_WINDOW, BOOK_LIVENESS_MIN_GENUINE_BARS } from '../lib/book-liveness.js';
 import { recordEmitSuppression } from '../lib/emit-suppressions.js';
-import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
+// `intervalMsFor` joins the EXISTING candle-guard import rather than arriving as a second
+// import of the same module. candle-guard owns TF_INTERVAL_MS outright: this file's private
+// getIntervalMs was a THIRD copy of that table and is deleted below.
+import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from '../lib/candle-guard.js';
 import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { computeOiDelta, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
@@ -22,7 +29,7 @@ import { getClosestTradeable, getTryNext } from '../lib/cross-asset-grid.js';
 import { trimToLeaderboardCell } from '../lib/leaderboard-cell.js';
 import { formatReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
-import type { TradeCallResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId } from '../types.js';
+import type { TradeCallResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId, Candle } from '../types.js';
 import {
   bucketTrendPersistence, bucketFundingState, bucketBreakoutPending,
   regimeProse, fundingProse, breakoutProse, trendProse, convictionProse,
@@ -31,6 +38,9 @@ import { getThresholdForTF } from '../lib/pertf-thresholds.js';
 import { getR4Thresholds } from '../lib/r4-relax-flag.js';
 import { recordOiScoreShadow } from '../lib/oiscore-shadow.js';
 import { getOiScoreSource } from '../lib/oiscore-source-flag.js';
+import { splitCandleWindow } from '../lib/candle-window.js';
+import { getCandleBasis, isCandleBasisShadowEnabled } from '../lib/candle-basis-flag.js';
+import { recordCandleBasisShadow } from '../lib/candle-basis-shadow.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -214,6 +224,157 @@ export function oiScoreFromOiDelta(oiChangePct: number): number {
   return 0;
 }
 
+/**
+ * Inputs to the indicator pass. SIGNAL-CLOSEDBAR-SHADOW-W1 CH2.
+ *
+ * The split is the whole point: `candles` is the ONLY field that changes between the
+ * live and closed bases. Everything else is passed in already-resolved so both bases
+ * see identical values — which is what makes a divergence attributable to the candle
+ * window and nothing else.
+ */
+export interface IndicatorInputs {
+  /** The window to score on — ALL bars (live) or closed-only. ASCENDING. */
+  candles: Candle[];
+  /** Annualized funding. Not candle-derived; identical under both bases. */
+  fundingRateAnnualized: number;
+  /**
+   * 24h price change. ALWAYS derived from the LIVE current price, under both bases.
+   * Price is a LEVEL — valid at any instant — whereas volume is an INTEGRAL over a bar
+   * and is only complete once the bar closes. Only integrals move to the closed basis.
+   */
+  priceChange: number;
+  /** Open interest from the asset context. Not candle-derived. */
+  openInterest: number;
+}
+
+/** The five verdict scores plus the candle-derived context the envelope and gates need. */
+export interface IndicatorScores extends VerdictScoreInputs {
+  regime: RegimeType;
+  hurstVal: number | null;
+  squeezeActive: boolean;
+  emaCross: EmaCrossDirection;
+  rsiVal: number | null;
+  avgCandleVol: number;
+  lastCandleVol: number;
+}
+
+/**
+ * The indicator pass, extracted PURE so it can be run twice over two candle windows.
+ * Mirrors the existing `deriveVerdict` extraction: this function is the score half,
+ * `deriveVerdict` is the score→verdict half, and both are exported and unit-testable.
+ *
+ * Behaviour is byte-identical to the inline block it replaces — pinned by
+ * `tests/fixtures/get-trade-call-golden-preclosedbar.json`, recorded from the
+ * pre-extraction code. Zero I/O, zero `process.env`, zero `Date.now()`: the funding
+ * writes/reads that used to sit in the middle of this block stay in `getTradeSignal`,
+ * because a function that must be safe to call twice cannot carry side effects.
+ */
+export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
+  const { candles, fundingRateAnnualized, priceChange, openInterest } = i;
+
+  const closes = candles.map(c => c.close);
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
+
+  // ── Compute indicators ──
+  const rsiVal = rsi(closes, 14);
+
+  // EMA crossover detection
+  const ema9Series = ema(closes, 9);
+  const ema21Series = ema(closes, 21);
+  let emaCross: EmaCrossDirection = 'NEUTRAL';
+  if (ema9Series && ema21Series && ema9Series.length >= 2) {
+    const len = ema9Series.length;
+    const curr9 = ema9Series[len - 1];
+    const prev9 = ema9Series[len - 2];
+    const curr21 = ema21Series[len - 1];
+    const prev21 = ema21Series[len - 2];
+    if (!isNaN(curr9) && !isNaN(prev9) && !isNaN(curr21) && !isNaN(prev21)) {
+      if (curr9 > curr21 && prev9 <= prev21) emaCross = 'BULLISH';
+      else if (curr9 < curr21 && prev9 >= prev21) emaCross = 'BEARISH';
+      else if (curr9 > curr21) emaCross = 'BULLISH';
+      else if (curr9 < curr21) emaCross = 'BEARISH';
+    }
+  }
+
+  // Volume
+  const avgCandleVol = candles.reduce((s, c) => s + c.volume, 0) / candles.length;
+  const lastCandleVol = candles[candles.length - 1].volume;
+
+  // ── v1.4 indicators ──
+  const hurstVal = hurstExponent(closes);
+  const squeezeActive = detectSqueeze(highs, lows, closes);
+
+  // ── Detect regime FIRST (used for asymmetric thresholds) ──
+  let regime: RegimeType = 'RANGING';
+  if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) regime = 'TRENDING_UP';
+  else if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) regime = 'TRENDING_DOWN';
+
+  // ── Score each indicator (-100 to +100) ──
+
+  // RSI (30% weight): contrarian — oversold = bullish, overbought = bearish
+  let rsiScore = 0;
+  if (rsiVal !== null) {
+    if (rsiVal < 25) rsiScore = 100;
+    else if (rsiVal < 30) rsiScore = 80;
+    else if (rsiVal < 40) rsiScore = 40;
+    else if (rsiVal <= 60) rsiScore = 0;
+    else if (rsiVal <= 70) rsiScore = -40;
+    else if (rsiVal <= 75) rsiScore = -80;
+    else rsiScore = -100;
+  }
+
+  // EMA cross (10% weight): trend confirmation
+  let emaScore = 0;
+  if (emaCross === 'BULLISH') emaScore = 100;
+  else if (emaCross === 'BEARISH') emaScore = -100;
+
+  // Funding rate (25% weight): contrarian signal
+  // Negative funding = shorts paying = contrarian bullish
+  // High positive funding = crowded longs = bearish
+  // R2: thresholds are in ANNUALIZED rate (cost of carry as % per year).
+  //     Old HL-calibrated raw thresholds { -0.0005, 0, 0.0005, 0.001 } × 8760 = { -4.38, 0, 4.38, 8.76 }.
+  //     This preserves HL behavior exactly while making CEX 8h funding directly comparable.
+  let fundingScore = 0;
+  if (fundingRateAnnualized < -4.38) fundingScore = 80;
+  else if (fundingRateAnnualized < 0) fundingScore = 40;
+  else if (fundingRateAnnualized > 8.76) fundingScore = -80;
+  else if (fundingRateAnnualized > 4.38) fundingScore = -40;
+
+  // OI + price direction (15% weight): momentum confirmation
+  // Only score when price direction CONFIRMS the signal, not as standalone
+  let oiScore = 0;
+  if (openInterest > 0) {
+    if (priceChange > 0.02) oiScore = 60;       // Strong up move, moderate bullish
+    else if (priceChange > 0) oiScore = 20;      // Weak up, slight bullish
+    else if (priceChange < -0.02) oiScore = -60;  // Strong down move, moderate bearish
+    else if (priceChange < 0) oiScore = -20;      // Weak down, slight bearish
+  }
+
+  // Volume (20% weight): conviction filter
+  // High volume confirms the move, low volume = fade
+  //
+  // SIGNAL-CLOSEDBAR-SHADOW-W1: this is the ladder the wave exists for. Under the LIVE
+  // basis `lastCandleVol` is the IN-PROGRESS bar, so volRatio ≈ elapsed_fraction ×
+  // true_relative_volume — a bar 10% elapsed scores the −70 floor no matter how heavy
+  // it is actually trading. Under the closed basis it is the last COMPLETE bar.
+  let volumeScore = 0;
+  if (avgCandleVol > 0) {
+    const volRatio = lastCandleVol / avgCandleVol;
+    if (volRatio > 3.0) volumeScore = 100;
+    else if (volRatio > 2.0) volumeScore = 80;
+    else if (volRatio > 1.5) volumeScore = 50;
+    else if (volRatio > 1.0) volumeScore = 10;
+    else if (volRatio > 0.5) volumeScore = -30;
+    else volumeScore = -70;
+  }
+
+  return {
+    rsiScore, emaScore, fundingScore, oiScore, volumeScore,
+    regime, hurstVal, squeezeActive, emaCross, rsiVal, avgCandleVol, lastCandleVol,
+  };
+}
+
 export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCallResult> {
   const coin = input.coin.toUpperCase();
   const timeframe = input.timeframe || '1h';
@@ -298,7 +459,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   const adapter = getAdapter(exchange);
 
   // Fetch candles (100 candles back)
-  const intervalMs = getIntervalMs(timeframe);
+  // `?? 3_600_000` reproduces the deleted private getIntervalMs EXACTLY: for every mapped
+  // timeframe the table value is a positive number so `||` and `??` agree, and for an
+  // unknown timeframe both yield the 1h fallback. Verified value-identical across all 11
+  // keys against candle-guard's TF_INTERVAL_MS before the swap.
+  const intervalMs = intervalMsFor(timeframe) ?? 3_600_000;
   const startTime = Date.now() - 100 * intervalMs;
   const [candles, assetCtx] = await Promise.all([
     adapter.getCandles(coin, timeframe, startTime, dex),
@@ -309,9 +474,22 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // the signal at the stalest close. No-op for ascending venues.
   candles.sort((a, b) => a.time - b.time);
 
+  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH2: split the window ONCE, here, right after the sort
+  //    that guarantees ascending order (splitCandleWindow's documented precondition). ──
+  //    Named `candleWindow`, never `window`, which would shadow the DOM global.
+  const candleBasis = getCandleBasis();
+  const candleShadowEnabled = isCandleBasisShadowEnabled();
+  const candleWindow = splitCandleWindow(candles, intervalMs, Date.now());
+
+  // The window that gates EMISSION. `CANDLE_BASIS` unset ⇒ 'live' ⇒ this is `candles`
+  // itself, so the guard below is byte-identical to its pre-wave form. Under the closed
+  // basis the count drops by one, which is exactly why the guard must follow the basis
+  // rather than always reading the raw array.
+  const emittedCandles = candleBasis === 'closed' ? candleWindow.closed : candles;
+
   const REQUIRED_CANDLES = 30;
-  if (candles.length < REQUIRED_CANDLES) {
-    const firstCandleTimeMs = candles.length > 0 ? candles[0].time : Date.now();
+  if (emittedCandles.length < REQUIRED_CANDLES) {
+    const firstCandleTimeMs = emittedCandles.length > 0 ? emittedCandles[0].time : Date.now();
     const suggestedTimeframes = computeSuggestedTimeframes({
       firstCandleTimeMs,
       nowMs: Date.now(),
@@ -322,7 +500,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       coin,
       exchange,
       timeframe,
-      candlesAvailable: candles.length,
+      candlesAvailable: emittedCandles.length,
       candlesRequired: REQUIRED_CANDLES,
       suggestedTimeframes,
       suggestedAction: suggestedActionFor(suggestedTimeframes),
@@ -350,32 +528,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   const fundingAnnotation = tradfiFundingAnnotation(assetClass);
 
   const closes = candles.map(c => c.close);
-  const highs = candles.map(c => c.high);
-  const lows = candles.map(c => c.low);
+  // ── §7: `currentPrice` stays LIVE under BOTH bases, always. Price is a LEVEL and is
+  //    valid at any instant; volume is an INTEGRAL and is only meaningful once its bar
+  //    closes. So the reported `price`, the track-record entry price and `recordSignal`
+  //    are untouched by this wave — ONLY indicator inputs move to the closed basis.
+  //    A future wave will otherwise "helpfully" move this and silently re-price the
+  //    entire track record. Do not. ──
   const currentPrice = closes[closes.length - 1];
-
-  // ── Compute indicators ──
-  const rsiVal = rsi(closes, 14);
-  const ema9Val = emaLast(closes, 9);
-  const ema21Val = emaLast(closes, 21);
-
-  // EMA crossover detection
-  const ema9Series = ema(closes, 9);
-  const ema21Series = ema(closes, 21);
-  let emaCross: EmaCrossDirection = 'NEUTRAL';
-  if (ema9Series && ema21Series && ema9Series.length >= 2) {
-    const len = ema9Series.length;
-    const curr9 = ema9Series[len - 1];
-    const prev9 = ema9Series[len - 2];
-    const curr21 = ema21Series[len - 1];
-    const prev21 = ema21Series[len - 2];
-    if (!isNaN(curr9) && !isNaN(prev9) && !isNaN(curr21) && !isNaN(prev21)) {
-      if (curr9 > curr21 && prev9 <= prev21) emaCross = 'BULLISH';
-      else if (curr9 < curr21 && prev9 >= prev21) emaCross = 'BEARISH';
-      else if (curr9 > curr21) emaCross = 'BULLISH';
-      else if (curr9 < curr21) emaCross = 'BEARISH';
-    }
-  }
 
   // Funding data
   // R2: raw rate is kept for display/API compat and for scale-invariant per-coin Z-score history.
@@ -389,12 +548,6 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
 
   // Volume
   const volume24h = assetCtx.volume24h;
-  const avgCandleVol = candles.reduce((s, c) => s + c.volume, 0) / candles.length;
-  const lastCandleVol = candles[candles.length - 1].volume;
-
-  // ── v1.4 indicators ──
-  const hurstVal = hurstExponent(closes);
-  const squeezeActive = detectSqueeze(highs, lows, closes);
 
   // Record funding for Z-Score history (fire-and-forget)
   try { recordFunding(coin, fundingRate); } catch (e) { console.debug('recordFunding failed:', e instanceof Error ? e.message : e); }
@@ -407,64 +560,58 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // their (structurally-small) z-score bucket but gain an interpretation note.
   const fundingState = fundingAnnotation.fundingStateOverride ?? bucketFundingState(fundingZScore);
 
-  // ── Detect regime FIRST (used for asymmetric thresholds) ──
-  let regime: RegimeType = 'RANGING';
-  if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) regime = 'TRENDING_UP';
-  else if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) regime = 'TRENDING_DOWN';
+  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH2 — derive BOTH bases, select ONE. ──
+  //
+  //    There is deliberately NO `scoringCandles` variable. A single mutable "which
+  //    candles" binding is precisely how a later edit silently moves the LIVE path;
+  //    two named derivations and one selection cannot do that by accident.
+  const indicatorInputs = {
+    fundingRateAnnualized,
+    priceChange,
+    openInterest: assetCtx.openInterest,
+  };
+  const liveBasisScores = computeIndicatorScores({ candles, ...indicatorInputs });
 
-  // ── Score each indicator (-100 to +100) ──
-
-  // RSI (30% weight): contrarian — oversold = bullish, overbought = bearish
-  let rsiScore = 0;
-  if (rsiVal !== null) {
-    if (rsiVal < 25) rsiScore = 100;
-    else if (rsiVal < 30) rsiScore = 80;
-    else if (rsiVal < 40) rsiScore = 40;
-    else if (rsiVal <= 60) rsiScore = 0;
-    else if (rsiVal <= 70) rsiScore = -40;
-    else if (rsiVal <= 75) rsiScore = -80;
-    else rsiScore = -100;
+  //    The closed pass is SHADOW work, so it is skipped entirely unless the shadow is on
+  //    or the closed basis is actually selected: `scan_trade_calls` / `/scan` fan this
+  //    function out across many assets, and this doubles the indicator pipeline.
+  let closedBasisScores: IndicatorScores | null = null;
+  let closedBasisErrorClass: string | null = null;
+  if (candleShadowEnabled || candleBasis === 'closed') {
+    try {
+      //  Dropping the in-progress bar reduces the count by ONE, so an asset sitting at
+      //  exactly REQUIRED_CANDLES legitimately fails here. That must never reach the live
+      //  path — which is why the whole DERIVATION is isolated, not merely the write.
+      if (candleWindow.closed.length < REQUIRED_CANDLES) {
+        throw new InsufficientCandlesError({
+          coin,
+          exchange,
+          timeframe,
+          candlesAvailable: candleWindow.closed.length,
+          candlesRequired: REQUIRED_CANDLES,
+          suggestedTimeframes: [],
+          suggestedAction: '',
+        });
+      }
+      closedBasisScores = computeIndicatorScores({ candles: candleWindow.closed, ...indicatorInputs });
+    } catch (e) {
+      closedBasisErrorClass = e instanceof Error ? e.constructor.name : 'Error';
+    }
   }
 
-  // EMA cross (10% weight): trend confirmation
-  let emaScore = 0;
-  if (emaCross === 'BULLISH') emaScore = 100;
-  else if (emaCross === 'BEARISH') emaScore = -100;
+  //    `CANDLE_BASIS` unset ⇒ 'live' ⇒ the emitted scores ARE the live scores ⇒ the
+  //    response is byte-identical to pre-wave. This is the chapter's single most
+  //    important property, and it is pinned by the golden fixture.
+  const emittedScores = candleBasis === 'closed' && closedBasisScores
+    ? closedBasisScores
+    : liveBasisScores;
 
-  // Funding rate (25% weight): contrarian signal
-  // Negative funding = shorts paying = contrarian bullish
-  // High positive funding = crowded longs = bearish
-  // R2: thresholds are in ANNUALIZED rate (cost of carry as % per year).
-  //     Old HL-calibrated raw thresholds { -0.0005, 0, 0.0005, 0.001 } × 8760 = { -4.38, 0, 4.38, 8.76 }.
-  //     This preserves HL behavior exactly while making CEX 8h funding directly comparable.
-  let fundingScore = 0;
-  if (fundingRateAnnualized < -4.38) fundingScore = 80;
-  else if (fundingRateAnnualized < 0) fundingScore = 40;
-  else if (fundingRateAnnualized > 8.76) fundingScore = -80;
-  else if (fundingRateAnnualized > 4.38) fundingScore = -40;
-
-  // OI + price direction (15% weight): momentum confirmation
-  // Only score when price direction CONFIRMS the signal, not as standalone
-  let oiScore = 0;
-  if (assetCtx.openInterest > 0) {
-    if (priceChange > 0.02) oiScore = 60;       // Strong up move, moderate bullish
-    else if (priceChange > 0) oiScore = 20;      // Weak up, slight bullish
-    else if (priceChange < -0.02) oiScore = -60;  // Strong down move, moderate bearish
-    else if (priceChange < 0) oiScore = -20;      // Weak down, slight bearish
-  }
-
-  // Volume (20% weight): conviction filter
-  // High volume confirms the move, low volume = fade
-  let volumeScore = 0;
-  if (avgCandleVol > 0) {
-    const volRatio = lastCandleVol / avgCandleVol;
-    if (volRatio > 3.0) volumeScore = 100;
-    else if (volRatio > 2.0) volumeScore = 80;
-    else if (volRatio > 1.5) volumeScore = 50;
-    else if (volRatio > 1.0) volumeScore = 10;
-    else if (volRatio > 0.5) volumeScore = -30;
-    else volumeScore = -70;
-  }
+  //    Every downstream consumer — verdictGates, deriveVerdict, the reasoning builder and
+  //    the envelope's indicators block — projects from this ONE selected object.
+  const {
+    rsiScore, emaScore, fundingScore, oiScore, volumeScore,
+    regime, hurstVal, squeezeActive,
+  } = emittedScores;
 
   // ── SCAN-RANKBY-REFINEMENTS-W1 CH4: the score→verdict tail is now the PURE deriveVerdict
   //    (single-derivation — the live verdict + the oiScore shadow both project from it). The
@@ -475,13 +622,18 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   const r4Thresholds = getR4Thresholds();
   const buyThreshold = getThresholdForTF(timeframe, 'buy', BUY_BASE_THRESHOLD);
   const sellThreshold = getThresholdForTF(timeframe, 'sell', SELL_THRESHOLD_GATED);
-  const verdictGates: VerdictGateInputs = {
-    fundingZScore, fundingRateAnnualized, hurstVal, squeezeActive, r4Thresholds, buyThreshold, sellThreshold,
+  // `hurstVal` / `squeezeActive` are CANDLE-DERIVED, so the closed basis needs its own
+  // gates — reusing the live gates would mix bases and make the divergence unreadable.
+  const gatesFor = (s: IndicatorScores): VerdictGateInputs => ({
+    fundingZScore, fundingRateAnnualized,
+    hurstVal: s.hurstVal, squeezeActive: s.squeezeActive,
+    r4Thresholds, buyThreshold, sellThreshold,
     // Only `enforce` may change a verdict. In `shadow` the measurement still runs and is still
     // counted below, but `bookLive` is left undefined so the emitted call is byte-identical to
     // legacy — that is what makes the shadow-compare report trustworthy.
     bookLive: bookLivenessMode === 'enforce' ? (bookLiveness?.live ?? true) : undefined,
-  };
+  });
+  const verdictGates: VerdictGateInputs = gatesFor(emittedScores);
 
   // oiScore_price = the priceChange-derived score computed above (gated on openInterest>0).
   const oiScorePrice = oiScore;
@@ -544,6 +696,42 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       callOi: oiVerdict.signal,
       confPrice: priceVerdict.confidence,
       confOi: oiVerdict.confidence,
+    }).catch(() => {});
+  }
+
+  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH2: candle-basis divergence log. Same contract as the
+  //    oiScore shadow above — fire-and-forget, try/catch-isolated, real (non-internal)
+  //    signals only, since internal scan cells never mature into Phase-E outcomes and
+  //    would swamp the denominator. INTERNAL data class: never leaves the database. ──
+  if (!input.internal && (candleShadowEnabled || candleBasis === 'closed')) {
+    // The live-basis verdict. Under the default basis the emitted `priceVerdict` already
+    // IS it, so the hot path does not derive it twice; only the (flip-wave) closed basis
+    // pays for a second derivation.
+    const liveBasisVerdict = candleBasis === 'closed'
+      ? deriveVerdict(liveBasisScores, gatesFor(liveBasisScores))
+      : priceVerdict;
+    const closedBasisVerdict = closedBasisScores
+      ? deriveVerdict(closedBasisScores, gatesFor(closedBasisScores))
+      : null;
+
+    void recordCandleBasisShadow({
+      coin,
+      exchange,
+      timeframe,
+      callLive: liveBasisVerdict.signal,
+      callClosed: closedBasisVerdict?.signal ?? null,
+      errorClass: closedBasisVerdict ? null : (closedBasisErrorClass ?? 'UnknownError'),
+      confLive: liveBasisVerdict.confidence,
+      confClosed: closedBasisVerdict?.confidence ?? null,
+      rawLive: liveBasisVerdict.rawScore,
+      rawClosed: closedBasisVerdict?.rawScore ?? null,
+      volScoreLive: liveBasisScores.volumeScore,
+      volScoreClosed: closedBasisScores?.volumeScore ?? null,
+      rsiScoreLive: liveBasisScores.rsiScore,
+      rsiScoreClosed: closedBasisScores?.rsiScore ?? null,
+      elapsedFraction: candleWindow.elapsedFraction,
+      nClosed: candleWindow.closed.length,
+      nTotal: candles.length,
     }).catch(() => {});
   }
 
@@ -731,11 +919,8 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   return result;
 }
 
-function getIntervalMs(tf: string): number {
-  const map: Record<string, number> = {
-    '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000,
-    '30m': 1_800_000, '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000,
-    '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
-  };
-  return map[tf] || 3_600_000;
-}
+// getIntervalMs DELETED (SIGNAL-CLOSEDBAR-SHADOW-W1 CH2) — it was a third copy of the
+// tf→ms table. `intervalMsFor` in src/lib/candle-guard.ts is the single owner; callers
+// supply their own fallback, because the two pre-existing call sites already disagreed
+// about it (`?? 900_000` vs `|| 3_600_000`), which proves the fallback is caller policy
+// and not primitive policy. Three tables → two.
