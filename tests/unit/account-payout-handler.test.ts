@@ -18,6 +18,7 @@ vi.hoisted(() => {
 
 import { accountPayoutAddressHandler } from '../../src/lib/account-handlers.js';
 import { ensureUserCode, getPayoutAddress, ensureReferralSchema } from '../../src/lib/referral-store.js';
+import { ensureFreeKeysSchema, _resetFreeKeyCacheForTest } from '../../src/lib/free-keys-store.js';
 import { dbRun } from '../../src/lib/performance-db.js';
 
 const KEY = 'av_free_0123456789abcdef01234567';
@@ -37,6 +38,13 @@ const req = (body: Record<string, unknown>) => ({ body } as never);
 beforeEach(() => {
   ensureReferralSchema();
   for (const t of ['referral_codes', 'referral_attributions', 'referral_ledger', 'referral_bonus']) dbRun(`DELETE FROM ${t}`);
+  // OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-08): the handler now requires the api key to EXIST before
+  // it mints a referral row, so the test's principal has to be a real key. Previously these cases
+  // passed BECAUSE any well-formed string was accepted — which was the vulnerability.
+  ensureFreeKeysSchema();
+  _resetFreeKeyCacheForTest();
+  dbRun('DELETE FROM free_keys');
+  dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', KEY, 'payout-test@example.com', null);
 });
 
 describe('accountPayoutAddressHandler', () => {

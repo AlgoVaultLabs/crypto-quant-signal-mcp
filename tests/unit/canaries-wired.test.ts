@@ -31,7 +31,11 @@ describe('canary-wiring meta-canary (SEC-19/21/34/36)', () => {
   it('reports zero orphans on the current tree', () => {
     const r = run([]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain('all 15 committed gate scripts are invoked by something');
+    // Assert the INVARIANT, not a gate count: the number grows every time a gate is added, and a
+    // hardcoded total would turn a correct change into a red test — the kind of friction that
+    // gets a gate weakened rather than fixed.
+    expect(r.out).toMatch(/all \d+ committed gate scripts are invoked by something/);
+    expect(r.out).not.toContain('invoked by NOTHING');
   });
 
   it('the three audited orphans are now wired', () => {

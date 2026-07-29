@@ -1,7 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Per-file SQLite isolation (unique temp HOME before imports) — mirrors account-payout-handler.test.ts.
+vi.hoisted(() => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-ref-exist-'));
+  process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
+  delete process.env.DATABASE_URL;
+});
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -58,5 +69,58 @@ describe('referral mint requires an EXISTING principal (SEC-08)', () => {
 
   it('a nonexistent key is refused with 404, not served a freshly-minted dashboard', () => {
     expect(code).toContain("res.status(404).send(getAccountErrorPageHtml('That API key was not found.");
+  });
+});
+
+
+// ── Behavioural proof: the guard actually stops the write ────────────────────────────────────
+const REAL_KEY = 'av_free_0123456789abcdef01234567';
+const GHOST_KEY = 'av_free_ffffffffffffffffffffffff'; // well-formed, never issued
+
+function mockRes() {
+  const res = {
+    statusCode: 200, body: '', headers: {} as Record<string, string>,
+    status(c: number) { res.statusCode = c; return res; },
+    setHeader(k: string, v: string) { res.headers[k] = v; },
+    send(b: string) { res.body = b; return res; },
+  };
+  return res;
+}
+
+describe('the guard prevents the row from being written (SEC-08, behavioural)', () => {
+  beforeEach(async () => {
+    const { ensureReferralSchema } = await import('../../src/lib/referral-store.js');
+    const { ensureFreeKeysSchema, _resetFreeKeyCacheForTest } = await import('../../src/lib/free-keys-store.js');
+    const { dbRun } = await import('../../src/lib/performance-db.js');
+    ensureReferralSchema();
+    ensureFreeKeysSchema();
+    _resetFreeKeyCacheForTest();
+    dbRun('DELETE FROM referral_codes');
+    dbRun('DELETE FROM free_keys');
+    dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', REAL_KEY, 'exists@example.com', null);
+  });
+
+  const countCodes = async (): Promise<number> => {
+    const { dbQuery } = await import('../../src/lib/performance-db.js');
+    const rows = await dbQuery<{ n: number }>('SELECT COUNT(*) AS n FROM referral_codes');
+    return Number(rows[0]?.n ?? 0);
+  };
+
+  it('a well-formed but NONEXISTENT key mints NOTHING and gets 404', async () => {
+    const { accountReferralsHandler } = await import('../../src/lib/account-handlers.js');
+    const before = await countCodes();
+    const res = mockRes();
+    await accountReferralsHandler({ body: { api_key: GHOST_KEY } } as never, res as never);
+    expect(res.statusCode).toBe(404);
+    // The whole point: row count is UNCHANGED. Pre-fix this INSERTed a referral_codes row.
+    expect(await countCodes()).toBe(before);
+  });
+
+  it('a REAL key still works — the guard rejects ghosts, not owners', async () => {
+    const { accountReferralsHandler } = await import('../../src/lib/account-handlers.js');
+    const res = mockRes();
+    await accountReferralsHandler({ body: { api_key: REAL_KEY } } as never, res as never);
+    expect(res.statusCode).toBe(200);
+    expect(await countCodes()).toBe(1);
   });
 });

@@ -91,7 +91,17 @@ function gateScripts(files) {
  * way (tests/unit/caddy-route-parity.test.mjs), and excluding tests reported it as an orphan.
  */
 function invokerFiles(files) {
-  return files.filter((f) => !NON_INVOKING.test(f) && /\.(ya?ml|json|mjs|js|cjs|sh|ts)$/.test(f));
+  return files.filter(
+    (f) =>
+      !NON_INVOKING.test(f) &&
+      /\.(ya?ml|json|mjs|js|cjs|sh|ts)$/.test(f) &&
+      // This file necessarily CONTAINS gate names — its self-test corpus is made of them — so
+      // scanning itself makes every fixture look like a live invocation. The bug appeared the
+      // moment this script became tracked (untracked files are invisible to `git ls-files`), so
+      // it passed while being written and failed on the very next run. Same self-reference trap
+      // that security-canary.mjs excludes itself for.
+      f !== 'scripts/check-canaries-wired.mjs',
+  );
 }
 
 function findInvocations(gate, files) {
