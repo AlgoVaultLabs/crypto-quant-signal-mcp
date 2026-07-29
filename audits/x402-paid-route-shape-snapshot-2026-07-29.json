@@ -1,0 +1,56 @@
+{
+  "snapshot_of": "POST /x402/<tool> — the paid x402 HTTP routes' REJECTION contract",
+  "taken": "2026-07-29",
+  "wave": "OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1",
+  "why": "This wave ADDED one error variant (invalid_content_type) to an existing public endpoint. Per CLAUDE.md, a new or modified public endpoint ships a shape snapshot with a drift check. No success-shape key changed; no existing error was removed or renamed.",
+  "routes": [
+    "/x402/get_trade_signal",
+    "/x402/get_trade_call",
+    "/x402/scan_funding_arb",
+    "/x402/get_market_regime",
+    "/x402/scan_trade_calls",
+    "/x402/get_equity_call",
+    "/x402/get_equity_regime"
+  ],
+  "error_contract": {
+    "402": {
+      "when": "unpaid, cross-tool/underpaid proof, or a replayed nonce",
+      "allowed_keys": ["x402Version", "error", "code", "message", "resource", "accepts"],
+      "codes": ["X402_PAYMENT_REPLAY"],
+      "unchanged_by_this_wave": true
+    },
+    "400 invalid_input": {
+      "when": "body parsed but failed the published JSON Schema for the tool",
+      "allowed_keys": ["error", "code", "details", "suggested_fix"],
+      "code": "X402_HTTP_INVALID_INPUT",
+      "unchanged_by_this_wave": true
+    },
+    "400 invalid_content_type": {
+      "when": "NEW (this wave). The caller DECLARED a body (content-length > 0) but it arrived empty because express.json() declined to parse it — a duplicated/comma-joined content-type, a missing content-type, or a non-JSON media type. Distinguishes a dropped body from a genuinely invalid one, which previously surfaced as a misleading schema error AFTER the payment had already verified.",
+      "allowed_keys": ["error", "code", "message", "suggested_fix"],
+      "code": "X402_HTTP_INVALID_CONTENT_TYPE",
+      "guarantees": [
+        "Emitted ONLY on the paid path (tier==='x402' with a pendingSettlement); an unpaid request still 402s before validation, so the CDP Bazaar crawler contract is untouched.",
+        "No settlement is attempted: this branch precedes tryClaimPayment() and settleX402Async(), so the caller is not charged and no nonce is claimed.",
+        "Never fires when the content-type is a clean JSON media type — a genuinely empty body still returns invalid_input."
+      ]
+    }
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price"
+  ],
+  "success_shape": "Unchanged — the route returns the core tool handler's existing public output object verbatim (byte-parity with the MCP tool).",
+  "cache_contract": "None — paid routes are computed on demand and are not cached.",
+  "consumers": [
+    "Circle Gateway buyers via @circle-fin/x402-batching GatewayClient.pay() (surfaces the body's `error` field verbatim in its thrown message)",
+    "CDP x402 buyers via @x402/fetch and the CDP Bazaar crawler (unpaid GET/POST -> 402 only)",
+    "scripts/circle-gateway-buyer-smoke.mjs (operator smoke)",
+    "landing/docs quickstart copy"
+  ],
+  "drift_check_command": "curl -s -o /dev/null -w '%{http_code}\\n' -X POST https://api.algovault.com/x402/get_market_regime -H 'content-type: application/json' -d '{}'   # expect 402 (unpaid short-circuits before validation; a 400 here would mean the paywall stopped preceding the body check)",
+  "regression_tests": [
+    "tests/x402-paid-path.test.ts — 'paid request whose content-type prevents body parsing' (drives the real mounted route over real fetch with a combined content-type)",
+    "tests/x402-rejection-diagnostics.test.ts — explainDroppedBody() predicate + its false-positive guards"
+  ]
+}
