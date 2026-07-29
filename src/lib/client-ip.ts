@@ -7,10 +7,19 @@
  * address under `app.set('trust proxy', 1)` (index.ts) — it resolves the
  * nearest-TRUSTED-hop value, where a raw leftmost-XFF parse takes the
  * attacker-writable end of the chain the moment any proxy hop appends instead
- * of replacing. Under the deployed single-Caddy replace-mode topology
- * (`header_up X-Forwarded-For {remote_host}`) the two are byte-identical, so
- * adopting this helper changes no live quota bucket or analytics hash
- * (regression-pinned in tests/client-ip-helper.test.ts).
+ * of replacing.
+ *
+ * WHAT `req.ip` RESOLVES TO NOW DIFFERS BY VHOST (OPS-AUDIT-REMEDIATION-HIGH-W1, SEC-07):
+ *   api.algovault.com — Caddy forwards `CF-Connecting-IP` ⇒ the REAL CLIENT.
+ *   algovault.com     — Caddy still forwards `{remote_host}`, which behind CF-orange is the
+ *                       CLOUDFLARE EDGE, not the client. Deliberate: the apex block's own
+ *                       comment records that flipping it moves the `/api/signup-email` +
+ *                       funnel attribution buckets.
+ *
+ * So a bucket keyed on this helper is PER-CLIENT on api. and PER-POP on the apex; anything that
+ * compares or merges hashes across the two must account for that. (The prior version of this
+ * comment said both hops were `{remote_host}` and therefore byte-identical — true when written,
+ * false since the SEC-07 fix.)
  *
  * Returns '' when `req.ip` is absent (callers keep their own fallback semantics,
  * e.g. `|| 'unknown'` at the quota sites, `null` hash at the attribution site).
