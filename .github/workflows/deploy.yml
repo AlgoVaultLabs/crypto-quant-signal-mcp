@@ -393,4 +393,14 @@ jobs:
       # unreachable endpoint), so a transient network blip never fails a good deploy; exit 1 means
       # a real stateful regression.
       - name: Post-deploy MCP stateless canary (fail-open)
-        run: node scripts/check-mcp-stateless.mjs
+        run: |
+          # Wait for the recreated container to answer before probing. Without this the canary
+          # fires seconds after the SSH step and reads the reverse proxy's 502 as a transport
+          # regression — which is exactly what happened on its first real run.
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 https://api.algovault.com/health >/dev/null 2>&1; then
+              echo "health OK after ${i} attempt(s)"; break
+            fi
+            sleep 5
+          done
+          node scripts/check-mcp-stateless.mjs

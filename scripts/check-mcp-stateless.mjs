@@ -92,6 +92,20 @@ async function main() {
     process.exit(0);
   }
 
+  // OPS-AUDIT-REMEDIATION-HIGH-W1: a 5xx is the GATEWAY answering, not the app — the container is
+  // still coming up (or is down). That is "unreachable" under this script's own fail-open contract,
+  // NOT evidence of a stateful transport, and reporting it as a regression is a false positive.
+  //
+  // Found by this canary's first real invocation: wired as a post-deploy step, it fired ~1.6s after
+  // the deploy and got 502 on all three probes, which the evaluator read as "stale session id
+  // rejected ⇒ STATEFUL regression" and failed the deploy. The workflow now also waits for /health,
+  // but the classification is fixed here so any future caller inherits it.
+  const gatewayish = [init.status, list.status, stale.status].filter((s) => s >= 502 && s <= 504);
+  if (gatewayish.length) {
+    console.log(`[mcp-stateless-canary] FAIL-OPEN: ${EP} returned ${gatewayish.join('/')} — gateway/app not up yet, not a statefulness signal — exit 0`);
+    process.exit(0);
+  }
+
   const nTools = list.json && list.json.result && Array.isArray(list.json.result.tools) ? list.json.result.tools.length : 0;
   const failures = evaluateStateless({
     initSid: init.sid, initStatus: init.status,
