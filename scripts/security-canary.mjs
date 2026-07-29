@@ -161,7 +161,58 @@ function secretScanFiles() {
  * Two-way self-test: the gate must FIRE on the real SEC-02 shape and must NOT fire on the
  * placeholdered form that replaced it. Without this a widened regex can silently stop matching.
  */
-const SELF_TEST_COUNTS = { fire: 0, noFire: 0 };
+const SELF_TEST_COUNTS = { fire: 0, noFire: 0, leakFire: 0, leakNoFire: 0 };
+
+/**
+ * The INTERNAL-class value-binding matcher. Hoisted to module scope deliberately: the gate
+ * and its self-test MUST read the same regex object, or the self-test can pass against a
+ * copy while the gate runs a different (broken) one.
+ *
+ * Value-binding form — a SERIALIZED value, never a bare column reference. That is the whole
+ * discriminator: `"vol_score_live": -70` is a leak; `vol_score_live INTEGER NOT NULL` in a
+ * CREATE TABLE, `vol_score_live` in an INSERT column list, and `["vol_score_live"]` in a
+ * forbidden-keys ARRAY are the things being GUARDED, not leaks.
+ *
+ * SIGNAL-CLOSEDBAR-SHADOW-W1 CH2 added the candle-basis shadow's component scores. They are
+ * the same data class as `outcome_return_pct`: raw model internals that would let a caller
+ * reverse-engineer the weighting function, and they never leave the database.
+ */
+const LEAK_VALUE = /["'](outcome_return_pct|outcome_price|phase_e_wr|phaseE|outcome_pnl|vol_score_live|vol_score_closed|raw_live|raw_closed)["']\s*:\s*[-\d.$]/;
+
+/**
+ * Two-way self-test for LEAK_VALUE, mirroring selfTestSecrets.
+ *
+ * A guard asserted only by ABSENCE cannot distinguish "clean" from "never ran" — and this
+ * one had no self-test at all until CH2, so a widening typo would have silently produced a
+ * green PII gate over an unmatched tree.
+ */
+function selfTestLeakValue() {
+  const mustFire = [
+    '"outcome_return_pct": 1.42,',
+    '{"outcome_price":39120.5}',
+    "  'vol_score_live': -70,",
+    '"vol_score_closed": 50',
+    '"raw_live": -12.5,',
+    '"raw_closed":  3',
+  ];
+  // Each of these is a legitimate shape that exists in this tree TODAY. They are locked in
+  // so a future widening cannot start flagging the schema that defines the guarded columns.
+  const mustNotFire = [
+    '  vol_score_live    INTEGER       NOT NULL,',              // CREATE TABLE column
+    '  raw_closed        NUMERIC,',                             // CREATE TABLE column
+    '(coin, exchange, timeframe, vol_score_live, raw_live)',    // INSERT column list
+    'const FORBIDDEN = ["vol_score_live", "raw_live"];',        // forbidden-keys ARRAY
+    'volScoreLive: number | null;',                             // the camelCase TS field
+    'expect(row.volScoreClosed).toBe(50);',
+    '/outcome_return_pct|outcome_price/i',                      // a sibling guard's own regex
+  ];
+  SELF_TEST_COUNTS.leakFire = mustFire.length;
+  SELF_TEST_COUNTS.leakNoFire = mustNotFire.length;
+  const fails = [];
+  mustFire.forEach((l) => { if (!LEAK_VALUE.test(l)) fails.push(`MISSED: ${l.slice(0, 70)}`); });
+  mustNotFire.forEach((l) => { if (LEAK_VALUE.test(l)) fails.push(`FALSE POSITIVE: ${l.slice(0, 70)}`); });
+  return fails;
+}
 function selfTestSecrets() {
   const mustFire = [
     'DATABASE_URL=postgres://algovault:s0meRealSecretValue@127.0.0.1:5432/signal_performance',
@@ -196,15 +247,13 @@ function selfTestSecrets() {
 // ── Gate B — PII / secret leak grep (value-binding discriminator, not bare identifier) ──────────
 function gatePii() {
   log('\n[B] PII / secret-leak gate');
-  // Fail closed if the matcher itself is broken — a vacuous gate is worse than no gate.
-  const stFails = selfTestSecrets();
+  // Fail closed if either matcher is broken — a vacuous gate is worse than no gate.
+  const stFails = [...selfTestSecrets(), ...selfTestLeakValue()];
   if (stFails.length) {
     stFails.forEach((f) => log('    ✖ self-test: ' + f));
-    record('pii', false, `secret-matcher self-test failed (${stFails.length})`);
+    record('pii', false, `matcher self-test failed (${stFails.length})`);
     return false;
   }
-  // Value-binding form: a SERIALIZED value, never a DB column ref. Per CLAUDE.md PII-guard regex.
-  const LEAK_VALUE = /["'](outcome_return_pct|outcome_price|phase_e_wr|phaseE|outcome_pnl)["']\s*:\s*[-\d.$]/;
   const hits = [];
   let files;
   if (DIFF_ONLY) {
@@ -299,9 +348,22 @@ function gateSsrf() {
 // placeholder that replaced it. Runs standalone AND as a precondition of the pii gate, so a
 // widened-then-broken regex can never go quietly vacuous.
 if (argv.includes('--self-test')) {
-  const fails = selfTestSecrets();
-  if (fails.length) { console.error('✖ secret-matcher self-test FAILED:'); fails.forEach((f) => console.error('   - ' + f)); process.exit(1); }
+  const secretFails = selfTestSecrets();
+  const leakFails = selfTestLeakValue();
+  const fails = [...secretFails, ...leakFails];
+  if (fails.length) { console.error('✖ matcher self-test FAILED:'); fails.forEach((f) => console.error('   - ' + f)); process.exit(1); }
+  // Assert the corpora are NON-EMPTY before reporting a pass. A self-test that ran zero
+  // assertions prints exactly the same ✓ as one that ran fifty — which is the vacuous-guard
+  // failure this whole mechanism exists to prevent, and it is not hypothetical: the first
+  // cut of the leak-value self-test was never wired into this branch and cheerfully
+  // reported "passed (0 must-fire, 0 must-not-fire)".
+  const empty = Object.entries(SELF_TEST_COUNTS).filter(([, n]) => n === 0).map(([k]) => k);
+  if (empty.length) {
+    console.error(`✖ self-test is VACUOUS — zero assertions ran for: ${empty.join(', ')}`);
+    process.exit(1);
+  }
   console.log(`✓ secret-matcher self-test passed (${SELF_TEST_COUNTS.fire} must-fire, ${SELF_TEST_COUNTS.noFire} must-not-fire)`);
+  console.log(`✓ leak-value self-test passed (${SELF_TEST_COUNTS.leakFire} must-fire, ${SELF_TEST_COUNTS.leakNoFire} must-not-fire)`);
   process.exit(0);
 }
 
