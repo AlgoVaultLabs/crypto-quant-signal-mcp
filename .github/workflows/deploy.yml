@@ -196,6 +196,14 @@ jobs:
           node scripts/check-canaries-wired.mjs --self-test
           node scripts/check-canaries-wired.mjs
 
+      # OPS-SEC-CLIENT-IP-VERIFY-W1 R5 — the proxy-hop drift gate. SEC-07 was `req.ip` silently
+      # becoming a Cloudflare PoP address, which collapsed every free-tier and rate-limit bucket to
+      # per-PoP with nothing failing and nothing alerting. This asserts the address the app meters
+      # is never inside a published Cloudflare range. Fail-closed on the logic; the live probe runs
+      # post-deploy where a credential is available.
+      - name: Client-IP not-a-CDN gate (fail-closed)
+        run: node scripts/check-client-ip-not-cf.mjs --self-test
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:

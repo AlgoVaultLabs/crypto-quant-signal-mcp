@@ -24,6 +24,14 @@ api.algovault.com {
     # single caller could exhaust or bypass the limit for everyone behind the same PoP.
     # CF-Connecting-IP is the real client (same pattern as /pa/event on the apex); Cloudflare
     # overwrites a client-supplied CF-Connecting-IP at its edge, so it is not spoofable here.
+    #
+    # MEASURED 2026-07-29 (OPS-SEC-CLIENT-IP-VERIFY-W1), read off the wire at BOTH the Caddy and
+    # Express vantages: Cloudflare delivers CF-Connecting-IP already MASKED — /24 for IPv4, /48
+    # for IPv6 (161.142.148.58 arrives as 161.142.148.0). The mask is UPSTREAM, not ours: our only
+    # ip_mask is in the apex LOG block, and remote_ip logged unmasked in the same line. The inbound
+    # X-Forwarded-For does still carry the full client address, so switching to it would restore
+    # exact per-client metering at the cost of reversing that privacy masking — deliberately NOT
+    # done (operator decision). Buckets are therefore per-/24, not per-PoP and not per-host.
     # SCOPE: api. vhost ONLY. The apex block deliberately keeps edge-based bucketing — its own
     # comment records that flipping it moves the funnel/attribution buckets on
     # /api/signup-email, which this wave is not scoped to touch.
