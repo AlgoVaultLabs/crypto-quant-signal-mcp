@@ -118,6 +118,13 @@ jobs:
       - name: Nav sync + coverage guard (build_nav --check)
         run: node scripts/build_nav.mjs --check
 
+      # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 (SEC-36): the mobile-nav parity invariant was committed
+      # but executed by nothing — build_nav.mjs referenced it only inside a COMMENT, so "a desktop
+      # nav shipped without its mobile replacement" was never actually gated. It runs here, next to
+      # the nav guard whose invariant it completes.
+      - name: Mobile-nav parity canary (check_mobile_nav_parity.sh)
+        run: bash scripts/check_mobile_nav_parity.sh
+
       # OPS-ANALYTICS-TAG-SINGLE-SOURCE-W1 CH4 — every content landing page must carry the
       # single-source analytics region (src/lib/analytics-snippet.ts) in sync + total coverage.
       # Fails the push if any page drifted or a new page never got the tag (structural).
@@ -179,6 +186,15 @@ jobs:
         run: |
           node scripts/check-landing-escaping.mjs --self-test
           node scripts/check-landing-escaping.mjs
+
+      # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 — the meta-canary. "A canary exists but nothing runs it"
+      # appeared THREE times in SECURITY-AUDIT-FULL-W1, and is why a live credential sat in a
+      # public repo for seven weeks with every gate green. This fails the build on any committed
+      # gate script that no workflow, cron, hook installer, test or inventory row invokes.
+      - name: Canary-wiring meta-canary (fail-closed)
+        run: |
+          node scripts/check-canaries-wired.mjs --self-test
+          node scripts/check-canaries-wired.mjs
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
@@ -369,3 +385,12 @@ jobs:
             else
               echo "No version change ($OLD_VERSION) — skipping release post"
             fi
+
+      # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 (SEC-21 / SEC-34): post-deploy stateless probe. This
+      # canary shipped with OPS-MCP-SESSION-RESILIENCE-W1 and was invoked by NOTHING — its own
+      # header named an escalation owner that did not exist. It belongs here, after the deploy that
+      # could regress the transport. Fail-open by the script's own contract (exit 0 on an
+      # unreachable endpoint), so a transient network blip never fails a good deploy; exit 1 means
+      # a real stateful regression.
+      - name: Post-deploy MCP stateless canary (fail-open)
+        run: node scripts/check-mcp-stateless.mjs

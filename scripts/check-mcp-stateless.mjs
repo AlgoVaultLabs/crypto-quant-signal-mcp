@@ -10,8 +10,14 @@
  *      under the old stateful path this returned 400 / -32000 "Server not initialized").
  *
  * Exit 0 = stateless/healthy OR endpoint unreachable (FAIL-OPEN — never pages on a transient
- * network blip). Exit 1 = stateful regression. NO Telegram path here: the existing security /
- * feature-registry canary cadence that invokes this script owns escalation (no-TG-on-completion).
+ * network blip). Exit 1 = stateful regression. No Telegram path here.
+ *
+ * OWNER — corrected by OPS-AUDIT-REMEDIATION-HIGH-W1 (SEC-21 / SEC-34). This header used to claim
+ * that "the existing security / feature-registry canary cadence that invokes this script owns
+ * escalation". No such cadence invoked it: the script was committed and run by NOTHING, and the
+ * owner it named did not exist, so the escalation chain was empty end to end. Its real owner is
+ * now a POST-DEPLOY step in .github/workflows/deploy.yml — the step runs right after the deploy
+ * that could regress statelessness, and stays fail-open per this script's own exit contract.
  *
  * Usage:
  *   node scripts/check-mcp-stateless.mjs              # probe prod (api.algovault.com/mcp)
