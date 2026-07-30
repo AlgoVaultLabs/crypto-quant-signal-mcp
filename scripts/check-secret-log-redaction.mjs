@@ -40,13 +40,49 @@ import { dirname, resolve, join } from 'node:path';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 
-/** Strip comments so the gate never matches prose ABOUT the defect it hunts. */
+/**
+ * Literal-aware comment stripper.
+ *
+ * A naive regex pass (block-comment regex + line-comment regex) is NOT safe on real
+ * source: a comment-close sequence, or a double-slash, sitting inside a string or
+ * template literal pairs with a distant comment-open and swallows
+ * hundreds of lines of REAL CODE. Measured on this repo's `src/index.ts`: the naive
+ * stripper removed 96,821 characters and destroyed the entire Stripe webhook switch, so
+ * this gate reported PASS while scanning a file with no case labels left in it — the
+ * dark-guard class all over again. (`check-canaries-wired.mjs` documents the same defect
+ * for YAML globs.) This walks the source tracking string/template state instead.
+ *
+ * NOTE (CLAUDE.md 3-example-threshold): this is now the 3rd hand-written comment
+ * stripper in scripts/. Flagged as a WIS extraction candidate for a dedicated
+ * OPS-SHARED-STRIPCOMMENTS-EXTRACTION wave — deliberately NOT inline-extracted here.
+ */
 export function stripComments(text) {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .map((l) => l.replace(/\/\/.*$/, ''))
-    .join('\n');
+  let out = '';
+  let i = 0;
+  const n = text.length;
+  let mode = 'code'; // 'code' | 'block' | 'line' | "'" | '"' | '`'
+  while (i < n) {
+    const c = text[i];
+    const d = text[i + 1];
+    if (mode === 'code') {
+      if (c === '/' && d === '*') { mode = 'block'; i += 2; out += ' '; continue; }
+      if (c === '/' && d === '/') { mode = 'line'; i += 2; continue; }
+      if (c === "'" || c === '"' || c === '`') { mode = c; out += c; i++; continue; }
+      out += c; i++; continue;
+    }
+    if (mode === 'block') {
+      if (c === '*' && d === '/') { mode = 'code'; i += 2; } else { if (c === '\n') out += '\n'; i++; }
+      continue;
+    }
+    if (mode === 'line') {
+      if (c === '\n') { mode = 'code'; out += '\n'; i++; } else i++;
+      continue;
+    }
+    if (c === '\\') { out += c + (d ?? ''); i += 2; continue; } // escape inside a literal
+    if (c === mode) { mode = 'code'; out += c; i++; continue; }
+    out += c; i++;
+  }
+  return out;
 }
 
 /** Calls that render a value non-disclosing. An interpolation through one of these is clean. */
@@ -119,7 +155,10 @@ export function findQueryAuth(src) {
     hits.push({ rule: 'R3', detail: 'isAdminAuthorized reads req.query — a leaked URL becomes replayable', snippet: fn[0].slice(0, 160) });
   }
   // The extracted predicate module must not learn about the query string either.
-  if (/resolveAdminAuth/.test(code) && /\bquery\b/.test(code) && /export function resolveAdminAuth/.test(code)) {
+  // Match real query ACCESS, not the word "query" in a user-facing message string —
+  // ADMIN_UNAUTHORIZED_API legitimately says "a key in the query string is no longer
+  // accepted", which the bare-word form flagged on its first live run.
+  if (/export function resolveAdminAuth/.test(code) && /\breq\s*\.\s*query\b|\bqueryKey\b|\bquery\s*[:.]/.test(code)) {
     hits.push({ rule: 'R3', detail: 'resolveAdminAuth references a query input — it must take none', snippet: 'src/lib/admin-auth.ts' });
   }
   return hits;

@@ -28,7 +28,10 @@
  * Index `idx_pse_processed_at` supports future cleanup cron (`VACUUM (ANALYZE)`
  * candidate per CLAUDE.md "Postgres provisioning" rules; append-only table).
  */
-import { dbExec, dbRun, dbQuery } from './performance-db.js';
+// NB: `dbRun` is deliberately NOT imported. It is the fire-and-forget writer, and an
+// idempotency claim made through it is neither atomic nor durable (SEC-20). Claims in
+// this module go through the awaited `dbQuery` only.
+import { dbExec, dbQuery } from './performance-db.js';
 
 const CREATE_PROCESSED_STRIPE_EVENTS_SQL = `
   CREATE TABLE IF NOT EXISTS processed_stripe_events (
@@ -71,40 +74,38 @@ export interface ProcessedStripeEventRow {
  */
 export async function tryClaimEvent(row: ProcessedStripeEventRow): Promise<boolean> {
   ensureProcessedStripeEventsSchema();
-  // Two-step claim: SELECT first (race window is acceptable here — Stripe
-  // retries are seconds apart, not concurrent), then INSERT. This avoids
-  // having to peek at rowCount from dbRun (which is a fire-and-forget void).
-  const existing = await dbQuery<{ event_id: string }>(
-    'SELECT event_id FROM processed_stripe_events WHERE event_id = ?',
-    [row.event_id],
-  );
-  if (existing.length > 0) return false;
-
-  try {
-    dbRun(
-      `INSERT INTO processed_stripe_events (event_id, event_type, session_id, customer_email, amount_total, metadata)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+  // ONE awaited round-trip: the database picks the winner, and `true` is returned only
+  // once the row is DURABLE.
+  //
+  // OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch2 (SEC-20) replaced a SELECT-then-`dbRun` claim
+  // that was neither atomic nor durable:
+  //   • `dbRun` is FIRE-AND-FORGET (performance-db `run` → `trackedWrite`). On Postgres
+  //     the UNIQUE-violation rejection resolves inside trackedWrite's own tracked
+  //     promise, so the `catch` meant to detect a lost race could never run — it was
+  //     dead code, and two concurrent deliveries could BOTH claim.
+  //   • `true` was returned BEFORE the row was durable. If that INSERT was later LOST
+  //     (the `[pg-write] WRITE LOST` path — SEC-14), the claim never persisted and
+  //     Stripe's retry re-ran the side-effect anyway.
+  //
+  // `ON CONFLICT (event_id) DO NOTHING RETURNING event_id` returns exactly one row to
+  // the winner and zero rows to every duplicate. Verified on BOTH backends: Postgres
+  // natively, and better-sqlite3 11.10.0 / SQLite 3.49.2, where `.all()` on an
+  // INSERT…RETURNING is a reader statement (first call [{event_id}], second []).
+  const claimed = await dbQuery<{ event_id: string }>(
+    `INSERT INTO processed_stripe_events (event_id, event_type, session_id, customer_email, amount_total, metadata)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (event_id) DO NOTHING
+     RETURNING event_id`,
+    [
       row.event_id,
       row.event_type,
       row.session_id ?? null,
       row.customer_email ?? null,
       row.amount_total ?? null,
       row.metadata ? JSON.stringify(row.metadata) : null,
-    );
-    return true;
-  } catch (err) {
-    // Likely UNIQUE constraint violation from a concurrent retry that won
-    // the SELECT-then-INSERT race. Re-check and return false (already
-    // processed by the racing fiber).
-    const recheck = await dbQuery<{ event_id: string }>(
-      'SELECT event_id FROM processed_stripe_events WHERE event_id = ?',
-      [row.event_id],
-    );
-    if (recheck.length > 0) return false;
-    // Some other error — surface so the webhook returns non-2xx + Stripe
-    // retries (preferred over silent drop).
-    throw err;
-  }
+    ],
+  );
+  return claimed.length > 0;
 }
 
 export async function getEventCount(): Promise<number> {

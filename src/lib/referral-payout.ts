@@ -8,7 +8,15 @@
  * This module does NOT touch accrual math (frozen in referral-accrual.ts).
  */
 import { REFERRAL_TERMS, formatUsdE2, payoutScheduleLabel } from './referral-constants.js';
-import { pendingPayouts, getLedgerById, markLedger, type PendingPayout } from './referral-store.js';
+import {
+  pendingPayouts,
+  getLedgerById,
+  markLedgerAsync,
+  tryClaimLedgerForPayout,
+  releaseLedgerPayoutClaim,
+  type PendingPayout,
+} from './referral-store.js';
+import { randomUUID } from 'node:crypto';
 import { maskEmail, sendPayoutPaidEmail } from './email.js';
 import { cdpPayoutConfigured } from './payout-config.js';
 
@@ -112,12 +120,26 @@ export interface BatchExecutionResult {
  * still-pending ledger rows and send ONE USDC-on-Base payment via the PayoutSender,
  * then mark those rows usdc_paid (same tx_ref) and email the referrer.
  *
- * Safety / idempotency:
- *  - Each ledger row's CURRENT status is re-read before sending — already-paid rows
- *    are skipped, so a replay or a partial-batch retry never double-sends.
- *  - A send failure leaves that referrer's rows usdc_pending (clean resume next run).
+ * Safety / idempotency (SEC-16, OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch2):
+ *  - Every payable row is ATOMICALLY CLAIMED before any send. This docstring previously
+ *    asserted that re-reading `status` made a replay safe; it did not. Read-then-send
+ *    with no claim between is a TOCTOU: the handler awaits `waitForUserOperation` per
+ *    referrer, so a browser resubmit or a second admin tab re-entered this function
+ *    mid-flight, BOTH runs saw `usdc_pending`, and BOTH called `sender.send` — paying
+ *    the referrer twice, on-chain, unrecoverably. The claim is a row in
+ *    `referral_payout_claims` taken via INSERT … ON CONFLICT DO NOTHING RETURNING, so
+ *    the database picks exactly one winner.
+ *  - The claim is ALSO the durable "already sent" marker, independent of the status
+ *    column. If a send succeeds but the mark-paid write is lost, the claim survives and
+ *    the next Approve-all skips the row instead of paying it again.
+ *  - Mark-paid is now AWAITED (`markLedgerAsync`): a lost write raises instead of
+ *    silently re-queueing a row whose money has already moved.
+ *  - A send FAILURE releases the claim, so the rows stay usdc_pending and resume
+ *    cleanly next run. This preserves the PayoutSender contract declared above — a
+ *    throw means no transfer was broadcast.
  *  - `maxBatchUsdE2` is an optional running ceiling (C3 supplies the env value); a
- *    referrer that would breach it is recorded as failed (batch_cap_reached), not sent.
+ *    referrer that would breach it is recorded as failed (batch_cap_reached), not sent,
+ *    and its claims are released.
  *  - The per-tx cap lives in the sender (C3's CdpPayoutSender), which throws over-cap.
  */
 export async function executeApproveAllBatch(
@@ -136,31 +158,46 @@ export async function executeApproveAllBatch(
   };
   const maxBatch = opts?.maxBatchUsdE2 ?? Infinity;
   let spentE2 = 0;
+  // Per-RUN identity. Two concurrent Approve-alls get different refs, so a release can
+  // only ever remove a claim this run actually took — never another run's in-flight one.
+  const runRef = randomUUID();
 
   for (const p of batch.due) {
     if (!p.payout_address) {
       res.skippedNoAddress.push(p.code);
       continue;
     }
-    // Re-read each row's CURRENT status (replay-safe: only still-pending rows are payable).
+    const claimRef = `${runRef}:${p.code}`;
+    // Re-read each row's CURRENT status, then ATOMICALLY CLAIM it. The status re-read
+    // alone is a TOCTOU (SEC-16) — the claim is what makes a concurrent run a no-op.
     const payableIds: number[] = [];
     let payableE2 = 0;
     for (const id of p.ledger_ids) {
       const row = await getLedgerById(id);
-      if (row && row.status === 'usdc_pending') {
-        payableIds.push(id);
-        payableE2 += row.commission_usd_e2;
-      } else {
+      if (!row || row.status !== 'usdc_pending') {
         res.skippedAlreadyPaid.push(id);
+        continue;
       }
+      if (!(await tryClaimLedgerForPayout(id, claimRef))) {
+        // Another run (or an earlier successful send whose mark-paid write was lost)
+        // owns this row. Never send for it.
+        res.skippedAlreadyPaid.push(id);
+        continue;
+      }
+      payableIds.push(id);
+      payableE2 += row.commission_usd_e2;
     }
     if (payableIds.length === 0) continue;
     if (spentE2 + payableE2 > maxBatch) {
+      await releaseClaims(payableIds, claimRef);
       res.failed.push({ code: p.code, reason: 'batch_cap_reached' });
       continue;
     }
     res.attempted++;
     if (opts?.dryRun) {
+      // Nothing was sent, so the claims must not persist — a dry run must leave the
+      // queue exactly as it found it.
+      await releaseClaims(payableIds, claimRef);
       res.paid.push({ code: p.code, amountUsdE2: payableE2, txRef: 'DRY_RUN' });
       res.totalPaidUsdE2 += payableE2;
       spentE2 += payableE2;
@@ -168,7 +205,10 @@ export async function executeApproveAllBatch(
     }
     try {
       const { txRef } = await sender.send(p.payout_address, payableE2);
-      for (const id of payableIds) markLedger(id, 'usdc_paid', txRef);
+      // AWAITED: a lost mark-paid write must raise, not silently re-queue a paid row.
+      // If it does raise, the claim deliberately STAYS — the money moved, so the row
+      // must never be picked up again; it surfaces as skippedAlreadyPaid next run.
+      for (const id of payableIds) await markLedgerAsync(id, 'usdc_paid', txRef);
       spentE2 += payableE2;
       res.totalPaidUsdE2 += payableE2;
       res.paid.push({ code: p.code, amountUsdE2: payableE2, txRef });
@@ -181,8 +221,23 @@ export async function executeApproveAllBatch(
         }
       }
     } catch (err) {
+      // No transfer was broadcast (PayoutSender contract), so release the claims and
+      // let the rows resume next run. This is the "no claimed-but-unsent black hole"
+      // path — without it a transient sender error would strand the referrer forever.
+      await releaseClaims(payableIds, claimRef);
       res.failed.push({ code: p.code, reason: err instanceof Error ? err.message : 'send_failed' });
     }
   }
   return res;
+}
+
+/** Best-effort claim release. A failure here must never mask the original outcome. */
+async function releaseClaims(ledgerIds: number[], claimRef: string): Promise<void> {
+  for (const id of ledgerIds) {
+    try {
+      await releaseLedgerPayoutClaim(id, claimRef);
+    } catch (err) {
+      console.error(`[referral-payout] claim release failed for ledger ${id}:`, err instanceof Error ? err.message : err);
+    }
+  }
 }

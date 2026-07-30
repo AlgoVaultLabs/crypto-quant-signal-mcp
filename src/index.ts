@@ -1376,6 +1376,24 @@ async function startHttp() {
 
       switch (event.type) {
         case 'customer.subscription.created': {
+          // Idempotency BEFORE side-effect (SEC-20, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2).
+          // handleSubscriptionCreated MINTS AN API KEY, overwrites customer.metadata and
+          // sends the welcome email. Stripe retries any non-2xx and can deliver at-least-
+          // once, so without a claim a redelivery generated a SECOND key, silently
+          // invalidating the one the paying customer had already installed, and emailed
+          // them a different one. Same shape as checkout.session.completed below.
+          const isNewSub = await tryClaimEvent({
+            event_id: event.id,
+            event_type: event.type,
+            customer_email: null,
+            metadata: { source: 'customer.subscription.created' },
+          });
+          if (!isNewSub) {
+            console.log(`Stripe webhook: duplicate customer.subscription.created (event ${event.id}) — already processed`);
+            // 200, never 500: a non-2xx makes Stripe retry harder against an event we
+            // have already fully processed.
+            return res.json({ received: true, status: 'duplicate' });
+          }
           const conv = await handleSubscriptionCreated(event);
           // REFERRAL-LIGHT-W1 (C3): if this paid signup carried a ref code (stamped
           // on the subscription by createCheckoutSession), attribute the conversion +

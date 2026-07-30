@@ -223,6 +223,16 @@ jobs:
           node scripts/check-secret-log-redaction.mjs --self-test
           node scripts/check-secret-log-redaction.mjs
 
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
+      # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
+      # applied to customer.subscription.created, which mints an API key. Also asserts no
+      # idempotency store is written through the fire-and-forget writer, and that money
+      # never leaves without a preceding atomic claim (SEC-16).
+      - name: Webhook idempotency gate (fail-closed)
+        run: |
+          node scripts/check-webhook-idempotency.mjs --self-test
+          node scripts/check-webhook-idempotency.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
