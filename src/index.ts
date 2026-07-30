@@ -21,6 +21,12 @@ import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { renderBrandFooter } from './lib/footer-content.js';
+import {
+  resolveAdminAuth,
+  buildAdminSessionCookie,
+  ADMIN_UNAUTHORIZED_PAGE,
+  ADMIN_UNAUTHORIZED_API,
+} from './lib/admin-auth.js';
 import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
@@ -1854,14 +1860,51 @@ async function startHttp() {
       return true;
     }
 
-    /** Check admin auth: Bearer token, query key, or session cookie. */
+    /**
+     * Check admin auth: Bearer token or session cookie.
+     *
+     * SEC-10 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch1): `req.query.key` was REMOVED as
+     * an authorization source. A URL key may only BOOTSTRAP a session (see
+     * `adminKeyBootstrap`); it can no longer authorize a request, so an admin URL
+     * leaked into a ticket, screenshot or access log is not replayable. The
+     * predicate itself lives in ./lib/admin-auth.ts — it takes no query input at
+     * all, so URL-key auth cannot be reintroduced by a future caller.
+     */
     function isAdminAuthorized(req: import('express').Request): boolean {
-      // Bearer token or query key
-      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
-        || (req.query.key as string);
-      if (token && safeCompare(token, adminKey)) return true;
-      // Session cookie
-      return isValidAdminSession(req.headers.cookie);
+      return resolveAdminAuth(
+        { authorization: req.headers['authorization'], cookie: req.headers.cookie },
+        { adminKey, compare: safeCompare, isValidSession: isValidAdminSession },
+      ).authorized;
+    }
+
+    /**
+     * The ONE sanctioned place a URL key is read: exchange `?key=` for an HttpOnly
+     * session cookie and 303 to the clean path, so the credential never survives in
+     * the address bar and never reaches a rendered page. Returns true if it handled
+     * the response (caller must return immediately).
+     */
+    function adminKeyBootstrap(
+      req: import('express').Request,
+      res: import('express').Response,
+      cleanPath: string,
+    ): boolean {
+      const key = typeof req.query.key === 'string' ? req.query.key : '';
+      if (!key || !safeCompare(key, adminKey)) return false;
+      res.setHeader('Set-Cookie', buildAdminSessionCookie(createAdminSession(), {
+        secure: req.secure,
+        ttlMs: ADMIN_SESSION_TTL,
+      }));
+      // Strip ONLY `key`; every other param survives the redirect, so an operator
+      // opening e.g. /admin/geo-dashboard?weeks=52&key=… still lands on weeks=52.
+      const rest = new URLSearchParams();
+      for (const [k, v] of Object.entries(req.query)) {
+        if (k === 'key') continue;
+        if (typeof v === 'string') rest.append(k, v);
+        else if (Array.isArray(v)) for (const item of v) if (typeof item === 'string') rest.append(k, item);
+      }
+      const qs = rest.toString();
+      res.redirect(303, qs ? `${cleanPath}?${qs}` : cleanPath);
+      return true;
     }
 
     /**
@@ -1924,15 +1967,9 @@ async function startHttp() {
 
     // Visual dashboard — key in URL sets a session cookie, then redirects to clean URL
     app.get('/dashboard', (req, res) => {
-      const key = req.query.key as string;
-      if (key && safeCompare(key, adminKey)) {
-        // Authenticate: set session cookie, redirect to clean URL
-        const sessionToken = createAdminSession();
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
-        return res.redirect(303, '/dashboard');
-      }
+      if (adminKeyBootstrap(req, res, '/dashboard')) return;
       if (!isValidAdminSession(req.headers.cookie)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       res.send(getDashboardHtml());
     });
@@ -2017,8 +2054,9 @@ async function startHttp() {
     // LLM-PROVIDER-A/B-W1 trigger status (≥100 queries/day × 7 consecutive
     // days) and stub-provider banner alert (Cowork Q-4 Path B).
     app.get('/admin/chat-analytics', async (req, res) => {
+      if (adminKeyBootstrap(req, res, '/admin/chat-analytics')) return; // SEC-10
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const lookback = Math.max(1, Math.min(180, parseInt(String(req.query.days ?? '90'), 10) || 90));
@@ -2036,8 +2074,9 @@ async function startHttp() {
     // LLMs recommend AlgoVault when asked about crypto trading agents. Mirrors
     // chat-analytics auth pattern: inline isAdminAuthorized(req) check.
     app.get('/admin/geo-dashboard', async (req, res) => {
+      if (adminKeyBootstrap(req, res, '/admin/geo-dashboard')) return; // SEC-10
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const lookbackWeeks = Math.max(1, Math.min(52, parseInt(String(req.query.weeks ?? '12'), 10) || 12));
@@ -2053,14 +2092,9 @@ async function startHttp() {
 
     // Signal performance dashboard (admin-only)
     app.get('/performance-dashboard', (req, res) => {
-      const key = req.query.key as string;
-      if (key && safeCompare(key, adminKey)) {
-        const sessionToken = createAdminSession();
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
-        return res.redirect(303, '/performance-dashboard');
-      }
+      if (adminKeyBootstrap(req, res, '/performance-dashboard')) return;
       if (!isValidAdminSession(req.headers.cookie)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       res.send(getPerformanceDashboardHtml());
     });
@@ -2095,8 +2129,10 @@ async function startHttp() {
     // REFERRAL-LIGHT-W1 (C4): referral admin surfaces — same isAdminAuthorized gate
     // (Bearer / ?key= / admin cookie) as the precedents.
     app.get('/admin/referrals', async (req, res) => {
+      // SEC-10: `?key=` is exchanged for the session cookie and stripped from the URL.
+      if (adminKeyBootstrap(req, res, '/admin/referrals')) return;
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const { topReferrers, listRecentLedger } = await import('./lib/referral-store.js');
@@ -2119,8 +2155,13 @@ async function startHttp() {
     });
 
     app.get('/admin/referrals/payouts', async (req, res) => {
+      // SEC-10: `?key=` is exchanged for the session cookie and stripped from the URL,
+      // so the credential authorizing the irreversible USDC send never persists in the
+      // address bar, browser history, or an access log — and is never re-embedded in
+      // the rendered form action below.
+      if (adminKeyBootstrap(req, res, '/admin/referrals/payouts')) return;
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const { pendingPayouts } = await import('./lib/referral-store.js');
@@ -2132,7 +2173,6 @@ async function startHttp() {
         res.send(renderAdminPayoutsPage({
           pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, payoutAddress: p.payout_address, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
           batchTotalUsdE2: pending.reduce((s, p) => s + p.pending_usd_e2, 0),
-          adminKey: typeof req.query.key === 'string' ? req.query.key : undefined,
         }));
       } catch (err) {
         console.error('[/admin/referrals/payouts] error:', err instanceof Error ? err.message : err);
@@ -2144,8 +2184,11 @@ async function startHttp() {
     // PayoutSender (C2 = Stub → reports not-configured; C3 = CDP server-wallet send),
     // then re-render the (reduced) queue with a result flash. Operator-triggered only.
     app.post('/admin/referrals/payouts/approve-all', async (req, res) => {
+      // SEC-10: no bootstrap on a POST — this is authorized by the session cookie the
+      // payouts page set (SameSite=Strict is still sent on a same-site form submit),
+      // or by an explicit Bearer header. A key in the URL no longer authorizes it.
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_API);
       }
       try {
         const { pendingPayouts } = await import('./lib/referral-store.js');
@@ -2162,7 +2205,6 @@ async function startHttp() {
         res.send(renderAdminPayoutsPage({
           pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, payoutAddress: p.payout_address, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
           batchTotalUsdE2: pending.reduce((s, p) => s + p.pending_usd_e2, 0),
-          adminKey: typeof req.query.key === 'string' ? req.query.key : undefined,
           result: {
             senderKind: result.senderKind,
             paidCount: result.paid.length,
@@ -2278,14 +2320,9 @@ async function startHttp() {
     // the session cookie then redirects). The served HTML embeds no data; it fetches
     // the gated JSON above via a same-origin XHR carrying the admin cookie.
     app.get('/dashboard/funnel', (req, res) => {
-      const key = req.query.key as string;
-      if (key && safeCompare(key, adminKey)) {
-        const sessionToken = createAdminSession();
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
-        return res.redirect(303, '/dashboard/funnel');
-      }
+      if (adminKeyBootstrap(req, res, '/dashboard/funnel')) return;
       if (!isValidAdminSession(req.headers.cookie)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');

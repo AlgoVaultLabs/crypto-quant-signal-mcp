@@ -9,6 +9,7 @@ import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js'
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
+import { formatWriteLossLog } from './log-redact.js';
 
 /**
  * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
@@ -139,14 +140,10 @@ export function buildPoolConfig(
 
 // ── OPS-SIGNAL-WRITE-RESILIENCE-W1 — resilient + loud fire-and-forget writes ──
 
-function safeJson(v: unknown): string {
-  try {
-    const s = JSON.stringify(v);
-    return s.length > 500 ? `${s.slice(0, 500)}…` : s;
-  } catch {
-    return String(v);
-  }
-}
+// NOTE: the former `safeJson` helper lived here solely to render bound parameters
+// into the WRITE-LOST line below. It TRUNCATED but never REDACTED, so it emitted
+// live API keys and subscriber emails (SEC-14). Superseded by the structural
+// redaction in ./log-redact.ts — see `formatWriteLossLog`.
 
 const TRANSIENT_DB_CODES = new Set([
   'EAI_AGAIN', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH',
@@ -250,10 +247,10 @@ class PgBackend implements DbBackend {
     const p = retryAsync(exec, { isRetryable: isTransientDbError })
       .then((r) => {
         if (!r.ok) {
-          console.error(
-            `[pg-write] WRITE LOST after ${r.attempts} attempt(s) [${label}]: ` +
-            `${(r.error as Error)?.message ?? String(r.error)} :: SQL=${sql} PARAMS=${safeJson(params)}`,
-          );
+          // SEC-14: the SQL SHAPE stays loggable (that is the diagnostic value);
+          // every bound parameter and every value-bearing span of the exception
+          // message is masked to len+sha16 by STRUCTURE, never by vendor prefix.
+          console.error(formatWriteLossLog(label, r.attempts, r.error, sql, params));
         } else if (r.attempts > 1) {
           console.error(`[pg-write] ${label} recovered after ${r.attempts} attempt(s)`);
         }

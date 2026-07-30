@@ -416,9 +416,15 @@ export function renderAdminReferralsPage(v: AdminOverviewView): string {
 
 export interface AdminPayoutsView {
   pending: Array<{ code: string; ownerEmail: string | null; payoutAddress: string | null; pendingUsdE2: number; rowCount: number; ledgerIds: number[] }>;
-  // REFERRAL-PAYOUT-OPS-W1 / C2 — batch total + the Approve-all form key + a post-run flash.
+  // REFERRAL-PAYOUT-OPS-W1 / C2 — batch total + a post-run flash.
+  //
+  // SEC-10 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch1): `adminKey` was REMOVED from this
+  // view. It carried ADMIN_API_KEY into the rendered HTML as a form-action query
+  // param, so the credential that authorizes an irreversible on-chain USDC send
+  // landed in browser history, the address bar, and any access log. The POST now
+  // rides the HttpOnly `av_admin_session` cookie (SameSite=Strict), which is sent on
+  // a same-site form submit — so do not re-add a key field here.
   batchTotalUsdE2?: number;
-  adminKey?: string;
   result?: {
     senderKind: string;
     paidCount: number;
@@ -456,8 +462,11 @@ export function renderAdminPayoutsPage(v: AdminPayoutsView): string {
     resultBlock = `<div class="card" style="border-color:${stub ? '#d29922' : 'var(--mint)'}"><strong>${headline}</strong>${stubNote}${skipped}${failed}</div>`;
   }
 
-  const approveAll = (v.pending.length && v.adminKey)
-    ? `<form method="post" action="/admin/referrals/payouts/approve-all?key=${encodeURIComponent(v.adminKey)}" onsubmit="return confirm('Send USDC on Base to all ${v.pending.length} referrer(s) with an address (${formatUsdE2(total)} total)? This is irreversible.')" style="margin:16px 0">
+  // SEC-10: no `?key=` on the action — the POST is authorized by the admin session
+  // cookie. The button's visibility is now driven purely by whether there is
+  // anything to approve, not by whether a credential happened to be in the URL.
+  const approveAll = v.pending.length
+    ? `<form method="post" action="/admin/referrals/payouts/approve-all" onsubmit="return confirm('Send USDC on Base to all ${v.pending.length} referrer(s) with an address (${formatUsdE2(total)} total)? This is irreversible.')" style="margin:16px 0">
         <button type="submit" style="font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px;border:1px solid var(--mint);background:var(--mint);color:var(--bg);cursor:pointer">Approve all &amp; send (${formatUsdE2(total)}) &rarr;</button>
       </form>`
     : '';

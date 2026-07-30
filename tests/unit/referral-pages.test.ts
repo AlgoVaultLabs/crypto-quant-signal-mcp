@@ -132,22 +132,27 @@ describe('renderAdminPayoutsPage — batch view + Approve-all', () => {
         { code: 'NOADDR', ownerEmail: 'b@x.com', payoutAddress: null, pendingUsdE2: 7000, rowCount: 1, ledgerIds: [2] },
       ],
       batchTotalUsdE2: 13000,
-      adminKey: 'SECRET',
     });
     expect(page).toContain('0x5aAe…');         // shortened (prefix + ellipsis)
     expect(page).not.toContain(ADDR);          // full address not shown
     expect(page).toContain('no address');
     expect(page).toContain('$130.00');         // batch total
   });
-  it('renders the Approve-all form carrying the admin key (only when there are rows + key)', () => {
-    const withKey = renderAdminPayoutsPage({
+  // FLIPPED by OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch1 (SEC-10). This test previously
+  // asserted `action="…/approve-all?key=SECRET"` — i.e. it PINNED the defect: the
+  // admin credential rendered into the page HTML. It passed *because of* the bug, so
+  // closing the finding necessarily breaks it. The assertion is inverted rather than
+  // deleted, so the vulnerable shape can never come back unnoticed.
+  it('renders the Approve-all form with NO credential in the action (SEC-10)', () => {
+    const page = renderAdminPayoutsPage({
       pending: [{ code: 'HASADDR', ownerEmail: null, payoutAddress: ADDR, pendingUsdE2: 6000, rowCount: 1, ledgerIds: [1] }],
-      adminKey: 'SECRET',
     });
-    expect(withKey).toContain('action="/admin/referrals/payouts/approve-all?key=SECRET"');
-    expect(withKey).toContain('Approve all');
-    // no key → no form (can't authorize the POST)
-    expect(renderAdminPayoutsPage({ pending: [{ code: 'X', ownerEmail: null, payoutAddress: ADDR, pendingUsdE2: 6000, rowCount: 1, ledgerIds: [1] }] })).not.toContain('approve-all');
+    expect(page).toContain('action="/admin/referrals/payouts/approve-all"');
+    expect(page).toContain('Approve all');
+    expect(page).not.toContain('key=');   // the POST now rides the admin session cookie
+    // Visibility is driven by "is there anything to approve?", never by whether a
+    // credential happened to be in the URL.
+    expect(renderAdminPayoutsPage({ pending: [] })).not.toContain('approve-all');
   });
   it('flashes a stub (not-configured) result vs a real send result', () => {
     const stub = renderAdminPayoutsPage({ pending: [], result: { senderKind: 'stub', paidCount: 0, totalPaidUsdE2: 0, skippedNoAddress: [], failed: [] } });

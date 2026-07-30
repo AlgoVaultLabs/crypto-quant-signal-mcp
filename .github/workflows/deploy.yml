@@ -213,6 +213,16 @@ jobs:
           node scripts/check-iphash-keyed.mjs --self-test
           node scripts/check-iphash-keyed.mjs
 
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch1 — SEC-14 + SEC-10 were CLAUDE.md laws that no gate
+      # enforced ("redact by STRUCTURE, never by vendor prefix"; no credential in a URL). Patching
+      # the two call sites fixes today; this makes a NEW leaking lane fail the build. Emits
+      # SECRET_LOG_REDACTION_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (scanned nothing) blocks too,
+      # so a broken scan can never read as "verified clean".
+      - name: Secret-log redaction gate (fail-closed)
+        run: |
+          node scripts/check-secret-log-redaction.mjs --self-test
+          node scripts/check-secret-log-redaction.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
