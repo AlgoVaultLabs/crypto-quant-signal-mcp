@@ -74,28 +74,44 @@
         {
           "port": 80,
           "proto": "tcp",
-          "allowed_sources": ["cloudflare"],
-          "classification": "restrict-to-source",
-          "purpose": "HTTP->HTTPS redirect for proxied hostnames, and the ACME HTTP-01 challenge path until DNS-01 is proven.",
-          "closure_candidate": "Once DNS-01 issuance is proven end-to-end, renewal no longer needs any inbound path and this port can move to `declared-closed`. Gated behind a real obtain, never switch-and-assume: a silently-broken DNS-01 plus a closed :80 means certificates expire and the site dies.",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
+          "purpose": "HTTP->HTTPS redirect (308 on every path, verified) and the ACME HTTP-01 challenge path.",
+          "justification": "DEFERRED, not overlooked — the CF-only narrowing hit a ratified HALT branch. The ruling was 'DNS-01 first, then restrict', precisely so renewal stops depending on any inbound path. DNS-01 turned out to be blocked by an unstated prerequisite: this host runs Caddy 2.6.2, which ships NO dns.providers module and has NO `add-package` subcommand (that arrived in 2.7). DNS-01 therefore requires replacing the Caddy binary on the host serving all public traffic — a materially larger change than configuration, five days before the Aug 4-5 renewal. Forcing it is exactly what the HALT branch exists to prevent.",
+          "narrowed_by_wave": "OPS-CF-ORIGIN-LOCK-W{NEXT}",
           "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
         },
         {
           "port": 443,
           "proto": "tcp",
-          "allowed_sources": ["cloudflare"],
-          "classification": "restrict-to-source",
-          "purpose": "All public traffic: landing, /verify, api.algovault.com, /api/merkle-batches, Stripe webhooks, x402 + Circle Gateway settlement callbacks. Every one of these arrives addressed to a CF-proxied hostname, so every one transits Cloudflare.",
-          "evidence": "All 11 A/AAAA/CNAME records on the zone were enumerated. All three that resolve to this origin are PROXIED. The single DNS-only record (blog.algovault.com) CNAMEs to hashnode.network and never touches this origin, so it is not blackholed by this rule.",
-          "why_restricted": "MEASURED, not hygiene: ~300 requests/24h reach this origin directly, bypassing Cloudflare entirely — proven by their raw-IP Host headers (232x '<origin>:80', 68x bare origin IP), which cannot have transited CF because CF always forwards the original hostname. 68 of them probed /.well-known/acme-challenge/, a cert-takeover recon pattern. Until this rule exists, Cloudflare's WAF, rate-limiting and bot-management are OPTIONAL for any attacker who knows the address — and the address is irreversibly published.",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
+          "purpose": "All public traffic: landing, /verify, api.algovault.com, /api/merkle-batches, Stripe webhooks, x402 + Circle Gateway settlement callbacks.",
+          "justification": "DEFERRED with the same HALT branch as :80 — see that entry. Recording the finding so the follow-up wave does not re-derive it: ~300 requests/24h reach this origin DIRECTLY, bypassing Cloudflare, proven by raw-IP Host headers (232x '<origin>:80', 68x bare origin IP) which cannot have transited CF because CF always forwards the original hostname; 68 probed /.well-known/acme-challenge/, a cert-takeover recon pattern. The origin answers https with a valid publicly-trusted certificate, so CF's WAF, rate-limiting and bot-management are OPTIONAL for anyone who knows the address — and the address is irreversibly published. This is the highest-value narrowing still outstanding.",
+          "narrowed_by_wave": "OPS-CF-ORIGIN-LOCK-W{NEXT}",
+          "narrowing_prework_already_done": "Gate 1 of the ratified order is COMPLETE and need not be repeated: all 11 A/AAAA/CNAME records on the zone were enumerated, and all three that resolve to this origin (algovault.com, api.algovault.com, plausible.algovault.com) are PROXIED. The single DNS-only record, blog.algovault.com, CNAMEs to hashnode.network and resolves into Hashnode's own hosting — it never touches this origin, so a CF-only rule blackholes nothing. Cloudflare publishes 22 source CIDRs, comfortably inside the 500-rule cap.",
+          "open_question_for_the_follow_up": "Whether DNS-01 is needed at all, or whether a CF-only rule is safe under the EXISTING HTTP-01 path. The deduction that it is safe: every hostname is CF-proxied, so Let's Encrypt cannot reach this origin directly and renewal must already transit Cloudflare today; TLS-ALPN-01 cannot traverse a CF proxy because CF terminates TLS, so HTTP-01-via-CF is necessarily the working path, and restricting to CF ranges would not change it. That is a DEDUCTION, not a measurement, and the ratified rule is 'prove issuance end-to-end, never switch-and-assume'. Proving it means forcing a real obtain, which is itself the thing the HALT branch forbids doing days before renewal. After the Aug 4-5 renewal completes there is a clean ~3-month runway in which to force one safely.",
           "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
         },
         {
           "port": 443,
           "proto": "udp",
-          "allowed_sources": ["cloudflare"],
-          "classification": "restrict-to-source",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
           "purpose": "HTTP/3 (QUIC). Caddy binds *:443/udp; must track the TCP rule or H3 clients silently fall back.",
+          "justification": "Tracks the :443/tcp ruling exactly — deferred under the same HALT branch. Narrowing these two apart would leave H3 clients failing over to TCP for reasons no one would connect back to a firewall change.",
+          "narrowed_by_wave": "OPS-CF-ORIGIN-LOCK-W{NEXT}",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        },
+        {
+          "port": null,
+          "proto": "icmp",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
+          "purpose": "ICMP. Deliberately allowed rather than swept up in the default-deny.",
+          "justification": "Availability, not convenience: blocking inbound ICMP breaks Path MTU Discovery (the `fragmentation-needed` reply), which manifests as large HTTPS responses hanging on any path with a reduced MTU — a failure mode that looks nothing like a firewall rule and would be debugged for hours. Hetzner's firewall is stateful, but its docs do not state whether related ICMP errors are exempted, so this is allowed EXPLICITLY rather than assumed. Negligible attack surface; a real availability risk if omitted.",
+          "narrowed_by_wave": "none — ICMP is not a narrowing candidate; this entry exists to record the decision, not to defer it",
+          "not_port_probed": true,
           "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
         }
       ],
@@ -145,6 +161,17 @@
           "why_no_operator_entry": "Refines the ratified D2 'operator + signal-1' two-entry list to zero entries, because the evidence removed both: signal-1 has never called it, and the operator address is dynamic. Operator access is preserved via an SSH tunnel over port 22 (`ssh -L 8080:127.0.0.1:8080 aoe-1`), which is strictly better than pinning a rotting /32. One-line revert if the architect disagrees: add `operator` to allowed_sources.",
           "additional_risk_closed": "The listener is PLAINTEXT HTTP — a TLS handshake to :8080 fails. Bearer tokens were crossing the public internet in cleartext to a box holding AOE model artifacts.",
           "end_state_wave": "OPS-AOE-MCP-BEHIND-TUNNEL-W{NEXT} — rebind to loopback behind Cloudflare Tunnel + Zero Trust Access. This is configuration, not new infrastructure: cloudflared already runs on this host serving aoe.algovault.com -> 127.0.0.1:4200 (tunnel 6454e5f8-...), so exposing the MCP is an extra ingress stanza plus a DNS record. Preferring a loopback rebind over a firewall rule is the standing rule; the firewall is the reversible interim while an agent-facing endpoint's URL and auth model change under their own wave.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        },
+        {
+          "port": null,
+          "proto": "icmp",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
+          "purpose": "ICMP. Same ruling as signal-1 — see that entry's justification.",
+          "justification": "Availability, not convenience: blocking inbound ICMP breaks Path MTU Discovery, a failure mode that looks nothing like a firewall rule. Allowed explicitly rather than assumed, because Hetzner's docs do not state whether its stateful firewall exempts related ICMP errors. Kept identical across both hosts so the two postures do not diverge for no reason.",
+          "narrowed_by_wave": "none — ICMP is not a narrowing candidate; this entry records the decision rather than deferring it",
+          "not_port_probed": true,
           "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
         }
       ],
