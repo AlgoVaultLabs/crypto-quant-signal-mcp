@@ -10,36 +10,54 @@
 # off). Sibling installer: scripts/install_test_gate_hook.sh wires this into
 # .git/hooks/pre-push (composably).
 #
-# CONTRACT
-#   exit 0  — no new failures vs baseline (or warn-mode, or fail-open).
-#   exit 1  — at least one NEW failing file/runner vs baseline (block the push).
-#   exit 2  — the gate COULD NOT VERIFY: the suite never ran (see hard_fail).
-#             Distinct from 1 so "a test regressed" and "the gate is broken" are
-#             never confused. The installed hook is `… || exit 1`, so both block.
+# CONTRACT  [settled by OPS-TEST-GATE-RECONCILE-W1]
+#   Every gate run prints EXACTLY ONE terminal machine-readable line:
+#       TEST_GATE_VERDICT=PASS | FAIL | INDETERMINATE
+#   Never absent, never more than one. Callers MUST read the TOKEN, not just the exit
+#   code, and a chapter/CI verdict requires TEST_GATE_VERDICT=PASS.
+#
+#   exit 0  — PASS:          the suite ran and no new failure appeared vs the baseline.
+#   exit 1  — FAIL:          at least one NEW failing file/runner vs the baseline.
+#   exit 2  — INDETERMINATE: the gate COULD NOT VERIFY — the suite never ran, so
+#                            NOTHING was checked. Distinct from 1 so "a test regressed"
+#                            and "the gate is broken" are never confused. The installed
+#                            hook is `… || exit 1`, so both block.
+#
+#   ⚠ THESE ARE DELIBERATELY *NOT* THE MONITORING EXIT CODES. Do not "align" them.
+#   `postgres-cpu-autopilot.py` uses 0=silent / 1=escalate / 2=critical-bypass /
+#   3=framework-error, where `2` means something else entirely. This script is a
+#   git-hook / CI gate — a different domain with ZERO shared callers: nothing reads both
+#   code spaces and no wrapper maps between them. So the cost of cross-domain divergence
+#   is ~0, while two codes for ONE meaning *inside this script* is a live footgun.
+#   OPS-TEST-GATE-FAILOPEN-W1 briefly introduced `3` on that symmetry argument; `2` was
+#   already deployed for the same meaning, so `2` wins and `3` is retired.
 #
 # MODES  (env)
-#   ALGOVAULT_TEST_GATE=block  (default) — exit 1 on regression, exit 2 if the
-#                                          gate cannot verify at all.
-#   ALGOVAULT_TEST_GATE=warn             — report, but exit 0. An EXPLICIT operator
-#                                          opt-out (not a silent fail-open); the
-#                                          ungated push is still recorded in the
-#                                          fail-open ledger.
+#   ALGOVAULT_TEST_GATE=block  (default) — 0 / 1 / 2 exactly as above.
+#   ALGOVAULT_TEST_GATE=warn             — THE one fail-open lever and the documented
+#                                          operator opt-out. It downgrades the exit CODE
+#                                          to 0 but NEVER the token, so a degraded run
+#                                          stays visibly degraded; the ungated push is
+#                                          recorded in the fail-open ledger.
+#                                          There is no `--hook` flag: the installed hook
+#                                          already blocks on any non-zero, so a flag with
+#                                          no consumer would be dead config.
 #   ALGOVAULT_TEST_GATE_AUTOINSTALL=0    — disable the `npm ci` auto-recovery below.
 #
-# FAIL-OPEN (never block a legit push on tooling/infra breakage) — reserved for a
-# genuinely INCONCLUSIVE environment the pusher can't fix from inside the hook:
-#   missing node/npx/jq, an unrecoverable dependency state, or a GENUINE compile
-#   error  → banner + ledger entry + exit 0.
+# NOTHING FAILS OPEN SILENTLY. Missing node/npx/jq, an unrecoverable dependency state, a
+# GENUINE compile error, an unusable report path (mktemp) and an unparseable vitest
+# report are ALL "the gate verified nothing" ⇒ INDETERMINATE / exit 2, with the banner
+# and (when the push is actually allowed) the ledger row.
+#   [OPS-TEST-GATE-MKTEMP-PORTABILITY-W1 hard-failed the two report-path cases;
+#    OPS-TEST-GATE-RECONCILE-W1 closed the remaining soft ones. Pinned by
+#    tests/unit/test-gate-report-path.test.ts.]
 #
-# NOT fail-open — "the suite did not run" is a HARD FAIL (exit 2), because a gate
-# that exits 0 while verifying nothing is indistinguishable from a healthy one:
-#   an unusable report path (mktemp failure), or vitest producing no parseable
-#   report (crash / bad flag / OOM)  → banner + exit 2.
-#   [OPS-TEST-GATE-MKTEMP-PORTABILITY-W1 — pinned by
-#    tests/unit/test-gate-report-path.test.ts. NOTE this is the one line where the
-#    two waves disagreed: FAILOPEN-VISIBILITY-W1 listed "an unparseable vitest
-#    report" as a fail-open. It is now a hard fail — that exact path is how the
-#    gate went dark on 2026-07-29.]
+#   ⚠ THE ONE BEHAVIOUR CHANGE + ITS REVERSAL LEVER. A cold checkout (no node_modules)
+#   with autoinstall OFF now BLOCKS a push where it previously did not. That is only
+#   acceptable because FAILOPEN-VISIBILITY-W1 shipped `ALGOVAULT_TEST_GATE_AUTOINSTALL`
+#   in the same arc, so the cold case can self-heal instead of wedging. If auto-recovery
+#   proves unreliable in practice the answer is `ALGOVAULT_TEST_GATE=warn` — NOT
+#   re-widening fail_open() back to exit 0.
 #
 # OPS-TEST-GATE-FAILOPEN-VISIBILITY-W1 (2026-07-18) — fail-open used to be a
 # single stderr line, so a checkout whose node_modules was 17 days stale pushed
@@ -58,8 +76,72 @@
 # dist/). Safe to run repeatedly; accepts a no-op `--check` flag.
 set -uo pipefail
 
+BASELINE_FILE="audits/test-baseline-known-failures.txt"
+# Resolved BEFORE the first possible verdict() call, so warn-mode is honoured even on
+# the earliest failure path (the `cd` below).
+MODE="${ALGOVAULT_TEST_GATE:-block}"
+# macOS exports TMPDIR WITH a trailing slash; strip it so composed paths don't
+# contain a cosmetic `//` (it shows up in every log path this script prints).
+TMP="${TMPDIR:-/tmp}"
+TMP="${TMP%/}"
+
+info() { echo "[test-gate] $*"; }
+warn() { echo "[test-gate] WARNING: $*" >&2; }
+
+# ── the ONE place a verdict is emitted  [OPS-TEST-GATE-RECONCILE-W1] ───────────
+#
+# Single-derivation: token → exit code is mapped here and nowhere else, and every
+# terminal path goes through verdict(). That is what makes "exactly one
+# TEST_GATE_VERDICT line per run" structural rather than a convention the next
+# early-return has to remember.
+#
+# `2` (not 3) for INDETERMINATE: `2` is what main already deployed for "could not
+# verify", and one meaning must not acquire a second code. See the docblock for why
+# the monitoring 0/1/2/3 convention deliberately does NOT apply in this domain.
+map_code() {  # $1 = token, $2 = mode → echoes the exit code
+  local c
+  case "$1" in
+    PASS)          c=0 ;;
+    FAIL)          c=1 ;;
+    INDETERMINATE) c=2 ;;
+    *)             echo 2; return 0 ;;
+  esac
+  # warn downgrades the CODE, never the token.
+  if [ "$c" -ne 0 ] && [ "${2:-block}" = "warn" ]; then c=0; fi
+  echo "$c"
+}
+
+verdict() {  # $1 = PASS|FAIL|INDETERMINATE
+  local token="$1" code
+  case "$token" in
+    PASS|FAIL|INDETERMINATE) ;;
+    *) warn "internal: unknown verdict token '$token' — reporting INDETERMINATE."; token=INDETERMINATE ;;
+  esac
+  code="$(map_code "$token" "$MODE")"
+  if [ "$token" != "PASS" ] && [ "$MODE" = "warn" ]; then
+    warn "ALGOVAULT_TEST_GATE=warn → $token downgraded to exit 0. Nothing is blocked."
+  fi
+  echo "TEST_GATE_VERDICT=$token"
+  exit "$code"
+}
+
+# ── pure decision helpers (driven directly by --self-test) ─────────────────────
+# Side-effect-free so the self-test exercises the REAL logic rather than a copy —
+# a self-test against a copy proves nothing about the shipped path.
+report_usable() {  # $1 = report path
+  [ -n "${1:-}" ] && [ -f "$1" ] && jq -e '.testResults' "$1" >/dev/null 2>&1
+}
+compute_new_fails() {  # $1 = baseline set, $2 = current failing set
+  comm -13 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | grep -vE '^[[:space:]]*$' || true
+}
+decide_verdict() {  # $1 = new-failure set, $2 = node:test failure marker
+  if [ -n "${1:-}" ] || [ -n "${2:-}" ]; then echo FAIL; else echo PASS; fi
+}
+
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$REPO_ROOT" || { echo "[test-gate] cannot cd to repo root; failing OPEN" >&2; exit 0; }
+# Was `exit 0` — a 9th silent fail-open. If we cannot even locate the repo root then
+# nothing was verified, and the caller must hear that rather than read a pass.
+cd "$REPO_ROOT" || { warn "cannot cd to repo root — nothing was verified."; verdict INDETERMINATE; }
 
 # CRITICAL: when invoked from a git hook (pre-push), git exports GIT_DIR /
 # GIT_INDEX_FILE / GIT_WORK_TREE / GIT_PREFIX / GIT_COMMON_DIR / GIT_QUARANTINE_PATH
@@ -73,15 +155,8 @@ unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR \
       GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_QUARANTINE_PATH \
       GIT_NAMESPACE GIT_REFLOG_ACTION 2>/dev/null || true
 
-BASELINE_FILE="audits/test-baseline-known-failures.txt"
-MODE="${ALGOVAULT_TEST_GATE:-block}"
-# macOS exports TMPDIR WITH a trailing slash; strip it so composed paths don't
-# contain a cosmetic `//` (it shows up in every log path this script prints).
-TMP="${TMPDIR:-/tmp}"
-TMP="${TMP%/}"
-
-info() { echo "[test-gate] $*"; }
-warn() { echo "[test-gate] WARNING: $*" >&2; }
+# (BASELINE_FILE / MODE / TMP / info / warn are declared above the `cd`, so the
+#  earliest failure path can already emit a verdict.)
 
 # ── OPS-TEST-GATE-FAILOPEN-VISIBILITY-W1 — loud + auditable fail-open ──────────
 #
@@ -97,22 +172,43 @@ warn() { echo "[test-gate] WARNING: $*" >&2; }
 # rather than a write-only file nobody opens.
 FAILOPEN_LOG="$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/algovault-test-gate-failopen.log"
 
+# OPS-TEST-GATE-RECONCILE-W1 — this function keeps its name, its banner and its
+# ledger, but no longer decides the exit code: it reports INDETERMINATE and lets
+# verdict() map it. In `block` that is exit 2 (the push is stopped); under
+# ALGOVAULT_TEST_GATE=warn it is exit 0 (the documented opt-out).
+#
+# The ledger records UNGATED PUSHES only. A blocked run let nothing through, so it is
+# not a ledger event — the invariant main already pinned with "a blocking hard failure
+# does NOT write a ledger row", now extended consistently to the soft cases that used
+# to be unconditionally exit-0.
 fail_open() {
-  local reason="$1" sha
+  local reason="$1" sha allowed=no
+  [ "$MODE" = "warn" ] && allowed=yes
   sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   {
     echo ""
     echo "════════════════════════════════════════════════════════════════════════"
-    echo "  ⚠  TEST GATE SKIPPED — THIS PUSH IS UNGATED"
+    if [ "$allowed" = yes ]; then
+      echo "  ⚠  TEST GATE SKIPPED — THIS PUSH IS UNGATED"
+    else
+      echo "  ✗  TEST GATE COULD NOT VERIFY — NO TESTS RAN"
+    fi
     echo "════════════════════════════════════════════════════════════════════════"
     echo "  reason : $reason"
-    echo "  effect : NO tests ran. Nothing was verified. Allowing the push (exit 0)."
-    echo "  logged : $FAILOPEN_LOG"
+    if [ "$allowed" = yes ]; then
+      echo "  effect : NO tests ran. Nothing was verified. Allowing the push (exit 0)."
+      echo "  logged : $FAILOPEN_LOG"
+    else
+      echo "  effect : NO tests ran. Nothing was verified. BLOCKING (exit 2)."
+      echo "  fix    : usually 'npm ci'. Deliberate override: ALGOVAULT_TEST_GATE=warn"
+    fi
     echo "════════════════════════════════════════════════════════════════════════"
     echo ""
   } >&2
-  printf '%s\t%s\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$sha" "$reason" >>"$FAILOPEN_LOG" 2>/dev/null || true
-  exit 0
+  if [ "$allowed" = yes ]; then
+    printf '%s\t%s\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$sha" "$reason" >>"$FAILOPEN_LOG" 2>/dev/null || true
+  fi
+  verdict INDETERMINATE
 }
 
 # Surfaced on the GREEN path: the suite has now actually run, so any previously
@@ -192,6 +288,85 @@ classify_build_log() {
 if [ "${1:-}" = "--classify-build-log" ]; then
   command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 2; }
   classify_build_log "${2:?usage: $0 --classify-build-log <build.log>}"
+  # DELIBERATELY token-free: this is a debug/test entrypoint whose STDOUT *is* the
+  # classification, read directly by tests/unit/test-gate-build-classifier.test.ts.
+  # The one-verdict-line contract governs GATE runs and --self-test, not this probe.
+  exit 0
+fi
+
+# ── --self-test (hermetic: never runs the real suite) ──────────────────────────
+#
+# Drives the REAL pure helpers above, so a green self-test says something about the
+# shipped decision path rather than about a copy of it.
+if [ "${1:-}" = "--self-test" ]; then
+  command -v jq >/dev/null 2>&1 || { echo "✖ self-test needs jq on PATH"; echo "TEST_GATE_VERDICT=INDETERMINATE"; exit 2; }
+  st_dir="$(mktemp -d "$TMP"/test-gate-selftest.XXXXXX)" || { echo "✖ self-test could not mktemp -d"; echo "TEST_GATE_VERDICT=INDETERMINATE"; exit 2; }
+  trap 'rm -rf "$st_dir"' EXIT
+  printf '{"testResults":[{"name":"/r/tests/a.test.ts","status":"passed"}]}' > "$st_dir/good.json"
+  printf 'not json at all'                                                   > "$st_dir/garbage.json"
+
+  st_fails=(); st_fire=0; st_nofire=0; st_map=0
+
+  # must-map: the token→exit-code mapping IS the contract, so it is asserted directly
+  # rather than merely implied by the token assertions.
+  #
+  # This corpus exists because the deliberate-breakage step found it missing in
+  # OPS-TEST-GATE-FAILOPEN-W1: with only token assertions, re-coding the INDETERMINATE
+  # mapping to 0 — precisely the defect this arc exists to fix — left the self-test
+  # fully green. A self-test that cannot catch the regression it was written for is
+  # decoration.
+  chk_map() {  # $1 = label, $2 = expected code, $3 = token, $4 = mode
+    st_map=$((st_map + 1))
+    local got; got="$(map_code "$3" "$4")"
+    if [ "$2" = "$got" ]; then echo "    ✓ must-map: $1 ⇒ exit $got"
+    else st_fails+=("WRONG must-map: $1 — expected exit $2, got $got"); fi
+  }
+  chk_fire() {  # $1 = case, $2 = expected token, $3 = actual token
+    st_fire=$((st_fire + 1))
+    if [ "$2" = "$3" ]; then echo "    ✓ must-fire: $1 ⇒ $3/$(map_code "$3" block)"
+    else st_fails+=("MISSED must-fire: $1 — expected $2, got $3"); fi
+  }
+  chk_nofire() {
+    st_nofire=$((st_nofire + 1))
+    if [ "$2" = "$3" ]; then echo "    ✓ must-not-fire: $1 ⇒ $3/$(map_code "$3" block)"
+    else st_fails+=("FALSE POSITIVE must-not-fire: $1 — expected $2, got $3"); fi
+  }
+  tok_for_report() { if report_usable "${1:-}"; then echo PASS; else echo INDETERMINATE; fi; }
+
+  echo "[test-gate] --self-test (hermetic; no suite is run)"
+  chk_fire   "empty report path (mktemp failure)"   INDETERMINATE "$(tok_for_report "")"
+  chk_fire   "unparseable report"                   INDETERMINATE "$(tok_for_report "$st_dir/garbage.json")"
+  chk_fire   "absent report file"                   INDETERMINATE "$(tok_for_report "$st_dir/nope.json")"
+  chk_fire   "new failure absent from the baseline" FAIL \
+             "$(decide_verdict "$(compute_new_fails "tests/known.test.ts" "tests/known.test.ts
+tests/brand-new.test.ts")" "")"
+  chk_nofire "clean report matching the baseline"   PASS \
+             "$(decide_verdict "$(compute_new_fails "tests/known.test.ts" "")" "")"
+  chk_nofire "the only failure IS allow-listed"     PASS \
+             "$(decide_verdict "$(compute_new_fails "tests/known.test.ts" "tests/known.test.ts")" "")"
+
+  chk_map "PASS in block mode"          0 PASS          block
+  chk_map "FAIL in block mode"          1 FAIL          block
+  chk_map "INDETERMINATE in block mode" 2 INDETERMINATE block
+  chk_map "FAIL under warn"             0 FAIL          warn
+  chk_map "INDETERMINATE under warn"    0 INDETERMINATE warn
+  chk_map "PASS is never downgraded"    0 PASS          warn
+
+  # Vacuity guard — a self-test that ran zero assertions prints the same ✓ as one that
+  # ran twelve. CLOSEDBAR CH2's PII-guard self-test shipped exactly that way and
+  # reported a green "passed (0 must-fire, 0 must-not-fire)".
+  if [ "$st_fire" -eq 0 ] || [ "$st_nofire" -eq 0 ] || [ "$st_map" -eq 0 ]; then
+    echo "self-test failed: VACUOUS — must-fire=$st_fire must-not-fire=$st_nofire must-map=$st_map (all must be > 0); refusing to report a pass."
+    echo "TEST_GATE_VERDICT=INDETERMINATE"
+    exit 2
+  fi
+  if [ "${#st_fails[@]}" -gt 0 ]; then
+    echo "self-test failed:"; printf '   - %s\n' "${st_fails[@]}"
+    echo "TEST_GATE_VERDICT=FAIL"
+    exit 1
+  fi
+  echo "self-test passed ($st_fire must-fire, $st_nofire must-not-fire, $st_map must-map)"
+  echo "TEST_GATE_VERDICT=PASS"
   exit 0
 fi
 
@@ -228,7 +403,7 @@ hard_fail() {
     fail_open "$1 [hard failure downgraded by ALGOVAULT_TEST_GATE=warn]"
   fi
   echo "[test-gate] push BLOCKED. Fix the toolchain, or override with: ALGOVAULT_TEST_GATE=warn git push" >&2
-  exit 2
+  verdict INDETERMINATE
 }
 
 # ── fail-open preflight: is the toolchain even present? ──
@@ -312,7 +487,7 @@ if [ -z "$VITEST_DIR" ] || [ ! -d "$VITEST_DIR" ]; then
 fi
 VITEST_JSON="$VITEST_DIR/report.json"
 npx vitest run --reporter=json --outputFile="$VITEST_JSON" >"$TMP/test-gate-vitest.log" 2>&1 || true
-if ! jq -e '.testResults' "$VITEST_JSON" >/dev/null 2>&1; then
+if ! report_usable "$VITEST_JSON"; then
   # Deliberately hard_fail, NOT fail_open: this is the exact branch that let the
   # gate exit 0 having run nothing on 2026-07-29. Cleanup is handled by the trap.
   hard_fail "vitest wrote no parseable report to $VITEST_JSON — see $TMP/test-gate-vitest.log (tail below).
@@ -338,24 +513,26 @@ fi
 
 # ── baseline diff: NEW = current-failing − allow-listed-known-failing ──
 BASELINE="$( [ -f "$BASELINE_FILE" ] && grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$BASELINE_FILE" | sort -u || true )"
-NEW_FAILS="$(comm -13 <(printf '%s\n' "$BASELINE") <(printf '%s\n' "$CURRENT_FAILS") | grep -vE '^[[:space:]]*$' || true)"
+NEW_FAILS="$(compute_new_fails "$BASELINE" "$CURRENT_FAILS")"
 KNOWN_N="$(printf '%s' "$BASELINE" | grep -cE '.' || true)"
 
-if [ -z "$NEW_FAILS" ] && [ -z "$NODE_FAILS" ]; then
+# The SAME pure helper the self-test drives, so the shipped decision and the asserted
+# decision cannot drift apart.
+VERDICT_TOKEN="$(decide_verdict "$NEW_FAILS" "$NODE_FAILS")"
+
+if [ "$VERDICT_TOKEN" = "PASS" ]; then
   # The suite actually ran and is clean → any commits pushed while the gate was
   # failing open are now covered. Surface them once, then clear the ledger.
   report_and_clear_failopen_ledger
   info "GREEN — vitest + node:test pass; no new failures vs baseline (${KNOWN_N} allow-listed)."
-  exit 0
+  verdict PASS
 fi
 
 echo "[test-gate] ✗ NEW test failure(s) vs the committed baseline ($BASELINE_FILE):" >&2
 [ -n "$NEW_FAILS" ] && printf '  - %s\n' $NEW_FAILS >&2
 [ -n "$NODE_FAILS" ] && echo "  - $NODE_FAILS" >&2
-if [ "$MODE" = "warn" ]; then
-  warn "ALGOVAULT_TEST_GATE=warn → reporting only, NOT blocking (exit 0)."
-  exit 0
-fi
-echo "[test-gate] push BLOCKED. Fix the regression, OR re-run with ALGOVAULT_TEST_GATE=warn to override," >&2
-echo "[test-gate] OR (if genuinely intractable) quarantine it with a ledger row + a line in $BASELINE_FILE." >&2
-exit 1
+[ "$MODE" = "warn" ] || {
+  echo "[test-gate] push BLOCKED. Fix the regression, OR re-run with ALGOVAULT_TEST_GATE=warn to override," >&2
+  echo "[test-gate] OR (if genuinely intractable) quarantine it with a ledger row + a line in $BASELINE_FILE." >&2
+}
+verdict FAIL

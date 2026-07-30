@@ -213,6 +213,20 @@ jobs:
           node scripts/check-iphash-keyed.mjs --self-test
           node scripts/check-iphash-keyed.mjs
 
+      # OPS-TEST-GATE-FAILOPEN-W1 (landed by OPS-TEST-GATE-RECONCILE-W1) — the test gate is the
+      # verdict source for every Bulk-Spec chapter gate, and during SIGNAL-CLOSEDBAR-SHADOW-W1
+      # CH2 it printed a pass having run ZERO tests (a BSD mktemp bug emptied the report path;
+      # the script then took a fail-open exit 0). This asserts the gate's own verdict logic in
+      # CI so it cannot rot back into an always-pass: 4 must-fire + 2 must-not-fire + 6 must-map
+      # cases, and it refuses to report a pass if any corpus is empty.
+      #
+      # Deliberately the --self-test and NOT a second full-suite run: the suite already runs
+      # fail-closed at "Vitest suite (pre-deploy gate)" above, so invoking the whole gate here
+      # would double CI wall-clock for no added signal. What CI cannot otherwise catch is the
+      # gate's own decision logic going vacuous — which is exactly what this covers.
+      - name: Test-gate verdict logic (fail-closed)
+        run: bash scripts/check_test_baseline.sh --self-test
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
