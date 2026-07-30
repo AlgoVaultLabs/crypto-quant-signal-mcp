@@ -609,8 +609,29 @@ const CREATE_FUNDING_STATS_MATVIEW_SQL = `
    GROUP BY coin;
 `;
 
+// OPS-SEC-DB-LEAST-PRIV-W2: guarded on ownership, because `CREATE INDEX` checks the
+// relation's OWNER *before* the `IF NOT EXISTS` short-circuit — so on prod, where the
+// matview is owned by `algovault_autopilot` (that role owns it so its postgres-CPU
+// recovery action can `REFRESH`, and so the 5-min host cron can refresh as the true
+// owner rather than borrowing superuser), a bare CREATE INDEX raises
+// `must be owner of materialized view` on EVERY schema-ensure. That was invisible while
+// the app connected as the bootstrap superuser, which bypasses the check entirely.
+// The index already exists there, so the statement was pure noise on a fire-and-forget
+// `exec` — it surfaced as `[pg-write] WRITE LOST`, which is exactly the shape of a real
+// lost write and would have trained the eye to ignore it.
+// The fresh-box path is unchanged: whoever CREATEs the matview owns it, so the guard
+// passes and the unique index (required by REFRESH ... CONCURRENTLY) is created.
 const CREATE_FUNDING_STATS_MATVIEW_INDEX_SQL = `
-  CREATE UNIQUE INDEX IF NOT EXISTS funding_stats_14d_coin_uk ON funding_stats_14d (coin);
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1 FROM pg_class c
+       WHERE c.relname = 'funding_stats_14d'
+         AND pg_catalog.pg_get_userbyid(c.relowner) = current_user
+    ) THEN
+      CREATE UNIQUE INDEX IF NOT EXISTS funding_stats_14d_coin_uk ON funding_stats_14d (coin);
+    END IF;
+  END $$;
 `;
 
 // POWER-USER-OUTREACH-W1-V2 (2026-05-28): NEW signup_emails table for free-tier
