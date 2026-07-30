@@ -1,8 +1,20 @@
 # Stage 1: Build
-FROM node:20-alpine AS builder
+#
+# OPS-RUNTIME-NODE24-W1 (Ch2) — SEC-15. Node 20 reached EOL 2026-04-30, so this image could
+# never be rebuilt patched again. Node 24 is the Active LTS line (EOL 2028-04-30). Pinned to a
+# MINOR + an explicit Alpine version, never a floating `:24`, and IDENTICAL in both stages —
+# a Stage-1/Stage-2 base mismatch is the classic ABI trap (it does not bite here, because
+# Stage 2 runs its own `npm ci`, but keeping them in lockstep is what keeps it that way).
+#
+# `--ignore-scripts` is LOAD-BEARING — see the full rationale in Dockerfile.facilitator.
+# Short version: better-sqlite3 v13 needs no install script but still ships a binding.gyp, and
+# npm's implicit gypfile default fires under `npm ci` and dies here (this image has no
+# python3/make/g++/cc). It is also the correct end-state for npm 12, which turns install
+# scripts off by default.
+FROM node:24.18-alpine3.24 AS builder
 WORKDIR /app
 COPY package*.json tsconfig.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY src/ ./src/
 RUN npm run build
 # KNOWLEDGE-ARTIFACT-W1 (2026-05-18, Q-2 Path B): generator runs INSIDE Stage 1
@@ -16,14 +28,14 @@ COPY README.md ./README.md
 RUN npm run build:knowledge
 
 # Stage 2: Production
-FROM node:20-alpine
+FROM node:24.18-alpine3.24
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --production
+RUN npm ci --production --ignore-scripts
 COPY --from=builder /app/dist/ ./dist/
 # CHANGELOG.md is read at runtime by src/scripts/agent-forum-post.ts::generateRelease()
 # via src/lib/changelog-parser.ts — ship it inside the image so the script no
-# longer needs the `git` CLI (which alpine node:20-alpine does not include).
+# longer needs the `git` CLI (which the alpine node images do not include).
 COPY CHANGELOG.md ./
 # INTEGRATIONS-W1 C6 — landing/integrations/*.html pre-rendered mirrors
 # read at startup by the /docs/integrations/:exchange route in dist/index.js.
