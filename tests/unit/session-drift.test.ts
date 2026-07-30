@@ -68,6 +68,28 @@ describe('check-session-drift.mjs — verdict contract', () => {
     expect(r.stdout).toMatch(/merged_live_refs\s+remote_refs=\d+ merged_but_live=\d+ stale_over_\d+d=\d+/);
   });
 
+  // The bug this pins was invisible to every other form of testing. Under `pre-push` git
+  // exports GIT_DIR/GIT_WORK_TREE, and env GIT_DIR overrides even `git -C <dir>` — so mode 2's
+  // per-worktree probes silently read the PUSHING repo instead. Measured on the first real
+  // hook invocation: colliding_worktrees=59 of 59 (100% false positives) while a standalone
+  // run of the same commit reported 0. No standalone run, unit test or --self-test could see
+  // it, because none of them have git's hook env set. So the test sets it explicitly.
+  it('is immune to git hook env leakage (GIT_DIR overrides even `git -C`)', { timeout: 30_000 }, () => {
+    const gitDir = resolve(__dirname, '..', '..', '.git');
+    const clean = run();
+    const hooked = run([], { GIT_DIR: gitDir, GIT_WORK_TREE: resolve(__dirname, '..', '..') });
+
+    const countOf = (out: string) =>
+      Number((out.match(/colliding_worktrees=(\d+)/) ?? [])[1] ?? -1);
+
+    expect(countOf(hooked.stdout), `hooked run:\n${hooked.all}`).toBeGreaterThanOrEqual(0);
+    expect(
+      countOf(hooked.stdout),
+      `hook env changed the verdict — GIT_DIR leaked into the per-worktree probes.\nclean:\n${clean.stdout}\nhooked:\n${hooked.stdout}`,
+    ).toBe(countOf(clean.stdout));
+    expect(tokenOf(hooked.stdout)).toBe(tokenOf(clean.stdout));
+  });
+
   it('fails CLOSED on an unparseable config: INDETERMINATE + exit 3', { timeout: 30_000 }, () => {
     const backup = readFileSync(CONFIG, 'utf8');
     try {

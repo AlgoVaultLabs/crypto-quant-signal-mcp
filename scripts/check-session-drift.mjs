@@ -138,8 +138,37 @@ export function loadConfig(path = CONFIG_PATH) {
   return cfg;
 }
 
+/**
+ * CRITICAL — scrub git's hook environment before shelling out.
+ *
+ * When invoked from `pre-push`, git exports GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE /
+ * GIT_PREFIX / GIT_COMMON_DIR / GIT_QUARANTINE_PATH into the environment, and **env GIT_DIR
+ * overrides even `git -C <dir>`**. Mode 2's whole job is probing OTHER worktrees, so without
+ * this every per-worktree probe silently reads the PUSHING repo instead: measured on the
+ * first real hook invocation as `colliding_worktrees=59` out of 59 — a 100% false-positive
+ * rate that would have gotten the gate disabled on day one — while a standalone run of the
+ * same commit correctly reported 0.
+ *
+ * `check_test_baseline.sh` documents and scrubs exactly this for the same reason. It is the
+ * literal case for CLAUDE.md's "run it where it lives, as the hook invokes it": no standalone
+ * run, no unit test and no `--self-test` could observe it, because none of them have git's
+ * hook env set.
+ */
+const GIT_HOOK_ENV = [
+  'GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_PREFIX', 'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_QUARANTINE_PATH',
+  'GIT_NAMESPACE', 'GIT_REFLOG_ACTION',
+];
+const CLEAN_ENV = (() => {
+  const e = { ...process.env };
+  for (const k of GIT_HOOK_ENV) delete e[k];
+  return e;
+})();
+
 function git(args, cwd = ROOT) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync('git', args, {
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: CLEAN_ENV,
+  }).trim();
 }
 
 // ── the three checks ─────────────────────────────────────────────────────────────────────
