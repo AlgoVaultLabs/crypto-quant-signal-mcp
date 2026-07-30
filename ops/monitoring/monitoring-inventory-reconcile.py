@@ -70,10 +70,12 @@ Reads the host locally when running ON the host; falls back to SSH otherwise, so
 serves the 06:57 cron and a laptop-side gate run. Fail-open on any SSH/parse failure.
 """
 import argparse
+import errno
 import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 from datetime import datetime, timezone, date
@@ -475,10 +477,146 @@ def call_wrapper(body):
         log(f"FAILED_WRAPPER_CALL: {exc}")
 
 
+# ─────────── POSTURE_DRIFT (OPS-HOST-EXPOSURE-POSTURE-W1) ───────────
+#
+# The 9th check. Every other check compares a committed artifact against the host filesystem;
+# this one compares the DECLARED inbound posture against what is actually reachable, probed from
+# a real off-box vantage — the peer host. `ss` on the box cannot answer "is this reachable from
+# the internet"; only something outside the box can, which is why this check probes the PEER
+# rather than localhost.
+#
+# It never mutates a firewall. Detection and alerting only: an unattended job must not change a
+# network rule. That limit is deliberate, not a gap.
+
+
+def _resolve_posture_path():
+    """Same sibling rule as the inventory — correct in a checkout AND at /opt/algovault-monitoring."""
+    env = os.environ.get("NETWORK_POSTURE_PATH")
+    if env:
+        return Path(env)
+    sibling = Path(__file__).resolve().parent / "network-posture.json"
+    if sibling.exists():
+        return sibling
+    return REPO_ROOT / "ops/monitoring/network-posture.json"
+
+
+POSTURE_PATH = _resolve_posture_path()
+POSTURE_PROBE_TIMEOUT = float(os.environ.get("POSTURE_PROBE_TIMEOUT", "6"))
+
+
+def peer_address(label):
+    """Opaque label → address, from the ENVIRONMENT only.
+
+    Never from network-posture.json: that file is committed to a PUBLIC repo and is required to
+    stay address-free. Set POSTURE_PEER_AOE_1 / POSTURE_PEER_SIGNAL_1 in the host's cron env.
+    Returns None when unset, which makes the probe SKIP loudly rather than pass silently.
+    """
+    return os.environ.get("POSTURE_PEER_" + label.upper().replace("-", "_"))
+
+
+def tcp_reachable(addr, port, timeout=None):
+    """True/False reachability, or None when the probe itself could not run (fail-open)."""
+    try:
+        with socket.create_connection((addr, port), timeout=timeout or POSTURE_PROBE_TIMEOUT):
+            return True
+    except (ConnectionRefusedError, socket.timeout, TimeoutError):
+        return False
+    except OSError as exc:
+        # Refused/unreachable are ANSWERS; anything else (DNS failure, no route, local socket
+        # exhaustion) means the prober is broken, and a broken prober must never read as a clean
+        # posture — the false-green shape OPS-FRESHNESS-SOURCE-TRUTH-W1 codified.
+        if exc.errno in (errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH):
+            return False
+        return None
+
+
+def expected_open_from(rule, prober_labels):
+    """SINGLE DERIVATION of expected peer reachability — see _expected_from_peer_derivation.
+
+    Reachable from the prober IFF the rule allows `any`, or names the prober's own label. A rule
+    restricted to `cloudflare` is therefore expected CLOSED from a peer host, and reporting that
+    as an outage would be the obvious false fire.
+    """
+    srcs = rule.get("allowed_sources") or []
+    if "any" in srcs:
+        return True
+    return any(lbl in srcs for lbl in prober_labels)
+
+
+def check_posture_drift(labels=None, posture=None, probe=None, resolve=None):
+    """Probe every peer host's declared ports from HERE. Returns findings + positive per-port rows.
+
+    Findings are the two directions that both matter:
+      UNEXPECTED_OPEN   — reachable but not declared reachable from here. The next accidentally
+                          published port lands here on its first cycle.
+      UNEXPECTED_CLOSED — declared reachable from here but not reachable. That is an outage
+                          signal, not a posture nit.
+
+    `probe` and `resolve` are injectable so --self-test can exercise BOTH directions hermetically —
+    no sockets, no network, no dependence on the live posture of either host.
+    """
+    labels = labels if labels is not None else HOST_LABELS
+    probe = probe or tcp_reachable
+    resolve = resolve or peer_address
+    out = {"findings": [], "probed": [], "skipped": []}
+
+    if posture is None:
+        try:
+            posture = json.loads(POSTURE_PATH.read_text())
+        except Exception as exc:
+            out["skipped"].append({"reason": "POSTURE_LOAD_FAILED",
+                                   "path": str(POSTURE_PATH), "error": str(exc)[:160]})
+            return out
+
+    for target, cfg in (posture.get("hosts") or {}).items():
+        if target in labels:
+            continue  # a host cannot be its own off-box vantage
+        addr = resolve(target)
+        if not addr:
+            out["skipped"].append({
+                "reason": "PEER_ADDRESS_UNSET", "target": target,
+                "hint": "set POSTURE_PEER_" + target.upper().replace("-", "_") + " in the cron env"})
+            continue
+
+        # Declared-reachable ports, plus every loopback-only port — the latter are expected CLOSED,
+        # and probing them is exactly what catches a future rebind from 127.0.0.1 to 0.0.0.0.
+        probes = []
+        for rule in cfg.get("inbound", []):
+            if rule.get("proto") != "tcp" or rule.get("port") is None:
+                continue  # icmp/udp are declared but not port-probed; see not_port_probed
+            probes.append((rule["port"], expected_open_from(rule, labels), "inbound"))
+        for rule in cfg.get("loopback_only", []):
+            if rule.get("proto", "tcp").startswith("tcp") and rule.get("port") is not None:
+                probes.append((rule["port"], False, "loopback_only"))
+
+        for port, expect_open, origin in sorted(set(probes)):
+            actual = probe(addr, port)
+            if actual is None:
+                out["skipped"].append({"reason": "PROBE_FAILED", "target": target, "port": port})
+                continue
+            verdict = "OK" if actual == expect_open else (
+                "UNEXPECTED_OPEN" if actual else "UNEXPECTED_CLOSED")
+            # POSITIVE per-port row — port + observed state + verdict. Never absence-of-alert:
+            # a port silently skipped by a load error must not look like a port that passed.
+            out["probed"].append({"target": target, "port": port, "origin": origin,
+                                  "expected": "open" if expect_open else "closed",
+                                  "observed": "open" if actual else "closed", "verdict": verdict})
+            if verdict != "OK":
+                out["findings"].append({"target": target, "port": port, "verdict": verdict,
+                                        "origin": origin,
+                                        "expected": "open" if expect_open else "closed"})
+    return out
+
+
 # ─────────── main ───────────
 
-def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None):
-    """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known."""
+def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None):
+    """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known.
+
+    `posture_result` is passed in rather than computed here so the network probe runs EXACTLY
+    once per invocation — its positive per-port rows and its findings are two projections of one
+    derivation, not two independent probes that could disagree.
+    """
     labels = labels if labels is not None else HOST_LABELS
     return {
         "HASH_DRIFT": check_hash_drift(rows, host_hashes),
@@ -488,6 +626,7 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None):
         "PENDING_STALE": check_pending_stale(rows),
         "REGISTRY_PARITY": check_registry_parity(rows, host_hashes, labels)["breaches"],
         "NO_BACKUP": check_no_backup(rows, backups, labels),
+        "POSTURE_DRIFT": (posture_result or {}).get("findings", []),
         "DIVERGENT_COPY": divergent_copy_findings(rows),
     }
 
@@ -534,10 +673,12 @@ def main(check_mode=False):
         return 0
     backups = host_backups()
 
-    f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS)
+    posture_result = check_posture_drift(HOST_LABELS)
+
+    f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
     drift_keys = ("HASH_DRIFT", "ORPHAN", "DARK", "SCHEDULE_DRIFT", "PENDING_STALE",
-                  "REGISTRY_PARITY", "NO_BACKUP")
+                  "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT")
     drifted = any(f[k] for k in drift_keys)
 
     if not check_mode:
@@ -551,6 +692,16 @@ def main(check_mode=False):
         rp = check_registry_parity(owned, host_hashes, HOST_LABELS)
         log(f"REGISTRY_COVERAGE: asserted_here={sum(len(entries_for_host(r, HOST_LABELS)) for r in owned if r.get('installed_at'))} "
             f"deferred_to_other_instances={rp['deferred'] or 'none'}")
+        # POSITIVE per-port accounting for the network probe: port + observed state + verdict for
+        # EVERY port probed, and a loud row for every port that could NOT be probed. A dark prober
+        # exiting 0 must never be indistinguishable from a clean posture.
+        for row in posture_result.get("probed", []):
+            log(f"POSTURE {row['target']}:{row['port']}/tcp ({row['origin']}) "
+                f"expected={row['expected']} observed={row['observed']} -> {row['verdict']}")
+        for sk in posture_result.get("skipped", []):
+            log(f"POSTURE_SKIPPED {json.dumps(sk)} — fail-open, NOT a pass")
+        if not posture_result.get("probed") and not posture_result.get("skipped"):
+            log("POSTURE_DRIFT: no peer host to probe from this instance (single-host posture)")
         if backups is None:
             log("NO_BACKUP: SKIPPED — backup listing unavailable (fail-open, not a pass)")
         streak = update_breach_streak(drifted)
@@ -749,6 +900,55 @@ def self_test():
         ck("no registry entry carries a literal address", new_leaks, [])
     except Exception as exc:
         failures.append(f"inventory self-registration: {exc}")
+
+    # ── 9. POSTURE_DRIFT, both directions, hermetically (injected probe + resolver) ──
+    POSTURE = {"hosts": {
+        "me-1": {"inbound": [{"port": 22, "proto": "tcp", "allowed_sources": ["any"]}]},
+        "peer-1": {
+            "inbound": [
+                {"port": 22, "proto": "tcp", "allowed_sources": ["any"]},
+                {"port": 443, "proto": "tcp", "allowed_sources": ["cloudflare"]},
+                {"port": 8080, "proto": "tcp", "allowed_sources": []},
+                {"port": None, "proto": "icmp", "allowed_sources": ["any"]},
+                {"port": 443, "proto": "udp", "allowed_sources": ["any"]},
+            ],
+            "loopback_only": [{"port": 5432, "proto": "tcp"}],
+        }}}
+    ME = {"me-1"}
+    res = lambda t: "203.0.113.9"          # RFC-5737 documentation address
+    pd = lambda open_ports: check_posture_drift(
+        ME, POSTURE, probe=lambda a, p: p in open_ports, resolve=res)
+
+    healthy = pd({22})
+    ck("healthy posture -> zero findings", healthy["findings"], [])
+    ck("a host never probes itself", [r["target"] for r in healthy["probed"] if r["target"] == "me-1"], [])
+    ck("icmp/udp declared but NOT port-probed",
+       sorted({r["port"] for r in healthy["probed"]}), [22, 443, 5432, 8080])
+    ck("cloudflare-restricted :443 is expected CLOSED from a peer (the obvious false fire)",
+       [r["verdict"] for r in healthy["probed"] if r["port"] == 443], ["OK"])
+    ck("positive per-port rows carry port+observed+verdict",
+       all({"port", "observed", "verdict", "expected"} <= set(r) for r in healthy["probed"]), True)
+
+    # direction 1 — a port that should not be reachable, is. The next stray published port.
+    o = pd({22, 8080})["findings"]
+    ck("UNEXPECTED_OPEN fires", [(f["port"], f["verdict"]) for f in o], [(8080, "UNEXPECTED_OPEN")])
+    ck("a loopback_only port rebound to 0.0.0.0 is caught",
+       [(f["port"], f["verdict"]) for f in pd({22, 5432})["findings"]], [(5432, "UNEXPECTED_OPEN")])
+
+    # direction 2 — a port that should be reachable, is not. An outage signal, not a nit.
+    c = pd(set())["findings"]
+    ck("UNEXPECTED_CLOSED fires", [(f["port"], f["verdict"]) for f in c], [(22, "UNEXPECTED_CLOSED")])
+
+    # fail-open, but never fail-SILENT: an unprobeable peer is a loud skip, not a pass.
+    unset = check_posture_drift(ME, POSTURE, probe=lambda a, p: True, resolve=lambda t: None)
+    ck("unresolvable peer -> skipped, not a finding", unset["findings"], [])
+    ck("unresolvable peer -> loud skip row",
+       [s["reason"] for s in unset["skipped"]], ["PEER_ADDRESS_UNSET"])
+    broke = check_posture_drift(ME, POSTURE, probe=lambda a, p: None, resolve=res)
+    ck("a broken prober reports SKIPPED, never a clean posture", broke["findings"], [])
+    ck("a broken prober emits one skip row per port", len(broke["skipped"]), 4)
+    ck("unreadable posture file -> skip, not a pass",
+       check_posture_drift(ME, {"hosts": {}}, probe=lambda a, p: True, resolve=res)["findings"], [])
 
     for f_ in failures:
         log(f"SELF_TEST_FAIL: {f_}")
