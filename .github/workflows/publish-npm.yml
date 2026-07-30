@@ -49,7 +49,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'   # >= 22.14.0 required for OIDC trusted publishing (Node 22 LTS)
+          # OPS-RUNTIME-NODE24-W1: tracks the production runtime (Node 20 EOL 2026-04-30).
+          # OIDC needs npm >= 11.5.1; Node 24 BUNDLES npm 11.16.0, so the floor is met with no
+          # explicit npm upgrade step (Node 22 bundles npm 10.9.8 and did NOT meet it on its own).
+          # 11.16.0 is also still < 12, so `npm ci` keeps its current install-script behaviour.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       # npm >= 11.5.1 is required for OIDC trusted publishing. Pin to the latest 11.x
