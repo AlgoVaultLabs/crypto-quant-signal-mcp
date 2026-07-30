@@ -13,10 +13,17 @@
  * multi-hop (spoofable) XFF the two deliberately diverge: the helper resolves the
  * trusted-hop value, the old parse took the attacker-controlled leftmost.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import express from 'express';
+
+// OPS-SEC-IPHASH-SALT-W1: hashIp is now HMAC-keyed and throws without a key (no unkeyed fallback,
+// by design). This suite's contract — two EQUAL ips produce two EQUAL hashes — is unchanged; it
+// just needs a key to compute one. Set before the module under test is imported.
+vi.hoisted(() => {
+  process.env.ALGOVAULT_IP_HASH_KEY ??= 'test-only-ip-hash-key-0123456789abcdef';
+});
 
 import { clientIp } from '../src/lib/client-ip.js';
 import { hashIp } from '../src/lib/analytics.js';

@@ -245,10 +245,100 @@ export function initAnalytics(): void {
   }
 }
 
-// ── IP hashing ──
+// ── IP pseudonymisation (keyed + versioned) ─────────────────────────────────────────────────────
+//
+// OPS-SEC-IPHASH-SALT-W1. This was `sha256(ip)[0:16]` — UNKEYED, so a stored `ip_hash` was
+// reversible by brute force in seconds: the input space is ~2^32 for a full IPv4 and only ~2^24 for
+// the /24-masked value we actually hash (Cloudflare masks CF-Connecting-IP upstream). An unkeyed
+// hash over a tiny input space is not a pseudonym, it is an encoding — so the analytics and quota
+// tables were effectively an address store, and any read path onto them a de-anonymisation dataset.
+//
+// Now HMAC-SHA256 under a server-side key held only in the host `.env` (mode 600). HMAC rather than
+// `sha256(salt + ip)` because HMAC is the purpose-built keyed-hash primitive.
+//
+// VERSIONING is the durable half of the fix. Every value carries its derivation version inline, so
+// the pre/post boundary is LEGIBLE instead of two incompatible namespaces silently sharing a
+// column. Historical `v1` values are never re-hashed — they cannot be, the input IP is gone, which
+// is exactly the property we wanted. A future rotation bumps the tag and becomes a non-event.
+//
+// The prefix rides in the VALUE rather than a sibling column because the highest-value consumers are
+// keys, not rows: `quota_usage.tracker_key` (`free:<hash>`), `chat_usage_monthly.api_key`
+// (`ip:<hash>`) and `agent_sessions.session_id` have nowhere to put a sibling column. It also keeps
+// the PQL cross-table join intact: `SUBSTR('free:v2:<hash>', 6)` = `v2:<hash>`, which still matches
+// `request_log.ip_hash` exactly.
 
+/** Current pseudonym derivation version. Bump ONLY together with a key rotation. */
+export const IP_HASH_VERSION = 'v2';
+
+const IP_HASH_KEY_ENV = 'ALGOVAULT_IP_HASH_KEY';
+
+/**
+ * Values that look like a key but are not one. A placeholder that silently "works" would emit
+ * v2-labelled pseudonyms under a guessable key — worse than v1, because the label would assert a
+ * protection that does not exist.
+ */
+const PLACEHOLDER_KEYS = new Set([
+  'changeme', 'change-me', 'placeholder', 'todo', 'replace-me', 'secret', 'key',
+  'your-key-here', 'xxx', 'test', 'dev',
+]);
+
+/** Thrown at HTTP boot, or on use, when the key is absent or obviously not a real key. */
+export class IpHashKeyError extends Error {
+  readonly code = 'IP_HASH_KEY_MISSING';
+  constructor(detail: string) {
+    super(
+      `${IP_HASH_KEY_ENV} ${detail}. IP pseudonymisation is keyed (OPS-SEC-IPHASH-SALT-W1) and has ` +
+      'NO unkeyed fallback by design — a fallback would silently write reversible v1-shaped values ' +
+      'under a v2 label. Generate one with `openssl rand -hex 32` and add it to the host .env ' +
+      '(mode 600) BEFORE deploying. See docs/RUNBOOK-IPHASH-ROTATION.md.',
+    );
+    this.name = 'IpHashKeyError';
+  }
+}
+
+/**
+ * The ONE place the key is resolved and validated (single-derivation rule). Throws rather than
+ * returning a fallback — see IpHashKeyError.
+ */
+export function resolveIpHashKey(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env[IP_HASH_KEY_ENV];
+  if (raw === undefined || raw === null) throw new IpHashKeyError('is not set');
+  const key = raw.trim();
+  if (!key) throw new IpHashKeyError('is empty');
+  if (PLACEHOLDER_KEYS.has(key.toLowerCase())) throw new IpHashKeyError(`is the placeholder "${key}"`);
+  if (key.length < 32) throw new IpHashKeyError(`is only ${key.length} chars (need >= 32; use \`openssl rand -hex 32\`)`);
+  return key;
+}
+
+/**
+ * Assert the key is usable. Called at HTTP-transport boot so a mis-sequenced deploy fails LOUDLY and
+ * IMMEDIATELY, rather than lazily on the first request that would have written a bucket.
+ *
+ * Deliberately NOT called in stdio mode: every `hashIp` call site takes an Express `req`, so the
+ * stdio/npx path never reaches it, and requiring a key there would break every published
+ * `npx crypto-quant-signal-mcp` install for a protection those users are not exposed to.
+ */
+export function assertIpHashKeyConfigured(env: NodeJS.ProcessEnv = process.env): void {
+  resolveIpHashKey(env);
+}
+
+/**
+ * Keyed, version-tagged pseudonym for an IP-derived value. Output: `v2:<16 hex>`.
+ *
+ * Never returns an unkeyed value — it throws instead. Do NOT catch-and-default this: a defaulted
+ * pseudonym is the reversible bug wearing the new label.
+ */
 export function hashIp(ip: string): string {
-  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
+  const key = resolveIpHashKey();
+  const mac = crypto.createHmac('sha256', key).update(ip).digest('hex').slice(0, 16);
+  return `${IP_HASH_VERSION}:${mac}`;
+}
+
+/** Strip the version prefix — for display/truncation only, never for storage or joins. */
+export function stripIpHashVersion(value: string | null | undefined): string {
+  if (!value) return '';
+  const i = value.indexOf(':');
+  return i === -1 ? value : value.slice(i + 1);
 }
 
 // ── Logging (fire-and-forget) ──

@@ -43,7 +43,7 @@ import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
 import { getEquityRegime } from './lib/equities/equity-tool-formatters.js';
 import { getEquityPerformance } from './lib/equities/equity-performance.js';
 import { getEquityPool } from './lib/equities/equity-store.js';
-import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } from './lib/analytics.js';
+import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation, assertIpHashKeyConfigured, IP_HASH_VERSION } from './lib/analytics.js';
 import { clientIp } from './lib/client-ip.js';
 import { ensureProcessedStripeEventsSchema, tryClaimEvent } from './lib/stripe-events-store.js';
 import { upsertSignupEmail, markConfirmationSent, tryClaimSignupEmailEvent } from './lib/signup-emails-store.js';
@@ -1902,6 +1902,9 @@ async function startHttp() {
         derived: {
           clientIp: resolved,
           ipHash: hashIp(resolved || 'unknown'),
+          // OPS-SEC-IPHASH-SALT-W1: surface the derivation version explicitly, so "which namespace
+          // is this bucket in?" is answerable from the echo rather than by parsing the prefix.
+          ipHashVersion: IP_HASH_VERSION,
         },
       });
     });
@@ -4666,12 +4669,27 @@ if (require.main === module) {
   const transport = (process.env.TRANSPORT || 'http').toLowerCase();
 
   if (transport === 'stdio') {
+    // OPS-SEC-IPHASH-SALT-W1: NO ip-hash key requirement here, deliberately. Every hashIp call
+    // site takes an Express `req`, so the stdio/npx path never reaches it — demanding a key would
+    // break every published `npx crypto-quant-signal-mcp` install for a protection stdio users are
+    // not exposed to. The guard below covers the deployment that actually stores pseudonyms.
     startStdio().catch((err) => {
       console.error('Fatal:', err);
       closeDb();
       process.exit(1);
     });
   } else {
+    // OPS-SEC-IPHASH-SALT-W1: crash-fast BEFORE binding a port. The HTTP transport is the one that
+    // writes ip_hash / free:<hash> / ip:<hash> buckets, so a deploy that landed before the key was
+    // installed must die loudly here — not lazily on the first request, which would leave a window
+    // where the server looks healthy while unable to meter anyone.
+    try {
+      assertIpHashKeyConfigured();
+    } catch (err) {
+      console.error(`Fatal: ${err instanceof Error ? err.message : err}`);
+      closeDb();
+      process.exit(1);
+    }
     startHttp().catch((err) => {
       console.error('Fatal:', err);
       closeDb();

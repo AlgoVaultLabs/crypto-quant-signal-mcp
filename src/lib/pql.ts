@@ -16,6 +16,7 @@
  * PII: the cohort NEVER exposes the raw `ip_hash` (a forbidden key on the
  * funnel-snapshot shape); it projects an 8-char `candidate_ref` prefix only.
  */
+import { stripIpHashVersion } from './analytics.js';
 import { dbExec, dbQuery } from './performance-db.js';
 import { getMonthlyQuota } from './license.js';
 
@@ -198,7 +199,12 @@ export async function getPqlCandidates(opts?: { limit?: number; thresholds?: Pql
       const isPql = peakQuotaPct >= t.quotaPct || recentCalls >= t.callFreq || reachedAha;
       if (!isPql) continue;
       candidates.push({
-        candidate_ref: typeof r.ip_hash === 'string' && r.ip_hash.length > 0 ? r.ip_hash.slice(0, 8) : 'unknown',
+        // OPS-SEC-IPHASH-SALT-W1: slice PAST the version prefix. A bare `.slice(0, 8)` on a
+        // `v2:<hash>` value spends 3 of its 8 chars on "v2:", cutting the admin ref to 5
+        // meaningful chars and colliding candidates that are genuinely distinct.
+        candidate_ref: typeof r.ip_hash === 'string' && r.ip_hash.length > 0
+          ? (stripIpHashVersion(r.ip_hash).slice(0, 8) || 'unknown')
+          : 'unknown',
         peak_quota_pct: peakQuotaPct,
         recent_calls: recentCalls,
         total_calls: num(r.total_calls),

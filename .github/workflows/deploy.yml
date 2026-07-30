@@ -204,6 +204,15 @@ jobs:
       - name: Client-IP not-a-CDN gate (fail-closed)
         run: node scripts/check-client-ip-not-cf.mjs --self-test
 
+      # OPS-SEC-IPHASH-SALT-W1 R4 — no unkeyed hash of an IP-derived value may exist in src/.
+      # The wave fixed the one hashIp; this stops the fix being undone in a NEW lane (a second
+      # createHash over an address re-creates the identical reversible-pseudonym defect while
+      # hashIp stays impeccable). Also fails on any `?? '<literal>'` fallback around the key.
+      - name: IP-hash keyed gate (fail-closed)
+        run: |
+          node scripts/check-iphash-keyed.mjs --self-test
+          node scripts/check-iphash-keyed.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
