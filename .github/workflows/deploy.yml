@@ -233,6 +233,16 @@ jobs:
           node scripts/check-webhook-idempotency.mjs --self-test
           node scripts/check-webhook-idempotency.mjs
 
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch3 — SEC-09 (a paid partner route served an
+      # unvalidated body, returning a wrong-but-plausible MISLABELLED verdict) + SEC-11 (an
+      # adapter read a venue field that venue does not return, silently zeroing a
+      # 15%-weight score term). R2 reports every venue it could NOT verify rather than
+      # counting unrecorded coverage as clean.
+      - name: Paid-route validation + venue field-existence gate (fail-closed)
+        run: |
+          node scripts/check-paid-route-validation.mjs --self-test
+          node scripts/check-paid-route-validation.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
