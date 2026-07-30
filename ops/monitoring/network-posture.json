@@ -1,0 +1,161 @@
+{
+  "_comment": "DECLARED inbound network posture, per host. The SoT the reconciler's POSTURE_DRIFT check asserts against. Retires the generator 'inbound exposure is an emergent property of whatever each service happened to bind'. Every other layer in this system has a SoT plus a canary; before OPS-HOST-EXPOSURE-POSTURE-W1 the network did not, which is why 'ufw is inactive' sat in an audit report instead of firing an alert. Changing a rule here does NOT change enforcement — enforcement is the Hetzner Cloud Firewall, mutated only by a human-dispatched wave. This file is what makes a drift DETECTABLE, not what applies it.",
+
+  "schema_version": 1,
+  "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1",
+
+  "_host_label_semantics": "`host` keys are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses — same contract as monitoring-inventory.json. Label -> address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON: this repo is PUBLIC. Unlike the inventory, this file has NO legacy rows, so it carries zero literal addresses and must stay that way.",
+
+  "_allowed_sources_semantics": "Named source ALIASES resolved at apply/probe time (see `source_aliases`), never literal CIDRs. A literal here would be a published address AND a value that silently rots when the upstream range changes. `any` is permitted but must carry a `justification` — an unexplained `any` reads as an oversight to the next reader; a justified one reads as a decision.",
+
+  "_expected_from_peer_derivation": "SINGLE-DERIVATION RULE — do NOT add a second field for this. A port's expected reachability from the PEER host is derived from `allowed_sources` alone: reachable IFF (`any` is present) OR (the probing peer's own host label is present). Everything else is expected CLOSED from the peer vantage. Consequence worth stating because it is the obvious false-fire: a port restricted to `cloudflare` is correctly UNREACHABLE from the peer host, and POSTURE_DRIFT must not read that as an outage.",
+
+  "_classification_semantics": {
+    "must-stay-public": "genuinely needs `any`; no narrowing possible without breaking a confirmed dependency",
+    "restrict-to-source": "reachable, but only from an enumerable source set",
+    "asserted-any": "open to the world as a RATIFIED DECISION, not an oversight; requires `justification` naming the wave that would narrow it",
+    "already-loopback": "bound to 127.0.0.1 — needs no firewall rule at all; recorded so a future rebind to 0.0.0.0 is caught by POSTURE_DRIFT on its first cycle",
+    "declared-closed": "deliberately unreachable from the internet; access is via another path (SSH tunnel, Cloudflare Tunnel)"
+  },
+
+  "_enforcement_semantics": "The Hetzner Cloud Firewall is the ONLY enforcement layer, deliberately. It is enforced OUTSIDE the VM, so a bad rule cannot sever console access the way a bad `ufw enable` can, and it is not bypassed by Docker's iptables chains. See `in_vm_layer` per host for why nothing runs inside the VM. NO AUTOMATED MUTATION: an unattended job must never change a network rule — POSTURE_DRIFT detects and alerts, a human-dispatched wave applies. That limit is deliberate, not a gap.",
+
+  "source_aliases": {
+    "any": {
+      "resolves_to": "0.0.0.0/0 + ::/0",
+      "note": "the absence of a restriction, stated explicitly"
+    },
+    "cloudflare": {
+      "resolves_to": "https://www.cloudflare.com/ips-v4 + https://www.cloudflare.com/ips-v6",
+      "count_at_owner_wave": 22,
+      "note": "15 IPv4 + 7 IPv6 as measured 2026-07-30 — comfortably inside Hetzner's 500-effective-rules/firewall cap. Re-resolved at apply time; never pinned as literals here. Contrast `github-actions` below."
+    },
+    "github-actions": {
+      "resolves_to": "https://api.github.com/meta -> .actions",
+      "count_at_owner_wave": 7297,
+      "usable": false,
+      "note": "NOT USABLE AS AN ALLOWLIST — recorded so the next reader does not re-derive the same dead end. 7,297 CIDRs (5,658 IPv4 / 1,639 IPv6, ~27.9M IPv4 addresses) measured 2026-07-30, against a Hetzner ceiling of 500 effective rules x 5 firewalls = 2,500 per server. Not 'large and churning' — not expressible. This is why signal-1:22 is `asserted-any` rather than allowlisted."
+    },
+    "operator": {
+      "resolves_to": "the operator's current egress address",
+      "stable": false,
+      "note": "DYNAMIC (residential). Deliberately never pinned as a literal rule: a pinned dynamic /32 either drifts into a silent deny or becomes a rule POSTURE_DRIFT flags forever. Where operator access to a restricted port is needed, the path is an SSH tunnel over port 22, not a firewall entry."
+    }
+  },
+
+  "hosts": {
+    "signal-1": {
+      "role": "public — algovault.com, api.algovault.com, plausible.algovault.com, Caddy, MCP server, Postgres, Redis, Plausible",
+      "enforcement": "hetzner-cloud-firewall",
+      "in_vm_layer": {
+        "ufw": {
+          "state": "intentionally-absent",
+          "ruling": "Q-C, ratified",
+          "evidence": "Established empirically on this box, not asserted from general knowledge: published container ports are DNAT'd in `nat/PREROUTING -m addrtype --dst-type LOCAL -j DOCKER` and then traverse `filter/FORWARD`, never `filter/INPUT` where ufw's user rules live. `iptables -S | grep -c ufw` = 0. Host processes (sshd, caddy) DO traverse INPUT. Net effect: ufw would govern ONLY 22/80/443 — the ports we intend to leave open — and would govern NONE of the container ports that constitute actual exposure. That is lockout risk and false assurance in exchange for zero enforcement.",
+          "do_not_re_litigate": "This is a RECORDED EMPIRICAL NEGATIVE. A future wave proposing to 'add ufw for defense in depth' would reintroduce the lockout risk believing it helps. If an in-VM layer is ever genuinely wanted, the lever is DOCKER-USER (below), not ufw."
+        },
+        "docker_user_chain": {
+          "state": "declared-empty",
+          "rationale": "DOCKER-USER exists on this host and is INTENTIONALLY empty. It is the one chain consulted BEFORE Docker's own ACCEPT rules, so it is the correct in-VM lever if one is ever needed — but it is redundant underneath an out-of-VM cloud firewall. Declared here so its emptiness is not mistaken for unfinished work."
+        }
+      },
+      "inbound": [
+        {
+          "port": 22,
+          "proto": "tcp",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
+          "purpose": "SSH. Three confirmed consumers: (1) GitHub Actions auto-deploy (appleboy/ssh-action, .github/workflows/deploy.yml), (2) the aoe-1 -> signal-1 Postgres tunnel, which dials OUT from aoe-1 and therefore needs inbound 22 here, (3) operator administration and the recovery path.",
+          "justification": "Ratified A2. An allowlist is mechanically impossible at the enforcement layer — see source_aliases.github-actions. Narrowing this to operator + aoe-1 requires moving deploy off inbound SSH entirely, which is OPS-DEPLOY-PULL-MODEL-W{NEXT}. Deliberately NOT bundled into a firewall wave: a broken deploy would leave us unable to deploy the fix.",
+          "narrowed_by_wave": "OPS-DEPLOY-PULL-MODEL-W{NEXT}",
+          "hardening": "Compensating controls, since the port stays open: key-only auth enforced server-side (PasswordAuthentication no, KbdInteractiveAuthentication no) and fail2ban proven to actually ban. Both are asserted by this wave, not assumed.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        },
+        {
+          "port": 80,
+          "proto": "tcp",
+          "allowed_sources": ["cloudflare"],
+          "classification": "restrict-to-source",
+          "purpose": "HTTP->HTTPS redirect for proxied hostnames, and the ACME HTTP-01 challenge path until DNS-01 is proven.",
+          "closure_candidate": "Once DNS-01 issuance is proven end-to-end, renewal no longer needs any inbound path and this port can move to `declared-closed`. Gated behind a real obtain, never switch-and-assume: a silently-broken DNS-01 plus a closed :80 means certificates expire and the site dies.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        },
+        {
+          "port": 443,
+          "proto": "tcp",
+          "allowed_sources": ["cloudflare"],
+          "classification": "restrict-to-source",
+          "purpose": "All public traffic: landing, /verify, api.algovault.com, /api/merkle-batches, Stripe webhooks, x402 + Circle Gateway settlement callbacks. Every one of these arrives addressed to a CF-proxied hostname, so every one transits Cloudflare.",
+          "evidence": "All 11 A/AAAA/CNAME records on the zone were enumerated. All three that resolve to this origin are PROXIED. The single DNS-only record (blog.algovault.com) CNAMEs to hashnode.network and never touches this origin, so it is not blackholed by this rule.",
+          "why_restricted": "MEASURED, not hygiene: ~300 requests/24h reach this origin directly, bypassing Cloudflare entirely — proven by their raw-IP Host headers (232x '<origin>:80', 68x bare origin IP), which cannot have transited CF because CF always forwards the original hostname. 68 of them probed /.well-known/acme-challenge/, a cert-takeover recon pattern. Until this rule exists, Cloudflare's WAF, rate-limiting and bot-management are OPTIONAL for any attacker who knows the address — and the address is irreversibly published.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        },
+        {
+          "port": 443,
+          "proto": "udp",
+          "allowed_sources": ["cloudflare"],
+          "classification": "restrict-to-source",
+          "purpose": "HTTP/3 (QUIC). Caddy binds *:443/udp; must track the TCP rule or H3 clients silently fall back.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        }
+      ],
+      "loopback_only": [
+        {"port": 3000, "proto": "tcp", "owner": "crypto-quant-signal-mcp-mcp-server-1", "classification": "already-loopback"},
+        {"port": 5432, "proto": "tcp", "owner": "crypto-quant-signal-mcp-postgres-1", "classification": "already-loopback", "note": "the DB holding internal-only outcome_return_pct / outcome-WR data — this bind is the control SECURITY-AUDIT-FULL-W1 flagged as load-bearing-and-alone"},
+        {"port": 8000, "proto": "tcp", "owner": "plausible-ce-plausible-1", "classification": "already-loopback"},
+        {"port": 2019, "proto": "tcp", "owner": "caddy admin API", "classification": "already-loopback"},
+        {"port": 53, "proto": "tcp+udp", "owner": "systemd-resolved (127.0.0.53/54)", "classification": "already-loopback"}
+      ]
+    },
+
+    "aoe-1": {
+      "role": "AOE — Prefect, shadow evaluator, promotion scanner, AOE workers, agent-facing MCP",
+      "enforcement": "hetzner-cloud-firewall",
+      "in_vm_layer": {
+        "ufw": {
+          "state": "intentionally-absent",
+          "ruling": "Q-C, ratified",
+          "evidence": "Same empirical chain as signal-1, verified independently on this box: `iptables -S | grep -c ufw` = 0, and the DNAT-to-FORWARD path bypasses filter/INPUT. This host makes the point sharpest — its ONE world-exposed container port (8080) carries a nat/DOCKER rule with NO `-d 127.0.0.1/32` constraint, unlike every loopback-published port here, and a `ufw deny 8080` would not have touched it.",
+          "do_not_re_litigate": "See signal-1.ufw.do_not_re_litigate."
+        },
+        "docker_user_chain": {
+          "state": "declared-empty",
+          "rationale": "See signal-1. Empty by intent, not by omission."
+        }
+      },
+      "inbound": [
+        {
+          "port": 22,
+          "proto": "tcp",
+          "allowed_sources": ["any"],
+          "classification": "asserted-any",
+          "purpose": "SSH. Consumers: operator administration + rsync-based AOE deploy (this host has no git checkout and no CI auto-deploy), and the recovery path.",
+          "justification": "Ratified A2. Unlike signal-1 there is no GitHub Actions constraint here, so this port COULD narrow to the operator — but the operator address is dynamic (see source_aliases.operator) and port 22 is the recovery path with no in-band fallback. Pinning a drifting /32 to the one port you would need during a lockout trades a real availability risk for a marginal reduction. Revisit if a stable operator vantage (bastion or Cloudflare Tunnel) ever exists.",
+          "narrowed_by_wave": "OPS-DEPLOY-PULL-MODEL-W{NEXT}",
+          "hardening": "Key-only auth already enforced server-side on this host (PasswordAuthentication no, verified via `sshd -T`); fail2ban asserted by this wave.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        },
+        {
+          "port": 8080,
+          "proto": "tcp",
+          "allowed_sources": [],
+          "classification": "declared-closed",
+          "purpose": "autonomous-optimizer-mcp-server-1 (uvicorn, bearer-auth). Previously world-reachable.",
+          "evidence": "14,654 retained access lines: 14,434x 404, 220x 401, and exactly ONE 200 — a ListToolsRequest from the operator's own address. ZERO hits from signal-1. The path fingerprint is textbook mass-scanning: /login, /.env, /.env.production, /.git/config, /goform/set_LimitClient_cfg. A published port whose only successful caller is the operator testing it is not a product surface, it is a leftover.",
+          "why_no_operator_entry": "Refines the ratified D2 'operator + signal-1' two-entry list to zero entries, because the evidence removed both: signal-1 has never called it, and the operator address is dynamic. Operator access is preserved via an SSH tunnel over port 22 (`ssh -L 8080:127.0.0.1:8080 aoe-1`), which is strictly better than pinning a rotting /32. One-line revert if the architect disagrees: add `operator` to allowed_sources.",
+          "additional_risk_closed": "The listener is PLAINTEXT HTTP — a TLS handshake to :8080 fails. Bearer tokens were crossing the public internet in cleartext to a box holding AOE model artifacts.",
+          "end_state_wave": "OPS-AOE-MCP-BEHIND-TUNNEL-W{NEXT} — rebind to loopback behind Cloudflare Tunnel + Zero Trust Access. This is configuration, not new infrastructure: cloudflared already runs on this host serving aoe.algovault.com -> 127.0.0.1:4200 (tunnel 6454e5f8-...), so exposing the MCP is an extra ingress stanza plus a DNS record. Preferring a loopback rebind over a firewall rule is the standing rule; the firewall is the reversible interim while an agent-facing endpoint's URL and auth model change under their own wave.",
+          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+        }
+      ],
+      "loopback_only": [
+        {"port": 8081, "proto": "tcp", "owner": "autonomous-optimizer-dashboard-internal-1", "classification": "already-loopback"},
+        {"port": 4200, "proto": "tcp", "owner": "aoe-prefect-server", "classification": "already-loopback", "note": "reachable externally ONLY via Cloudflare Tunnel + Zero Trust Access at aoe.algovault.com — the pattern 8080 should adopt"},
+        {"port": 6380, "proto": "tcp", "owner": "aoe-redis", "classification": "already-loopback"},
+        {"port": 20241, "proto": "tcp", "owner": "cloudflared metrics", "classification": "already-loopback"},
+        {"port": 5432, "proto": "tcp", "owner": "aoe-pg-tunnel.service (ssh -N -L; also binds docker bridge gateways 172.17.0.1/172.18.0.1 so containers can reach it)", "classification": "already-loopback"}
+      ],
+      "outbound_note": "cloudflared holds several high-numbered *:udp sockets (QUIC). These are OUTBOUND sockets, not inbound services, and must not be declared as inbound ports or POSTURE_DRIFT will chase ephemeral port numbers every cycle."
+    }
+  }
+}
