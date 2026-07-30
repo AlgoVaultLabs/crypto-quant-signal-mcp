@@ -144,9 +144,18 @@ describe('AsterAdapter.getAssetContext', () => {
       status: 200,
       body: { symbol: 'BTCUSDT', openInterest: '5599.890', time: 1778913079287 },
     });
+    // RE-FIXTURED by OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch3 (SEC-11). This mock used to
+    // carry `prevClosePrice: '80557.8'` — a Binance SPOT-only field that Aster's perp
+    // 24hr ticker DOES NOT RETURN — and asserted prevDayPx === 80557.8. It therefore
+    // passed BECAUSE of the bug: it pinned the adapter to a fictional field. Shape below
+    // matches a captured live payload (see tests/unit/aster-prevday.test.ts).
     setMock('/fapi/v1/ticker/24hr', {
       status: 200,
-      body: { symbol: 'BTCUSDT', volume: '10231.981', quoteVolume: '813229059.16', lastPrice: '78732.5', prevClosePrice: '80557.8' },
+      body: {
+        symbol: 'BTCUSDT', volume: '10231.981', quoteVolume: '813229059.16',
+        lastPrice: '78732.5', openPrice: '80557.8', highPrice: '80900.0', lowPrice: '78100.0',
+        priceChangePercent: '-2.265',
+      },
     });
 
     const adapter = new AsterAdapter();
@@ -155,7 +164,7 @@ describe('AsterAdapter.getAssetContext', () => {
     expect(ctx.funding).toBeCloseTo(0.00002333);
     expect(ctx.fundingAnnualized).toBeCloseTo(0.00002333 * 1095);
     expect(ctx.openInterest).toBeCloseTo(5599.89);
-    expect(ctx.prevDayPx).toBeCloseTo(80557.8);
+    expect(ctx.prevDayPx).toBeCloseTo(80557.8); // now from openPrice, the real field
     expect(ctx.volume24h).toBeCloseTo(813229059.16);
     expect(ctx.markPx).toBeCloseTo(78732.5);
     expect(ctx.oraclePx).toBeCloseTo(78732.5);

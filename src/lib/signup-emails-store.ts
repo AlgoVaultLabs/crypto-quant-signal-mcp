@@ -137,23 +137,23 @@ export async function tryClaimSignupEmailEvent(
   const hash = crypto.createHash('sha256').update(email).digest('hex').slice(0, 16);
   const eventId = `signup-email:${hash}:${Math.floor(Date.now() / 1000)}`;
 
-  const existing = await dbQuery<{ event_id: string }>(
-    'SELECT event_id FROM processed_signup_email_events WHERE event_id = ?',
-    [eventId],
+  // ONE awaited round-trip; the database picks the winner and the row is durable before
+  // `claimed: true` is returned.
+  //
+  // OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch2: this was a byte-for-byte copy of the SEC-20
+  // defect in a second lane — SELECT, then a FIRE-AND-FORGET `dbRun`, then report
+  // success. On Postgres `dbRun` never throws to the caller (the rejection resolves
+  // inside trackedWrite's own promise), so the `catch` was dead code, and a LOST write
+  // meant the claim never persisted while the confirmation email had already been sent.
+  // Found by `scripts/check-webhook-idempotency.mjs` on its FIRST live run — which is
+  // the entire argument for shipping the law as a gate rather than patching one lane.
+  const claimed = await dbQuery<{ event_id: string }>(
+    `INSERT INTO processed_signup_email_events (event_id, event_type) VALUES (?, ?)
+     ON CONFLICT (event_id) DO NOTHING
+     RETURNING event_id`,
+    [eventId, eventType],
   );
-  if (existing.length > 0) return { claimed: false, eventId };
-
-  try {
-    dbRun(
-      'INSERT INTO processed_signup_email_events (event_id, event_type) VALUES (?, ?)',
-      eventId,
-      eventType,
-    );
-    return { claimed: true, eventId };
-  } catch {
-    // Race with concurrent caller; either way, NOT new from this fiber.
-    return { claimed: false, eventId };
-  }
+  return { claimed: claimed.length > 0, eventId };
 }
 
 export async function getSignupEmailCount(): Promise<number> {

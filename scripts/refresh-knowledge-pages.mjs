@@ -16,7 +16,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import devto from './fetchers/devto.mjs';
 import medium from './fetchers/medium.mjs';
@@ -40,10 +40,13 @@ function loadTelegram() {
     return {
       sendAlert: typeof mod.sendAlert === 'function' ? mod.sendAlert : null,
       sendDigest: typeof mod.sendDigest === 'function' ? mod.sendDigest : null,
+      // SEC-17: renders an interpolated value as a Markdown code span so a `_` in a
+      // source name (e.g. `github_discussion`) cannot open an unterminated entity.
+      mdValue: typeof mod.mdValue === 'function' ? mod.mdValue : (v) => String(v),
     };
   } catch (err) {
     console.warn(`[refresh-pages] telegram load failed (continuing): ${err.message}`);
-    return { sendAlert: null, sendDigest: null };
+    return { sendAlert: null, sendDigest: null, mdValue: (v) => String(v) };
   }
 }
 
@@ -126,14 +129,29 @@ async function main() {
   console.log(`[refresh-pages] wrote ${dedup.length} pages atomically · pages_refreshed_at=${bundle.pages_refreshed_at}`);
 
   // Telegram digest — non-fatal if telegram module unavailable or chat unreachable.
-  const { sendAlert, sendDigest } = loadTelegram();
-  const sections = buildDigestLines(dedup.length, allPages.length, perSource, errors);
+  const { sendAlert, sendDigest, mdValue } = loadTelegram();
+  const sections = buildDigestLines(dedup.length, allPages.length, perSource, errors, mdValue);
   if (typeof sendDigest === 'function') {
     try {
-      await sendDigest(sections);
-      console.log(`[refresh-pages] digest sent · sections=${sections.length}`);
+      // SEC-17: sendDigest returns a BOOLEAN and NEVER THROWS. This used to `await` it,
+      // discard the result and log "digest sent" unconditionally — so the catch below was
+      // unreachable and three consecutive weeks of HTTP 400 rendered as success. Assert
+      // DELIVERY, not attempt.
+      const delivered = await sendDigest(sections);
+      if (delivered) {
+        console.log(`[refresh-pages] digest sent · sections=${sections.length}`);
+      } else {
+        console.error(`[refresh-pages] DIGEST SEND FAILED · sections=${sections.length} — see the [telegram] HTTP line above`);
+        process.exitCode = 1; // a load-bearing side-effect that did not happen must be visible to cron
+        if (typeof sendAlert === 'function') {
+          // Escalate through the plain-text-capable alert path; if THAT also fails there
+          // is nothing further we can do from in-container, and the non-zero exit stands.
+          await sendAlert('Knowledge-bundle weekly digest FAILED to deliver (Telegram rejected the message).', 'warning');
+        }
+      }
     } catch (err) {
-      console.warn(`[refresh-pages] sendDigest failed (continuing): ${err.message}`);
+      console.error(`[refresh-pages] DIGEST SEND THREW: ${err.message}`);
+      process.exitCode = 1;
     }
   } else {
     console.warn('[refresh-pages] sendDigest unavailable — digest skipped');
@@ -141,15 +159,20 @@ async function main() {
   if (errors.length > 0 && typeof sendAlert === 'function') {
     try {
       const summary = errors.map((e) => `${e.source}: ${e.error}`).join('; ').slice(0, 300);
-      await sendAlert(`Knowledge-bundle refresh: ${errors.length} fetcher(s) failed — ${summary}`, 'warning');
-      console.log(`[refresh-pages] WARNING alert sent · failed=${errors.length}`);
+      // SEC-17: same class as the digest above — assert delivery, don't assume it.
+      if (await sendAlert(`Knowledge-bundle refresh: ${errors.length} fetcher(s) failed — ${summary}`, 'warning')) {
+        console.log(`[refresh-pages] WARNING alert sent · failed=${errors.length}`);
+      } else {
+        console.error(`[refresh-pages] WARNING ALERT SEND FAILED · failed=${errors.length} — the operator was NOT notified`);
+        process.exitCode = 1;
+      }
     } catch (err) {
       console.warn(`[refresh-pages] sendAlert failed (continuing): ${err.message}`);
     }
   }
 }
 
-function buildDigestLines(dedupCount, rawCount, perSource, errors) {
+function buildDigestLines(dedupCount, rawCount, perSource, errors, mdValue = (v) => String(v)) {
   const lines = [];
   lines.push(`📚 *Knowledge bundle pages refreshed*`);
   lines.push(`Total pages: ${dedupCount} (deduped from ${rawCount})`);
@@ -157,9 +180,9 @@ function buildDigestLines(dedupCount, rawCount, perSource, errors) {
   lines.push(`*Per-source counts:*`);
   for (const s of perSource) {
     if (s.status === 'ok') {
-      lines.push(`· ✅ ${s.source}: ${s.count}`);
+      lines.push(`· ✅ ${mdValue(s.source)}: ${s.count}`);
     } else {
-      lines.push(`· 🛑 ${s.source}: FAILED (${(s.error || '').slice(0, 100)})`);
+      lines.push(`· 🛑 ${mdValue(s.source)}: FAILED (${mdValue((s.error || '').slice(0, 100))})`);
     }
   }
   if (errors.length > 0) {
@@ -171,12 +194,21 @@ function buildDigestLines(dedupCount, rawCount, perSource, errors) {
   return lines;
 }
 
-main().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error('[refresh-pages] FATAL:', msg);
-  const { sendAlert } = loadTelegram();
-  if (typeof sendAlert === 'function') {
-    sendAlert(`refresh-knowledge-pages FATAL: ${msg}`, 'critical').catch(() => {});
-  }
-  process.exit(1);
-});
+// Test seam (CLAUDE.md "make entrypoints test-importable"): run main() ONLY when this
+// file is the process entrypoint. Importing it previously executed the whole refresh —
+// network fetches included — which is why the digest body had no test and the byte-168
+// Markdown defect survived three weeks of green builds (SEC-17).
+export { buildDigestLines };
+
+const isEntrypoint = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+if (isEntrypoint) {
+  main().catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[refresh-pages] FATAL:', msg);
+    const { sendAlert } = loadTelegram();
+    if (typeof sendAlert === 'function') {
+      sendAlert(`refresh-knowledge-pages FATAL: ${msg}`, 'critical').catch(() => {});
+    }
+    process.exit(1);
+  });
+}

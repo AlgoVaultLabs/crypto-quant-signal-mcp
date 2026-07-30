@@ -1,0 +1,40 @@
+{
+  "_comment": "Recorded LIVE key sets for each venue's 24h-ticker endpoint. Consumed by scripts/check-paid-route-validation.mjs (R2), which asserts every `ticker.<field>` an adapter reads actually exists in that venue's recording. SEC-11 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch3): the Aster adapter read `prevClosePrice`, a Binance SPOT-only field its perp ticker never returns, so `?? 0` silently zeroed the 15%-weight momentum term on a PROMOTED venue with nothing logged and no fallback fired. A recorded key set turns that class into a build failure.",
+  "_how_to_add_a_venue": "curl the venue's 24h-ticker endpoint, `jq -c 'keys'` (or `.data[0] | keys` for an envelope), and paste the array verbatim with the probe date + the exact URL. Never hand-edit a key list — the whole point is that it came from the venue. Per the CLAUDE.md per-venue-divergence LAW, never copy another venue's field names.",
+  "_unrecorded_are_reported_not_ignored": "An adapter whose venue has no recording is REPORTED as unverified on every run, never silently passed. binance + bybit are unrecorded because their APIs TCP-block this operator's host (documented); record them from a host that can reach them — tracked as OPS-VENUE-TICKER-KEYS-EXTEND-W{NEXT}.",
+  "schema_version": 1,
+  "venues": {
+    "aster": [
+      "closeTime", "count", "firstId", "highPrice", "lastId", "lastPrice", "lastQty",
+      "lowPrice", "openPrice", "openTime", "priceChange", "priceChangePercent",
+      "quoteVolume", "symbol", "volume", "weightedAvgPrice"
+    ],
+    "bitget": [
+      "askPr", "askSz", "baseVolume", "bidPr", "bidSz", "change24h", "changeUtc24h",
+      "deliveryStartTime", "deliveryStatus", "deliveryTime", "fundingRate", "high24h",
+      "holdingAmount", "indexPrice", "lastPr", "low24h", "markPrice", "open24h",
+      "openUtc", "quoteVolume", "symbol", "ts", "usdtVolume"
+    ],
+    "okx": [
+      "askPx", "askSz", "bidPx", "bidSz", "high24h", "instId", "instType", "last",
+      "lastSz", "low24h", "open24h", "sodUtc0", "sodUtc8", "ts", "vol24h", "volCcy24h"
+    ]
+  },
+  "probes": {
+    "aster": {
+      "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr?symbol=BTCUSDT",
+      "probed_at": "2026-07-30",
+      "note": "prevClosePrice is ABSENT — it is a Binance SPOT-only field. openPrice IS present and is the 24h-rolling open. priceChangePercent is a percent-NUMBER, not a fraction (live-verified: last 64031.2, open 64351.5, pcp -0.498, (last-open)/open = -0.4977%)."
+    },
+    "bitget": {
+      "url": "https://api.bitget.com/api/v2/mix/market/ticker?symbol=BTCUSDT&productType=USDT-FUTURES",
+      "probed_at": "2026-07-30",
+      "note": "Envelope response — keys taken from .data[0]. 24h open is `open24h`."
+    },
+    "okx": {
+      "url": "https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP",
+      "probed_at": "2026-07-30",
+      "note": "Envelope response — keys taken from .data[0]. 24h open is `open24h`; `last` (not lastPrice)."
+    }
+  }
+}

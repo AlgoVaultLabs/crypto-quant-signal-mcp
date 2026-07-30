@@ -224,8 +224,53 @@ jobs:
       # fail-closed at "Vitest suite (pre-deploy gate)" above, so invoking the whole gate here
       # would double CI wall-clock for no added signal. What CI cannot otherwise catch is the
       # gate's own decision logic going vacuous — which is exactly what this covers.
+      #
+      # NB its INDETERMINATE code is 2, not the 3 used by the redaction gate below: 2 was
+      # already deployed in check_test_baseline.sh for "could not verify", and one meaning must
+      # not acquire a second code INSIDE one script. Different scripts, zero shared callers —
+      # see CLAUDE.md's verdict-token law.
       - name: Test-gate verdict logic (fail-closed)
         run: bash scripts/check_test_baseline.sh --self-test
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch1 — SEC-14 + SEC-10 were CLAUDE.md laws that no gate
+      # enforced ("redact by STRUCTURE, never by vendor prefix"; no credential in a URL). Patching
+      # the two call sites fixes today; this makes a NEW leaking lane fail the build. Emits
+      # SECRET_LOG_REDACTION_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (scanned nothing) blocks too,
+      # so a broken scan can never read as "verified clean".
+      - name: Secret-log redaction gate (fail-closed)
+        run: |
+          node scripts/check-secret-log-redaction.mjs --self-test
+          node scripts/check-secret-log-redaction.mjs
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
+      # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
+      # applied to customer.subscription.created, which mints an API key. Also asserts no
+      # idempotency store is written through the fire-and-forget writer, and that money
+      # never leaves without a preceding atomic claim (SEC-16).
+      - name: Webhook idempotency gate (fail-closed)
+        run: |
+          node scripts/check-webhook-idempotency.mjs --self-test
+          node scripts/check-webhook-idempotency.mjs
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch3 — SEC-09 (a paid partner route served an
+      # unvalidated body, returning a wrong-but-plausible MISLABELLED verdict) + SEC-11 (an
+      # adapter read a venue field that venue does not return, silently zeroing a
+      # 15%-weight score term). R2 reports every venue it could NOT verify rather than
+      # counting unrecorded coverage as clean.
+      - name: Paid-route validation + venue field-existence gate (fail-closed)
+        run: |
+          node scripts/check-paid-route-validation.mjs --self-test
+          node scripts/check-paid-route-validation.mjs
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4 — SEC-17 (a producer logged "digest sent" for
+      # three weeks of HTTP 400, because sendDigest returns a boolean and never throws) +
+      # SEC-13 (the sanctioned smoke prescribed DRY_RUN_TG, which WRITES the 24h cooldown
+      # marker and so silenced the next genuine page). Reports, without enforcing, the
+      # weaker "discarded result that claims nothing" sites.
+      - name: Delivery-assertion + inert-smoke gate (fail-closed)
+        run: |
+          node scripts/check-delivery-assertion.mjs --self-test
+          node scripts/check-delivery-assertion.mjs
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5

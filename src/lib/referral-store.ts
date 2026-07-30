@@ -81,6 +81,11 @@ const REFERRAL_DDL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_notif_source ON referral_notifications (channel, source_id);
   CREATE INDEX IF NOT EXISTS idx_referral_notif_pending ON referral_notifications (status, channel);
+  CREATE TABLE IF NOT EXISTS referral_payout_claims (
+    ledger_id ${BIGINT} PRIMARY KEY,
+    claim_ref TEXT NOT NULL,
+    claimed_at ${TS} NOT NULL DEFAULT ${NOW}
+  );
 `;
 
 let _initialized = false;
@@ -526,6 +531,82 @@ export function markLedger(id: number, status: LedgerStatus, txRef?: string | nu
   } else {
     dbRun('UPDATE referral_ledger SET status = ? WHERE id = ?', status, id);
   }
+}
+
+/**
+ * AWAITED mark — for money paths, where a silently lost write re-queues a row that has
+ * already been paid (SEC-16). `markLedger` above goes through the fire-and-forget
+ * writer: on Postgres a failure is logged as `[pg-write] WRITE LOST` and never raises,
+ * so the caller believes the row was marked paid when it was not.
+ *
+ * Returns the number of rows actually updated, so a caller can tell "marked" from
+ * "matched nothing". Throws on a real write failure — which is the point.
+ */
+export async function markLedgerAsync(id: number, status: LedgerStatus, txRef?: string | null): Promise<number> {
+  ensureReferralSchema();
+  const rows = txRef !== undefined && txRef !== null
+    ? await dbQuery<{ id: number }>('UPDATE referral_ledger SET status = ?, tx_ref = ? WHERE id = ? RETURNING id', [status, txRef, id])
+    : await dbQuery<{ id: number }>('UPDATE referral_ledger SET status = ? WHERE id = ? RETURNING id', [status, id]);
+  return rows.length;
+}
+
+// ── Payout claims (SEC-16, OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch2) ──────────────
+//
+// WHY A SEPARATE TABLE rather than a `usdc_paying` ledger status (which is what the
+// audit originally proposed): `referral_ledger.status` carries a DB-level CHECK
+// constraint pinned to exactly four values, live in production as
+// `referral_ledger_status_check`. A new status value would be REJECTED by that
+// constraint on every UPDATE; `CREATE TABLE IF NOT EXISTS` cannot alter a CHECK, and
+// SQLite cannot ALTER one at all (table rebuild only). Widening it would also have
+// required auditing every status consumer — the clawback filter
+// (`referral-accrual.ts` `status IN ('credited','usdc_pending')`), the admin
+// `/payouts/:id/paid` 409 guard, and the `usdc_pending_usd_e2` aggregate — any of which
+// would have silently skipped a claimed row. Architect-ratified as Q2a.
+//
+// The claim row is also the DURABLE "we already sent for this" marker, INDEPENDENT of
+// the status column. That closes the second half of SEC-16: if the send succeeds but
+// the mark-paid write is lost, the claim still exists, so the next Approve-all skips
+// the row instead of paying it twice.
+
+/**
+ * Atomically claim a ledger row for payout. Returns true for exactly one caller; every
+ * concurrent or repeated attempt gets false. One awaited round-trip — the database
+ * picks the winner, so a second admin tab or a browser resubmit cannot also send.
+ */
+export async function tryClaimLedgerForPayout(ledgerId: number, claimRef: string): Promise<boolean> {
+  ensureReferralSchema();
+  const claimed = await dbQuery<{ ledger_id: number }>(
+    `INSERT INTO referral_payout_claims (ledger_id, claim_ref) VALUES (?, ?)
+     ON CONFLICT (ledger_id) DO NOTHING
+     RETURNING ledger_id`,
+    [ledgerId, claimRef],
+  );
+  return claimed.length > 0;
+}
+
+/**
+ * Release a claim so a later run can retry — the no-black-hole path. Scoped to the
+ * claim_ref that took it, so one run can never release another run's in-flight claim.
+ * Only ever called when the send did NOT happen (the PayoutSender contract is that a
+ * throw means no transfer was broadcast — see `PayoutSender.send`).
+ */
+export async function releaseLedgerPayoutClaim(ledgerId: number, claimRef: string): Promise<boolean> {
+  ensureReferralSchema();
+  const removed = await dbQuery<{ ledger_id: number }>(
+    'DELETE FROM referral_payout_claims WHERE ledger_id = ? AND claim_ref = ? RETURNING ledger_id',
+    [ledgerId, claimRef],
+  );
+  return removed.length > 0;
+}
+
+/** Diagnostics / tests: is this ledger row currently claimed, and by which run? */
+export async function getLedgerPayoutClaim(ledgerId: number): Promise<{ ledger_id: number; claim_ref: string } | null> {
+  ensureReferralSchema();
+  const rows = await dbQuery<{ ledger_id: number; claim_ref: string }>(
+    'SELECT ledger_id, claim_ref FROM referral_payout_claims WHERE ledger_id = ?',
+    [ledgerId],
+  );
+  return rows.length ? rows[0] : null;
 }
 
 export async function listRecentLedger(limit = 50): Promise<LedgerRow[]> {

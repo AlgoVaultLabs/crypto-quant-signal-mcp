@@ -15,7 +15,7 @@
 #
 # Contract (Claude files/monitoring-runbook.md ## Operator-action-required alert contract):
 # ships ONLY the pure alert branch (severity CRITICAL_PERSISTENT + OPS-<CLASS>-W{NEXT} template).
-# send_telegram.sh OWNS the severity gate, 24h-per-alert_id cooldown, resolver, DRY_RUN_TG gate,
+# send_telegram.sh OWNS the severity gate, 24h-per-alert_id cooldown, resolver, ALGOVAULT_TG_TEST_INERT + DRY_RUN_TG gates,
 # and fail-open. This script is ALSO fail-open: every infra/network error logs + exits 0.
 #
 # Installed crontab (weekly, off-:00 per snapshot-sampler discipline): 29 6 * * 1  (Mon 06:29 UTC).
@@ -23,7 +23,16 @@
 # (OPS-DOCS-JSONLD-TOOLCOUNT-W1 R3 endpoint-truth).
 set -uo pipefail
 
-URL="${DOCS_DRIFT_URL:-https://algovault.com/docs.html}"
+# SEC-13 follow-on (OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch4): this pointed at
+# `/docs.html`, which 301-redirects. The fetch below uses `curl -fsS` WITHOUT `-L`, so it
+# never followed the redirect: every run got an empty body, hit the FAIL_OPEN branch and
+# exited 0. The canary was therefore STRUCTURALLY DARK — it could not detect drift at
+# all, while looking perfectly healthy (`exit 0`, no alert). Found by running it on the
+# host, as the scheduler invokes it, during this wave; the 6th instance of the dark-guard
+# class in this project. `/docs` is the canonical URL (HTTP 200, ~186 KB, carries every
+# REQUIRED_IDS anchor), and `-L` is added as defence in depth so a future redirect cannot
+# silently re-dark it.
+URL="${DOCS_DRIFT_URL:-https://algovault.com/docs}"
 RESOLVER="${DOCS_DRIFT_RESOLVER:-1.1.1.1}"   # pin a fixed resolver (DNS hygiene)
 SEND="${DOCS_DRIFT_SEND:-/opt/algovault-monitoring/send_telegram.sh}"
 LOG="${DOCS_DRIFT_LOG:-/var/log/docs-drift-canary.log}"
@@ -48,7 +57,7 @@ HOST=$(printf '%s' "$URL" | sed -E 's#https?://([^/]+).*#\1#')
 IP=$(command -v dig >/dev/null 2>&1 && dig +short A "$HOST" "@$RESOLVER" 2>/dev/null | head -1 || true)
 RESOLVE_ARGS=(); [ -n "$IP" ] && RESOLVE_ARGS=(--resolve "$HOST:443:$IP")
 
-HTML=$(curl -fsS -m 20 --retry 2 --retry-delay 3 "${RESOLVE_ARGS[@]}" -A "algovault-docs-drift-canary" "$URL" 2>>"$LOG")
+HTML=$(curl -fsSL -m 20 --retry 2 --retry-delay 3 "${RESOLVE_ARGS[@]}" -A "algovault-docs-drift-canary" "$URL" 2>>"$LOG")
 if [ -z "$HTML" ]; then
   log "FAIL_OPEN: empty/failed fetch of $URL (network/origin transient)"
   exit 0
@@ -68,8 +77,11 @@ if [ "$BYTES" -lt 50000 ] || [[ "$HTML" != *'<title>AlgoVault Docs'* ]]; then
 fi
 
 # Synthetic-verification hook: append a guaranteed-absent id to FORCE the drift branch on the
-# REAL page, so the alert path can be exercised end-to-end under DRY_RUN_TG=1 (no real corruption,
-# no real send). Unset in production.
+# REAL page, so the alert path can be exercised end-to-end under ALGOVAULT_TG_TEST_INERT=1
+# (no real corruption, no real send, and NO cooldown marker). SEC-13: this used to say
+# DRY_RUN_TG=1, which is NOT inert — send_telegram.sh writes the 24h marker on that path, so
+# the smoke silenced the next genuine DOCS_STRUCTURE_DRIFT alert for 24h and a second smoke
+# false-greened. Unset in production.
 [ -n "${DOCS_DRIFT_FORCE_REQUIRE:-}" ] && REQUIRED_IDS+=("$DOCS_DRIFT_FORCE_REQUIRE")
 
 MISSING=()
@@ -83,10 +95,10 @@ if [ "${#MISSING[@]}" -eq 0 ]; then
   exit 0
 fi
 
-log "DRIFT: served docs.html is missing ${#MISSING[@]} required section(s): ${MISSING[*]}"
+log "DRIFT: served docs page is missing ${#MISSING[@]} required section(s): ${MISSING[*]}"
 [ -x "$SEND" ] || { log "FAIL_OPEN: send_telegram.sh not executable at $SEND"; exit 0; }
 
-# Pure alert branch. send_telegram.sh owns every gate (severity → 24h cooldown → DRY_RUN_TG →
+# Pure alert branch. send_telegram.sh owns every gate (severity → INERT → 24h cooldown → DRY_RUN_TG →
 # fail-open). Its interface is POSITIONAL: `send_telegram.sh <alert_id> <severity> [body_file|-]`;
 # the body (incl the OPS-<CLASS>-W{NEXT} recommended-wave template, resolved at send-time) is piped
 # via stdin. (An earlier --flag form was silently SUPPRESSED_SEVERITY — the flags landed in the

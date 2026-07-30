@@ -27,8 +27,11 @@ canary auto-resolves SILENTLY (recovery alerts are noise). Retires the pre-wave
 alarm-fatigue where the raw active=false count re-fired every cycle.
 
 Alert contract: severity=CRITICAL_PERSISTENT only; 24h cooldown per alert_id
-(wrapper); fail-open (exit 0 on ALL errors); DRY_RUN_TG=1 routes through every gate
-but skips the POST. recommended_wave uses the OPS-WEBHOOK-DELIVERY-<CLASS>-W{NEXT}
+(wrapper); fail-open (exit 0 on ALL errors); ALGOVAULT_TG_TEST_INERT=1 routes through
+every gate but skips the POST **and writes no cooldown marker** — use it for repeated
+smokes (SEC-13). DRY_RUN_TG=1 also skips the POST but DOES write the 24h marker, so a
+second run false-greens (cooldown-suppressed, not healthy) and the next genuine alert is
+silenced; keep it only for a test whose assertion IS the cooldown. recommended_wave uses the OPS-WEBHOOK-DELIVERY-<CLASS>-W{NEXT}
 template (NO literal Wn — the wrapper's send-time resolver fills {NEXT}).
 
 Test seams (env): WEBHOOK_CANARY_FORCE_DISABLED_IDS (comma ids) +
@@ -197,8 +200,10 @@ def fire(body):
         return
     proc = subprocess.run([WRAPPER, ALERT_ID, "CRITICAL_PERSISTENT", "-"], input=body, capture_output=True, text=True, timeout=30)
     log("wrapper exit=%d out=%s" % (proc.returncode, (proc.stdout or proc.stderr).strip()[:160]))
-    if os.environ.get("DRY_RUN_TG") == "1":
-        log("WOULD_FIRE: class=%s (DRY_RUN_TG=1, no POST)" % ALERT_ID)
+    if os.environ.get("ALGOVAULT_TG_TEST_INERT") == "1":
+        log("WOULD_FIRE: alert_id=%s severity=CRITICAL_PERSISTENT verdict=SUPPRESSED_TEST_INERT (no POST, no cooldown marker)" % ALERT_ID)
+    elif os.environ.get("DRY_RUN_TG") == "1":
+        log("WOULD_FIRE: alert_id=%s severity=CRITICAL_PERSISTENT verdict=DRY_RUN (no POST; 24h COOLDOWN MARKER WRITTEN — prefer ALGOVAULT_TG_TEST_INERT=1)" % ALERT_ID)
 
 
 def run_cycle(disabled_ids, dead, failed, total):
@@ -259,7 +264,7 @@ def self_test():
     DISABLED_SET_FILE = os.path.join(tmp, "disabled.set")
     LOG = os.path.join(tmp, "selftest.log")
     os.environ["WEBHOOK_CANARY_SELFTEST"] = "1"
-    os.environ["DRY_RUN_TG"] = "1"
+    os.environ["ALGOVAULT_TG_TEST_INERT"] = "1"  # SEC-13: inert, writes no cooldown marker
 
     failures = []
 
