@@ -13,14 +13,25 @@
 # CONTRACT
 #   exit 0  — no new failures vs baseline (or warn-mode, or fail-open).
 #   exit 1  — at least one NEW failing file/runner vs baseline (block the push).
+#   exit 2  — the gate COULD NOT VERIFY: the suite never ran (see hard_fail).
+#             Distinct from 1 so "a test regressed" and "the gate is broken" are
+#             never confused. The installed hook is `… || exit 1`, so both block.
 #
 # MODES  (env ALGOVAULT_TEST_GATE)
-#   block  (default) — exit 1 on regression.
-#   warn             — report the regression but exit 0 (don't block).
+#   block  (default) — exit 1 on regression, exit 2 if the gate can't verify.
+#   warn             — report, but exit 0 (don't block). Explicit operator opt-out.
 #
-# FAIL-OPEN (never block a legit push on tooling/infra breakage):
-#   missing node_modules / vitest / jq, or a failed `npm run build`, or an
-#   unparseable vitest report  → loud WARNING + exit 0.
+# FAIL-OPEN (never block a legit push on tooling/infra breakage) — reserved for a
+# genuinely INCONCLUSIVE environment the pusher can't fix from inside the hook:
+#   missing node/npx/jq, missing node_modules / vitest, or a failed `npm run build`
+#   → loud WARNING + exit 0.
+#
+# NOT fail-open — "the suite did not run" is a HARD FAIL (exit 2), because a gate
+# that exits 0 while verifying nothing is indistinguishable from a healthy one:
+#   an unusable report path (mktemp failure), or vitest producing no parseable
+#   report (crash / bad flag / OOM)  → banner + exit 2.
+#   [OPS-TEST-GATE-MKTEMP-PORTABILITY-W1 — pinned by
+#    tests/unit/test-gate-report-path.test.ts]
 #
 # IDEMPOTENT — read-only against the repo (only writes /tmp logs + the gitignored
 # dist/). Safe to run repeatedly; accepts a no-op `--check` flag.
@@ -43,10 +54,42 @@ unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR \
 
 BASELINE_FILE="audits/test-baseline-known-failures.txt"
 MODE="${ALGOVAULT_TEST_GATE:-block}"
+# macOS exports TMPDIR WITH a trailing slash; strip it so composed paths don't
+# contain a cosmetic `//` (it shows up in every log path this script prints).
 TMP="${TMPDIR:-/tmp}"
+TMP="${TMP%/}"
 
 info() { echo "[test-gate] $*"; }
 warn() { echo "[test-gate] WARNING: $*" >&2; }
+
+# ── hard fail: the gate could not run the suite ────────────────────────────────
+#
+# NOT the same class as a fail-open. Failing OPEN is for a genuinely INCONCLUSIVE
+# environment the pusher can't be expected to fix from inside this hook (no
+# node/npx/jq, no node_modules, a compile error that surfaces loudly via
+# build/deploy anyway). "The suite did not run" is different: the gate verified
+# NOTHING, and exiting 0 there is indistinguishable from a healthy GREEN — the
+# exact failure mode this gate exists to prevent (CLAUDE.md: "installed is not
+# working", and a dark guard exiting 0 must still escalate).
+#
+# Exit 2, not 1, keeps the documented contract honest: 1 == "a test regressed",
+# 2 == "the gate itself could not verify". The installed pre-push hook is
+# `… || exit 1`, so both block the push identically.
+hard_fail() {
+  {
+    echo ""
+    echo "[test-gate] ================================================================"
+    echo "[test-gate] ✗ GATE COULD NOT VERIFY — NO TESTS RAN"
+    echo "[test-gate]   $1"
+    echo "[test-gate] ================================================================"
+  } >&2
+  if [ "$MODE" = "warn" ]; then
+    warn "ALGOVAULT_TEST_GATE=warn → downgrading to a report (exit 0). Nothing was verified."
+    exit 0
+  fi
+  echo "[test-gate] push BLOCKED. Fix the toolchain, or override with: ALGOVAULT_TEST_GATE=warn git push" >&2
+  exit 2
+}
 
 # ── fail-open preflight: is the toolchain even present? ──
 for need in node npx jq; do
@@ -70,16 +113,37 @@ npm run build:knowledge >"$TMP/test-gate-knowledge.log" 2>&1 \
   || warn "npm run build:knowledge failed — knowledge-flow may not validate (see $TMP/test-gate-knowledge.log)."
 
 # ── run vitest, capture the failing-file set ──
-VITEST_JSON="$(mktemp "$TMP/test-gate-vitest.XXXXXX.json")"
+#
+# PORTABILITY — the template's `XXXXXX` MUST be the last thing in the name.
+# BSD/macOS mktemp does not substitute `XXXXXX` when a suffix follows it, so the
+# previous `mktemp "$TMP/test-gate-vitest.XXXXXX.json"` created a file named
+# LITERALLY `test-gate-vitest.XXXXXX.json` (GNU mktemp substitutes, so this was
+# invisible on ubuntu CI). Once that literal name existed — left by a concurrent
+# worktree session, or by an interrupted run — the next mktemp exited 1 with
+# EMPTY stdout ("mkstemp failed …: File exists"). With no `set -e` the script
+# carried on with an empty path → `npx vitest run --outputFile=` →
+# `CACError: option --outputFile <filename/-s> value is missing` → no report →
+# the parse check below fired and the gate exited 0 having verified NOTHING
+# (observed 2026-07-29, SIGNAL-CLOSEDBAR-SHADOW-W1 CH2).
+#
+# `mktemp -d` with a TRAILING `XXXXXX` substitutes on both BSD and GNU, and the
+# per-run directory keeps a readable `report.json` inside it. The EXIT trap
+# removes it even on an interrupted run, so no leftover can poison the next one.
+VITEST_DIR="$(mktemp -d "$TMP/test-gate-vitest.XXXXXX" 2>/dev/null)" || VITEST_DIR=""
+cleanup_vitest_dir() { [ -n "${VITEST_DIR:-}" ] && rm -rf "$VITEST_DIR"; return 0; }
+trap cleanup_vitest_dir EXIT
+if [ -z "$VITEST_DIR" ] || [ ! -d "$VITEST_DIR" ]; then
+  hard_fail "could not create a temp report dir under $TMP (mktemp -d failed) — vitest was never invoked."
+fi
+VITEST_JSON="$VITEST_DIR/report.json"
 npx vitest run --reporter=json --outputFile="$VITEST_JSON" >"$TMP/test-gate-vitest.log" 2>&1 || true
 if ! jq -e '.testResults' "$VITEST_JSON" >/dev/null 2>&1; then
-  warn "vitest produced no parseable report (see $TMP/test-gate-vitest.log) — infra error; failing OPEN (exit 0)."
-  rm -f "$VITEST_JSON"
-  exit 0
+  hard_fail "vitest wrote no parseable report to $VITEST_JSON — see $TMP/test-gate-vitest.log (tail below).
+[test-gate]   $(tail -3 "$TMP/test-gate-vitest.log" 2>/dev/null | tr '\n' ' ')"
 fi
 CURRENT_FAILS="$(jq -r '.testResults[] | select(.status=="failed") | .name' "$VITEST_JSON" \
                  | sed "s#.*/tests/#tests/#" | sort -u)"
-rm -f "$VITEST_JSON"
+cleanup_vitest_dir
 
 # ── run the node:test canaries (every tests/**/*.test.mjs that is NOT a vitest
 #    file — detected by content so new node:test files are auto-covered) ──
