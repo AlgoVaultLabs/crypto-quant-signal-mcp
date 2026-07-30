@@ -1,0 +1,22 @@
+{
+  "_comment": "Baked Node.js end-of-life table, consumed by scripts/check-runtime-node-eol.mjs. BAKED, NOT FETCHED, deliberately: the gate must be able to DECIDE without the network, so a CI runner with no egress fails on a real EOL rather than on a fetch timeout. Placed under scripts/data/ (alongside cloudflare-ip-ranges.json) and NOT under audits/, which Dockerfile:13 COPYs as a Stage-1 build input that projects into the PUBLIC knowledge bundle.",
+  "_source": "https://raw.githubusercontent.com/nodejs/Release/main/schedule.json — the official nodejs/Release SoT. Values below were read from it on the probe date, not from memory.",
+  "_how_to_refresh": "curl the source above and re-copy the `end` dates for every major listed here, then move revisit_by forward. A major that disappears upstream should be KEPT here with its historical EOL date — an old Dockerfile pinned to it must still fail.",
+  "_TODO_revisit_by": "2027-01-31",
+  "_revisit_rationale": "Node 26 enters LTS 2026-10-28 and Node 28 is announced around 2027-04; refreshing each January keeps this table ahead of both. If it is stale past revisit_by the canary reports INDETERMINATE (exit 3) rather than silently trusting an aging table — a defensive threshold that expires, per the CLAUDE.md defensive-threshold discipline.",
+  "probed_at": "2026-07-30",
+  "warning_window_days": 90,
+  "_warning_window_rationale": "A major inside its last 90 days is reported as a WARNING (still exit 0) so a bump can be scheduled deliberately; past EOL is a hard FAIL. 90 days is roughly one release train — enough to plan a runtime bump without an emergency.",
+  "eol": {
+    "18": "2025-04-30",
+    "19": "2023-06-01",
+    "20": "2026-04-30",
+    "21": "2024-06-01",
+    "22": "2027-04-30",
+    "23": "2025-06-01",
+    "24": "2028-04-30",
+    "25": "2026-06-01",
+    "26": "2029-04-30",
+    "27": "2030-04-30"
+  }
+}

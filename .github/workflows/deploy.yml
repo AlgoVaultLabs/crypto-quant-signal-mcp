@@ -288,6 +288,18 @@ jobs:
           node scripts/check-delivery-assertion.mjs --self-test
           node scripts/check-delivery-assertion.mjs
 
+      # OPS-RUNTIME-NODE24-W1 Ch4 — the generator for SEC-15. That finding existed because a
+      # base image aged out of support with EVERY GATE GREEN: Node 20 hit EOL 2026-04-30 and
+      # the Dockerfiles kept saying node:20-alpine for another 91 days, because "supported
+      # runtime" was a fact nobody had made executable. This checks every place a Node major
+      # is DECLARED — both stages of both Dockerfiles, all three workflows, and engines — and
+      # fails past EOL (warns inside 90 days). Fail-CLOSED: a missing, unparseable or
+      # self-expired EOL table is INDETERMINATE (exit 3), never a pass.
+      - name: Runtime Node EOL gate (fail-closed)
+        run: |
+          node scripts/check-runtime-node-eol.mjs --self-test
+          node scripts/check-runtime-node-eol.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
