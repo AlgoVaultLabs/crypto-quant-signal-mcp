@@ -78,6 +78,12 @@ function setupFixture(): Fixture {
     join(dir, 'package.json'),
     JSON.stringify({ name: 'fixture', scripts: { build: 'true', 'build:knowledge': 'true' } }),
   );
+  // autoinstall_allowed() requires a package-lock.json (plus AUTOINSTALL!=0 and no CI).
+  // Without one it returns false UNCONDITIONALLY, which silently made every
+  // "auto-recovery ON" assertion vacuous — recovery was never reachable, so the
+  // on/off gate could be neutered with nothing going red. Found by R5's
+  // deliberate-breakage step; the lock file is what makes the gate testable at all.
+  writeFileSync(join(dir, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3 }));
 
   // Sandboxed TMPDIR — asserted against directly, so it must not be the shared one.
   const tmp = join(dir, 'tmpdir');
@@ -282,6 +288,12 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(r.exitCode, `output:\n${r.all}`).toBe(2);
     expect(r.all).toMatch(/node_modules/);
     expect(r.stdout).toMatch(/^TEST_GATE_VERDICT=INDETERMINATE$/m);
+    // Pins the OFF side of the auto-recovery gate: the documented reason must be given,
+    // and no `npm ci` may be attempted. Without these two assertions
+    // `autoinstall_allowed()` could be neutered to always-allow with nothing going red
+    // (R5.3 initially stayed GREEN under exactly that mutation).
+    expect(r.all).toMatch(/auto-recovery is off/);
+    expect(r.all).not.toMatch(/recovering with 'npm ci'/);
   });
 
   it('reports INDETERMINATE (exit 2), not a pass, on a genuine build failure', () => {
@@ -302,9 +314,14 @@ describe('check_test_baseline.sh — report-path contract', () => {
   it('cold checkout with autoinstall ON attempts recovery, and token matches code', () => {
     rmSync(join(fx.dir, 'node_modules'), { recursive: true, force: true });
 
-    const r = runGate(fx, { ALGOVAULT_TEST_GATE_AUTOINSTALL: '1' });
+    const r = runGate(fx, { ALGOVAULT_TEST_GATE_AUTOINSTALL: '1', CI: '' });
 
-    expect(r.all, `output:\n${r.all}`).toMatch(/npm ci|recovery|node_modules/i);
+    // The ON side: recovery must actually be ATTEMPTED, and the OFF reason must NOT
+    // appear. Together with the OFF test above this pins the gate in both directions.
+    expect(r.all, `output:\n${r.all}`).toMatch(/recovering with 'npm ci'/);
+    expect(r.all).not.toMatch(/auto-recovery is off/);
+    // Whichever way recovery lands (the stub npm "succeeds" but installs nothing, so
+    // this ends INDETERMINATE), the token must agree with the exit code.
     const token = (r.stdout.match(/^TEST_GATE_VERDICT=(\w+)$/m) ?? [])[1];
     expect(token, `no token in:\n${r.all}`).toBeTruthy();
     const expected = { PASS: 0, FAIL: 1, INDETERMINATE: 2 }[token as 'PASS' | 'FAIL' | 'INDETERMINATE'];
