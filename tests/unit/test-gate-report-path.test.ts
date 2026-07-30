@@ -29,7 +29,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, readdirSync, copyFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -289,6 +289,50 @@ describe('check_test_baseline.sh — report-path contract', () => {
 
     expect(r.exitCode, `output:\n${r.all}`).toBe(0);
     expect(r.all).toMatch(/warn/i);
+  });
+
+  // ── composition with OPS-TEST-GATE-FAILOPEN-VISIBILITY-W1's fail-open ledger ──
+  //
+  // hard_fail() in warn mode delegates to fail_open() rather than a plain exit 0,
+  // so an UNGATED push is recorded no matter which path allowed it. Neither wave
+  // had this on its own, so it is pinned here rather than assumed.
+
+  /** The ledger fail_open() appends to: $(git rev-parse --git-common-dir)/… */
+  const ledgerPath = (f: Fixture) => join(f.dir, '.git', 'algovault-test-gate-failopen.log');
+
+  it('records a warn-mode hard failure in the fail-open ledger (an ungated push is never silent)', () => {
+    stubNpx(fx, null);
+
+    const r = runGate(fx, { ALGOVAULT_TEST_GATE: 'warn' });
+
+    expect(r.exitCode, `output:\n${r.all}`).toBe(0);
+    expect(r.all).toMatch(/THIS PUSH IS UNGATED/);
+    const ledger = readFileSync(ledgerPath(fx), 'utf8');
+    expect(ledger, `ledger:\n${ledger}`).toMatch(/downgraded by ALGOVAULT_TEST_GATE=warn/);
+  });
+
+  it('a later GREEN run reports the ungated push and clears the ledger', () => {
+    // 1. warn-mode hard failure → one ledger row.
+    stubNpx(fx, null);
+    runGate(fx, { ALGOVAULT_TEST_GATE: 'warn' });
+    expect(readFileSync(ledgerPath(fx), 'utf8').trim(), 'precondition: ledger has a row').not.toBe('');
+
+    // 2. the suite now actually runs green → those commits are covered.
+    stubNpx(fx, report(['tests/unit/a.test.ts']));
+    const r = runGate(fx);
+
+    expect(r.exitCode, `output:\n${r.all}`).toBe(0);
+    expect(r.all).toMatch(/went UNGATED since the last GREEN gate/);
+    expect(readFileSync(ledgerPath(fx), 'utf8').trim(), 'ledger should be cleared').toBe('');
+  });
+
+  it('a blocking hard failure does NOT write a ledger row (nothing went ungated)', () => {
+    stubNpx(fx, null);
+
+    const r = runGate(fx); // block mode
+
+    expect(r.exitCode).not.toBe(0);
+    expect(existsSync(ledgerPath(fx)) ? readFileSync(ledgerPath(fx), 'utf8').trim() : '').toBe('');
   });
 
   // ── baseline allow-list semantics — unchanged by this wave ──
