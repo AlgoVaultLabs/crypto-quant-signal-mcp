@@ -15,3 +15,12 @@ ops/scripts/.disk-forensics-hosts
 
 # Parallel-session worktrees (native `claude -w` / scripts/cc-session.sh)
 /.claude/worktrees/
+
+# Per-repo napkin runbook (`napkin` skill) — local-only working notes. Names the
+# operator's own filesystem layout (/Users/…) and the prod container, and this repo
+# is PUBLIC, so it stays out of git. Same class as ops/scripts/.disk-forensics-hosts
+# above. NOTE: `.claude/` is only PARTIALLY ignored (worktrees + this file) — it
+# still holds tracked files (settings.json, launch.json, commands/), so an
+# unignored file here WOULD be swept in by `git add -A`, which CLAUDE.md bans for
+# exactly this reason. (OPS-ENDPOINT-TRUTH-VAULT-QUARANTINE-W1)
+/.claude/napkin.md
