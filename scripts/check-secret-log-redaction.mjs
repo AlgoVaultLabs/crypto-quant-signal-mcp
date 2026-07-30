@@ -139,7 +139,12 @@ export function findLogLeaks(src) {
       continue;
     }
     if (SECRET_LABEL.test(arg.text)) {
-      hits.push({ rule: 'R2', detail: 'a KEY=/SECRET=/TOKEN=-shaped value interpolated into a log/throw', snippet: arg.text.slice(0, 160) });
+      // NB: this message deliberately avoids writing a credential label immediately
+      // followed by `=` and a long unbroken run. `security-canary.mjs`'s `assigned-secret`
+      // matcher (correctly) reads that shape as a hardcoded credential, and this file's
+      // own prose tripped it on the first deploy — a gate flagging a gate's description
+      // of the thing it detects.
+      hits.push({ rule: 'R2', detail: 'a credential-labelled value (KEY / SECRET / TOKEN / PASSWORD) interpolated into a log or throw', snippet: arg.text.slice(0, 160) });
     }
   }
   return hits;
