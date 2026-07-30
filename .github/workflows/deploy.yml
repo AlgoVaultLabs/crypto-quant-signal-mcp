@@ -243,6 +243,16 @@ jobs:
           node scripts/check-paid-route-validation.mjs --self-test
           node scripts/check-paid-route-validation.mjs
 
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4 — SEC-17 (a producer logged "digest sent" for
+      # three weeks of HTTP 400, because sendDigest returns a boolean and never throws) +
+      # SEC-13 (the sanctioned smoke prescribed DRY_RUN_TG, which WRITES the 24h cooldown
+      # marker and so silenced the next genuine page). Reports, without enforcing, the
+      # weaker "discarded result that claims nothing" sites.
+      - name: Delivery-assertion + inert-smoke gate (fail-closed)
+        run: |
+          node scripts/check-delivery-assertion.mjs --self-test
+          node scripts/check-delivery-assertion.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:

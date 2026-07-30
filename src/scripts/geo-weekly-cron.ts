@@ -569,8 +569,13 @@ async function main(): Promise<void> {
   const { data, wowAlerts, ranked, brief, decline } = await fetchDigestData();
   const lines = buildDigest(data);
 
-  await sendDigest(lines);
-  console.log(`[geo-cron] digest sent · sections=${lines.length}`);
+  // SEC-17: assert delivery, not attempt (sendDigest returns a boolean, never throws).
+  if (await sendDigest(lines)) {
+    console.log(`[geo-cron] digest sent · sections=${lines.length}`);
+  } else {
+    console.error(`[geo-cron] DIGEST SEND FAILED · sections=${lines.length} — see the [telegram] HTTP line above`);
+    process.exitCode = 1;
+  }
 
   // GEO-AUTOPILOT-W1 (C3) — persist the weekly DECIDE row (status='proposed'); the
   // dashboard renders it + Cowork materializes the brief from it. NO completion TG.
@@ -589,11 +594,18 @@ async function main(): Promise<void> {
   // supporting detail, not the trigger; honors the "fire on sustained drift" alert contract.
   if (decline.slipping) {
     const summary = wowAlerts.map((a) => `${a.model} -${num(a.drop_pct).toFixed(1)}%`).join(', ');
-    await sendAlert(
+    // SEC-17: assert delivery, not attempt — an operator-action alert that silently
+    // failed to send is worse than no alert, because the log claims it went out.
+    const alerted = await sendAlert(
       `GEO weekly probe — ${decline.reason}${summary ? `; per-engine dips: ${summary}` : ''} (see digest above for details)`,
       'warning',
     );
-    console.log(`[geo-cron] WoW WARNING alert sent · ${decline.reason}`);
+    if (alerted) {
+      console.log(`[geo-cron] WoW WARNING alert sent · ${decline.reason}`);
+    } else {
+      console.error(`[geo-cron] WoW WARNING ALERT SEND FAILED · ${decline.reason} — the operator was NOT notified`);
+      process.exitCode = 1;
+    }
   } else {
     console.log(`[geo-cron] no WoW WARNING (gate HOLDING: ${decline.reason}) · raw_wow_dips=${wowAlerts.length}`);
   }

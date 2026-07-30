@@ -674,8 +674,14 @@ async function runDigest(): Promise<void> {
     sections.push(`📦 *npm Downloads:* ${d.downloads ?? '—'} (last day)`);
   }
 
-  await sendDigest(sections);
-  console.log('[monitor] digest sent');
+  // SEC-17: sendDigest returns a boolean and never throws — an unchecked await logs
+  // success for a message Telegram rejected. Assert delivery, not attempt.
+  if (await sendDigest(sections)) {
+    console.log('[monitor] digest sent');
+  } else {
+    console.error('[monitor] DIGEST SEND FAILED — see the [telegram] HTTP line above');
+    process.exitCode = 1;
+  }
 }
 
 function getSystemInfo(): {

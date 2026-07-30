@@ -17,22 +17,59 @@ function isConfigured(): boolean {
   return BOT_TOKEN.length > 0 && CHAT_ID.length > 0;
 }
 
+/**
+ * Render a dynamic value so Markdown cannot mis-parse it (SEC-17).
+ *
+ * Telegram's LEGACY `Markdown` parse mode has no escape syntax — that is precisely why
+ * MarkdownV2 exists — so a backslash does not help. A code span does: content inside
+ * backticks is literal, so `_`, `*` and `[` in an interpolated value stop being entity
+ * starters. Backticks in the value itself are stripped, since they would close the span.
+ *
+ * The concrete incident: the weekly knowledge-page digest interpolated the source name
+ * `github_discussion`, whose single `_` opened an italic entity that never closed. Every
+ * POST returned HTTP 400 `can't parse entities … at byte offset 168` (byte-exact) for
+ * three consecutive weeks while the producer logged "digest sent".
+ */
+export function mdValue(value: unknown): string {
+  return `\`${String(value).replace(/`/g, '')}\``;
+}
+
+async function sendOnce(
+  text: string,
+  parseMode: 'Markdown' | null,
+): Promise<{ ok: boolean; status?: number; body?: string }> {
+  const res = await fetch(`${API_BASE}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: CHAT_ID,
+      text,
+      ...(parseMode ? { parse_mode: parseMode } : {}),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.ok) return { ok: true };
+  return { ok: false, status: res.status, body: await res.text() };
+}
+
 async function post(text: string, retries = 1): Promise<boolean> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(`${API_BASE}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          text,
-          parse_mode: 'Markdown',
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (res.ok) return true;
-      const body = await res.text();
-      console.error(`[telegram] HTTP ${res.status}: ${body}`);
+      const r = await sendOnce(text, 'Markdown');
+      if (r.ok) return true;
+      console.error(`[telegram] HTTP ${r.status}: ${r.body}`);
+      // A Markdown parse failure is a FORMATTING problem, not a delivery problem. Retry
+      // once as PLAIN TEXT so an unescaped entity in some future producer's interpolated
+      // value can never again cost the operator the message entirely. Loud on purpose:
+      // the fallback firing means that producer still needs mdValue() applied.
+      if (r.status === 400 && /can't parse entities/i.test(r.body ?? '')) {
+        const plain = await sendOnce(text, null);
+        if (plain.ok) {
+          console.error('[telegram] DELIVERED AS PLAIN TEXT after a Markdown parse error — wrap interpolated values in mdValue()');
+          return true;
+        }
+        console.error(`[telegram] plain-text fallback also failed: HTTP ${plain.status}: ${plain.body}`);
+      }
     } catch (err) {
       console.error(`[telegram] attempt ${attempt + 1} failed:`, (err as Error).message);
     }
