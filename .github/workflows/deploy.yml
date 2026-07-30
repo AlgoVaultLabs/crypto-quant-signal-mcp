@@ -232,6 +232,22 @@ jobs:
       - name: Test-gate verdict logic (fail-closed)
         run: bash scripts/check_test_baseline.sh --self-test
 
+      # OPS-CC-DRIFT-DETECTOR-W1 — the parallel-session drift detector's own decision logic.
+      #
+      # ONLY the --self-test runs here, and that is deliberate — do NOT "fix" this into a real
+      # run. The three checks are inherently LOCAL: they compare this checkout's merge-base
+      # against origin/main and scan sibling WORKTREES on the developer's machine. A CI runner
+      # has one fresh clone and zero worktrees, so a real run there would be a guaranteed PASS
+      # over nothing — a vacuous green, the exact class this arc has been retiring. What CI can
+      # protect is that the gate's own logic has not rotted into an always-pass, which is what
+      # the vacuity-guarded self-test asserts (4 must-fire + 3 must-not-fire + 6 must-map).
+      #
+      # NB its INDETERMINATE code is 3, not the 2 used by the test gate above. That is the
+      # token-law default for a NEW gate with no incumbent; check_test_baseline.sh is 2 only
+      # because it had already deployed 2 for that meaning. Do not align them.
+      - name: Session-drift detector logic (fail-closed)
+        run: node scripts/check-session-drift.mjs --self-test
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch1 — SEC-14 + SEC-10 were CLAUDE.md laws that no gate
       # enforced ("redact by STRUCTURE, never by vendor prefix"; no credential in a URL). Patching
       # the two call sites fixes today; this makes a NEW leaking lane fail the build. Emits
