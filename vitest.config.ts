@@ -79,6 +79,10 @@ export default defineConfig({
       // "No test suite found"). The pre-push gate detects node:test files by CONTENT, so it
       // picks this up automatically.
       'tests/unit/monitoring-primitive-parity.test.mjs',
+      // OPS-HOST-EXPOSURE-POSTURE-W1 — node:test guard on the declared network posture
+      // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
+      // "No test suite found"). Same content-detection note as the parity canary above.
+      'tests/unit/network-posture-declaration.test.mjs',
       // OPS-VITEST-MAIN-RED-FIX-W1: check-system-map.test.ts drives
       // scripts/check_system_map.sh against throwaway temp git repos. It passes on
       // macOS (local dev + the pre-push gate) but fails on ubuntu CI — a BSD-vs-GNU
