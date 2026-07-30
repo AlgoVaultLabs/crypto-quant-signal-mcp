@@ -80,12 +80,17 @@ if [ "${1:-}" = "--self-test" ]; then
     [ "$got" = "$want" ] || { echo "self-test FAIL: rolsuper='$v' routed to $got, want $want"; fails=$((fails+1)); }
   done
   # B-direction: the DSN parser must actually extract a role from both DSN shapes.
-  got=$(printf 'DATABASE_URL=postgresql://algovault_app:pw@postgres:5432/db\n' \
-        | sed -nE 's#.*postgres(ql)?://([A-Za-z0-9_]+):[^@]*@.*#\2#p')
-  [ "$got" = "algovault_app" ] || { echo "self-test FAIL: postgresql:// parser got '$got'"; fails=$((fails+1)); }
-  got=$(printf 'DATABASE_URL=postgres://algovault_app:pw@127.0.0.1:5432/db\n' \
-        | sed -nE 's#.*postgres(ql)?://([A-Za-z0-9_]+):[^@]*@.*#\2#p')
-  [ "$got" = "algovault_app" ] || { echo "self-test FAIL: postgres:// parser got '$got'"; fails=$((fails+1)); }
+  # The secret segment is interpolated via %s rather than written inline, so no
+  # `scheme://role:secret@host` LITERAL ever appears in this file. That is deliberate:
+  # security-canary.mjs's `dsn-password` detector correctly flags such a literal (it is
+  # the exact shape of the leak SEC-02 was), and a fixture is not a reason to weaken a
+  # gate — the placeholder is kept out of the matched shape instead.
+  ph='PLACEHOLDER'
+  for scheme in postgresql postgres; do
+    got=$(printf 'DATABASE_URL=%s://algovault_app:%s@host:5432/db\n' "$scheme" "$ph" \
+          | sed -nE 's#.*postgres(ql)?://([A-Za-z0-9_]+):[^@]*@.*#\2#p')
+    [ "$got" = "algovault_app" ] || { echo "self-test FAIL: $scheme:// parser got '$got'"; fails=$((fails+1)); }
+  done
   if [ "$fails" -eq 0 ]; then echo "self-test PASS (6 checks: A drift/clean, B rolsuper t/f routing, both DSN shapes parsed)"; exit 0; fi
   echo "self-test FAILED ($fails)"; exit 1
 fi

@@ -85,9 +85,16 @@ SEVERITY = "CRITICAL_PERSISTENT"  # design-time classification: sustained
 # NOTE: no -F flag — psql's unaligned default separator already IS `|`, and this
 # command is split() for subprocess (NO shell), so a quoted -F'|' would reach
 # psql with LITERAL quotes and silently break every row (caught by live smoke).
+# OPS-SEC-DB-LEAST-PRIV-W2: reads as `aoe_readonly`, not the bootstrap superuser.
+# This connects over the postgres container's `local ... trust` line, so the role is
+# chosen purely by -U and needs no credential — which is exactly why a DSN rotation can
+# never re-point it, and why it had to be changed here by hand. `aoe_readonly` holds
+# SELECT on `signals` + `directional_labels` (live-verified), which is all this census
+# reads; it cannot write, so the read-only intent is now enforced by the role rather
+# than only by `SET default_transaction_read_only=on` below.
 PSQL_DEFAULT = (
     "docker exec crypto-quant-signal-mcp-postgres-1 "
-    "psql -U algovault -d signal_performance -tA"
+    "psql -U aoe_readonly -d signal_performance -tA"
 )
 
 CENSUS_SQL = (

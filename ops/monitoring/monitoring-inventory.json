@@ -284,6 +284,22 @@
       "owner_wave": "OPS-LLM-SPEND-MONITOR-W1"
     },
     {
+      "id": "db-superuser-canary",
+      "artifact": "scripts/db-superuser-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/db-superuser-canary.sh",
+      "criticality": "load-bearing",
+      "schedule": "39 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "5ac88efcd9e3e9a25f4da5d4af928c87680d74b5f19a72d076391b504d231a11",
+      "alert_ids": [
+        "DB_SUPERUSER_DRIFT"
+      ],
+      "owner_wave": "OPS-SEC-DB-LEAST-PRIV-W2"
+    },
+    {
       "id": "stripe-webhook-events-canary",
       "artifact": "ops/monitoring/stripe-webhook-events-canary.sh",
       "kind": "executable",
@@ -355,7 +371,7 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "b89d27277ef3d9ca2d6000ff59374f3ee4c46be9424bc4b8a54fbeb507653619",
+      "sha256": "340ce02dc6beb44f6fd864fe56eb2e49d531fe307c559cddcc540bb98a297861",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
@@ -565,7 +581,7 @@
       "schedule": "37 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "650b368048041fcd8eeda8c54d26fa204b85796cac49fe559572530b1b5913d4",
+      "sha256": "5ca84a838d03cba7c33638323468c4c0642b68ff154be5668b5ce8ca6e202b64",
       "alert_ids": [
         "SEED_COVERAGE_GAP"
       ],
