@@ -14,6 +14,10 @@ import { getRequestIsAutomated } from './license.js';
 // import of LicenseTier) → no cycle. The IN-lists below are BUILT from these arrays, so a
 // newly-added paid tier cannot drift out of the split.
 import { SUBSCRIPTION_TIERS, X402_TIERS } from './payment-rail.js';
+// OPS-TOP-IP-FORENSICS-W1: the ONE (tool, verdict) → billing-class derivation. Predicates are
+// GENERATED from FEATURE_REGISTRY's quota model, so the digest's idea of "billable" cannot
+// drift from the runtime meter.
+import { billablePredicate, freeHoldPredicate, unmeteredPredicate } from './call-class.js';
 
 // ── Table creation ──
 
@@ -606,6 +610,14 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
   const subTierPlaceholders = SUBSCRIPTION_TIERS.map(() => '?').join(',');
   const x402TierPlaceholders = X402_TIERS.map(() => '?').join(',');
 
+  // OPS-TOP-IP-FORENSICS-W1: call-class predicates, generated from the canonical quota model.
+  // A null predicate (a class with no tools) collapses to a constant-false guard rather than an
+  // `IN ()` syntax error — the count then honestly reads 0 instead of the query throwing.
+  const FALSE_PRED = { sql: '1 = 0', params: [] as string[] };
+  const billable = billablePredicate() ?? FALSE_PRED;
+  const freeHold = freeHoldPredicate() ?? FALSE_PRED;
+  const unmetered = unmeteredPredicate() ?? FALSE_PRED;
+
   const [
     total,
     last24h,
@@ -642,6 +654,13 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     paidX40224h,
     paidSubscriptionSessions24h,
     paidX402Sessions24h,
+    // OPS-TOP-IP-FORENSICS-W1: the billable/free-HOLD/unmetered decomposition.
+    billableCalls24h,
+    freeHoldCalls24h,
+    unmeteredCalls24h,
+    billableSessions24h,
+    billableCalls7d,
+    freeHoldCalls7d,
   ] = await Promise.all([
     // DASH-EXTERNAL-ONLY-W1: every dashboard tile / breakdown counts EXTERNAL
     // calls only (internal loopback like algovault-bot excluded). Per CLAUDE.md
@@ -717,6 +736,16 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND license_tier IN (${x402TierPlaceholders})`, [dayAgo, BOT_FALSE, ...X402_TIERS]),
     dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier IN (${subTierPlaceholders})`, [dayAgo, BOT_FALSE, ...SUBSCRIPTION_TIERS]),
     dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier IN (${x402TierPlaceholders})`, [dayAgo, BOT_FALSE, ...X402_TIERS]),
+    // OPS-TOP-IP-FORENSICS-W1: billable / free-by-design-HOLD / unmetered over the EXTERNAL
+    // slice (same is_bot_internal=false scope as externalCalls24h, so the three classes plus
+    // `unclassified` reconcile to it exactly). `internal` is already carried by
+    // totalCallsInternal — it is not re-counted here.
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${billable.sql}`, [dayAgo, BOT_FALSE, ...billable.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${freeHold.sql}`, [dayAgo, BOT_FALSE, ...freeHold.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${unmetered.sql}`, [dayAgo, BOT_FALSE, ...unmetered.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND ${billable.sql}`, [dayAgo, BOT_FALSE, ...billable.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${billable.sql}`, [weekAgo, BOT_FALSE, ...billable.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${freeHold.sql}`, [weekAgo, BOT_FALSE, ...freeHold.params]),
   ]);
 
   // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: concentration % of the top talkers
@@ -790,6 +819,31 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       sessions: Number(automatedSessions24h[0]?.count ?? 0),
       last7d: { total: Number(automatedFree7d[0]?.count ?? 0) },
     },
+    // OPS-TOP-IP-FORENSICS-W1: ADDITIVE call-class decomposition of the external slice. The
+    // pre-existing totals above are UNCHANGED (add before you remove, per Data Integrity) —
+    // this is a new lens on the same rows, not a replacement series.
+    //
+    // Invariant: billable + freeHold + unmetered + unclassified == totalCallsExternal.last24h.
+    // `unclassified` is computed as the REMAINDER rather than queried, so a tool_name with no
+    // registry entry (a retired tool's historical rows) can never silently vanish — it shows up
+    // as a non-zero remainder the digest renders as `other N`. Clamped at 0: the three classes
+    // are mutually exclusive by construction, but a negative would be a louder bug than a 0.
+    callClasses: (() => {
+      const billableN = Number(billableCalls24h[0]?.count ?? 0);
+      const freeHoldN = Number(freeHoldCalls24h[0]?.count ?? 0);
+      const unmeteredN = Number(unmeteredCalls24h[0]?.count ?? 0);
+      return {
+        billable: billableN,
+        freeHold: freeHoldN,
+        unmetered: unmeteredN,
+        unclassified: Math.max(0, extTotal24h - billableN - freeHoldN - unmeteredN),
+        billableSessions: Number(billableSessions24h[0]?.count ?? 0),
+        last7d: {
+          billable: Number(billableCalls7d[0]?.count ?? 0),
+          freeHold: Number(freeHoldCalls7d[0]?.count ?? 0),
+        },
+      };
+    })(),
     externalConcentration: { top1_pct: pctOfExternal(top1Calls), top5_pct: pctOfExternal(top5Calls) },
     // OPS-DIGEST-CHANNEL-LABELS-W1: concentration scoped to the Raw API clients bucket
     // (the digest's "top IP %" now reads from this, on the 🔌 Raw API clients line).

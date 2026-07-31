@@ -274,7 +274,11 @@ export interface ClientActivity24h {
     total: number | null;
     recognized: number | null;
     raw_api: number | null;
-    raw_api_top1_pct: number | null; // percent (0-100), 1 decimal — top IP's share of the Raw-API bucket
+    // percent (0-100), 1 decimal — the top SESSION's share of the Raw-API bucket. Named "top
+    // client" on every rendered surface (digest + funnel dashboard): the underlying query groups
+    // by session_id, which equals the ipHash only for callers sending no X-AlgoVault-Track-Token
+    // (OPS-TOP-IP-FORENSICS-W1 — it was previously rendered as "top IP", which was a label lie).
+    raw_api_top1_pct: number | null;
     paid: number | null;
     // OPS-DIGEST-PAID-RAIL-SPLIT-W1: `paid` broken down by payment RAIL. Base x402 and OKX
     // a2mcp both resolve to tier='x402', so they share one bucket.

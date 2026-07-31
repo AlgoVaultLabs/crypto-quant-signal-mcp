@@ -22,7 +22,7 @@
  *                           rollout window still renders.
  *   🔁 TG bot             = the algovault-bot's OWN daily metric, bridged via shared Postgres
  *                           (`tgBot`, from bot_daily_metrics) — Watch/Scanwatch/Scan + subscribers
- * plus a mirrored per-channel Sessions block. The "top IP %" concentration sits on the
+ * plus a mirrored per-channel Sessions block. The "top client %" concentration sits on the
  * 🔌 Raw API clients line (where a poller surge shows), sourced from `rawConcentration`.
  * Top assets are the genuine (recognized+paid) slice, so bot-BTC-polling never dominates.
  *
@@ -34,9 +34,26 @@
  * The raw `tier=internal` polling count is NOT shown here (it's the bot's alert-engine noise,
  * covered by the bot's own digest); `totalCallsInternal` stays in the payload, unrendered.
  *
+ * OPS-TOP-IP-FORENSICS-W1 (2026-07-31) — the block now LEADS with the billable decomposition:
+ *   💰 Billable / 🆓 Free-by-design HOLD / 🔎 Unmetered / ❓ Unclassified, all projected from the
+ * ONE derivation in call-class.ts (which itself derives from FEATURE_REGISTRY's quota model —
+ * no parallel literal). `Total Agent Calls` is PRESERVED unchanged beside them (add before you
+ * remove) but is now annotated as a VOLUME figure: it counts every logged dispatch including
+ * free-by-design HOLDs, so it is not a demand number.
+ *
+ * Why: the 2026-07-31 digest read `Total Agent Calls 3080 · Raw API clients 2955 (top IP 91.6%)`
+ * and was read as one caller making ~2,707 unmetered calls. Forensics found the metering fully
+ * intact — that caller's chargeable calls reconciled byte-exactly with its quota counter (67→67)
+ * — and 2,819 of the 2,955 rows were HOLD verdicts, free by explicit design. The headline was
+ * conflating free-by-design compute with billable demand at ~50x.
+ *
+ * Also relabelled: `(top IP …%)` → `(top client …%)`. The underlying `rawConcentration` query
+ * groups by `session_id`, which equals the ipHash ONLY for callers sending no track token.
+ *
  * Graceful-degrade: any absent field → '—'; `rawConcentration` falls back to the legacy
- * `externalConcentration`, and `topAssetsGenuine` to `topAssets`, so a digest fired during
- * the rollout window (before the /analytics deploy lands) still renders instead of throwing.
+ * `externalConcentration`, `topAssetsGenuine` to `topAssets`, and an absent `callClasses` omits
+ * the four new lines entirely, so a digest fired during the rollout window (before the
+ * /analytics deploy lands) renders exactly the prior layout instead of throwing.
  */
 export function formatAgentActivity(a: Record<string, unknown>): string {
   const num = (v: unknown, fallback: number | string = '—'): number | string =>
@@ -92,11 +109,34 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
   const totalUniqueSessions =
     asNum(genuine.freeSessions) + asNum(automated.sessions) + asNum(genuine.paidSessions) + (tgFresh ? asNum(tgBot!.subscribers) : 0);
 
+  // OPS-TOP-IP-FORENSICS-W1: the billable/free/unmetered decomposition, projected from the ONE
+  // derivation in call-class.ts. Rendered ONLY when the field is present, so a digest fired
+  // before the /analytics deploy lands degrades to exactly the prior layout (fail-open, same
+  // discipline as tgBot + rawConcentration).
+  const cc = (a.callClasses ?? null) as Record<string, unknown> | null;
+  const ccPresent = !!cc && typeof cc.billable === 'number';
+  const unclassified = ccPresent && typeof cc!.unclassified === 'number' ? (cc!.unclassified as number) : 0;
+  const classLines = !ccPresent
+    ? []
+    : [
+        `• 💰 Billable calls — Last 24h: ${num(cc!.billable)}   (${num(cc!.billableSessions)} sessions)`,
+        `• 🆓 Free-by-design HOLD — Last 24h: ${num(cc!.freeHold)}`,
+        `• 🔎 Unmetered (rate-limited) — Last 24h: ${num(cc!.unmetered)}`,
+        // An unregistered tool_name must be VISIBLE, never folded into another class.
+        ...(unclassified > 0 ? [`• ❓ Unclassified — Last 24h: ${unclassified}`] : []),
+      ];
+
   return [
     '🤖 *Agent Activity (24h)*',
-    `• Total Agent Calls: ${totalAgentCalls}`,
+    ...classLines,
+    // Add-before-remove: the pre-existing series is preserved unchanged alongside the new
+    // breakdown so nobody loses continuity. NB it counts every logged dispatch — billable AND
+    // free-by-design HOLD AND internal — so it is a VOLUME figure, not a demand figure.
+    `• Total Agent Calls: ${totalAgentCalls}${ccPresent ? '   (all traffic incl. free HOLD)' : ''}`,
     `• 🟢 Recognized clients: ${num(genuine.free)}`,
-    `• 🔌 Raw API clients: ${num(automated.total)}   (top IP ${num(rawConc.top1_pct)}%)`,
+    // "top client", not "top IP": rawConcentration groups by session_id (analytics.ts), which
+    // equals the ipHash only for callers that send no X-AlgoVault-Track-Token.
+    `• 🔌 Raw API clients: ${num(automated.total)}   (top client ${num(rawConc.top1_pct)}%)`,
     `• 💳 Paid: ${num(genuine.paid)}${railSuffix(genuine.paid, genuine.paidSubscription, genuine.paidX402)}`,
     ...(tgCallsLine ? [tgCallsLine] : []),
     `• Top assets (24h): ${assetList}`,
