@@ -231,14 +231,32 @@ report_and_clear_failopen_ledger() {
 # Distinguishes the two build-failure classes, which need OPPOSITE responses:
 #
 #   RECOVERABLE   — every error is TS2307 "Cannot find module 'X'" where X
-#                   resolves to a package that IS declared in the manifest but is
-#                   NOT installed. That is stale node_modules, not a code defect:
-#                   there is nothing for a human to fix and the gate can be made
-#                   meaningful again by `npm ci`. Failing open here is simply wrong.
+#                   resolves to a package the manifest declares but node_modules
+#                   does not currently satisfy, either because it is NOT INSTALLED
+#                   or because it is installed AT A VERSION OUTSIDE THE DECLARED
+#                   RANGE. Both are stale node_modules, not a code defect: there is
+#                   nothing for a human to fix and the gate can be made meaningful
+#                   again by `npm ci`. Failing open here is simply wrong.
 #   COMPILE_ERROR — anything else (a non-TS2307 error, a relative-path TS2307, or
-#                   a package that is declared AND installed yet unresolvable).
-#                   Real compile errors keep the documented fail-open policy:
-#                   they surface via build/deploy, not this gate.
+#                   a package that is declared AND installed at a version the range
+#                   ALLOWS yet is unresolvable). Real compile errors keep the
+#                   documented fail-open policy: they surface via build/deploy, not
+#                   this gate.
+#
+# OPS-TEST-GATE-VERSION-MISMATCH-W1 (2026-07-31) added the second RECOVERABLE arm.
+# "Is it installed?" and "is the RIGHT one installed?" are different questions, and
+# only the first had an answer here. Observed during
+# OPS-X402-SCHEME-REGISTRATION-INVARIANT-W1:
+#
+#   src/lib/builder-code-constants.ts(34,8): error TS2307: Cannot find module
+#   '@x402/extensions/builder-code' or its corresponding type declarations.
+#
+# package.json required `~2.20.0` after OPS-BASE-BUILDER-CODE-W1's bump; the
+# checkout held 2.9.0, which ships no `builder-code` subpath. The package was
+# declared AND present, so the presence check answered "installed" and the log was
+# filed as a genuine compile error — auto-recovery never fired and the operator ran
+# `npm ci` by hand. (The gate itself behaved correctly: INDETERMINATE/exit 2 blocked
+# the push. Only the classification was wrong.)
 #
 # Manifest/node_modules roots are overridable so the classifier is unit-testable
 # against fixture logs (tests/unit/test-gate-build-classifier.test.ts).
@@ -254,8 +272,96 @@ pkg_of_specifier() {
   esac
 }
 
+# ── minimal semver, deliberately NOT rented from node_modules ─────────────────
+#
+# This code runs precisely when node_modules is suspect, so resolving `semver`
+# out of it to diagnose it would be circular — and `semver` is not a declared
+# dependency of this repo anyway. What is implemented here is exactly the range
+# grammar package.json actually uses (`^X.Y.Z`, `~X.Y.Z`, `X.Y.Z`); everything
+# else answers `unknown` rather than guessing. See version_satisfies().
+
+# Strict `X.Y.Z` → "X Y Z". Partials ('2', '2.9'), prereleases, build metadata
+# and anything non-numeric → "" (undecidable). Padding a partial would be a
+# guess: npm reads '1.2' as the RANGE >=1.2.0 <1.3.0, not as the version 1.2.0.
+ver_norm() {
+  printf '%s' "${1:-}" | awk '
+    /^[0-9]+\.[0-9]+\.[0-9]+$/ { split($0, f, "."); printf "%s %s %s", f[1]+0, f[2]+0, f[3]+0 }'
+}
+
+# Compare two normalised triples → -1 | 0 | 1.
+#
+# NUMERIC per component, never lexical: as strings "9" sorts ABOVE "20" and "10"
+# sorts BELOW "2".
+#
+# Which direction actually bites was measured, not assumed. Mutating this to a
+# string compare and re-running the suite leaves the live 2.9.0-vs-~2.20.0 pair on
+# RECOVERABLE anyway (both bounds compare wrong, and the two errors cancel) — so
+# that pair does NOT pin this. What flips is a HEALTHY install: 1.10.0 against
+# ^1.2.0 reads as below the lower bound and gets condemned as stale, reinstalling
+# on every build. tests/unit/test-gate-build-classifier.test.ts carries the guard
+# on that case for exactly this reason.
+ver_cmp() {
+  local -a A B; local i
+  read -r -a A <<<"$1"; read -r -a B <<<"$2"
+  for i in 0 1 2; do
+    [ "${A[i]}" -lt "${B[i]}" ] && { echo -1; return 0; }
+    [ "${A[i]}" -gt "${B[i]}" ] && { echo 1; return 0; }
+  done
+  echo 0
+}
+
+# Does installed version $1 satisfy declared range $2? → yes | no | unknown
+#
+# `unknown` is a first-class answer, not a failure. The caller acts ONLY on a
+# proven `no`, so an undecidable range (npm:/git:/file: aliases, dist-tags,
+# compound `>=x <y` or `||` ranges, wildcards, prereleases) keeps the settled
+# COMPILE_ERROR behaviour instead of triggering a reinstall on a hunch.
+version_satisfies() {
+  local v="$1" range="$2" op base bv vv M m p uM um up
+  vv="$(ver_norm "$v")"
+  [ -n "$vv" ] || { echo unknown; return 0; }
+
+  # Trim surrounding whitespace before matching.
+  range="${range#"${range%%[![:space:]]*}"}"
+  range="${range%"${range##*[![:space:]]}"}"
+
+  case "$range" in
+    ''|'*'|x|X)      echo yes;     return 0 ;;  # any version is in range
+    *[[:space:]]*)   echo unknown; return 0 ;;  # compound: '>=1.0.0 <2.0.0'
+    *'|'*)           echo unknown; return 0 ;;  # alternation: '^1 || ^2'
+    *:*)             echo unknown; return 0 ;;  # npm:/git:/file: alias or URL
+  esac
+
+  case "$range" in
+    '^'*)    op=caret; base="${range#^}"  ;;
+    '~'*)    op=tilde; base="${range#\~}" ;;
+    '='*)    op=eq;    base="${range#=}"  ;;
+    [0-9]*)  op=eq;    base="$range"      ;;
+    *)       echo unknown; return 0 ;;          # >=, <, -, x-ranges, dist-tags
+  esac
+
+  bv="$(ver_norm "$base")"
+  [ -n "$bv" ] || { echo unknown; return 0; }
+
+  # Every supported operator shares the same inclusive lower bound.
+  [ "$(ver_cmp "$vv" "$bv")" -lt 0 ] && { echo no; return 0; }
+  [ "$op" = eq ] && { [ "$(ver_cmp "$vv" "$bv")" -eq 0 ] && echo yes || echo no; return 0; }
+
+  read -r M m p <<<"$bv"
+  if [ "$op" = tilde ]; then                       # ~X.Y.Z → <X.(Y+1).0
+    uM="$M"; um=$((m + 1)); up=0
+  elif [ "$M" -gt 0 ]; then                        # ^X.Y.Z → <(X+1).0.0
+    uM=$((M + 1)); um=0; up=0
+  elif [ "$m" -gt 0 ]; then                        # ^0.Y.Z → <0.(Y+1).0
+    uM=0; um=$((m + 1)); up=0
+  else                                             # ^0.0.Z → <0.0.(Z+1)
+    uM=0; um=0; up=$((p + 1))
+  fi
+  [ "$(ver_cmp "$vv" "$uM $um $up")" -lt 0 ] && echo yes || echo no
+}
+
 classify_build_log() {
-  local log="$1" errs total ts2307 spec pkg
+  local log="$1" errs total ts2307 spec pkg range installed
   [ -f "$log" ] || { echo "COMPILE_ERROR"; return 0; }
   errs="$(grep -E "error TS[0-9]+:" "$log" 2>/dev/null || true)"
   # A build that failed without emitting a single TS error is not a dependency
@@ -273,11 +379,23 @@ classify_build_log() {
     # Relative/absolute import that cannot resolve = a real code defect.
     [ -n "$pkg" ] || { echo "COMPILE_ERROR"; return 0; }
     # Not declared anywhere = a real defect (or a missing dependency entry).
-    jq -e --arg p "$pkg" \
-      '((.dependencies[$p] // .devDependencies[$p] // .optionalDependencies[$p]) != null)' \
-      "$TEST_GATE_MANIFEST" >/dev/null 2>&1 || { echo "COMPILE_ERROR"; return 0; }
-    # Declared AND present on disk, yet unresolvable = not a stale-install issue.
-    [ ! -d "$TEST_GATE_NODE_MODULES/$pkg" ] || { echo "COMPILE_ERROR"; return 0; }
+    # An unreadable/malformed manifest yields an empty range and lands here too.
+    range="$(jq -r --arg p "$pkg" \
+      '(.dependencies[$p] // .devDependencies[$p] // .optionalDependencies[$p]) // empty' \
+      "$TEST_GATE_MANIFEST" 2>/dev/null || true)"
+    [ -n "$range" ] || { echo "COMPILE_ERROR"; return 0; }
+    # Declared and absent from disk = the classic stale install.
+    [ -d "$TEST_GATE_NODE_MODULES/$pkg" ] || continue
+    # Declared AND on disk: still recoverable, but ONLY on a PROVEN range
+    # violation — the installed copy predates a manifest bump and cannot offer
+    # what the code imports, which is exactly what `npm ci` fixes. A missing
+    # version, an unreadable package.json or an undecidable range all answer
+    # something other than `no`, so "cannot tell" keeps the settled
+    # COMPILE_ERROR verdict rather than reinstalling on a hunch.
+    installed="$(jq -r '.version // empty' \
+      "$TEST_GATE_NODE_MODULES/$pkg/package.json" 2>/dev/null || true)"
+    [ "$(version_satisfies "$installed" "$range")" = no ] \
+      || { echo "COMPILE_ERROR"; return 0; }
   done < <(printf '%s\n' "$errs" | sed -n "s/.*Cannot find module '\([^']*\)'.*/\1/p" | sort -u)
 
   echo "RECOVERABLE"

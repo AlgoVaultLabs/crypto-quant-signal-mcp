@@ -59,6 +59,17 @@ function classify(logBody: string): string {
 const TS2307 = (spec: string) =>
   `src/lib/foo.ts(3,20): error TS2307: Cannot find module '${spec}' or its corresponding type declarations.\n`;
 
+// Writes a fixture install. `version === null` = the directory exists but carries no
+// readable package.json, which is a real (if odd) on-disk state the classifier must
+// not guess about.
+function install(name: string, version: string | null): void {
+  const dir = path.join(nodeModules, ...name.split('/'));
+  fs.mkdirSync(dir, { recursive: true });
+  if (version !== null) {
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version }));
+  }
+}
+
 describe.skipIf(SKIP)('test-gate build-failure classifier', () => {
   beforeAll(() => {
     fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-gate-classifier-'));
@@ -67,12 +78,32 @@ describe.skipIf(SKIP)('test-gate build-failure classifier', () => {
     fs.writeFileSync(
       manifest,
       JSON.stringify({
-        dependencies: { '@scope/declared-missing': '^1.0.0', 'declared-missing': '^2.0.0' },
-        devDependencies: { 'declared-installed': '^3.0.0' },
+        dependencies: {
+          '@scope/declared-missing': '^1.0.0',
+          'declared-missing': '^2.0.0',
+          // Installed at 2.9.0 — BELOW the range. Both spellings of the numeric-vs-
+          // lexical trap live here: "9" sorts ABOVE "20" as a string.
+          'version-stale': '~2.20.0',
+          '@scope/version-stale': '~2.20.0',
+          // Installed at 1.10.0 — INSIDE the range, and the same trap mirrored:
+          // "1.10.0" sorts BELOW "1.2.0" as a string.
+          'version-ok': '^1.2.0',
+        },
+        devDependencies: {
+          'declared-installed': '^3.0.0',
+          'version-unreadable': '^1.0.0',
+          // A range grammar the classifier does not decide (alias/URL/dist-tag).
+          'range-exotic': 'npm:some-alias@^1.0.0',
+        },
       }),
     );
-    // Only `declared-installed` is actually on disk.
-    fs.mkdirSync(path.join(nodeModules, 'declared-installed'), { recursive: true });
+    // `declared-missing` / `@scope/declared-missing` are deliberately NOT on disk.
+    install('declared-installed', '3.1.0');
+    install('version-stale', '2.9.0');
+    install('@scope/version-stale', '2.9.0');
+    install('version-ok', '1.10.0');
+    install('range-exotic', '1.0.0');
+    install('version-unreadable', null);
   });
 
   afterAll(() => {
@@ -101,6 +132,78 @@ describe.skipIf(SKIP)('test-gate build-failure classifier', () => {
     expect(
       classify(TS2307('declared-missing') + TS2307('@scope/declared-missing/server')),
     ).toBe('RECOVERABLE');
+  });
+
+  // ── RECOVERABLE: installed, but at a version the manifest no longer allows ──
+  //
+  // OPS-TEST-GATE-VERSION-MISMATCH-W1 (2026-07-31). "Is it installed?" is not the
+  // same question as "is the RIGHT one installed?", and the gap between them is a
+  // whole third state the classifier used to have no name for.
+  //
+  // Observed during OPS-X402-SCHEME-REGISTRATION-INVARIANT-W1: package.json wanted
+  // `@x402/extensions@~2.20.0` (bumped by OPS-BASE-BUILDER-CODE-W1) while the
+  // checkout still held 2.9.0, which ships no `builder-code` subpath —
+  //   src/lib/builder-code-constants.ts(34,8): error TS2307: Cannot find module
+  //   '@x402/extensions/builder-code' or its corresponding type declarations.
+  // `pkg_of_specifier` reduced the subpath correctly and the package WAS declared
+  // and WAS on disk, so the old presence check answered "yes, installed" and the
+  // log was filed as a genuine compile error. Auto-recovery never fired and the
+  // operator ran `npm ci` by hand — which is precisely the recovery the classifier
+  // exists to choose. (The gate itself behaved: INDETERMINATE/exit 2 blocked the
+  // push. Only the classification was wrong.)
+
+  it('declared + installed BELOW the declared range → RECOVERABLE', () => {
+    // `version-stale` is the live pair: installed 2.9.0 against a required ~2.20.0.
+    expect(classify(TS2307('version-stale'))).toBe('RECOVERABLE');
+  });
+
+  it('scoped declared + installed below the declared range → RECOVERABLE', () => {
+    expect(classify(TS2307('@scope/version-stale'))).toBe('RECOVERABLE');
+  });
+
+  it('SUBPATH import against an out-of-range install → RECOVERABLE (the live shape)', () => {
+    // Verbatim shape of the observed failure: a subpath that only exists in the
+    // required version, against an older install of the same package.
+    expect(classify(TS2307('version-stale/builder-code'))).toBe('RECOVERABLE');
+  });
+
+  // ── COMPILE_ERROR: installed at a version that IS allowed ──
+
+  it('declared + installed + version satisfies + missing SUBPATH → COMPILE_ERROR', () => {
+    // The mirror of the case above and the reason it must be a version compare and
+    // not "reinstall whenever a subpath is missing": the correct version is on disk,
+    // so `npm ci` changes nothing and a missing subpath is a genuine code defect.
+    expect(classify(TS2307('version-ok/no-such-subpath'))).toBe('COMPILE_ERROR');
+  });
+
+  it('a satisfying install is not called stale by a LEXICAL compare — 1.10.0 satisfies ^1.2.0', () => {
+    // THE numeric-vs-lexical guard, and note which direction actually catches it.
+    // "1.10.0" sorts BELOW "1.2.0" as a string, so a lexical comparator declares a
+    // healthy install out-of-range and reinstalls on every build — this case flips.
+    // The live 2.9.0-vs-~2.20.0 pair does NOT flip under a lexical compare (it lands
+    // on RECOVERABLE either way, by luck), so it cannot carry this guard; verified by
+    // mutating ver_cmp to a string compare and re-running the suite.
+    expect(classify(TS2307('version-ok'))).toBe('COMPILE_ERROR');
+  });
+
+  it('installed version UNREADABLE → COMPILE_ERROR (never guess a mismatch)', () => {
+    // Directory on disk with no package.json. "Cannot tell" is not "stale":
+    // RECOVERABLE is claimed only on a PROVEN range violation.
+    expect(classify(TS2307('version-unreadable'))).toBe('COMPILE_ERROR');
+  });
+
+  it('range grammar the classifier does not decide → COMPILE_ERROR', () => {
+    // `npm:`/git/file aliases, dist-tags and compound ranges are deliberately
+    // undecided rather than guessed. Undecided keeps the settled behaviour.
+    expect(classify(TS2307('range-exotic'))).toBe('COMPILE_ERROR');
+  });
+
+  it('MIXED — one out-of-range package plus one genuinely broken → COMPILE_ERROR', () => {
+    // A real defect must never be masked by a reinstall, even when a stale-version
+    // error sits next to it in the same log.
+    expect(classify(TS2307('version-stale') + TS2307('version-ok/no-such-subpath'))).toBe(
+      'COMPILE_ERROR',
+    );
   });
 
   // ── COMPILE_ERROR: keep the documented fail-open policy ──
