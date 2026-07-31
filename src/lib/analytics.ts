@@ -9,7 +9,10 @@ import { dbExec, dbRun, dbQuery } from './performance-db.js';
 // per-request classifyTraffic verdict from the ALS to stamp `request_log.is_automated`.
 // analytics.ts is a leaf (only performance-db + crypto); license.ts does NOT import
 // analytics → this edge is a DAG, no import cycle (verified in Plan Mode).
-import { getRequestIsAutomated } from './license.js';
+import { getRequestIsAutomated, getRequestUserAgent } from './license.js';
+// OPS-CLIENT-ATTRIBUTION-W1: the ONE UA → client identity map (also drives is_automated
+// via traffic-classifier.ts). Imported, never re-derived.
+import { classifyClient, normalizeUaForStorage, UNKNOWN_CLIENT } from './client-registry.js';
 // OPS-DIGEST-PAID-RAIL-SPLIT-W1: the ONE canonical tier→rail map. Pure leaf (type-only
 // import of LicenseTier) → no cycle. The IN-lists below are BUILT from these arrays, so a
 // newly-added paid tier cannot drift out of the split.
@@ -35,7 +38,9 @@ const CREATE_TABLE_SQL = `
     confidence INTEGER,
     ip_hash TEXT,
     is_bot_internal ${process.env.DATABASE_URL ? 'BOOLEAN' : 'INTEGER'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'},
-    is_automated ${process.env.DATABASE_URL ? 'BOOLEAN NOT NULL' : 'INTEGER NOT NULL'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'}
+    is_automated ${process.env.DATABASE_URL ? 'BOOLEAN NOT NULL' : 'INTEGER NOT NULL'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'},
+    user_agent TEXT,
+    client_name TEXT
   );
 `;
 
@@ -60,6 +65,27 @@ const ALTER_BOT_INTERNAL_SQL = process.env.DATABASE_URL
 const ALTER_AUTOMATED_SQL = process.env.DATABASE_URL
   ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS is_automated BOOLEAN NOT NULL DEFAULT FALSE;`
   : `ALTER TABLE request_log ADD COLUMN is_automated INTEGER NOT NULL DEFAULT 0;`;
+
+// OPS-CLIENT-ATTRIBUTION-W1 (2026-07-31): the UA was ALREADY being read (it sets
+// `is_automated`) and then discarded, so a heavy caller could be classified but never named —
+// OPS-TOP-IP-FORENSICS-W1 tested 30 candidate hashes for its top talker and matched none.
+// These two columns close that permanently, at the row that already exists.
+//
+// Both are NULLABLE with no default: on PG 11+ that is a metadata-only catalog change, so a
+// ~41k-rows/7d table is NOT rewritten. Pre-applied on prod PG via SSH BEFORE this deploy
+// (information_schema-guarded) — the code path is a no-op there.
+// PG: IF NOT EXISTS (idempotent). SQLite: bare — it has NO `ADD COLUMN IF NOT EXISTS`
+// (verified 3.49, DASH-EXTERNAL-ONLY-W1-PATCH-A), so re-runs throw "duplicate column" and are
+// caught by initAnalytics's try/catch, exactly like the two ALTERs above.
+//
+// PII: a User-Agent is not an address. No IP, no other header, nothing from Authorization; the
+// stored value is truncated to MAX_UA_LEN.
+const ALTER_USER_AGENT_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS user_agent TEXT;`
+  : `ALTER TABLE request_log ADD COLUMN user_agent TEXT;`;
+const ALTER_CLIENT_NAME_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS client_name TEXT;`
+  : `ALTER TABLE request_log ADD COLUMN client_name TEXT;`;
 
 // DASH-EXTERNAL-ONLY-W1, 2026-05-24: partial index for external-only reads.
 // Speeds the 24h/7d/all-time tiles in getUsageStats() + getToolLatencyStats(),
@@ -218,6 +244,19 @@ export function initAnalytics(): void {
     // Best-effort — column may already exist (PG IF NOT EXISTS no-ops; SQLite
     // "duplicate column" caught here). DEFAULT FALSE keeps old rows queryable.
   }
+  // OPS-CLIENT-ATTRIBUTION-W1: durable client attribution (user_agent + client_name).
+  // Separate try/catch per column so a SQLite "duplicate column" on the first does not
+  // skip the second — they were added in one wave but are independent statements.
+  try {
+    dbExec(ALTER_USER_AGENT_SQL);
+  } catch {
+    // Best-effort — column may already exist (PG IF NOT EXISTS no-ops; SQLite throws).
+  }
+  try {
+    dbExec(ALTER_CLIENT_NAME_SQL);
+  } catch {
+    // Best-effort — see above. Both columns are nullable, so old rows stay queryable.
+  }
   // DASH-EXTERNAL-ONLY-W1: partial index on (timestamp) WHERE NOT is_bot_internal.
   // Idempotent CREATE INDEX IF NOT EXISTS; safe to fire on fresh deploy + existing PG.
   try {
@@ -365,6 +404,10 @@ interface LogEntry {
   // verdict. Optional — when omitted, logRequest reads it from the ALS
   // (getRequestIsAutomated), so the 12 existing call sites need no change.
   isAutomated?: boolean;
+  // OPS-CLIENT-ATTRIBUTION-W1: raw User-Agent. Optional — when omitted, read from the
+  // ALS (getRequestUserAgent), so existing call sites need no change. Truncated and
+  // classified inside logRequest so BOTH derived values come from one place.
+  userAgent?: string | null;
 }
 
 export function logRequest(entry: LogEntry): void {
@@ -379,9 +422,16 @@ export function logRequest(entry: LogEntry): void {
     const automatedValue = isAutomated
       ? (process.env.DATABASE_URL ? true : 1)
       : (process.env.DATABASE_URL ? false : 0);
+    // OPS-CLIENT-ATTRIBUTION-W1: same single-derivation shape as isAutomated — an explicit
+    // entry value wins, else the ALS value stamped once at the POST layer. Both stored
+    // values derive from the ONE client registry, so the raw UA and the normalized name can
+    // never disagree about what a client is.
+    const rawUa = entry.userAgent ?? getRequestUserAgent();
+    const uaValue = normalizeUaForStorage(rawUa);
+    const clientNameValue = uaValue === null ? UNKNOWN_CLIENT : classifyClient(rawUa).name;
     dbRun(
-      `INSERT INTO request_log (timestamp, session_id, tool_name, asset, timeframe, license_tier, response_time_ms, verdict, confidence, ip_hash, is_bot_internal, is_automated)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO request_log (timestamp, session_id, tool_name, asset, timeframe, license_tier, response_time_ms, verdict, confidence, ip_hash, is_bot_internal, is_automated, user_agent, client_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       new Date().toISOString(),
       entry.sessionId || null,
       entry.toolName,
@@ -394,6 +444,8 @@ export function logRequest(entry: LogEntry): void {
       entry.ipHash || null,
       botInternalValue,
       automatedValue,
+      uaValue,
+      clientNameValue,
     );
   } catch {
     // Never fail the request — logging is best-effort

@@ -3404,7 +3404,11 @@ async function startHttp() {
 
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
-    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, source: attributionSource, background: backgroundPriority }, async () => {
+    // OPS-CLIENT-ATTRIBUTION-W1: thread the raw UA — the SAME string classifyTraffic just
+    // consumed for `requestAuthenticity` — so logRequest stamps user_agent + client_name from
+    // one value. Previously the UA was read here and discarded, leaving a heavy caller
+    // classifiable but unnameable (30 candidate hashes missed in OPS-TOP-IP-FORENSICS-W1).
+    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 

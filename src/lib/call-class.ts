@@ -22,6 +22,9 @@
  * can all import it without a cycle (same shape as payment-rail.ts).
  */
 import { FEATURE_REGISTRY, type QuotaUnit } from './feature-registry.js';
+// OPS-CLIENT-ATTRIBUTION-W1: the client dimension projects from the ONE UA registry — the
+// same map that drives `is_automated` and `request_log.client_name`. Never a second literal.
+import { clientNamesOfKind, RECOGNIZED_KINDS, AUTOMATED_KINDS } from './client-registry.js';
 
 /**
  * How a logged `request_log` row relates to the 100/mo call quota.
@@ -156,4 +159,42 @@ export function freeHoldPredicate(): ClassPredicate | null {
 export function unmeteredPredicate(): ClassPredicate | null {
   if (UNMETERED_TOOLS.length === 0) return null;
   return { sql: `tool_name IN (${inList(UNMETERED_TOOLS)})`, params: [...UNMETERED_TOOLS] };
+}
+
+// ── Client dimension (OPS-CLIENT-ATTRIBUTION-W1) ────────────────────────────────────────────
+//
+// The second axis of the same question. The billing axis above answers "was this call DEMAND?";
+// this one answers "WHOSE demand was it?". Both live here so the digest has ONE place that
+// generates request_log predicates — but the client names themselves are NOT redefined here:
+// they are projected from `client-registry.ts`, the same map that drives `is_automated` and the
+// persisted `request_log.client_name`. A second literal would drift the moment a client is added.
+
+/** Client names counted as a REAL client (agent_client / bare_sdk / browser). DERIVED. */
+export const RECOGNIZED_CLIENT_NAMES: readonly string[] = clientNamesOfKind(...RECOGNIZED_KINDS);
+/** Client names that are automated by construction (crawler / health_check). DERIVED. */
+export const AUTOMATED_CLIENT_NAMES: readonly string[] = clientNamesOfKind(...AUTOMATED_KINDS);
+
+/**
+ * `recognized_client` — a row whose stored `client_name` is a real client.
+ *
+ * Rows written BEFORE this wave have `client_name IS NULL` and are deliberately EXCLUDED
+ * rather than assumed: back-filling an identity we never observed would be fabrication, and
+ * the null remainder is what makes the pre/post boundary legible (same reasoning as the
+ * `v1:`/`v2:` ip_hash tags).
+ */
+export function recognizedClientPredicate(): ClassPredicate | null {
+  if (RECOGNIZED_CLIENT_NAMES.length === 0) return null;
+  return {
+    sql: `client_name IN (${inList(RECOGNIZED_CLIENT_NAMES)})`,
+    params: [...RECOGNIZED_CLIENT_NAMES],
+  };
+}
+
+/** `automated_client` — crawler / health-check rows, by stored client_name. */
+export function automatedClientPredicate(): ClassPredicate | null {
+  if (AUTOMATED_CLIENT_NAMES.length === 0) return null;
+  return {
+    sql: `client_name IN (${inList(AUTOMATED_CLIENT_NAMES)})`,
+    params: [...AUTOMATED_CLIENT_NAMES],
+  };
 }
