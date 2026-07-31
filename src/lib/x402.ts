@@ -29,6 +29,7 @@ import {
   GATEWAY_EIP712_DOMAIN_NAME,
   gatewayRequirementsCarryDomain,
   createGatewayScheme,
+  assertGatewayNetworkIsCollisionFree,
   probeCircleFacilitator,
   resolveCircleGatewayFromEnv,
   type CircleGatewayConfig,
@@ -231,11 +232,17 @@ export async function initX402(): Promise<void> {
 
     srv.register(caip2, cdpExactScheme as Parameters<typeof srv.register>[1]);
 
-    // Additive: the Gateway scheme registers on its OWN network key (testnet eip155:84532) — the
-    // CDP registration above is on eip155:8453, so there is no collision. GatewayEvmScheme extends
-    // ExactEvmScheme and merges the facilitator's `extra` (verifyingContract / name) through, which
-    // is what makes the buyer's EIP-712 domain resolvable.
+    // Additive: the Gateway scheme registers on its OWN network key (testnet eip155:84532 /
+    // mainnet eip155:10) — the CDP registration above is on eip155:8453, so there is no collision.
+    // GatewayEvmScheme extends ExactEvmScheme and merges the facilitator's `extra`
+    // (verifyingContract / name) through, which is what makes the buyer's EIP-712 domain resolvable.
+    //
+    // 🛑 register() is LAST-WINS since @x402/core 2.20.0 (was FIRST-WINS). A same-network collision
+    // would therefore REPLACE the CDP scheme and silently reroute Base settlement — it is no longer
+    // a harmless "Gateway gets dropped". assertGatewayNetworkIsCollisionFree throws at boot rather
+    // than letting that happen. See OPS-BASE-BUILDER-CODE-W1 + tests/circle-gateway-mainnet.test.ts.
     if (gateway) {
+      assertGatewayNetworkIsCollisionFree(gateway.config.network, caip2);
       srv.register(
         gateway.config.network as `${string}:${string}`,
         createGatewayScheme() as unknown as Parameters<typeof srv.register>[1],

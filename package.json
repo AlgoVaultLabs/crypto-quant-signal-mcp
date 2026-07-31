@@ -79,9 +79,9 @@
     "@okxweb3/x402-express": "0.1.1",
     "@slicekit/erc8128": "^0.3.3",
     "@virtuals-protocol/acp-node-v2": "0.1.7",
-    "@x402/core": "^2.9.0",
-    "@x402/evm": "^2.9.0",
-    "@x402/extensions": "~2.9.0",
+    "@x402/core": "~2.20.0",
+    "@x402/evm": "~2.20.0",
+    "@x402/extensions": "~2.20.0",
     "ajv": "^8.20.0",
     "better-sqlite3": "^13.0.2",
     "binance": "^3.5.4",
@@ -102,7 +102,7 @@
     "resend": "^6.12.2",
     "stripe": "^22.0.1",
     "undici": "^6.24.1",
-    "viem": "^2.47.12",
+    "viem": "~2.54.0",
     "wink-bm25-text-search": "^3.1.2"
   },
   "devDependencies": {

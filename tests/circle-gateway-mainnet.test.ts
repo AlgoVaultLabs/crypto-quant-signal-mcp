@@ -30,6 +30,7 @@ import {
   GATEWAY_EIP712_DOMAIN_NAME,
   CIRCLE_MAINNET_FACILITATOR_URL,
   resolveCircleGatewayFromEnv,
+  assertGatewayNetworkIsCollisionFree,
 } from '../src/lib/circle-gateway.js';
 
 const CDP_NET = 'eip155:8453';
@@ -87,15 +88,34 @@ const buildGatewayReqs = (srv: x402ResourceServer, net: string, price = 0.02) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('THE COLLISION — why mainnet Gateway is NOT on eip155:8453 (characterization)', () => {
-  it('register() is FIRST-WINS: a 2nd exact scheme on the same network is a silent no-op', async () => {
+  // ⚠️ BEHAVIOUR INVERTED BY @x402/core 2.9.0 → 2.20.0 (OPS-BASE-BUILDER-CODE-W1, 2026-07-30).
+  // This used to assert FIRST-WINS ("a 2nd exact scheme on the same network is a silent no-op",
+  // so a collision left CDP in place). Upstream is now LAST-WINS: the 2nd register() REPLACES the
+  // first, so a collision would silently reroute Base settlement to Gateway. Prod never collides
+  // (CDP eip155:8453 vs Gateway eip155:10), and that separation is now an ENFORCED invariant —
+  // see assertGatewayNetworkIsCollisionFree() — not merely a convention. Do NOT "restore" the old
+  // assertion: it documents a property upstream no longer provides.
+  it('register() is LAST-WINS: a 2nd exact scheme on the same network REPLACES the first', async () => {
     const srv = new x402ResourceServer(cdpFacilitator() as never);
     srv.register(CDP_NET, cdpExactScheme as never);
-    srv.register(CDP_NET, createGatewayScheme() as never); // would-be mainnet collision
+    const gatewayScheme = createGatewayScheme();
+    srv.register(CDP_NET, gatewayScheme as never); // would-be mainnet collision
 
     const registry = (srv as unknown as { registeredServerSchemes: Map<string, Map<string, unknown>> })
       .registeredServerSchemes.get(CDP_NET)!;
-    expect([...registry.keys()]).toEqual(['exact']);        // ONE entry, not two
-    expect(registry.get('exact')).toBe(cdpExactScheme);     // CDP won; Gateway was dropped
+    expect([...registry.keys()]).toEqual(['exact']);           // still ONE entry, not two
+    expect(registry.get('exact')).toBe(gatewayScheme);         // LAST-WINS: Gateway replaced CDP
+    expect(registry.get('exact')).not.toBe(cdpExactScheme);    // …CDP is GONE — the hazard
+  });
+
+  // The ENFORCED invariant that replaces the (now-false) "a collision is harmless" assumption.
+  it('assertGatewayNetworkIsCollisionFree THROWS on a same-network collision, and is silent otherwise', () => {
+    // Prove the guard FIRES — a guard that cannot fail is not a guard.
+    expect(() => assertGatewayNetworkIsCollisionFree(CDP_NET, CDP_NET)).toThrow(/REFUSING to register/);
+    expect(() => assertGatewayNetworkIsCollisionFree(CDP_NET, CDP_NET)).toThrow(/LAST-WINS/);
+    // …and stays silent for the real production topology (Gateway on its own network key).
+    expect(() => assertGatewayNetworkIsCollisionFree('eip155:10', CDP_NET)).not.toThrow();
+    expect(() => assertGatewayNetworkIsCollisionFree('eip155:84532', CDP_NET)).not.toThrow();
   });
 
   it('the dropped Gateway still BUILDS — with extra={}, i.e. unpayable by any Gateway client', async () => {

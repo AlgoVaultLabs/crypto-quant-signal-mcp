@@ -86,13 +86,46 @@ const ALLOWED_FACILITATOR_URLS: readonly string[] = [
  * by construction. Gateway balances are unified + chain-agnostic (Circle docs), so the buyer is
  * not disadvantaged by paying on a non-Base chain.
  *
- * ⚠️ Adding `eip155:8453` here would re-open the silent collision. `assertGatewayDomainPresent()`
- * below is the structural backstop that turns that mistake into a loud, fail-open drop.
+ * ⚠️ Adding `eip155:8453` here would re-open the collision. TWO backstops now exist:
+ * `assertGatewayNetworkIsCollisionFree()` (below — refuses to register at boot) and
+ * `assertGatewayDomainPresent()` (a loud, fail-open drop at build time).
+ *
+ * 🛑 THE COLLISION IS NO LONGER "SILENT + HARMLESS" — @x402/core 2.20.0 changed
+ * `x402ResourceServer.register()` from FIRST-WINS to LAST-WINS
+ * (OPS-BASE-BUILDER-CODE-W1, 2026-07-30; characterised in `tests/circle-gateway-mainnet.test.ts`).
+ * Previously a same-network collision left the CDP scheme in place and merely dropped Gateway.
+ * NOW the second `register()` REPLACES the first, so a collision would silently reroute **Base
+ * settlement** through Gateway. That is why network separation is an ENFORCED INVARIANT below
+ * rather than a convention — do not downgrade it back to a comment.
  */
 const ALLOWED_GATEWAY_NETWORKS: readonly string[] = [
   'eip155:84532', // Base Sepolia — testnet; proven end-to-end by OPS-CIRCLE-GATEWAY-TESTNET-SETTLE-W1
   'eip155:10',    // OP Mainnet — collision-free vs the CDP `exact`/eip155:8453 registration
 ];
+
+/**
+ * Hard invariant: the Gateway scheme MUST NOT register on the same CAIP-2 network as the CDP
+ * `exact` scheme. Under LAST-WINS registration a collision would silently replace the CDP scheme
+ * and reroute Base settlement — a capital-path failure with no error and no log.
+ *
+ * Throws at boot (loud, before any payment is served) instead of degrading silently.
+ *
+ * @param gatewayNetwork CAIP-2 network the Gateway scheme is about to register on.
+ * @param cdpNetwork     CAIP-2 network the CDP `exact` scheme is already registered on.
+ */
+export function assertGatewayNetworkIsCollisionFree(
+  gatewayNetwork: string,
+  cdpNetwork: string
+): void {
+  if (gatewayNetwork === cdpNetwork) {
+    throw new Error(
+      `circle-gateway: REFUSING to register the Gateway scheme on ${gatewayNetwork} — it collides ` +
+        `with the CDP 'exact' registration on the same network. x402ResourceServer.register() is ` +
+        `LAST-WINS (@x402/core >=2.20.0), so this would silently REPLACE the CDP scheme and reroute ` +
+        `Base settlement through Gateway. Use a distinct network (see ALLOWED_GATEWAY_NETWORKS).`
+    );
+  }
+}
 
 /** The `extra.name` Circle stamps on every Gateway kind — the EIP-712 domain name. */
 export const GATEWAY_EIP712_DOMAIN_NAME = 'GatewayWalletBatched';
