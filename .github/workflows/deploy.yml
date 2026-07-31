@@ -300,6 +300,17 @@ jobs:
           node scripts/check-runtime-node-eol.mjs --self-test
           node scripts/check-runtime-node-eol.mjs
 
+      # OPS-HOST-KERNEL-REBOOT-W1 R3 — the generator for SEC-18. That finding was "the kernel is 12
+      # revisions behind", but the real exposure was that nobody knew whether the box COMES BACK.
+      # This asserts the boot-survival contract continuously, so the next UNPLANNED reboot (Hetzner
+      # maintenance, panic, OOM) is safe. It is activation-AWARE by design: a naive is-enabled grep
+      # false-positives on socket-activated ssh.service and timer-activated units (measured on both
+      # live hosts), and a canary that cries wolf on SSH gets ignored.
+      - name: Boot-readiness gate (fail-closed)
+        run: |
+          node scripts/check-boot-readiness.mjs --self-test
+          node scripts/check-boot-readiness.mjs
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:

@@ -1,0 +1,54 @@
+{
+  "_comment": "Declared boot-survival contract, consumed by scripts/check-boot-readiness.mjs. OPS-HOST-KERNEL-REBOOT-W1 (SEC-18). Every unit listed here MUST come back on its own after an unplanned reboot (Hetzner maintenance, panic, OOM) — not merely be running today.",
+  "_why_effective_enablement": "A naive `is-enabled != enabled` check is WRONG and dangerous. Measured on both live hosts at R0: `ssh.service` reports `disabled` because Ubuntu 24.04 socket-activates it (`ssh.socket` is enabled), and `algovault-funnel-snapshot.service` reports `disabled` because its `.timer` is enabled. Both are correct by design, and 'fixing' either would be a real misconfiguration — enabling ssh.service alongside ssh.socket, or making a timer's service run at boot. So each row declares HOW the unit is legitimately activated, and the canary verifies THAT.",
+  "_activation_semantics": {
+    "enabled": "the unit itself must be `systemctl is-enabled` = enabled|enabled-runtime",
+    "socket": "the named socket unit must be enabled; the .service is expected to be `disabled`",
+    "timer": "the named timer unit must be enabled; the .service is expected to be `static` or `disabled`"
+  },
+  "_TODO_revisit_by": "2027-02-28",
+  "_revisit_rationale": "Re-read after any wave that adds or retires a host service. A stale contract silently stops guarding whatever it forgot; if the revisit date passes the canary reports INDETERMINATE rather than a confident pass.",
+  "probed_at": "2026-07-31",
+  "hosts": {
+    "signal-1": {
+      "address": "204.168.185.24",
+      "compose_in_this_repo": true,
+      "units": [
+        { "unit": "ssh.service", "activation": "socket", "via": "ssh.socket", "why": "loss needs Hetzner console recovery — the single most important row here" },
+        { "unit": "docker.service", "activation": "enabled", "why": "every application container depends on it" },
+        { "unit": "containerd.service", "activation": "enabled", "why": "docker's runtime" },
+        { "unit": "caddy.service", "activation": "enabled", "why": "TLS + both vhosts (apex and api)" },
+        { "unit": "cron.service", "activation": "enabled", "why": "75 active cron lines incl. every seeder" },
+        { "unit": "fail2ban.service", "activation": "enabled", "why": "compensating control for an internet-facing :22 (OPS-HOST-EXPOSURE-POSTURE-W1)" },
+        { "unit": "algovault-bot.service", "activation": "enabled", "why": "the public Telegram bot" },
+        { "unit": "algovault-funnel-snapshot.service", "activation": "timer", "via": "algovault-funnel-snapshot.timer" },
+        { "unit": "algovault-funnel-leak-detector.service", "activation": "timer", "via": "algovault-funnel-leak-detector.timer" },
+        { "unit": "algovault-bot-cron.service", "activation": "timer", "via": "algovault-bot-cron.timer" },
+        { "unit": "algovault-bot-digest.service", "activation": "timer", "via": "algovault-bot-digest.timer" },
+        { "unit": "docker-builder-gc.service", "activation": "timer", "via": "docker-builder-gc.timer", "why": "the standing disk-reclaim guarantee (OPS-BUILDER-GC-TIMER-W1)" }
+      ],
+      "containers": ["crypto-quant-signal-mcp-mcp-server-1", "crypto-quant-signal-mcp-postgres-1", "crypto-quant-signal-mcp-facilitator-1"]
+    },
+    "aoe-1": {
+      "address": "178.104.200.44",
+      "compose_in_this_repo": false,
+      "compose_exemption_reason": "The AOE stack lives in the SEPARATE `autonomous-optimizer` repo and is rsync-deployed to /opt/algovault/autonomous-optimizer (docker-compose.aoe.yml is not tracked here). This repo therefore CANNOT verify its restart policies in code — R2 is reported-but-not-enforced for this host, never silently skipped. Live state was verified at R0 (9/9 `unless-stopped`) and re-verified after the R1 rehearsal reboot (9/9 returned). Enforcing it in code is tracked as OPS-AOE-COMPOSE-BOOT-CONTRACT-W{NEXT}.",
+      "units": [
+        { "unit": "ssh.service", "activation": "socket", "via": "ssh.socket" },
+        { "unit": "docker.service", "activation": "enabled" },
+        { "unit": "containerd.service", "activation": "enabled" },
+        { "unit": "cron.service", "activation": "enabled" },
+        { "unit": "fail2ban.service", "activation": "enabled" },
+        { "unit": "algovault-aoe.service", "activation": "enabled", "why": "the optimisation engine" },
+        { "unit": "aoe-pg-tunnel.service", "activation": "enabled", "why": "the cross-host SSH tunnel to signal-1's Postgres — AOE is blind without it" },
+        { "unit": "cloudflared.service", "activation": "enabled", "why": "Zero-Trust access to the internal dashboard" },
+        { "unit": "docker-builder-gc.service", "activation": "timer", "via": "docker-builder-gc.timer" }
+      ],
+      "containers": ["aoe-pg-tunnel", "aoe-prefect-server", "aoe-redis", "aoe-supervisor"]
+    }
+  },
+  "acceptable_restart_policies": ["always", "unless-stopped"],
+  "_restart_policy_note": "`unless-stopped` also means an EXPLICITLY stopped container does NOT auto-start after a boot. So `docker compose stop` before a reboot silently forfeits auto-recovery — recorded here because it is counter-intuitive and was nearly acted on during this wave.",
+  "postgres_stop_budget_seconds_min": 30,
+  "_stop_budget_note": "Measured on the real event (OPS-HOST-KERNEL-REBOOT-W1 R2): `shutting down` -> `database system is shut down` took 459 ms, and the restart logged a clean `database system was shut down at ...` with zero crash-recovery markers. The floor here is insurance against future growth, not a live emergency."
+}

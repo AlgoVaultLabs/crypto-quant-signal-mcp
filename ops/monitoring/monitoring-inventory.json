@@ -728,6 +728,35 @@
       ],
       "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1",
       "notes": "Declared inbound network posture — the SoT the reconciler's POSTURE_DRIFT check asserts live reachability against. No `schedule`: it is DATA read by the reconciler's own cron, not itself a scheduled job, so DARK does not apply. A SHARED PRIMITIVE under the same canonical + committed-.sha256 + parity contract as send_telegram.sh: both hosts must read the SAME declaration or each would assert a different posture and the peer-vantage comparison would be meaningless. kind=baseline-data so HASH_DRIFT treats a mutation here as SEVERE — an edited posture file silently redefines what 'correct' means, which is worse than a drifted script."
+    },
+    {
+      "id": "kernel-staleness-canary",
+      "artifact": "ops/monitoring/kernel-staleness-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+          "schedule": "23 7 * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+          "schedule": "37 7 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "23 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "3495a7a148b17c11daebcedb00b36fb144af7c0b5d3d614eb3b3c061da31e3b8",
+      "alert_ids": [
+        "KERNEL_STALENESS"
+      ],
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W1",
+      "notes": "Standing signal for SEC-18. Keyed on RUNNING-vs-newest-INSTALLED kernel, deliberately NOT on /var/run/reboot-required mtime: that file is re-stamped by every new kernel package, so its age is the age of the LATEST trigger and an alert keyed on it resets its own clock monthly (measured at R0 - both hosts read 2026-07-29 while one was 12 and the other 30 revisions behind). Same file on both hosts, ONE canonical sha256 on this row; per-host copies carry no hash of their own. `--self-test` is two-way and vacuity-guarded (>=7 assertions) and proves the send path by capturing the wrapper argv, because both hosts are freshly rebooted and the BREACH branch is unreachable from live state. Fires through send_telegram.sh, which owns severity/cooldown/{NEXT}; smoke it with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1 (that writes the 24h marker and false-greens run 2)."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
