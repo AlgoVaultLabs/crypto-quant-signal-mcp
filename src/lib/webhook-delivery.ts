@@ -78,6 +78,10 @@ function billingMonthBucket(d: Date = new Date()): number {
  * the idempotency claim would suppress it anyway — but not calling is cheaper and
  * makes the intent explicit at the call site.
  */
+export function notifyQuarantinedForTest(sub: WebhookSubscription, newState: DeliveryState, nowSec: number): void {
+  maybeNotifyQuarantined(sub, newState, nowSec);
+}
+
 function maybeNotifyQuarantined(sub: WebhookSubscription, newState: DeliveryState, nowSec: number): void {
   if (newState !== 'quarantined') return;
   if (sub.delivery_state === 'quarantined') return; // already there — not a new edge
@@ -91,7 +95,13 @@ function maybeNotifyQuarantined(sub: WebhookSubscription, newState: DeliveryStat
       subscriptionId: sub.id,
       stateEpochBucket: quarantinedAt,
       expiresAt: quarantineExpiresAt(quarantinedAt, sub.tier),
-      lastSuccessAt: sub.last_success_at,
+      // `last_success_at` is stamped by the health PROBE; `last_delivered_at` is the
+      // last REAL delivery. A customer asking "when did my webhook last work?" means
+      // either. Sub 6 has last_success_at NULL but last_delivered_at 2026-07-21 — so
+      // reading only the former would have told a paying customer their endpoint had
+      // "not delivered successfully yet", which is false. Omit the sentence only when
+      // BOTH are null.
+      lastSuccessAt: sub.last_success_at ?? sub.last_delivered_at,
     },
   });
 }

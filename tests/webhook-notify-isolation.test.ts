@@ -150,6 +150,66 @@ describe('the notify leaf itself never throws out of the detached wrapper', () =
   });
 });
 
+describe('quarantine warning reports when the endpoint last WORKED', () => {
+  it('falls back to last_delivered_at when last_success_at is null', async () => {
+    // Sub 6 live: last_success_at NULL (only PROBES stamp it) but last_delivered_at
+    // 2026-07-21 — a real delivery. Reading only last_success_at would tell a paying
+    // customer their endpoint had "not delivered successfully yet", which is FALSE.
+    const ctxs: Array<Record<string, unknown>> = [];
+    vi.doMock('../src/lib/subscriber-notify.js', () => ({
+      notifySubscriberDetached: (a: { context?: Record<string, unknown> }) => { ctxs.push(a.context ?? {}); },
+      notifySubscriber: async () => ({ sent: true, outcome: 'sent' }),
+    }));
+    vi.resetModules();
+    perfDb = await import('../src/lib/performance-db.js');
+    store = await import('../src/lib/webhooks-store.js');
+    delivery = await import('../src/lib/webhook-delivery.js');
+
+    const sub = await store.createSubscription({
+      url: 'https://sink.example.com/h', events: ['trade_call'], tier: 'starter', ownerKey: 'av_live_paying',
+    });
+    const row = await store.getSubscription(sub.id);
+    // Reproduce sub 6's LIVE shape exactly: a sub backfilled by
+    // backfillLegacyWebhookLifecycle (failure_class 'legacy') carries a real
+    // last_delivered_at while last_success_at was never populated.
+    const legacyShaped = {
+      ...row!,
+      delivery_state: 'degraded' as const,
+      failure_class: 'legacy',
+      last_success_at: null,
+      last_delivered_at: 1784642333, // 2026-07-21T13:58:53Z — sub 6's actual value
+    };
+    delivery.notifyQuarantinedForTest(legacyShaped, 'quarantined', nowS());
+
+    expect(ctxs).toHaveLength(1);
+    // Without the fallback this would be null and the email would tell a paying
+    // customer their endpoint had "not delivered successfully yet" — false.
+    expect(ctxs[0].lastSuccessAt).toBe(1784642333);
+  });
+
+  it('omits the sentence only when BOTH timestamps are null', async () => {
+    const ctxs: Array<Record<string, unknown>> = [];
+    vi.doMock('../src/lib/subscriber-notify.js', () => ({
+      notifySubscriberDetached: (a: { context?: Record<string, unknown> }) => { ctxs.push(a.context ?? {}); },
+      notifySubscriber: async () => ({ sent: true, outcome: 'sent' }),
+    }));
+    vi.resetModules();
+    perfDb = await import('../src/lib/performance-db.js');
+    store = await import('../src/lib/webhooks-store.js');
+    delivery = await import('../src/lib/webhook-delivery.js');
+
+    const sub = await store.createSubscription({
+      url: 'https://sink.example.com/h', events: ['trade_call'], tier: 'starter', ownerKey: 'av_live_paying',
+    });
+    const row = await store.getSubscription(sub.id);
+    delivery.notifyQuarantinedForTest(
+      { ...row!, delivery_state: 'degraded' as const, last_success_at: null, last_delivered_at: null },
+      'quarantined', nowS(),
+    );
+    expect(ctxs[0].lastSuccessAt ?? null).toBeNull();
+  });
+});
+
 describe('terminal notification fires on the real transitions', () => {
   it('quarantine_expired fires webhook_disabled exactly once', async () => {
     const calls = await boot('records');
