@@ -38,6 +38,12 @@ services:
       start_period: 5s
     restart: unless-stopped
   postgres:
+    # OPS-HOST-KERNEL-REBOOT-W1 (R3): clean-stop budget. Docker's default is 10s; at reboot
+    # a SIGKILL would force crash recovery on the next start (Data Integrity law). MEASURED on
+    # the real 2026-07-31 reboot: `shutting down` -> `database system is shut down` took 459 ms,
+    # so this is insurance against future growth, not a live emergency. Asserted by
+    # scripts/check-boot-readiness.mjs (R3).
+    stop_grace_period: 120s
     image: postgres:16-alpine
     # CH3-PRE (OPS-SEED-ORCHESTRATOR-W1 V2-RESUME V3): bump /dev/shm from the
     # Docker-default 64MB -> 256MB. Under high seed concurrency the parallel-query

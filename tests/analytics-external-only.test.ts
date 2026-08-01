@@ -37,6 +37,7 @@ import {
   getSkillInvocationStats,
 } from '../src/lib/analytics.js';
 import { requestContext } from '../src/lib/license.js';
+import { MAX_UA_LEN } from '../src/lib/client-registry.js';
 import { dbQuery, dbRun, closeDb } from '../src/lib/performance-db.js';
 
 const SENTINEL_TOOL = 'test_dash_ext_w1';
@@ -401,5 +402,75 @@ describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bo
     expect(
       d((s) => s.externalGenuine.paidSubscriptionSessions) + d((s) => s.externalGenuine.paidX402Sessions),
     ).toBeLessThanOrEqual(d((s) => s.externalGenuine.paidSessions));
+  });
+
+  // ── OPS-CLIENT-ATTRIBUTION-W1: durable client attribution (user_agent + client_name) ──
+  //
+  // These are the tests that would have answered "who is the top talker?" — the previous wave
+  // could only classify it, because the UA was read for is_automated and then dropped.
+
+  it('logRequest persists user_agent + normalized client_name from the ALS', async () => {
+    await requestContext.run(
+      { license: { tier: 'free' }, userAgent: 'python-httpx/0.27.0' } as never,
+      async () => {
+        logRequest({ toolName: SPLIT_TOOL, licenseTier: 'free', responseTimeMs: 10 });
+      },
+    );
+    await new Promise((r) => setTimeout(r, 60));
+    const rows = await dbQuery<{ user_agent: string | null; client_name: string | null }>(
+      'SELECT user_agent, client_name FROM request_log WHERE tool_name = ?',
+      [SPLIT_TOOL],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].user_agent).toBe('python-httpx/0.27.0');
+    expect(rows[0].client_name).toBe('python-httpx');
+  });
+
+  it('an absent UA stores NULL + client_name=unknown — never a fabricated identity', async () => {
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'free', responseTimeMs: 10 });
+    await new Promise((r) => setTimeout(r, 60));
+    const rows = await dbQuery<{ user_agent: string | null; client_name: string | null }>(
+      'SELECT user_agent, client_name FROM request_log WHERE tool_name = ?',
+      [SPLIT_TOOL],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].user_agent).toBeNull();
+    expect(rows[0].client_name).toBe('unknown');
+  });
+
+  it('an unmatched UA stores the raw string but client_name=other (surfacing remainder)', async () => {
+    await requestContext.run(
+      { license: { tier: 'free' }, userAgent: 'Totally-Novel-Client/9.9' } as never,
+      async () => {
+        logRequest({ toolName: SPLIT_TOOL, licenseTier: 'free', responseTimeMs: 10 });
+      },
+    );
+    await new Promise((r) => setTimeout(r, 60));
+    const rows = await dbQuery<{ user_agent: string | null; client_name: string | null }>(
+      'SELECT user_agent, client_name FROM request_log WHERE tool_name = ?',
+      [SPLIT_TOOL],
+    );
+    expect(rows.length).toBe(1);
+    // The raw UA is what makes the NEXT unknown talker identifiable by query.
+    expect(rows[0].user_agent).toBe('Totally-Novel-Client/9.9');
+    expect(rows[0].client_name).toBe('other');
+  });
+
+  it('a long UA is truncated to MAX_UA_LEN on write (bounded, not a blob store)', async () => {
+    const long = 'axios/1.7.2 ' + 'x'.repeat(MAX_UA_LEN + 300);
+    await requestContext.run(
+      { license: { tier: 'free' }, userAgent: long } as never,
+      async () => {
+        logRequest({ toolName: SPLIT_TOOL, licenseTier: 'free', responseTimeMs: 10 });
+      },
+    );
+    await new Promise((r) => setTimeout(r, 60));
+    const rows = await dbQuery<{ user_agent: string | null; client_name: string | null }>(
+      'SELECT user_agent, client_name FROM request_log WHERE tool_name = ?',
+      [SPLIT_TOOL],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].user_agent!.length).toBe(MAX_UA_LEN);
+    expect(rows[0].client_name).toBe('axios');
   });
 });

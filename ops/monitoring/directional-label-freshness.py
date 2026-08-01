@@ -31,7 +31,16 @@ Test seams (hermetic suite: test-directional-label-freshness.py):
   LF_STATE_FILE  state path        LF_DIGEST_FILE digest path
   LF_WRAPPER     send_telegram.sh path
   LF_NOW_EPOCH   freeze "now"      --force-stale VENUE  synthetic breach
-                                   (pair with DRY_RUN_TG=1 — runbook §6)
+                                   (pair with ALGOVAULT_TG_TEST_INERT=1 — runbook §6)
+
+SEC-13: the sanctioned smoke used to REQUIRE DRY_RUN_TG=1, which is NOT inert —
+send_telegram.sh writes the 24h cooldown marker on that path ("marker written for
+cooldown smokes"). So a smoke BURNED the real cooldown: for the next 24h a genuine
+MAJOR-venue label-production halt — the exact 16-day silent starvation this canary
+exists to catch — was SUPPRESSED_COOLDOWN and never reached Telegram. And a second
+smoke false-greened, being cooldown-suppressed rather than healthy.
+ALGOVAULT_TG_TEST_INERT=1 exits BEFORE the cooldown gate and writes no marker.
+Keep DRY_RUN_TG only for a test whose assertion IS the cooldown (clear the marker first).
 
 Thresholds carry `defensive-reductions-to-revisit.md` rows.
 TODO: revisit by 2026-08-04 — tier SLOs vs 30d of observed lag telemetry.
@@ -85,9 +94,16 @@ SEVERITY = "CRITICAL_PERSISTENT"  # design-time classification: sustained
 # NOTE: no -F flag — psql's unaligned default separator already IS `|`, and this
 # command is split() for subprocess (NO shell), so a quoted -F'|' would reach
 # psql with LITERAL quotes and silently break every row (caught by live smoke).
+# OPS-SEC-DB-LEAST-PRIV-W2: reads as `aoe_readonly`, not the bootstrap superuser.
+# This connects over the postgres container's `local ... trust` line, so the role is
+# chosen purely by -U and needs no credential — which is exactly why a DSN rotation can
+# never re-point it, and why it had to be changed here by hand. `aoe_readonly` holds
+# SELECT on `signals` + `directional_labels` (live-verified), which is all this census
+# reads; it cannot write, so the read-only intent is now enforced by the role rather
+# than only by `SET default_transaction_read_only=on` below.
 PSQL_DEFAULT = (
     "docker exec crypto-quant-signal-mcp-postgres-1 "
-    "psql -U algovault -d signal_performance -tA"
+    "psql -U aoe_readonly -d signal_performance -tA"
 )
 
 CENSUS_SQL = (
@@ -136,7 +152,7 @@ def evaluate(rows, force_stale: str | None, now: int):
         input_flowing = (now - newest_sig) <= INPUT_FLOWING_H * 3600
         lag_h = (now - newest_lab) / 3600 if newest_lab else float("inf")
         if force_stale and venue == force_stale:
-            lag_h, input_flowing = 999.0, True  # synthetic breach (DRY_RUN_TG smoke)
+            lag_h, input_flowing = 999.0, True  # synthetic breach (ALGOVAULT_TG_TEST_INERT smoke)
         breach = input_flowing and lag_h > slo_h
         mark = "BREACH" if breach else ("idle" if not input_flowing else "ok")
         lag_s = "never" if lag_h == float("inf") else f"{lag_h:.1f}h"
@@ -225,9 +241,16 @@ def main(argv: list[str]) -> int:
     if "--force-stale" in argv:
         i = argv.index("--force-stale")
         force_stale = argv[i + 1] if i + 1 < len(argv) else None
-        if os.environ.get("DRY_RUN_TG") != "1":
-            log("REFUSING --force-stale without DRY_RUN_TG=1 (runbook §6: synthetic fires are silent)")
+        # SEC-13: accept the INERT lever (preferred — no cooldown marker) or the legacy
+        # DRY_RUN_TG (which DOES write the marker and therefore burns the real cooldown).
+        inert = os.environ.get("ALGOVAULT_TG_TEST_INERT") == "1"
+        dry = os.environ.get("DRY_RUN_TG") == "1"
+        if not inert and not dry:
+            log("REFUSING --force-stale without ALGOVAULT_TG_TEST_INERT=1 (runbook §6: synthetic fires are silent)")
             return 0
+        if dry and not inert:
+            log("WARNING --force-stale under DRY_RUN_TG=1 WRITES the 24h cooldown marker and will "
+                "suppress the next genuine alert; prefer ALGOVAULT_TG_TEST_INERT=1")
     state_file = Path(os.environ.get("LF_STATE_FILE", "/var/lib/algovault-monitoring/label-freshness-state.json"))
     digest_file = Path(os.environ.get("LF_DIGEST_FILE", "/var/lib/algovault-monitoring/label-freshness-digest.txt"))
     wrapper = os.environ.get("LF_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")

@@ -41,13 +41,15 @@
       "unchanged_by_this_wave": true
     },
     "400 invalid_content_type": {
-      "when": "NEW (this wave). The caller DECLARED a body (content-length > 0) but it arrived empty because express.json() declined to parse it — a duplicated/comma-joined content-type, a missing content-type, or a non-JSON media type. Distinguishes a dropped body from a genuinely invalid one, which previously surfaced as a misleading JSON-Schema error AFTER the payment had already verified.",
+      "when": "The caller DECLARED a body (content-length > 0) but it arrived empty because express.json() declined to parse it — a duplicated/comma-joined content-type, a missing content-type, or a non-JSON media type. Distinguishes a dropped body from a genuinely invalid one, which previously surfaced as a misleading JSON-Schema error AFTER the payment had already verified.",
       "allowed_keys": ["error", "code", "message", "suggested_fix"],
       "code": "X402_HTTP_INVALID_CONTENT_TYPE",
+      "amended_by": "OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 (2026-07-29) — this check now runs BEFORE, and INDEPENDENTLY OF, schema validation. It was previously nested inside the validation-failure branch, so it only fired on routes whose schema has a REQUIRED field. On scan_funding_arb, scan_trade_calls and get_equity_regime every field is optional, so an unparsed body validated clean as {} and the route served a DEFAULTS-ONLY result and CHARGED for it, silently discarding the caller's parameters. All 7 payable routes now behave identically.",
       "guarantees": [
         "Emitted ONLY on the paid path (tier==='x402' with a pendingSettlement); an unpaid request still 402s before validation, so the CDP Bazaar crawler contract is untouched (verified live: unpaid POST with a duplicated content-type returns 402, not 400).",
         "No settlement is attempted: this branch precedes tryClaimPayment() and settleX402Async(), so the caller is not charged and no nonce is claimed.",
-        "Never fires when the content-type is a clean JSON media type — a genuinely empty body still returns invalid_input."
+        "Never fires when the content-type is a clean JSON media type — a genuinely empty body still returns invalid_input.",
+        "Uniform across ALL payable routes regardless of whether their JSON Schema has required fields — a paid request can never be served a defaults-only result built from a body that never parsed."
       ]
     }
   },

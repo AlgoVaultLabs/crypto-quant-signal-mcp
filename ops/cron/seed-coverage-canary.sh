@@ -30,7 +30,11 @@ ALERT_ID="SEED_COVERAGE_GAP"
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [$ALERT_ID] $*" >> "$LOG"; }
 
 # Promoted set from the venues table — the SAME SoT the monitor reads. Fail-open.
-PROM=$(docker exec "$PG_CTR" psql -U algovault -d signal_performance -tAc \
+# OPS-SEC-DB-LEAST-PRIV-W2: reads as `aoe_readonly`, not the bootstrap superuser. This
+# uses the container's `local ... trust` line, so -U alone selects the role and no
+# credential is involved — meaning the app's DSN rotation could not re-point it.
+# `aoe_readonly` holds SELECT on `venues` (live-verified: returns the full promoted set).
+PROM=$(docker exec "$PG_CTR" psql -U aoe_readonly -d signal_performance -tAc \
   "SELECT string_agg(exchange_id, ',' ORDER BY exchange_id) FROM venues WHERE status = 'promoted'" 2>>"$LOG" \
   | tr -d '[:space:]') || { log "FAIL_OPEN: promoted-set query failed"; exit 0; }
 [ -n "$PROM" ] || { log "FAIL_OPEN: empty promoted set (venues table unreachable/empty)"; exit 0; }

@@ -1,10 +1,10 @@
 {
-  "_comment": "OPS-MONITORING-INVENTORY-PARITY-W1 (2026-07-28). SoT for every host-installed monitoring artifact. Reconciled daily by ops/monitoring/monitoring-inventory-reconcile.py (HASH_DRIFT / ORPHAN / DARK / SCHEDULE_DRIFT / PENDING_STALE). A wave that installs, edits, or retires a host monitoring artifact updates its row IN THE SAME COMMIT. Zero-deletion: retired rows are kept, never removed \u2014 a retired row is how you prove something was INTENTIONALLY stopped rather than silently lost.",
+  "_comment": "OPS-MONITORING-INVENTORY-PARITY-W1 (2026-07-28), extended by OPS-AOE-MONITORING-PARITY-W1 (2026-07-29) to a multi-host consumer REGISTRY. SoT for every host-installed monitoring artifact. Reconciled daily by ops/monitoring/monitoring-inventory-reconcile.py (HASH_DRIFT / ORPHAN / DARK / SCHEDULE_DRIFT / PENDING_STALE / REGISTRY_PARITY / NO_BACKUP, plus the DIVERGENT_COPY standing report). A wave that installs, edits, or retires a host monitoring artifact updates its row IN THE SAME COMMIT. Zero-deletion: retired rows are kept, never removed — a retired row is how you prove something was INTENTIONALLY stopped rather than silently lost.",
   "_kind_semantics": {
     "executable": "standard drift semantics",
     "config": "drift EXPECTED during a wave, suspicious between waves",
     "test": "standard",
-    "baseline-data": "HASH_DRIFT is SEVERE \u2014 regenerating the comparison basis silently redefines what the gate considers normal"
+    "baseline-data": "HASH_DRIFT is SEVERE — regenerating the comparison basis silently redefines what the gate considers normal"
   },
   "_install_state_semantics": {
     "installed": "live",
@@ -12,7 +12,7 @@
     "unclassified": "present on host, owner unknown, decision required; reported EVERY run",
     "retired": "intentionally stopped, with evidence"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "artifacts": [
     {
       "id": "monitoring-inventory-reconcile",
@@ -20,15 +20,28 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/monitoring-inventory-reconcile.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/monitoring-inventory-reconcile.py",
+          "schedule": "57 6 * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/monitoring-inventory-reconcile.py",
+          "schedule": "17 7 * * *"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "0e14b7d4f9d7071bfa924359ddff1ffc7fd26980e01c5f4239ef5a69b580b2ad",
+      "sha256": "12598b6d20fa140818b07884c2f46561ecbb7ed5998b4bcf9a3f92153a8e0e5b",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
-      "owner_wave": "OPS-MONITORING-INVENTORY-PARITY-W1"
+      "owner_wave": "OPS-MONITORING-INVENTORY-PARITY-W1",
+      "notes": "Row 1 of its own inventory. As of OPS-AOE-MONITORING-PARITY-W1 it is ALSO a vendored shared primitive under the same canonical + committed-.sha256 + parity contract as the wrapper — one artifact installed twice, not two artifacts to maintain. Each instance evaluates only the rows it owns (MONITORING_HOST_LABELS)."
     },
     {
       "id": "monitoring-inventory",
@@ -36,6 +49,16 @@
       "kind": "config",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/monitoring-inventory.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/monitoring-inventory.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/monitoring-inventory.json"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:monitoring-inventory-reconcile",
@@ -51,25 +74,43 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/send_telegram.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/send_telegram.sh"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/send_telegram.sh"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:*",
       "install_state": "installed",
       "sha256": "243ba4a760365df6bc734c1883ed7f3128dddaea1360f491234b878836c9739d",
       "alert_ids": [],
+      "exempt_consumers": [
+        {
+          "path": "autonomous-optimizer: src/monitoring/aoe_daily_digest.py, aoe_weekly_digest.py, src/feedback/gate_watchers.py",
+          "reason": "ADR docs/adr/aoe-gate-watcher-stdlib-telegram.md",
+          "kind": "telemetry-not-alert",
+          "detail": "These use a zero-dep urllib send path by design, and that is CORRECT rather than tolerated. This wrapper carries ALERT semantics (severity-gated, 24h-deduped, operator-action-required); a per-fire INFO/WARN heartbeat is TELEMETRY, and CLAUDE.md already holds that a by-design fire has no meaningful cooldown threshold. Different contracts, different transports. Do NOT 'fix' these to route through the wrapper."
+        }
+      ],
       "owner_wave": "OPS-MONITORING-TELEGRAM-INTEGRATION-W1",
       "divergent_copies": [
         {
-          "host": "178.104.200.44",
-          "sha256": "938d6b6f7104a8c1802c506d11c4cabefb0d9e392d13743a487530cc305169c5",
-          "state": "unreconciled",
-          "classification": "BEHAVIORAL",
-          "detail": "178 is a STALE FORK missing (1) log() '|| true' fail-open [OPS-AUTOPUB-FULL-REVIEW-FIX-W1 C5] and (2) the ENTIRE test-context gate [OPS-AUTOPUB-TEST-ALERT-LEAK-W1 2026-07-22]. Consequence: ALGOVAULT_TG_TEST_INERT=1 is a NO-OP on 178, so any gate/test run there fires a REAL page AND writes a REAL 24h cooldown marker, silencing the next genuine AOE alert.",
-          "follow_up": "OPS-TELEGRAM-WRAPPER-SINGLE-SOT-W{NEXT}",
-          "priority": "P1"
+          "host": "aoe-1",
+          "sha256": "243ba4a760365df6bc734c1883ed7f3128dddaea1360f491234b878836c9739d",
+          "state": "reconciled",
+          "classification": "STALE_ANCESTOR",
+          "detail": "RECONCILED 2026-07-29 by OPS-AOE-MONITORING-PARITY-W1. The aoe-1 copy (938d6b6f…169c5) was NOT a behavioural fork: it was byte-identical to this host's own send_telegram.sh.bak.PRE-TEST-CONTEXT-GATE-20260722, i.e. a pure unmodified ANCESTOR carrying zero AOE-specific edits. It had simply never received OPS-AUTOPUB-FULL-REVIEW-FIX-W1 C5 (log() fail-open) or OPS-AUTOPUB-TEST-ALERT-LEAK-W1 (the test-context gate). Both hosts now run the canonical revision; parity is asserted every run by REGISTRY_PARITY over installed_at, not by re-detecting divergence after the fact.",
+          "reconciled_by": "OPS-AOE-MONITORING-PARITY-W1",
+          "prior_sha256": "938d6b6f7104a8c1802c506d11c4cabefb0d9e392d13743a487530cc305169c5"
         }
       ],
-      "notes": "The single alert contract; consumers MUST NOT re-implement its gates. Host copy CHANGED mid-wave at 2026-07-28T14:09:12Z (7144->7713 B) with no backup \u2014 the prior revision is unrecoverable. Baseline captured is the post-change running revision."
+      "notes": "The single operator-action-required ALERT contract; consumers MUST NOT re-implement its gates (see exempt_consumers for the one ruled-out class). Canonical home is this repo; autonomous-optimizer VENDORS a copy at monitoring/aoe-host/ with a committed .sha256 and a pytest that pins BOTH behaviours (a hash alone cannot catch a re-vendor from a stale source that also re-records the hash). CORRECTION 2026-07-29 (OPS-AOE-MONITORING-PARITY-W1): the prior note claimed the 2026-07-28T14:09:12Z mid-wave change left 'no backup — the prior revision is unrecoverable'. That is FALSE. send_telegram.sh.bak.PRE-C5-FAILOPEN (7144 B, sha b122a5eb…30299, mtime …14:09:12.482861130Z, 2 ms before the new file) IS that revision; the concurrent session took the backup as part of the same write. A .bak.<REASON> convention exists on signal-1 and was followed. It is now MANDATORY on every host and asserted by the NO_BACKUP check."
     },
     {
       "id": "website-drift-canary",
@@ -243,6 +284,22 @@
       "owner_wave": "OPS-LLM-SPEND-MONITOR-W1"
     },
     {
+      "id": "db-superuser-canary",
+      "artifact": "scripts/db-superuser-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/db-superuser-canary.sh",
+      "criticality": "load-bearing",
+      "schedule": "39 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "5ac88efcd9e3e9a25f4da5d4af928c87680d74b5f19a72d076391b504d231a11",
+      "alert_ids": [
+        "DB_SUPERUSER_DRIFT"
+      ],
+      "owner_wave": "OPS-SEC-DB-LEAST-PRIV-W2"
+    },
+    {
       "id": "stripe-webhook-events-canary",
       "artifact": "ops/monitoring/stripe-webhook-events-canary.sh",
       "kind": "executable",
@@ -298,11 +355,12 @@
       "schedule": "13,28,43,58 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "c715c64f66794fee3d7c5977b9a9cf59497672b8bc82fcd05f8e54950325e7c6",
+      "sha256": "aac453da860aa80c1047121d31318f7f15c36d83e15b0feff42fb0505e668f5c",
       "alert_ids": [
         "WEBHOOK_DELIVERY_DRIFT"
       ],
-      "owner_wave": "OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1"
+      "owner_wave": "OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1",
+      "notes": "SEC-13: docstring + WOULD_FIRE path switched to ALGOVAULT_TG_TEST_INERT=1 (no cooldown marker); the hermetic self-test now sets INERT rather than DRY_RUN_TG. WOULD_FIRE lines now carry alert_id + severity + verdict rather than an absence. Re-verified live on the host."
     },
     {
       "id": "directional-label-freshness",
@@ -314,12 +372,13 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "b89d27277ef3d9ca2d6000ff59374f3ee4c46be9424bc4b8a54fbeb507653619",
+      "sha256": "6100ac59a1ecfe01a2bf7ac7f4fecf6eb48bac6d62681238803167bb8cb5b52a",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
       ],
-      "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1"
+      "owner_wave": "OPS-DIRECTIONAL-LABEL-FRESHNESS-W1",
+      "notes": "SEC-13 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4): --force-stale now accepts ALGOVAULT_TG_TEST_INERT=1, which suppresses BEFORE the cooldown gate and writes no marker. It previously REQUIRED DRY_RUN_TG=1, which DOES write the 24h marker — so the sanctioned smoke silenced the next genuine MAJOR-venue page for 24h and a second smoke false-greened. Re-verified live on the host under INERT: 16 positive per-venue rows (venue + lag + slo + verdict), marker unchanged."
     },
     {
       "id": "test-directional-label-freshness",
@@ -442,7 +501,7 @@
         "gate-shadow-cpu"
       ],
       "owner_wave": "OPS-SHADOW-PIPELINE-W1",
-      "notes": "Transient systemd-run --on-active=48h one-shot armed 2026-06-05; window expired ~2026-06-07, no armed timer. Host/repo hashes differ but the delta is 100% COMMENTS (executable body byte-identical, verified comment-stripped); the REPO copy is retained because it is RICHER \u2014 it carries the systemd-run install command and the rollback crontab path the host copy dropped. Historical, not live drift."
+      "notes": "Transient systemd-run --on-active=48h one-shot armed 2026-06-05; window expired ~2026-06-07, no armed timer. Host/repo hashes differ but the delta is 100% COMMENTS (executable body byte-identical, verified comment-stripped); the REPO copy is retained because it is RICHER — it carries the systemd-run install command and the rollback crontab path the host copy dropped. Historical, not live drift."
     },
     {
       "id": "book-liveness-canary",
@@ -460,7 +519,7 @@
       ],
       "owner_wave": "OPS-PFE-METRIC-INTEGRITY-W1",
       "pending_since": "2026-07-21",
-      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot \u2014 so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true. Fired once at 2026-07-21T04:02Z (install-time smoke)."
+      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot — so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true. Fired once at 2026-07-21T04:02Z (install-time smoke)."
     },
     {
       "id": "nav-drift-canary",
@@ -477,7 +536,7 @@
         "NAV_REGION_DRIFT"
       ],
       "owner_wave": "NAV-PLATFORM-GENERATOR-W1",
-      "notes": "BLOCKED, not neglected \u2014 the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_nav.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_nav --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
+      "notes": "BLOCKED, not neglected — the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_nav.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_nav --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
       "pending_since": "2026-07-12"
     },
     {
@@ -495,7 +554,7 @@
         "ANALYTICS_REGION_DRIFT"
       ],
       "owner_wave": "OPS-ANALYTICS-TAG-SINGLE-SOURCE-W1",
-      "notes": "BLOCKED, not neglected \u2014 the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_analytics.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_analytics --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
+      "notes": "BLOCKED, not neglected — the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_analytics.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_analytics --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
       "pending_since": "2026-07-15"
     },
     {
@@ -508,11 +567,12 @@
       "schedule": "29 6 * * 1",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "3af8df187ee2751214a927c9072997b7f2a4ab057c7f4bfffe1205b812c8b575",
+      "sha256": "0ea36506fcaaf14cde0d16de90a9301f256a2af645e179ceeae915d82de16b05",
       "alert_ids": [
         "DOCS_STRUCTURE_DRIFT"
       ],
-      "owner_wave": "OPS-DOCS-JSONLD-TOOLCOUNT-W1"
+      "owner_wave": "OPS-DOCS-JSONLD-TOOLCOUNT-W1",
+      "notes": "SEC-13 lever switch, PLUS a dark-guard repair found by running it where it lives: it fetched https://algovault.com/docs.html, which 301-redirects, with `curl -fsS` and no -L — so EVERY run got an empty body, took the FAIL_OPEN branch and exited 0. It could not detect drift at all while looking healthy. Now fetches the canonical /docs with -L; live run asserts POSITIVE (\"all 18 required docs sections present\") and a forced-absent id still reaches the DRIFT branch."
     },
     {
       "id": "seed-coverage-canary",
@@ -524,7 +584,7 @@
       "schedule": "37 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "650b368048041fcd8eeda8c54d26fa204b85796cac49fe559572530b1b5913d4",
+      "sha256": "5ca84a838d03cba7c33638323468c4c0642b68ff154be5668b5ce8ca6e202b64",
       "alert_ids": [
         "SEED_COVERAGE_GAP"
       ],
@@ -596,6 +656,110 @@
       ],
       "owner_wave": "OPS-EQUITY-RETIRE-W1",
       "notes": "Disabled on host 2026-07-16 as equity-verdict-watch.sh.disabled-equity-retire-20260716T040525Z."
+    },
+    {
+      "id": "aoe-shadow-writer-stall-canary",
+      "artifact": "monitoring/aoe-host/aoe-shadow-writer-stall-canary.py",
+      "repo": "autonomous-optimizer",
+      "kind": "executable",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/aoe-shadow-writer-stall-canary.py",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-shadow-writer-stall-canary.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "13,18,23,28,33,38,43,48,53,58 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "7e737948ecb8ea44e9e4e87e6717b4d33e3b3de244225fa56fe8ac964b3f686c",
+      "alert_ids": [
+        "AOE_SHADOW_WRITER_STALL_PERSISTENT"
+      ],
+      "owner_wave": "OPS-AOE-CANARY-AND-GATE-WATCHER-REACTIVATE-W1",
+      "notes": "Probes the bank_shadow.duckdb writer lock; fires CRITICAL_PERSISTENT through send_telegram.sh and re-implements NO gate inline (contract-clean, verified OPS-AOE-MONITORING-PARITY-W1 R4). Already repo-resident and hash-identical across clone / host rsync tree / running copy at adoption — it was never an orphan, contrary to the OPS-MONITORING-INVENTORY-PARITY-W1 follow-up note."
+    },
+    {
+      "id": "aoe-shadow-writer-stall-manifest",
+      "artifact": "monitoring/aoe-host/aoe-shadow-writer-stall-manifest.yaml",
+      "repo": "autonomous-optimizer",
+      "kind": "config",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/aoe-shadow-writer-stall-manifest.yaml",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-shadow-writer-stall-manifest.yaml"
+        }
+      ],
+      "criticality": "supporting",
+      "schedule": null,
+      "invoked_by": "called-by:aoe-shadow-writer-stall-canary",
+      "install_state": "installed",
+      "sha256": "0e2602176a868c04810fb3d313408f617ab9404b0a21fedc216840980480aae1",
+      "alert_ids": [
+        "AOE_SHADOW_WRITER_STALL_PERSISTENT"
+      ],
+      "owner_wave": "OPS-AOE-CANARY-AND-GATE-WATCHER-REACTIVATE-W1"
+    },
+    {
+      "id": "network-posture",
+      "artifact": "ops/monitoring/network-posture.json",
+      "kind": "baseline-data",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/network-posture.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/network-posture.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/network-posture.json"
+        }
+      ],
+      "criticality": "load-bearing",
+      "install_state": "installed",
+      "sha256": "c85be7425e65092ad85b7bfa6972375678b8e90155f2ddc798c267662886bf3f",
+      "alert_ids": [
+        "MONITORING_INVENTORY_DRIFT"
+      ],
+      "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1",
+      "notes": "Declared inbound network posture — the SoT the reconciler's POSTURE_DRIFT check asserts live reachability against. No `schedule`: it is DATA read by the reconciler's own cron, not itself a scheduled job, so DARK does not apply. A SHARED PRIMITIVE under the same canonical + committed-.sha256 + parity contract as send_telegram.sh: both hosts must read the SAME declaration or each would assert a different posture and the peer-vantage comparison would be meaningless. kind=baseline-data so HASH_DRIFT treats a mutation here as SEVERE — an edited posture file silently redefines what 'correct' means, which is worse than a drifted script."
+    },
+    {
+      "id": "kernel-staleness-canary",
+      "artifact": "ops/monitoring/kernel-staleness-canary.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+          "schedule": "23 7 * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/kernel-staleness-canary.sh",
+          "schedule": "37 7 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "23 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "3495a7a148b17c11daebcedb00b36fb144af7c0b5d3d614eb3b3c061da31e3b8",
+      "alert_ids": [
+        "KERNEL_STALENESS"
+      ],
+      "owner_wave": "OPS-HOST-KERNEL-REBOOT-W1",
+      "notes": "Standing signal for SEC-18. Keyed on RUNNING-vs-newest-INSTALLED kernel, deliberately NOT on /var/run/reboot-required mtime: that file is re-stamped by every new kernel package, so its age is the age of the LATEST trigger and an alert keyed on it resets its own clock monthly (measured at R0 - both hosts read 2026-07-29 while one was 12 and the other 30 revisions behind). Same file on both hosts, ONE canonical sha256 on this row; per-host copies carry no hash of their own. `--self-test` is two-way and vacuity-guarded (>=7 assertions) and proves the send path by capturing the wrapper argv, because both hosts are freshly rebooted and the BREACH branch is unreachable from live state. Fires through send_telegram.sh, which owns severity/cooldown/{NEXT}; smoke it with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1 (that writes the 24h marker and false-greens run 2)."
     }
-  ]
+  ],
+  "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
+  "_installed_at_semantics": "The CONSUMER REGISTRY — every host+path a shared artifact is installed at. This is the generator-level fix of OPS-AOE-MONITORING-PARITY-W1: the AOE copy of send_telegram.sh was NOT a fork (it was byte-identical to the signal host's own PRE-TEST-CONTEXT-GATE backup, i.e. a pure unmodified ancestor). Two waves updated the primitive at ONE call site because nothing recorded that a second host was also a consumer. Detection alone only tells you the miss already happened; the registry is what makes an update unable to MISS a host. The row's `sha256` is the ONE canonical hash — entries carry no hash of their own (single-derivation: a second recorded hash is a second thing that can drift). `schedule` on an entry overrides the row's for that host.",
+  "_exempt_consumers_semantics": "Consumers deliberately NOT bound by this artifact's contract, with the ruling that exempted them. Machine-recorded rather than left in an ADR alone: an exemption that lives only in prose gets \"fixed\" by a future wave enforcing the contract."
 }

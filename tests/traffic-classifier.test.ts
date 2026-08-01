@@ -11,10 +11,32 @@ import { classifyTraffic, _defaultIsDatacenterIpForTest } from '../src/lib/traff
 const CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
 describe('classifyTraffic — AC matrix', () => {
-  it('known bots → automated (Googlebot, python-requests, curl via isbot)', () => {
+  it('known bots → automated (Googlebot + curl via isbot)', () => {
     expect(classifyTraffic({ ua: 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' }).is_automated).toBe(true);
-    expect(classifyTraffic({ ua: 'python-requests/2.31.0' }).is_automated).toBe(true);
     expect(classifyTraffic({ ua: 'curl/8.4.0' }).is_automated).toBe(true);
+  });
+
+  /**
+   * OPS-CLIENT-ATTRIBUTION-W1 — DELIBERATE FLIP, not a regression.
+   *
+   * This assertion previously read `python-requests/2.31.0 → automated`. That WAS correct
+   * behaviour for isbot, and it is exactly the defect: a bare SDK UA is what an autonomous
+   * agent calling from code looks like, so "🟢 Recognized clients" was structurally ~0 and
+   * could never count the ICP (measured 2026-07-31: 0 recognized across 24h with 70 distinct
+   * sessions connected). The registry now un-tags programmatic SDKs BEFORE isbot.
+   *
+   * Flipped here rather than deleted, because per CLAUDE.md an exemption and the test that
+   * encodes it are a PAIR — dropping the test would leave the boundary unpinned. The full
+   * both-directions table lives in tests/client-registry.test.ts.
+   *
+   * `curl` above is untouched on purpose: interactive human tooling, not an agent runtime.
+   */
+  it('bare-SDK agents → NOT automated (the ICP fix; was automated pre-2026-07-31)', () => {
+    expect(classifyTraffic({ ua: 'python-requests/2.31.0' }).is_automated).toBe(false);
+    expect(classifyTraffic({ ua: 'python-httpx/0.27.0' }).is_automated).toBe(false);
+    expect(classifyTraffic({ ua: 'axios/1.7.2' }).is_automated).toBe(false);
+    // …but a named prober wearing an SDK UA stays automated.
+    expect(classifyTraffic({ ua: 'CoinbaseBazaarDiscovery/1.0 (axios/1.7.2)' }).is_automated).toBe(true);
   });
 
   it('health-check UAs → automated with reason=health_check (ELB/GoogleHC/kube-probe/UptimeRobot)', () => {

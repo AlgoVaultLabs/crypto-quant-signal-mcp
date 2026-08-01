@@ -40,7 +40,7 @@ import {
   selectOkxA2mcp,
 } from './okx-a2mcp-config.js';
 import type { OkxA2mcpEnv, OkxA2mcpMode, ResolvedOkxA2mcp } from './okx-a2mcp-config.js';
-import { HTTP_TOOLS, callCoreHandler, type HttpTool } from './x402-http-routes.js';
+import { HTTP_TOOLS, callCoreHandler, validateToolInput, tolerantJson, type HttpTool } from './x402-http-routes.js';
 import type { LicenseInfo } from '../types.js';
 // OKX managed facilitator (HMAC-signed verify/settle → web3.okx.com). Live path only —
 // constructed lazily inside mountLive(), so importing this module is side-effect-free.
@@ -200,7 +200,7 @@ function mountStub(app: Express, tools: string[], provider: StubOkxA2mcpProvider
       res.setHeader(c.headerName, c.header);
       res.status(c.status).json(c.body);
     });
-    app.post(route, express.json(), async (req: Request, res: Response) => {
+    app.post(route, tolerantJson, async (req: Request, res: Response) => {
       try {
         const receipt = await provider.settle(tool, req.headers as Record<string, string | undefined>);
         if (!receipt.settled) {
@@ -209,7 +209,32 @@ function mountStub(app: Express, tools: string[], provider: StubOkxA2mcpProvider
           res.status(c.status).json(c.body);
           return;
         }
-        const result = await callCoreHandler(ht, (req.body ?? {}) as Record<string, unknown>, X402_LICENSE);
+        const gate = validateToolInput(ht, req.body, req.headers as Record<string, string | string[] | undefined>);
+        if (!gate.ok) {
+          const rej = gate.rejection;
+          const dropped = rej.kind === 'dropped_body';
+          console.warn(
+            `[a2mcp] ${dropped ? 'dropped-body' : 'input-validation'} REJECT for ${route} ` +
+            `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
+            `body-keys=${rej.rawBodyKeys} ` +
+            `detail=${JSON.stringify(dropped ? rej.reason : rej.errors.slice(0, 3))}`,
+          );
+          res.status(400).json(dropped
+            ? {
+              error: 'invalid_content_type',
+              code: 'OKX_A2MCP_INVALID_CONTENT_TYPE',
+              message: `The request body could not be read: ${rej.reason}`,
+              suggested_fix: 'Send the body as JSON under a single `content-type: application/json` header, then retry.',
+            }
+            : {
+              error: 'invalid_input',
+              code: 'OKX_A2MCP_INVALID_INPUT',
+              details: rej.errors,
+              suggested_fix: `Body must satisfy the published JSON Schema for ${ht}.`,
+            });
+          return;
+        }
+        const result = await callCoreHandler(ht, gate.input, X402_LICENSE);
         res.setHeader(
           'PAYMENT-RESPONSE',
           Buffer.from(JSON.stringify({ status: 'settled', _stub: true, transaction: receipt.tx })).toString('base64'),
@@ -305,9 +330,34 @@ async function mountLive(app: Express, tools: string[], resolved: ResolvedOkxA2m
       }
       res.status(402).json(body);
     });
-    app.post(route, express.json(), async (req: Request, res: Response) => {
+    app.post(route, tolerantJson, async (req: Request, res: Response) => {
       try {
-        const result = await callCoreHandler(ht, (req.body ?? {}) as Record<string, unknown>, X402_LICENSE);
+        const gate = validateToolInput(ht, req.body, req.headers as Record<string, string | string[] | undefined>);
+        if (!gate.ok) {
+          const rej = gate.rejection;
+          const dropped = rej.kind === 'dropped_body';
+          console.warn(
+            `[a2mcp] ${dropped ? 'dropped-body' : 'input-validation'} REJECT for ${route} ` +
+            `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
+            `body-keys=${rej.rawBodyKeys} ` +
+            `detail=${JSON.stringify(dropped ? rej.reason : rej.errors.slice(0, 3))}`,
+          );
+          res.status(400).json(dropped
+            ? {
+              error: 'invalid_content_type',
+              code: 'OKX_A2MCP_INVALID_CONTENT_TYPE',
+              message: `The request body could not be read: ${rej.reason}`,
+              suggested_fix: 'Send the body as JSON under a single `content-type: application/json` header, then retry.',
+            }
+            : {
+              error: 'invalid_input',
+              code: 'OKX_A2MCP_INVALID_INPUT',
+              details: rej.errors,
+              suggested_fix: `Body must satisfy the published JSON Schema for ${ht}.`,
+            });
+          return;
+        }
+        const result = await callCoreHandler(ht, gate.input, X402_LICENSE);
         res.json(result);
       } catch (err: unknown) {
         if (!res.headersSent) {

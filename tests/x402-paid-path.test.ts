@@ -83,6 +83,21 @@ function setProof(requirement: Record<string, unknown>, nonce: string) {
   nextSettlement = { requirements: requirement, paymentPayload: paymentEnvelope(requirement, nonce) };
 }
 
+/**
+ * OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 — two test seams the free-HOLD guard needs.
+ *
+ * `nextVerdict` drives the mocked get_trade_signal handler so BOTH branches of the
+ * HOLD-skip are reachable (live verdicts were 5/5 HOLD when this was written, so the
+ * directional branch is not reachable from real data on demand).
+ * `settleCalls` counts real `settleX402Async` → `settlePayment` invocations, which is
+ * how "a HOLD is FREE" becomes an assertion instead of a promise.
+ */
+let nextVerdict: 'BUY' | 'SELL' | 'HOLD' = 'BUY';
+let settleCalls = 0;
+
+/** Settle is fire-and-forget AFTER res.json(), so give the server a tick before asserting. */
+const settleTick = () => new Promise((r) => setTimeout(r, 60));
+
 beforeAll(() => {
   process.env.X402_WALLET_ADDRESS = WALLET;
   process.env.X402_NETWORK = 'base-mainnet';
@@ -105,6 +120,8 @@ beforeEach(async () => {
   process.env.HOME = tempHome;
   process.env.USERPROFILE = tempHome;
   nextSettlement = null;
+  nextVerdict = 'BUY';
+  settleCalls = 0;
 
   vi.resetModules();
   const { closeDb } = await import('../src/lib/performance-db.js');
@@ -127,7 +144,7 @@ beforeEach(async () => {
       }
       findMatchingRequirements() { return null; }
       async verifyPayment() { return { isValid: true }; }
-      settlePayment() { return Promise.resolve({ success: true }); }
+      settlePayment() { settleCalls++; return Promise.resolve({ success: true }); }
     },
   }));
   vi.doMock('@x402/core/http', () => ({ encodePaymentRequiredHeader: () => 'stub-header' }));
@@ -147,7 +164,16 @@ beforeEach(async () => {
   }));
   // Mock the 3 core tool handlers to fixed outputs (we assert serve-vs-402).
   vi.doMock('../src/tools/get-trade-call.js', () => ({
-    getTradeSignal: () => ({ call: 'BUY', confidence: 70, coin: 'BTC' }),
+    getTradeSignal: () => ({ call: nextVerdict, confidence: 70, coin: 'BTC' }),
+  }));
+  // The remaining payable routes, so the content-type matrix can drive EVERY one of them
+  // end-to-end rather than only the three the original suite happened to cover.
+  vi.doMock('../src/tools/scan-trade-calls.js', () => ({
+    runScanTradeCall: () => ({ calls: [], scanned: 0 }),
+  }));
+  vi.doMock('../src/lib/equities/equity-tool-formatters.js', () => ({
+    getEquityCall: () => ({ call: 'HOLD', symbol: 'AAPL' }),
+    getEquityRegime: () => ({ regime: 'RANGING', symbol: 'AAPL' }),
   }));
   vi.doMock('../src/tools/scan-funding-arb.js', () => ({
     scanFundingArb: () => ({ opportunities: [], scannedPairs: 1 }),
@@ -355,5 +381,124 @@ describe('paid request whose content-type prevents body parsing', () => {
     const res = await post('get_market_regime', { coin: 'BTC', timeframe: '1h' });
     expect(res.status).toBe(200);
     expect((await res.json() as { regime?: string }).regime).toBe('RANGING');
+  });
+});
+
+/**
+ * OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 R2 — the branch-coverage canary that retires the class.
+ *
+ * Every payment break in this arc — v1/v2 header, `expected[0]` rail binding, invalid_input, and
+ * the duplicated content-type — hid the same way: the suite exercised SOME routes on SOME
+ * branches, and the broken combination was never driven end-to-end. This drives the REAL mounted
+ * route over real `fetch` with a real x402 envelope for EVERY payable route on BOTH content-type
+ * shapes, and the SANITY test fails if a future route is added to HTTP_TOOLS without joining the
+ * matrix — so coverage cannot silently rot.
+ *
+ * Real money is deliberately NOT used here (architect-confirmed): a canary that spends USDC per CI
+ * run needs a funded key in CI and flakes on vendor latency. The genuine-money check stays the
+ * operator-run live smoke.
+ */
+describe('R2 — every payable route × {clean, duplicated} content-type', () => {
+  const ROUTES: Array<{ path: string; tool: string; body: Record<string, unknown> }> = [
+    { path: 'get_trade_signal', tool: 'get_trade_signal', body: { coin: 'BTC', timeframe: '4h' } },
+    { path: 'get_trade_call', tool: 'get_trade_signal', body: { coin: 'BTC', timeframe: '4h' } }, // alias
+    { path: 'scan_funding_arb', tool: 'scan_funding_arb', body: { minSpreadBps: 5, limit: 10 } },
+    { path: 'get_market_regime', tool: 'get_market_regime', body: { coin: 'BTC', timeframe: '1h' } },
+    { path: 'scan_trade_calls', tool: 'scan_trade_calls', body: { topN: 5, timeframe: '4h' } },
+    { path: 'get_equity_call', tool: 'get_equity_call', body: { symbol: 'AAPL' } },
+    { path: 'get_equity_regime', tool: 'get_equity_regime', body: { symbol: 'SPY' } },
+  ];
+
+  /** Repeated header keys are combined by fetch — exactly what a client adding its own
+   *  `content-type` on top of an SDK that already sets `Content-Type` produces. */
+  const postDupContentType = (path: string, body: Record<string, unknown>) =>
+    fetch(`${baseUrl}/x402/${path}`, {
+      method: 'POST',
+      headers: [
+        ['content-type', 'application/json'],
+        ['content-type', 'application/json'],
+        ['x-payment', 'present'],
+      ] as unknown as HeadersInit,
+      body: JSON.stringify(body),
+    });
+
+  const priceOf = async (tool: string): Promise<number> => {
+    const { TOOL_PRICING } = await import('../src/lib/x402.js');
+    return (TOOL_PRICING as unknown as Record<string, number>)[tool];
+  };
+
+  it('SANITY: the matrix covers every mounted payable route (fails when a route is added)', async () => {
+    const { HTTP_TOOLS } = await import('../src/lib/x402-http-routes.js');
+    const covered = new Set(ROUTES.map((r) => r.path));
+    for (const t of HTTP_TOOLS as readonly string[]) {
+      expect(covered.has(t), `HTTP_TOOLS route "${t}" is missing from the R2 matrix`).toBe(true);
+    }
+    expect(covered.has('get_trade_call')).toBe(true); // the non-discoverable paid alias
+  });
+
+  for (const r of ROUTES) {
+    it(`${r.path}: PAID + duplicated content-type → 400 invalid_content_type (not a misleading schema error)`, async () => {
+      setProof(req(await priceOf(r.tool)), freshNonce());
+      const res = await postDupContentType(r.path, r.body);
+      expect(res.status).toBe(400);
+      expect((await res.json() as { error?: string }).error).toBe('invalid_content_type');
+    });
+
+    it(`${r.path}: PAID + clean content-type → 200 served`, async () => {
+      setProof(req(await priceOf(r.tool)), freshNonce());
+      const res = await post(r.path, r.body);
+      expect(res.status).toBe(200);
+    });
+  }
+});
+
+/**
+ * OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 R3 — "HOLDs are always free" as an ASSERTION.
+ *
+ * That is a canonical public pricing promise (brand-facts M3) enforced by exactly one line:
+ * `if (pendingSettlement && verdict !== 'HOLD') settleX402Async(...)`. Nothing tested it — the
+ * pre-existing settle-skip assertions cover only the downgrade and replay paths. Deleting the
+ * `verdict !== 'HOLD'` guard would start charging for HOLDs, change public pricing, and ship green.
+ * These make that impossible, in both directions and on both routes.
+ */
+describe('R3 — HOLDs are free, directional calls charge (brand M3 / Data Integrity)', () => {
+  for (const path of ['get_trade_signal', 'get_trade_call']) {
+    it(`${path}: HOLD → 200 with the verdict AND no settle (FREE)`, async () => {
+      nextVerdict = 'HOLD';
+      setProof(req(0.02), freshNonce());
+      const res = await post(path, { coin: 'BTC', timeframe: '4h' });
+      expect(res.status).toBe(200);
+      expect((await res.json() as { call?: string }).call).toBe('HOLD');
+      await settleTick();
+      expect(settleCalls, 'a HOLD must NEVER settle — charging for HOLDs is a public pricing change').toBe(0);
+    });
+
+    it(`${path}: directional → 200 AND settles (the charge still happens)`, async () => {
+      nextVerdict = 'BUY';
+      setProof(req(0.02), freshNonce());
+      const res = await post(path, { coin: 'BTC', timeframe: '4h' });
+      expect(res.status).toBe(200);
+      expect((await res.json() as { call?: string }).call).toBe('BUY');
+      await settleTick();
+      expect(settleCalls, 'a directional verdict MUST settle — free directional calls are lost revenue').toBe(1);
+    });
+  }
+
+  it('a free HOLD is still SERVED — the verdict is returned, never withheld', async () => {
+    nextVerdict = 'HOLD';
+    setProof(req(0.02), freshNonce());
+    const body = await (await post('get_trade_call', { coin: 'BTC', timeframe: '4h' })).json() as
+      { call?: string; confidence?: number };
+    expect(body.call).toBe('HOLD');
+    expect(body.confidence).toBe(70);
+  });
+
+  it('the HOLD-skip is get_trade_signal-ONLY — an always-charge tool settles regardless', async () => {
+    nextVerdict = 'HOLD'; // must not leak into other tools' settle decision
+    setProof(req(0.02), freshNonce());
+    const res = await post('get_market_regime', { coin: 'BTC', timeframe: '1h' });
+    expect(res.status).toBe(200);
+    await settleTick();
+    expect(settleCalls).toBe(1);
   });
 });

@@ -127,8 +127,11 @@ export function resolveTrackTokenForRequest(
  * logic, so the id and the tier can never drift (single-derivation LAW). The
  * tier labels how stitchable the id is — the honest way to report cookieless
  * traffic (PostHog 3-layer identity model: stable-id → fingerprint-fallback →
- * ephemeral; ICO: a hashed IP is still personal data, so `ipHash` is salted
- * upstream, never raw):
+ * ephemeral; ICO: a hashed IP is still personal data, so `ipHash` is KEYED
+ * upstream, never raw — as of OPS-SEC-IPHASH-SALT-W1 that is HMAC-SHA256 under a host-only
+ * key, version-tagged `v2:<hash>`. Before that wave this line was aspirational: the hash was
+ * unkeyed sha256 and therefore brute-force reversible, so the claim is now true rather than
+ * merely intended. See src/lib/analytics.ts hashIp):
  *   - 'token'    → X-AlgoVault-Track-Token / --track-token argv (IDENTIFIED; cross-request stitchable)
  *   - 'fallback' → ipHash (stable per client behind Caddy, but MAY over-merge NAT'd clients)
  *   - 'anon'     → randomUUID (only when both absent; UNSTITCHABLE across requests)

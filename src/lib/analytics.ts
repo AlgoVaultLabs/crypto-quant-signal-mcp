@@ -9,11 +9,18 @@ import { dbExec, dbRun, dbQuery } from './performance-db.js';
 // per-request classifyTraffic verdict from the ALS to stamp `request_log.is_automated`.
 // analytics.ts is a leaf (only performance-db + crypto); license.ts does NOT import
 // analytics → this edge is a DAG, no import cycle (verified in Plan Mode).
-import { getRequestIsAutomated } from './license.js';
+import { getRequestIsAutomated, getRequestUserAgent } from './license.js';
+// OPS-CLIENT-ATTRIBUTION-W1: the ONE UA → client identity map (also drives is_automated
+// via traffic-classifier.ts). Imported, never re-derived.
+import { classifyClient, normalizeUaForStorage, UNKNOWN_CLIENT } from './client-registry.js';
 // OPS-DIGEST-PAID-RAIL-SPLIT-W1: the ONE canonical tier→rail map. Pure leaf (type-only
 // import of LicenseTier) → no cycle. The IN-lists below are BUILT from these arrays, so a
 // newly-added paid tier cannot drift out of the split.
 import { SUBSCRIPTION_TIERS, X402_TIERS } from './payment-rail.js';
+// OPS-TOP-IP-FORENSICS-W1: the ONE (tool, verdict) → billing-class derivation. Predicates are
+// GENERATED from FEATURE_REGISTRY's quota model, so the digest's idea of "billable" cannot
+// drift from the runtime meter.
+import { billablePredicate, freeHoldPredicate, unmeteredPredicate } from './call-class.js';
 
 // ── Table creation ──
 
@@ -31,7 +38,9 @@ const CREATE_TABLE_SQL = `
     confidence INTEGER,
     ip_hash TEXT,
     is_bot_internal ${process.env.DATABASE_URL ? 'BOOLEAN' : 'INTEGER'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'},
-    is_automated ${process.env.DATABASE_URL ? 'BOOLEAN NOT NULL' : 'INTEGER NOT NULL'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'}
+    is_automated ${process.env.DATABASE_URL ? 'BOOLEAN NOT NULL' : 'INTEGER NOT NULL'} DEFAULT ${process.env.DATABASE_URL ? 'FALSE' : '0'},
+    user_agent TEXT,
+    client_name TEXT
   );
 `;
 
@@ -56,6 +65,27 @@ const ALTER_BOT_INTERNAL_SQL = process.env.DATABASE_URL
 const ALTER_AUTOMATED_SQL = process.env.DATABASE_URL
   ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS is_automated BOOLEAN NOT NULL DEFAULT FALSE;`
   : `ALTER TABLE request_log ADD COLUMN is_automated INTEGER NOT NULL DEFAULT 0;`;
+
+// OPS-CLIENT-ATTRIBUTION-W1 (2026-07-31): the UA was ALREADY being read (it sets
+// `is_automated`) and then discarded, so a heavy caller could be classified but never named —
+// OPS-TOP-IP-FORENSICS-W1 tested 30 candidate hashes for its top talker and matched none.
+// These two columns close that permanently, at the row that already exists.
+//
+// Both are NULLABLE with no default: on PG 11+ that is a metadata-only catalog change, so a
+// ~41k-rows/7d table is NOT rewritten. Pre-applied on prod PG via SSH BEFORE this deploy
+// (information_schema-guarded) — the code path is a no-op there.
+// PG: IF NOT EXISTS (idempotent). SQLite: bare — it has NO `ADD COLUMN IF NOT EXISTS`
+// (verified 3.49, DASH-EXTERNAL-ONLY-W1-PATCH-A), so re-runs throw "duplicate column" and are
+// caught by initAnalytics's try/catch, exactly like the two ALTERs above.
+//
+// PII: a User-Agent is not an address. No IP, no other header, nothing from Authorization; the
+// stored value is truncated to MAX_UA_LEN.
+const ALTER_USER_AGENT_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS user_agent TEXT;`
+  : `ALTER TABLE request_log ADD COLUMN user_agent TEXT;`;
+const ALTER_CLIENT_NAME_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE request_log ADD COLUMN IF NOT EXISTS client_name TEXT;`
+  : `ALTER TABLE request_log ADD COLUMN client_name TEXT;`;
 
 // DASH-EXTERNAL-ONLY-W1, 2026-05-24: partial index for external-only reads.
 // Speeds the 24h/7d/all-time tiles in getUsageStats() + getToolLatencyStats(),
@@ -214,6 +244,19 @@ export function initAnalytics(): void {
     // Best-effort — column may already exist (PG IF NOT EXISTS no-ops; SQLite
     // "duplicate column" caught here). DEFAULT FALSE keeps old rows queryable.
   }
+  // OPS-CLIENT-ATTRIBUTION-W1: durable client attribution (user_agent + client_name).
+  // Separate try/catch per column so a SQLite "duplicate column" on the first does not
+  // skip the second — they were added in one wave but are independent statements.
+  try {
+    dbExec(ALTER_USER_AGENT_SQL);
+  } catch {
+    // Best-effort — column may already exist (PG IF NOT EXISTS no-ops; SQLite throws).
+  }
+  try {
+    dbExec(ALTER_CLIENT_NAME_SQL);
+  } catch {
+    // Best-effort — see above. Both columns are nullable, so old rows stay queryable.
+  }
   // DASH-EXTERNAL-ONLY-W1: partial index on (timestamp) WHERE NOT is_bot_internal.
   // Idempotent CREATE INDEX IF NOT EXISTS; safe to fire on fresh deploy + existing PG.
   try {
@@ -245,10 +288,100 @@ export function initAnalytics(): void {
   }
 }
 
-// ── IP hashing ──
+// ── IP pseudonymisation (keyed + versioned) ─────────────────────────────────────────────────────
+//
+// OPS-SEC-IPHASH-SALT-W1. This was `sha256(ip)[0:16]` — UNKEYED, so a stored `ip_hash` was
+// reversible by brute force in seconds: the input space is ~2^32 for a full IPv4 and only ~2^24 for
+// the /24-masked value we actually hash (Cloudflare masks CF-Connecting-IP upstream). An unkeyed
+// hash over a tiny input space is not a pseudonym, it is an encoding — so the analytics and quota
+// tables were effectively an address store, and any read path onto them a de-anonymisation dataset.
+//
+// Now HMAC-SHA256 under a server-side key held only in the host `.env` (mode 600). HMAC rather than
+// `sha256(salt + ip)` because HMAC is the purpose-built keyed-hash primitive.
+//
+// VERSIONING is the durable half of the fix. Every value carries its derivation version inline, so
+// the pre/post boundary is LEGIBLE instead of two incompatible namespaces silently sharing a
+// column. Historical `v1` values are never re-hashed — they cannot be, the input IP is gone, which
+// is exactly the property we wanted. A future rotation bumps the tag and becomes a non-event.
+//
+// The prefix rides in the VALUE rather than a sibling column because the highest-value consumers are
+// keys, not rows: `quota_usage.tracker_key` (`free:<hash>`), `chat_usage_monthly.api_key`
+// (`ip:<hash>`) and `agent_sessions.session_id` have nowhere to put a sibling column. It also keeps
+// the PQL cross-table join intact: `SUBSTR('free:v2:<hash>', 6)` = `v2:<hash>`, which still matches
+// `request_log.ip_hash` exactly.
 
+/** Current pseudonym derivation version. Bump ONLY together with a key rotation. */
+export const IP_HASH_VERSION = 'v2';
+
+const IP_HASH_KEY_ENV = 'ALGOVAULT_IP_HASH_KEY';
+
+/**
+ * Values that look like a key but are not one. A placeholder that silently "works" would emit
+ * v2-labelled pseudonyms under a guessable key — worse than v1, because the label would assert a
+ * protection that does not exist.
+ */
+const PLACEHOLDER_KEYS = new Set([
+  'changeme', 'change-me', 'placeholder', 'todo', 'replace-me', 'secret', 'key',
+  'your-key-here', 'xxx', 'test', 'dev',
+]);
+
+/** Thrown at HTTP boot, or on use, when the key is absent or obviously not a real key. */
+export class IpHashKeyError extends Error {
+  readonly code = 'IP_HASH_KEY_MISSING';
+  constructor(detail: string) {
+    super(
+      `${IP_HASH_KEY_ENV} ${detail}. IP pseudonymisation is keyed (OPS-SEC-IPHASH-SALT-W1) and has ` +
+      'NO unkeyed fallback by design — a fallback would silently write reversible v1-shaped values ' +
+      'under a v2 label. Generate one with `openssl rand -hex 32` and add it to the host .env ' +
+      '(mode 600) BEFORE deploying. See docs/RUNBOOK-IPHASH-ROTATION.md.',
+    );
+    this.name = 'IpHashKeyError';
+  }
+}
+
+/**
+ * The ONE place the key is resolved and validated (single-derivation rule). Throws rather than
+ * returning a fallback — see IpHashKeyError.
+ */
+export function resolveIpHashKey(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env[IP_HASH_KEY_ENV];
+  if (raw === undefined || raw === null) throw new IpHashKeyError('is not set');
+  const key = raw.trim();
+  if (!key) throw new IpHashKeyError('is empty');
+  if (PLACEHOLDER_KEYS.has(key.toLowerCase())) throw new IpHashKeyError(`is the placeholder "${key}"`);
+  if (key.length < 32) throw new IpHashKeyError(`is only ${key.length} chars (need >= 32; use \`openssl rand -hex 32\`)`);
+  return key;
+}
+
+/**
+ * Assert the key is usable. Called at HTTP-transport boot so a mis-sequenced deploy fails LOUDLY and
+ * IMMEDIATELY, rather than lazily on the first request that would have written a bucket.
+ *
+ * Deliberately NOT called in stdio mode: every `hashIp` call site takes an Express `req`, so the
+ * stdio/npx path never reaches it, and requiring a key there would break every published
+ * `npx crypto-quant-signal-mcp` install for a protection those users are not exposed to.
+ */
+export function assertIpHashKeyConfigured(env: NodeJS.ProcessEnv = process.env): void {
+  resolveIpHashKey(env);
+}
+
+/**
+ * Keyed, version-tagged pseudonym for an IP-derived value. Output: `v2:<16 hex>`.
+ *
+ * Never returns an unkeyed value — it throws instead. Do NOT catch-and-default this: a defaulted
+ * pseudonym is the reversible bug wearing the new label.
+ */
 export function hashIp(ip: string): string {
-  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
+  const key = resolveIpHashKey();
+  const mac = crypto.createHmac('sha256', key).update(ip).digest('hex').slice(0, 16);
+  return `${IP_HASH_VERSION}:${mac}`;
+}
+
+/** Strip the version prefix — for display/truncation only, never for storage or joins. */
+export function stripIpHashVersion(value: string | null | undefined): string {
+  if (!value) return '';
+  const i = value.indexOf(':');
+  return i === -1 ? value : value.slice(i + 1);
 }
 
 // ── Logging (fire-and-forget) ──
@@ -271,6 +404,10 @@ interface LogEntry {
   // verdict. Optional — when omitted, logRequest reads it from the ALS
   // (getRequestIsAutomated), so the 12 existing call sites need no change.
   isAutomated?: boolean;
+  // OPS-CLIENT-ATTRIBUTION-W1: raw User-Agent. Optional — when omitted, read from the
+  // ALS (getRequestUserAgent), so existing call sites need no change. Truncated and
+  // classified inside logRequest so BOTH derived values come from one place.
+  userAgent?: string | null;
 }
 
 export function logRequest(entry: LogEntry): void {
@@ -285,9 +422,16 @@ export function logRequest(entry: LogEntry): void {
     const automatedValue = isAutomated
       ? (process.env.DATABASE_URL ? true : 1)
       : (process.env.DATABASE_URL ? false : 0);
+    // OPS-CLIENT-ATTRIBUTION-W1: same single-derivation shape as isAutomated — an explicit
+    // entry value wins, else the ALS value stamped once at the POST layer. Both stored
+    // values derive from the ONE client registry, so the raw UA and the normalized name can
+    // never disagree about what a client is.
+    const rawUa = entry.userAgent ?? getRequestUserAgent();
+    const uaValue = normalizeUaForStorage(rawUa);
+    const clientNameValue = uaValue === null ? UNKNOWN_CLIENT : classifyClient(rawUa).name;
     dbRun(
-      `INSERT INTO request_log (timestamp, session_id, tool_name, asset, timeframe, license_tier, response_time_ms, verdict, confidence, ip_hash, is_bot_internal, is_automated)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO request_log (timestamp, session_id, tool_name, asset, timeframe, license_tier, response_time_ms, verdict, confidence, ip_hash, is_bot_internal, is_automated, user_agent, client_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       new Date().toISOString(),
       entry.sessionId || null,
       entry.toolName,
@@ -300,6 +444,8 @@ export function logRequest(entry: LogEntry): void {
       entry.ipHash || null,
       botInternalValue,
       automatedValue,
+      uaValue,
+      clientNameValue,
     );
   } catch {
     // Never fail the request — logging is best-effort
@@ -516,6 +662,14 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
   const subTierPlaceholders = SUBSCRIPTION_TIERS.map(() => '?').join(',');
   const x402TierPlaceholders = X402_TIERS.map(() => '?').join(',');
 
+  // OPS-TOP-IP-FORENSICS-W1: call-class predicates, generated from the canonical quota model.
+  // A null predicate (a class with no tools) collapses to a constant-false guard rather than an
+  // `IN ()` syntax error — the count then honestly reads 0 instead of the query throwing.
+  const FALSE_PRED = { sql: '1 = 0', params: [] as string[] };
+  const billable = billablePredicate() ?? FALSE_PRED;
+  const freeHold = freeHoldPredicate() ?? FALSE_PRED;
+  const unmetered = unmeteredPredicate() ?? FALSE_PRED;
+
   const [
     total,
     last24h,
@@ -552,6 +706,13 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     paidX40224h,
     paidSubscriptionSessions24h,
     paidX402Sessions24h,
+    // OPS-TOP-IP-FORENSICS-W1: the billable/free-HOLD/unmetered decomposition.
+    billableCalls24h,
+    freeHoldCalls24h,
+    unmeteredCalls24h,
+    billableSessions24h,
+    billableCalls7d,
+    freeHoldCalls7d,
   ] = await Promise.all([
     // DASH-EXTERNAL-ONLY-W1: every dashboard tile / breakdown counts EXTERNAL
     // calls only (internal loopback like algovault-bot excluded). Per CLAUDE.md
@@ -627,6 +788,16 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
     dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND license_tier IN (${x402TierPlaceholders})`, [dayAgo, BOT_FALSE, ...X402_TIERS]),
     dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier IN (${subTierPlaceholders})`, [dayAgo, BOT_FALSE, ...SUBSCRIPTION_TIERS]),
     dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND license_tier IN (${x402TierPlaceholders})`, [dayAgo, BOT_FALSE, ...X402_TIERS]),
+    // OPS-TOP-IP-FORENSICS-W1: billable / free-by-design-HOLD / unmetered over the EXTERNAL
+    // slice (same is_bot_internal=false scope as externalCalls24h, so the three classes plus
+    // `unclassified` reconcile to it exactly). `internal` is already carried by
+    // totalCallsInternal — it is not re-counted here.
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${billable.sql}`, [dayAgo, BOT_FALSE, ...billable.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${freeHold.sql}`, [dayAgo, BOT_FALSE, ...freeHold.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${unmetered.sql}`, [dayAgo, BOT_FALSE, ...unmetered.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(DISTINCT session_id) as count FROM request_log WHERE timestamp >= ? AND session_id IS NOT NULL AND is_bot_internal = ? AND ${billable.sql}`, [dayAgo, BOT_FALSE, ...billable.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${billable.sql}`, [weekAgo, BOT_FALSE, ...billable.params]),
+    dbQuery<{ count: string }>(`SELECT COUNT(*) as count FROM request_log WHERE timestamp >= ? AND is_bot_internal = ? AND ${freeHold.sql}`, [weekAgo, BOT_FALSE, ...freeHold.params]),
   ]);
 
   // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: concentration % of the top talkers
@@ -700,6 +871,31 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       sessions: Number(automatedSessions24h[0]?.count ?? 0),
       last7d: { total: Number(automatedFree7d[0]?.count ?? 0) },
     },
+    // OPS-TOP-IP-FORENSICS-W1: ADDITIVE call-class decomposition of the external slice. The
+    // pre-existing totals above are UNCHANGED (add before you remove, per Data Integrity) —
+    // this is a new lens on the same rows, not a replacement series.
+    //
+    // Invariant: billable + freeHold + unmetered + unclassified == totalCallsExternal.last24h.
+    // `unclassified` is computed as the REMAINDER rather than queried, so a tool_name with no
+    // registry entry (a retired tool's historical rows) can never silently vanish — it shows up
+    // as a non-zero remainder the digest renders as `other N`. Clamped at 0: the three classes
+    // are mutually exclusive by construction, but a negative would be a louder bug than a 0.
+    callClasses: (() => {
+      const billableN = Number(billableCalls24h[0]?.count ?? 0);
+      const freeHoldN = Number(freeHoldCalls24h[0]?.count ?? 0);
+      const unmeteredN = Number(unmeteredCalls24h[0]?.count ?? 0);
+      return {
+        billable: billableN,
+        freeHold: freeHoldN,
+        unmetered: unmeteredN,
+        unclassified: Math.max(0, extTotal24h - billableN - freeHoldN - unmeteredN),
+        billableSessions: Number(billableSessions24h[0]?.count ?? 0),
+        last7d: {
+          billable: Number(billableCalls7d[0]?.count ?? 0),
+          freeHold: Number(freeHoldCalls7d[0]?.count ?? 0),
+        },
+      };
+    })(),
     externalConcentration: { top1_pct: pctOfExternal(top1Calls), top5_pct: pctOfExternal(top5Calls) },
     // OPS-DIGEST-CHANNEL-LABELS-W1: concentration scoped to the Raw API clients bucket
     // (the digest's "top IP %" now reads from this, on the 🔌 Raw API clients line).

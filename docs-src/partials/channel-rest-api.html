@@ -26,7 +26,11 @@ const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
 const wallet  = createWalletClient({ account, chain: base, transport: http() });
 const fetchWithPay = wrapFetchWithPayment(fetch, wallet);
 
-// Pays automatically on the 402, then returns the verdict
+// Pays automatically on the 402, then returns the verdict.
+// content-type: set it EXACTLY once. x402-fetch wraps raw fetch, which would send a string
+// body as text/plain — so here you must set it. Circle's GatewayClient.pay() is the opposite:
+// it sets Content-Type itself, so passing your own merges into "application/json,
+// application/json" and the server replies 400 invalid_content_type (you are not charged).
 const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -35,6 +39,15 @@ const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", 
 
 const verdict = await res.json();
 console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
+      </div>
+
+      <div class="bg-navy-700 border border-amber-500/30 rounded-xl p-5 mb-6">
+        <h5 class="text-sm font-semibold text-white mb-2">Set <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">content-type</code> exactly once</h5>
+        <p class="text-gray-400 text-sm leading-relaxed mb-2">The two common x402 clients have <span class="font-semibold text-white">opposite</span> requirements, and getting it wrong produces the same <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">400 invalid_content_type</code> <em>after</em> your payment has already verified (you are not charged):</p>
+        <ul class="space-y-1.5 list-disc list-inside">
+          <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">x402-fetch</code> wraps raw <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">fetch</code>, which sends a string body as <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">text/plain</code> &mdash; so you <span class="font-semibold text-white">must</span> pass <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">content-type: application/json</code> yourself, as above.</li>
+          <li class="text-gray-400 text-sm leading-relaxed">Circle's <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">GatewayClient.pay()</code> (the Circle Gateway rail advertised on every 402) already sets <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">Content-Type</code> &mdash; so you must <span class="font-semibold text-white">not</span>. Adding your own leaves both capitalisations in the options object; <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">fetch</code> then merges them into <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">application/json, application/json</code>, which no JSON parser accepts. Pass <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">body</code> as a plain object and omit <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">headers</code> entirely.</li>
+        </ul>
       </div>
 
       <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>

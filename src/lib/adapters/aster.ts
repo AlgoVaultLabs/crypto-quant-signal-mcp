@@ -25,6 +25,7 @@ import type {
 } from '../../types.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
+import { reconstructPrevDayOpen } from './_prev-day-open.js';
 
 const BASE_URL = 'https://fapi.asterdex.com';
 const MAX_RETRIES = 1;
@@ -71,12 +72,35 @@ interface AsterOpenInterest {
   openInterest: string;
 }
 
+/**
+ * SEC-11 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch3): this interface DECLARED
+ * `prevClosePrice`, a field Aster's live 24hr ticker does not return.
+ *
+ * LIVE PROBE (read-only, 2026-07-30) — the full key set is:
+ *   symbol, priceChange, priceChangePercent, weightedAvgPrice, lastPrice, lastQty,
+ *   openPrice, highPrice, lowPrice, volume, quoteVolume, openTime, closeTime,
+ *   firstId, lastId, count
+ * `prevClosePrice` is ABSENT (it is a Binance SPOT-only field), so
+ * `safeUpstreamNum(undefined) ?? 0` silently produced prevDayPx = 0 — not null, so
+ * nothing logged, no fallback fired, and the venue looked healthy in every readiness
+ * report while its 15%-weight momentum term scored a constant 0 for a PROMOTED venue.
+ *
+ * `priceChangePercent` is a percent-NUMBER, not a fraction (live-verified: lastPrice
+ * 64031.2, openPrice 64351.5, priceChangePercent "-0.498", and (last-open)/open =
+ * -0.4977%). Callers must divide by 100 — per the CLAUDE.md per-venue-divergence LAW,
+ * never assume cross-venue uniformity.
+ */
 interface AsterTicker24hr {
   symbol: string;
   volume: string;
   quoteVolume: string;
   lastPrice: string;
-  prevClosePrice: string;
+  /** 24h-rolling open — the field that actually exists (Binance-futures semantics). */
+  openPrice: string;
+  highPrice: string;
+  lowPrice: string;
+  /** Percent-NUMBER (e.g. "-0.498" = −0.498%), NOT a fraction. */
+  priceChangePercent: string;
 }
 
 export class AsterAdapter implements ExchangeAdapter {
@@ -128,7 +152,17 @@ export class AsterAdapter implements ExchangeAdapter {
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
       openInterest: safeUpstreamNum(oi.openInterest) ?? 0,
-      prevDayPx: safeUpstreamNum(ticker.prevClosePrice) ?? 0,
+      // SEC-11: `openPrice` is the field Aster actually returns. Fall back through the
+      // shared reconstruction (24h-change → hi/lo midpoint → last) rather than 0, which
+      // is a WRONG number that silently zeroes the 15%-weight momentum term.
+      // priceChangePercent is a percent-NUMBER here, so /100 to get the fraction.
+      prevDayPx: safeUpstreamNum(ticker.openPrice)
+        ?? reconstructPrevDayOpen(
+          safeUpstreamNum(ticker.lastPrice) ?? 0,
+          (safeUpstreamNum(ticker.priceChangePercent) ?? NaN) / 100,
+          safeUpstreamNum(ticker.highPrice) ?? undefined,
+          safeUpstreamNum(ticker.lowPrice) ?? undefined,
+        ),
       volume24h: safeUpstreamNum(ticker.quoteVolume) ?? 0,
       oraclePx: markPx,
       markPx,

@@ -46,7 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'   # OPS-RUNTIME-NODE24-W1: track the runtime (Node 20 EOL 2026-04-30)
           cache: 'npm'
 
       - name: Install deps
@@ -195,6 +195,121 @@ jobs:
         run: |
           node scripts/check-canaries-wired.mjs --self-test
           node scripts/check-canaries-wired.mjs
+
+      # OPS-SEC-CLIENT-IP-VERIFY-W1 R5 — the proxy-hop drift gate. SEC-07 was `req.ip` silently
+      # becoming a Cloudflare PoP address, which collapsed every free-tier and rate-limit bucket to
+      # per-PoP with nothing failing and nothing alerting. This asserts the address the app meters
+      # is never inside a published Cloudflare range. Fail-closed on the logic; the live probe runs
+      # post-deploy where a credential is available.
+      - name: Client-IP not-a-CDN gate (fail-closed)
+        run: node scripts/check-client-ip-not-cf.mjs --self-test
+
+      # OPS-SEC-IPHASH-SALT-W1 R4 — no unkeyed hash of an IP-derived value may exist in src/.
+      # The wave fixed the one hashIp; this stops the fix being undone in a NEW lane (a second
+      # createHash over an address re-creates the identical reversible-pseudonym defect while
+      # hashIp stays impeccable). Also fails on any `?? '<literal>'` fallback around the key.
+      - name: IP-hash keyed gate (fail-closed)
+        run: |
+          node scripts/check-iphash-keyed.mjs --self-test
+          node scripts/check-iphash-keyed.mjs
+
+      # OPS-TEST-GATE-FAILOPEN-W1 (landed by OPS-TEST-GATE-RECONCILE-W1) — the test gate is the
+      # verdict source for every Bulk-Spec chapter gate, and during SIGNAL-CLOSEDBAR-SHADOW-W1
+      # CH2 it printed a pass having run ZERO tests (a BSD mktemp bug emptied the report path;
+      # the script then took a fail-open exit 0). This asserts the gate's own verdict logic in
+      # CI so it cannot rot back into an always-pass: 4 must-fire + 2 must-not-fire + 6 must-map
+      # cases, and it refuses to report a pass if any corpus is empty.
+      #
+      # Deliberately the --self-test and NOT a second full-suite run: the suite already runs
+      # fail-closed at "Vitest suite (pre-deploy gate)" above, so invoking the whole gate here
+      # would double CI wall-clock for no added signal. What CI cannot otherwise catch is the
+      # gate's own decision logic going vacuous — which is exactly what this covers.
+      #
+      # NB its INDETERMINATE code is 2, not the 3 used by the redaction gate below: 2 was
+      # already deployed in check_test_baseline.sh for "could not verify", and one meaning must
+      # not acquire a second code INSIDE one script. Different scripts, zero shared callers —
+      # see CLAUDE.md's verdict-token law.
+      - name: Test-gate verdict logic (fail-closed)
+        run: bash scripts/check_test_baseline.sh --self-test
+
+      # OPS-CC-DRIFT-DETECTOR-W1 — the parallel-session drift detector's own decision logic.
+      #
+      # ONLY the --self-test runs here, and that is deliberate — do NOT "fix" this into a real
+      # run. The three checks are inherently LOCAL: they compare this checkout's merge-base
+      # against origin/main and scan sibling WORKTREES on the developer's machine. A CI runner
+      # has one fresh clone and zero worktrees, so a real run there would be a guaranteed PASS
+      # over nothing — a vacuous green, the exact class this arc has been retiring. What CI can
+      # protect is that the gate's own logic has not rotted into an always-pass, which is what
+      # the vacuity-guarded self-test asserts (4 must-fire + 3 must-not-fire + 6 must-map).
+      #
+      # NB its INDETERMINATE code is 3, not the 2 used by the test gate above. That is the
+      # token-law default for a NEW gate with no incumbent; check_test_baseline.sh is 2 only
+      # because it had already deployed 2 for that meaning. Do not align them.
+      - name: Session-drift detector logic (fail-closed)
+        run: node scripts/check-session-drift.mjs --self-test
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch1 — SEC-14 + SEC-10 were CLAUDE.md laws that no gate
+      # enforced ("redact by STRUCTURE, never by vendor prefix"; no credential in a URL). Patching
+      # the two call sites fixes today; this makes a NEW leaking lane fail the build. Emits
+      # SECRET_LOG_REDACTION_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (scanned nothing) blocks too,
+      # so a broken scan can never read as "verified clean".
+      - name: Secret-log redaction gate (fail-closed)
+        run: |
+          node scripts/check-secret-log-redaction.mjs --self-test
+          node scripts/check-secret-log-redaction.mjs
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
+      # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
+      # applied to customer.subscription.created, which mints an API key. Also asserts no
+      # idempotency store is written through the fire-and-forget writer, and that money
+      # never leaves without a preceding atomic claim (SEC-16).
+      - name: Webhook idempotency gate (fail-closed)
+        run: |
+          node scripts/check-webhook-idempotency.mjs --self-test
+          node scripts/check-webhook-idempotency.mjs
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch3 — SEC-09 (a paid partner route served an
+      # unvalidated body, returning a wrong-but-plausible MISLABELLED verdict) + SEC-11 (an
+      # adapter read a venue field that venue does not return, silently zeroing a
+      # 15%-weight score term). R2 reports every venue it could NOT verify rather than
+      # counting unrecorded coverage as clean.
+      - name: Paid-route validation + venue field-existence gate (fail-closed)
+        run: |
+          node scripts/check-paid-route-validation.mjs --self-test
+          node scripts/check-paid-route-validation.mjs
+
+      # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch4 — SEC-17 (a producer logged "digest sent" for
+      # three weeks of HTTP 400, because sendDigest returns a boolean and never throws) +
+      # SEC-13 (the sanctioned smoke prescribed DRY_RUN_TG, which WRITES the 24h cooldown
+      # marker and so silenced the next genuine page). Reports, without enforcing, the
+      # weaker "discarded result that claims nothing" sites.
+      - name: Delivery-assertion + inert-smoke gate (fail-closed)
+        run: |
+          node scripts/check-delivery-assertion.mjs --self-test
+          node scripts/check-delivery-assertion.mjs
+
+      # OPS-RUNTIME-NODE24-W1 Ch4 — the generator for SEC-15. That finding existed because a
+      # base image aged out of support with EVERY GATE GREEN: Node 20 hit EOL 2026-04-30 and
+      # the Dockerfiles kept saying node:20-alpine for another 91 days, because "supported
+      # runtime" was a fact nobody had made executable. This checks every place a Node major
+      # is DECLARED — both stages of both Dockerfiles, all three workflows, and engines — and
+      # fails past EOL (warns inside 90 days). Fail-CLOSED: a missing, unparseable or
+      # self-expired EOL table is INDETERMINATE (exit 3), never a pass.
+      - name: Runtime Node EOL gate (fail-closed)
+        run: |
+          node scripts/check-runtime-node-eol.mjs --self-test
+          node scripts/check-runtime-node-eol.mjs
+
+      # OPS-HOST-KERNEL-REBOOT-W1 R3 — the generator for SEC-18. That finding was "the kernel is 12
+      # revisions behind", but the real exposure was that nobody knew whether the box COMES BACK.
+      # This asserts the boot-survival contract continuously, so the next UNPLANNED reboot (Hetzner
+      # maintenance, panic, OOM) is safe. It is activation-AWARE by design: a naive is-enabled grep
+      # false-positives on socket-activated ssh.service and timer-activated units (measured on both
+      # live hosts), and a canary that cries wolf on SSH gets ignored.
+      - name: Boot-readiness gate (fail-closed)
+        run: |
+          node scripts/check-boot-readiness.mjs --self-test
+          node scripts/check-boot-readiness.mjs
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5

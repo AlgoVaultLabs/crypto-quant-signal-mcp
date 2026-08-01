@@ -52,6 +52,14 @@ interface RequestContext {
    */
   isAutomated?: boolean;
   /**
+   * OPS-CLIENT-ATTRIBUTION-W1: the raw request User-Agent, captured ONCE at the /mcp POST
+   * layer where headers are in scope (the SAME value that feeds classifyTraffic above), then
+   * read by `logRequest()` to stamp `request_log.user_agent` + `client_name`. Threaded rather
+   * than re-read so the persisted identity and the is_automated verdict are guaranteed to
+   * describe the same string. Absent (stdio / edge paths) → stored as NULL / 'unknown'.
+   */
+  userAgent?: string | null;
+  /**
    * FUNNEL-FIX-ATTRIBUTION-W1: the classifed acquisition source (classifySource) for
    * this request, resolved ONCE at the /mcp POST layer where headers are in scope, then
    * read at the agent_sessions write to stamp first_touch (write-once) + last_touch.
@@ -114,6 +122,15 @@ export function getRequestVerdict(): string | undefined {
  */
 export function getRequestIsAutomated(): boolean {
   return requestContext.getStore()?.isAutomated ?? false;
+}
+
+/**
+ * OPS-CLIENT-ATTRIBUTION-W1: read the per-request raw User-Agent for the
+ * `request_log.user_agent` / `client_name` stamp. Returns null when unset (stdio / edge
+ * paths) — the writer then stores NULL + `unknown` rather than inventing an identity.
+ */
+export function getRequestUserAgent(): string | null {
+  return requestContext.getStore()?.userAgent ?? null;
 }
 
 /**

@@ -29,6 +29,7 @@ import {
   GATEWAY_EIP712_DOMAIN_NAME,
   gatewayRequirementsCarryDomain,
   createGatewayScheme,
+  gatewayRegistrationIsCollisionFree,
   probeCircleFacilitator,
   resolveCircleGatewayFromEnv,
   type CircleGatewayConfig,
@@ -231,11 +232,20 @@ export async function initX402(): Promise<void> {
 
     srv.register(caip2, cdpExactScheme as Parameters<typeof srv.register>[1]);
 
-    // Additive: the Gateway scheme registers on its OWN network key (testnet eip155:84532) — the
-    // CDP registration above is on eip155:8453, so there is no collision. GatewayEvmScheme extends
-    // ExactEvmScheme and merges the facilitator's `extra` (verifyingContract / name) through, which
-    // is what makes the buyer's EIP-712 domain resolvable.
-    if (gateway) {
+    // Additive: the Gateway scheme registers on its OWN network key (testnet eip155:84532 /
+    // mainnet eip155:10) — the CDP registration above is on eip155:8453, so there is no collision.
+    // GatewayEvmScheme extends ExactEvmScheme and merges the facilitator's `extra`
+    // (verifyingContract / name) through, which is what makes the buyer's EIP-712 domain resolvable.
+    //
+    // 🛑 A same-network collision would REPLACE the CDP scheme and reroute Base settlement. We no
+    // longer rely on @x402/core's registration ORDER to decide what happens — it flipped from
+    // FIRST-WINS to LAST-WINS across one minor bump (2.9.0 → 2.20.0) and can flip again, in either
+    // direction. The decision is taken HERE, before register() is called, so the property holds
+    // under ANY upstream ordering: a colliding Gateway registration is REFUSED, the CDP incumbent
+    // survives, and the server stays up. (A throw here would take every correctly-configured rail
+    // down with it — see gatewayRegistrationIsCollisionFree.) CRITICAL-logged + counted, never
+    // silent. OPS-X402-SCHEME-REGISTRATION-INVARIANT-W1 + tests/circle-gateway-mainnet.test.ts.
+    if (gateway && gatewayRegistrationIsCollisionFree(gateway.config.network, caip2)) {
       srv.register(
         gateway.config.network as `${string}:${string}`,
         createGatewayScheme() as unknown as Parameters<typeof srv.register>[1],
@@ -350,9 +360,10 @@ export async function initX402(): Promise<void> {
           } as Parameters<typeof resourceServer.buildPaymentRequirements>[0]);
 
           // CIRCLE-GATEWAY-MAINNET-ENABLE-W1 R1b — structural backstop. A successful build is NOT
-          // proof the Gateway scheme served it: if GatewayEvmScheme was silently dropped (which is
-          // what `register()`'s first-wins guard does whenever Gateway shares a network with CDP),
-          // this call still returns entries — plain CDP-shaped payments to the seller address with
+          // proof the Gateway scheme served it: whenever Gateway shares a network with CDP only ONE
+          // of the two is registered (which one is version-dependent, and we now refuse the
+          // collision outright — see gatewayRegistrationIsCollisionFree), yet this call still
+          // returns entries — plain CDP-shaped payments to the seller address with
           // `extra = {}`, unpayable by any Gateway client. Only the EIP-712 domain distinguishes
           // the two, so assert it and fail-open rather than advertise an unpayable rail.
           if (!gatewayRequirementsCarryDomain(gatewayReqs)) {

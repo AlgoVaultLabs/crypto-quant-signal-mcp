@@ -1,16 +1,60 @@
-# Stage 1: Build
-FROM node:20-alpine AS builder
+# OPS-RUNTIME-NODE24-W1 (Ch1) — SEC-15 + SEC-28.
+#
+# RUNTIME: Node 20 reached EOL 2026-04-30 and receives no further security patches, ever —
+# so `docker compose up -d --build` could never produce a patched image again. Node 24 is the
+# Active LTS line (EOL 2028-04-30). Pinned to a MINOR + an explicit Alpine version, never a
+# floating `:24`, so a rebuild cannot silently change the runtime underneath us.
+#
+# THIS IMAGE IS NOT FREE OF THE NATIVE-ABI COUPLING. It COPYs the SAME root package*.json as
+# the main image and runs `npm ci --production`, so it installs better-sqlite3 too — verified
+# live (the running container carried node_modules/better-sqlite3/build/Release/*.node).
+# better-sqlite3 v11 publishes no Node-24 prebuild, so bumping this base alone would fall back
+# to `node-gyp` and fail with "Could not find any Python installation to use" (reproduced on
+# node:24-alpine before this change). That is why the better-sqlite3 -> ^13.0.2 bump lands in
+# THIS chapter rather than a later one.
+FROM node:24.18-alpine3.24 AS builder
 WORKDIR /app
 COPY package*.json tsconfig.json ./
-RUN npm ci
+# `--ignore-scripts` IS LOAD-BEARING, not hygiene. better-sqlite3 v13 ships its prebuilt
+# binaries INSIDE the npm tarball (package/prebuilds/linuxmusl-x64.node) and declares NO
+# install script — but it still ships a `binding.gyp`, and npm's documented default is to
+# run `node-gyp rebuild` for any package that has one and no explicit install script.
+# Under `npm ci` that default fires and the build dies with "Could not find any Python
+# installation to use" (this image has no python3/make/g++/cc at all — verified). Note the
+# asymmetry, which is why a local check is not evidence about the image: plain
+# `npm install` does NOT trigger it; `npm ci` DOES, even from a lockfile generated inside
+# this very image.
+#
+# Skipping install scripts is also the correct end-state independently: npm 12 turns them
+# OFF by default (npm 11.16 already prints `npm warn allow-scripts`), so v13 — which needs
+# none — is the only line that keeps working. better-sqlite3 v12 would still install here,
+# but only because its `prebuild-install` script DOWNLOADS the binary at build time; under
+# npm 12 that script stops running and the module silently arrives with no binary.
+#
+# Blast radius audited before adding this: the only non-optional prod dep with an install
+# hook is @coinbase/x402, whose postinstall is a 4-line `console.log` legal notice; es5-ext's
+# is a fail-soft donation nag (`|| exit 0`); bufferutil/utf-8-validate are OPTIONAL native
+# accelerators that fall back to pure JS. Nothing load-bearing is skipped.
+RUN npm ci --ignore-scripts
 COPY src/ ./src/
 RUN npm run build
 
 # Stage 2: Production
-FROM node:20-alpine
+#
+# NB: Stage 2 runs its OWN `npm ci --production` — the native module does NOT cross stages, so
+# there is no Stage-1/Stage-2 ABI mismatch to guard against here. Both stages must still pin the
+# SAME base, which is what keeps the built `dist/` and the runtime Node in step.
+FROM node:24.18-alpine3.24
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --production
+# See the Stage-1 note: --ignore-scripts is required for better-sqlite3 v13 under `npm ci`.
+RUN npm ci --production --ignore-scripts
 COPY --from=builder /app/dist/ ./dist/
 EXPOSE 4022
+# SEC-28: this process custodies the x402 gas-wallet private key and was running as ROOT
+# (verified live: uid=0). Nothing here requires root — FACILITATOR_PRIVATE_KEY arrives via the
+# environment rather than a mode-600 file, the service writes nothing to disk, and it binds
+# 4022 (>1024, so no CAP_NET_BIND_SERVICE). The `node` user (uid 1000) ships with the base
+# image and is the same one the main image already uses.
+USER node
 CMD ["node", "dist/facilitator.js"]

@@ -56,7 +56,7 @@ const ajv = new Ajv({ useDefaults: true, coerceTypes: true, allErrors: true });
  * swallow parse errors to `{}` and let the paywall return 402 (paid calls with a bad body
  * still get a clean 400 from the ajv check downstream).
  */
-function tolerantJson(req: Request, res: Response, next: NextFunction): void {
+export function tolerantJson(req: Request, res: Response, next: NextFunction): void {
   express.json()(req, res, (err?: unknown) => {
     if (err) (req as Request & { body: unknown }).body = {};
     next();
@@ -106,6 +106,70 @@ export function explainDroppedBody(
     return `content-type "${raw}" is not a JSON media type`;
   }
   return null;
+}
+
+/**
+ * THE ONE input gate for every paid tool channel (SEC-09, OPS-AUDIT-REMEDIATION-MEDIUM-W1
+ * / Ch3). Extracted from the /x402 route rather than reimplemented, so `/x402/*` and
+ * okx.ai `/a2mcp/*` cannot drift — a second validator is a second thing to forget.
+ *
+ * WHY THE ORDER MATTERS, twice over:
+ *  1. `rawBodyKeys` is counted BEFORE `validate()`. Ajv runs with `useDefaults`, so it
+ *     MUTATES `input` with schema defaults even on a failing validation — reading the
+ *     count afterwards reports a body that "has keys" when the caller sent none.
+ *  2. The dropped-body check runs BEFORE and INDEPENDENTLY OF schema validation. Nesting
+ *     it inside the `!validate(input)` branch only catches routes whose schema has a
+ *     REQUIRED field; on all-optional schemas an unparsed body validates clean as `{}`
+ *     and the route serves a DEFAULTS-ONLY result — on /x402 that meant CHARGING for it
+ *     (OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 found 3 of 7 payable routes affected). On
+ *     /a2mcp/* the same shape returned a wrong-but-plausible verdict to a paying partner.
+ *
+ * Returns a REASON, not a response: each channel renders its own error envelope/codes.
+ */
+export type ToolInputRejection =
+  | { kind: 'dropped_body'; reason: string; rawBodyKeys: number }
+  | { kind: 'invalid_input'; errors: unknown[]; rawBodyKeys: number };
+
+export type ToolInputResult =
+  | { ok: true; input: Record<string, unknown> }
+  | { ok: false; rejection: ToolInputRejection };
+
+/** ajv.compile is expensive; one compiled validator per tool, built on first use. */
+const validatorCache = new Map<string, ValidateFunction>();
+
+function validatorFor(tool: HttpTool): ValidateFunction | null {
+  const cached = validatorCache.get(tool);
+  if (cached) return cached;
+  const spec = BAZAAR_ROUTES[tool];
+  if (!spec) return null;
+  const v = ajv.compile(spec.inputSchema);
+  validatorCache.set(tool, v);
+  return v;
+}
+
+export function validateToolInput(
+  tool: HttpTool,
+  body: unknown,
+  headers: Record<string, string | string[] | undefined>,
+): ToolInputResult {
+  const rawBodyKeys = Object.keys((body ?? {}) as Record<string, unknown>).length;
+
+  const one = (h: string | string[] | undefined): string | undefined =>
+    Array.isArray(h) ? h.join(', ') : h;
+  const droppedBody = rawBodyKeys === 0
+    ? explainDroppedBody(one(headers['content-type']), one(headers['content-length']))
+    : null;
+  if (droppedBody) return { ok: false, rejection: { kind: 'dropped_body', reason: droppedBody, rawBodyKeys } };
+
+  const input: Record<string, unknown> = { ...((body ?? {}) as Record<string, unknown>) };
+  const validate = validatorFor(tool);
+  // No declared schema for this tool → nothing to enforce; pass the body through
+  // unchanged (same behaviour as before this gate existed).
+  if (!validate) return { ok: true, input };
+  if (!validate(input)) {
+    return { ok: false, rejection: { kind: 'invalid_input', errors: (validate.errors ?? []) as unknown[], rawBodyKeys } };
+  }
+  return { ok: true, input };
 }
 
 /** Log every /x402 request's method + final status + UA (so the Bazaar crawler's probe is observable). */
@@ -265,7 +329,8 @@ export function mountX402HttpRoutes(app: Express): string[] {
   for (const { routePath, tool, send402Opts } of routeSpecs) {
     const spec = BAZAAR_ROUTES[tool];
     if (!spec) continue; // defensive: only declared tools
-    const validate: ValidateFunction = ajv.compile(spec.inputSchema);
+    // The compiled validator now lives in `validateToolInput`'s per-tool cache (SEC-09),
+    // so the route no longer compiles its own — one derivation, one compile.
 
     // x402 discovery challenge (GET). The CDP Bazaar indexer crawls the resource URL
     // with a GET — it MUST return a 402 (the x402 payment-required challenge), NOT 404,
@@ -293,45 +358,49 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // Validate body against the SAME schema declared to the Bazaar (defaults applied).
       // Done BEFORE the price-binding check so the (defaults-applied) timeframe is known
       // for the per-timeframe premium assertion (X402-03).
-      // Counted BEFORE validate(): ajv runs with `useDefaults`, so it MUTATES `input` with
-      // schema defaults even on a failing validation — reading the count afterwards would
-      // report a body that "has keys" when the caller actually sent none.
-      const rawBodyKeys = Object.keys((req.body ?? {}) as Record<string, unknown>).length;
-      const input: Record<string, unknown> = { ...(req.body ?? {}) };
-      if (!validate(input)) {
-        // A PAID, VERIFIED request that we then refuse must NEVER be silent. Both 2026-07-29
-        // Circle Gateway failures were invisible here — the only trace was `status=400 paid=y`
-        // with no reason (OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1).
-        const droppedBody = rawBodyKeys === 0
-          ? explainDroppedBody(req.headers['content-type'], req.headers['content-length'])
-          : null;
-        console.warn(
-          `[x402-route] input-validation REJECT for ${routePath} paid=y ` +
-          `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
-          `body-keys=${rawBodyKeys}` +
-          (droppedBody ? ` dropped-body=${JSON.stringify(droppedBody)}` : '') +
-          ` errors=${JSON.stringify((validate.errors ?? []).slice(0, 3))}`,
-        );
-        if (droppedBody) {
-          // The schema error would be a LIE here — the body never reached the validator. Say what
-          // actually went wrong. No settlement was attempted: this runs BEFORE tryClaimPayment
-          // and before settleX402Async, so the caller genuinely was not charged.
+      //
+      // The gate itself now lives in `validateToolInput` (SEC-09) so the okx.ai /a2mcp/*
+      // channel enforces the IDENTICAL contract instead of a second copy. Both ordering
+      // subtleties — count-before-validate, and dropped-body-before-schema — are
+      // documented there and are the whole reason this is one function.
+      const gate = validateToolInput(tool, req.body, req.headers as Record<string, string | string[] | undefined>);
+      if (!gate.ok) {
+        const rej = gate.rejection;
+        if (rej.kind === 'dropped_body') {
+          console.warn(
+            `[x402-route] dropped-body REJECT for ${routePath} paid=y ` +
+            `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
+            `content-length=${JSON.stringify(req.headers['content-length'] ?? null)} ` +
+            `reason=${JSON.stringify(rej.reason)}`,
+          );
+          // Never a schema error here — the body never reached the validator. No settlement is
+          // attempted: this precedes tryClaimPayment and settleX402Async, so the caller is not charged.
           return res.status(400).json({
             error: 'invalid_content_type',
             code: 'X402_HTTP_INVALID_CONTENT_TYPE',
-            message: `Payment verified, but the request body could not be read: ${droppedBody}`,
+            message: `Payment verified, but the request body could not be read: ${rej.reason}`,
             suggested_fix:
               'Send the body as JSON under a single `content-type: application/json` header, then ' +
               'retry. You were NOT charged — no settlement was attempted for this request.',
           });
         }
+        // A PAID, VERIFIED request that we then refuse must NEVER be silent. Both 2026-07-29
+        // Circle Gateway failures were invisible here — the only trace was `status=400 paid=y`
+        // with no reason (OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1).
+        console.warn(
+          `[x402-route] input-validation REJECT for ${routePath} paid=y ` +
+          `content-type=${JSON.stringify(req.headers['content-type'] ?? null)} ` +
+          `body-keys=${rej.rawBodyKeys}` +
+          ` errors=${JSON.stringify(rej.errors.slice(0, 3))}`,
+        );
         return res.status(400).json({
           error: 'invalid_input',
           code: 'X402_HTTP_INVALID_INPUT',
-          details: validate.errors ?? [],
+          details: rej.errors,
           suggested_fix: `Body must satisfy the published JSON Schema for ${tool}.`,
         });
       }
+      const input: Record<string, unknown> = gate.input;
 
       // X402-01 / X402-03 — per-route price binding (the chokepoint the audit
       // flagged). `verifyX402Payment` (called inside resolveLicense) matched the

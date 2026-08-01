@@ -8,16 +8,30 @@
  * `by_authenticity` denominator from it.
  *
  * Layered DENY-list (never a human allow-list as the PRIMARY mechanism — that
- * would drop real agents). Precedence (architect-ratified Q3):
+ * would drop real agents). Precedence (architect-ratified Q3; registry layers added
+ * by OPS-CLIENT-ATTRIBUTION-W1):
  *   L0  internal-tier (bot loopback / admin bypass)            → automated
- *   --  KNOWN-AGENT un-tag escape hatch (the ONE allow-list)   → human (beats L1)
- *   L2  health-check UA tokens (ELB/GoogleHC/kube-probe/…)     → automated
+ *   --  registry `agent_client` un-tag (the ONE allow-list)    → human (beats L1)
+ *   L2  registry `health_check`                                → automated
+ *   --  registry `crawler` (named probers + bot/spider tokens) → automated
+ *   --  registry `bare_sdk` un-tag  ← NEW                      → human (beats L1)
  *   L1  isbot (206-pattern crawler/bot list; subsumes most     → automated
  *       of crawler-user-agents) + generic HTTP clients
  *   L4  datacenter-IP ∧ generic/empty-UA ∧ no-real-call        → automated
  *       (a connect-only probe from cloud with no human signal; COMBINING only —
  *       NEVER excludes on cloud-IP alone: real agents run in the cloud)
  *   --  default                                                → human
+ *
+ * The `bare_sdk` un-tag is the ICP fix: isbot flags `python-httpx` / `axios` / `undici` /
+ * `node` as crawlers, which is exactly what an autonomous agent looks like, so
+ * "🟢 Recognized clients" read 0 across an entire 24h window with 70 distinct sessions
+ * (measured 2026-07-31). isbot is NOT disabled — an unknown UA still reaches it; the
+ * registry only corrects the known-SDK false positives, and `crawler` is asserted first so
+ * widening the allow-list can never un-tag a prober.
+ *
+ * NOTE the deliberate boundary: `curl` / `wget` / `HTTPie` / `Postman` / `Insomnia` are NOT
+ * in `bare_sdk` — they are interactive human probing tools, not agent runtimes, and keep
+ * their prior isbot-driven verdict.
  *
  * The KNOWN-AGENT un-tag is REQUIRED: isbot v5 flags `claude-code/…` (pattern
  * `^claude-code/`) and `Cursor/…` (pattern `cursor/`) as bots, but these are
@@ -34,6 +48,11 @@
  * canary in the tests (single-derivation: two bot-derivations must never drift).
  */
 import { isbot } from 'isbot';
+// OPS-CLIENT-ATTRIBUTION-W1: the ONE User-Agent → client identity map. The KNOWN-AGENT and
+// health-check lists that used to live here as local regexes now live THERE, because the same
+// UA also has to produce `request_log.client_name` — two homes for one fact is the drift
+// CLAUDE.md forbids. This module projects from it; it does not re-derive.
+import { classifyClient } from './client-registry.js';
 
 export interface TrafficSignals {
   /** Request User-Agent (raw). null/empty when the client omits it. */
@@ -61,23 +80,6 @@ export interface ClassifyDeps {
   isBot?: (ua: string) => boolean;
   isDatacenterIp?: (ip: string) => boolean;
 }
-
-/**
- * KNOWN-AGENT un-tag allow-list — real MCP clients / AI dev agents that represent
- * a HUMAN user even when isbot's heuristics flag them. Intentionally biased toward
- * human ("never drop real agents"): a spoofed human is a minor measurement noise,
- * a dropped real agent corrupts the activation funnel. Extend as new MCP clients
- * appear. `// TODO: revisit by 2026-09-27` — re-audit against the live agent UA mix.
- */
-const KNOWN_AGENT_RE =
-  /\b(claude|anthropic|cursor|cline|windsurf|codeium|continue\.dev|librechat|goose|zed\.dev|chatgpt|openai|modelcontextprotocol|mcp[-_]?client|langchain|llamaindex|smithery)\b/i;
-
-/**
- * L2 — explicit health-check / uptime-probe UA tokens. isbot catches most, but an
- * explicit list yields a precise `health_check` reason + belt-and-suspenders.
- */
-const HEALTH_CHECK_RE =
-  /(ELB-HealthChecker|GoogleHC|kube-probe|UptimeRobot|Pingdom|Pingdom\.com_bot|Datadog\/Synthetics|Amazon-Route53-Health-Check|Consul Health Check|StatusCake|Site24x7|Better Uptime|HetrixTools)/i;
 
 /**
  * L3 — generic HTTP-client UAs (SOFT signal; only meaningful in the L4 combination).
@@ -134,17 +136,42 @@ export function classifyTraffic(signals: TrafficSignals, deps: ClassifyDeps = {}
   // that sets request_log.is_bot_internal (does not re-derive it).
   if (signals.isInternalTier) return { is_automated: true, reason: 'internal_tier' };
 
-  // Un-tag escape hatch — known real MCP agents are HUMAN (beats isbot L1).
-  if (ua && KNOWN_AGENT_RE.test(ua)) return { is_automated: false, reason: null };
+  // Registry-driven layers (OPS-CLIENT-ATTRIBUTION-W1). ONE ordered map decides client
+  // identity; the branches below just project its `kind`. Registry order already encodes
+  // the precedence this function used to spell out: agent_client beats crawler ("never drop
+  // a real agent"), and crawler beats bare_sdk, so a named prober shipping an SDK UA
+  // (`CoinbaseBazaarDiscovery/1.0 (axios)`) cannot be laundered by the bare-SDK un-tag.
+  const client = ua ? classifyClient(ua) : null;
+
+  // Un-tag escape hatch — known real MCP agents are HUMAN (beats isbot L1). Unchanged
+  // behavior, now sourced from the registry.
+  if (client?.kind === 'agent_client') return { is_automated: false, reason: null };
 
   // L2 — explicit health-check / uptime probes.
-  if (ua && HEALTH_CHECK_RE.test(ua)) return { is_automated: true, reason: 'health_check' };
+  if (client?.kind === 'health_check') return { is_automated: true, reason: 'health_check' };
+
+  // Named + generic crawlers — asserted BEFORE the bare-SDK un-tag below, so widening the
+  // allow-list can never accidentally un-tag a prober.
+  if (client?.kind === 'crawler') return { is_automated: true, reason: 'crawler_bot' };
+
+  // NEW un-tag — a bare programmatic SDK (`python-httpx`, `axios`, `undici`, `node`, the MCP
+  // SDK default) is THE ICP shape: an autonomous agent calling from code. isbot flags these as
+  // crawlers, which made "🟢 Recognized clients" structurally ~0 — it could never count the
+  // target customer. This runs BEFORE isbot so the flag is corrected rather than isbot being
+  // disabled; every UA the registry does not know still falls through to isbot unchanged.
+  if (client?.kind === 'bare_sdk') return { is_automated: false, reason: null };
 
   // L1 — isbot (crawler/bot + most generic HTTP clients).
   if (ua && isBotFn(ua)) return { is_automated: true, reason: 'crawler_bot' };
 
   // L4 — combining only: a connect-only probe from a datacenter IP with a
   // generic/empty UA and no real tool call. NEVER fires on cloud-IP alone.
+  //
+  // NARROWED by the bare_sdk un-tag above, deliberately and with eyes open: an `axios`/`httpx`
+  // connect-only probe from a cloud IP now reads HUMAN, because it is genuinely
+  // indistinguishable from a real agent that connected and has not called yet. That is the
+  // ratified bias ("a dropped real agent corrupts the funnel; a spoofed human is noise").
+  // L4 still covers the EMPTY-UA case and the interactive tools left outside `bare_sdk`.
   const genericOrEmptyUa = ua === '' || GENERIC_CLIENT_RE.test(ua);
   if (genericOrEmptyUa && signals.hadRealToolCall !== true && ip && isDatacenterIpFn(ip)) {
     return { is_automated: true, reason: 'datacenter_no_call_probe' };

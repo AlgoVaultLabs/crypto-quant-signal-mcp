@@ -22,7 +22,7 @@
  * current first-wins behavior. If a future SDK bump changes it, this goes red — which is the
  * point. Do not "fix" it by loosening the assertion; re-derive the design.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { x402ResourceServer } from '@x402/core/server';
 import {
   createGatewayScheme,
@@ -30,6 +30,9 @@ import {
   GATEWAY_EIP712_DOMAIN_NAME,
   CIRCLE_MAINNET_FACILITATOR_URL,
   resolveCircleGatewayFromEnv,
+  gatewayRegistrationIsCollisionFree,
+  getRefusedGatewayRegistrationCount,
+  _resetRefusedGatewayRegistrationCount,
 } from '../src/lib/circle-gateway.js';
 
 const CDP_NET = 'eip155:8453';
@@ -87,15 +90,123 @@ const buildGatewayReqs = (srv: x402ResourceServer, net: string, price = 0.02) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('THE COLLISION — why mainnet Gateway is NOT on eip155:8453 (characterization)', () => {
-  it('register() is FIRST-WINS: a 2nd exact scheme on the same network is a silent no-op', async () => {
+  // ⚠️ BEHAVIOUR INVERTED BY @x402/core 2.9.0 → 2.20.0 (OPS-BASE-BUILDER-CODE-W1, 2026-07-30).
+  // This used to assert FIRST-WINS ("a 2nd exact scheme on the same network is a silent no-op",
+  // so a collision left CDP in place). Upstream is now LAST-WINS: the 2nd register() REPLACES the
+  // first, so a collision would silently reroute Base settlement to Gateway. Do NOT "restore" the
+  // old assertion: it documents a property upstream no longer provides.
+  //
+  // This test deliberately calls srv.register() DIRECTLY, bypassing our guard, because its job is
+  // to characterise UPSTREAM — it is the tripwire that tells us the ordering moved again. Our own
+  // safety property no longer depends on which way it points; that is the order-independence test
+  // below (OPS-X402-SCHEME-REGISTRATION-INVARIANT-W1).
+  it('register() is LAST-WINS: a 2nd exact scheme on the same network REPLACES the first', async () => {
     const srv = new x402ResourceServer(cdpFacilitator() as never);
     srv.register(CDP_NET, cdpExactScheme as never);
-    srv.register(CDP_NET, createGatewayScheme() as never); // would-be mainnet collision
+    const gatewayScheme = createGatewayScheme();
+    srv.register(CDP_NET, gatewayScheme as never); // would-be mainnet collision
 
     const registry = (srv as unknown as { registeredServerSchemes: Map<string, Map<string, unknown>> })
       .registeredServerSchemes.get(CDP_NET)!;
-    expect([...registry.keys()]).toEqual(['exact']);        // ONE entry, not two
-    expect(registry.get('exact')).toBe(cdpExactScheme);     // CDP won; Gateway was dropped
+    expect([...registry.keys()]).toEqual(['exact']);           // still ONE entry, not two
+    expect(registry.get('exact')).toBe(gatewayScheme);         // LAST-WINS: Gateway replaced CDP
+    expect(registry.get('exact')).not.toBe(cdpExactScheme);    // …CDP is GONE — the hazard
+  });
+
+  // The ENFORCED invariant that replaces the (now-false) "a collision is harmless" assumption.
+  //
+  // ⚠️ CONTRACT CHANGED DELIBERATELY by OPS-X402-SCHEME-REGISTRATION-INVARIANT-W1: this used to
+  // assert the guard THROWS. It now asserts it REFUSES. The throw was shipped by
+  // OPS-BASE-BUILDER-CODE-W1, but `initX402()` is awaited UNGUARDED in startHttp(), so a Gateway
+  // misconfiguration took the WHOLE server down — every MCP tool, the HTTP API and CDP settlement
+  // — which is strictly worse than the hazard being guarded, and inconsistent with the two
+  // adjacent ratified fail-opens (x402.ts's initialize() retry, and resolveGatewayConfig's
+  // DISABLED(…)). Refusing keeps the incumbent CDP scheme and keeps the process serving.
+  it('refuses a same-network collision (CRITICAL + counted), and is silent otherwise', () => {
+    _resetRefusedGatewayRegistrationCount();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Prove the guard FIRES — a guard that cannot fail is not a guard.
+      expect(gatewayRegistrationIsCollisionFree(CDP_NET, CDP_NET)).toBe(false);
+      expect(getRefusedGatewayRegistrationCount()).toBe(1);
+
+      // CRITICAL, naming BOTH schemes and the contested network — one line an operator can act on.
+      const logged = err.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toMatch(/CRITICAL/);
+      expect(logged).toMatch(/Gateway/);
+      expect(logged).toMatch(/CDP/);
+      expect(logged).toContain(CDP_NET);
+
+      // …and stays silent for the real production topology (Gateway on its own network key).
+      expect(gatewayRegistrationIsCollisionFree('eip155:10', CDP_NET)).toBe(true);
+      expect(gatewayRegistrationIsCollisionFree('eip155:84532', CDP_NET)).toBe(true);
+      expect(getRefusedGatewayRegistrationCount()).toBe(1); // unchanged — no false refusals
+    } finally {
+      err.mockRestore();
+      _resetRefusedGatewayRegistrationCount();
+    }
+  });
+
+  // THE version-proof assertion. The guard decides BEFORE register() is ever called, so the
+  // surviving scheme is a function of OUR rule (the incumbent stays) and not of @x402/core's
+  // iteration order. Registering A-then-B and B-then-A both leave the FIRST-registered scheme in
+  // place — which is exactly what a future bump flipping first/last-wins cannot silently invert,
+  // because under our guard the second register() never happens at all.
+  it('order-independence: whichever scheme registers FIRST survives, in both orderings', () => {
+    _resetRefusedGatewayRegistrationCount();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const gatewayScheme = createGatewayScheme();
+
+      // Ordering 1 — CDP first (production's order), Gateway second and contested.
+      const srvA = new x402ResourceServer(cdpFacilitator() as never);
+      srvA.register(CDP_NET, cdpExactScheme as never);
+      if (gatewayRegistrationIsCollisionFree(CDP_NET, CDP_NET)) {
+        srvA.register(CDP_NET, gatewayScheme as never);
+      }
+
+      // Ordering 2 — Gateway first, CDP second and contested.
+      const srvB = new x402ResourceServer(cdpFacilitator() as never);
+      if (gatewayRegistrationIsCollisionFree(CDP_NET, 'eip155:99999')) {
+        srvB.register(CDP_NET, gatewayScheme as never); // no incumbent yet ⇒ allowed
+      }
+      if (gatewayRegistrationIsCollisionFree(CDP_NET, CDP_NET)) {
+        srvB.register(CDP_NET, cdpExactScheme as never);
+      }
+
+      const reg = (s: x402ResourceServer) =>
+        (s as unknown as { registeredServerSchemes: Map<string, Map<string, unknown>> })
+          .registeredServerSchemes.get(CDP_NET)!;
+
+      // Each server holds exactly ONE scheme: the one that got there first.
+      expect([...reg(srvA).keys()]).toEqual(['exact']);
+      expect([...reg(srvB).keys()]).toEqual(['exact']);
+      expect(reg(srvA).get('exact')).toBe(cdpExactScheme);   // CDP registered first ⇒ CDP survives
+      expect(reg(srvB).get('exact')).toBe(gatewayScheme);    // Gateway first ⇒ Gateway survives
+
+      // The rule is symmetric: exactly one refusal per ordering, never zero, never two.
+      expect(getRefusedGatewayRegistrationCount()).toBe(2);
+    } finally {
+      err.mockRestore();
+      _resetRefusedGatewayRegistrationCount();
+    }
+  });
+
+  // The production topology must register CLEANLY — no refusal, both rails live.
+  it('the live topology (CDP eip155:8453 / Gateway eip155:10) registers with ZERO refusals', () => {
+    _resetRefusedGatewayRegistrationCount();
+    const srv = new x402ResourceServer([cdpFacilitator(), gatewayFacilitator(GW_NET)] as never);
+    srv.register(CDP_NET, cdpExactScheme as never);
+    const gatewayScheme = createGatewayScheme();
+    expect(gatewayRegistrationIsCollisionFree(GW_NET, CDP_NET)).toBe(true);
+    srv.register(GW_NET, gatewayScheme as never);
+
+    const all = (srv as unknown as { registeredServerSchemes: Map<string, Map<string, unknown>> })
+      .registeredServerSchemes;
+    expect(all.get(CDP_NET)!.get('exact')).toBe(cdpExactScheme);  // Base still CDP
+    expect(all.get(GW_NET)!.get('exact')).toBe(gatewayScheme);    // OP is Gateway
+    expect(getRefusedGatewayRegistrationCount()).toBe(0);         // nothing refused in prod's shape
+    _resetRefusedGatewayRegistrationCount();
   });
 
   it('the dropped Gateway still BUILDS — with extra={}, i.e. unpayable by any Gateway client', async () => {

@@ -1,0 +1,26 @@
+{
+  "_doc": "OPS-CC-DRIFT-DETECTOR-W1 — config for scripts/check-session-drift.mjs. Every union_safe_paths row carries its OWN `reason`: an exemption that lives only in prose gets 'fixed' by a future wave enforcing the contract. Missing or unparseable ⇒ SESSION_DRIFT_VERDICT=INDETERMINATE, exit 3 — never a pass.",
+
+  "union_safe_paths": [
+    {
+      "path": ".github/workflows/deploy.yml",
+      "reason": "Append-only CI steps. Two waves adding a new fail-closed step at the same spot is a UNION, not a conflict — OPS-TEST-GATE-RECONCILE-W1 union-resolved exactly this file twice in one session (against OPS-SEC-IPHASH-SALT-W1, then against OPS-AUDIT-REMEDIATION-MEDIUM-W1). Measured: the only tracked path that collided across live worktrees without being a genuine semantic overlap."
+    },
+    {
+      "path": "audits/test-baseline-known-failures.txt",
+      "reason": "The test-gate allow-list. Waves quarantine independent failures by appending a line; two waves appending different lines is a union. Also asserted untouched by verification-layer waves, so a collision here is far more likely to be two legitimate appends than one design overwriting another."
+    },
+    {
+      "path": "status.md",
+      "reason": "NO-OP IN THIS REPO — retained deliberately, and this reason is the point. OPS-CC-DRIFT-DETECTOR-W1's spec named status.md 'the single biggest false-positive source', but R1 measured it at ZERO effect: `git ls-files` shows status.md is a VAULT file (/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/status.md), not a repo path, so it can never appear in a git-derived touched set here. Excluding it changed the mode-2 rate by 174/435 → 174/435. Kept as an explicit no-op so a future reader does not re-derive the same wrong premise, and so the wave's own gate (which greps for it) reads a documented row rather than a silent omission. If status.md is ever tracked IN THIS REPO, this row becomes load-bearing."
+    }
+  ],
+
+  "merged_ref_stale_days": 14,
+  "_merged_ref_stale_days_reason": "R1 measured 20+ of 43 remote branches already merged-but-live, aged 2 days to 4 months, so 14d flags ~15 on the first run. That backlog is real and is reported ONCE as a list; mode 3 never blocks a push, and deletion stays a human act (OPS-TEST-GATE-RECONCILE-W1's two deletions were operator-ruled).",
+
+  "mode2_enforcement": "report",
+  "_mode2_promotion_criterion": "REPORT → BLOCK only after 30 consecutive real pushes with ZERO mode-2 false positives, counted by the operator from the gate's own output — a number that can be checked, not a vibe. Until then a worktree overlap is information, never a block. Flip is owned by OPS-CC-DRIFT-MODE2-PROMOTE-W{NEXT}; do not flip it here.",
+
+  "_tracked_only_note": "Mode 2 considers TRACKED paths only (committed diff vs merge-base + tracked modifications; untracked '??' entries dropped at source). R1: that single decision took the false-positive rate from 174/435 to 2/28 with no exclusion list at all, and both survivors were genuine. The dominant noise source was `node_modules` surfacing as UNTRACKED in 19 worktrees — .gitignore's `node_modules/` pattern does not match a SYMLINK, which is the known worktree symlink trap. Excluding local artifacts by name would have been an ever-growing list; excluding untracked paths by construction is the generator-level fix."
+}

@@ -9,6 +9,7 @@ import type { SignalRecord, SignalVerdict, PerformanceStats } from '../types.js'
 import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js';
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
+import { formatWriteLossLog } from './log-redact.js';
 
 /**
  * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
@@ -139,14 +140,10 @@ export function buildPoolConfig(
 
 // ── OPS-SIGNAL-WRITE-RESILIENCE-W1 — resilient + loud fire-and-forget writes ──
 
-function safeJson(v: unknown): string {
-  try {
-    const s = JSON.stringify(v);
-    return s.length > 500 ? `${s.slice(0, 500)}…` : s;
-  } catch {
-    return String(v);
-  }
-}
+// NOTE: the former `safeJson` helper lived here solely to render bound parameters
+// into the WRITE-LOST line below. It TRUNCATED but never REDACTED, so it emitted
+// live API keys and subscriber emails (SEC-14). Superseded by the structural
+// redaction in ./log-redact.ts — see `formatWriteLossLog`.
 
 const TRANSIENT_DB_CODES = new Set([
   'EAI_AGAIN', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH',
@@ -250,10 +247,10 @@ class PgBackend implements DbBackend {
     const p = retryAsync(exec, { isRetryable: isTransientDbError })
       .then((r) => {
         if (!r.ok) {
-          console.error(
-            `[pg-write] WRITE LOST after ${r.attempts} attempt(s) [${label}]: ` +
-            `${(r.error as Error)?.message ?? String(r.error)} :: SQL=${sql} PARAMS=${safeJson(params)}`,
-          );
+          // SEC-14: the SQL SHAPE stays loggable (that is the diagnostic value);
+          // every bound parameter and every value-bearing span of the exception
+          // message is masked to len+sha16 by STRUCTURE, never by vendor prefix.
+          console.error(formatWriteLossLog(label, r.attempts, r.error, sql, params));
         } else if (r.attempts > 1) {
           console.error(`[pg-write] ${label} recovered after ${r.attempts} attempt(s)`);
         }
@@ -609,8 +606,29 @@ const CREATE_FUNDING_STATS_MATVIEW_SQL = `
    GROUP BY coin;
 `;
 
+// OPS-SEC-DB-LEAST-PRIV-W2: guarded on ownership, because `CREATE INDEX` checks the
+// relation's OWNER *before* the `IF NOT EXISTS` short-circuit — so on prod, where the
+// matview is owned by `algovault_autopilot` (that role owns it so its postgres-CPU
+// recovery action can `REFRESH`, and so the 5-min host cron can refresh as the true
+// owner rather than borrowing superuser), a bare CREATE INDEX raises
+// `must be owner of materialized view` on EVERY schema-ensure. That was invisible while
+// the app connected as the bootstrap superuser, which bypasses the check entirely.
+// The index already exists there, so the statement was pure noise on a fire-and-forget
+// `exec` — it surfaced as `[pg-write] WRITE LOST`, which is exactly the shape of a real
+// lost write and would have trained the eye to ignore it.
+// The fresh-box path is unchanged: whoever CREATEs the matview owns it, so the guard
+// passes and the unique index (required by REFRESH ... CONCURRENTLY) is created.
 const CREATE_FUNDING_STATS_MATVIEW_INDEX_SQL = `
-  CREATE UNIQUE INDEX IF NOT EXISTS funding_stats_14d_coin_uk ON funding_stats_14d (coin);
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1 FROM pg_class c
+       WHERE c.relname = 'funding_stats_14d'
+         AND pg_catalog.pg_get_userbyid(c.relowner) = current_user
+    ) THEN
+      CREATE UNIQUE INDEX IF NOT EXISTS funding_stats_14d_coin_uk ON funding_stats_14d (coin);
+    END IF;
+  END $$;
 `;
 
 // POWER-USER-OUTREACH-W1-V2 (2026-05-28): NEW signup_emails table for free-tier

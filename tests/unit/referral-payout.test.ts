@@ -60,7 +60,10 @@ async function seed(code: string, addr: string | null, amountsE2: number[]): Pro
 
 beforeEach(() => {
   ensureReferralSchema();
-  for (const t of ['referral_codes', 'referral_attributions', 'referral_ledger', 'referral_bonus']) dbRun(`DELETE FROM ${t}`);
+  // referral_payout_claims added by OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch2 (SEC-16). It
+  // MUST be cleared here: a claim leaking between tests makes a later payout silently
+  // skip its rows, which would surface as an unrelated flake.
+  for (const t of ['referral_codes', 'referral_attributions', 'referral_ledger', 'referral_bonus', 'referral_payout_claims']) dbRun(`DELETE FROM ${t}`);
 });
 
 describe('detectPayoutBatch', () => {

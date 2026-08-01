@@ -30,7 +30,7 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
         '🤖 *Agent Activity (24h)*',
         '• Total Agent Calls: 1069', // 100 + 965 + 4 (no TG bot in this payload)
         '• 🟢 Recognized clients: 100',
-        '• 🔌 Raw API clients: 965   (top IP 22.5%)',
+        '• 🔌 Raw API clients: 965   (top client 22.5%)',
         '• 💳 Paid: 4', // OPS-DIGEST-PAID-RAIL-SPLIT-W1: bare total — no rail split in this payload
         '• Top assets (24h): BTC, ETH, SOL',
         '',
@@ -61,18 +61,18 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
   it('prefers rawConcentration but falls back to externalConcentration when the new field is absent', () => {
     expect(
       formatAgentActivity({ externalAutomated: { total: 10 }, rawConcentration: { top1_pct: 33.3 }, externalConcentration: { top1_pct: 5 } }),
-    ).toContain('(top IP 33.3%)');
+    ).toContain('(top client 33.3%)');
     // rollout-window payload (pre-deploy /analytics has no rawConcentration yet)
     expect(
       formatAgentActivity({ externalAutomated: { total: 10 }, externalConcentration: { top1_pct: 7.7 } }),
-    ).toContain('(top IP 7.7%)');
+    ).toContain('(top client 7.7%)');
   });
 
   it('graceful-degrades to em-dash + legacy topAssets when new fields are absent', () => {
     const legacy = { totalCallsInternal: { last24h: 5 }, topAssets: [{ asset: 'BTC', calls: 3 }] };
     const out = formatAgentActivity(legacy);
     expect(out).toContain('• 🟢 Recognized clients: —');
-    expect(out).toContain('• 🔌 Raw API clients: —   (top IP —%)');
+    expect(out).toContain('• 🔌 Raw API clients: —   (top client —%)');
     expect(out).toContain('• 💳 Paid: —');
     expect(out).toContain('• Top assets (24h): BTC');
     expect(out).toContain('👥 *Sessions (24h)*');
@@ -86,7 +86,7 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
       topAssetsGenuine: [],
     });
     expect(out).toContain('• 🟢 Recognized clients: 0');
-    expect(out).toContain('• 🔌 Raw API clients: 0   (top IP 0%)');
+    expect(out).toContain('• 🔌 Raw API clients: 0   (top client 0%)');
     // OPS-DIGEST-PAID-RAIL-SPLIT-W1: calls AND sessions lines both render the bare zero
     // total (this payload carries no rail split) — count them so the two stay distinguishable.
     expect(out.split('\n').filter((l) => l === '• 💳 Paid: 0')).toHaveLength(2);

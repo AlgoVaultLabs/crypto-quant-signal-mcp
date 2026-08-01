@@ -21,6 +21,12 @@ import { runScanTradeCall, SCAN_TRADE_CALLS_SCHEMA, SCAN_TRADE_CALLS_DESCRIPTION
 import { getSignalPerformance, runBackfill } from './resources/signal-performance.js';
 import { refreshGridIfStale } from './lib/cross-asset-grid.js';
 import { renderBrandFooter } from './lib/footer-content.js';
+import {
+  resolveAdminAuth,
+  buildAdminSessionCookie,
+  ADMIN_UNAUTHORIZED_PAGE,
+  ADMIN_UNAUTHORIZED_API,
+} from './lib/admin-auth.js';
 import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
 import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
@@ -43,7 +49,7 @@ import { PUBLIC_READONLY_TOOL_ANNOTATIONS } from './tool-annotations.js';
 import { getEquityRegime } from './lib/equities/equity-tool-formatters.js';
 import { getEquityPerformance } from './lib/equities/equity-performance.js';
 import { getEquityPool } from './lib/equities/equity-store.js';
-import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation } from './lib/analytics.js';
+import { initAnalytics, logRequest, hashIp, getUsageStats, logSkillInvocation, assertIpHashKeyConfigured, IP_HASH_VERSION } from './lib/analytics.js';
 import { clientIp } from './lib/client-ip.js';
 import { ensureProcessedStripeEventsSchema, tryClaimEvent } from './lib/stripe-events-store.js';
 import { upsertSignupEmail, markConfirmationSent, tryClaimSignupEmailEvent } from './lib/signup-emails-store.js';
@@ -1370,6 +1376,24 @@ async function startHttp() {
 
       switch (event.type) {
         case 'customer.subscription.created': {
+          // Idempotency BEFORE side-effect (SEC-20, OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2).
+          // handleSubscriptionCreated MINTS AN API KEY, overwrites customer.metadata and
+          // sends the welcome email. Stripe retries any non-2xx and can deliver at-least-
+          // once, so without a claim a redelivery generated a SECOND key, silently
+          // invalidating the one the paying customer had already installed, and emailed
+          // them a different one. Same shape as checkout.session.completed below.
+          const isNewSub = await tryClaimEvent({
+            event_id: event.id,
+            event_type: event.type,
+            customer_email: null,
+            metadata: { source: 'customer.subscription.created' },
+          });
+          if (!isNewSub) {
+            console.log(`Stripe webhook: duplicate customer.subscription.created (event ${event.id}) — already processed`);
+            // 200, never 500: a non-2xx makes Stripe retry harder against an event we
+            // have already fully processed.
+            return res.json({ received: true, status: 'duplicate' });
+          }
           const conv = await handleSubscriptionCreated(event);
           // REFERRAL-LIGHT-W1 (C3): if this paid signup carried a ref code (stamped
           // on the subscription by createCheckoutSession), attribute the conversion +
@@ -1854,15 +1878,97 @@ async function startHttp() {
       return true;
     }
 
-    /** Check admin auth: Bearer token, query key, or session cookie. */
+    /**
+     * Check admin auth: Bearer token or session cookie.
+     *
+     * SEC-10 (OPS-AUDIT-REMEDIATION-MEDIUM-W1 / Ch1): `req.query.key` was REMOVED as
+     * an authorization source. A URL key may only BOOTSTRAP a session (see
+     * `adminKeyBootstrap`); it can no longer authorize a request, so an admin URL
+     * leaked into a ticket, screenshot or access log is not replayable. The
+     * predicate itself lives in ./lib/admin-auth.ts — it takes no query input at
+     * all, so URL-key auth cannot be reintroduced by a future caller.
+     */
     function isAdminAuthorized(req: import('express').Request): boolean {
-      // Bearer token or query key
-      const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
-        || (req.query.key as string);
-      if (token && safeCompare(token, adminKey)) return true;
-      // Session cookie
-      return isValidAdminSession(req.headers.cookie);
+      return resolveAdminAuth(
+        { authorization: req.headers['authorization'], cookie: req.headers.cookie },
+        { adminKey, compare: safeCompare, isValidSession: isValidAdminSession },
+      ).authorized;
     }
+
+    /**
+     * The ONE sanctioned place a URL key is read: exchange `?key=` for an HttpOnly
+     * session cookie and 303 to the clean path, so the credential never survives in
+     * the address bar and never reaches a rendered page. Returns true if it handled
+     * the response (caller must return immediately).
+     */
+    function adminKeyBootstrap(
+      req: import('express').Request,
+      res: import('express').Response,
+      cleanPath: string,
+    ): boolean {
+      const key = typeof req.query.key === 'string' ? req.query.key : '';
+      if (!key || !safeCompare(key, adminKey)) return false;
+      res.setHeader('Set-Cookie', buildAdminSessionCookie(createAdminSession(), {
+        secure: req.secure,
+        ttlMs: ADMIN_SESSION_TTL,
+      }));
+      // Strip ONLY `key`; every other param survives the redirect, so an operator
+      // opening e.g. /admin/geo-dashboard?weeks=52&key=… still lands on weeks=52.
+      const rest = new URLSearchParams();
+      for (const [k, v] of Object.entries(req.query)) {
+        if (k === 'key') continue;
+        if (typeof v === 'string') rest.append(k, v);
+        else if (Array.isArray(v)) for (const item of v) if (typeof item === 'string') rest.append(k, item);
+      }
+      const qs = rest.toString();
+      res.redirect(303, qs ? `${cleanPath}?${qs}` : cleanPath);
+      return true;
+    }
+
+    /**
+     * OPS-SEC-CLIENT-IP-VERIFY-W1 — permanent client-IP echo (admin-gated).
+     *
+     * SEC-07 shipped a proxy-header change whose end-to-end effect could not be confirmed,
+     * because it was INFERRED from `ipHash` values instead of read from the header. The follow-up
+     * then nearly repeated the mistake from the other side: a Caddy access log reported
+     * `Cf-Connecting-Ip` masked to /24 while `X-Forwarded-For` in the SAME log line was unmasked
+     * — the signature of a log formatter, not of the wire value.
+     *
+     * So this route makes "what address does the app actually see?" a ONE-REQUEST question,
+     * answered at the layer that consumes it with no log formatter in between. Admin-auth'd
+     * (never an open info leak), and it echoes VALUES rather than hashes — hashing is precisely
+     * what made the two previous attempts unfalsifiable.
+     */
+    app.get('/debug/client-ip', (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const raw = (n: string) => req.headers[n] ?? null;
+      const resolved = clientIp(req);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({
+        _note: 'OPS-SEC-CLIENT-IP-VERIFY-W1 — raw wire values as Express sees them. Admin-only.',
+        headers: {
+          'cf-connecting-ip': raw('cf-connecting-ip'),
+          'x-forwarded-for': raw('x-forwarded-for'),
+          'x-real-ip': raw('x-real-ip'),
+          'true-client-ip': raw('true-client-ip'),
+          'cf-ray': raw('cf-ray'),
+        },
+        express: {
+          reqIp: req.ip ?? null,
+          reqIps: req.ips ?? [],           // parsed XFF chain, left→right
+          socketRemote: req.socket?.remoteAddress ?? null,
+        },
+        derived: {
+          clientIp: resolved,
+          ipHash: hashIp(resolved || 'unknown'),
+          // OPS-SEC-IPHASH-SALT-W1: surface the derivation version explicitly, so "which namespace
+          // is this bucket in?" is answerable from the echo rather than by parsing the prefix.
+          ipHashVersion: IP_HASH_VERSION,
+        },
+      });
+    });
 
     // JSON API
     app.get('/analytics', async (req, res) => {
@@ -1879,15 +1985,9 @@ async function startHttp() {
 
     // Visual dashboard — key in URL sets a session cookie, then redirects to clean URL
     app.get('/dashboard', (req, res) => {
-      const key = req.query.key as string;
-      if (key && safeCompare(key, adminKey)) {
-        // Authenticate: set session cookie, redirect to clean URL
-        const sessionToken = createAdminSession();
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
-        return res.redirect(303, '/dashboard');
-      }
+      if (adminKeyBootstrap(req, res, '/dashboard')) return;
       if (!isValidAdminSession(req.headers.cookie)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       res.send(getDashboardHtml());
     });
@@ -1972,8 +2072,9 @@ async function startHttp() {
     // LLM-PROVIDER-A/B-W1 trigger status (≥100 queries/day × 7 consecutive
     // days) and stub-provider banner alert (Cowork Q-4 Path B).
     app.get('/admin/chat-analytics', async (req, res) => {
+      if (adminKeyBootstrap(req, res, '/admin/chat-analytics')) return; // SEC-10
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const lookback = Math.max(1, Math.min(180, parseInt(String(req.query.days ?? '90'), 10) || 90));
@@ -1991,8 +2092,9 @@ async function startHttp() {
     // LLMs recommend AlgoVault when asked about crypto trading agents. Mirrors
     // chat-analytics auth pattern: inline isAdminAuthorized(req) check.
     app.get('/admin/geo-dashboard', async (req, res) => {
+      if (adminKeyBootstrap(req, res, '/admin/geo-dashboard')) return; // SEC-10
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const lookbackWeeks = Math.max(1, Math.min(52, parseInt(String(req.query.weeks ?? '12'), 10) || 12));
@@ -2008,14 +2110,9 @@ async function startHttp() {
 
     // Signal performance dashboard (admin-only)
     app.get('/performance-dashboard', (req, res) => {
-      const key = req.query.key as string;
-      if (key && safeCompare(key, adminKey)) {
-        const sessionToken = createAdminSession();
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
-        return res.redirect(303, '/performance-dashboard');
-      }
+      if (adminKeyBootstrap(req, res, '/performance-dashboard')) return;
       if (!isValidAdminSession(req.headers.cookie)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       res.send(getPerformanceDashboardHtml());
     });
@@ -2050,8 +2147,10 @@ async function startHttp() {
     // REFERRAL-LIGHT-W1 (C4): referral admin surfaces — same isAdminAuthorized gate
     // (Bearer / ?key= / admin cookie) as the precedents.
     app.get('/admin/referrals', async (req, res) => {
+      // SEC-10: `?key=` is exchanged for the session cookie and stripped from the URL.
+      if (adminKeyBootstrap(req, res, '/admin/referrals')) return;
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const { topReferrers, listRecentLedger } = await import('./lib/referral-store.js');
@@ -2074,8 +2173,13 @@ async function startHttp() {
     });
 
     app.get('/admin/referrals/payouts', async (req, res) => {
+      // SEC-10: `?key=` is exchanged for the session cookie and stripped from the URL,
+      // so the credential authorizing the irreversible USDC send never persists in the
+      // address bar, browser history, or an access log — and is never re-embedded in
+      // the rendered form action below.
+      if (adminKeyBootstrap(req, res, '/admin/referrals/payouts')) return;
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       try {
         const { pendingPayouts } = await import('./lib/referral-store.js');
@@ -2087,7 +2191,6 @@ async function startHttp() {
         res.send(renderAdminPayoutsPage({
           pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, payoutAddress: p.payout_address, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
           batchTotalUsdE2: pending.reduce((s, p) => s + p.pending_usd_e2, 0),
-          adminKey: typeof req.query.key === 'string' ? req.query.key : undefined,
         }));
       } catch (err) {
         console.error('[/admin/referrals/payouts] error:', err instanceof Error ? err.message : err);
@@ -2099,8 +2202,11 @@ async function startHttp() {
     // PayoutSender (C2 = Stub → reports not-configured; C3 = CDP server-wallet send),
     // then re-render the (reduced) queue with a result flash. Operator-triggered only.
     app.post('/admin/referrals/payouts/approve-all', async (req, res) => {
+      // SEC-10: no bootstrap on a POST — this is authorized by the session cookie the
+      // payouts page set (SameSite=Strict is still sent on a same-site form submit),
+      // or by an explicit Bearer header. A key in the URL no longer authorizes it.
       if (!isAdminAuthorized(req)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_API);
       }
       try {
         const { pendingPayouts } = await import('./lib/referral-store.js');
@@ -2117,7 +2223,6 @@ async function startHttp() {
         res.send(renderAdminPayoutsPage({
           pending: pending.map((p) => ({ code: p.code, ownerEmail: p.owner_email, payoutAddress: p.payout_address, pendingUsdE2: p.pending_usd_e2, rowCount: p.row_count, ledgerIds: p.ledger_ids })),
           batchTotalUsdE2: pending.reduce((s, p) => s + p.pending_usd_e2, 0),
-          adminKey: typeof req.query.key === 'string' ? req.query.key : undefined,
           result: {
             senderKind: result.senderKind,
             paidCount: result.paid.length,
@@ -2233,14 +2338,9 @@ async function startHttp() {
     // the session cookie then redirects). The served HTML embeds no data; it fetches
     // the gated JSON above via a same-origin XHR carrying the admin cookie.
     app.get('/dashboard/funnel', (req, res) => {
-      const key = req.query.key as string;
-      if (key && safeCompare(key, adminKey)) {
-        const sessionToken = createAdminSession();
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL / 1000}${req.secure ? '; Secure' : ''}`);
-        return res.redirect(303, '/dashboard/funnel');
-      }
+      if (adminKeyBootstrap(req, res, '/dashboard/funnel')) return;
       if (!isValidAdminSession(req.headers.cookie)) {
-        return res.status(401).send('Unauthorized — add ?key=YOUR_ADMIN_KEY to the URL');
+        return res.status(401).send(ADMIN_UNAUTHORIZED_PAGE);
       }
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -3304,7 +3404,11 @@ async function startHttp() {
 
     // Run the entire request handling inside AsyncLocalStorage context
     // so tool handlers read the correct per-request license
-    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, source: attributionSource, background: backgroundPriority }, async () => {
+    // OPS-CLIENT-ATTRIBUTION-W1: thread the raw UA — the SAME string classifyTraffic just
+    // consumed for `requestAuthenticity` — so logRequest stamps user_agent + client_name from
+    // one value. Previously the UA was read here and discarded, leaving a heavy caller
+    // classifiable but unnameable (30 candidate hashes missed in OPS-TOP-IP-FORENSICS-W1).
+    await requestContext.run({ license, sessionId, ipHash, isAutomated: requestAuthenticity.is_automated, userAgent: req.headers['user-agent'] ?? null, source: attributionSource, background: backgroundPriority }, async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
@@ -4624,12 +4728,27 @@ if (require.main === module) {
   const transport = (process.env.TRANSPORT || 'http').toLowerCase();
 
   if (transport === 'stdio') {
+    // OPS-SEC-IPHASH-SALT-W1: NO ip-hash key requirement here, deliberately. Every hashIp call
+    // site takes an Express `req`, so the stdio/npx path never reaches it — demanding a key would
+    // break every published `npx crypto-quant-signal-mcp` install for a protection stdio users are
+    // not exposed to. The guard below covers the deployment that actually stores pseudonyms.
     startStdio().catch((err) => {
       console.error('Fatal:', err);
       closeDb();
       process.exit(1);
     });
   } else {
+    // OPS-SEC-IPHASH-SALT-W1: crash-fast BEFORE binding a port. The HTTP transport is the one that
+    // writes ip_hash / free:<hash> / ip:<hash> buckets, so a deploy that landed before the key was
+    // installed must die loudly here — not lazily on the first request, which would leave a window
+    // where the server looks healthy while unable to meter anyone.
+    try {
+      assertIpHashKeyConfigured();
+    } catch (err) {
+      console.error(`Fatal: ${err instanceof Error ? err.message : err}`);
+      closeDb();
+      process.exit(1);
+    }
     startHttp().catch((err) => {
       console.error('Fatal:', err);
       closeDb();

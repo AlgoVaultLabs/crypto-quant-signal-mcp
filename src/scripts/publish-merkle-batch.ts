@@ -15,6 +15,7 @@ import { createPublicClient, createWalletClient, http } from 'viem';
 import { base } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildMerkleTree } from '../lib/merkle.js';
+import { getBuilderCodeDataSuffix } from '../lib/builder-code-constants.js';
 import {
   getUnbatchedSignals,
   getNextBatchId,
@@ -84,11 +85,35 @@ async function publishBatch() {
 
   console.log(`[${ts()}] Publishing batch ${batchId}: ${signals.length} signals, root: ${root}`);
 
-  const txHash = await walletClient.writeContract({
+  // Builder-code attribution (OPS-BASE-BUILDER-CODE-W1) — ADDITIVE TELEMETRY ONLY.
+  // ERC-8021 appends the suffix AFTER the ABI-encoded args; the contract ignores the
+  // trailing bytes (simulated on Base mainnet: no revert, +534 gas / +0.54%).
+  // Every failure path below falls back to publishing UNATTRIBUTED — an anchor must
+  // never fail because of attribution.
+  const writeArgs = {
     address: MERKLE_CONTRACT as `0x${string}`,
     abi,
-    functionName: 'publishRoot',
-    args: [BigInt(batchId), root, BigInt(signals.length)],
+    functionName: 'publishRoot' as const,
+    args: [BigInt(batchId), root, BigInt(signals.length)] as const,
+  };
+
+  let dataSuffix = getBuilderCodeDataSuffix();
+  if (dataSuffix) {
+    try {
+      // Pre-send gate: prove the attributed calldata does not revert before broadcasting.
+      await publicClient.simulateContract({ ...writeArgs, account, dataSuffix });
+      console.log(`[${ts()}] Builder-code attribution ON (suffix ${dataSuffix})`);
+    } catch (err) {
+      console.warn(
+        `[${ts()}] Builder-code simulation FAILED — publishing UNATTRIBUTED: ${String(err)}`
+      );
+      dataSuffix = undefined;
+    }
+  }
+
+  const txHash = await walletClient.writeContract({
+    ...writeArgs,
+    ...(dataSuffix ? { dataSuffix } : {}),
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });

@@ -69,9 +69,11 @@ const ALLOWED_FACILITATOR_URLS: readonly string[] = [
  * 'exact', network 'eip155:8453')` — and they CANNOT coexist on one `x402ResourceServer`. Two
  * independent layers break, both SILENTLY (probed against the real SDK, 2026-07-19):
  *
- *   1. `x402ResourceServer.register()` is `Map<network, Map<scheme, server>>` guarded by
- *      `if (!serverByScheme.has(server.scheme))` — FIRST-WINS, silent no-op. CDP registers first
- *      (x402.ts), so `GatewayEvmScheme` would simply never be registered.
+ *   1. `x402ResourceServer.register()` collapses them into ONE entry. WHICH one survives is
+ *      version-dependent and has already inverted once: on @x402/core 2.9.0 it was FIRST-WINS
+ *      (`if (!serverByScheme.has(server.scheme))` — Gateway silently never registered), and on
+ *      2.20.0 it is LAST-WINS (Gateway REPLACES CDP and reroutes Base settlement). We no longer
+ *      depend on either — see `gatewayRegistrationIsCollisionFree()` below.
  *   2. `getSupportedKind(x402Version, network, scheme)` takes no `extra` argument, so two kinds
  *      that differ ONLY by `extra.name` are indistinguishable; first match wins.
  *
@@ -86,13 +88,86 @@ const ALLOWED_FACILITATOR_URLS: readonly string[] = [
  * by construction. Gateway balances are unified + chain-agnostic (Circle docs), so the buyer is
  * not disadvantaged by paying on a non-Base chain.
  *
- * ⚠️ Adding `eip155:8453` here would re-open the silent collision. `assertGatewayDomainPresent()`
- * below is the structural backstop that turns that mistake into a loud, fail-open drop.
+ * ⚠️ Adding `eip155:8453` here would re-open the collision. TWO backstops exist:
+ * `gatewayRegistrationIsCollisionFree()` (below — refuses the colliding registration, keeps the
+ * incumbent, keeps the server up) and `assertGatewayDomainPresent()` (a loud, fail-open drop at
+ * build time).
+ *
+ * 🛑 NETWORK SEPARATION IS AN ENFORCED INVARIANT, NOT A CONVENTION — and deliberately NOT one
+ * rented from the SDK. @x402/core 2.20.0 flipped `x402ResourceServer.register()` from FIRST-WINS
+ * to LAST-WINS, turning "a collision harmlessly drops Gateway" into "a collision silently reroutes
+ * **Base settlement**". Either behaviour is a coin-flip we do not control and cannot test against
+ * future versions, so the outcome is now decided in OUR code before `register()` is called
+ * (OPS-X402-SCHEME-REGISTRATION-INVARIANT-W1; the inversion itself stays characterised in
+ * `tests/circle-gateway-mainnet.test.ts`). Do not downgrade this back to a comment, and do not
+ * re-express it as a dependency on whichever ordering the pinned version happens to have.
  */
 const ALLOWED_GATEWAY_NETWORKS: readonly string[] = [
   'eip155:84532', // Base Sepolia — testnet; proven end-to-end by OPS-CIRCLE-GATEWAY-TESTNET-SETTLE-W1
   'eip155:10',    // OP Mainnet — collision-free vs the CDP `exact`/eip155:8453 registration
 ];
+
+/**
+ * Hard invariant: the Gateway scheme MUST NOT register on the same CAIP-2 network as the CDP
+ * `exact` scheme. A collision would replace the CDP scheme and reroute Base settlement — a
+ * capital-path failure with no error and no log.
+ *
+ * ── WHY THIS OWNS THE PROPERTY INSTEAD OF RENTING IT ─────────────────────────────────────
+ * Whether a collision was "harmlessly dropped" or "silently reroutes money" used to be decided
+ * by @x402/core's iteration order, which inverted from FIRST-WINS to LAST-WINS across a single
+ * minor bump (2.9.0 → 2.20.0). Any future bump can invert it again, in either direction. So the
+ * decision is taken HERE, before `register()` is ever called: the answer no longer depends on
+ * upstream ordering, under any version. Pinned by the order-independence test in
+ * `tests/circle-gateway-mainnet.test.ts`.
+ *
+ * ── WHY IT REFUSES INSTEAD OF THROWING ───────────────────────────────────────────────────
+ * OPS-BASE-BUILDER-CODE-W1 shipped this as a boot-time `throw`. `initX402()` is awaited
+ * UNGUARDED in `startHttp()` (`src/index.ts`), so that throw took down the WHOLE server — all
+ * MCP tools, the HTTP API and CDP settlement — for a Gateway misconfiguration. That is strictly
+ * worse than the hazard it guards: it converts a bad env var into a total outage for the rails
+ * that were configured correctly. It is also inconsistent with the two adjacent, already-ratified
+ * decisions — `x402.ts` wraps `resourceServer.initialize()` in a fail-open that DROPS Gateway and
+ * retries CDP-only rather than "take the LIVE mainnet revenue rail dark", and `resolveGatewayConfig`
+ * answers an un-allow-listed network with `DISABLED(…)`, not a throw.
+ *
+ * So: refuse the SECOND registration, keep the incumbent, keep the process up. The surviving
+ * scheme is the one production already uses. The refusal is CRITICAL-logged and COUNTED — an
+ * operator-action-required event, never a silent no-op.
+ *
+ * 🛑 Do not "improve" this back into a throw.
+ *
+ * @param gatewayNetwork CAIP-2 network the Gateway scheme is about to register on.
+ * @param cdpNetwork     CAIP-2 network the CDP `exact` scheme is already registered on.
+ * @returns `true` when the registration is safe to perform; `false` when it MUST be skipped.
+ */
+let refusedGatewayRegistrations = 0;
+
+export function gatewayRegistrationIsCollisionFree(
+  gatewayNetwork: string,
+  cdpNetwork: string
+): boolean {
+  if (gatewayNetwork !== cdpNetwork) return true;
+
+  refusedGatewayRegistrations += 1;
+  console.error(
+    `CRITICAL circle-gateway: REFUSING to register the Gateway 'exact' scheme on ${gatewayNetwork} — ` +
+      `it collides with the CDP 'exact' scheme already registered on that same network. Registering ` +
+      `it would replace CDP and reroute settlement through Gateway. The CDP registration is KEPT and ` +
+      `Gateway is NOT registered; the server stays up. Operator action: give Gateway a distinct ` +
+      `network (see ALLOWED_GATEWAY_NETWORKS) or disable it.`
+  );
+  return false;
+}
+
+/** How many Gateway registrations have been refused this process. 0 is the expected steady state. */
+export function getRefusedGatewayRegistrationCount(): number {
+  return refusedGatewayRegistrations;
+}
+
+/** Test-only reset of the refusal counter. */
+export function _resetRefusedGatewayRegistrationCount(): void {
+  refusedGatewayRegistrations = 0;
+}
 
 /** The `extra.name` Circle stamps on every Gateway kind — the EIP-712 domain name. */
 export const GATEWAY_EIP712_DOMAIN_NAME = 'GatewayWalletBatched';
@@ -161,15 +236,16 @@ export function resolveCircleGatewayFromEnv(
   }
 
   // ── Network ── allow-listed only. `eip155:8453` is deliberately ABSENT: Gateway there would
-  // collide with the CDP `exact` registration and be silently dropped. See ALLOWED_GATEWAY_NETWORKS.
+  // collide with the CDP `exact` registration on the same (version, scheme, network) triple.
+  // See ALLOWED_GATEWAY_NETWORKS and gatewayRegistrationIsCollisionFree().
   const network = env.CIRCLE_GATEWAY_NETWORK || ALLOWED_GATEWAY_NETWORKS[0];
   if (!ALLOWED_GATEWAY_NETWORKS.includes(network)) {
     return DISABLED(
       `network ${network} is not testnet-allow-listed (allowed: ${ALLOWED_GATEWAY_NETWORKS.join(', ')})` +
         (network === 'eip155:8453'
           ? ' — Base mainnet is EXCLUDED ON PURPOSE: it collides with the CDP `exact` scheme on the ' +
-            'same (version, scheme, network) triple, so the Gateway scheme would be silently dropped. ' +
-            'Mainnet Gateway runs on eip155:10 (OP Mainnet).'
+            'same (version, scheme, network) triple, and the two cannot coexist on one resource ' +
+            'server. Mainnet Gateway runs on eip155:10 (OP Mainnet).'
           : ''),
     );
   }
@@ -331,8 +407,9 @@ export async function probeCircleFacilitator(
  * signable domain. `GatewayEvmScheme.enhancePaymentRequirements` merges it in from the facilitator.
  *
  * WHY THIS EXISTS. If `GatewayEvmScheme` is ever NOT the scheme that served the build — most
- * plausibly because someone puts Gateway back on `eip155:8453`, where `register()` silently
- * first-wins in favour of the CDP scheme — the build still SUCCEEDS and still returns entries. They
+ * plausibly because someone puts Gateway back on `eip155:8453`, where only one of the two schemes
+ * can be registered at all (`gatewayRegistrationIsCollisionFree` now refuses that registration
+ * outright, keeping CDP) — the build still SUCCEEDS and still returns entries. They
  * are just plain CDP-shaped payments to the Gateway seller address, with `extra = {}` (measured).
  * Nothing throws. The pre-existing `getSupportedKind(2, net, 'exact')` liveness check cannot catch
  * it either, because on a shared network that predicate answers TRUE from the CDP kind — so the
