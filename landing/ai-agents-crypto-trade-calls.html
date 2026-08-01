@@ -109,7 +109,7 @@ tailwind.config = { theme: { extend: { colors: {
     <div class="eyebrow">MCP for AI trading agents</div>
     <h1 style="font-size:42px;font-weight:600;line-height:1.12;letter-spacing:-0.025em;margin:14px 0 0">How do AI agents get real-time crypto <span style="color:#5BEEB3">trade calls</span>?</h1>
 
-    <p class="lede">AI agents get crypto trade calls by calling an MCP server. AlgoVault returns one composite verdict per call: direction, confidence, and market regime, across five perpetual-futures venues. It posts a <span class="stat" data-tr-field="pfe_wr">91.6%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. The agent reads the verdict and decides execution.</p>
+    <p class="lede">AI agents get crypto trade calls by calling an MCP server. AlgoVault returns one composite verdict per call: direction, confidence, and market regime, across five perpetual-futures venues. It posts a <span class="stat" data-tr-field="pfe_wr">91.7%</span> PFE win rate over <span class="stat" data-tr-field="call_count">233,000</span> verified calls, each Merkle-anchored on Base L2. The agent reads the verdict and decides execution.</p>
 
     <h2>How does an agent request a call?</h2>
     <p>The agent calls one tool over the <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer" target="_blank">Model Context Protocol</a>. No chart, no adapter glue. Connect over remote HTTPS, a local stdio process, or an MCP registry, then call <code>get_trade_call</code> with a coin, timeframe, and venue.</p>

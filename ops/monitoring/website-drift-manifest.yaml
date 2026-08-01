@@ -169,6 +169,28 @@ rows:
     tg_fires: true
     recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
 
+  # OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1. The row above watches the VISIBLE span, which hydrates
+  # client-side and is therefore self-healing for humans even when the baked literal is stale. This
+  # row watches the schema.org additionalProperty on the same page, which a crawler reads with NO
+  # JavaScript — so it is only ever as fresh as the last deploy-time injection and CANNOT self-heal.
+  # It sat unmanaged at 91.8% against a live 91.7%, matched by no manifest claim, precisely because
+  # the older jsonld-description-pfe-rate needs the % to PRECEDE the label while this form inverts
+  # it. Watching only the span would have kept that invisible.
+  # BAND, never EXACT (the page literal is refreshed by the 00:39 UTC injector while the SoT moves
+  # continuously, so EXACT fires on normal bake lag) and never FLOOR (a win rate can legitimately
+  # fall; FLOOR is for monotonic counters like batch_count).
+  - alert_id: HOMEPAGE_PFE_JSONLD_PROPERTYVALUE_BAND
+    page_url: https://algovault.com/
+    claim_pattern: '"name": "PFE win rate", "value": "([0-9.]+)%"'
+    extract_method: regex_first_match
+    transform: float(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .overall.pfeWinRate * 100
+    tolerance_type: BAND
+    tolerance_value: 3
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
   - alert_id: HOMEPAGE_HOLD_RATE_DTRF_BAND
     page_url: https://algovault.com/
     claim_pattern: 'data-tr-field="hold_rate"[^>]*>([0-9.]+)%'

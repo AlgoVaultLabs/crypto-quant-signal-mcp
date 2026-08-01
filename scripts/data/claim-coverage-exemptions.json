@@ -1,0 +1,23 @@
+{
+  "_comment": "Exemptions for scripts/check-claim-coverage.mjs. Each row carries its OWN reason and followup and is PRINTED on every run. CLAUDE.md: an exemption that lives only in a comment or an ADR gets 'fixed' by a future wave enforcing the contract, and one that is never printed reads as 'covered everything'. An exemption row that stops matching anything is itself reported as STALE — a permanent exemption for a site that no longer exists is how a guard quietly narrows.",
+  "_schema": "file: repo-relative path (exact). contains: substring that must appear within the flagged site's context window; omit to exempt the WHOLE file. reason: why a manifest claim is wrong or impossible here. followup: the wave that would retire this exemption, or null if it is permanent by nature.",
+  "exemptions": [
+    {
+      "file": "landing/index.html",
+      "contains": "conviction ≥ 60%",
+      "reason": "A CONFIGURATION THRESHOLD, not a published rate. It reads 'every qualifying call (conviction ≥ 60%) is Merkle-anchored', and the words 'win-rate track record' land one clause later, which is why a proximity rule flags it. The SoT serves no field for it, so binding it to /api/performance-public would be wrong, not merely unnecessary.",
+      "followup": null
+    },
+    {
+      "file": "landing/integrations/maf.html",
+      "contains": "PFE Win Rate model should do",
+      "reason": "Qualitative FLOOR claim in illustrative prose about what a selective model does ('exactly what a 90%+ PFE Win Rate model should do'), currently TRUE against a live 91.7%. Its source of truth is algovault-skills/docs/integrations/maf.md in a SEPARATE repo and this page is rendered by scripts/render-integrations.mjs, so editing the HTML here is a lane fix the next render silently reverts.",
+      "followup": "OPS-SKILLS-NUMERIC-CLAIM-SWEEP-W{NEXT}"
+    },
+    {
+      "file": "landing/llms-full.txt",
+      "reason": "WHOLE-FILE exemption, and the most consequential one here — recorded rather than hidden. Measured 2026-08-01: 15 numeric claim sites, all unmanaged and materially stale (overall PFE WR reads 89.4% against a live 91.7%; a full by-timeframe table 5m..1d; '56,375+ trade calls' against a live 432,843; last_updated 2026-06-08). Binding it needs accessors this manifest does not yet have (bySignalType.BUY/SELL.pfeWinRate, byTimeframe.*) plus prose rewrites, so it is a wave, not a row. It is publicly served (200) and is exactly the surface AI answer-engines read, so the follow-up is not optional.",
+      "followup": "OPS-LLMS-TXT-LIVEBIND-W{NEXT}"
+    }
+  ]
+}

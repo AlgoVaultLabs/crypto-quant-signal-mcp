@@ -22,8 +22,31 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
   });
 
   it('proof numbers are LIVE-bound via data-tr-field, with % INSIDE the pfe_wr span', () => {
-    expect(count('<span data-tr-field="pfe_wr">91.5%</span>')).toBe(2);
-    expect(count('<span data-tr-field="call_count">246,980</span>+')).toBe(2);
+    // SHAPE, not snapshot. These literals are OWNED by scripts/snapshot-landing-data.mjs, which
+    // rewrites them on every deploy and again daily at 00:39 UTC — so asserting the exact digits
+    // asserts the opposite of this test's own name: it fails precisely when the live-binding works.
+    // It did: pinning "91.5%" broke the suite the moment the injector moved it to 91.7%.
+    // CLAUDE.md — naturally drifting values (PFE WR %, version, asset counts) get a shape regex;
+    // value correctness belongs to the drift-tolerant layer (HOMEPAGE_PFE_DTRF_BAND, BAND ±3pp)
+    // and to scripts/check-claim-coverage.mjs, which asserts the span is manifest-managed at all.
+    // The old assertion counted 2 because only 2 of the 8 pfe_wr spans happened to hold "91.5%";
+    // once the injector normalised them all to one live value that count became 8. So the COUNT was
+    // value-coupled too. Assert the actual invariant instead: EVERY pfe_wr span is well-formed and
+    // live-bound (percent inside), with a non-vacuous floor so an empty page cannot pass.
+    // `[^>]*` around the attribute is LOAD-BEARING: two of these spans carry a style attribute
+    // (`<span data-tr-field="pfe_wr" style="…">`) and the GEO pages use `<span class="stat"
+    // data-tr-field="pfe_wr">`. A regex demanding the attribute sit immediately after `<span`
+    // silently under-matches — the exact phrasing-escape this wave's coverage gate exists to kill,
+    // and it bit this very assertion twice while being written.
+    const allPfe = html.match(/data-tr-field="pfe_wr"/g) ?? [];
+    const wellFormedPfe = html.match(/<span[^>]*data-tr-field="pfe_wr"[^>]*>\d+\.\d%<\/span>/g) ?? [];
+    expect(allPfe.length).toBeGreaterThanOrEqual(2);
+    expect(wellFormedPfe).toHaveLength(allPfe.length);
+
+    const allCalls = html.match(/data-tr-field="call_count"/g) ?? [];
+    const wellFormedCalls = html.match(/<span[^>]*data-tr-field="call_count"[^>]*>[\d,]+<\/span>/g) ?? [];
+    expect(allCalls.length).toBeGreaterThanOrEqual(2);
+    expect(wellFormedCalls).toHaveLength(allCalls.length);
     // Design.md data-tr-field-percent-suffix-discipline: % must never sit OUTSIDE the span.
     expect(html).not.toMatch(/<span data-tr-field="pfe_wr">[0-9.]+<\/span>%/);
   });

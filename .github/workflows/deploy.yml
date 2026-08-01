@@ -197,6 +197,16 @@ jobs:
           node scripts/check-live-numeric-claims.mjs --self-test
           node scripts/check-live-numeric-claims.mjs
 
+      # OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 — the generator for the phrasing-escape class.
+      # Three separate waves fixed "a new phrasing of the same fact escaped its phrasing-specific
+      # claim regex" by adding one more row, which cannot retire the class. This asks the inverse
+      # question — is EVERY public numeric claim site either manifest-managed or explicitly
+      # exempted with a reason? — so a new phrasing fails the commit that introduces it.
+      - name: Claim-coverage gate (fail-closed)
+        run: |
+          node scripts/check-claim-coverage.mjs --self-test
+          node scripts/check-claim-coverage.mjs
+
       # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 — the meta-canary. "A canary exists but nothing runs it"
       # appeared THREE times in SECURITY-AUDIT-FULL-W1, and is why a live credential sat in a
       # public repo for seven weeks with every gate green. This fails the build on any committed
