@@ -640,7 +640,7 @@ async function generateTrackRecord(): Promise<Post> {
 
   const startDate = new Date().toISOString().slice(0, 10);
 
-  const content = `AlgoVault Signal Intelligence — Week of ${startDate}
+  const content = `AlgoVault Trade-Call Intelligence — Week of ${startDate}
 
 📊 ${totalTrackedCalls.toLocaleString()} trade calls tracked
 🎯 PFE Win Rate: ${pfeWR.toFixed(1)}% across ${assetCount}+ assets (Hyperliquid)
@@ -658,7 +658,7 @@ ${ctaLines([
 Built by AlgoVault Labs — call interpretation for AI trading agents.`;
 
   return {
-    title: `AlgoVault Weekly Signal Report — Week of ${startDate}`,
+    title: `AlgoVault Weekly Trade-Call Report — Week of ${startDate}`,
     content,
     moltbookSubmolt: 'agents',
     tags: ['mcp', 'crypto', 'ai', 'trading'],
