@@ -41,7 +41,7 @@ test('every alert id in a committed alert-emitting artifact owns a DISTINCT reco
 test("the gate's own self-test is green and NOT vacuous", () => {
   const { out, code } = run(['--self-test']);
   assert.equal(code, 0, `self-test failed:\n${out}`);
-  assert.match(out, /self-test \(passed\)/, out);
+  assert.match(out, /self-test passed/, out);
   assert.doesNotMatch(out, /\b0 must-(fire|not-fire|map)\b/,
     `an empty corpus means the self-test verified nothing:\n${out}`);
 });

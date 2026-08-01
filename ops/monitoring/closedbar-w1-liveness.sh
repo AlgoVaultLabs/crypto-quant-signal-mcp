@@ -186,7 +186,7 @@ self_test() {
     echo "self-test FAILED: ${failures} failure(s) across ${fire} must-fire, ${nofire} must-not-fire, ${map} must-map"
     return 1
   fi
-  echo "self-test (passed): ${fire} must-fire, ${nofire} must-not-fire, ${map} must-map (${pass} assertions)"
+  echo "self-test passed: ${fire} must-fire, ${nofire} must-not-fire, ${map} must-map (${pass} assertions)"
   return 0
 }
 

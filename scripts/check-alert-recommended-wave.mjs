@@ -193,7 +193,7 @@ function selfTest() {
     console.log(`self-test FAILED: ${failures} failure(s) across ${mustFire} must-fire, ${mustNotFire} must-not-fire, ${mustMap} must-map`);
     return 1;
   }
-  console.log(`self-test (passed): ${mustFire} must-fire, ${mustNotFire} must-not-fire, ${mustMap} must-map (${pass} assertions)`);
+  console.log(`self-test passed: ${mustFire} must-fire, ${mustNotFire} must-not-fire, ${mustMap} must-map (${pass} assertions)`);
   return 0;
 }
 
