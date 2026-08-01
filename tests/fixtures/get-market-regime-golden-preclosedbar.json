@@ -1,0 +1,33 @@
+{
+  "regime": "RANGING",
+  "confidence": 55,
+  "metrics": {
+    "adx": 11.2,
+    "adx_interpretation": "No trend",
+    "adx_slope": -0.03,
+    "adx_slope_interpretation": "Steady — no momentum change",
+    "volatility_ratio": 0.009,
+    "volatility_interpretation": "Low",
+    "price_structure": "HIGHER_HIGHS",
+    "pivot_quality": 0.477,
+    "trend_strength": "WEAK",
+    "cross_venue_funding_sentiment": "NEUTRAL",
+    "funding_divergence_note": "Insufficient cross-venue data",
+    "underlying_session": "ALWAYS_OPEN"
+  },
+  "suggestion": "Market is range-bound with low directional momentum. Favor mean-reversion strategies — buy support, sell resistance. Position sizing: conservative. Use tight stops.",
+  "timestamp": 1785326760,
+  "coin": "BTC",
+  "timeframe": "1h",
+  "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_market_regime",
+    "compatible_with": [
+      "crypto-quant-risk-mcp",
+      "crypto-quant-backtest-mcp"
+    ],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted"
+  }
+}
