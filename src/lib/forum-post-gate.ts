@@ -39,14 +39,35 @@
 import { splitFencedSegments } from './forum-post-content.js';
 
 /**
- * Minimum words in the SHIPPED body. Calibrated against the real corpus rather than
- * guessed: the defective post was 61 words, and the shortest legitimate post this
- * pipeline produces is the quiet-week market scan (~130 words incl. its CTAs). 120
- * sits between them with margin on both sides. It is deliberately NOT the editorial
- * pipeline's 1200 — that is a different product (long-form GEO posts); these are short
- * data notes and holding them to a long-form floor would block every one of them.
+ * Minimum words in the SHIPPED body — a SMOKE FLOOR for catastrophically truncated
+ * output, NOT the guard that catches the defect this module exists for.
+ *
+ * ⚠️ CALIBRATION IS MEASURED, AND AN EARLIER GUESS HERE WAS WRONG AND DANGEROUS.
+ * The first version of this constant was 120, justified by a comment claiming "the
+ * shortest legitimate post this pipeline produces is the quiet-week market scan (~130
+ * words)". That was false, and a 120 floor would have PERMANENTLY blocked three of the
+ * four post types — turning working weekly posts into hard failures forever. Measured,
+ * through this module's own strip + gate, on the real templates:
+ *
+ *     usage-example (MCP-outage fallback)  42
+ *     arb branch, 1 opportunity            74
+ *     track-record (structurally fixed)    78   ← every Sunday, invariant
+ *     quiet-week market scan              183
+ *     scan digest, 3 setups               193
+ *     the DEFECTIVE 2026-07-31 post        61   (blank CTAs)
+ *
+ * 30 is the floor: comfortably below every real template — the 42 above is a
+ * RECONSTRUCTION of the outage fallback rather than a captured artifact, so the margin is
+ * deliberately wider than the measurement is precise — while still catching an empty or
+ * stub body, which is all a length check can honestly claim to catch.
+ *
+ * Note it does NOT separate the defective post from the legitimate ones: 61 sits ABOVE two
+ * real templates. That is the whole point — LENGTH NEVER WAS THE SIGNAL. The 2026-07-31
+ * post is rejected by G2 (its CTAs were bare URLs), and G2/G3/G4 are what actually make
+ * the class impossible. Do not raise this number to "tighten" the gate; tighten G2-G4
+ * instead, and re-measure the table above before touching it at all.
  */
-export const MIN_BODY_WORDS = 120;
+export const MIN_BODY_WORDS = 30;
 
 export interface ForumPostGateInput {
   title: string;
@@ -54,6 +75,20 @@ export interface ForumPostGateInput {
   rawContent: string;
   /** The body as it will actually be published. */
   strippedContent: string;
+  /**
+   * Hosts the strip is configured to PRESERVE (canonical domain + any extras).
+   *
+   * G3 needs this to distinguish two outcomes that look identical in the output but mean
+   * opposite things. A link to an allowlisted host that vanished is a DEFECT — we expected
+   * it to reach the reader. A link to a non-allowlisted host that got flattened to plain
+   * text is the strip WORKING AS DESIGNED (that is its whole job: outbound links become
+   * prose). Without this list the gate flags the second case and rejects correct copy —
+   * e.g. the release post's GitHub release-notes link.
+   *
+   * Omitted ⇒ every authored link is required to survive, which is the stricter reading
+   * and the right default for a caller that has not told us what it preserves.
+   */
+  keepHosts?: string[];
 }
 
 export interface ForumPostGateResult {
@@ -63,8 +98,12 @@ export interface ForumPostGateResult {
   failures: string[];
 }
 
-/** Markdown links `[text](url)`, prose only. */
-const MD_LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+/** Markdown links `[text](url)`, prose only.
+ *  The optional `"title"` group is NOT decorative: the strip's Pass 1 accepts it
+ *  (forum-post-content.ts), so without it here the gate blanks a titled link before the
+ *  bare-URL scan and then reports a bare URL for a link the strip demonstrably preserves —
+ *  a false G2 rejection of correct copy. The two regexes must accept the same shapes. */
+const MD_LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)(?:\s+"[^"]*")?\)/g;
 /** Bare http(s) URLs. Mirrors the strip's Pass-2 pattern so the two agree exactly. */
 const BARE_URL_RE = /https?:\/\/[^\s)>\]]+/g;
 
@@ -78,6 +117,20 @@ function proseOf(markdown: string): string {
 
 function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
+}
+
+/** Same exact-or-`*.host` rule the strip applies, so the two cannot disagree about which
+ *  links were supposed to survive. */
+function hostIsAllowlisted(url: string, keepHosts: string[]): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return keepHosts.some((h) => {
+      const k = h.toLowerCase();
+      return host === k || host.endsWith(`.${k}`);
+    });
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -111,18 +164,29 @@ export function checkForumPost(input: ForumPostGateInput): ForumPostGateResult {
     checks.push('G2 bare-url: OK (no bare URLs in prose)');
   }
 
-  // ── 3. Every authored link SURVIVES the strip ──
-  // A link to a non-allowlisted host is reduced to its text, dropping the URL. That is
-  // the silent-blanking shape, one level up.
+  // ── 3. Every link we EXPECTED to survive actually survived ──
+  // A link to a non-allowlisted host is reduced to its text by design — that is the strip
+  // doing its job. Only a link on a host we said we would PRESERVE is expected to reach
+  // the reader, so only that one vanishing is a defect.
   const authored = [...rawProse.matchAll(MD_LINK_RE)].map((m) => m[2]);
-  const dropped = authored.filter((url) => !input.strippedContent.includes(url));
+  const expected = input.keepHosts
+    ? authored.filter((url) => hostIsAllowlisted(url, input.keepHosts!))
+    : authored;
+  // Scoped to PROSE on both sides. Checking the whole stripped body would let a URL that
+  // merely appears inside a code fence vouch for a prose link that was actually flattened —
+  // a fence is documentation, not a call to action.
+  const shippedProse = proseOf(input.strippedContent);
+  const dropped = expected.filter((url) => !shippedProse.includes(url));
   if (dropped.length > 0) {
     failures.push(
-      `G3 cta-survival: ${dropped.length} authored link(s) did NOT survive stripping ` +
+      `G3 cta-survival: ${dropped.length} allowlisted link(s) did NOT survive stripping ` +
         `(${dropped.slice(0, 3).join(', ')}) — the host must be allowlisted via StripOptions.keepHosts`,
     );
   } else {
-    checks.push(`G3 cta-survival: OK (${authored.length}/${authored.length} authored links survive)`);
+    checks.push(
+      `G3 cta-survival: OK (${expected.length}/${expected.length} allowlisted links survive` +
+        `${authored.length > expected.length ? `, ${authored.length - expected.length} outbound flattened by design` : ''})`,
+    );
   }
 
   // ── 4. At least one CTA actually reaches the reader ──

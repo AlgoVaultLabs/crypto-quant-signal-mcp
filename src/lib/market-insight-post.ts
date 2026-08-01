@@ -50,13 +50,25 @@ export function composeMarketInsightPost(
   if (digest) {
     return {
       kind: 'digest',
-      title: `This week's top crypto trade setups — ${scan.assetCount} assets · ${scan.venueCount} venues (${monthTag})`,
+      // "asset scans", not "assets": the count sums each venue's universe, so a coin listed
+      // on several venues contributes several times. The title is the most-quoted line of
+      // the post, so it is the last place to let an inflated-sounding number stand unqualified.
+      title: `This week's top crypto trade setups — ${scan.assetCount} asset scans · ${scan.venueCount} venues (${monthTag})`,
       body: [
         digest,
         '',
         'Every setup above is a live call from the same engine that publishes its full record on-chain — each one written down before its outcome is known. Conviction is shown as measured, not rounded up: these are the week\'s strongest setups, not certainties.',
         '',
-        'Ranking is by conviction across every venue scanned, deduplicated per coin, and filtered to assets that actually carry enough open interest to trade. What is not here matters as much as what is: the engine holds by default.',
+        // FACTUALITY — every clause here is deliberately weaker than the obvious phrasing,
+        // because the obvious phrasing is not true:
+        //  · "enough open interest" would be FALSE on four venues. BINANCE / ASTER / BINGX /
+        //    XT expose no bulk-OI endpoint, so `effectiveLiquidityUsd` gates them on 24h
+        //    VOLUME instead (OI_PROXY_VENUES, exchange-universe.ts). "liquidity floor"
+        //    covers both without asserting which was measured where.
+        //  · the count is a SUM of per-venue universes, so a coin listed on eight venues is
+        //    counted eight times — it is a scan count, not a distinct-asset count. The
+        //    sentence says "scans" for exactly that reason.
+        'Ranking is by conviction across every venue scanned, deduplicated per coin, and filtered by a USD liquidity floor. The headline figure counts scans rather than distinct assets — a coin listed on several venues is scanned on each. What is not here matters as much as what is: the engine holds by default.',
       ].join('\n'),
     };
   }
@@ -71,7 +83,7 @@ export function composeMarketInsightPost(
     : 'Regime data was not available for this run.';
   return {
     kind: 'quiet',
-    title: `Quiet week: ${scan.assetCount} assets scanned, no fresh directional setups (${monthTag})`,
+    title: `Quiet week: ${scan.assetCount} asset scans, no fresh directional setups (${monthTag})`,
     body: [
       `📡 This week I scanned ${scan.assetCount} assets across ${scan.venueCount} venues.`,
       '',
@@ -81,7 +93,7 @@ export function composeMarketInsightPost(
       '',
       'Every call it does publish is Merkle-anchored on Base L2 before its outcome is known. That is also why the quiet weeks get reported: a record you can only see when it flatters us is not a record.',
       '',
-      'The same scan runs continuously across every supported venue, so a week with no setups is not a week with no coverage.',
+      'The same scan runs continuously across every supported venue, so a week with no setups is not a week with no coverage. The figure above counts scans rather than distinct assets — a coin listed on several venues is scanned on each.',
     ].join('\n'),
   };
 }

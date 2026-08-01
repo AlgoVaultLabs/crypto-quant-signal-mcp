@@ -248,6 +248,25 @@ const MCP_HEADERS = {
   // call site can forget, which is precisely how the original incident happened; a header
   // on the shared client cannot be forgotten by construction.
   'X-AlgoVault-Priority': 'background',
+  // ⚠️ THE PRIORITY HEADER ABOVE IS INERT WITHOUT THIS ONE.
+  // `resolveBackgroundPriority` (license.ts:146-153) opens with `if (tier !== 'internal')
+  // return false`, so an UNAUTHENTICATED caller's priority hint is discarded and the
+  // request runs in the interactive lane regardless. Sending the priority header alone was
+  // pure ceremony — it looked like the HL-throw incident had been addressed while changing
+  // nothing at all.
+  //
+  // It also closes a second, quieter problem. With no credential, `resolveLicense` falls
+  // through to the FREE tier (quota 100/mo, keyed `free:${ipHash}` and PERSISTED to
+  // Postgres), so a weekly 15-venue fan-out would consume — and eventually exhaust — the
+  // free allowance attached to our own server's IP, on our own server.
+  //
+  // Read at call time and simply ABSENT when unset: this script also runs locally and in
+  // dry runs, where there is no bypass key and free-tier is the correct behaviour.
+  // `checkInternalBypass` additionally requires BOT_INTERNAL_BYPASS_ENABLED=true
+  // server-side, so a stray key on its own grants nothing.
+  ...(process.env.ALGOVAULT_INTERNAL_BYPASS_KEY
+    ? { 'X-AlgoVault-Internal-Key': process.env.ALGOVAULT_INTERNAL_BYPASS_KEY }
+    : {}),
 };
 
 /** Parse SSE response body to extract JSON-RPC result */
@@ -423,7 +442,16 @@ async function fetchShowcaseSetups(): Promise<{
       continue;
     }
     venueCount++;
-    assetCount += Number.isFinite(result.scanned) ? result.scanned : 0;
+    // Count scans that actually produced a VERDICT, not the universe we set out to scan.
+    // `scanned` is the post-filter universe size measured BEFORE any per-coin scoring, and
+    // `errors` counts the cells that then failed — a live probe returned Hyperliquid
+    // {scanned:100, errors:81}. Publishing the raw universe would have overstated the work
+    // roughly 5x on that venue, in the headline figure, which is exactly the kind of
+    // unearned number the Numerical-citation rule exists to stop. The subtraction is exact:
+    // holds + eligible_non_hold + errors == scanned, verified against live responses.
+    const attempted = Number.isFinite(result.scanned) ? result.scanned : 0;
+    const failedCells = Number.isFinite(result.errors) ? Number(result.errors) : 0;
+    assetCount += Math.max(0, attempted - failedCells);
     for (const c of result.calls ?? []) {
       const verdict = String(c.call ?? '').toUpperCase();
       if (!SETUP_VERDICTS.has(verdict)) continue;
@@ -742,10 +770,16 @@ async function generateMarketInsight(): Promise<Post> {
     } catch (err) {
       throw new Error(`Both arb and scan APIs failed — skipping this run: ${err instanceof Error ? err.message : err}`);
     }
-    if (scan.venueCount === 0) {
-      // Publishing "0 assets across 0 venues" would be a false claim about coverage, not a
-      // quiet week. A total fan-out failure is an outage: skip the slot, keep the silence.
-      throw new Error('Scan fan-out reached no venues — skipping this run rather than publishing an empty coverage claim');
+    if (scan.venueCount === 0 || scan.assetCount === 0) {
+      // Publishing "0 assets across N venues" is a false claim about coverage, not a quiet
+      // week — and BOTH counts have to be checked. Guarding only `venueCount` left a real
+      // hole: every venue can answer successfully with `scanned: 0` (an unreachable
+      // liquidity source makes the floor deny the whole universe, by design), which yields
+      // venueCount=15, assetCount=0 and the sentence "I scanned 0 assets across 15 venues".
+      // A total-coverage failure is an outage; skip the slot and keep the silence.
+      throw new Error(
+        `Scan fan-out produced no coverage (venues=${scan.venueCount}, assets=${scan.assetCount}) — skipping this run rather than publishing an empty coverage claim`,
+      );
     }
 
     // Composition lives in `lib/market-insight-post.ts` (pure) so it is unit-testable —
@@ -885,7 +919,7 @@ async function generateRelease(version?: string): Promise<Post> {
       `[release] WARNING: CHANGELOG.md not found; falling back to generic release note for v${resolvedVersion}.`,
     );
     changelogItems = [
-      `Released version ${resolvedVersion} — see https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases for details.`,
+      `Released version ${resolvedVersion} — see [the release notes](https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases) for details.`,
     ];
   } else {
     const entry = parseChangelog(changelogMd, resolvedVersion);
@@ -894,7 +928,7 @@ async function generateRelease(version?: string): Promise<Post> {
         `[release] WARNING: CHANGELOG.md has no entry for version ${resolvedVersion}; falling back to generic release note.`,
       );
       changelogItems = [
-        `Released version ${resolvedVersion} — see https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases for details.`,
+        `Released version ${resolvedVersion} — see [the release notes](https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases) for details.`,
       ];
     } else {
       // Flatten all sections into a single bullet list. Keep subsection
@@ -912,7 +946,7 @@ async function generateRelease(version?: string): Promise<Post> {
       changelogItems = flattened.slice(0, 8);
       if (changelogItems.length === 0) {
         changelogItems = [
-          `Released version ${resolvedVersion} — see https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases for details.`,
+          `Released version ${resolvedVersion} — see [the release notes](https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases) for details.`,
         ];
       }
     }
@@ -1495,7 +1529,14 @@ async function main() {
   // and enforced on the live path — a dry run reports the verdict but never blocks,
   // so an operator can always inspect a failing draft.
   const gateBody = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
-  const gate = checkForumPost({ title: post.title, rawContent: post.content, strippedContent: gateBody });
+  const gate = checkForumPost({
+    title: post.title,
+    rawContent: post.content,
+    strippedContent: gateBody,
+    // The SAME list the strip was given, so the gate judges "was this link supposed to
+    // survive?" by the identical rule rather than forming a second, drifting opinion.
+    keepHosts: [STRIP_KEEP_OPTS.keepCanonicalDomain, ...STRIP_KEEP_OPTS.keepHosts],
+  });
   const gateWords = gateBody.split(/\s+/).filter(Boolean).length;
   console.log(`[${ts}] Post generated: "${post.title}" (${gateWords} words shipped)`);
   for (const line of gate.checks) console.log(`[${ts}]   ${line}`);

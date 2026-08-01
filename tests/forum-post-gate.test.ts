@@ -131,3 +131,65 @@ describe('forum post publish gate', () => {
     expect(r.checks).toHaveLength(5);
   });
 });
+
+describe('gate calibration — the floor must never exceed the real corpus', () => {
+  // WHY THIS EXISTS: the first version of this gate shipped MIN_BODY_WORDS=120 on a GUESS,
+  // justified by a comment asserting the quiet-week scan (~130 words) was the shortest post
+  // the pipeline produces. Both numbers were wrong. A 120 floor would have PERMANENTLY
+  // blocked three of the four weekly post types — track-record every Sunday, forever —
+  // because no test measured the real templates against the gate. This is that test.
+  //
+  // Values below were MEASURED through the real strip + gate (see the MIN_BODY_WORDS
+  // docblock). Re-measure before changing any of them; do not adjust them to make a new
+  // floor fit, which is precisely the move that would reintroduce the outage.
+  const MEASURED_CORPUS = {
+    'usage-example (MCP-outage fallback)': 42,
+    'market-insight arb branch, 1 opportunity': 74,
+    'track-record (structurally fixed length)': 78,
+    'quiet-week market scan': 183,
+    'scan digest, 3 setups': 193,
+  } as const;
+
+  it('MIN_BODY_WORDS sits below EVERY real post type', () => {
+    for (const [label, words] of Object.entries(MEASURED_CORPUS)) {
+      expect(MIN_BODY_WORDS, `floor ${MIN_BODY_WORDS} would block "${label}" at ${words} words`)
+        .toBeLessThanOrEqual(words);
+    }
+  });
+
+  it('the defective 2026-07-31 post is NOT caught by length — G2 is what catches it', () => {
+    // 61 words sits ABOVE two legitimate templates, so length could never have separated
+    // them. Stated explicitly so nobody "fixes" the gate by raising the floor again.
+    expect(61).toBeGreaterThan(MEASURED_CORPUS['usage-example (MCP-outage fallback)']);
+    const r = run(BROKEN_RAW);
+    expect(r.failures.join(' ')).toMatch(/G2 bare-url/);
+  });
+});
+
+describe('G3 distinguishes an intended flattening from a defect', () => {
+  const body = `Title\n\n${'word '.repeat(80)}\n\n` +
+    'See [the release notes](https://github.com/AlgoVaultFi/crypto-quant-signal-mcp/releases) for details.\n' +
+    '📊 Track record: [algovault.com/track-record](https://algovault.com/track-record?src=devto)';
+
+  it('an OUTBOUND link flattened by design does NOT fail the gate', () => {
+    // github.com is deliberately not allowlisted — the strip turning it into prose IS the
+    // strip working. Treating that as a defect rejected the entire release post.
+    const shipped = stripExternalUrlsForModeration(body, KEEP);
+    const r = checkForumPost({ title: 'T', rawContent: body, strippedContent: shipped, keepHosts: ['algovault.com', 't.me'] });
+    expect(r.failures.join(' ')).not.toMatch(/G3/);
+    expect(r.ok).toBe(true);
+  });
+
+  it('but an ALLOWLISTED link that vanishes still FAILS', () => {
+    const shipped = stripExternalUrlsForModeration(body, { keepCanonicalDomain: 'example.invalid' });
+    const r = checkForumPost({ title: 'T', rawContent: body, strippedContent: shipped, keepHosts: ['algovault.com', 't.me'] });
+    expect(r.failures.join(' ')).toMatch(/G3 cta-survival/);
+  });
+
+  it('a markdown link carrying a "title" is not misreported as a bare URL', () => {
+    const titled = `Title\n\n${'word '.repeat(80)}\n\n[docs](https://algovault.com/docs?src=devto "AlgoVault docs")`;
+    const shipped = stripExternalUrlsForModeration(titled, KEEP);
+    const r = checkForumPost({ title: 'T', rawContent: titled, strippedContent: shipped, keepHosts: ['algovault.com', 't.me'] });
+    expect(r.failures.join(' ')).not.toMatch(/G2 bare-url/);
+  });
+});

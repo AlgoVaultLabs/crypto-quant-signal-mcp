@@ -73,9 +73,9 @@ describe('weekly market-insight post — digest branch', () => {
     expect(p.body).not.toMatch(/— HOLD/);
   });
 
-  it('the title states LIVE counts, not literals', () => {
+  it('the title says "asset scans", never "assets" — the count is not distinct assets', () => {
     const p = composeMarketInsightPost(WITH_SETUPS, 'Aug 2026', null);
-    expect(p.title).toContain(`${GOLDEN.assetCount} assets`);
+    expect(p.title).toContain(`${GOLDEN.assetCount} asset scans`);
     expect(p.title).toContain(`${GOLDEN.venueCount} venues`);
   });
 
@@ -98,9 +98,12 @@ describe('weekly market-insight post — quiet-week branch', () => {
     expect(g.ok).toBe(true);
   });
 
-  it('clears the word floor — the quiet branch is the shortest post we ever publish', () => {
-    // If any post type is going to trip G1 it is this one, so pin the margin explicitly
-    // rather than discovering it in production on a quiet Friday.
+  it('clears the word floor with real margin', () => {
+    // NOTE: this is NOT the shortest post the pipeline publishes — an earlier version of
+    // this test claimed it was, and that false premise is what justified a 120-word floor
+    // that would have permanently blocked track-record (78 words), the 1-opportunity arb
+    // branch (74) and the usage-example outage path (42). Measured values live in the
+    // MIN_BODY_WORDS docblock; do not re-derive them from intuition.
     const p = composeMarketInsightPost(QUIET, 'Aug 2026', 'RANGING');
     const { shipped } = gateOf(p.title, p.body);
     expect(shipped.split(/\s+/).filter(Boolean).length).toBeGreaterThan(MIN_BODY_WORDS);
