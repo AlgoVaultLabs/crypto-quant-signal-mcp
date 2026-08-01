@@ -24,6 +24,25 @@ export interface StripOptions {
    * `[support](https://hashnode.com/support)`.
    */
   keepCanonicalDomain?: string;
+  /**
+   * FIX-CONVICTION-CALL-POSTS-W1: ADDITIONAL allowlisted hosts, matched by the
+   * same exact-or-`*.host` rule as `keepCanonicalDomain`. Omitted ⇒ undefined ⇒
+   * behaviour byte-identical to before this option existed.
+   *
+   * This is an allowlist EXTENSION, never a relaxation: everything not named
+   * here is still stripped, and a bare URL is still deleted even for an
+   * allowlisted host (rule 3 is unchanged — intent must be expressed as markup).
+   *
+   * It exists because our PRIMARY call-to-action is the Telegram bot, which by
+   * definition cannot live on the canonical domain. Without an explicit entry a
+   * `[…](https://t.me/algovaultofficialbot)` link is reduced to its link TEXT and
+   * the handle disappears entirely — strictly worse than a bare URL, because the
+   * reader is left with no way to reach the bot at all.
+   *
+   * Keep this list SHORT and first-party. Every entry is a host we control and
+   * publish under; it is not a general escape hatch for outbound links.
+   */
+  keepHosts?: string[];
 }
 
 /**
@@ -34,8 +53,8 @@ export interface StripOptions {
  *   1. Code blocks (```…``` or ~~~…~~~) are treated as opaque — content
  *      inside them is passed through untouched regardless of URLs.
  *   2. Outside code blocks, markdown links `[text](url)` are replaced with
- *      just `text`, unless the URL's hostname matches
- *      `opts.keepCanonicalDomain` in which case the full link is kept.
+ *      just `text`, unless the URL's hostname matches `opts.keepCanonicalDomain`
+ *      or any entry in `opts.keepHosts`, in which case the full link is kept.
  *   3. Outside code blocks, bare http(s):// URLs are deleted (replaced
  *      with an empty string). Canonical-domain bare URLs are also
  *      stripped — the back-link should be a markdown link (rule 2) so we
@@ -46,24 +65,30 @@ export interface StripOptions {
  * @param opts Options (optional).
  * @returns The stripped markdown.
  */
-export function stripExternalUrlsForModeration(
-  markdown: string,
-  opts: StripOptions = {}
-): string {
-  if (!markdown) return markdown;
+export interface MarkdownSegment {
+  kind: 'code' | 'prose';
+  text: string;
+}
 
-  // Split the body into fenced-code segments and prose segments so the
-  // URL-stripping passes never touch code. We match both ``` and ~~~
-  // fences; the opening fence can carry an info-string (e.g. ```ts) that
-  // we must not chew on. Unterminated fences are treated as code-until-
-  // end-of-input (same as most renderers).
+/**
+ * Split a body into fenced-code and prose segments, so URL handling never
+ * touches code. Matches both ``` and ~~~ fences; the opening fence may carry an
+ * info-string (e.g. ```ts). An unterminated fence is code-until-end-of-input
+ * (what most renderers do).
+ *
+ * EXPORTED so the publish gate (`forum-post-gate.ts`) classifies code exactly the
+ * way the strip does. A gate that re-implemented fence parsing could disagree with
+ * the strip about what counts as code — and would then either pass a URL that gets
+ * deleted, or fail one that was always safe.
+ */
+export function splitFencedSegments(markdown: string): MarkdownSegment[] {
   const fenceRegex = /(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\2[ \t]*(?=\n|$)|$)/g;
-  const segments: Array<{ kind: 'code' | 'prose'; text: string }> = [];
+  const segments: MarkdownSegment[] = [];
   let cursor = 0;
   for (const m of markdown.matchAll(fenceRegex)) {
     const start = m.index ?? 0;
-    // The regex's leading `(^|\n)` captures either a newline or the start
-    // of the string; the literal text sits immediately after.
+    // The regex's leading `(^|\n)` captures either a newline or the start of the
+    // string; the literal fence sits immediately after.
     const leadLen = m[1]?.length ?? 0;
     const codeStart = start + leadLen;
     if (codeStart > cursor) {
@@ -76,25 +101,39 @@ export function stripExternalUrlsForModeration(
   if (cursor < markdown.length) {
     segments.push({ kind: 'prose', text: markdown.slice(cursor) });
   }
+  return segments;
+}
 
-  const keepHost = opts.keepCanonicalDomain?.toLowerCase() ?? null;
+export function stripExternalUrlsForModeration(
+  markdown: string,
+  opts: StripOptions = {}
+): string {
+  if (!markdown) return markdown;
+
+  const segments = splitFencedSegments(markdown);
+
+  // One allowlist, built once: the canonical domain plus any explicit extras.
+  // Empty ⇒ nothing is preserved, exactly as before either option existed.
+  const keepHosts = [opts.keepCanonicalDomain, ...(opts.keepHosts ?? [])]
+    .filter((h): h is string => typeof h === 'string' && h.length > 0)
+    .map((h) => h.toLowerCase());
 
   const processed = segments.map((seg) => {
     if (seg.kind === 'code') return seg.text;
-    return stripProse(seg.text, keepHost);
+    return stripProse(seg.text, keepHosts);
   });
 
   return processed.join('');
 }
 
-function stripProse(text: string, keepHost: string | null): string {
+function stripProse(text: string, keepHosts: string[]): string {
   // Pass 1: markdown links. `[text](url)` or `[text](url "title")`.
   // Use a conservative character class for the text (no newline, no `]`).
   // The URL can be any run of non-whitespace + optional title in quotes.
   let out = text.replace(
     /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)(?:\s+"[^"]*")?\)/g,
     (_match, linkText: string, url: string) => {
-      if (keepHost && hostMatches(url, keepHost)) {
+      if (keepHosts.some((h) => hostMatches(url, h))) {
         // Keep the full markdown link. Re-emit a clean form (drop the
         // optional title) so downstream regexes see a predictable shape.
         return `[${linkText}](${url})`;

@@ -18,6 +18,7 @@
  */
 
 import { stripExternalUrlsForModeration } from '../lib/forum-post-content.js';
+import { checkForumPost } from '../lib/forum-post-gate.js';
 import { FUNDING_VENUE_LIST_TEXT } from '../lib/funding-venues.js';
 import {
   verifyHashnodePost,
@@ -72,6 +73,53 @@ function getCanonical(postType: string): string {
 }
 
 const CANONICAL_DOMAIN = 'algovault.com';
+
+// ── Calls-to-action (FIX-CONVICTION-CALL-POSTS-W1) ──
+//
+// THE BUG THIS CLOSES: every CTA was authored as a BARE url —
+//     Real-time signals: https://api.algovault.com/mcp
+// and `publishDevTo` runs the body through `stripExternalUrlsForModeration`,
+// whose Pass 2 deletes every bare URL *including* canonical-domain ones (the
+// strip is deliberate and test-locked; the docblock says intent must be
+// expressed as MARKUP). So the published post ended with two naked labels:
+//     Real-time signals:
+//     Full track record:
+// Live proof: dev.to article 4280654 (2026-07-31) ends exactly that way. This
+// affected ALL FOUR post types, not one — so the fix is here, at the single
+// authoring site, not per-type.
+//
+// TWO RULES, both load-bearing:
+//   1. Author every CTA as a MARKDOWN LINK. Never "fix" this by weakening the
+//      strip — the strip is what keeps these posts out of spam moderation.
+//   2. Every CTA target must be reachable BY A HUMAN IN A BROWSER. The old copy
+//      pointed at `https://api.algovault.com/mcp`, which is a POST-only MCP
+//      endpoint and answers a browser with 405 — a dead CTA even once un-blanked.
+//      Human-facing CTAs therefore point at pages, never at the MCP endpoint.
+//
+// `?src=devto` is a real `ATTRIBUTION_SOURCES` enum member (attribution-sources.ts),
+// so a click lands in the `devto` funnel bucket instead of the `unknown` default-deny.
+const CTA_SRC = 'devto';
+const CTA_TRACK_RECORD = `https://algovault.com/track-record?src=${CTA_SRC}`;
+const CTA_DOCS = `https://algovault.com/docs?src=${CTA_SRC}`;
+/** Primary CTA per brand. Verified live: profile "AlgoVault Official Bot".
+ *  Telegram usernames are case-insensitive, so casing in copy is safe. NOTE the
+ *  near-misses `algovaultlabsbot` / `algovaultsignalsbot` are UNREGISTERED and two
+ *  other near-misses resolve to unrelated third-party bots — never retype this by hand. */
+const CTA_TELEGRAM = 'https://t.me/algovaultofficialbot';
+/** Hosts whose markdown links survive moderation stripping. First-party only —
+ *  the Telegram bot cannot live on the canonical domain, and without this entry the
+ *  primary CTA is reduced to link TEXT with the handle dropped entirely. */
+const CTA_KEEP_HOSTS = ['t.me'];
+
+/** The ONE strip configuration every publisher + the dry-run preview share, so a
+ *  preview can never disagree with what actually ships. (`stripAllUrls` mode passes
+ *  `{}` deliberately — that path strips everything, allowlist included.) */
+const STRIP_KEEP_OPTS = { keepCanonicalDomain: CANONICAL_DOMAIN, keepHosts: CTA_KEEP_HOSTS };
+
+/** Render CTA rows as markdown links — the ONE authoring site for every post type. */
+function ctaLines(items: Array<{ label: string; url: string }>): string {
+  return items.map(({ label, url }) => `${label}: [${url.replace(/^https?:\/\//, '').split('?')[0]}](${url})`).join('\n');
+}
 
 // ── CLI argument parsing ──
 
@@ -318,8 +366,8 @@ const USAGE_TITLES = [
   'How an AI agent analyzes BTC with AlgoVault MCP',
   'Cross-venue funding arb: what AlgoVault sees right now',
   'Market regime detection: is ETH trending or ranging?',
-  'Why HOLD calls matter: AlgoVault\'s selective signal engine',
-  'TradFi on Hyperliquid: GOLD and TSLA signals via MCP',
+  'Why HOLD calls matter: AlgoVault\'s selective engine',
+  'TradFi on Hyperliquid: GOLD and TSLA calls via MCP',
 ];
 
 const INSIGHT_COINS = ['BTC', 'ETH', 'SOL', 'DOGE', 'AVAX', 'LINK', 'GOLD', 'TSLA'];
@@ -373,10 +421,14 @@ async function generateTrackRecord(): Promise<Post> {
 📈 Confidence band ${bestBand} hitting ${bestBandRate.toFixed(1)}% accuracy
 
 All calls are on-chain verified (Base L2 Merkle root).
-Live track record: https://algovault.com/track-record
-Try it free: https://api.algovault.com/mcp
 
-Built by AlgoVault Labs — signal interpretation for AI trading agents.`;
+${ctaLines([
+  { label: '📊 Live track record', url: CTA_TRACK_RECORD },
+  { label: '🔌 Connect an agent', url: CTA_DOCS },
+  { label: '🛰 Set a standing scan in Telegram', url: CTA_TELEGRAM },
+])}
+
+Built by AlgoVault Labs — call interpretation for AI trading agents.`;
 
   return {
     title: `AlgoVault Weekly Signal Report — Week of ${startDate}`,
@@ -423,7 +475,7 @@ async function generateUsageExample(): Promise<Post> {
     }
   } catch (err) {
     console.error(`[usage-example] MCP call failed:`, err instanceof Error ? err.message : err);
-    reasoning = 'Live signal data temporarily unavailable.';
+    reasoning = 'Live call data temporarily unavailable.';
   }
 
   // Truncate reasoning to 2-3 sentences
@@ -437,7 +489,7 @@ Here's a real-world workflow showing how agents use AlgoVault:
 💡 Workflow #${exIdx + 1}: ${example.name} (${example.level})
 "${example.prompt}"
 
-And here's what the live signal returned just now:
+And here's what the live call returned just now:
 
 Tool: ${example.tool}
 Asset: ${example.coin} (${tierLabel})
@@ -446,10 +498,12 @@ Verdict: ${verdict} (${confidence}% confidence)
 
 ${reasoningTrimmed}
 
-This is what "signal interpretation" means — we don't tell agents what to trade. We give them the analysis so they can decide.
+This is what "call interpretation" means — we don't tell agents what to trade. We give them the analysis so they can decide.
 
-20 workflows like this in our docs: https://algovault.com/docs.html
-Connect in 30 seconds: https://api.algovault.com/mcp`;
+${ctaLines([
+  { label: '📖 20 workflows like this in our docs', url: CTA_DOCS },
+  { label: '📊 Full verified track record', url: CTA_TRACK_RECORD },
+])}`;
 
   return {
     title: USAGE_TITLES[titleIdx],
@@ -506,14 +560,16 @@ async function generateMarketInsight(): Promise<Post> {
 
   const content = `${title}
 
-Live from AlgoVault's signal engine:
+Live from AlgoVault's engine:
 
 ${body}
 
-⚠️ This is signal interpretation, not financial advice. AlgoVault helps AI agents analyze — execution decisions are theirs.
+⚠️ This is call interpretation, not financial advice. AlgoVault helps AI agents analyze — execution decisions are theirs.
 
-Real-time signals: https://api.algovault.com/mcp
-Full track record: https://algovault.com/track-record`;
+${ctaLines([
+  { label: '🛰 Want this on your coins automatically? Set a standing scan', url: CTA_TELEGRAM },
+  { label: '📊 See the full verified track record', url: CTA_TRACK_RECORD },
+])}`;
 
   return {
     title,
@@ -666,12 +722,18 @@ ${bullets}
 Now tracking ${assetCount}+ assets with ${pfeWR.toFixed(1)}% PFE Win Rate across ${perf.overall.totalEvaluated.toLocaleString()} evaluated calls.
 
 Upgrade now — remote agents get the new version automatically:
-🔗 Remote: https://api.algovault.com/mcp
-📦 npm: npx -y crypto-quant-signal-mcp@${resolvedVersion}
-📖 Docs: https://algovault.com/docs.html
-📊 Track record: https://algovault.com/track-record
 
-Built by AlgoVault Labs — signal interpretation for AI trading agents.`;
+\`\`\`
+Remote MCP   https://api.algovault.com/mcp
+npm          npx -y crypto-quant-signal-mcp@${resolvedVersion}
+\`\`\`
+
+${ctaLines([
+  { label: '📖 Docs', url: CTA_DOCS },
+  { label: '📊 Track record', url: CTA_TRACK_RECORD },
+])}
+
+Built by AlgoVault Labs — call interpretation for AI trading agents.`;
 
   return {
     title: `AlgoVault MCP v${resolvedVersion} — What's New`,
@@ -703,7 +765,7 @@ async function publishMoltbook(post: Post, postType: string): Promise<PublishRes
   // Strip external URLs from the body — Moltbook has no canonical-URL
   // field, and embedded links trigger the `is_spam: true` auto-flag per
   // audit 2026-04-15.
-  const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+  const strippedContent = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
 
   const body = JSON.stringify({ submolt: post.moltbookSubmolt, title: post.title, content: strippedContent });
   const opts: RequestInit = {
@@ -756,7 +818,7 @@ async function publishDevTo(post: Post, postType: string): Promise<PublishResult
   // spec calls for uniform stripping across platforms to reduce
   // moderation risk. The canonical back-link is preserved on Dev.to via
   // the `canonical_url` field rather than in-body.
-  const strippedContent = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+  const strippedContent = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
   const canonical = getCanonical(postType);
 
   const body = JSON.stringify({
@@ -827,7 +889,7 @@ async function publishHashnode(post: Post, postType: string, publishOpts: { stri
   // density (regardless of domain) is what triggers anti-spam.
   const strippedContent = publishOpts.stripAllUrls
     ? stripExternalUrlsForModeration(post.content, {})
-    : stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+    : stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
   const canonical = getCanonical(postType);
 
   const mutation = `mutation PublishPost($input: PublishPostInput!) {
@@ -1215,12 +1277,29 @@ async function main() {
     post.content = `${post.content}\n\n> Test probe: ${args.testTag}. Safe to delete.`;
   }
 
-  // Word count check
-  const wordCount = post.content.split(/\s+/).length;
-  console.log(`[${ts}] Post generated: "${post.title}" (${wordCount} words)`);
+  // ── Publish gate (FIX-CONVICTION-CALL-POSTS-W1) ──
+  // This used to be a bare `console.log` of the word count that nothing branched on,
+  // which is how a 61-word post with two blank CTA labels published green for weeks.
+  // It is now a real gate, evaluated against the STRIPPED body (what actually ships)
+  // and enforced on the live path — a dry run reports the verdict but never blocks,
+  // so an operator can always inspect a failing draft.
+  const gateBody = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
+  const gate = checkForumPost({ title: post.title, rawContent: post.content, strippedContent: gateBody });
+  const gateWords = gateBody.split(/\s+/).filter(Boolean).length;
+  console.log(`[${ts}] Post generated: "${post.title}" (${gateWords} words shipped)`);
+  for (const line of gate.checks) console.log(`[${ts}]   ${line}`);
+  for (const line of gate.failures) console.error(`[${ts}]   ${line}`);
+  console.log(`[${ts}] FORUM_POST_GATE_VERDICT=${gate.ok ? 'PASS' : 'FAIL'}`);
+  if (!gate.ok && !args.dryRun) {
+    await recordFailure('gate', args.type, `gate-red: ${gate.failures[0]}`);
+    try {
+      await sendAlert(`Forum post gate RED (${args.type}) — not published: ${gate.failures.join('; ')}`, 'warning');
+    } catch { /* Telegram optional */ }
+    throw new Error(`FORUM_POST_GATE_FAIL: ${gate.failures.join('; ')}`);
+  }
 
   if (args.dryRun) {
-    const strippedPreview = stripExternalUrlsForModeration(post.content, { keepCanonicalDomain: CANONICAL_DOMAIN });
+    const strippedPreview = stripExternalUrlsForModeration(post.content, STRIP_KEEP_OPTS);
     const canonical = getCanonical(args.type);
     console.log('\n=== DRY RUN — Moltbook (m/' + post.moltbookSubmolt + ') ===');
     console.log(`Title: ${post.title}`);
@@ -1230,27 +1309,30 @@ async function main() {
     console.log(`Tags: ${post.tags.join(', ')}`);
     console.log(`canonical_url: ${canonical}`);
     console.log(strippedPreview);
-    const hashnodePreview = args.hashnodeStripUrls
-      ? stripExternalUrlsForModeration(post.content, {})
-      : strippedPreview;
-    console.log(`\n=== DRY RUN — Hashnode${args.hashnodeStripUrls ? ' (A/B URL-stripped)' : ''} ===`);
-    console.log(`Title: ${post.title}`);
-    console.log(`originalArticleURL: ${canonical}`);
-    console.log(hashnodePreview);
+    // No Hashnode preview: the publish was removed (deprecated 2026-05-26). A preview
+    // for a channel we do not publish to would misreport what actually ships — and a
+    // dry run is the artifact this pipeline is verified against, so it must not lie.
     console.log(`\n[${ts}] Dry run complete — no posts published.`);
     return;
   }
 
   // Publish to all platforms.
-  // R4: --hashnode-strip-urls only affects the Hashnode body (Dev.to and
-  // Moltbook receive the standard canonical-domain-preserved version).
+  //
+  // FIX-CONVICTION-CALL-POSTS-W1: the Hashnode publish is GONE. Two independent
+  // reasons, either sufficient:
+  //   1. Hashnode was DEPRECATED 2026-05-26 (dev.to is the canonical channel).
+  //   2. It was not merely dead, it was DESTRUCTIVE. Hashnode answers with an HTML
+  //      error page, `publishHashnode` JSON.parses it, and the resulting
+  //      `SyntaxError: Unexpected token '<', "<!DOCTYPE "…` propagated out of
+  //      `main()` UNCAUGHT — on 2026-07-29 and 2026-07-31 alike. So every run
+  //      aborted here, AFTER dev.to had already published, and every statement
+  //      below this line never executed in production: the Done summary, the
+  //      dropped-platform alert, the publish ledger. A future wave adding a
+  //      verification step at the end of main() would have found it silently
+  //      skipped and read that as "it didn't happen" rather than "it never ran".
   const results: Record<string, PublishResult> = {};
   results.moltbook = await publishMoltbook(post, args.type);
   results.devto = await publishDevTo(post, args.type);
-  results.hashnode = await publishHashnode(post, args.type, { stripAllUrls: args.hashnodeStripUrls });
-  if (args.hashnodeStripUrls) {
-    console.log('[hashnode A/B] URL-stripped variant published. Late verify (60s + 5min) will log survival.');
-  }
 
   const published = Object.entries(results).filter(([, v]) => v.url).map(([k]) => k);
   const skipped = Object.entries(results).filter(([, v]) => !v.url).map(([k]) => k);
