@@ -355,12 +355,12 @@
       "schedule": "13,28,43,58 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "aac453da860aa80c1047121d31318f7f15c36d83e15b0feff42fb0505e668f5c",
+      "sha256": "493898e35a99cc780cc0463b94b5be9998d7105c31c60b4a30ac9902e80491c8",
       "alert_ids": [
         "WEBHOOK_DELIVERY_DRIFT"
       ],
       "owner_wave": "OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1",
-      "notes": "SEC-13: docstring + WOULD_FIRE path switched to ALGOVAULT_TG_TEST_INERT=1 (no cooldown marker); the hermetic self-test now sets INERT rather than DRY_RUN_TG. WOULD_FIRE lines now carry alert_id + severity + verdict rather than an absence. Re-verified live on the host."
+      "notes": "SEC-13: docstring + WOULD_FIRE path switched to ALGOVAULT_TG_TEST_INERT=1 (no cooldown marker); the hermetic self-test now sets INERT rather than DRY_RUN_TG. WOULD_FIRE lines now carry alert_id + severity + verdict rather than an absence. Re-verified live on the host. OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH2 (D3): the TERMINAL-DISABLE condition now labels the entity ID with its noun ('newly disabled: subscription id 6' / 'subscription ids 6, 9') instead of the ambiguous '(new: 6)', which a real operator read as a COUNT on 2026-08-01; the metrics/Action/Audit/Source lines are byte-unchanged. --self-test gained 5 RENDERED-BODY assertions (A-F assert run_cycle's action verdict only, which is exactly how the misleading body passed every prior gate); proven able to fail -- reverting the format string yields SELF-TEST: FAIL (3 failed) while all 9 pre-existing assertions still pass."
     },
     {
       "id": "directional-label-freshness",

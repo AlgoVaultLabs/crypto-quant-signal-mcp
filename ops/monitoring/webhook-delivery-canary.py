@@ -192,9 +192,17 @@ def build_body(cls, condition, consecutive, dead, failed, total, disabled):
     ])
 
 
+# Last body handed to fire(). The --self-test asserts the RENDERED TEXT against this
+# (OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 R2.2) — asserting run_cycle's action verdict alone
+# is what let a body a human misreads pass every gate.
+LAST_FIRE_BODY = None
+
+
 def fire(body):
     """Hand the body to the wrapper (it owns severity/cooldown/DRY_RUN/fail-open).
     In --self-test we skip the wrapper entirely (hermetic)."""
+    global LAST_FIRE_BODY
+    LAST_FIRE_BODY = body
     if os.environ.get("WEBHOOK_CANARY_SELFTEST") == "1":
         log("WOULD_FIRE: (self-test — wrapper skipped)")
         return
@@ -222,7 +230,14 @@ def run_cycle(disabled_ids, dead, failed, total):
     new_ids = disabled_ids - alerted
     if new_ids:
         cls = "TERMINAL-DISABLE"
-        condition = "%d subscription(s) permanently disabled (new: %s)" % (len(disabled_ids), ",".join(map(str, sorted(new_ids))))
+        # OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 (D3): an entity ID carries its entity NOUN.
+        # The old form put a bare parenthesised number immediately after a count, and a
+        # real operator read it as "6 subscriptions" on 2026-08-01 (there were 2).
+        # Never render a bare ID next to a count.
+        ids = sorted(new_ids)
+        noun = "subscription id" if len(ids) == 1 else "subscription ids"
+        condition = "%d subscription(s) permanently disabled — newly disabled: %s %s" % (
+            len(disabled_ids), noun, ", ".join(map(str, ids)))
     else:
         breached, cls, condition = classify_secondary(dead, failed, total)
         if not breached:
@@ -296,6 +311,25 @@ def self_test():
     write_breach_count(SUSTAINED_CYCLES - 1)
     r = run_cycle(set(), DEAD_THRESHOLD, DEAD_THRESHOLD, DEAD_THRESHOLD + 5)
     check("systemic dead-spike (active subs) sustained → fire DEAD-SPIKE", r["action"] == "fire" and r["class"] == "DEAD-SPIKE")
+
+    # G) RENDERED-BODY assertions (OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 R2.2, D3).
+    #    A–F assert run_cycle's ACTION verdict only — never the text an operator reads,
+    #    which is precisely how the ambiguous "(new: 6)" body passed every prior gate.
+    #    These drive the REAL path (run_cycle → build_body → fire) and assert the output.
+    save_disabled_set(set())
+    write_breach_count(SUSTAINED_CYCLES - 1)
+    run_cycle({6}, 0, 0, 0)
+    body = LAST_FIRE_BODY or ""
+    check("rendered body labels the ID ('subscription id 6')", "subscription id 6" in body)
+    check("rendered body drops the ambiguous '(new: 6)'", "(new: 6)" not in body)
+    check("rendered body keeps the metrics line verbatim", "disabled=1 dead=0 failed=0 total=0" in body)
+
+    save_disabled_set(set())
+    write_breach_count(SUSTAINED_CYCLES - 1)
+    run_cycle({6, 9}, 0, 0, 0)
+    body2 = LAST_FIRE_BODY or ""
+    check("plural renders 'subscription ids 6, 9'", "subscription ids 6, 9" in body2)
+    check("plural renders no bare 'id 6, 9'", "id 6, 9" not in body2)
 
     ok = not failures
     print("SELF-TEST: %s (%d failed)" % ("PASS" if ok else "FAIL", len(failures)))
