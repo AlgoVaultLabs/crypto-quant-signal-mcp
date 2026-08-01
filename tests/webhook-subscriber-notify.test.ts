@@ -231,6 +231,36 @@ describe('two-flag firewall', () => {
   });
 });
 
+describe('notification key redaction (credential-leak guard)', () => {
+  // The key EMBEDS the owner key, which for a paid subscriber IS their live
+  // `av_live_…` API key. The first deploy of this chapter was BLOCKED by the
+  // fail-closed check-secret-log-redaction gate for logging it verbatim — a real
+  // credential would have landed in the container logs.
+  it('never renders the owner key', async () => {
+    const { mod } = await loadNotify({ email: 'a@b.com' });
+    const key = mod.notificationKey('webhook_disabled', 'av_live_SUPERSECRET123', 6, 1700);
+    const redacted = mod.redactNotificationKey(key);
+    expect(key).toContain('av_live_SUPERSECRET123');       // the raw key does carry it
+    expect(redacted).not.toContain('av_live_SUPERSECRET123'); // the log form never does
+    expect(redacted).not.toContain('SUPERSECRET');
+    // Still useful for forensics: event, subscription and occurrence survive.
+    expect(redacted).toContain('webhook_disabled');
+    expect(redacted).toContain('6');
+    expect(redacted).toContain('1700');
+  });
+
+  it('redacts a free: owner key too (it embeds an ipHash)', async () => {
+    const { mod } = await loadNotify({ email: 'a@b.com' });
+    const redacted = mod.redactNotificationKey(mod.notificationKey('webhook_disabled', 'free:deadbeefcafe', 6, 1700));
+    expect(redacted).not.toContain('deadbeefcafe');
+  });
+
+  it('degrades safely on a malformed key rather than echoing it', async () => {
+    const { mod } = await loadNotify({ email: 'a@b.com' });
+    expect(mod.redactNotificationKey('av_live_LEAK')).not.toContain('LEAK');
+  });
+});
+
 describe('notification key', () => {
   it('is stable per occurrence and varies by event / owner / sub / bucket', async () => {
     const { mod } = await loadNotify({ email: 'a@b.com' });

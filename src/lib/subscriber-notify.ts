@@ -153,6 +153,23 @@ export function notificationKey(
 }
 
 /**
+ * Log-safe rendering of a notification key. The key EMBEDS the owner key, which for a
+ * paid subscriber IS their live `av_live_…` API key — logging it verbatim would put a
+ * working credential in the container logs. Caught by the fail-closed
+ * `check-secret-log-redaction` gate on first deploy; never log a raw key.
+ */
+export function redactNotificationKey(key: string): string {
+  const parts = key.split(':');
+  // A malformed key must NOT be echoed even in part — `parts[0]` of a bare
+  // `av_live_…` string IS the credential. Emit an opaque marker instead.
+  if (parts.length < 4) return '<malformed-key-redacted>';
+  // Only the first segment is a known-safe literal (the event name); everything
+  // between it and the trailing (subId, bucket) is owner-derived.
+  const event = NOTIFY_REGISTRY[parts[0] as SubscriberNotifyEvent] ? parts[0] : '<event-redacted>';
+  return `${event}:<owner-redacted>:${parts[parts.length - 2]}:${parts[parts.length - 1]}`;
+}
+
+/**
  * Durable claim BEFORE the send (mirrors stripe-events-store.tryClaimEvent).
  * `ON CONFLICT DO NOTHING RETURNING` gives exactly one row to the winner and zero to
  * every duplicate, on BOTH backends. Returns false when the claim is already held.
@@ -288,7 +305,7 @@ export async function notifySubscriber(args: NotifyArgs): Promise<NotifyResult> 
     if (isSubscriberNotifyDryRun()) {
       // Render for real so the gate proves the body, then stop. NO row is written,
       // so repeated dry runs cannot false-green via a cooldown marker.
-      console.log(`[subscriber-notify] DRY_RUN ${event} → ${maskEmail(to)} key=${key} ctx=${JSON.stringify(ctx)}`);
+      console.log(`[subscriber-notify] DRY_RUN ${event} → ${maskEmail(to)} ${redactNotificationKey(key)} ctx=${JSON.stringify(ctx)}`);
       return { sent: false, outcome: 'dry_run', reason: `would send ${event} to ${maskEmail(to)}` };
     }
 
@@ -300,7 +317,7 @@ export async function notifySubscriber(args: NotifyArgs): Promise<NotifyResult> 
       outcome: 'sent',
     });
     if (!claimed) {
-      console.log(`[subscriber-notify] duplicate suppressed key=${key}`);
+      console.log(`[subscriber-notify] duplicate suppressed ${redactNotificationKey(key)}`);
       return { sent: false, outcome: 'suppressed_duplicate' };
     }
 
