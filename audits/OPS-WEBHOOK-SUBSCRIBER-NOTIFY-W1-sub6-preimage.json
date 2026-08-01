@@ -1,0 +1,34 @@
+{
+  "wave": "OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1",
+  "chapter": "CH5 R5.2",
+  "captured_at_utc": "2026-08-01T13:21:00Z",
+  "purpose": "Pre-image of webhook_subscriptions id=6 taken BEFORE the R5.3 UPDATE. This is the rollback source; without it the restore is irreversible. url and secret are DELIBERATELY excluded (a subscriber URL can embed an auth token).",
+  "row": {
+    "id": 6,
+    "delivery_state": "disabled",
+    "active": false,
+    "tier": "starter",
+    "failure_class": "legacy",
+    "disabled_reason": "quarantine_expired",
+    "quarantined_at": 1784907276,
+    "next_probe_at": null,
+    "last_probe_at": 1785538941,
+    "last_success_at": null,
+    "consecutive_failures": 21,
+    "created_at": 1784630633,
+    "last_delivered_at": 1784642333,
+    "owner_key_prefix": "av_live_~",
+    "events": "[\"trade_call\",\"regime_shift\"]",
+    "assets": "[\"BTC\",\"ETH\",\"SOL\",\"HYPE\",\"ZEC\",\"ADA\",\"SUI\",\"XRP\",\"DOGE\"]",
+    "timeframes": "[\"1h\"]",
+    "min_confidence": 60
+  },
+  "human_readable_utc": {
+    "quarantined_at": "2026-07-24T15:34:36+00:00",
+    "next_probe_at": null,
+    "last_probe_at": "2026-07-31T23:02:21+00:00",
+    "last_success_at": null,
+    "created_at": "2026-07-21T10:43:53+00:00",
+    "last_delivered_at": "2026-07-21T13:58:53+00:00"
+  }
+}

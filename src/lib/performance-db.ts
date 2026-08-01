@@ -842,6 +842,49 @@ const CREATE_WEBHOOK_DELIVERIES_STATUS_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status, created_at);
 `;
 
+// OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4 (R4.3) — the subscriber-notification
+// idempotency ledger. Mirrors `processed_stripe_events`: the claim is taken BEFORE
+// the send, so a retried tick cannot mail a customer twice.
+//
+//   - notification_key = `${event}:${ownerKey}:${subscriptionId}:${stateEpochBucket}`
+//     The bucket makes the key stable for ONE lifecycle occurrence: a sub that is
+//     quarantined, recovers, and is quarantined again gets a NEW key (new
+//     quarantined_at) and is therefore notified again — correctly.
+//   - `outcome` records what actually happened, so the Detect half of
+//     Detect→Recover→Alert→Escalate is a query, not a log grep.
+//   - NEVER stores the subscriber URL or secret (a webhook URL can embed an auth
+//     token). owner_key is stored because it is already this table's tenant key
+//     and lives beside webhook_subscriptions.owner_key.
+//   - On live PG the table is pre-applied via SSH BEFORE this commit lands
+//     (CLAUDE.md schema sequencing); `IF NOT EXISTS` makes the deploy a no-op.
+const CREATE_SUBSCRIBER_NOTIFICATIONS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS subscriber_notifications (
+      notification_key TEXT PRIMARY KEY,
+      owner_key TEXT NOT NULL,
+      event TEXT NOT NULL,
+      subscription_id BIGINT NULL,
+      sent_at BIGINT NOT NULL,
+      resend_id TEXT NULL,
+      outcome TEXT NOT NULL
+    );`
+  : `CREATE TABLE IF NOT EXISTS subscriber_notifications (
+      notification_key TEXT PRIMARY KEY,
+      owner_key TEXT NOT NULL,
+      event TEXT NOT NULL,
+      subscription_id INTEGER NULL,
+      sent_at INTEGER NOT NULL,
+      resend_id TEXT NULL,
+      outcome TEXT NOT NULL
+    );`;
+
+const CREATE_SUBSCRIBER_NOTIFICATIONS_OWNER_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_subscriber_notifications_owner ON subscriber_notifications (owner_key, sent_at);
+`;
+
+const CREATE_SUBSCRIBER_NOTIFICATIONS_OUTCOME_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_subscriber_notifications_outcome ON subscriber_notifications (outcome, sent_at);
+`;
+
 function getBackend(): DbBackend {
   if (backend) return backend;
 
@@ -889,6 +932,12 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_WEBHOOK_SUBSCRIPTIONS_OWNER_INDEX_SQL);
   backend.exec(CREATE_WEBHOOK_DELIVERIES_SQL);
   backend.exec(CREATE_WEBHOOK_DELIVERIES_STATUS_INDEX_SQL);
+  // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4 (2026-08-01): subscriber-notification
+  // idempotency ledger. Pre-applied to live PG via SSH before this commit;
+  // IF NOT EXISTS = no-op there.
+  backend.exec(CREATE_SUBSCRIBER_NOTIFICATIONS_SQL);
+  backend.exec(CREATE_SUBSCRIBER_NOTIFICATIONS_OWNER_INDEX_SQL);
+  backend.exec(CREATE_SUBSCRIBER_NOTIFICATIONS_OUTCOME_INDEX_SQL);
   runMigrations(backend, isPg);
   // OPS-WEBHOOK-DELIVERY-AUTO-DISABLED-W1 (2026-07-24): one-time idempotent
   // backfill of legacy one-way-disabled subs (active=false but still at the

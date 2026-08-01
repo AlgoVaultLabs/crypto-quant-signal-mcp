@@ -41,6 +41,70 @@ import {
   type DeliveryState,
 } from './webhooks-store.js';
 import { classifyDeliveryFailure, extractErrorCode, type WebhookFailureClass } from './webhook-failure-class.js';
+import { quarantineMaxSecFor, quarantineExpiresAt } from './webhook-quarantine-policy.js';
+import { notifySubscriberDetached, type NotifyArgs } from './subscriber-notify.js';
+
+/**
+ * Call-site guard for every subscriber notification (R4.5).
+ *
+ * `notifySubscriberDetached` already swallows its own async rejections, so this
+ * try/catch is defence in DEPTH, not a duplicate: it also absorbs a SYNCHRONOUS
+ * throw — an import-time failure, a future refactor, a bad mock. The invariant this
+ * protects is the whole point of the chapter: notifying a subscriber is a side
+ * channel, and it must never be able to fail a delivery or abort a sweep. A
+ * notification feature that can take the delivery path down is strictly worse than
+ * the silence it replaces. Pinned by tests/webhook-notify-isolation.test.ts.
+ */
+function safeNotify(args: NotifyArgs): void {
+  try {
+    notifySubscriberDetached(args);
+  } catch (err) {
+    console.error('[webhook-delivery] notify dispatch failed (swallowed):', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Billing-month bucket (UTC `YYYYMM` as an int) — the idempotency discriminator for
+ * the quota-paused notice. The exhausted branch fires on every drain tick, so
+ * without a month bucket a single exhausted owner would be mailed hundreds of times.
+ */
+function billingMonthBucket(d: Date = new Date()): number {
+  return d.getUTCFullYear() * 100 + (d.getUTCMonth() + 1);
+}
+
+/**
+ * Fire the day-1 quarantine warning ONLY on the edge into `quarantined`. A sub that
+ * is already quarantined keeps failing probes; notifying on each would be spam, and
+ * the idempotency claim would suppress it anyway — but not calling is cheaper and
+ * makes the intent explicit at the call site.
+ */
+export function notifyQuarantinedForTest(sub: WebhookSubscription, newState: DeliveryState, nowSec: number): void {
+  maybeNotifyQuarantined(sub, newState, nowSec);
+}
+
+function maybeNotifyQuarantined(sub: WebhookSubscription, newState: DeliveryState, nowSec: number): void {
+  if (newState !== 'quarantined') return;
+  if (sub.delivery_state === 'quarantined') return; // already there — not a new edge
+  // `quarantined_at` was just stamped by recordFailureAndTransition; the in-memory
+  // `sub` predates it, so anchor the occurrence on now.
+  const quarantinedAt = nowSec;
+  safeNotify({
+    ownerKey: sub.owner_key,
+    event: 'webhook_quarantined',
+    context: {
+      subscriptionId: sub.id,
+      stateEpochBucket: quarantinedAt,
+      expiresAt: quarantineExpiresAt(quarantinedAt, sub.tier),
+      // `last_success_at` is stamped by the health PROBE; `last_delivered_at` is the
+      // last REAL delivery. A customer asking "when did my webhook last work?" means
+      // either. Sub 6 has last_success_at NULL but last_delivered_at 2026-07-21 — so
+      // reading only the former would have told a paying customer their endpoint had
+      // "not delivered successfully yet", which is false. Omit the sentence only when
+      // BOTH are null.
+      lastSuccessAt: sub.last_success_at ?? sub.last_delivered_at,
+    },
+  });
+}
 
 /** Owner-facing hint per post-failure lifecycle state (call-voice, no secrets). */
 function transitionSuggestedAction(
@@ -378,6 +442,22 @@ export async function deliverOne(
   // next monthly reset / tier upgrade. No Telegram (background pause is silent).
   const quota = checkQuotaByKey(sub.owner_key, sub.tier as LicenseTier);
   if (!quota.allowed) {
+    // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4 (D4): the pause used to be SILENT — the
+    // suggested_action below was returned to nobody. Tell the owner, once per
+    // billing month. This branch fires on EVERY drain tick while exhausted, so the
+    // idempotency key is bucketed by month; a per-delivery notice would mail
+    // hundreds of times. Fire-and-forget: a notify failure must never change this
+    // DeliveryResult (pinned by the forced-throw test).
+    safeNotify({
+      ownerKey: sub.owner_key,
+      event: 'webhook_quota_paused',
+      context: {
+        subscriptionId: sub.id,
+        stateEpochBucket: billingMonthBucket(),
+        quotaUsed: quota.used,
+        quotaTotal: quota.total,
+      },
+    });
     return {
       deliveryId: delivery.id,
       status: 'pending',
@@ -454,8 +534,13 @@ export async function deliverOne(
     // class but http_410) → degraded→quarantine (C4 probes it back); http_410 →
     // disabled immediately. Forensic log only, NO Telegram (recovery is silent).
     const failureClass = classifyDeliveryFailure({ httpStatus: lastCode ?? undefined, errorCode: lastErrorCode });
-    const t = await recordFailureAndTransition(sub.id, failureClass, Math.floor(Date.now() / 1000));
+    const nowSec = Math.floor(Date.now() / 1000);
+    const t = await recordFailureAndTransition(sub.id, failureClass, nowSec);
     console.log(`[webhook-delivery] sub ${sub.id} failure(${failureClass}) → ${t.state} (consecutive=${t.consecutiveFailures})`);
+    // D1 day-1 warning: fire ONLY on the active|degraded → quarantined edge, not on
+    // every failure while already quarantined. The idempotency key is bucketed by
+    // the quarantine occurrence, so a re-quarantine after a recovery notifies again.
+    maybeNotifyQuarantined(sub, t.state, nowSec);
     return {
       deliveryId: delivery.id,
       status: 'failed',
@@ -585,8 +670,9 @@ async function probeOne(sub: WebhookSubscription, deps: DeliveryDeps, cfg: Deliv
 
 /**
  * One health-probe sweep tick. For every quarantined sub whose `next_probe_at` is
- * due: (1) expire to `disabled(quarantine_expired)` if quarantined longer than
- * WEBHOOK_QUARANTINE_MAX_SEC; else probe — 2xx → AUTO-RESUME `active`; `http_410`
+ * due: (1) expire to `disabled(quarantine_expired)` if quarantined longer than the
+ * sub's TIER-DIFFERENTIATED window — `quarantineMaxSecFor(sub.tier)`, paid 30d /
+ * free 7d (OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH3); else probe — 2xx → AUTO-RESUME `active`; `http_410`
  * → `disabled(permanent_http_410)`; any other (transient) → exponential back-off
  * of `next_probe_at`. All transitions forensic-logged; NO Telegram (silent per the
  * alert contract). Quarantined subs are never enqueued for real events — recovery
@@ -598,9 +684,18 @@ export async function runHealthProbeSweep(deps: DeliveryDeps = {}, cfg: Delivery
   const due = await getQuarantinedDue(now, limit);
   const out: ProbeSweepResult = { probed: due.length, resumed: 0, disabled: 0, backedOff: 0 };
   for (const sub of due) {
-    if (sub.quarantined_at != null && now - sub.quarantined_at > lc.quarantineMaxSec) {
+    // Tier-differentiated expiry — the ONE derivation lives in the policy leaf.
+    const quarantineMaxSec = quarantineMaxSecFor(sub.tier);
+    if (sub.quarantined_at != null && now - sub.quarantined_at > quarantineMaxSec) {
       await setDeliveryState(sub.id, 'disabled', { disabled_reason: 'quarantine_expired', next_probe_at: null, last_probe_at: now });
-      console.log(`[webhook-probe] sub ${sub.id} quarantine_expired (>${lc.quarantineMaxSec}s no recovery) → disabled`);
+      console.log(`[webhook-probe] sub ${sub.id} quarantine_expired (>${quarantineMaxSec}s no recovery, tier=${sub.tier}) → disabled`);
+      // D1: terminal. Tell the owner — this is the case a paying customer hit on
+      // 2026-08-01 and was never told about.
+      safeNotify({
+        ownerKey: sub.owner_key,
+        event: 'webhook_disabled',
+        context: { subscriptionId: sub.id, stateEpochBucket: sub.quarantined_at, retriedForSec: quarantineMaxSec },
+      });
       out.disabled += 1;
       continue;
     }
@@ -608,10 +703,22 @@ export async function runHealthProbeSweep(deps: DeliveryDeps = {}, cfg: Delivery
     if (r.ok) {
       await recordProbeResult(sub.id, true, now);
       console.log(`[webhook-probe] sub ${sub.id} probe 2xx → resumed active`);
+      // Registered-and-silent: recovery alerts are noise. Routed through the same
+      // registry so the silence is an explicit decision, not an omission.
+      safeNotify({
+        ownerKey: sub.owner_key,
+        event: 'webhook_resumed',
+        context: { subscriptionId: sub.id, stateEpochBucket: sub.quarantined_at },
+      });
       out.resumed += 1;
     } else if (r.failureClass === 'http_410') {
       await setDeliveryState(sub.id, 'disabled', { disabled_reason: 'permanent_http_410', next_probe_at: null, last_probe_at: now });
       console.log(`[webhook-probe] sub ${sub.id} probe http_410 → disabled`);
+      safeNotify({
+        ownerKey: sub.owner_key,
+        event: 'webhook_disabled',
+        context: { subscriptionId: sub.id, stateEpochBucket: sub.quarantined_at, retriedForSec: quarantineMaxSec },
+      });
       out.disabled += 1;
     } else {
       // Exponential back-off, seeded at base, doubling each failed probe, capped at max.

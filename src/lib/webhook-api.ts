@@ -39,6 +39,7 @@ import {
 } from './webhooks-store.js';
 import { deliverOne, buildSampleEvent } from './webhook-delivery.js';
 import { assertEgressAllowed, EgressBlockedError } from './webhook-ssrf.js';
+import { quarantineExpiresAt } from './webhook-quarantine-policy.js';
 
 /**
  * FEATURE-PARITY-CHANNELS-W1 CH1: the accepted webhook event set is now a
@@ -150,6 +151,14 @@ function serializeSubscription(s: WebhookSubscription, opts: { includeSecret: bo
     // allow-listed (no forbidden Phase-E key); the enqueue gate stays the `active`
     // projection. delivery_state ∈ active|degraded|quarantined|disabled.
     delivery_state: s.delivery_state,
+    // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH3 (R3.4): the owner can see their own
+    // recovery deadline. Epoch seconds while `quarantined`, else null — a disabled
+    // sub retains `quarantined_at`, but its deadline has already passed, so echoing
+    // one would be misleading. Derived via `quarantineExpiresAt`, never a literal.
+    quarantine_expires_at:
+      s.delivery_state === 'quarantined' && s.quarantined_at != null
+        ? quarantineExpiresAt(s.quarantined_at, s.tier)
+        : null,
   };
   // scan_digest params echo back only when set — signal-sub serialization stays byte-identical.
   if (s.cadence != null) out.cadence = s.cadence;
