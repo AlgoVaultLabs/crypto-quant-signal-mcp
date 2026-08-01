@@ -187,6 +187,16 @@ jobs:
           node scripts/check-landing-escaping.mjs --self-test
           node scripts/check-landing-escaping.mjs
 
+      # OPS-DOCS-HOLDRATE-LIVE-W1 (SEC-12 + SEC-32) — the docs-surface analogue of
+      # tests/unit/tool-description-forward-stability.test.ts. /docs published "~84%" while the SoT
+      # was 99.2%; retyping the digit would have recreated the defect one release later. This blocks
+      # the literal form coming back, plus the `%%` bug that shipped to the npm README twice and the
+      # dead-hook shape where a data-tr-field span exists on a page that never loads the hydrator.
+      - name: Live numeric-claims gate (fail-closed)
+        run: |
+          node scripts/check-live-numeric-claims.mjs --self-test
+          node scripts/check-live-numeric-claims.mjs
+
       # OPS-AUDIT-REMEDIATION-HIGH-W1 Ch5 — the meta-canary. "A canary exists but nothing runs it"
       # appeared THREE times in SECURITY-AUDIT-FULL-W1, and is why a live credential sat in a
       # public repo for seven weeks with every gate green. This fails the build on any committed

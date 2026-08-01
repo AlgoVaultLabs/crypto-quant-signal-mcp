@@ -181,6 +181,26 @@ rows:
     tg_fires: true
     recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
 
+  # ============================ /docs ============================
+  # Added by OPS-DOCS-HOLDRATE-LIVE-W1 (SEC-12). /docs carried NO drift row at all while publicly
+  # stating a HOLD rate of "~84%" against a live SoT of 99.2% — an entire public page unmonitored.
+  # BAND, never FLOOR: a HOLD rate can legitimately fall, so FLOOR would suppress the real signal
+  # (the monotonic-FLOOR coercion belongs to counters that only grow, e.g. batch_count).
+  # Not EXACT either: the page literal is refreshed by the 00:39 UTC injector while the SoT moves
+  # continuously, so EXACT would fire on normal bake lag rather than on drift.
+
+  - alert_id: DOCS_HOLD_RATE_DTRF_BAND
+    page_url: https://algovault.com/docs
+    claim_pattern: 'data-tr-field="hold_rate"[^>]*>([0-9.]+)%'
+    extract_method: regex_first_match
+    transform: float(match)
+    sot_endpoint: https://api.algovault.com/api/performance-public
+    sot_jq: .hold_rate
+    tolerance_type: BAND
+    tolerance_value: 3
+    tg_fires: true
+    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+
   # ============================ /track-record ============================
 
   - alert_id: TRACKRECORD_TF_RENDER_LIST_EXACT_SET

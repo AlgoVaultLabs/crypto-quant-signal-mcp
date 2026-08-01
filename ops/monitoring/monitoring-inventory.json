@@ -145,7 +145,7 @@
       "schedule": null,
       "invoked_by": "called-by:website-drift-canary",
       "install_state": "installed",
-      "sha256": "b2abb972549f586929d44e35aea096ba7a77eaf1f24ce742a4bcf5d37fd71fa5",
+      "sha256": "81b82a2c5933f1bcddb140bd037cacd354a88a4a917020b722807df1e8ef1e60",
       "alert_ids": [],
       "owner_wave": "OPS-FRESHNESS-SOURCE-TRUTH-W1"
     },
