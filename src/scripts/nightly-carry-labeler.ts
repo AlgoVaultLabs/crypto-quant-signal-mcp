@@ -104,10 +104,36 @@ export async function sweepDivergenceRetention(query: RetentionQuery = dbQuery a
   }
 }
 
+// SIGNAL-CLOSEDBAR-SHADOW-W1 CH2 — same contract for the candle-basis shadow table. It is
+// append-only and lands on the host that runs the Postgres-CPU autopilot, so it ships with
+// its retention rather than acquiring one after it becomes a problem.
+export const CANDLE_BASIS_SHADOW_RETENTION_DAYS = 90;
+export async function sweepCandleBasisShadowRetention(
+  query: RetentionQuery = dbQuery as RetentionQuery,
+): Promise<number> {
+  try {
+    const deleted = await query(
+      `DELETE FROM candle_basis_shadow WHERE recorded_at < now() - make_interval(days => $1) RETURNING id`,
+      [CANDLE_BASIS_SHADOW_RETENTION_DAYS],
+    );
+    const n = Array.isArray(deleted) ? deleted.length : 0;
+    console.log(`[nightly-carry-labeler] STEP candle-basis-retention OK (pruned ${n} rows older than ${CANDLE_BASIS_SHADOW_RETENTION_DAYS}d)`);
+    return n;
+  } catch (e) {
+    console.error(`[nightly-carry-labeler] STEP candle-basis-retention FAILED (non-fatal): ${String((e as Error).message ?? e).slice(0, 160)}`);
+    return -1;
+  }
+}
+
 export async function main(argv: string[]): Promise<number> {
   const labelStatus = runSteps(argv);
-  // Runs regardless of the label-stream status but NEVER changes the exit code; skipped on --check.
-  if (!argv.includes('--check')) await sweepDivergenceRetention();
+  // Run regardless of the label-stream status but NEVER change the exit code; skipped on
+  // --check. Sequential, and each is independently fail-soft, so one sweep failing can
+  // neither skip the other nor fail the run.
+  if (!argv.includes('--check')) {
+    await sweepDivergenceRetention();
+    await sweepCandleBasisShadowRetention();
+  }
   return labelStatus;
 }
 

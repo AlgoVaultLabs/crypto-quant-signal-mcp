@@ -17,19 +17,21 @@ insert-scale-factor for each append-only table.
 | `equity_verdicts` | append + nightly UPDATE (outcome fill) | UPDATE path keeps autovacuum active; ANALYZE still useful |
 | `equity_universe` | small, re-frozen periodically | negligible |
 | `equity_symbol_misses` | append (out-of-universe demand log) | EQUITY-LAUNCH-READINESS-W1; low-volume; no PII (tickers only); safe to trim >180d |
+| `candle_basis_shadow` | append (closed-bar re-base divergence) | SIGNAL-CLOSEDBAR-SHADOW-W1 CH2; one row per non-internal signal while `CANDLE_BASIS_SHADOW_ENABLED` is on (internal grid cells excluded); indexes `(recorded_at)` + `(timeframe, recorded_at)`; INTERNAL data class — `vol_score_*` / `raw_*` never leave the DB (guarded by `security-canary.mjs` Gate B). 90-day retention DELETE runs nightly inside `nightly-carry-labeler` (`sweepCandleBasisShadowRetention`, fail-soft), so the table is bounded by construction rather than by this cron; the monthly `VACUUM (ANALYZE)` below is what reclaims the space those DELETEs free — a retention DELETE without a vacuum just accumulates dead tuples. |
 | `rate_limit_events` | append (typed rate-limit events) | OPS-RATELIMIT-TELEMETRY-DIGEST-W1; rows on a ban/self-throttle/batch-wait/skip; read weekly by `rate-limit-digest-weekly` (renamed from `shadow-digest-weekly` by OPS-TELEMETRY-DIGEST-REFRAME-W1); indexes `(ts, venue)` + `(ts, venue, caller)`; the `caller` column (OPS-RATELIMIT-CALLER-ATTRIBUTION-W1, `NOT NULL DEFAULT 'unknown'`) attributes each event to its entry point (the 9 MCP tools / `grid_warmer` / `backfill`); no PII; safe to trim >90d. NOTE: during an HL saturation window the self-throttle rows run ~8–54/min (not "rare") — at ~1 write/sec fire-and-forget this is still within an on-demand `VACUUM (ANALYZE) rate_limit_events;` (no monthly cron line needed); revisit if the per-caller telemetry later shows write pressure. |
 
 ### Monthly cron (host root crontab, off-:00, low-traffic window)
 ```
-23 4 1 * * docker exec crypto-quant-signal-mcp-postgres-1 psql -U "$POSTGRES_USER" -d signal_performance -c "VACUUM (ANALYZE) signals; VACUUM (ANALYZE) equity_bars_daily; VACUUM (ANALYZE) equity_verdicts;" >> /var/log/pg-maint.log 2>&1
+23 4 1 * * docker exec crypto-quant-signal-mcp-postgres-1 psql -U "$POSTGRES_USER" -d signal_performance -c "VACUUM (ANALYZE) signals; VACUUM (ANALYZE) equity_bars_daily; VACUUM (ANALYZE) equity_verdicts; VACUUM (ANALYZE) candle_basis_shadow;" >> /var/log/pg-maint.log 2>&1
 ```
 (`$POSTGRES_USER` is the value of `POSTGRES_USER` in the postgres container env.)
 
 ### Autovacuum insert-scale-factor tuning (per append table)
 For Postgres 13+ the insert-driven autovacuum threshold is tunable per table:
 ```sql
-ALTER TABLE equity_bars_daily SET (autovacuum_vacuum_insert_scale_factor = 0.05);
-ALTER TABLE equity_verdicts   SET (autovacuum_vacuum_insert_scale_factor = 0.10);
+ALTER TABLE equity_bars_daily   SET (autovacuum_vacuum_insert_scale_factor = 0.05);
+ALTER TABLE equity_verdicts     SET (autovacuum_vacuum_insert_scale_factor = 0.10);
+ALTER TABLE candle_basis_shadow SET (autovacuum_vacuum_insert_scale_factor = 0.05);
 ```
 Lower scale-factor → more frequent insert-triggered vacuums (keeps the visibility map fresh for
 index-only scans). 0.05–0.10 is a reasonable starting band for steady daily appends.

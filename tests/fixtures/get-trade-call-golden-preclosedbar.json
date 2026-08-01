@@ -1,0 +1,54 @@
+{
+  "call": "HOLD",
+  "confidence": 34,
+  "price": 2994,
+  "indicators": {
+    "funding_rate": 0.00001,
+    "funding_24h_avg": 0.00001,
+    "funding_state": "NORMAL",
+    "volume_24h": 125000000,
+    "trend_persistence": "LOW",
+    "breakout_pending": "IMMINENT",
+    "underlying_session": "ALWAYS_OPEN"
+  },
+  "regime": "TRENDING_UP",
+  "reasoning": "Trending regime, upward bias. Funding pressure mild. Compression building, breakout setup pending. Trend persistence low; mean-reverting structure. No actionable setup at this snapshot.",
+  "timestamp": 1785326760,
+  "coin": "BTC",
+  "timeframe": "1h",
+  "_algovault": {
+    "version": "<PKG_VERSION>",
+    "tool": "get_trade_call",
+    "compatible_with": [
+      "crypto-quant-risk-mcp",
+      "crypto-quant-backtest-mcp"
+    ],
+    "session_id": null,
+    "exchange": "BINANCE",
+    "venue_status": "promoted"
+  },
+  "_receipts": {
+    "verdict": "HOLD",
+    "conviction_pct": 34,
+    "regime": "TRENDING_UP",
+    "factors": [
+      {
+        "factor": "trend_persistence",
+        "direction": "neutral",
+        "value": "LOW"
+      },
+      {
+        "factor": "funding_state",
+        "direction": "neutral",
+        "value": "NORMAL"
+      },
+      {
+        "factor": "breakout_pending",
+        "direction": "neutral",
+        "value": "IMMINENT"
+      }
+    ],
+    "verification_uri": "https://algovault.com/track-record",
+    "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+  }
+}
