@@ -108,7 +108,7 @@ case "$VERDICT" in
 esac
 
 if [ "$STALLED_FOR" -gt "$STALL_SECONDS" ]; then
-  printf '🛑 CANDLE_BASIS_SHADOW_STALLED\n\ncandle_basis_shadow row count has not grown in %sh (n=%s, unchanged since the recorded growth stamp). The shadow write is likely DARK — the ≥7d window is not accumulating.\n\nReport: %s\n\nAction: dispatch SIGNAL-CLOSEDBAR-FLIP-W{NEXT} via Cowork → Claude Code\n' \
+  printf '🛑 CANDLE_BASIS_SHADOW_STALLED\n\ncandle_basis_shadow row count has not grown in %sh (n=%s, unchanged since the recorded growth stamp). The shadow write is likely DARK — the ≥7d window is not accumulating.\n\nReport: %s\n\nAction: dispatch OPS-CANDLE-BASIS-SHADOW-STALLED-W{NEXT} via Cowork → Claude Code\n' \
     "$((STALLED_FOR / 3600))" "$N" "$STATE_DIR/report-$TODAY.md" \
     | "$TG" "CANDLE_BASIS_SHADOW_STALLED" CRITICAL_PERSISTENT -
 fi

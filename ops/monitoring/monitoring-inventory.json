@@ -779,6 +779,50 @@
       "sha256": "69cd905c3641cc3ed049107427542d1b385f6de6ddbc95b5a32613dd16bab1d2",
       "owner_wave": "SIGNAL-CLOSEDBAR-SHADOW-W1",
       "notes": "Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
+    },
+    {
+      "id": "closedbar-w1-liveness",
+      "artifact": "ops/monitoring/closedbar-w1-liveness.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/usr/local/bin/closedbar-w1-liveness.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/usr/local/bin/closedbar-w1-liveness.sh",
+          "schedule": null
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": null,
+      "invoked_by": "systemd:transient (systemd-run --on-active, armed per deploy)",
+      "install_state": "installed",
+      "sha256": "321d217d947d914f9d9bf8a022e35a948de001e7a4d7e5ee4ce28ec5a8739f60",
+      "owner_wave": "OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1",
+      "notes": "Deferred liveness probe for bucket-deterministic watchlist dispatch. SIGNAL-CLOSEDBAR-SHADOW-W1 CH6 installed it to /usr/local/bin with NO committed ancestor and no inventory row, so when a full-tree rsync reverted the bot on 2026-08-01 nothing detected it — the probe itself caught the symptom 90 minutes later, by luck of timing. Canonical home is now ops/monitoring/; the host copy carries the __DEPLOY_EPOCH__ substitution, so REGISTRY_PARITY is asserted against the HOST sha, not the repo one. Has a hermetic, vacuity-guarded --self-test (GNU and BSD date both exercised). Committed ancestor at ops/monitoring/closedbar-w1-liveness.sh, so git IS the recovery path; the host copy differs only by the __DEPLOY_EPOCH__ substitution. NO_BACKUP only scans /opt/algovault-monitoring/, which this artifact is not in."
+    },
+    {
+      "id": "algovault-bot-dispatch-schedule",
+      "artifact": "external:algovault-bot/src/algovault_bot/dispatch_schedule.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-bot/src/algovault_bot/dispatch_schedule.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-bot/src/algovault_bot/dispatch_schedule.py",
+          "schedule": null
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": null,
+      "invoked_by": "systemd:algovault-bot-cron.timer",
+      "install_state": "installed",
+      "sha256": "228cc980faf23669d5c804ca23d7482fbe74545e291fad1794e37246a97ad9e3",
+      "owner_wave": "OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1",
+      "notes": "Bucket-deterministic dispatch for the TG bot. Lives in the SEPARATE algovault-bot repo (hence the external: artifact ref — this inventory's repo cannot host the ancestor), deployed to /opt/algovault-bot by hand rsync because that tree is NOT a git checkout. On 2026-08-01 a full-tree rsync from a stale Mac checkout DELETED this file, silently reverting dispatch to the relative-age scheduler and restoring the +1min/period ratchet. A HASH_DRIFT/ORPHAN row is the detection that was missing. The durable fix is a git-based bot deploy: OPS-BOT-GIT-DEPLOY-W{NEXT}. Ancestor is committed on algovault-bot main (merged 2026-08-01 by this incident wave), so git IS the recovery path. NO_BACKUP only scans /opt/algovault-monitoring/."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
