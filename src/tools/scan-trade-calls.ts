@@ -52,6 +52,7 @@ import {
   PARAM_DESC_SCAN_INCLUDE_REASONING,
   PARAM_DESC_SCAN_OI_CHANGE_WINDOW,
   PARAM_DESC_SCAN_OI_BASIS,
+  PARAM_DESC_SCAN_MIN_LIQUIDITY_USD,
 } from '../tool-descriptions.js';
 import type { LicenseInfo, SuggestedX402 } from '../types.js';
 import { PROMOTED_VENUE_IDS, type PromotedVenueId } from '../lib/capabilities.js';
@@ -89,6 +90,13 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
   // SCAN-RANKBY-REFINEMENTS-W1 CH3: OI-delta basis for the oi_change lens. z.enum rejects an
   // invalid value at the MCP boundary; default 'notional' ⇒ byte-identical. Ignored by other lenses.
   oiBasis: z.enum(['notional', 'contracts']).default('notional').describe(PARAM_DESC_SCAN_OI_BASIS),
+  // FIX-CONVICTION-CALL-POSTS-W1: optional USD liquidity floor on the scan UNIVERSE.
+  // `.optional()` with NO default — absent ⇒ no floor ⇒ byte-identical output, the same
+  // firewall `minConfidence` uses. It lives here rather than in a consumer because the
+  // per-call payload carries no liquidity field at all, so a caller physically cannot
+  // apply it downstream; gating server-side is also what lets every surface share ONE
+  // derivation of the floor instead of each re-implementing it.
+  minLiquidityUsd: z.number().min(0).optional().describe(PARAM_DESC_SCAN_MIN_LIQUIDITY_USD),
 };
 
 export interface ScanAlgovaultMeta {

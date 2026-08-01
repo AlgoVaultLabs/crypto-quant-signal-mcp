@@ -100,6 +100,12 @@ export const PARAM_DESC_SCAN_EXCHANGE =
   'Venue: BINANCE (default) HL BYBIT OKX BITGET.';
 export const PARAM_DESC_SCAN_MIN_CONFIDENCE =
   'Optional confidence floor, 0 to 100, applied to non-HOLD trade calls.';
+// FIX-CONVICTION-CALL-POSTS-W1: universe-side liquidity floor. Deliberately carries NO
+// numeric example — a baked figure here would be a hardcoded count in a published tool
+// description and would trip the forward-stability canary.
+export const PARAM_DESC_SCAN_MIN_LIQUIDITY_USD =
+  'Optional USD liquidity floor applied to the scan universe: notional open interest, ' +
+  'or 24h volume on venues that expose no bulk OI. Omitted means no floor.';
 export const PARAM_DESC_SCAN_INCLUDE_HOLDS =
   'Include HOLD calls after non-HOLD (default false). HOLDs never cost quota.';
 export const PARAM_DESC_SCAN_LIMIT =

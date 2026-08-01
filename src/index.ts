@@ -688,12 +688,12 @@ function createServer(): McpServer {
     SCAN_TRADE_CALLS_DESCRIPTION,
     SCAN_TRADE_CALLS_SCHEMA,
     { title: 'Market Scanner', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
-    async ({ topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis }) => {
+    async ({ topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis, minLiquidityUsd }) => {
       const startMs = Date.now();
       try {
         const license = getRequestLicense();
         const scan = () => runScanTradeCall(
-          { topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis },
+          { topN, timeframe, exchange, minConfidence, includeHolds, limit, rankBy, includeReasoning, oiChangeWindow, oiBasis, minLiquidityUsd },
           license,
         );
         // OPS-HL-INTERACTIVE-PRIORITY-W1: a background-priority caller (today: the bot's

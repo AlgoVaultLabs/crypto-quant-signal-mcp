@@ -15,7 +15,7 @@ import type {
 } from '../types.js';
 import { annualizeFunding } from '../lib/rank-constants.js';
 import { FUNDING_VENUE_META, FUNDING_ARB_FETCH_ADAPTERS } from '../lib/funding-venues.js';
-import { fetchVenueUniverse } from '../lib/exchange-universe.js';
+import { fetchVenueUniverse, effectiveLiquidityUsd } from '../lib/exchange-universe.js';
 import { getFreshCarryScores, carryKey, type CarryScores } from '../lib/carry-rank-reader.js';
 import { writeDivergenceLog } from '../lib/carry-divergence-log.js';
 
@@ -82,7 +82,9 @@ async function getVenueLiquidity(exchangeId: ExchangeId): Promise<Map<string, nu
   const byCoin = new Map<string, number>();
   try {
     for (const a of await fetchVenueUniverse(exchangeId)) {
-      byCoin.set(a.coin, a.oiIsProxy ? a.volume24h_usd : a.notionalOI_usd);
+      // FIX-CONVICTION-CALL-POSTS-W1: the proxy-vs-OI choice moved to ONE exported fn in
+      // exchange-universe.ts when the scan universe became a second consumer of the rule.
+      byCoin.set(a.coin, effectiveLiquidityUsd(a));
     }
   } catch { /* fail-soft per venue */ }
   liquidityCache.set(exchangeId, { at: now, byCoin });

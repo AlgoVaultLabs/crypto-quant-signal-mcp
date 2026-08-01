@@ -33,7 +33,7 @@
 
 import pLimit from 'p-limit';
 import { getTradeSignal } from '../tools/get-trade-call.js';
-import { getExchangeTopAssetsWithVolume } from './exchange-universe.js';
+import { getExchangeTopAssetsWithVolume, fetchVenueUniverse, effectiveLiquidityUsd } from './exchange-universe.js';
 import { PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 import { getRankedUniverse, type RankedAsset } from './rank-metrics.js';
 import { resolveRankBy, type RankBy } from './rank-constants.js';
@@ -120,6 +120,11 @@ export interface ScanTradeCallsParams {
    *  price + factors + reasoning (+ oi_change_window) via enrichScanCall. Default
    *  false ⇒ bare verdict cells, byte-identical to today. Orthogonal to rankBy. */
   includeReasoning?: boolean;
+  /** FIX-CONVICTION-CALL-POSTS-W1: minimum USD liquidity (notional OI, or 24h volume on
+   *  proxy venues — see `effectiveLiquidityUsd`) an asset must clear to enter the scan
+   *  universe. Omitted or 0 ⇒ no floor ⇒ byte-identical to before this param existed.
+   *  Composes with every `rankBy`. */
+  minLiquidityUsd?: number;
   /** SCAN-RANKBY-REFINEMENTS-W1 CH1: OI-delta window for the oi_change lens
    *  (1h/4h/24h). Omitted ⇒ '24h' (byte-identical). Ignored by other lenses. */
   oiChangeWindow?: OiWindow;
@@ -252,6 +257,42 @@ function getUniverseCache(): ResultCache<string[]> {
  * error: if a fetch throws but we have a last-known-good set, serve it; with no
  * prior good set, the error propagates.
  */
+// ── FIX-CONVICTION-CALL-POSTS-W1: venue liquidity map for the optional universe floor ──
+// 60s TTL, matching `scan_funding_arb`'s per-leg gate cache. Only consulted when a caller
+// actually passes `minLiquidityUsd`, so the default scan path performs no extra fetch.
+const LIQUIDITY_TTL_MS = 60_000;
+const liquidityCache = new Map<string, { at: number; byCoin: Map<string, number> }>();
+
+/** Test seam, matching `_setScorerForTest` et al.: when set, the floor reads this instead
+ *  of the live universe, so unit tests never touch the network. */
+let _liquidityMapOverride: ((exchange: ScanExchangeId) => Map<string, number>) | null = null;
+export function _setLiquidityMapForTest(fn: ((exchange: ScanExchangeId) => Map<string, number>) | null): void {
+  _liquidityMapOverride = fn;
+  liquidityCache.clear();
+}
+
+/** coin → USD liquidity on `exchange`. Fail-soft to an EMPTY map, which makes the floor
+ *  default-DENY rather than silently admitting an ungated universe. */
+async function getVenueLiquidityUsd(exchange: ScanExchangeId): Promise<Map<string, number>> {
+  if (_liquidityMapOverride) return _liquidityMapOverride(exchange);
+  const now = Date.now();
+  const hit = liquidityCache.get(exchange);
+  if (hit && now - hit.at <= LIQUIDITY_TTL_MS) return hit.byCoin;
+  const byCoin = new Map<string, number>();
+  try {
+    // Full universe, not the top-N slice: the floor must be able to judge any coin the
+    // lens selected, including one outside the OI head.
+    for (const a of await fetchVenueUniverse(exchange)) byCoin.set(a.coin, effectiveLiquidityUsd(a));
+  } catch (err) {
+    console.debug(
+      `[trade-call-scanner] liquidity universe fetch failed for ${exchange} — floor will deny all:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+  liquidityCache.set(exchange, { at: now, byCoin });
+  return byCoin;
+}
+
 export async function getTopCoinSet(exchange: ScanExchangeId, n: number): Promise<string[]> {
   const cache = getUniverseCache();
   const key = `${exchange}:${n}`;
@@ -368,6 +409,36 @@ export async function scanTradeCalls(params: ScanTradeCallsParams): Promise<Scan
     coins = ranked.map((r) => r.coin);
     rankMap = new Map(ranked.map((r) => [r.coin, r]));
   }
+
+  // FIX-CONVICTION-CALL-POSTS-W1: optional USD liquidity floor on the UNIVERSE.
+  //
+  // Why the universe and not the output: the per-call payload carries no liquidity
+  // field at all (coin/call/confidence/regime/factors/reasoning/price — verified
+  // against the live tool), so a CONSUMER cannot filter for itself. Gating here is the
+  // only place the data exists, and it makes the floor one shared derivation that every
+  // surface inherits by passing one param instead of each re-implementing it.
+  //
+  // Applied AFTER lens selection so it composes with every `rankBy` uniformly. Omitted
+  // or 0 ⇒ the block is skipped ⇒ byte-identical to before the param existed.
+  //
+  // Fail-soft is default-DENY on purpose: an unreachable universe yields an empty map,
+  // every coin scores 0 and nothing clears the floor — matching `scan_funding_arb`'s
+  // long-standing per-leg gate, rather than silently scanning an UNGATED universe,
+  // which is the failure mode that would actually reach print.
+  const minLiquidityUsd = params.minLiquidityUsd;
+  if (minLiquidityUsd != null && minLiquidityUsd > 0 && coins.length > 0) {
+    const liquidity = await getVenueLiquidityUsd(exchange);
+    const before = coins.length;
+    coins = coins.filter((c) => (liquidity.get(c) ?? 0) >= minLiquidityUsd);
+    if (rankMap) {
+      const rm = rankMap;
+      rankMap = new Map(coins.flatMap((c) => (rm.get(c) ? [[c, rm.get(c)!] as [string, RankedAsset]] : [])));
+    }
+    console.debug(
+      `[trade-call-scanner] liquidity floor $${minLiquidityUsd.toLocaleString()} on ${exchange}: ${coins.length}/${before} coins cleared`,
+    );
+  }
+
   const scanned = coins.length;
 
   const limiter = pLimit(concurrency);

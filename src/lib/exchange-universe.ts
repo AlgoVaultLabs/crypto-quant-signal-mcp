@@ -665,6 +665,29 @@ const FETCHERS: Record<PromotedExchangeId, (limit: number) => Promise<ExchangeAs
 export const OI_PROXY_VENUES: ReadonlySet<ExchangeId> = new Set<ExchangeId>(['BINANCE', 'ASTER', 'BINGX', 'XT']);
 
 /**
+ * The USD liquidity figure to gate an asset on — ONE derivation, two consumers.
+ *
+ * A venue that exposes no bulk-OI endpoint carries a 24h-VOLUME proxy in
+ * `notionalOI_usd` and flags it via `oiIsProxy` (see `OI_PROXY_VENUES` above).
+ * Reading `notionalOI_usd` unconditionally would compare a volume number against an
+ * OI threshold on those venues and silently mis-gate them.
+ *
+ * `scan_funding_arb`'s per-leg gate has always applied this rule inline;
+ * FIX-CONVICTION-CALL-POSTS-W1 made the scan universe a SECOND consumer, so the rule
+ * moved here rather than being written twice (CLAUDE.md single-derivation: two
+ * independent re-derivations drift to contradiction).
+ *
+ * Returns 0 for an absent or non-finite figure, so every caller default-DENIES: an
+ * asset whose liquidity we cannot establish must never clear a liquidity floor.
+ */
+export function effectiveLiquidityUsd(
+  asset: Pick<ExchangeAsset, 'notionalOI_usd' | 'volume24h_usd' | 'oiIsProxy'>,
+): number {
+  const v = asset.oiIsProxy ? asset.volume24h_usd : asset.notionalOI_usd;
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
  * Fetch top-N USDT-margined perps on `exchange` by notional OI (or volume proxy for proxy venues).
  * Sorted desc by `notionalOI_usd`; at most `limit` entries.
  *
