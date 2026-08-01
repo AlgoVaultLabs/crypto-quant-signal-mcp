@@ -2365,6 +2365,27 @@ function isPfeWin(signal: SignalVerdict, pfe: number | null): boolean {
 }
 
 /**
+ * Separator for the in-memory (exchange, coin, timeframe, signal) group key in
+ * `aggregateRowsInJs`. U+0000 is chosen because it can never occur inside an
+ * exchange id, coin, timeframe or verdict - a printable separator (`|`, `:`, `-`)
+ * could appear in a value and silently MERGE two distinct tuples into one group,
+ * corrupting the counts. Pinned by tests/unit/perfstats-key-separator.test.ts.
+ *
+ * The key is EPHEMERAL: built per row, used as a Map key, and discarded when the
+ * function returns `[...map.values()]`. It is never persisted, so this constant is
+ * NOT a stored-data contract - but its VALUE must still not change, for the
+ * collision reason above.
+ *
+ * Written as the escape sequence rather than a raw NUL byte
+ * (OPS-GREPPABLE-SOURCE-GUARD-W1): the compiled string is byte-identical, but a raw
+ * NUL makes tools that skip binary files - notably ugrep invoked with `-I`, which is
+ * how the agent shell resolves `grep` - silently skip this ENTIRE file and report
+ * its contents as ABSENT. That cost a 3-chapter false HALT on 2026-08-01. Enforced
+ * repo-wide by scripts/check-source-greppable.mjs.
+ */
+export const STAT_GROUP_KEY_SEP = '\u0000';
+
+/**
  * In-JS analogue of the CH2 SQL GROUP BY — the reference grouping. Groups raw
  * rows by (exchange||'HL', coin, timeframe, signal) with the exact computeStats
  * win/eval predicates. CH2's aggregateSignalsSql produces the identical shape
@@ -2375,7 +2396,7 @@ export function aggregateRowsInJs(rows: SignalRecord[]): { groups: StatGroupRow[
   let minCa = Infinity, maxCa = -Infinity;
   for (const r of rows) {
     const ex = r.exchange || 'HL';
-    const key = `${ex} ${r.coin} ${r.timeframe} ${r.signal}`;
+    const key = `${ex}${STAT_GROUP_KEY_SEP}${r.coin}${STAT_GROUP_KEY_SEP}${r.timeframe}${STAT_GROUP_KEY_SEP}${r.signal}`;
     let g = map.get(key);
     if (!g) { g = { exchange: ex, coin: r.coin, timeframe: r.timeframe, signal: r.signal, cnt: 0, pfe_eval: 0, pfe_win: 0, max_ca: -Infinity, max_id: -Infinity }; map.set(key, g); }
     g.cnt++;
