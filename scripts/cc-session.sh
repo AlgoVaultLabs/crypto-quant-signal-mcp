@@ -2,8 +2,11 @@
 # cc-session.sh — per-session git-worktree isolation for parallel Claude Code sessions.
 # Part of CC-PARALLEL-SESSION-ISOLATION-W1. See docs/RUNBOOK-PARALLEL-SESSIONS.md.
 #
-#   new <task>      create/launch an isolated worktree session
-#                   (native `claude -w` if available, else a `git worktree add` fallback)
+#   new <task> [--base <ref>]
+#                   create/launch an isolated worktree session, based on a FRESHLY FETCHED
+#                   remote default branch (native `claude -w` if available, else a
+#                   `git worktree add` fallback). --base overrides the default and forces
+#                   the fallback path, because `claude --worktree` takes no base ref.
 #   list            show every worktree: path, branch, ahead/behind, dirty, assigned port
 #   clean [--force] safely reclaim merged+clean+pushed worktrees (DRY-RUN unless --force)
 #   port <task>     print the deterministic port a task would use (used by the SessionStart hook)
@@ -66,23 +69,88 @@ native_worktree_supported() {
   claude --help 2>/dev/null | grep -q -- '--worktree'
 }
 
+# Remote default branch as a ref name (e.g. `origin/main`). Resolved, never hardcoded —
+# `main` is this repo's default today, but that is not a property of the script.
+default_base_ref() {
+  local sym
+  sym=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null) || sym=""
+  if [ -n "$sym" ]; then
+    printf '%s\n' "${sym#refs/remotes/}"
+  elif git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+    printf 'origin/main\n'   # symbolic-ref is set by `git clone` but not by `git remote add`
+  else
+    printf '\n'              # unresolvable — caller must require an explicit --base
+  fi
+}
+
+# Fetch so the base ref is CURRENT, but never block session creation on the network.
+#
+# WHY THIS IS THE ACTUAL FIX (OPS-CC-SESSION-BASE-REF-W1). `cmd_new` execs to
+# `claude --worktree`, which bases the new worktree on the LOCAL `refs/remotes/origin/<default>`
+# ref — measured: 150 of 160 branches in this repo reflog "Created from origin/main". That ref
+# is only as fresh as the last fetch, so without this a session started after a quiet period
+# silently begins behind.
+#
+# ⚠️ The older claim that `cc-session.sh` makes every session branch off local `HEAD` was FALSE
+# for the path that actually runs: the bare `git worktree add` below is a FALLBACK, reached only
+# when `claude -w` is unavailable. It is still given an explicit base (correctness for those
+# installs), but the missing fetch — not a missing base ref — was the real staleness source.
+fetch_or_warn() {
+  local base="$1" tip dist
+  git fetch origin --quiet 2>/dev/null && return 0
+  tip=$(git log -1 --format=%cr "$base" 2>/dev/null || echo 'unknown')
+  dist=$(git rev-list --count "HEAD..$base" 2>/dev/null || echo '?')
+  {
+    echo "cc-session: WARNING — git fetch failed; using the CACHED $base."
+    echo "cc-session:   cached $base tip is dated $tip, and is $dist commit(s) ahead of local HEAD."
+    echo "cc-session:   Proceeding: a slightly-stale $base still beats branching off local HEAD,"
+    echo "cc-session:   and refusing to create a session because the network is down is worse."
+  } >&2
+  return 0
+}
+
 # --- subcommands ---
 cmd_new() {
-  [ $# -ge 1 ] || die "usage: cc-session.sh new <task>"
-  local root task wt branch port f
+  local root task wt branch port f base="" explicit_base=0 positional=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base)   [ $# -ge 2 ] || die "--base requires a ref"; base="$2"; explicit_base=1; shift 2 ;;
+      --base=*) base="${1#--base=}"; explicit_base=1; shift ;;
+      -*)       die "unknown flag: $1 (usage: cc-session.sh new <task> [--base <ref>])" ;;
+      *)        [ -z "$positional" ] || die "usage: cc-session.sh new <task> [--base <ref>]"
+                positional="$1"; shift ;;
+    esac
+  done
+  [ -n "$positional" ] || die "usage: cc-session.sh new <task> [--base <ref>]"
   root=$(repo_root) || die "not in a git repository"
-  task=$(slugify "$1"); [ -n "$task" ] || die "empty task name after slugify"
+  task=$(slugify "$positional"); [ -n "$task" ] || die "empty task name after slugify"
   cd "$root"
 
+  if [ "$explicit_base" -eq 0 ]; then
+    base=$(default_base_ref)
+    [ -n "$base" ] || die "cannot resolve the remote default branch (refs/remotes/origin/HEAD is unset and origin/main does not exist) — pass --base <ref>"
+  fi
+  fetch_or_warn "$base"
+
+  # Validate BEFORE creating anything, so a typo cannot leave a half-made worktree behind.
+  git rev-parse --verify --quiet "${base}^{commit}" >/dev/null 2>&1 \
+    || die "base '$base' is not a resolvable commit-ish — nothing was created"
+
+  # `claude --worktree` takes no base argument, so an explicit --base cannot be expressed on the
+  # native path. Rather than accept the flag and silently ignore it, --base FORCES the manual
+  # path. A flag that quietly does nothing is worse than no flag.
   if native_worktree_supported; then
-    echo "cc-session: native isolated session → claude --worktree $task" >&2
-    exec claude --worktree "$task"
+    if [ "$explicit_base" -eq 0 ]; then
+      echo "cc-session: native isolated session → claude --worktree $task (base: $base, freshly fetched)" >&2
+      exec claude --worktree "$task"
+    fi
+    echo "cc-session: --base $base given → using the manual worktree path (claude --worktree accepts no base ref)" >&2
   fi
 
-  # fallback: manual git worktree (older Claude Code without -w)
+  # fallback: manual git worktree (older Claude Code without -w, or an explicit --base)
   wt="$WT_SUBDIR/$task"; branch="worktree-$task"
-  echo "cc-session: native -w unavailable; fallback → git worktree add $wt -b $branch" >&2
-  git worktree add "$wt" -b "$branch"
+  echo "cc-session: git worktree add $wt -b $branch $base" >&2
+  git worktree add "$wt" -b "$branch" "$base"
   for f in .env .env.local; do
     if [ -f "$f" ]; then cp "$f" "$wt/$f"; echo "cc-session: copied $f" >&2; fi
   done
@@ -175,7 +243,9 @@ cmd_port() {
 usage() {
   cat >&2 <<'EOF'
 cc-session.sh — per-session git-worktree isolation for parallel Claude Code sessions
-  cc-session.sh new <task>       create/launch an isolated worktree session
+  cc-session.sh new <task> [--base <ref>]
+                                 create/launch an isolated worktree session (fetches first,
+                                 bases off the remote default; --base forces the fallback)
   cc-session.sh list             list worktrees (path, branch, ahead/behind, dirty, port)
   cc-session.sh clean [--force]  reclaim merged+clean+pushed worktrees (DRY-RUN default)
   cc-session.sh port <task>      print the deterministic port for a task
