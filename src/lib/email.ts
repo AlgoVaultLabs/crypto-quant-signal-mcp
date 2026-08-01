@@ -17,6 +17,8 @@ import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, forma
 
 const FROM_DEFAULT = 'noreply@algovault.com';
 const ACCOUNT_URL = 'https://api.algovault.com/account';
+// OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4: upgrade CTA target for the quota-paused notice.
+const SIGNUP_URL = 'https://api.algovault.com/signup';
 const REFERRAL_TERMS_URL = 'https://api.algovault.com/referral-terms';
 
 let resend: Resend | null = null;
@@ -535,4 +537,156 @@ Questions? Reply to this email or write to support@algovault.com
 
 — AlgoVault Labs
 `;
+}
+
+// ── Webhook lifecycle notifications (OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4, R4.4) ──
+//
+// D1/D4: a subscriber could permanently lose a durable resource — or have their
+// deliveries silently paused — and never be told. These three templates are the
+// customer-facing half of that channel. They are ADDITIVE; every export above is
+// byte-unchanged.
+//
+// COPY LAW (enforced by tests/webhook-subscriber-notify.test.ts):
+//   - ZERO internal vocabulary. No wave IDs, no `delivery_state`, no `failure_class`,
+//     no cadence or engine internals. The reader owns a webhook, not our lifecycle.
+//   - NEVER the subscription URL or secret — a webhook URL can embed an auth token.
+//   - EVERY number and date interpolates from live state. A hardcoded "7 days" is an
+//     automatic fail: the window is tier-differentiated (quarantineMaxSecFor).
+//   - Ends with an action-verb CTA and the outcome it produces.
+
+/** UTC calendar date for customer-facing copy — "23 August 2026". */
+function formatUtcDate(epochSec: number): string {
+  return new Date(epochSec * 1000).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
+/** Transactional shell for webhook lifecycle notices (no marketing, no unsubscribe). */
+function webhookNotifShell(subject: string, bodyHtml: string, ctaLabel: string, ctaUrl: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f8fa;padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #d0d7de;border-radius:12px;overflow:hidden">
+<tr><td style="padding:24px 28px;border-bottom:1px solid #d0d7de"><div style="font-size:18px;font-weight:700">AlgoVault Labs</div><div style="font-size:12px;color:#656d76;margin-top:2px">Webhook delivery</div></td></tr>
+<tr><td style="padding:28px">${bodyHtml}
+  <p style="font-size:13px;line-height:1.5;margin:20px 0 0"><a href="${ctaUrl}" style="color:#0969da;text-decoration:none">${ctaLabel} &rarr;</a></p>
+</td></tr>
+<tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">You're getting this because you own a webhook on AlgoVault. Questions? Reply to this email.</td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+export interface WebhookQuarantinedEmailArgs {
+  to: string;
+  subscriptionId: number;
+  /** Epoch seconds — from quarantineExpiresAt(quarantined_at, tier). Never a literal. */
+  expiresAt: number;
+  /** Epoch seconds of the last 2xx, or null when the endpoint has NEVER succeeded. */
+  lastSuccessAt: number | null;
+}
+
+/**
+ * Day-1 warning: the endpoint is failing, we are still retrying, here is the deadline.
+ *
+ * The "last delivered" sentence is OMITTED when `lastSuccessAt` is null. That is not a
+ * cosmetic branch: sub 6 — the live subscription this wave exists for — has
+ * last_success_at NULL and has NEVER delivered successfully, so the spec's original
+ * "tell them when it last succeeded" had no value to render.
+ */
+export async function sendWebhookQuarantinedEmail(args: WebhookQuarantinedEmailArgs): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const { to, subscriptionId, expiresAt, lastSuccessAt } = args;
+  const deadline = formatUtcDate(expiresAt);
+  const subject = 'Your AlgoVault webhook is not responding';
+  const lastLine = lastSuccessAt != null
+    ? `<p style="font-size:14px;line-height:1.5;margin:0 0 8px">It last delivered successfully on ${formatUtcDate(lastSuccessAt)}.</p>`
+    : `<p style="font-size:14px;line-height:1.5;margin:0 0 8px">It has not delivered successfully yet.</p>`;
+  const html = webhookNotifShell(subject,
+    `<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">Your webhook is not responding</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">Webhook #${subscriptionId} has stopped accepting events. We are still retrying it automatically.</p>
+  ${lastLine}
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">If it does not respond by <strong>${deadline}</strong>, we will turn it off.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0">Your endpoint must return a 2xx status. Fix it and we resume on the next retry.</p>`,
+    'Review your webhooks', ACCOUNT_URL);
+  const text = `Your AlgoVault webhook is not responding.
+
+Webhook #${subscriptionId} has stopped accepting events. We are still retrying it automatically.
+${lastSuccessAt != null ? `It last delivered successfully on ${formatUtcDate(lastSuccessAt)}.` : 'It has not delivered successfully yet.'}
+
+If it does not respond by ${deadline}, we will turn it off.
+
+Your endpoint must return a 2xx status. Fix it and we resume on the next retry.
+
+Review your webhooks: ${ACCOUNT_URL}
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
+export interface WebhookDisabledEmailArgs {
+  to: string;
+  subscriptionId: number;
+  /** Seconds we retried before giving up — from quarantineMaxSecFor(tier). */
+  retriedForSec: number;
+}
+
+/** Terminal: it is off, nothing is being delivered, here is how to restart it. */
+export async function sendWebhookDisabledEmail(args: WebhookDisabledEmailArgs): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const { to, subscriptionId, retriedForSec } = args;
+  const days = Math.max(1, Math.round(retriedForSec / 86400));
+  const dayLabel = days === 1 ? '1 day' : `${days} days`;
+  const subject = 'Your AlgoVault webhook has been turned off';
+  const html = webhookNotifShell(subject,
+    `<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">Your webhook has been turned off</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">Webhook #${subscriptionId} never came back, so we have turned it off. No events are being delivered.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">We retried automatically for ${dayLabel} without a single successful delivery.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0">Fix your endpoint so it returns a 2xx status, then register the webhook again to resume delivery.</p>`,
+    'Register a webhook', ACCOUNT_URL);
+  const text = `Your AlgoVault webhook has been turned off.
+
+Webhook #${subscriptionId} never came back, so we have turned it off. No events are being delivered.
+
+We retried automatically for ${dayLabel} without a single successful delivery.
+
+Fix your endpoint so it returns a 2xx status, then register the webhook again to resume delivery: ${ACCOUNT_URL}
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
+export interface WebhookQuotaPausedEmailArgs {
+  to: string;
+  subscriptionId: number;
+  /** Live quota figures — never hardcoded. */
+  used: number;
+  total: number;
+}
+
+/** D4: deliveries paused at the monthly cap. An upgrade moment, so silence costs revenue. */
+export async function sendWebhookQuotaPausedEmail(args: WebhookQuotaPausedEmailArgs): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+  const { to, subscriptionId, used, total } = args;
+  const subject = 'Webhook deliveries paused — monthly limit reached';
+  const html = webhookNotifShell(subject,
+    `<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">Your deliveries are paused</h1>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">You have used ${used.toLocaleString('en-GB')} of your ${total.toLocaleString('en-GB')} monthly calls, so webhook #${subscriptionId} is paused.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0 0 8px">Deliveries resume automatically when your quota resets next month.</p>
+  <p style="font-size:14px;line-height:1.5;margin:0">Upgrade your plan to resume them today.</p>`,
+    'Upgrade your plan', SIGNUP_URL);
+  const text = `Webhook deliveries paused — monthly limit reached.
+
+You have used ${used.toLocaleString('en-GB')} of your ${total.toLocaleString('en-GB')} monthly calls, so webhook #${subscriptionId} is paused.
+
+Deliveries resume automatically when your quota resets next month.
+
+Upgrade your plan to resume them today: ${SIGNUP_URL}
+— AlgoVault Labs`;
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
 }

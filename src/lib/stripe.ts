@@ -290,8 +290,16 @@ export async function handleSubscriptionCreated(
  * Look up an active-subscription Stripe customer by api_key metadata.
  * Returns null if Stripe is not configured, key fails format check,
  * key isn't found, or the customer has no active subscription.
+ *
+ * OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4 (Q4, architect-ratified): `email` is
+ * ADDITIVE. This function already fetches the full customer object, which carries
+ * `.email` — it was simply being discarded, so returning it costs ZERO extra
+ * round-trips. Doing this rather than writing a second owner_key→email resolver
+ * keeps single-derivation: there is exactly one api-key→customer lookup in the
+ * codebase, and every caller projects from it. `email` is null when Stripe has no
+ * email on the customer; callers MUST treat that as unreachable, never as an error.
  */
-export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId: string; tier: string } | null> {
+export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId: string; tier: string; email: string | null } | null> {
   if (!stripe) return null;
   if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return null;
 
@@ -311,7 +319,11 @@ export async function getCustomerByApiKey(apiKey: string): Promise<{ customerId:
     if (subs.data.length === 0) return null;
 
     const tier = (customer.metadata?.tier as string) || 'starter';
-    return { customerId: customer.id, tier };
+    // `customer` is a Customer | DeletedCustomer union in the SDK types; a deleted
+    // customer carries no email. Guard rather than cast so a deleted-but-searchable
+    // record degrades to "unreachable" instead of throwing.
+    const email = 'email' in customer && typeof customer.email === 'string' ? customer.email : null;
+    return { customerId: customer.id, tier, email };
   } catch (err) {
     console.error('Stripe getCustomerByApiKey error:', err instanceof Error ? err.message : err);
     return null;
