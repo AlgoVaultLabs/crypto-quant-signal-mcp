@@ -195,8 +195,17 @@ function parseArgs(): CliArgs {
 // ── API data fetching ──
 
 interface PerformanceData {
-  totalSignals: number;
-  overall: { totalSignals: number; totalEvaluated: number; pfeWinRate: number | null };
+  // FIX-CONVICTION-CALL-POSTS-W1: dual-shape read. `/api/performance-public` renamed
+  // `totalSignals` → `totalCalls` in the signal→call rename (73e34e5) and this consumer was
+  // never migrated, so `perf.overall.totalSignals` has been `undefined` and
+  // `.toLocaleString()` on it threw — caught by the caller's own handler, logged as
+  // "API error — skipping this run", exit 0. The track-record post has therefore been
+  // SILENTLY DEAD every Sunday (the one run in /var/log/agent-forum.log, 2026-07-26, shows
+  // exactly this). Both spellings are declared optional so a future rename in either
+  // direction degrades to a loud, findable failure rather than a silent skip.
+  totalCalls?: number;
+  totalSignals?: number;
+  overall: { totalCalls?: number; totalSignals?: number; totalEvaluated: number; pfeWinRate: number | null };
   byTimeframe: Record<string, { count: number; pfeWinRate: number | null }>;
   byAsset: Record<string, { count: number; tier: number; pfeWinRate: number | null }>;
   period: { from: string; to: string };
@@ -595,6 +604,16 @@ async function generateTrackRecord(): Promise<Post> {
   const toPercent = (v: number) => v <= 1 ? v * 100 : v;
   const pfeWR = toPercent(perf.overall.pfeWinRate ?? 0);
 
+  // Dual-shape read across the signal→call rename, then CRASH-FAST if neither spelling is
+  // present. Never `?? 0`: this is the post's headline number and a silent zero would
+  // publish "0 trade calls tracked" under our own byline — strictly worse than not posting.
+  const totalTrackedCalls = perf.overall.totalCalls ?? perf.overall.totalSignals;
+  if (typeof totalTrackedCalls !== 'number' || !Number.isFinite(totalTrackedCalls)) {
+    throw new Error(
+      'performance-public exposes neither overall.totalCalls nor overall.totalSignals — refusing to publish a track-record post without its headline figure',
+    );
+  }
+
   // Find top performer by PFE win rate (min 5 evaluated)
   let topAsset = 'BTC'; let topTf = '1h'; let topRate = 0; let topEval = 0;
   for (const [tf, data] of Object.entries(perf.byTimeframe)) {
@@ -623,7 +642,7 @@ async function generateTrackRecord(): Promise<Post> {
 
   const content = `AlgoVault Signal Intelligence — Week of ${startDate}
 
-📊 ${perf.overall.totalSignals.toLocaleString()} trade calls tracked
+📊 ${totalTrackedCalls.toLocaleString()} trade calls tracked
 🎯 PFE Win Rate: ${pfeWR.toFixed(1)}% across ${assetCount}+ assets (Hyperliquid)
 🏆 Top performer: ${topAsset} ${topTf} — ${topRate.toFixed(1)}% PFE Win Rate (${topEval} evaluated)
 📈 Confidence band ${bestBand} hitting ${bestBandRate.toFixed(1)}% accuracy
