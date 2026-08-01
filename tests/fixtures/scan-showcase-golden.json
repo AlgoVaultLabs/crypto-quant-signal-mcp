@@ -1,0 +1,57 @@
+{
+  "setups": [
+    {
+      "coin": "KAITO",
+      "call": "BUY",
+      "confidence": 58,
+      "regime": "TRENDING_UP",
+      "price": 1.19,
+      "factors": [
+        {
+          "factor": "trend_persistence",
+          "direction": "neutral",
+          "value": "HIGH"
+        },
+        {
+          "factor": "funding_state",
+          "direction": "bearish",
+          "value": "ELEVATED"
+        },
+        {
+          "factor": "oi_change_pct",
+          "direction": "bullish",
+          "value": "+27.6%"
+        }
+      ],
+      "reasoning": "Trending regime, upward bias. Funding pressure mild.",
+      "oi_change_window": "24h"
+    },
+    {
+      "coin": "BTC",
+      "call": "BUY",
+      "confidence": 51,
+      "regime": "TRENDING_UP",
+      "price": 64170.8,
+      "factors": [
+        {
+          "factor": "trend_persistence",
+          "direction": "neutral",
+          "value": "HIGH"
+        }
+      ],
+      "reasoning": "Trending regime, upward bias."
+    },
+    {
+      "coin": "KOMA",
+      "call": "SELL",
+      "confidence": 54,
+      "regime": "TRENDING_DOWN",
+      "price": 0.0412,
+      "factors": [],
+      "reasoning": ""
+    }
+  ],
+  "assetCount": 900,
+  "venueCount": 9,
+  "expected": "📡 This week I scanned 900 assets across 9 venues.\n\nTop fresh setups:\n\n🟢 KAITO — BUY @ $1.19 · 58% conviction · TRENDING_UP\n   📊 trend persistence HIGH · funding elevated ↓ · OI +27.6% (24h) ↑\n   💡 Trending regime, upward bias\n\n🟢 BTC — BUY @ $64,171 · 51% conviction · TRENDING_UP\n   📊 trend persistence HIGH\n   💡 Trending regime, upward bias\n\n🔴 KOMA — SELL @ $0.0412 · 54% conviction · TRENDING_DOWN\n\nWant this on your coins automatically? Set a standing scan: /scanwatch."
+}

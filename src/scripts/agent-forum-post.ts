@@ -19,6 +19,8 @@
 
 import { stripExternalUrlsForModeration } from '../lib/forum-post-content.js';
 import { checkForumPost } from '../lib/forum-post-gate.js';
+import { type RenderableScanCall } from '../lib/scan-digest.js';
+import { composeMarketInsightPost } from '../lib/market-insight-post.js';
 import { FUNDING_VENUE_LIST_TEXT } from '../lib/funding-venues.js';
 import {
   verifyHashnodePost,
@@ -235,6 +237,17 @@ let mcpSessionId: string | null = null;
 const MCP_HEADERS = {
   'Content-Type': 'application/json',
   'Accept': 'application/json, text/event-stream',
+  // OPS-HL-INTERACTIVE-PRIORITY-W1 / FIX-CONVICTION-CALL-POSTS-W1: this ENTIRE script is a
+  // cron. Nobody is waiting on it, so every call it makes belongs in the batch lane and
+  // must yield the interactive reserve to live callers. `index.ts:700-707` routes on this
+  // header; the comment there records the measured cost of getting it wrong — 161 of 171
+  // Hyperliquid interactive rate-limit throws in one week, all inside a single minute, from
+  // exactly this kind of weekly venue fan-out.
+  //
+  // It is set GLOBALLY rather than per-call ON PURPOSE. A per-call flag is one a future
+  // call site can forget, which is precisely how the original incident happened; a header
+  // on the shared client cannot be forgotten by construction.
+  'X-AlgoVault-Priority': 'background',
 };
 
 /** Parse SSE response body to extract JSON-RPC result */
@@ -300,9 +313,173 @@ async function callMcpTool(tool: string, args: Record<string, unknown>): Promise
     }),
   });
   if (!res.ok) throw new Error(`MCP call ${tool} returned ${res.status}`);
-  const json = await parseSseResponse(res) as { result?: McpToolResult };
+  const json = await parseSseResponse(res) as { result?: McpToolResult & { isError?: boolean } };
   if (!json.result?.content?.[0]?.text) throw new Error(`MCP call ${tool}: no content in response`);
+  // FAIL LOUD on a tool-level error. An MCP tool error comes back as a SUCCESSFUL JSON-RPC
+  // result carrying `isError: true` — there is no `json.error` to check — so without this
+  // guard the error ENVELOPE is returned as if it were data. That is not hypothetical: the
+  // editorial pipeline shipped ~18 posts embedding a `-32602` envelope as its "live API
+  // response" block before the same guard was added there (fixed 2026-07-24, `5e5df16`).
+  if (json.result.isError) {
+    throw new Error(`MCP_TOOL_ERROR ${tool}: ${json.result.content[0].text.slice(0, 300)}`);
+  }
   return JSON.parse(json.result.content[0].text);
+}
+
+// ── Weekly cross-venue scan showcase (FIX-CONVICTION-CALL-POSTS-W1) ──
+//
+// These mirror `algovault_bot.adoption`'s showcase constants so the dev.to digest and the
+// Telegram digest are the same ARTIFACT rendered from the same params. They intentionally
+// do NOT mirror the bot's venue LIST: that list is a hardcoded 12 whose own "verified live"
+// comment has already drifted (the live enum is 15), so the set is derived at runtime.
+const SHOWCASE_TOP_N = 100;        // adoption.py SHOWCASE_TOP_N — also the schema ceiling
+const SHOWCASE_TIMEFRAME = '1h';   // adoption.py SHOWCASE_TIMEFRAME
+/** Max setups in the post. The spec asks for 3-5; the bot shows 3. Selection may differ
+ *  between surfaces (each scans its own day) — only the RENDER is single-derived. */
+const SHOWCASE_MAX_SETUPS = 5;
+/** USD liquidity floor. Same figure as `scan_funding_arb`'s per-leg gate, and for the same
+ *  reason: below it, a "setup" is not executable enough to publish under our own byline. */
+const SHOWCASE_MIN_LIQUIDITY_USD = 5_000_000;
+
+/** The wire shape — everything off the MCP is untyped JSON until validated. */
+interface RawScanCall {
+  coin?: unknown; call?: unknown; confidence?: unknown; regime?: unknown; price?: unknown;
+  factors?: unknown; reasoning?: unknown; oi_change_window?: unknown;
+}
+interface ScanResult {
+  scanned: number;
+  calls: RawScanCall[];
+  errors?: number;
+}
+
+/** ALLOW-list, not a deny-list: a setup is a BUY or a SELL, full stop. Skipping only
+ *  `HOLD` would silently admit any NEW verdict the engine ever starts emitting. */
+const SETUP_VERDICTS = new Set(['BUY', 'SELL']);
+/** Same reasoning for the regime label. It is rendered verbatim into a public post, so an
+ *  unrecognised value means our reading of the payload has gone stale — and the right
+ *  response to "we do not understand this row" is to drop the row and say so, not print it. */
+const KNOWN_REGIMES = new Set<string>(['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE']);
+
+/**
+ * The venue set, read from the LIVE tool schema rather than a literal.
+ *
+ * `scan_trade_calls` takes a SINGULAR `exchange` (there is no `venues` param), so a
+ * cross-venue scan is an N-call fan-out and something has to supply N. Reading
+ * `tools/list` means a newly promoted venue joins the digest automatically — and, more to
+ * the point, a DEMOTED one disappears instead of erroring every week. The bot's equivalent
+ * hardcoded list is the cautionary case: it carries a comment asserting "verified live:
+ * enum == these 12" and the live enum is now 15.
+ */
+async function fetchScanVenues(): Promise<string[]> {
+  await initMcpSession();
+  const res = await fetch(MCP_ENDPOINT, {
+    method: 'POST',
+    headers: { ...MCP_HEADERS, ...(mcpSessionId ? { 'mcp-session-id': mcpSessionId } : {}) },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+  });
+  if (!res.ok) throw new Error(`MCP tools/list returned ${res.status}`);
+  const json = await parseSseResponse(res) as {
+    result?: { tools?: Array<{ name: string; inputSchema?: { properties?: Record<string, { enum?: string[] }> } }> };
+  };
+  const venues = json.result?.tools?.find((t) => t.name === 'scan_trade_calls')
+    ?.inputSchema?.properties?.exchange?.enum;
+  if (!venues?.length) throw new Error('MCP tools/list: scan_trade_calls exposes no exchange enum');
+  return venues;
+}
+
+/**
+ * Fan out `scan_trade_calls` across every venue and aggregate the fresh (non-HOLD) calls.
+ *
+ * Mirrors `adoption.fetch_showcase_setups`: dedupe by coin keeping the highest-confidence
+ * venue, sum `scanned` for the "N assets" figure, and count venues that answered for the
+ * "M venues" figure. Both counts are LIVE-derived; neither is ever a literal.
+ *
+ * A single venue failing must not abort the digest — but unlike the bot, this also RETURNS
+ * the error count, because a 9-of-15 run and a 15-of-15 run print an identical sentence
+ * and the difference should not be invisible to the operator.
+ */
+async function fetchShowcaseSetups(): Promise<{
+  setups: RenderableScanCall[]; assetCount: number; venueCount: number; venuesFailed: number; venues: string[];
+}> {
+  const venues = await fetchScanVenues();
+  const bestByCoin = new Map<string, RenderableScanCall>();
+  let assetCount = 0;
+  let venueCount = 0;
+  let venuesFailed = 0;
+
+  for (const exchange of venues) {
+    let result: ScanResult;
+    try {
+      result = await callMcpTool('scan_trade_calls', {
+        topN: SHOWCASE_TOP_N,
+        timeframe: SHOWCASE_TIMEFRAME,
+        exchange,
+        includeReasoning: true,
+        minLiquidityUsd: SHOWCASE_MIN_LIQUIDITY_USD,
+      }) as ScanResult;
+    } catch (err) {
+      venuesFailed++;
+      console.error(`[market-insight] venue ${exchange} failed:`, err instanceof Error ? err.message : err);
+      continue;
+    }
+    venueCount++;
+    assetCount += Number.isFinite(result.scanned) ? result.scanned : 0;
+    for (const c of result.calls ?? []) {
+      const verdict = String(c.call ?? '').toUpperCase();
+      if (!SETUP_VERDICTS.has(verdict)) continue;
+      const coin = String(c.coin ?? '').toUpperCase();
+      const confidence = Number(c.confidence);
+      const regime = String(c.regime ?? '');
+      // A setup we cannot label or score is not publishable — drop it rather than render
+      // "undefined% conviction" into a public post.
+      if (!coin || !Number.isFinite(confidence)) continue;
+      if (!KNOWN_REGIMES.has(regime)) {
+        console.warn(`[market-insight] ${exchange}/${coin}: unrecognised regime '${regime}' — dropping from the digest`);
+        continue;
+      }
+      const prev = bestByCoin.get(coin);
+      if (prev && prev.confidence >= confidence) continue;
+      bestByCoin.set(coin, {
+        coin,
+        call: verdict as RenderableScanCall['call'],
+        confidence,
+        regime: regime as RenderableScanCall['regime'],
+        ...(Number.isFinite(Number(c.price)) ? { price: Number(c.price) } : {}),
+        ...(Array.isArray(c.factors) ? { factors: c.factors as RenderableScanCall['factors'] } : {}),
+        ...(typeof c.reasoning === 'string' ? { reasoning: c.reasoning } : {}),
+        ...(typeof c.oi_change_window === 'string' ? { oi_change_window: c.oi_change_window } : {}),
+      });
+    }
+  }
+
+  const setups = [...bestByCoin.values()]
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, SHOWCASE_MAX_SETUPS);
+  return { setups, assetCount, venueCount, venuesFailed, venues };
+}
+
+/**
+ * The modal regime across a venue's full scan, HOLDs included — for the quiet-week note.
+ *
+ * Only called when there are no setups, and scoped honestly: it reports what one venue's
+ * universe looked like, never "the market". Returns null rather than guessing.
+ */
+async function fetchModalRegime(venue: string): Promise<string | null> {
+  try {
+    const r = await callMcpTool('scan_trade_calls', {
+      topN: SHOWCASE_TOP_N, timeframe: SHOWCASE_TIMEFRAME, exchange: venue,
+      includeHolds: true, limit: 100, minLiquidityUsd: SHOWCASE_MIN_LIQUIDITY_USD,
+    }) as ScanResult;
+    const tally = new Map<string, number>();
+    for (const c of r.calls ?? []) {
+      const g = String(c.regime ?? '').trim();
+      if (g) tally.set(g, (tally.get(g) ?? 0) + 1);
+    }
+    if (tally.size === 0) return null;
+    return [...tally.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  } catch {
+    return null;
+  }
 }
 
 // ── Usage example counter ──
@@ -370,7 +547,10 @@ const USAGE_TITLES = [
   'TradFi on Hyperliquid: GOLD and TSLA calls via MCP',
 ];
 
-const INSIGHT_COINS = ['BTC', 'ETH', 'SOL', 'DOGE', 'AVAX', 'LINK', 'GOLD', 'TSLA'];
+// FIX-CONVICTION-CALL-POSTS-W1: `INSIGHT_COINS` is GONE. It was an 8-coin list the
+// market-insight fallback picked from at RANDOM to headline a "High-conviction call" —
+// the mechanism by which a 35%-confidence HOLD on a coin nobody chose became a published
+// claim of high conviction. The fallback now scans every venue and reports what it found.
 
 interface Post {
   title: string;
@@ -540,21 +720,52 @@ async function generateMarketInsight(): Promise<Post> {
   }
 
   if (!title) {
-    // Fallback: trade signal for a random asset
-    const coin = INSIGHT_COINS[Math.floor(Math.random() * INSIGHT_COINS.length)];
+    // ── Fallback: the WEEKLY CROSS-VENUE SCAN DIGEST (FIX-CONVICTION-CALL-POSTS-W1) ──
+    //
+    // WHAT THIS REPLACED, and why it had to go. The old fallback picked a coin at RANDOM
+    // from an 8-item list, asked for one trade call, and titled the result
+    // "High-conviction call: {COIN} {VERDICT} at {N}% confidence" — regardless of the
+    // verdict or the number. The engine holds ~98% of the time BY DESIGN, so the usual
+    // output was a HOLD: on 2026-07-31 it published "High-conviction call: LINK HOLD at
+    // 35% confidence". That is manufactured conviction. It asserts high conviction over a
+    // low-confidence non-call, which is precisely the kind of claim the whole
+    // verifiable-track-record posture exists to not make.
+    //
+    // The replacement shows the market as it actually was: a real cross-venue scan, the
+    // top setups ranked by conviction with their REAL percentages, and an honest note when
+    // there is nothing to show. 49-58% is fine to print — it is labelled "top setups this
+    // week", not "high conviction".
+    const monthTag = new Date().toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    let scan: Awaited<ReturnType<typeof fetchShowcaseSetups>>;
     try {
-      // v1.10.0 dual-emit graceful read: prefer `call`, fall back to `signal`.
-      const tc = await callMcpTool('get_trade_signal', { coin, timeframe: '1h' }) as {
-        call?: string; signal?: string; confidence: number; price: number; regime: string;
-        indicators: { rsi: number | null; funding_rate: number; squeeze_active: boolean };
-        reasoning: string;
-      };
-      const verdictStr = (tc.call ?? tc.signal) as string;
-      title = `High-conviction call: ${coin} ${verdictStr} at ${tc.confidence}% confidence`;
-      const reasonShort = tc.reasoning.split('. ').slice(0, 2).join('. ') + '.';
-      body = `${coin} 1h analysis:\n\n  Verdict: ${verdictStr} (${tc.confidence}% confidence)\n  Price: $${tc.price.toLocaleString()}\n  Regime: ${tc.regime}\n  RSI: ${tc.indicators.rsi?.toFixed(1) ?? 'N/A'}\n  Funding: ${(tc.indicators.funding_rate * 100).toFixed(4)}%\n  Squeeze: ${tc.indicators.squeeze_active ? 'ACTIVE' : 'No'}\n\n${reasonShort}`;
-    } catch {
-      throw new Error('Both arb and signal APIs failed — skipping this run');
+      scan = await fetchShowcaseSetups();
+    } catch (err) {
+      throw new Error(`Both arb and scan APIs failed — skipping this run: ${err instanceof Error ? err.message : err}`);
+    }
+    if (scan.venueCount === 0) {
+      // Publishing "0 assets across 0 venues" would be a false claim about coverage, not a
+      // quiet week. A total fan-out failure is an outage: skip the slot, keep the silence.
+      throw new Error('Scan fan-out reached no venues — skipping this run rather than publishing an empty coverage claim');
+    }
+
+    // Composition lives in `lib/market-insight-post.ts` (pure) so it is unit-testable —
+    // this file calls `main()` at import, so nothing in it can be. The tests therefore
+    // exercise the ACTUAL published copy rather than a transcription of it, which is the
+    // distinction that matters: the defect this wave fixes lived in published copy no test
+    // ever looked at. The clock and the network stay here; the words live there.
+    // The regime probe is only worth a call on a quiet week — it exists solely for that
+    // branch's sentence, so a week WITH setups must not pay for it.
+    const regime = scan.setups.length === 0 ? await fetchModalRegime(scan.venues[0]) : null;
+    const composed = composeMarketInsightPost(
+      { setups: scan.setups, assetCount: scan.assetCount, venueCount: scan.venueCount, probeVenue: scan.venues[0] },
+      monthTag,
+      regime,
+    );
+    title = composed.title;
+    body = composed.body;
+    console.log(`[market-insight] scan digest: kind=${composed.kind} setups=${scan.setups.length} assets=${scan.assetCount} venues=${scan.venueCount} failed=${scan.venuesFailed}`);
+    if (scan.venuesFailed > 0) {
+      console.warn(`[market-insight] ${scan.venuesFailed} venue(s) failed to scan — counts reflect ${scan.venueCount} that answered`);
     }
   }
 

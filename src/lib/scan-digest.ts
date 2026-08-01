@@ -268,6 +268,70 @@ export function renderScanDigestLine(call: RenderableScanCall): string {
   return lines.join('\n');
 }
 
+/**
+ * The Telegram showcase's CTA, verbatim. `/scanwatch` is a bot command, so it only makes
+ * sense on the Telegram surface — every other surface passes its own.
+ */
+export const SCAN_SHOWCASE_TG_CTA = 'Want this on your coins automatically? Set a standing scan: /scanwatch.';
+
+export interface ScanShowcaseOptions {
+  /**
+   * Replaces the final CTA line. Omitted ⇒ the Telegram wording (byte-identical to the bot).
+   * `null` omits the CTA line AND its preceding blank line entirely — for a surface that
+   * renders its own CTAs outside this block, so they cannot end up duplicated.
+   */
+  cta?: string | null;
+}
+
+/**
+ * Render the WEEKLY CROSS-VENUE SHOWCASE body — the "📡 This week I scanned N assets
+ * across M venues" digest Telegram subscribers receive every Monday.
+ *
+ * ⚠️ THIS IS A MIRROR, NOT AN IMPORT — and the direction matters.
+ * The canonical implementation of this framing is Python:
+ * `algovault_bot.adoption.render_scan_showcase`, which has shipped for months. Python
+ * cannot import TypeScript, so a second surface wanting the same body had exactly two
+ * options: replicate the framing, or fork the format. This is the honest replication, and
+ * `tests/scan-showcase-render.test.ts` pins it against the Python source line for line.
+ * Do not "tidy" a rule here without changing BOTH sides — a mirror edited on one side is
+ * just a fork with a reassuring comment on it.
+ *
+ * The PER-CALL blocks are NOT mirrored: they delegate to `renderScanDigestLine` above,
+ * which the bot's `scan_digest.py` already declares itself a mirror of. So the per-setup
+ * format has exactly ONE definition and cannot drift between surfaces at all.
+ *
+ * Returns `null` when there are no fresh setups, leaving what a quiet week MEANS to the
+ * caller — Telegram suppresses the broadcast; dev.to publishes an honest market-state
+ * note. Returning null rather than an empty string keeps that a deliberate decision
+ * instead of something a falsy check swallows.
+ *
+ * @param setups      selected non-HOLD calls, already ranked and deduped by coin
+ * @param assetCount  total perps scanned across every venue that answered — LIVE, never a literal
+ * @param venueCount  venues that scanned WITHOUT error — live, and NOT the venue set's size
+ */
+export function renderScanShowcase(
+  setups: RenderableScanCall[],
+  assetCount: number,
+  venueCount: number,
+  opts: ScanShowcaseOptions = {},
+): string | null {
+  if (setups.length === 0) return null;
+  // Interpolate the counts RAW. The Python uses an f-string `{asset_count}` on an int, so
+  // `toLocaleString()` here would insert thousands separators and silently break parity
+  // for exactly the four-digit asset counts this runs at in production.
+  const lines = [
+    `📡 This week I scanned ${assetCount} assets across ${venueCount} venues.`,
+    '',
+    'Top fresh setups:',
+    '',
+    setups.map(renderScanDigestLine).join('\n\n'),
+  ];
+  // `cta: null` ⇒ no CTA line and no trailing blank line, for a caller that renders its
+  // own CTAs around this block. `undefined` ⇒ the Telegram default (bot parity).
+  if (opts.cta !== null) lines.push('', opts.cta ?? SCAN_SHOWCASE_TG_CTA);
+  return lines.join('\n');
+}
+
 /** Header scope for the MCP `content[1]` digest (the one-call PULL — no cadence). */
 export interface ScanDigestMeta {
   topN?: number;
