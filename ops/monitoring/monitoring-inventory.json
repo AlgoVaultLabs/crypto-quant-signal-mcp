@@ -757,6 +757,27 @@
       ],
       "owner_wave": "OPS-HOST-KERNEL-REBOOT-W1",
       "notes": "Standing signal for SEC-18. Keyed on RUNNING-vs-newest-INSTALLED kernel, deliberately NOT on /var/run/reboot-required mtime: that file is re-stamped by every new kernel package, so its age is the age of the LATEST trigger and an alert keyed on it resets its own clock monthly (measured at R0 - both hosts read 2026-07-29 while one was 12 and the other 30 revisions behind). Same file on both hosts, ONE canonical sha256 on this row; per-host copies carry no hash of their own. `--self-test` is two-way and vacuity-guarded (>=7 assertions) and proves the send path by capturing the wrapper argv, because both hosts are freshly rebooted and the BREACH branch is unreachable from live state. Fires through send_telegram.sh, which owns severity/cooldown/{NEXT}; smoke it with ALGOVAULT_TG_TEST_INERT=1, never DRY_RUN_TG=1 (that writes the 24h marker and false-greens run 2)."
+    },
+    {
+      "id": "candle-basis-shadow-report",
+      "artifact": "ops/cron/candle-basis-shadow-report.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/candle-basis-shadow-report.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/candle-basis-shadow-report.sh",
+          "schedule": "43 5 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "43 5 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "69cd905c3641cc3ed049107427542d1b385f6de6ddbc95b5a32613dd16bab1d2",
+      "owner_wave": "SIGNAL-CLOSEDBAR-SHADOW-W1",
+      "notes": "Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
