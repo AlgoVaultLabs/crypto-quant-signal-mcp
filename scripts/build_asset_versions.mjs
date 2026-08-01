@@ -120,7 +120,17 @@ function main() {
   let written = 0;
   let refs = 0;
 
-  for (const file of htmlFiles()) {
+  // docs-src/template.html is stamped alongside landing/**, and it has to be. `landing/docs.html`
+  // is GENERATED from it, and `build_docs --check` compares the generated output against the file
+  // on disk outside the marker regions. If only the generated page were stamped, the template
+  // would still hold the unversioned (or a stale) ref, so those two would disagree the moment the
+  // asset hash moved and build_docs --check would drift on every deploy with no edit to blame.
+  // Stamping both keeps the generator's input and output in lockstep.
+  // (OPS-DOCS-HOLDRATE-LIVE-W1, when /docs gained its first first-party script ref.)
+  const DOCS_TEMPLATE = path.join(REPO_ROOT, 'docs-src', 'template.html');
+  const targets = [...htmlFiles(), ...(fs.existsSync(DOCS_TEMPLATE) ? [DOCS_TEMPLATE] : [])];
+
+  for (const file of targets) {
     const src = fs.readFileSync(file, 'utf-8');
     for (const m of src.matchAll(ASSET_REF_RE)) if (hashes[m[1]]) refs++;
     const { out, changed } = stampHtml(src, hashes);

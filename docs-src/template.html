@@ -331,6 +331,14 @@ tailwind.config = {
   </main>
 </div>
 
+<!--
+  Live track-record hydration. WITHOUT this, every `data-tr-field` span on /docs is a DEAD HOOK:
+  it renders the deploy-baked fallback and never reflects the live SoT, which is indistinguishable
+  from a working span on inspection. docs.html was the only public page carrying such spans that
+  did not load this script (OPS-DOCS-HOLDRATE-LIVE-W1). The `?v=` is stamped by
+  scripts/build_asset_versions.mjs; do not hand-write a version here.
+-->
+<script defer src="/js/track-record-proxy.js?v=f485c24a"></script>
 
 </body>
 </html>

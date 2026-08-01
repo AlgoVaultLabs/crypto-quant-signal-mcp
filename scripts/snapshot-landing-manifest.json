@@ -97,8 +97,12 @@
       "sot": "performance",
       "accessor": "hold_rate",
       "format": "float_1dp",
+      "_note": "NOT monotonic — a HOLD rate can fall, so this is never FLOOR-coerced. The replace_template writes the % INSIDE the span, which is the contract every span must match: a span holding a bare number FOLLOWED by a literal % bakes into '99.2%%'. That shipped to the npm README twice (91.6%%, 99.1%%) and was 'fixed' both times by deleting the inner % — the wrong side, which re-arms on the next inject. Guarded by scripts/check-live-numeric-claims.mjs (OPS-DOCS-HOLDRATE-LIVE-W1).",
       "apply_to_files": [
         "landing/index.html",
+        "landing/docs.html",
+        "landing/faq.html",
+        "landing/glossary.html",
         "README.md"
       ],
       "replace_all": true

@@ -1988,7 +1988,7 @@ cfg = gate_api.Configuration(
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Rate limiting still applies (prevents abuse)</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Only BUY and SELL verdicts are charged</li>
         </ul>
-        <p class="text-gray-500 text-xs mt-3">This aligns incentives: you only pay when we see a tradeable opportunity. Current HOLD rate is ~84%, meaning the engine rejects most scans.</p>
+        <p class="text-gray-500 text-xs mt-3">This aligns incentives: you only pay when we see a tradeable opportunity. The engine returns HOLD on <span data-tr-field="hold_rate">99.2%</span> of scans &mdash; every one of them free.</p>
       </div>
 
 
@@ -2099,7 +2099,7 @@ cfg = gate_api.Configuration(
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. A high HOLD rate (~84%) means the engine is selective &mdash; it only calls when multiple indicators align. HOLD calls are always free across all tiers.
+            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. At <span data-tr-field="hold_rate">99.2%</span>, the engine is highly selective &mdash; it calls only when multiple indicators align. HOLD calls are always free across all tiers.
           </div>
         </details>
 
@@ -2133,6 +2133,14 @@ cfg = gate_api.Configuration(
   </main>
 </div>
 
+<!--
+  Live track-record hydration. WITHOUT this, every `data-tr-field` span on /docs is a DEAD HOOK:
+  it renders the deploy-baked fallback and never reflects the live SoT, which is indistinguishable
+  from a working span on inspection. docs.html was the only public page carrying such spans that
+  did not load this script (OPS-DOCS-HOLDRATE-LIVE-W1). The `?v=` is stamped by
+  scripts/build_asset_versions.mjs; do not hand-write a version here.
+-->
+<script defer src="/js/track-record-proxy.js?v=f485c24a"></script>
 
 </body>
 </html>
