@@ -772,6 +772,7 @@
         }
       ],
       "criticality": "load-bearing",
+      "repo_resident": true,
       "schedule": "43 5 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
