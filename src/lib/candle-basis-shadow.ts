@@ -32,33 +32,73 @@
  */
 
 import { dbQuery } from './performance-db.js';
-import type { SignalVerdict } from '../types.js';
+import type { SignalVerdict, RegimeType } from '../types.js';
+import type { PriceStructureResult } from './indicators.js';
 
+/**
+ * CH3 widened this from a `get_trade_call`-only table to a `tool`-discriminated one.
+ * The trade-call model internals (`raw_*`, `vol_score_*`, `rsi_score_*`) are therefore
+ * NULLABLE here where CH2 declared them NOT NULL: `get_market_regime` has no raw score,
+ * no volume ladder and no RSI, so a NOT NULL column could only be satisfied by inventing
+ * a number — a fabricated value in a measurement table CH4 will aggregate. Nullable and
+ * absent is the honest encoding. See `ALTER_SQL` for the matching live migration.
+ */
 const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS candle_basis_shadow (
-  id                BIGSERIAL     PRIMARY KEY,
-  recorded_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  coin              TEXT          NOT NULL,
-  exchange          TEXT          NOT NULL,
-  timeframe         TEXT          NOT NULL,
-  call_live         TEXT          NOT NULL,
-  call_closed       TEXT,
-  error_class       TEXT,
-  conf_live         INTEGER       NOT NULL,
-  conf_closed       INTEGER,
-  raw_live          NUMERIC       NOT NULL,
-  raw_closed        NUMERIC,
-  vol_score_live    INTEGER       NOT NULL,
-  vol_score_closed  INTEGER,
-  rsi_score_live    INTEGER       NOT NULL,
-  rsi_score_closed  INTEGER,
-  elapsed_fraction  NUMERIC,
-  n_closed          INTEGER       NOT NULL,
-  n_total           INTEGER       NOT NULL
+  id                    BIGSERIAL     PRIMARY KEY,
+  recorded_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  tool                  TEXT,
+  coin                  TEXT          NOT NULL,
+  exchange              TEXT          NOT NULL,
+  timeframe             TEXT          NOT NULL,
+  call_live             TEXT          NOT NULL,
+  call_closed           TEXT,
+  error_class           TEXT,
+  conf_live             INTEGER       NOT NULL,
+  conf_closed           INTEGER,
+  raw_live              NUMERIC,
+  raw_closed            NUMERIC,
+  vol_score_live        INTEGER,
+  vol_score_closed      INTEGER,
+  rsi_score_live        INTEGER,
+  rsi_score_closed      INTEGER,
+  structure_live        TEXT,
+  structure_closed      TEXT,
+  pivot_quality_live    NUMERIC,
+  pivot_quality_closed  NUMERIC,
+  elapsed_fraction      NUMERIC,
+  n_closed              INTEGER       NOT NULL,
+  n_total               INTEGER       NOT NULL
 )`;
+
+/**
+ * Idempotent migration for a table created by CH2. Every statement is safe to re-run, so
+ * a fresh database (which gets the final shape from `CREATE_TABLE_SQL`) and an existing
+ * one converge on the same schema.
+ *
+ * `tool` is left NULLABLE with an explicit one-shot backfill rather than given a column
+ * DEFAULT: a lingering `DEFAULT 'get_trade_call'` would silently mislabel rows from a
+ * future third tool that forgot to pass one, which is the same class of quiet-wrong-value
+ * the NOT NULL relaxation above exists to avoid.
+ */
+const ALTER_SQL = [
+  `ALTER TABLE candle_basis_shadow ADD COLUMN IF NOT EXISTS tool TEXT`,
+  `ALTER TABLE candle_basis_shadow ADD COLUMN IF NOT EXISTS structure_live TEXT`,
+  `ALTER TABLE candle_basis_shadow ADD COLUMN IF NOT EXISTS structure_closed TEXT`,
+  `ALTER TABLE candle_basis_shadow ADD COLUMN IF NOT EXISTS pivot_quality_live NUMERIC`,
+  `ALTER TABLE candle_basis_shadow ADD COLUMN IF NOT EXISTS pivot_quality_closed NUMERIC`,
+  // Every row that predates the discriminator was written by get_trade_call.
+  `UPDATE candle_basis_shadow SET tool = 'get_trade_call' WHERE tool IS NULL`,
+  `ALTER TABLE candle_basis_shadow ALTER COLUMN raw_live DROP NOT NULL`,
+  `ALTER TABLE candle_basis_shadow ALTER COLUMN vol_score_live DROP NOT NULL`,
+  `ALTER TABLE candle_basis_shadow ALTER COLUMN rsi_score_live DROP NOT NULL`,
+];
+
 const CREATE_INDEX_RECORDED_SQL =
   `CREATE INDEX IF NOT EXISTS idx_candle_basis_shadow_recorded ON candle_basis_shadow (recorded_at)`;
 const CREATE_INDEX_TF_SQL =
   `CREATE INDEX IF NOT EXISTS idx_candle_basis_shadow_tf_recorded ON candle_basis_shadow (timeframe, recorded_at)`;
+const CREATE_INDEX_TOOL_SQL =
+  `CREATE INDEX IF NOT EXISTS idx_candle_basis_shadow_tool_recorded ON candle_basis_shadow (tool, recorded_at)`;
 
 let _ensured = false;
 
@@ -80,8 +120,10 @@ function isPostgresBacked(): boolean {
 async function ensureTable(): Promise<void> {
   if (_ensured) return;
   await dbQuery(CREATE_TABLE_SQL);
+  for (const sql of ALTER_SQL) await dbQuery(sql);
   await dbQuery(CREATE_INDEX_RECORDED_SQL);
   await dbQuery(CREATE_INDEX_TF_SQL);
+  await dbQuery(CREATE_INDEX_TOOL_SQL);
   _ensured = true;
 }
 
@@ -90,29 +132,52 @@ export function _resetCandleBasisShadowEnsure(): void {
   _ensured = false;
 }
 
-export interface CandleBasisShadowRow {
+/** Fields every instrumented tool supplies, whatever its verdict vocabulary is. */
+interface CandleBasisShadowBase {
   coin: string;
   exchange: string;
   timeframe: string;
+  /** Constructor name of the closed-basis throw, populated iff `callClosed` is null. */
+  errorClass: string | null;
+  confLive: number;
+  confClosed: number | null;
+  /** 0..1 into the in-progress bar; null when the venue omitted a partial bar. */
+  elapsedFraction: number | null;
+  nClosed: number;
+  nTotal: number;
+}
+
+/** `get_trade_call` — CH2's shape. `tool` is optional so CH2's call site stays FROZEN. */
+export interface TradeCallShadowRow extends CandleBasisShadowBase {
+  tool?: 'get_trade_call';
   /** The EMITTED verdict under the live (in-progress-bar) basis. */
   callLive: SignalVerdict;
   /** Null iff the closed-basis derivation threw — then `errorClass` is set. */
   callClosed: SignalVerdict | null;
-  /** Constructor name of the throw, populated iff `callClosed` is null. */
-  errorClass: string | null;
-  confLive: number;
-  confClosed: number | null;
   rawLive: number;
   rawClosed: number | null;
   volScoreLive: number;
   volScoreClosed: number | null;
   rsiScoreLive: number;
   rsiScoreClosed: number | null;
-  /** 0..1 into the in-progress bar; null when the venue omitted a partial bar. */
-  elapsedFraction: number | null;
-  nClosed: number;
-  nTotal: number;
 }
+
+/**
+ * `get_market_regime` — CH3. Its verdict is the REGIME, and the quantity this wave
+ * measures is `detectPriceStructure`'s volume-weighted output, so it carries
+ * `structure_*` / `pivot_quality_*` instead of the trade-call model internals.
+ */
+export interface MarketRegimeShadowRow extends CandleBasisShadowBase {
+  tool: 'get_market_regime';
+  callLive: RegimeType;
+  callClosed: RegimeType | null;
+  structureLive: PriceStructureResult['structure'];
+  structureClosed: PriceStructureResult['structure'] | null;
+  pivotQualityLive: number;
+  pivotQualityClosed: number | null;
+}
+
+export type CandleBasisShadowRow = TradeCallShadowRow | MarketRegimeShadowRow;
 
 /**
  * Persist ONE shadow divergence row. FIRE-AND-FORGET safe: every error is swallowed here
@@ -124,14 +189,20 @@ export async function recordCandleBasisShadow(row: CandleBasisShadowRow): Promis
   if (!isPostgresBacked()) return false;
   try {
     await ensureTable();
+    // ONE fixed INSERT for both variants: the columns the other tool has no analogue
+    // for go in as NULL rather than as an invented number.
+    const isRegime = row.tool === 'get_market_regime';
     await dbQuery(
       `INSERT INTO candle_basis_shadow
-        (coin, exchange, timeframe, call_live, call_closed, error_class,
+        (tool, coin, exchange, timeframe, call_live, call_closed, error_class,
          conf_live, conf_closed, raw_live, raw_closed,
          vol_score_live, vol_score_closed, rsi_score_live, rsi_score_closed,
+         structure_live, structure_closed, pivot_quality_live, pivot_quality_closed,
          elapsed_fraction, n_closed, n_total)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+               $17, $18, $19, $20, $21, $22)`,
       [
+        row.tool ?? 'get_trade_call',
         row.coin.toUpperCase(),
         row.exchange,
         row.timeframe,
@@ -140,12 +211,16 @@ export async function recordCandleBasisShadow(row: CandleBasisShadowRow): Promis
         row.errorClass,
         row.confLive,
         row.confClosed,
-        row.rawLive,
-        row.rawClosed,
-        row.volScoreLive,
-        row.volScoreClosed,
-        row.rsiScoreLive,
-        row.rsiScoreClosed,
+        isRegime ? null : row.rawLive,
+        isRegime ? null : row.rawClosed,
+        isRegime ? null : row.volScoreLive,
+        isRegime ? null : row.volScoreClosed,
+        isRegime ? null : row.rsiScoreLive,
+        isRegime ? null : row.rsiScoreClosed,
+        isRegime ? row.structureLive : null,
+        isRegime ? row.structureClosed : null,
+        isRegime ? row.pivotQualityLive : null,
+        isRegime ? row.pivotQualityClosed : null,
         row.elapsedFraction,
         row.nClosed,
         row.nTotal,

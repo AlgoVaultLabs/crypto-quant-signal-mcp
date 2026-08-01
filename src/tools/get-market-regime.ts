@@ -8,11 +8,15 @@ import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
 import { fetchTradFiFundingByVenue, normalizeTo8h, computeTradFiFundingSentiment, buildFundingByVenue } from '../lib/tradfi-funding.js';
 import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
+import { splitCandleWindow } from '../lib/candle-window.js';
+import { getCandleBasis, isCandleBasisShadowEnabled } from '../lib/candle-basis-flag.js';
+import { recordCandleBasisShadow } from '../lib/candle-basis-shadow.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
 import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
-import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId } from '../types.js';
+import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, Candle } from '../types.js';
+import type { PriceStructureResult } from '../lib/indicators.js';
 
 interface MarketRegimeInput {
   coin: string;
@@ -31,6 +35,173 @@ const CANDLE_COUNTS: Record<string, number> = {
 // ADX slope thresholds (linear regression slope per bar)
 const ADX_SLOPE_RISING = 0.5;
 const ADX_SLOPE_FALLING = -0.5;
+
+/** Everything `getMarketRegime` derives from candles alone. */
+export interface RegimeIndicators {
+  adxVal: number | null;
+  adxSlope: number | null;
+  plusDI: number | null;
+  minusDI: number | null;
+  atrVal: number | null;
+  structure: PriceStructureResult;
+}
+
+/**
+ * SIGNAL-CLOSEDBAR-SHADOW-W1 CH3 — the whole candle→indicator derivation, extracted
+ * PURE so the live and closed bases can be computed from the same code with different
+ * inputs. The CH2 analogue is `computeIndicatorScores` in get-trade-call.ts.
+ *
+ * Deliberately does NOT return `currentPrice`. Per CH2 §7's level-vs-integral rule, a
+ * price is a LEVEL — valid at every instant, including mid-bar — while ADX/ATR/pivots
+ * are INTEGRALS over a bar and are only complete at close. `currentPrice` therefore
+ * stays on the LIVE candles under BOTH bases, and keeping it out of this function is
+ * what makes that structural rather than a comment someone can drift away from.
+ */
+export function computeRegimeIndicators(candles: Candle[]): RegimeIndicators {
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
+  const closes = candles.map(c => c.close);
+  const volumes = candles.map(c => c.volume);
+
+  const adxResult = adx(highs, lows, closes, 14, 5);
+  return {
+    adxVal: adxResult?.adx ?? null,
+    adxSlope: adxResult?.adxSlope ?? null,
+    plusDI: adxResult?.plusDI ?? null,
+    minusDI: adxResult?.minusDI ?? null,
+    atrVal: atr(highs, lows, closes, 14),
+    structure: detectPriceStructure(highs, lows, closes, volumes),
+  };
+}
+
+/** The regime verdict — what `classifyRegime` decides from the indicators alone. */
+export interface RegimeClassification {
+  regime: RegimeType;
+  confidence: number;
+  trendStrength: TrendStrength;
+}
+
+export interface RegimeClassifierInputs {
+  adxVal: number | null;
+  adxSlope: number | null;
+  plusDI: number | null;
+  minusDI: number | null;
+  slopeCategory: AdxSlopeCategory;
+  priceStructure: PriceStructureResult['structure'];
+  volatilityRatio: number;
+}
+
+/**
+ * SIGNAL-CLOSEDBAR-SHADOW-W1 CH3 — the regime classification, lifted VERBATIM out of
+ * `getMarketRegime` and made pure. Behaviour is unchanged; the extraction exists so the
+ * shadow row's closed-basis verdict comes from THIS code rather than a second
+ * hand-written derivation in the CH4 harness, which would drift (single-derivation rule).
+ */
+export function classifyRegime(i: RegimeClassifierInputs): RegimeClassification {
+  const { adxVal, adxSlope, plusDI, minusDI, slopeCategory, priceStructure, volatilityRatio } = i;
+  let regime: RegimeType;
+  let confidence: number;
+  let trendStrength: TrendStrength;
+
+  if (adxVal !== null && adxVal > 25) {
+    // ADX above trending threshold — but check slope for exhaustion
+    if (adxVal < 30 && slopeCategory === 'FALLING' && adxSlope !== null && adxSlope < -1.0) {
+      // ADX 25-30 and falling fast → trend is dying, reclassify as RANGING
+      regime = 'RANGING';
+      trendStrength = 'WEAK';
+      confidence = Math.round((25 - adxVal) * 4 + 30); // fade toward ranging confidence
+      confidence = Math.max(30, Math.min(confidence, 60));
+    } else {
+      // Normal trending classification
+      if (priceStructure === 'HIGHER_HIGHS') {
+        regime = 'TRENDING_UP';
+      } else if (priceStructure === 'LOWER_LOWS') {
+        regime = 'TRENDING_DOWN';
+      } else {
+        if (plusDI! > minusDI!) {
+          regime = 'TRENDING_UP';
+        } else {
+          regime = 'TRENDING_DOWN';
+        }
+      }
+
+      // Confidence from ADX value
+      if (adxVal > 40) {
+        trendStrength = 'STRONG';
+        confidence = Math.min(90, Math.round(adxVal * 2));
+      } else if (adxVal > 30) {
+        trendStrength = 'MODERATE';
+        confidence = Math.round(adxVal * 2);
+      } else {
+        trendStrength = 'WEAK';
+        confidence = Math.round(adxVal * 1.5);
+      }
+
+      // ADX slope adjustment: boost rising, penalize falling (asymmetric: -15 to +10)
+      if (adxSlope !== null) {
+        const slopeAdjustment = Math.max(-15, Math.min(10, Math.round(adxSlope * 5)));
+        confidence = Math.max(20, Math.min(95, confidence + slopeAdjustment));
+      }
+
+      // Downgrade trend strength if slope is falling
+      if (slopeCategory === 'FALLING') {
+        if (trendStrength === 'STRONG') trendStrength = 'MODERATE';
+        else if (trendStrength === 'MODERATE') trendStrength = 'WEAK';
+      }
+    }
+  } else if (adxVal !== null && adxVal > 18 && slopeCategory === 'RISING' && adxSlope !== null && adxSlope > 0.8) {
+    // Early trend detection: ADX 18-25 but rising fast → emerging trend
+    if (plusDI! > minusDI!) {
+      regime = 'TRENDING_UP';
+    } else {
+      regime = 'TRENDING_DOWN';
+    }
+    trendStrength = 'WEAK';
+    confidence = Math.max(40, Math.min(60, Math.round(adxVal * 2)));
+  } else {
+    // Non-trending: RANGING or VOLATILE
+    trendStrength = 'WEAK';
+    if (volatilityRatio > 0.03) {
+      regime = 'VOLATILE';
+      confidence = Math.min(85, Math.round(volatilityRatio * 2000));
+    } else {
+      regime = 'RANGING';
+      confidence = adxVal !== null ? Math.round((25 - adxVal) * 4) : 50;
+    }
+    confidence = Math.max(30, Math.min(confidence, 85));
+  }
+
+  return { regime, confidence, trendStrength };
+}
+
+/**
+ * Indicators → everything downstream of them, for ONE basis. Both the emitted response
+ * and the shadow row project from this, so they can never disagree about what a given
+ * candle set means. `currentPrice` is a caller-supplied LEVEL: it is the LIVE last close
+ * under both bases (CH2 §7), which is exactly why it is a parameter and not derived here.
+ */
+export function projectRegime(ind: RegimeIndicators, currentPrice: number) {
+  const slopeCategory: AdxSlopeCategory = ind.adxSlope !== null
+    ? (ind.adxSlope > ADX_SLOPE_RISING ? 'RISING' : ind.adxSlope < ADX_SLOPE_FALLING ? 'FALLING' : 'FLAT')
+    : 'FLAT';
+  const volatilityRatio = ind.atrVal !== null && currentPrice > 0 ? ind.atrVal / currentPrice : 0;
+  const priceStructure = ind.structure.structure;
+  return {
+    slopeCategory,
+    volatilityRatio,
+    priceStructure,
+    pivotQuality: ind.structure.avgPivotScore,
+    ...classifyRegime({
+      adxVal: ind.adxVal,
+      adxSlope: ind.adxSlope,
+      plusDI: ind.plusDI,
+      minusDI: ind.minusDI,
+      slopeCategory,
+      priceStructure,
+      volatilityRatio,
+    }),
+  };
+}
 
 export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketRegimeResult> {
   const coin = input.coin.toUpperCase();
@@ -82,13 +253,25 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   // invert the regime. No-op for ascending venues.
   candles.sort((a, b) => a.time - b.time);
 
+  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH3: the confirmed-bar basis, mirroring CH2. The
+  //    sort immediately above is what guarantees ascending order, which is
+  //    `splitCandleWindow`'s documented precondition. Named `candleWindow`, never
+  //    `window`, which would shadow the DOM global.
+  //    `intervalMs` is the SAME value used for `startTime` above — one interval per
+  //    call, so the fetch window and the bar split can never disagree.
+  const candleBasis = getCandleBasis();
+  const candleShadowEnabled = isCandleBasisShadowEnabled();
+  const candleWindow = splitCandleWindow(candles, intervalMs, Date.now());
+  //    CANDLE_BASIS unset ⇒ 'live' ⇒ this IS `candles` ⇒ byte-identical to pre-wave.
+  const emittedCandles = candleBasis === 'closed' ? candleWindow.closed : candles;
+
   const REQUIRED_CANDLES = 30;
-  if (candles.length < REQUIRED_CANDLES) {
+  if (emittedCandles.length < REQUIRED_CANDLES) {
     // Structured recovery hint: which finer timeframes already have enough
     // candles for this (usually newly-listed) symbol. `candles[0].time` is the
     // oldest candle in the fetched window ≈ the listing's first candle when the
     // listing is younger than the window.
-    const firstCandleTimeMs = candles.length > 0 ? candles[0].time : Date.now();
+    const firstCandleTimeMs = emittedCandles.length > 0 ? emittedCandles[0].time : Date.now();
     const suggestedTimeframes = computeSuggestedTimeframes({
       firstCandleTimeMs,
       nowMs: Date.now(),
@@ -99,7 +282,7 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       coin,
       exchange,
       timeframe,
-      candlesAvailable: candles.length,
+      candlesAvailable: emittedCandles.length,
       candlesRequired: REQUIRED_CANDLES,
       suggestedTimeframes,
       suggestedAction: suggestedActionFor(suggestedTimeframes),
@@ -113,21 +296,51 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     ? { state: 'UNKNOWN' as const, note: '' }
     : classifyUnderlyingSession({ assetClass, at: new Date() });
 
-  const highs = candles.map(c => c.high);
-  const lows = candles.map(c => c.low);
-  const closes = candles.map(c => c.close);
-  const volumes = candles.map(c => c.volume);
-  const currentPrice = closes[closes.length - 1];
+  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH3: derive BOTH bases, select ONE. There is
+  //    deliberately no single mutable "which candles" binding — that is precisely how
+  //    a later edit silently moves the LIVE path; two named derivations and one
+  //    selection cannot do that by accident. (Same shape as CH2.)
+  const liveBasisIndicators = computeRegimeIndicators(candles);
 
-  // Compute indicators (now with ADX slope and volume-weighted structure)
-  const adxResult = adx(highs, lows, closes, 14, 5);
-  const atrVal = atr(highs, lows, closes, 14);
-  const structureResult = detectPriceStructure(highs, lows, closes, volumes);
+  //    The closed pass is SHADOW work, so it is skipped unless the shadow is on or the
+  //    closed basis is actually selected — it doubles the indicator pipeline.
+  let closedBasisIndicators: RegimeIndicators | null = null;
+  let closedBasisErrorClass: string | null = null;
+  if (candleShadowEnabled || candleBasis === 'closed') {
+    try {
+      //  Dropping the in-progress bar reduces the count by ONE, so an asset sitting at
+      //  exactly REQUIRED_CANDLES legitimately fails here. That must never reach the
+      //  live path — which is why the whole DERIVATION is isolated, not just the write.
+      if (candleWindow.closed.length < REQUIRED_CANDLES) {
+        throw new InsufficientCandlesError({
+          coin,
+          exchange,
+          timeframe,
+          candlesAvailable: candleWindow.closed.length,
+          candlesRequired: REQUIRED_CANDLES,
+          suggestedTimeframes: [],
+          suggestedAction: '',
+        });
+      }
+      closedBasisIndicators = computeRegimeIndicators(candleWindow.closed);
+    } catch (e) {
+      closedBasisErrorClass = e instanceof Error ? e.constructor.name : 'Error';
+    }
+  }
 
-  const adxVal = adxResult?.adx ?? null;
-  const adxSlope = adxResult?.adxSlope ?? null;
-  const priceStructure = structureResult.structure;
-  const pivotQuality = structureResult.avgPivotScore;
+  const emittedIndicators = candleBasis === 'closed' && closedBasisIndicators
+    ? closedBasisIndicators
+    : liveBasisIndicators;
+
+  //    LEVEL, not INTEGRAL (CH2 §7): the newest price is valid at every instant, so it
+  //    is read from the LIVE candles under BOTH bases. `computeRegimeIndicators` cannot
+  //    return it, which is what keeps this structural rather than conventional.
+  const currentPrice = candles[candles.length - 1].close;
+
+  const { adxVal, adxSlope, plusDI, minusDI } = emittedIndicators;
+  const atrVal = emittedIndicators.atrVal;
+  const priceStructure = emittedIndicators.structure.structure;
+  const pivotQuality = emittedIndicators.structure.avgPivotScore;
   const volatilityRatio = atrVal !== null && currentPrice > 0 ? atrVal / currentPrice : 0;
 
   // Categorize ADX slope
@@ -165,77 +378,10 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   }
 
   // ── Classify regime with ADX slope awareness (Item 6) ──
-  let regime: RegimeType;
-  let confidence: number;
-  let trendStrength: TrendStrength;
-
-  if (adxVal !== null && adxVal > 25) {
-    // ADX above trending threshold — but check slope for exhaustion
-    if (adxVal < 30 && slopeCategory === 'FALLING' && adxSlope !== null && adxSlope < -1.0) {
-      // ADX 25-30 and falling fast → trend is dying, reclassify as RANGING
-      regime = 'RANGING';
-      trendStrength = 'WEAK';
-      confidence = Math.round((25 - adxVal) * 4 + 30); // fade toward ranging confidence
-      confidence = Math.max(30, Math.min(confidence, 60));
-    } else {
-      // Normal trending classification
-      if (priceStructure === 'HIGHER_HIGHS') {
-        regime = 'TRENDING_UP';
-      } else if (priceStructure === 'LOWER_LOWS') {
-        regime = 'TRENDING_DOWN';
-      } else {
-        if (adxResult!.plusDI > adxResult!.minusDI) {
-          regime = 'TRENDING_UP';
-        } else {
-          regime = 'TRENDING_DOWN';
-        }
-      }
-
-      // Confidence from ADX value
-      if (adxVal > 40) {
-        trendStrength = 'STRONG';
-        confidence = Math.min(90, Math.round(adxVal * 2));
-      } else if (adxVal > 30) {
-        trendStrength = 'MODERATE';
-        confidence = Math.round(adxVal * 2);
-      } else {
-        trendStrength = 'WEAK';
-        confidence = Math.round(adxVal * 1.5);
-      }
-
-      // ADX slope adjustment: boost rising, penalize falling (asymmetric: -15 to +10)
-      if (adxSlope !== null) {
-        const slopeAdjustment = Math.max(-15, Math.min(10, Math.round(adxSlope * 5)));
-        confidence = Math.max(20, Math.min(95, confidence + slopeAdjustment));
-      }
-
-      // Downgrade trend strength if slope is falling
-      if (slopeCategory === 'FALLING') {
-        if (trendStrength === 'STRONG') trendStrength = 'MODERATE';
-        else if (trendStrength === 'MODERATE') trendStrength = 'WEAK';
-      }
-    }
-  } else if (adxVal !== null && adxVal > 18 && slopeCategory === 'RISING' && adxSlope !== null && adxSlope > 0.8) {
-    // Early trend detection: ADX 18-25 but rising fast → emerging trend
-    if (adxResult!.plusDI > adxResult!.minusDI) {
-      regime = 'TRENDING_UP';
-    } else {
-      regime = 'TRENDING_DOWN';
-    }
-    trendStrength = 'WEAK';
-    confidence = Math.max(40, Math.min(60, Math.round(adxVal * 2)));
-  } else {
-    // Non-trending: RANGING or VOLATILE
-    trendStrength = 'WEAK';
-    if (volatilityRatio > 0.03) {
-      regime = 'VOLATILE';
-      confidence = Math.min(85, Math.round(volatilityRatio * 2000));
-    } else {
-      regime = 'RANGING';
-      confidence = adxVal !== null ? Math.round((25 - adxVal) * 4) : 50;
-    }
-    confidence = Math.max(30, Math.min(confidence, 85));
-  }
+  //    Body lifted verbatim into the pure `classifyRegime` above; behaviour unchanged.
+  const { regime, confidence, trendStrength } = classifyRegime({
+    adxVal, adxSlope, plusDI, minusDI, slopeCategory, priceStructure, volatilityRatio,
+  });
 
   // ── Interpretations ──
   let adxInterpretation = 'No data';
@@ -272,6 +418,40 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   // signal suppression in v1).
   if (isClosedState(session.state)) {
     suggestion += ' Underlying market closed — candles reflect capped synthetic pricing; treat regime as provisional until reopen.';
+  }
+
+  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH3: persist the basis divergence. Fire-and-forget and
+  //    doubly isolated (the store swallows, and this `void`s + `.catch()`es) so a shadow
+  //    write can NEVER affect the emitted regime. Skipped for internal callers, which are
+  //    seed/backfill traffic and would swamp the measurement.
+  if (license.tier !== 'internal' && (candleShadowEnabled || candleBasis === 'closed')) {
+    // Both sides project through the SAME `projectRegime`, so the recorded live verdict
+    // is the emitted one by construction rather than by a parallel re-derivation.
+    const liveProjection = candleBasis === 'closed'
+      ? projectRegime(liveBasisIndicators, currentPrice)
+      : { regime, confidence, pivotQuality, priceStructure };
+    const closedProjection = closedBasisIndicators
+      ? projectRegime(closedBasisIndicators, currentPrice)
+      : null;
+
+    void recordCandleBasisShadow({
+      tool: 'get_market_regime',
+      coin,
+      exchange,
+      timeframe,
+      callLive: liveProjection.regime,
+      callClosed: closedProjection?.regime ?? null,
+      errorClass: closedBasisErrorClass,
+      confLive: liveProjection.confidence,
+      confClosed: closedProjection?.confidence ?? null,
+      structureLive: liveProjection.priceStructure,
+      structureClosed: closedProjection?.priceStructure ?? null,
+      pivotQualityLive: liveProjection.pivotQuality,
+      pivotQualityClosed: closedProjection?.pivotQuality ?? null,
+      elapsedFraction: candleWindow.elapsedFraction,
+      nClosed: candleWindow.closed.length,
+      nTotal: candles.length,
+    }).catch(() => {});
   }
 
   // Upgrade hint: only for free tier
