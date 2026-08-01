@@ -41,6 +41,7 @@ import {
   type DeliveryState,
 } from './webhooks-store.js';
 import { classifyDeliveryFailure, extractErrorCode, type WebhookFailureClass } from './webhook-failure-class.js';
+import { quarantineMaxSecFor } from './webhook-quarantine-policy.js';
 
 /** Owner-facing hint per post-failure lifecycle state (call-voice, no secrets). */
 function transitionSuggestedAction(
@@ -585,8 +586,9 @@ async function probeOne(sub: WebhookSubscription, deps: DeliveryDeps, cfg: Deliv
 
 /**
  * One health-probe sweep tick. For every quarantined sub whose `next_probe_at` is
- * due: (1) expire to `disabled(quarantine_expired)` if quarantined longer than
- * WEBHOOK_QUARANTINE_MAX_SEC; else probe — 2xx → AUTO-RESUME `active`; `http_410`
+ * due: (1) expire to `disabled(quarantine_expired)` if quarantined longer than the
+ * sub's TIER-DIFFERENTIATED window — `quarantineMaxSecFor(sub.tier)`, paid 30d /
+ * free 7d (OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH3); else probe — 2xx → AUTO-RESUME `active`; `http_410`
  * → `disabled(permanent_http_410)`; any other (transient) → exponential back-off
  * of `next_probe_at`. All transitions forensic-logged; NO Telegram (silent per the
  * alert contract). Quarantined subs are never enqueued for real events — recovery
@@ -598,9 +600,11 @@ export async function runHealthProbeSweep(deps: DeliveryDeps = {}, cfg: Delivery
   const due = await getQuarantinedDue(now, limit);
   const out: ProbeSweepResult = { probed: due.length, resumed: 0, disabled: 0, backedOff: 0 };
   for (const sub of due) {
-    if (sub.quarantined_at != null && now - sub.quarantined_at > lc.quarantineMaxSec) {
+    // Tier-differentiated expiry — the ONE derivation lives in the policy leaf.
+    const quarantineMaxSec = quarantineMaxSecFor(sub.tier);
+    if (sub.quarantined_at != null && now - sub.quarantined_at > quarantineMaxSec) {
       await setDeliveryState(sub.id, 'disabled', { disabled_reason: 'quarantine_expired', next_probe_at: null, last_probe_at: now });
-      console.log(`[webhook-probe] sub ${sub.id} quarantine_expired (>${lc.quarantineMaxSec}s no recovery) → disabled`);
+      console.log(`[webhook-probe] sub ${sub.id} quarantine_expired (>${quarantineMaxSec}s no recovery, tier=${sub.tier}) → disabled`);
       out.disabled += 1;
       continue;
     }

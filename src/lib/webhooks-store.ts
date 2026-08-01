@@ -432,7 +432,11 @@ export interface WebhookLifecycleConfig {
   quarantineAfterFailures: number; // consecutive transient failures → quarantined
   probeBackoffBaseSec: number;     // first next_probe_at = quarantined_at + base
   probeBackoffMaxSec: number;      // ceiling for min(base·2^n, max)
-  quarantineMaxSec: number;        // 7d no-recovery → disabled(quarantine_expired)
+  // NOTE: the quarantine WINDOW deliberately does NOT live here. Since
+  // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH3 it is tier-differentiated (paid 30d /
+  // free 7d), so it cannot be a single config scalar. Its ONE derivation is
+  // `quarantineMaxSecFor(tier)` in src/lib/webhook-quarantine-policy.ts — do not
+  // reintroduce a `quarantineMaxSec` field here.
 }
 
 function lifecycleEnvInt(name: string, def: number): number {
@@ -447,7 +451,6 @@ export function loadLifecycleConfig(): WebhookLifecycleConfig {
     quarantineAfterFailures: lifecycleEnvInt('WEBHOOK_QUARANTINE_AFTER_FAILURES', 10),
     probeBackoffBaseSec: lifecycleEnvInt('WEBHOOK_PROBE_BACKOFF_BASE_SEC', 300),
     probeBackoffMaxSec: lifecycleEnvInt('WEBHOOK_PROBE_BACKOFF_MAX_SEC', 86400),
-    quarantineMaxSec: lifecycleEnvInt('WEBHOOK_QUARANTINE_MAX_SEC', 604800),
   };
 }
 
