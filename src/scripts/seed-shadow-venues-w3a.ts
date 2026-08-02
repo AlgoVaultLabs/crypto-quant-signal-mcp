@@ -115,7 +115,13 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error('[seed-shadow-venues-w3a] FATAL:', err);
-  process.exit(1);
-});
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): a cron/CLI entrypoint must guard its top-level
+// main() so importing this module for a test does not execute it. Live cron invokes
+// `node dist/scripts/<name>.js`, so require.main === module is true there and the
+// scheduled run is unaffected.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[seed-shadow-venues-w3a] FATAL:', err);
+    process.exit(1);
+  });
+}

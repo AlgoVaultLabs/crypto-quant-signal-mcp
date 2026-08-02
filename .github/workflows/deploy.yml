@@ -329,6 +329,18 @@ jobs:
           node scripts/check-claudemd-claims.mjs --self-test
           node scripts/check-claudemd-claims.mjs --check
 
+      # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-22 — a cron/CLI entrypoint must guard its top-level
+      # main(), or anything that imports it RUNS it (a test, a canary, another script reusing one
+      # helper) and the failure is silent and expensive. CLAUDE.md already carried this as prose
+      # with no executable gate: SEC-22 was filed against 2 files, and a re-grep at HEAD found
+      # those 2 already fixed while SEVEN others had never been guarded at all. Emits
+      # ENTRYPOINT_GUARDS_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (scanned nothing, or found no
+      # entrypoints at all) blocks too, so a broken detector can never read as "verified clean".
+      - name: Entrypoint-guard gate (fail-closed)
+        run: |
+          node scripts/check-entrypoint-guards.mjs --self-test
+          node scripts/check-entrypoint-guards.mjs
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
       # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
       # applied to customer.subscription.created, which mints an API key. Also asserts no

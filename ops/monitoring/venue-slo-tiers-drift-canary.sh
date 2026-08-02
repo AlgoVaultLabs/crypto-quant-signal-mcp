@@ -13,7 +13,10 @@
 # canary.sh: the host wrapper (send_telegram.sh) owns severity / cooldown / DRY_RUN / fail-open;
 # this consumer only pipes the drift summary. Installed to /opt/algovault-monitoring/ via SSH
 # (the repo copy is paths-ignored in deploy.yml, so it never triggers a prod rebuild).
-# Suggested cron: weekly, e.g. `0 12 * * 1 /opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh`.
+# Suggested cron: weekly, e.g. `27 12 * * 1 /opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh`.
+# SEC-48 (OPS-AUDIT-REMEDIATION-LOW-W1): the minute is OFF the :00 boundary deliberately. CLAUDE.md
+# forbids :00 for sampling/monitoring crons because everything else on the box also fires there,
+# and the resulting contention over-counts CPU by 50-90x. This was `0 12 * * 1` until 2026-08-02.
 set -uo pipefail
 
 CTR=${LF_LABELER_CTR:-crypto-quant-signal-mcp-mcp-server-1}

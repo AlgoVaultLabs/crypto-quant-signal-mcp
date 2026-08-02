@@ -91,10 +91,15 @@ du_b() { local v; v="$(rssh "du -sxb '$1' 2>/dev/null | cut -f1")"; echo "${v:-0
 
 # safety tag from a source label (allow-list; unknown -> REVIEW)
 safety_tag() {
+  # SEC-22/SEC-23 (OPS-AUDIT-REMEDIATION-LOW-W1): ORDER IS THE SAFETY PROPERTY.
+  # `case` is FIRST-MATCH-WINS, and the original order put the broad SAFE row first, so
+  # "image layers (referenced)" — which is DO-NOT-TOUCH — matched *"image layers"* and was
+  # labelled SAFE. A forensics report that labels live data SAFE is worse than no report.
+  # Most-specific and most-dangerous first; the broad SAFE row LAST among the real rows.
   case "$1" in
-    *"image layers"*|*"build-cache"*|*json-log*|*journald*|*apt\ cache*|*"old kernels"*) echo "SAFE" ;;
-    *ClickHouse*|*editorial*|*research-archive*|*DuckDB*|*"/var/log (other)"*) echo "REVIEW" ;;
     *Postgres*|*Redis*|*oi_snapshots*|*WAL*|*"image layers (referenced)"*) echo "DO-NOT-TOUCH" ;;
+    *ClickHouse*|*editorial*|*research-archive*|*DuckDB*|*"/var/log"*) echo "REVIEW" ;;
+    *"image layers"*|*"build-cache"*|*json-log*|*journald*|*apt\ cache*|*"old kernels"*) echo "SAFE" ;;
     *) echo "REVIEW" ;;
   esac
 }

@@ -611,9 +611,15 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error('[geo-cron] fatal:', msg);
-  sendAlert(`GEO weekly cron failed: ${msg}`, 'critical').catch(() => {});
-  process.exit(1);
-});
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): a cron/CLI entrypoint must guard its top-level
+// main() so importing this module for a test does not execute it. Live cron invokes
+// `node dist/scripts/<name>.js`, so require.main === module is true there and the
+// scheduled run is unaffected.
+if (require.main === module) {
+  main().catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[geo-cron] fatal:', msg);
+    sendAlert(`GEO weekly cron failed: ${msg}`, 'critical').catch(() => {});
+    process.exit(1);
+  });
+}
