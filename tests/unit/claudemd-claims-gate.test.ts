@@ -27,13 +27,17 @@ function run(args: string[]): { code: number; out: string } {
 }
 
 describe('claudemd-claims gate (OPS-CLAUDEMD-CLAIM-VERIFIER-W1)', () => {
-  it('self-test passes: dead prescriptive path fires, correction blocks do not, vacuity guarded', () => {
+  it('self-test passes: dead prescriptive path fires, correction blocks do not, vacuity guarded', { timeout: 60_000 }, () => {
     const { code, out } = run(['--self-test']);
     expect(out).toContain('self-test passed');
     expect(code).toBe(0);
   });
 
-  it('--check emits exactly one verdict token and it is PASS on the current tree + lock', () => {
+  // Generous by intent: this spawns the REAL gate, which shells out to git. It passed standalone
+  // at ~3s and still blocked a push under the full parallel suite, against vitest's 5s default —
+  // a timing-fragile gate teaches people to re-run until green, which is how a real red gets
+  // waved through. The underlying cost was fixed too (one batched cat-file, not ~160 spawns).
+  it('--check emits exactly one verdict token and it is PASS on the current tree + lock', { timeout: 60_000 }, () => {
     const { code, out } = run(['--check']);
     const tokens = out.match(/CLAUDEMD_CLAIMS_VERDICT=\w+/g) ?? [];
     expect(tokens).toHaveLength(1);

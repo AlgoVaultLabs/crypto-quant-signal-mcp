@@ -1,0 +1,92 @@
+{
+  "_comment": "OPS-CLAIM-VERIFIER-COVERAGE-W1 — the host-path claims made by the prescriptive docs (vault CLAUDE.md), routed to the daily reconciler so each is checked LOCALLY on the host that owns it. CI never gets SSH; the verifier asserts COVERAGE (every host-path claim has a row here or an exemption with a reason), the reconciler asserts TRUTH on-host. Two projections of one fact, never two probes that can disagree.",
+
+  "_why_not_ssh_from_ci": "monitoring-inventory-reconcile.py already runs daily on each host (signal-1 57 6, aoe-1 17 7) with per-host row ownership via MONITORING_HOST_LABELS. On those hosts these paths are LOCAL FILES — no SSH required at all. Building a second reporter, or giving CI prod credentials, would both be strictly worse.",
+
+  "_why_inventory_membership_is_not_coverage": "MEASURED 2026-08-02, not reasoned: simulating a DELETED /opt/algovault-monitoring/send_telegram.sh against the live inventory fires NOTHING. HASH_DRIFT skips a file it cannot find (by design — 'absence is DARK/ORPHAN's business'), DARK only evaluates rows carrying a `schedule` and the wrapper's is null, and ORPHAN runs host→repo so a missing file is invisible to it. The shared alert wrapper that CLAUDE.md forbids consumers from re-implementing could therefore vanish from a host in silence. DOC_PATH_CLAIM closes exactly that hole, which is why rows here are kept for artifacts that ALSO have an inventory row — it is not duplication, it is the one assertion the inventory delegates away.",
+
+  "_expect_semantics": {
+    "present": "the path MUST exist on every owning host. Absent ⇒ MISSING finding.",
+    "absent": "an INVERSE claim — the doc prescribes this path as a FUTURE target and it must NOT exist yet. Present ⇒ REVIEW finding (the doc's 'do this later' has silently become 'someone did it')."
+  },
+  "_unreachable_is_not_a_pass": "A claim whose owning host is not THIS instance is reported DEFERRED, never silently skipped — the verdict-token principle at per-check granularity. A skipped claim must never read identically to a passing one.",
+
+  "claims": [
+    {
+      "path": "/opt/algovault-monitoring/send_telegram.sh",
+      "hosts": ["signal-1", "aoe-1"],
+      "expect": "present",
+      "source": "CLAUDE.md — Operator-action-required alert contract; the shared wrapper consumers MUST NOT re-implement",
+      "reason": "Load-bearing on BOTH hosts and the one primitive whose second installation went unrecorded for 7 days (OPS-AOE-MONITORING-PARITY-W1). Its existence is restated in prose because a mid-incident reader needs the path; the row is what keeps that restatement honest."
+    },
+    {
+      "path": "/opt/algovault-monitoring/website-drift-canary.py",
+      "hosts": ["signal-1"],
+      "expect": "present",
+      "source": "CLAUDE.md — Whole-website data congruency canary",
+      "reason": "Named in CLAUDE.md as the daily congruency canary; a TG-alert responder is sent to this exact path. signal-1 only — measured ABSENT on aoe-1 2026-08-02, which is correct, not drift."
+    },
+    {
+      "path": "/opt/algovault-monitoring/postgres-cpu-autopilot.py",
+      "hosts": ["signal-1"],
+      "expect": "present",
+      "source": "CLAUDE.md — Postgres-CPU Autopilot",
+      "reason": "The autopilot entry point cited by the alert contract; postgres runs only on signal-1."
+    },
+    {
+      "path": "/opt/algovault-monitoring/autopilot-framework.py",
+      "hosts": ["signal-1", "aoe-1"],
+      "expect": "absent",
+      "source": "CLAUDE.md — 'until 3rd consumer, then extract to /opt/algovault-monitoring/autopilot-framework.py'",
+      "reason": "INVERSE claim. This is a FUTURE extraction target, not an installed artifact — the 3-example-threshold rule names it as what to build at the 3rd consumer. Measured ABSENT on both hosts 2026-08-02. If it ever appears, the extraction happened and CLAUDE.md's 'until' clause is stale — which is a doc correction, not an ops fault."
+    },
+    {
+      "path": "/opt/algovault-bot",
+      "hosts": ["signal-1"],
+      "expect": "present",
+      "source": "CLAUDE.md — Deploy pipeline; holds .venv beside the source, so a deploy swaps per manifest entry",
+      "reason": "The whole-directory-swap hazard is argued FROM this path's layout; if the path moved, that law's reasoning would silently stop applying to the real deploy root."
+    },
+    {
+      "path": "/opt/algovault-bot/.venv/bin/python",
+      "hosts": ["signal-1"],
+      "expect": "present",
+      "source": "CLAUDE.md — 'the units execute /opt/algovault-bot/.venv/bin/python'",
+      "reason": "The interpreter the systemd units actually exec. This is the single path whose disappearance the 'never whole-directory-swap' law exists to prevent, so it is the highest-value existence check of the set."
+    },
+    {
+      "path": "/opt/crypto-quant-signal-mcp",
+      "hosts": ["signal-1"],
+      "expect": "present",
+      "source": "CLAUDE.md — 'Canonical deploy dir /opt/crypto-quant-signal-mcp/'",
+      "reason": "Canonical deploy dir named by the deploy law; also the server.json path the registry-conformance canary validates. Trailing slash normalised away — the claim is about the directory."
+    }
+  ],
+
+  "exempt_claims": [
+    {
+      "value": "/opt/...",
+      "reason": "PROSE ELLIPSIS, not a path — CLAUDE.md's 'structurally dark once installed to /opt/... while every gate stays green'. Three ASCII dots, so the template detector's Unicode-ellipsis rule does not catch it. Probing it would fire forever."
+    },
+    {
+      "value": "/var/run/docker.sock:ro",
+      "reason": "A docker MOUNT SPEC (note the :ro suffix), not a filesystem path. The claim is about the mount being cosmetic (socket access is root-equivalent), not about a file existing."
+    },
+    {
+      "value": "/usr/bin/grep",
+      "reason": "A measurement CITATION from the ugrep forensics ('/usr/bin/grep → 73'), naming the system binary used as a control. Present on every Linux/macOS box by definition; checking it asserts nothing about AlgoVault."
+    },
+    {
+      "value": "/app/audits/",
+      "reason": "CONTAINER-scoped path, deliberately asserted ABSENT at runtime by CLAUDE.md itself (a Stage-1 build input whose content reaches prod via dist/knowledge/*.json). Not a host path; the reconciler runs on the host, not inside the app container."
+    },
+    {
+      "value": "/app/dist/lib/x402.js",
+      "reason": "CONTAINER-scoped deployed-artifact path used to teach the tsc-emits-per-module lesson. Same reason as /app/audits/ — the host filesystem is the wrong place to look for it."
+    },
+    {
+      "value": "/app/dist/index.js",
+      "reason": "CONTAINER-scoped, and the literal at the centre of the wave that shipped an unsatisfiable AC. Kept in the doc precisely as the counter-example; probing it on a host would fire forever."
+    }
+  ]
+}

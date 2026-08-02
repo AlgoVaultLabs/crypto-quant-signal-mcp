@@ -413,6 +413,75 @@ def check_no_backup(rows, backups, labels=None):
     return out
 
 
+def load_doc_path_claims(path=None):
+    """The prescriptive docs' host-path claims (OPS-CLAIM-VERIFIER-COVERAGE-W1).
+
+    Resolved by the SAME sibling rule as the inventory, for the same measured reason: deriving a
+    path from __file__'s grandparent is correct in a checkout and resolves to `/ops/monitoring/...`
+    on a host, which is how this reconciler's own first unattended run reconciled NOTHING.
+
+    Returns [] when the file is absent — a host that predates the install must not start failing —
+    and the caller logs that as SKIPPED, never as a pass.
+    """
+    p = Path(path) if path else Path(os.environ.get("DOC_PATH_CLAIMS_PATH", "")) if os.environ.get(
+        "DOC_PATH_CLAIMS_PATH") else None
+    if p is None:
+        sibling = Path(__file__).resolve().parent / "doc-host-path-claims.json"
+        p = sibling if sibling.exists() else REPO_ROOT / "ops/monitoring/doc-host-path-claims.json"
+    try:
+        return json.loads(p.read_text()).get("claims", [])
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        log(f"DOC_PATH_CLAIMS_LOAD_FAILED: {exc} (path {p}) — fail-open, NOT a pass")
+        return []
+
+
+def check_doc_path_claims(claims, labels=None, exists=None):
+    """docs -> host. Every host-path a prescriptive doc asserts is verified LOCALLY, on the host
+    that owns it, by the daily run that is already there.
+
+    W1 shipped these 9 claims UNPROBED behind a --probe-hosts flag because CI has no prod SSH and
+    must never get any. But on these hosts the paths are ordinary local files, so the probe needs
+    no SSH at all — it needs to run somewhere else. This is that somewhere else.
+
+    Three outcomes, deliberately distinct (an unprobed claim is not a passing claim — the
+    verdict-token principle at per-check granularity):
+      MISSING   expect=present and the path is not here          -> finding
+      REVIEW    expect=absent  and the path IS here              -> finding (an inverse claim that
+                                                                    silently came true)
+      DEFERRED  owned by another instance's labels               -> reported, never silently skipped
+
+    Returns {"findings": [...], "probed": [...], "deferred": [...]} so the caller can emit POSITIVE
+    per-claim output. Never mutates anything: a doc that disagrees with the host is corrected by a
+    human, because a job that edits its own operating manual is a category error.
+    """
+    labels = labels if labels is not None else HOST_LABELS
+    exists = exists if exists is not None else (lambda p: Path(p).exists())
+    findings, probed, deferred = [], [], []
+    for c in claims:
+        path = (c.get("path") or "").rstrip("/")
+        owners = set(c.get("hosts") or [])
+        if not path:
+            continue
+        if not owners & labels:
+            deferred.append({"path": path, "hosts": sorted(owners)})
+            continue
+        expect = c.get("expect", "present")
+        here = bool(exists(path))
+        if expect == "absent":
+            verdict = "OK" if not here else "REVIEW"
+        else:
+            verdict = "OK" if here else "MISSING"
+        probed.append({"path": path, "expected": expect,
+                       "observed": "present" if here else "absent", "verdict": verdict})
+        if verdict != "OK":
+            findings.append({"path": path, "expected": expect,
+                             "observed": "present" if here else "absent",
+                             "verdict": verdict, "source": c.get("source", "")})
+    return {"findings": findings, "probed": probed, "deferred": deferred}
+
+
 def divergent_copy_findings(rows):
     """Unreconciled cross-host copies. Encoded as an inventory FIELD rather than a prose
     follow-up precisely because prose follow-ups get lost — that is the class this wave retires.
@@ -610,12 +679,13 @@ def check_posture_drift(labels=None, posture=None, probe=None, resolve=None):
 
 # ─────────── main ───────────
 
-def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None):
+def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
+             doc_claims_result=None):
     """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known.
 
-    `posture_result` is passed in rather than computed here so the network probe runs EXACTLY
-    once per invocation — its positive per-port rows and its findings are two projections of one
-    derivation, not two independent probes that could disagree.
+    `posture_result` and `doc_claims_result` are passed in rather than computed here so each probe
+    runs EXACTLY once per invocation — its positive per-item rows and its findings are two
+    projections of one derivation, not two independent probes that could disagree.
     """
     labels = labels if labels is not None else HOST_LABELS
     return {
@@ -627,6 +697,7 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
         "REGISTRY_PARITY": check_registry_parity(rows, host_hashes, labels)["breaches"],
         "NO_BACKUP": check_no_backup(rows, backups, labels),
         "POSTURE_DRIFT": (posture_result or {}).get("findings", []),
+        "DOC_PATH_CLAIM": (doc_claims_result or {}).get("findings", []),
         "DIVERGENT_COPY": divergent_copy_findings(rows),
     }
 
@@ -674,11 +745,14 @@ def main(check_mode=False):
     backups = host_backups()
 
     posture_result = check_posture_drift(HOST_LABELS)
+    doc_claims = load_doc_path_claims()
+    doc_claims_result = check_doc_path_claims(doc_claims, HOST_LABELS)
 
-    f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result)
+    f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result,
+                 doc_claims_result)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
     drift_keys = ("HASH_DRIFT", "ORPHAN", "DARK", "SCHEDULE_DRIFT", "PENDING_STALE",
-                  "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT")
+                  "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT", "DOC_PATH_CLAIM")
     drifted = any(f[k] for k in drift_keys)
 
     if not check_mode:
@@ -702,6 +776,19 @@ def main(check_mode=False):
             log(f"POSTURE_SKIPPED {json.dumps(sk)} — fail-open, NOT a pass")
         if not posture_result.get("probed") and not posture_result.get("skipped"):
             log("POSTURE_DRIFT: no peer host to probe from this instance (single-host posture)")
+        # POSITIVE per-claim accounting for the docs' host-path claims: path + expectation +
+        # observed state + verdict for EVERY claim this instance owns, and an explicit DEFERRED
+        # line for every claim it does not. A claim silently skipped must never read as passing.
+        for row in doc_claims_result.get("probed", []):
+            log(f"DOC_PATH_CLAIM {row['path']} expected={row['expected']} "
+                f"observed={row['observed']} -> {row['verdict']}")
+        deferred_claims = doc_claims_result.get("deferred", [])
+        if deferred_claims:
+            log(f"DOC_PATH_CLAIM_DEFERRED to other instances: "
+                f"{json.dumps([d['path'] + '@' + ','.join(d['hosts']) for d in deferred_claims])}")
+        if not doc_claims:
+            log("DOC_PATH_CLAIM: SKIPPED — doc-host-path-claims.json not installed here "
+                "(fail-open, NOT a pass)")
         if backups is None:
             log("NO_BACKUP: SKIPPED — backup listing unavailable (fail-open, not a pass)")
         streak = update_breach_streak(drifted)
@@ -949,6 +1036,62 @@ def self_test():
     ck("a broken prober emits one skip row per port", len(broke["skipped"]), 4)
     ck("unreadable posture file -> skip, not a pass",
        check_posture_drift(ME, {"hosts": {}}, probe=lambda a, p: True, resolve=res)["findings"], [])
+
+    # ── DOC_PATH_CLAIM (OPS-CLAIM-VERIFIER-COVERAGE-W1) ──
+    # W1 shipped these claims UNPROBED behind a --probe-hosts flag CI can never use. Here they are
+    # local files, so the only thing that was ever missing is a place to run the check.
+    CLAIMS = [
+        {"path": "/opt/algovault-monitoring/send_telegram.sh", "hosts": ["signal-1", "aoe-1"], "expect": "present"},
+        {"path": "/opt/algovault-monitoring/website-drift-canary.py", "hosts": ["signal-1"], "expect": "present"},
+        {"path": "/opt/algovault-monitoring/autopilot-framework.py", "hosts": ["signal-1", "aoe-1"], "expect": "absent"},
+        {"path": "/opt/crypto-quant-signal-mcp/", "hosts": ["signal-1"], "expect": "present"},
+    ]
+    SIG = {"signal-1"}
+    here = lambda present: (lambda p: p in present)  # noqa: E731 — fixture seam, mirrors probe=
+
+    # healthy: everything present except the inverse claim, which must stay absent
+    ok = check_doc_path_claims(CLAIMS, SIG, exists=here({
+        "/opt/algovault-monitoring/send_telegram.sh",
+        "/opt/algovault-monitoring/website-drift-canary.py",
+        "/opt/crypto-quant-signal-mcp"}))
+    ck("healthy doc claims -> zero findings", ok["findings"], [])
+    ck("positive per-claim rows carry path+expected+observed+verdict",
+       all({"path", "expected", "observed", "verdict"} <= set(r) for r in ok["probed"]), True)
+    ck("a trailing slash does not make a directory claim unverifiable",
+       [r["verdict"] for r in ok["probed"] if r["path"].endswith("signal-mcp")], ["OK"])
+
+    # direction 1 — a path the docs promise is GONE (the moved-file class, 2 of W1's 5 positives)
+    gone = check_doc_path_claims(CLAIMS, SIG, exists=here({
+        "/opt/algovault-monitoring/website-drift-canary.py", "/opt/crypto-quant-signal-mcp"}))
+    ck("MISSING fires when a prescribed path is absent",
+       [(f["path"], f["verdict"]) for f in gone["findings"]],
+       [("/opt/algovault-monitoring/send_telegram.sh", "MISSING")])
+
+    # direction 2 — an INVERSE claim that silently came true ("extract at the 3rd consumer")
+    built = check_doc_path_claims(CLAIMS, SIG, exists=here({
+        "/opt/algovault-monitoring/send_telegram.sh",
+        "/opt/algovault-monitoring/website-drift-canary.py",
+        "/opt/algovault-monitoring/autopilot-framework.py",
+        "/opt/crypto-quant-signal-mcp"}))
+    ck("REVIEW fires when an 'absent until' path exists",
+       [(f["path"], f["verdict"]) for f in built["findings"]],
+       [("/opt/algovault-monitoring/autopilot-framework.py", "REVIEW")])
+
+    # ownership — another host's claim is DEFERRED, never silently skipped, and never a finding
+    aoe = check_doc_path_claims(CLAIMS, {"aoe-1"}, exists=here({
+        "/opt/algovault-monitoring/send_telegram.sh"}))
+    ck("aoe-1 owns only the shared wrapper + the inverse claim",
+       sorted(r["path"] for r in aoe["probed"]),
+       ["/opt/algovault-monitoring/autopilot-framework.py",
+        "/opt/algovault-monitoring/send_telegram.sh"])
+    ck("signal-1-only claims are DEFERRED on aoe-1, not MISSING", aoe["findings"], [])
+    ck("deferred claims are reported, never silently dropped",
+       sorted(d["path"] for d in aoe["deferred"]),
+       ["/opt/algovault-monitoring/website-drift-canary.py", "/opt/crypto-quant-signal-mcp"])
+
+    # vacuity — an absent manifest yields nothing to check, and the caller must say so
+    ck("no claims -> no probed rows (caller logs SKIPPED, not a pass)",
+       check_doc_path_claims([], SIG, exists=here(set()))["probed"], [])
 
     for f_ in failures:
         log(f"SELF_TEST_FAIL: {f_}")
