@@ -162,15 +162,28 @@ describe('runScanTradeCall — exhausted-tier entry block', () => {
     expect(isExhausted(r)).toBe(true);
     if (!isExhausted(r)) return;
     expect(r.error).toBe('quota_exhausted');
-    // REFERRAL-INPRODUCT-NUDGE-W1: the scan wall is now referral-prominent (keyless
-    // here → the get-your-link path leads) + carries the structured referral_hint.
-    expect(r.message).toContain("You've hit your");
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the scan wall renders the ONE notice contract, and its
+    // `code` is now the SAME `TIER_LIMIT_REACHED` every other surface emits (it was lowercase
+    // `tier_limit_reached` here, so an agent needed two branches for one event). `error` keeps
+    // its original lowercase value, which is what a pre-wave consumer matched on.
+    expect(r.code).toBe('TIER_LIMIT_REACHED');
+    expect(r.message).toContain('Free monthly quota used: 1000/100');
+    expect(r.message).toMatch(/Access returns \d{4}-\d{2}-\d{2} \(\d+ days\)/);
+    expect(r.resets_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(r.usage_display).toBe('1000/100');
+    expect(r.quota.resets_at).toBe(r.resets_at);
+    // REFERRAL-INPRODUCT-NUDGE-W1: the wall keeps the referral arm (keyless here → the
+    // get-your-link path) + the structured referral_hint.
     expect(r.message.toLowerCase()).toContain('refer a friend');
-    expect(r.message).toContain('create a free account'); // keyless get-your-link path
+    expect(r.message).toContain('Create your free account for a referral link');
     expect(r.message).not.toContain('unlimited');
     expect(r.referral_hint.from).toBe('limit');
     expect(r.referral_hint.link_or_path).toContain('upgrade_from=limit_referral');
     expect(r.suggested_action).toBeTruthy();
+    // The hardcoded UPGRADE_HINT promised x402 unconditionally; with no live rail in this
+    // env the offer must be absent from BOTH the prose and the action.
+    expect(r.suggested_action).not.toContain('x402');
+    expect(r.message).not.toContain('x402');
     expect(calls.n).toBe(0); // scanner never ran
   });
 });

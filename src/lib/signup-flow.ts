@@ -10,6 +10,7 @@
  * so copy drift between surfaces is impossible.
  */
 import { EXCHANGE_COUNT } from './capabilities.js';
+import { PLANS, planCallsLabel, planPriceLabel } from './plans.js';
 
 export interface SignupFlowStep {
   title: string;
@@ -71,13 +72,18 @@ export function renderSignupFlowTailwind(): string {
  * `  ${renderPlanCards()}` supplies the 2-space indent — same pattern as
  * renderSignupFlowDark), so the rendered bytes are unchanged.
  */
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1 (2026-08-02): the three prices + three call counts now
+// interpolate from the ONE plan SoT (`plans.ts`) instead of being hand-typed literals. The
+// rendered BYTES are unchanged (the SoT holds exactly these values), which the existing
+// signup/join page tests assert — the point is that a price move is now a one-line edit in
+// one file rather than a hunt across HTML, `getMonthlyQuota` and the quota-exhaustion copy.
 export function renderPlanCards(signupBase = ''): string {
   return `<div class="plans">
     <div class="plan">
-      <h2>Starter</h2>
-      <div class="price">$9.99<span>/mo</span></div>
+      <h2>${PLANS.starter.label}</h2>
+      <div class="price">${planPriceLabel('starter')}<span>/mo</span></div>
       <ul>
-        <li>3,000 calls/month</li>
+        <li>${planCallsLabel('starter')} calls/month</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
@@ -87,10 +93,10 @@ export function renderPlanCards(signupBase = ''): string {
     </div>
     <div class="plan popular">
       <div class="pop-badge">MOST POPULAR</div>
-      <h2>Pro</h2>
-      <div class="price">$49<span>/mo</span></div>
+      <h2>${PLANS.pro.label}</h2>
+      <div class="price">${planPriceLabel('pro')}<span>/mo</span></div>
       <ul>
-        <li>15,000 calls/month</li>
+        <li>${planCallsLabel('pro')} calls/month</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
@@ -99,10 +105,10 @@ export function renderPlanCards(signupBase = ''): string {
       <a class="btn" href="${signupBase}/signup?plan=pro">Subscribe to Pro</a>
     </div>
     <div class="plan">
-      <h2>Enterprise</h2>
-      <div class="price">$299<span>/mo</span></div>
+      <h2>${PLANS.enterprise.label}</h2>
+      <div class="price">${planPriceLabel('enterprise')}<span>/mo</span></div>
       <ul>
-        <li>100,000 calls/month</li>
+        <li>${planCallsLabel('enterprise')} calls/month</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
         <li>All assets &amp; timeframes</li>
         <li>SLA guarantee</li>

@@ -25,7 +25,13 @@
     ],
     "session_id": null,
     "exchange": "BINANCE",
-    "venue_status": "promoted"
+    "venue_status": "promoted",
+    "quota": {
+      "used": 0,
+      "total": 100,
+      "remaining": 100,
+      "resets_at": "2026-08-28T12:06:00.000Z"
+    }
   },
   "_receipts": {
     "verdict": "HOLD",

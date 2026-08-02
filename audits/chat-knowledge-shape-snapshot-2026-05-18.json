@@ -38,32 +38,62 @@
   "error_contract": {
     "QUESTION_TOO_SHORT": {
       "http_status": 400,
-      "shape": { "code": "QUESTION_TOO_SHORT", "message": "string" },
+      "shape": {
+        "code": "QUESTION_TOO_SHORT",
+        "message": "string"
+      },
       "fires_on": "question.length < 5"
     },
     "QUESTION_TOO_LONG": {
       "http_status": 400,
-      "shape": { "code": "QUESTION_TOO_LONG", "message": "string" },
+      "shape": {
+        "code": "QUESTION_TOO_LONG",
+        "message": "string"
+      },
       "fires_on": "question.length > 500"
     },
     "INVALID_QUESTION": {
       "http_status": 400,
-      "shape": { "code": "INVALID_QUESTION", "message": "string" },
+      "shape": {
+        "code": "INVALID_QUESTION",
+        "message": "string"
+      },
       "fires_on": "request body missing question field OR question not a string"
     },
     "INVALID_MODEL": {
       "http_status": 400,
-      "shape": { "code": "INVALID_MODEL", "message": "string", "allowed_models": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"] },
+      "shape": {
+        "code": "INVALID_MODEL",
+        "message": "string",
+        "allowed_models": [
+          "claude-haiku-4-5-20251001",
+          "claude-sonnet-4-6"
+        ]
+      },
       "fires_on": "model not in allow-list"
     },
     "CHAT_QUOTA_EXHAUSTED": {
       "http_status": 429,
-      "shape": { "code": "CHAT_QUOTA_EXHAUSTED", "message": "string", "retry_after_days": "number", "limit": "number", "tier": "string", "upgrade_url": "string" },
-      "fires_on": "this calendar month's per-tier quota is exhausted"
+      "shape": {
+        "code": "CHAT_QUOTA_EXHAUSTED",
+        "message": "string",
+        "retry_after_days": "number",
+        "resets_at": "ISO-8601 instant (added OPS-QUOTA-EXHAUSTION-NOTICE-W1)",
+        "usage_display": "string, e.g. '10/10' (added OPS-QUOTA-EXHAUSTION-NOTICE-W1)",
+        "limit": "number",
+        "tier": "string",
+        "upgrade_url": "string",
+        "suggested_action": "string (added OPS-QUOTA-EXHAUSTION-NOTICE-W1)"
+      },
+      "fires_on": "this calendar month's per-tier quota is exhausted",
+      "amended_2026_08_02": "OPS-QUOTA-EXHAUSTION-NOTICE-W1 amended THIS BLOCK ONLY (the file keeps its 2026-05-18 date because the other five sections were not re-attested today). Live-captured verbatim from prod on 2026-08-02 with a disposable av_free_ bucket before the change. Additive: every pre-wave field keeps its name and type. `code` is deliberately unchanged. `upgrade_url` moved from https://algovault.com/#pricing — a different destination from every other surface carrying no `upgrade_from` — to the attributed /signup?plan=starter&upgrade_from=limit_chat, so a chat-wall conversion is no longer invisible to the funnel. The message now states usage N/limit and the reset DATE; the reset is a UTC CALENDAR-month boundary, NOT the call meter's rolling 30-day window."
     },
     "INTERNAL_ERROR": {
       "http_status": 500,
-      "shape": { "code": "INTERNAL_ERROR", "message": "string" },
+      "shape": {
+        "code": "INTERNAL_ERROR",
+        "message": "string"
+      },
       "fires_on": "unexpected error in chat engine path"
     }
   },

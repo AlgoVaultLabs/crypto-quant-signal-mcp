@@ -781,6 +781,23 @@
       "notes": "Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
     },
     {
+      "id": "quota-exhaustion-canary",
+      "artifact": "ops/monitoring/quota-exhaustion-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/quota-exhaustion-canary.py",
+      "criticality": "load-bearing",
+      "schedule": "31 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "52819fbc5d202e1d4670fa7b5730fa29d21df1e9f72b9c1e80938764881bd329",
+      "alert_ids": [
+        "QUOTA_EXHAUSTION_HIGH_VOLUME"
+      ],
+      "owner_wave": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+      "notes": "R4: pages ONLY when a HIGH-VOLUME free bucket exhausts the 100/mo cap (burn rate >= QUOTA_CANARY_MIN_CALLS_PER_DAY, default 50/day, i.e. spent the allowance in <=2 days). Ordinary low-volume exhaustion is SILENT BY DESIGN — the alert marks a conversion moment for a caller with no account and no email, not a fault. Dedup identity is (tracker_key, period_start), so a bucket that stays exhausted does not re-fire hourly while the SAME caller exhausting a NEW rolling period does. No sustain gate: a quota counter only climbs within a period, so sustain would add latency and detect nothing. SECRET HYGIENE: a keyed bucket's tracker_key IS the caller's av_free_ API key and is redacted by STRUCTURE (key:sha16:<digest>) in every log line and alert body; keyless free:v2:<hash> ids pass through. Alert body keeps IDs and COUNTS on SEPARATE lines (the 2026-08-01 '(new: 6)' misread class). Prints one QUOTA_EXHAUSTION_CANARY_VERDICT= token per run; the alert contract forces exit 0 on error, so the token is the only thing that can say a run verified NOTHING (INDETERMINATE). --self-test is hermetic (no DB, no wrapper, temp state) and was PROVEN able to fail: four deliberate breaks — bare parenthesised ID, count inside the ID line, removed secret redaction, removed volume threshold, removed period-scoped dedup — each yields SELF-TEST: FAIL. The ID-line assertion is written defensively (no split-index) so a missing label reports FAIL instead of raising. PROBED LIVE BEFORE INSTALL: quota_usage.period_start is a TEXT column (persistTracker writes an ISO-8601 string), so the query casts `period_start::timestamptz` before EXTRACT — without the cast psql errors and the canary would have fail-opened on every single run, i.e. shipped dark. Also verified the algovault_autopilot role can SELECT the table (665 rows). BOOTSTRAP report-not-page on the first cycle: measured 19 exhausted buckets on the host, 5 above the volume threshold, so a naive first run would have paged the whole historical backlog as if it had just happened; the first cycle seeds state silently and only what happens NEXT pages."
+    },
+    {
       "id": "closedbar-w1-liveness",
       "artifact": "ops/monitoring/closedbar-w1-liveness.sh",
       "kind": "executable",
@@ -823,6 +840,44 @@
       "sha256": "228cc980faf23669d5c804ca23d7482fbe74545e291fad1794e37246a97ad9e3",
       "owner_wave": "OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1",
       "notes": "Bucket-deterministic dispatch for the TG bot. Lives in the SEPARATE algovault-bot repo (hence the external: artifact ref — this inventory's repo cannot host the ancestor), deployed to /opt/algovault-bot by hand rsync because that tree is NOT a git checkout. On 2026-08-01 a full-tree rsync from a stale Mac checkout DELETED this file, silently reverting dispatch to the relative-age scheduler and restoring the +1min/period ratchet. A HASH_DRIFT/ORPHAN row is the detection that was missing. The durable fix is a git-based bot deploy: OPS-BOT-GIT-DEPLOY-W{NEXT}. Ancestor is committed on algovault-bot main (merged 2026-08-01 by this incident wave), so git IS the recovery path. NO_BACKUP only scans /opt/algovault-monitoring/."
+    },
+    {
+      "id": "bot-deploy-parity",
+      "artifact": "ops/cron/bot-deploy-parity.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/bot-deploy-parity.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/bot-deploy-parity.sh",
+          "schedule": "37 6 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "37 6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "148efc4058a4b8f47194d718e34925ce97d62eb92aac8888bd653407861e22a6",
+      "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
+      "notes": "Daily parity between the live /opt/algovault-bot tree and the commit it was deployed from. MISSING is literally the 2026-08-02 failure: a full-tree rsync from a stale shared checkout deleted dispatch_schedule.py and nothing detected it for 90 minutes. Verifies against DEPLOYED_MANIFEST.sha256, written by ops/scripts/host-deploy.sh FROM THE COMMIT — the host has no clone of the bot repo, and hashing the host tree at deploy time would make this check tautological. Reads the deployed path set from ops/deploy/algovault-bot.manifest, the same file the deploy tool reads. Emits one BOT_DEPLOY_PARITY_VERDICT= token; 0=PASS/1=FAIL/3=INDETERMINATE, fails closed. Runs from the deploy checkout like candle-basis-shadow-report.sh, deliberately NOT copied into /opt/algovault-monitoring/ (a second copy drifts and trips DIVERGENT_COPY)."
+    },
+    {
+      "id": "host-deploy-primitive",
+      "artifact": "ops/scripts/host-deploy.sh",
+      "kind": "executable",
+      "host": "n-a",
+      "host_path": "n-a",
+      "installed_at": [],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": null,
+      "invoked_by": "operator (manual, from a developer checkout)",
+      "install_state": "installed",
+      "sha256": "4babde829a321782181903e3678be5d4817d37c7c83de02f4d006dc4e9debaa3",
+      "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
+      "notes": "SHA-pinned deploy primitive. Runs on the OPERATOR's machine, not on a host — hence installed_at is empty and host/host_path are n-a rather than invented; it is listed so the registry records the tool that governs deploys, and REGISTRY_PARITY has nothing to assert for it. Refuses any ref that is not an ancestor of origin/main, materializes git archive <sha>, swaps per manifest entry (never whole-directory — /opt/algovault-bot holds a 171M .venv the units execute), sets ownership at the destination including the .bak copy, and stamps DEPLOYED_SHA + DEPLOYED_MANIFEST.sha256. Generic: 7 substantive /opt services share the class it closes; rollout is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT}."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

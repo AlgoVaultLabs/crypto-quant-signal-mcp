@@ -150,10 +150,27 @@ test('src/index.ts: track-record tier breakdown served by the unified leaderboar
 test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → signup-flow.ts renderPlanCards)', async () => {
   // The 3 paid tier cards moved into the shared renderPlanCards() helper (single-source
   // for getSignupPageHtml + the /join page); getSignupPageHtml output stays byte-identical.
-  const ts = await read('src/lib/signup-flow.ts');
-  assert.match(ts, /<h2>Starter<\/h2>/, 'Starter tier preserved');
-  assert.match(ts, /<h2>Pro<\/h2>/, 'Pro tier preserved');
-  assert.match(ts, /<h2>Enterprise<\/h2>/, 'Enterprise tier preserved');
+  //
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1: this asserted the SOURCE TEXT of signup-flow.ts, so it
+  // failed the moment the card literals started interpolating from the plans SoT — even
+  // though the RENDERED bytes were unchanged. A test that greps the source can only certify
+  // how the output is spelled in the file, never that the output is right. It now renders the
+  // component and asserts the OUTPUT, which is both the original intent and strictly stronger:
+  // it would still catch a tier being dropped, and it now also catches the SoT emitting the
+  // wrong label, price or allowance.
+  const { renderPlanCards } = await import('../../dist/lib/signup-flow.js');
+  const html = renderPlanCards();
+  assert.match(html, /<h2>Starter<\/h2>/, 'Starter tier preserved');
+  assert.match(html, /<h2>Pro<\/h2>/, 'Pro tier preserved');
+  assert.match(html, /<h2>Enterprise<\/h2>/, 'Enterprise tier preserved');
+  // The rendered prices + allowances are what a visitor actually sees — pin them here so a
+  // bad SoT edit fails loudly instead of silently repricing three public pages.
+  assert.match(html, /\$9\.99<span>\/mo<\/span>/, 'Starter price rendered');
+  assert.match(html, /\$49<span>\/mo<\/span>/, 'Pro price rendered');
+  assert.match(html, /\$299<span>\/mo<\/span>/, 'Enterprise price rendered');
+  assert.match(html, /<li>3,000 calls\/month<\/li>/, 'Starter allowance rendered');
+  assert.match(html, /<li>15,000 calls\/month<\/li>/, 'Pro allowance rendered');
+  assert.match(html, /<li>100,000 calls\/month<\/li>/, 'Enterprise allowance rendered');
   // index.ts must call the helper (byte-identical render):
   const idx = await read('src/index.ts');
   assert.match(idx, /\$\{renderPlanCards\(\)\}/, 'getSignupPageHtml renders via renderPlanCards()');

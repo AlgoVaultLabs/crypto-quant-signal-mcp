@@ -1,0 +1,112 @@
+{
+  "endpoint": "_algovault (MCP tool response envelope metadata block)",
+  "snapshot_date": "2026-08-02",
+  "_meta": {
+    "wave": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+    "snapshot_date": "2026-08-02",
+    "schema_version": "v1.24.1+quota-exhaustion-notice-w1",
+    "supersedes": "audits/algovault-meta-shape-snapshot-2026-05-20.json (ACTIVATION-PAYWALL-W1)",
+    "supersede_reason": "ONE snapshot per shape. The knowledge-bundle builder projects every audits/*-shape-snapshot-*.json into response_shapes, so leaving both files would publish two contradictory descriptions of the same block.",
+    "source_of_truth": "src/types.ts AlgoVaultMeta + QuotaState",
+    "rule_cite": "CLAUDE.md Build rules: 'Allow-list not deny-list for public-API response shaping' + 'Public-shape snapshot with drift-check for every NEW or modified public endpoint'"
+  },
+  "allowed_keys": [
+    "version",
+    "tool",
+    "compatible_with",
+    "upgrade_hint",
+    "session_id",
+    "exchange",
+    "venue_status",
+    "tier_warning",
+    "quota"
+  ],
+  "forbidden_keys": [
+    "api_key",
+    "stripe_customer_id",
+    "outcome_return_pct",
+    "outcome_price",
+    "license_key",
+    "ip_hash",
+    "internal_id",
+    "test_mode",
+    "operator_email"
+  ],
+  "changed_this_wave": {
+    "added": [
+      "quota — live quota state on a SUCCESSFUL response: {used, total, remaining, resets_at}. STRICTLY ADDITIVE and proven so: removing the key from a rendered meta yields the pre-wave block byte-identically (tests/unit/quota-exhaustion-notice.test.ts, 'AC4')."
+    ],
+    "unchanged": "Every pre-wave key keeps its name, type and semantics. tier_warning still fires only from 80%; `quota` is the always-on counterpart so a caller can see the wall coming from call one instead of discovering it as a hard failure."
+  },
+  "quota_shape": {
+    "used": "number (calls consumed this rolling period)",
+    "total": "number (the tier's monthly allowance; free = 100, FROZEN)",
+    "remaining": "number (max(0, total - used))",
+    "resets_at": "ISO-8601 instant. The window is ROLLING 30 days anchored on the caller's FIRST call — NOT a calendar month, so it cannot be reconstructed as 'the 1st of next month'.",
+    "omitted_when": "unmetered tiers (x402 / internal — their quota is Infinity and has no honest JSON form), bot-internal traffic, or a non-finite/non-positive limit (default-deny)",
+    "key_names": "used/total/remaining deliberately match scan_trade_calls' long-shipped _algovault.quota rather than inventing a second vocabulary for the same fact."
+  },
+  "error_contract": {
+    "TIER_LIMIT_REACHED": {
+      "envelope_shape": {
+        "code": "TIER_LIMIT_REACHED",
+        "error_code": "TIER_LIMIT_REACHED",
+        "message": "string — the ONE exhaustion notice (usage N/limit, reset date, ranked paths)",
+        "current_usage": "number",
+        "monthly_limit": "number",
+        "tier": "free",
+        "suggested_upgrade_url": "https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached&upgrade_from=limit",
+        "retry_after_days": "number — DERIVED from resets_at, never passed separately",
+        "resets_at": "ISO-8601 instant (added this wave)",
+        "usage_display": "string, e.g. '100/100' (added this wave)",
+        "recommended_path": "'subscription' | 'x402' (added this wave)",
+        "suggested_action": "string — the structured-error law's suggested_<action> (added this wave)",
+        "referral_hint": "{cta, link_or_path, bonus_calls, from}",
+        "suggested_x402": "OPTIONAL — present only when a LIVE public x402 rail was derived"
+      },
+      "fires_when": "a free-tier caller invokes a metered tool at or above the cap (license.ts checkQuota returns allowed:false)",
+      "isError": true,
+      "frozen_behaviour": "At the cap ALL calls stop — trade calls AND HOLDs. get_trade_call gates at ENTRY, above any market work, so the tool cannot know whether the call would have been a HOLD; that is what makes a HOLD pass-through structurally impossible rather than merely absent. Regression-locked by tests/unit/quota-exhaustion-notice.test.ts 'AC2'.",
+      "no_teaser": "The notice never hints that an actionable verdict existed — no verdict, no confidence, no partial result.",
+      "interaction_with_tier_warning": "tier_warning is NEVER set on this error path; the envelope carries the full context itself."
+    },
+    "CHAT_QUOTA_EXHAUSTED": {
+      "envelope_shape": {
+        "code": "CHAT_QUOTA_EXHAUSTED",
+        "message": "string — the same notice contract, chat wording",
+        "retry_after_days": "number",
+        "resets_at": "ISO-8601 instant (added this wave)",
+        "usage_display": "string, e.g. '10/10' (added this wave)",
+        "limit": "number",
+        "tier": "free|starter|pro|enterprise",
+        "upgrade_url": "https://api.algovault.com/signup?plan=starter&upgrade_from=limit_chat",
+        "suggested_action": "string (added this wave)"
+      },
+      "fires_when": "the SEPARATE monthly chat meter is exhausted (free = 10/mo). Served by POST /api/chat (HTTP 429) and the chat_knowledge MCP tool (isError:true) from ONE builder so they cannot drift.",
+      "isError": true,
+      "reset_semantics": "UTC CALENDAR-month boundary — deliberately DIFFERENT from the call meter's rolling 30-day window. Each notice states its own.",
+      "code_unchanged": "Deliberately still CHAT_QUOTA_EXHAUSTED, not TIER_LIMIT_REACHED: the two meters are independent events and exhausting chat leaves the trading tools working.",
+      "no_referral_arm": "Referral bonuses credit the CALL meter, so offering them on a chat wall would promise relief that never arrives.",
+      "changed_this_wave": "upgrade_url moved from https://algovault.com/#pricing (a different destination from every other surface, carrying no upgrade_from) to the attributed /signup URL — every chat-wall click was previously invisible to the funnel."
+    }
+  },
+  "cache_contract": {
+    "quota_freshness": "computed per-request from the in-process callTrackers meter (license.ts); no caching layer between trackCall() and emission",
+    "quota_ttl": "request-scoped (no TTL — fresh per call)",
+    "stale_signal_handling": "n/a — the counter only increments in-process and is write-through persisted to quota_usage; a restart re-hydrates it via initQuotaDb"
+  },
+  "consumers": [
+    "MCP client (Claude Desktop / Claude Code / Cursor / Cline) — tight: read _algovault.quota.remaining + resets_at to show headroom, and tier_warning.suggested_upgrade_url as a CTA. Absence of either field is normal (paid/unmetered/bot-internal) and must be a no-op.",
+    "LLM agent (system prompt readers) — loose: branch on the stable TIER_LIMIT_REACHED / CHAT_QUOTA_EXHAUSTED codes and on suggested_action. Do NOT block tool invocation on tier_warning or quota; only the explicit error envelope blocks.",
+    "Telegram bot (BOT-W1) — documented-only: bot-internal calls bypass BOTH tier_warning and quota; the bot meters its own users in SQLite.",
+    "ops/monitoring/quota-exhaustion-canary.py — documented-only: reads the quota_usage table directly, NOT this envelope, and pages only on HIGH-VOLUME exhaustion."
+  ],
+  "drift_check_command": "curl -fsS https://api.algovault.com/mcp -X POST -H 'Authorization: Bearer <FREE_TIER_TEST_KEY>' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"get_trade_call\",\"arguments\":{\"coin\":\"BTC\",\"timeframe\":\"15m\"}}}' | sed -n 's/^data: //p' | jq -r '.result.content[0].text' | jq -r '._algovault | keys | sort | join(\",\")' | { read keys; for allowed in 'compatible_with,exchange,quota,session_id,tier_warning,tool,venue_status,version' 'compatible_with,exchange,quota,session_id,tool,venue_status,version' 'compatible_with,exchange,session_id,tool,venue_status,version'; do [ \"$keys\" = \"$allowed\" ] && { echo 'DRIFT_CHECK_OK'; exit 0; }; done; echo \"DRIFT_CHECK_FAIL: got '$keys'\"; exit 1; }",
+  "drift_check_notes": [
+    "The response is an SSE event-stream, so the `data:` prefix must be stripped before jq — a naive `jq` on the raw body fails with a control-character error.",
+    "quota is present for any METERED caller (free or paid) and OMITTED for x402/internal/bot-internal — the check accepts both.",
+    "tier_warning is present only from 80% of the cap — the check accepts both.",
+    "upgrade_hint fires only for free tier on a non-HOLD verdict; a HOLD response omits it."
+  ],
+  "test_coverage": "tests/unit/algovault-meta-tier-warning.test.ts (tier_warning: thresholds, paid tiers, bot-internal, immutability, defensive NaN/zero/negative) + tests/unit/quota-exhaustion-notice.test.ts (the notice per surface, quota additivity proven by byte-comparison, and the frozen cutoff regression-locked against HOLD and non-HOLD)"
+}

@@ -18,7 +18,11 @@
 // over-promising wording that violated the bounded-tier copy rule). Both imports
 // are pure / side-effect-free; no import cycle. REFERRAL-INPRODUCT-NUDGE-W1: the
 // referral arm + structured hint also come from the (pure) nudge-copy SoT.
-import { buildLimitMessage, buildReferralHint, type ReferralHint } from './nudge-copy.js';
+import { buildReferralHint, type ReferralHint } from './nudge-copy.js';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1 (2026-08-02): the exhaustion notice is now ONE contract shared
+// by every free-tier surface (message + facts + suggested_action). `quota-notice` is a pure leaf
+// (plans / nudge-copy / referral-constants only), so importing it here closes no cycle.
+import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts, type QuotaNoticeContext } from './quota-notice.js';
 // FUNNEL-FIX-AGENT-X402-NUDGE-W1: type-only import (no runtime edge) so this light module never
 // imports the x402-nudge leaf — the additive `suggested_x402` is COMPUTED by the caller (index.ts)
 // and passed in; this formatter only serializes it.
@@ -110,27 +114,66 @@ export class TierLimitReachedError extends Error {
    *  projection derive the tool's `suggested_x402` in-protocol pay-per-call rail. Optional so
    *  every existing throw site stays valid; unset ⇒ no x402 branch. */
   readonly tool?: string;
+  /**
+   * OPS-QUOTA-EXHAUSTION-NOTICE-W1: the ISO instant access returns. Before this wave the
+   * envelope carried only `retry_after_days` — a bare integer, absent from the human message
+   * entirely — so a caller learned roughly how long but never WHEN. `retry_after_days` is now
+   * COMPUTED from this instant instead of being passed alongside it, so the two cannot disagree.
+   */
+  readonly resets_at: string;
+  /** Structured-error law: one imperative next step, always incl. the wait-for-reset fallback. */
+  readonly suggested_action: string;
+  /** Epoch ms the meter's period began. camelCase ⇒ NOT a wire field; feeds `noticeContext()`. */
+  readonly periodStartMs?: number;
+  /** Epoch ms the meter resets. camelCase ⇒ NOT a wire field; `resets_at` is the wire form. */
+  readonly resetAtMs: number;
+  /** Caller's referral code (keyed) or null. camelCase ⇒ NOT a wire field. */
+  readonly referralCode: string | null;
 
   constructor(args: {
     currentUsage: number;
     monthlyLimit: number;
     tier: string;
     suggestedUpgradeUrl: string;
-    retryAfterDays: number;
+    /**
+     * Epoch ms at which the caller's meter resets — `license.monthResetAtMs()` for the rolling
+     * 30-day call meter. REQUIRED: a notice that cannot say when access returns is precisely the
+     * defect this wave exists to close, so there is no "omit it" mode.
+     */
+    resetAtMs: number;
+    /** Epoch ms the period began — enables the burn-rate ranking of subscription vs x402. */
+    periodStartMs?: number;
     /** Caller's derived referral code (keyed) or null (keyless) — drives the
      *  referral-prominent copy + the structured referral_hint. */
     referralCode?: string | null;
     /** Canonical tool name that hit the quota edge (for `suggested_x402`). */
     tool?: string;
+    /** Injectable clock (tests only). */
+    nowMs?: number;
   }) {
-    // REFERRAL-INPRODUCT-NUDGE-W1 (was ACTIVATION-NUDGE-W1): the shared builder now
-    // renders the referral-PROMINENT + upgrade-RETAINED copy (generator-level — all 4
-    // throw sites inherit it). State-adaptive on `referralCode` (keyed → own link;
-    // keyless → get-your-link path). The human MESSAGE carries the BARE
-    // upgrade_from=limit URL; the structured `suggested_upgrade_url` keeps the
-    // caller's utm_* chain + adds upgrade_from=limit (A2); `referral_hint` is the
-    // additive agent-relayable structured field.
-    super(buildLimitMessage({ total: args.monthlyLimit, referralCode: args.referralCode ?? null }));
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (was REFERRAL-INPRODUCT-NUDGE-W1 / ACTIVATION-NUDGE-W1):
+    // the shared builder is now `quota-notice`, the ONE notice every free-tier surface renders
+    // (generator-level — all throw sites inherit it). State-adaptive on `referralCode` (keyed →
+    // own link; keyless → get-your-link path). The human MESSAGE carries the BARE
+    // upgrade_from=limit URL; the structured `suggested_upgrade_url` keeps the caller's utm_*
+    // chain + adds upgrade_from=limit (A2); `referral_hint` is the additive structured field.
+    //
+    // The x402 arm is NOT known here — `index.ts` derives the live rail at serialization time —
+    // so the constructor renders the base notice and `buildTierLimitPayload` re-renders it from
+    // the SAME function with the rail attached. One derivation, two call sites.
+    const noticeCtx: QuotaNoticeContext = {
+      meter: 'calls',
+      used: args.currentUsage,
+      limit: args.monthlyLimit,
+      resetAtMs: args.resetAtMs,
+      periodStartMs: args.periodStartMs,
+      referralCode: args.referralCode ?? null,
+      nowMs: args.nowMs,
+    };
+    super(buildQuotaNoticeMessage(noticeCtx));
+    this.periodStartMs = args.periodStartMs;
+    this.resetAtMs = args.resetAtMs;
+    this.referralCode = args.referralCode ?? null;
     this.referral_hint = buildReferralHint({ from: 'limit', code: args.referralCode ?? null });
     this.current_usage = args.currentUsage;
     this.monthly_limit = args.monthlyLimit;
@@ -138,9 +181,34 @@ export class TierLimitReachedError extends Error {
     this.suggested_upgrade_url = args.suggestedUpgradeUrl.includes('upgrade_from=')
       ? args.suggestedUpgradeUrl
       : `${args.suggestedUpgradeUrl}${args.suggestedUpgradeUrl.includes('?') ? '&' : '?'}upgrade_from=limit`;
-    this.retry_after_days = args.retryAfterDays;
+    const facts = quotaNoticeFacts(noticeCtx);
+    this.retry_after_days = facts.retry_after_days;
+    this.resets_at = facts.resets_at;
+    this.suggested_action = buildQuotaSuggestedAction(noticeCtx);
     this.tool = args.tool;
     Object.setPrototypeOf(this, TierLimitReachedError.prototype);
+  }
+
+  /**
+   * Rebuild this error's notice context, optionally with the LIVE x402 rail attached.
+   *
+   * The rail is derived by `index.ts` at serialization time (behind `X402_NUDGE_ENABLED` +
+   * the live-rail predicates), which is downstream of the throw. Rather than keeping a second
+   * copy of the message, the wire projection re-renders from the SAME builder with the rail —
+   * so the prose and the `suggested_x402` field can never disagree about whether a rail exists.
+   * That mismatch is exactly what the pre-wave `scan_trade_calls` copy shipped: a hardcoded
+   * "or pay per call via x402" that stayed in the text even when no rail was live.
+   */
+  noticeContext(x402?: SuggestedX402): QuotaNoticeContext {
+    return {
+      meter: 'calls',
+      used: this.current_usage,
+      limit: this.monthly_limit,
+      resetAtMs: this.resetAtMs,
+      periodStartMs: this.periodStartMs,
+      referralCode: this.referralCode,
+      x402,
+    };
   }
 }
 
@@ -154,6 +222,14 @@ export interface TierLimitPayload {
   tier: string;
   suggested_upgrade_url: string;
   retry_after_days: number;
+  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: ISO-8601 instant access returns. Additive. */
+  resets_at: string;
+  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: `usage/limit` display form, e.g. `"100/100"`. Additive. */
+  usage_display: string;
+  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: which path the notice leads with. Additive. */
+  recommended_path: 'subscription' | 'x402';
+  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: the structured-error law's `suggested_<action>`. Additive. */
+  suggested_action: string;
   referral_hint: ReferralHint;
   /** FUNNEL-FIX-AGENT-X402-NUDGE-W1: additive in-protocol x402 pay-per-call branch. */
   suggested_x402?: SuggestedX402;
@@ -172,15 +248,25 @@ export function buildTierLimitPayload(
   err: TierLimitReachedError,
   opts?: { suggestedX402?: SuggestedX402 },
 ): TierLimitPayload {
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1: re-render the notice from the SAME builder with the live
+  // rail attached, so the prose ranks the two paths using the price the `suggested_x402` field
+  // actually advertises. With no rail the context is identical to the constructor's, so the
+  // message is byte-identical to `err.message`.
+  const ctx = err.noticeContext(opts?.suggestedX402);
+  const facts = quotaNoticeFacts(ctx);
   return {
     code: err.code,
     error_code: err.code,
-    message: err.message,
+    message: buildQuotaNoticeMessage(ctx),
     current_usage: err.current_usage,
     monthly_limit: err.monthly_limit,
     tier: err.tier,
     suggested_upgrade_url: err.suggested_upgrade_url,
-    retry_after_days: err.retry_after_days,
+    retry_after_days: facts.retry_after_days,
+    resets_at: facts.resets_at,
+    usage_display: facts.usage_display,
+    recommended_path: facts.recommended_path,
+    suggested_action: buildQuotaSuggestedAction(ctx),
     referral_hint: err.referral_hint,
     ...(opts?.suggestedX402 ? { suggested_x402: opts.suggestedX402 } : {}),
   };

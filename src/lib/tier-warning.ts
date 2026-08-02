@@ -143,3 +143,41 @@ export function withTierWarning(meta: AlgoVaultMeta, ctx: TierWarningContext): A
   });
   return { ...meta, tier_warning: warning };
 }
+
+/**
+ * Attach live quota state to an `_algovault` block on a SUCCESSFUL response
+ * (OPS-QUOTA-EXHAUSTION-NOTICE-W1, 2026-08-02).
+ *
+ * `tier_warning` only appears from 80% — so below that a caller had no quota signal at all and
+ * the wall arrived without warning. This is the always-on counterpart: usage, remaining, and
+ * the reset instant, visible from call one, so a developer debugging an agent can see the
+ * boundary coming instead of discovering it as a hard failure.
+ *
+ * It does NOT alter the cutoff and does not weaken it — it is telemetry on the healthy path.
+ *
+ * Default-deny, mirroring `computeTierWarning`'s gate: bot-internal traffic is skipped (no human
+ * to inform, and the bot meters its own users), and a non-finite or non-positive limit is skipped
+ * — which is what excludes the unmetered `x402` / `internal` tiers, whose quota is `Infinity` and
+ * has no honest JSON form. Paid tiers DO get it: `412/3000` is as useful to them as to free.
+ *
+ * Returns a NEW object; callers replace their meta. Skipped ⇒ the input is returned untouched, so
+ * the shape is byte-identical to before this wave.
+ */
+export function withQuotaState(
+  meta: AlgoVaultMeta,
+  ctx: { tier: LicenseTier; used: number; total: number; resetAtMs: number; isBotInternal?: boolean },
+): AlgoVaultMeta {
+  if (ctx.isBotInternal === true) return meta;
+  if (!Number.isFinite(ctx.total) || ctx.total <= 0) return meta;
+  if (!Number.isFinite(ctx.used) || ctx.used < 0) return meta;
+  if (!Number.isFinite(ctx.resetAtMs)) return meta;
+  return {
+    ...meta,
+    quota: {
+      used: ctx.used,
+      total: ctx.total,
+      remaining: Math.max(0, ctx.total - ctx.used),
+      resets_at: new Date(ctx.resetAtMs).toISOString(),
+    },
+  };
+}

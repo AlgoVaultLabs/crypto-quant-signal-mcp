@@ -11,6 +11,7 @@
  */
 
 import { renderSigninComponent } from './signin-component.js';
+import { PLANS, planPriceLabel } from './plans.js';
 
 /**
  * Sanitize a UTM-ish param to safe URL-injection-free chars. Anything outside
@@ -103,7 +104,7 @@ export function getWelcomePageHtml(
              <div id="signup-email-error" class="signup-email-error" aria-live="polite"></div>
            </form>
          </div>`}
-         <a class="paywall-btn" href="/signup?plan=starter&utm_source=welcome_page${utmSource ? `_${utmSource}` : ''}${utmQuery}">Upgrade to Starter — $9.99/mo</a>
+         <a class="paywall-btn" href="/signup?plan=starter&utm_source=welcome_page${utmSource ? `_${utmSource}` : ''}${utmQuery}">Upgrade to ${PLANS.starter.label} — ${planPriceLabel('starter')}/mo</a>
          <p class="paywall-fineprint">Or stay on the free tier — your API key is auto-provisioned on every <code>/signup</code> click. <a href="/signup?plan=pro${utmQuery}">Need higher volume? See Pro / Enterprise →</a></p>
        </div>`
     : '';

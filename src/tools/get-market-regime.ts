@@ -12,8 +12,8 @@ import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis, isCandleBasisShadowEnabled } from '../lib/candle-basis-flag.js';
 import { recordCandleBasisShadow } from '../lib/candle-basis-shadow.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
-import { trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
-import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
+import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, Candle } from '../types.js';
 import type { PriceStructureResult } from '../lib/indicators.js';
@@ -208,19 +208,31 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const timeframe = input.timeframe || '4h';
   const license = input.license || { tier: 'free' as const, key: null };
 
-  // Quota tracking (all tiers)
-  const quota = trackCall(license);
-  if (!quota.allowed) {
+  // Quota tracking (all tiers).
+  //
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1: READ-ONLY gate first, charge second — the same shape as
+  // `get_trade_call`'s (operator-frozen) entry gate. This tool previously gated on the
+  // INCREMENTING `trackCall`, so every refused call still charged the meter: the Step-0 probe
+  // watched `current_usage` read 101/100 then 102/100 on successive blocked calls, and it climbs
+  // without bound for as long as a caller keeps hitting the wall. A notice cannot honestly say
+  // "N/100" while N drifts past 100. The refusal itself is UNCHANGED — both gates refuse at the
+  // cap, HOLD and non-HOLD alike (regression-locked in tests/unit/quota-exhaustion-notice.test.ts).
+  // Charging only allowed calls also routes blocks through `checkQuota`, which is what emits the
+  // `quota_hit_block` funnel event — this tool never emitted it before.
+  const gate = checkQuota(license);
+  if (!gate.allowed) {
     throw new TierLimitReachedError({
-      currentUsage: quota.used,
-      monthlyLimit: quota.total,
+      currentUsage: gate.used,
+      monthlyLimit: gate.total,
       tier: license.tier,
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
-      retryAfterDays: daysUntilMonthReset(license),
+      resetAtMs: monthResetAtMs(license),
+      periodStartMs: periodStartMs(license),
       referralCode: referralCodeForKey(license.key),
       tool: 'get_market_regime', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
     });
   }
+  const quota = trackCall(license);
 
   const candleCount = CANDLE_COUNTS[timeframe] || 168;
   const intervalMs = getIntervalMs(timeframe);
@@ -478,6 +490,14 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     isBotInternal: license.tier === 'internal',
     upgradeUrl: DEFAULT_UPGRADE_URL,
     tool: 'get_market_regime', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
+  });
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (R3): always-on quota state (additive).
+  meta = withQuotaState(meta, {
+    tier: license.tier,
+    used: quota.used,
+    total: quota.total || getMonthlyQuota(license.tier),
+    resetAtMs: monthResetAtMs(license),
+    isBotInternal: license.tier === 'internal',
   });
 
   return {

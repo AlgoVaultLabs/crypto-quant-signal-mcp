@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getUpgradeHint, getQuotaExhaustedMessage, trackCall, resetLicenseCache } from '../src/lib/license.js';
+import { getUpgradeHint, trackCall, resetLicenseCache } from '../src/lib/license.js';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: `getQuotaExhaustedMessage` was deleted (dead export — its
+// last production caller moved to the shared notice). These cases now target the canonical
+// builder directly, so the test exercises the string a caller actually receives.
+import { buildQuotaNoticeMessage } from '../src/lib/quota-notice.js';
 import type { LicenseInfo } from '../src/types.js';
 
 describe('getUpgradeHint', () => {
@@ -73,22 +77,30 @@ describe('getUpgradeHint', () => {
   });
 });
 
-describe('getQuotaExhaustedMessage', () => {
-  it('renders the referral-prominent + upgrade-retained limit copy (REFERRAL-INPRODUCT-NUDGE-W1)', () => {
-    // Same shared builder the TIER_LIMIT_REACHED envelope renders. No referralCode
-    // arg → keyless (get-your-link path leads); upgrade retained beneath. No "unlimited".
-    const msg = getQuotaExhaustedMessage(100, 100);
-    expect(msg).toContain("You've hit your 100 free calls this month");
-    expect(msg.toLowerCase()).toContain('refer a friend');
-    expect(msg).toContain('create a free account'); // keyless get-your-link path
-    expect(msg).toContain('Or Upgrade → Starter, 3,000 calls/mo, $9.99');
+describe('the free-tier exhaustion notice (buildQuotaNoticeMessage)', () => {
+  // A fixed reset instant + clock: the notice must state a DATE, and a hardcoded interval
+  // would pass a "contains 30 days" assertion while being wrong for every real caller.
+  const RESET_AT = Date.parse('2026-08-24T09:13:22.000Z');
+  const NOW = Date.parse('2026-08-02T09:13:22.000Z'); // exactly 22 days earlier
+
+  it('KEYLESS → usage, a live reset date, the subscription arm and the get-your-link path', () => {
+    const msg = buildQuotaNoticeMessage({
+      meter: 'calls', used: 100, limit: 100, resetAtMs: RESET_AT, nowMs: NOW, referralCode: null,
+    });
+    expect(msg).toContain('Free monthly quota used: 100/100');
+    expect(msg).toContain('Access returns 2026-08-24 (22 days)');
+    expect(msg).toContain('Starter');
     expect(msg).toContain('signup?plan=starter&upgrade_from=limit');
+    expect(msg).toContain('Create your free account for a referral link'); // keyless path
+    expect(msg.toLowerCase()).toContain('refer a friend');
     expect(msg).not.toContain('unlimited');
   });
 
-  it('KEYED → renders the user\'s own give-get link', () => {
-    const msg = getQuotaExhaustedMessage(100, 100, 'ABCD1234');
+  it("KEYED → renders the user's own give-get link", () => {
+    const msg = buildQuotaNoticeMessage({
+      meter: 'calls', used: 100, limit: 100, resetAtMs: RESET_AT, nowMs: NOW, referralCode: 'ABCD1234',
+    });
     expect(msg).toContain('Your link: algovault.com/join?ref=ABCD1234');
-    expect(msg).not.toContain('create a free account');
+    expect(msg).not.toContain('Create your free account');
   });
 });
