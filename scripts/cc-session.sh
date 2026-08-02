@@ -7,7 +7,10 @@
 #                   remote default branch (native `claude -w` if available, else a
 #                   `git worktree add` fallback). --base overrides the default and forces
 #                   the fallback path, because `claude --worktree` takes no base ref.
-#   list            show every worktree: path, branch, ahead/behind, dirty, assigned port
+#   list            show every worktree: path, branch, ahead/behind, dirty, assigned port,
+#                   and GUARDS — how many registered pre-push/pre-commit gate scripts are
+#                   actually present in that checkout (read-only projection of
+#                   ops/shared-worktree-state.json; see OPS-SHARED-WORKTREE-STATE-REGISTRY-W1)
 #   clean [--force] safely reclaim merged+clean+pushed worktrees (DRY-RUN unless --force)
 #   port <task>     print the deterministic port a task would use (used by the SessionStart hook)
 #
@@ -164,8 +167,28 @@ cmd_new() {
   ( cd "$wt" && exec claude )
 }
 
+# Read-only projection of ops/shared-worktree-state.json: one registered gate-script path per
+# line. OPS-SHARED-WORKTREE-STATE-REGISTRY-W1 — worktrees isolate the git index and nothing
+# else, so a checkout can silently lack a guard the shared hook still invokes; `list` should
+# say so. FAILS SOFT by design (prints nothing): this is a convenience view, and it must never
+# break because the registry is absent, unparseable, or node is missing.
+shared_state_scripts() {
+  local root reg
+  root=$(repo_root) || return 0
+  reg="$root/ops/shared-worktree-state.json"
+  [ -r "$reg" ] || return 0
+  command -v node >/dev/null 2>&1 || return 0
+  node -e '
+    try {
+      const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+      const s = new Set((j.resources || []).filter((r) => r.kind === "hook-block" && r.script).map((r) => r.script));
+      for (const x of s) console.log(x);
+    } catch {}
+  ' "$reg" 2>/dev/null || true
+}
+
 list_row() {
-  local path="$1" branch="$2" base ab dirty port
+  local path="$1" branch="$2" base ab dirty port guards="-" have=0 total=0 s
   if git -C "$path" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
     base='@{upstream}'
   else
@@ -176,13 +199,25 @@ list_row() {
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then dirty="Y"; else dirty="N"; fi
   port=$(grep -hs '^PORT=' "$path/.env.local" 2>/dev/null | head -1 | cut -d= -f2 || true)
   [ -n "$port" ] || port="-"
-  printf '%-46s %-26s %-9s %-5s %-6s\n' "$path" "$branch" "$ab" "$dirty" "$port"
+  if [ -n "${SHARED_STATE_SCRIPTS:-}" ]; then
+    while IFS= read -r s; do
+      [ -n "$s" ] || continue
+      total=$(( total + 1 ))
+      if [ -f "$path/$s" ]; then have=$(( have + 1 )); fi
+    done <<EOF
+$SHARED_STATE_SCRIPTS
+EOF
+    if [ "$total" -gt 0 ]; then guards="$have/$total"; fi
+  fi
+  printf '%-46s %-26s %-9s %-5s %-6s %-7s\n' "$path" "$branch" "$ab" "$dirty" "$port" "$guards"
 }
 
 cmd_list() {
   local root path branch
   root=$(repo_root) || die "not in a git repository"
-  printf '%-46s %-26s %-9s %-5s %-6s\n' "WORKTREE" "BRANCH" "AHEAD/BEH" "DIRTY" "PORT"
+  # Resolved ONCE, not per row — 75 checkouts is a realistic count on this machine.
+  SHARED_STATE_SCRIPTS="$(shared_state_scripts)"
+  printf '%-46s %-26s %-9s %-5s %-6s %-7s\n' "WORKTREE" "BRANCH" "AHEAD/BEH" "DIRTY" "PORT" "GUARDS"
   while IFS= read -r line; do
     case "$line" in
       worktree\ *) path="${line#worktree }" ;;

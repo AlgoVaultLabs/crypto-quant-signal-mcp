@@ -1,57 +1,45 @@
 #!/usr/bin/env bash
 # OPS-VITEST-SUITE-REPAIR-W1 / C4 — installer for the local pre-push test-gate.
 #
-# Wires scripts/check_test_baseline.sh into .git/hooks/pre-push so every push is
-# checked against the committed green baseline (substitutes for the flag-disabled
-# push-triggered CI). Mirrors scripts/install_system_map_hook.sh: standard
-# .git/hooks path, NO custom core.hooksPath.
+# Wires scripts/check_test_baseline.sh into the shared pre-push hook so every push is checked
+# against the committed green baseline (substitutes for the flag-disabled push-triggered CI).
 #
-# COMPOSABLE — if a pre-push hook already exists, this APPENDS a guarded marker
-# block (idempotent) instead of overwriting, so a later wave (e.g.
-# OPS-AOE-PREPUSH-RESTORE-W1's main-branch protection) can add its own block to
-# the SAME hook. Re-running is a no-op once the marker is present.
+# RETROFITTED onto scripts/lib/hook-block.sh by OPS-SHARED-WORKTREE-STATE-REGISTRY-W1. Emission,
+# the idempotence key, composability and the skip-guard now live in ONE helper shared by all four
+# installers — this was the 4th hand-rolled emitter, past the 3-example extraction threshold. The
+# GUARD's behaviour is unchanged; only how it is installed changed.
 #
-# WORKTREE-SAFE — resolves the hooks dir via `git rev-parse --git-common-dir`,
-# which is the shared $GIT_COMMON_DIR. .git/hooks lives there, so the hook
-# governs EVERY linked worktree — install once per clone, not per worktree.
+# WORKTREE-SAFE — the helper resolves the hooks dir via `git rev-parse --git-common-dir`, the
+# shared $GIT_COMMON_DIR. The hook governs EVERY linked worktree: install once per clone, not per
+# worktree. (Measured 2026-08-02: 74 checkouts share one hooks dir on this machine.)
 #
 # NOT invoked from CI — developer-onboarding utility. Run once per fresh clone:
 #   bash scripts/install_test_gate_hook.sh
+#   bash scripts/install_test_gate_hook.sh --allow-unpublished   # audited bootstrap only
 set -euo pipefail
 
-COMMON_DIR="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
-HOOKS_DIR="$COMMON_DIR/hooks"
-HOOK_PATH="$HOOKS_DIR/pre-push"
-MARKER_BEGIN='# >>> algovault test-gate (OPS-VITEST-SUITE-REPAIR-W1) >>>'
-MARKER_END='# <<< algovault test-gate <<<'
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=scripts/lib/hook-block.sh
+. "$REPO_ROOT/scripts/lib/hook-block.sh"
 
-# The guarded block. Resolves the repo root at hook-run time so it works from
-# any worktree; honours ALGOVAULT_TEST_GATE (block|warn) read by the gate script.
-read -r -d '' BLOCK <<EOF || true
-$MARKER_BEGIN
+ALLOW_UNPUBLISHED=0
+for arg in "$@"; do
+  case "$arg" in
+    --allow-unpublished) ALLOW_UNPUBLISHED=1 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    *) printf '%s\n' "unknown flag: $arg (see --help)" >&2; exit 2 ;;
+  esac
+done
+
+GATE_SCRIPT='scripts/check_test_baseline.sh'
+hook_block_assert_publishable "$GATE_SCRIPT" "$ALLOW_UNPUBLISHED" || exit 1
+
+read -r -d '' COMMENT <<'EOF' || true
 # Local greenness gate — substitutes for the flag-disabled push-triggered CI.
 # Blocks a push that introduces a NEW test failure vs the committed baseline
 # (audits/test-baseline-known-failures.txt). Override (report-only):
 #   ALGOVAULT_TEST_GATE=warn git push
-"\$(git rev-parse --show-toplevel)/scripts/check_test_baseline.sh" || exit 1
-$MARKER_END
 EOF
 
-mkdir -p "$HOOKS_DIR"
-
-if [ -f "$HOOK_PATH" ]; then
-  if grep -qF "$MARKER_BEGIN" "$HOOK_PATH"; then
-    echo "[test-gate hook] already installed in $HOOK_PATH (idempotent no-op)"
-    exit 0
-  fi
-  # Composable append — preserve the existing hook (do NOT overwrite).
-  printf '\n%s\n' "$BLOCK" >>"$HOOK_PATH"
-  chmod +x "$HOOK_PATH"
-  echo "[test-gate hook] appended guarded block to existing $HOOK_PATH (composable)"
-  exit 0
-fi
-
-# Fresh hook.
-printf '%s\n\n%s\n' '#!/usr/bin/env bash' "$BLOCK" >"$HOOK_PATH"
-chmod 0755 "$HOOK_PATH"
-echo "[test-gate hook] installed at $HOOK_PATH (mode 755)"
+hook_block_install pre-push test-gate OPS-VITEST-SUITE-REPAIR-W1 "$GATE_SCRIPT" "$COMMENT" \
+  '"$(git rev-parse --show-toplevel)/scripts/check_test_baseline.sh" || exit 1'

@@ -178,20 +178,17 @@
     {
       "class": "repo-path",
       "value": "ops/shared-worktree-state.json",
-      "line": 206,
-      "in_flight": "origin/ops/shared-worktree-state-registry-w1"
+      "line": 206
     },
     {
       "class": "repo-path",
       "value": "scripts/check-shared-state.mjs",
-      "line": 206,
-      "in_flight": "origin/ops/shared-worktree-state-registry-w1"
+      "line": 206
     },
     {
       "class": "repo-path",
       "value": "scripts/lib/hook-block.sh",
-      "line": 206,
-      "in_flight": "origin/ops/shared-worktree-state-registry-w1"
+      "line": 206
     },
     {
       "class": "basename",

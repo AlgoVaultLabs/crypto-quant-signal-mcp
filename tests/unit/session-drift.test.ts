@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -169,6 +169,25 @@ describe('install_session_drift_hook.sh', () => {
       ].join('\n');
       writeFileSync(hookPath, seeded);
 
+      // OPS-SHARED-WORKTREE-STATE-REGISTRY-W1: the installer now sources scripts/lib/hook-block.sh
+      // (the ONE emitter shared by all four installers) and calls hook_block_assert_publishable,
+      // which refuses to write a block whose script is unreachable from the RESOLVED remote
+      // default ref. So the fixture needs the helper, the gate script, and a resolvable
+      // origin/HEAD — i.e. it now has to look like a real clone, which is the point of the
+      // precondition. `git update-ref` stands in for a bare remote: cheaper, same observable.
+      mkdirSync(join(dir, 'scripts', 'lib'), { recursive: true });
+      copyFileSync(
+        resolve(__dirname, '..', '..', 'scripts', 'lib', 'hook-block.sh'),
+        join(dir, 'scripts', 'lib', 'hook-block.sh'),
+      );
+      writeFileSync(join(dir, 'scripts', 'check-session-drift.mjs'), 'console.log("stub");\n');
+      spawnSync('git', ['-C', dir, 'config', 'user.email', 'test@example.com']);
+      spawnSync('git', ['-C', dir, 'config', 'user.name', 'test']);
+      spawnSync('git', ['-C', dir, 'add', '-A']);
+      spawnSync('git', ['-C', dir, 'commit', '-qm', 'fixture']);
+      spawnSync('git', ['-C', dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD']);
+      spawnSync('git', ['-C', dir, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+
       const installer = readFileSync(resolve(__dirname, '..', '..', 'scripts', 'install_session_drift_hook.sh'), 'utf8');
       const local = join(dir, 'install.sh');
       writeFileSync(local, installer);
@@ -177,8 +196,19 @@ describe('install_session_drift_hook.sh', () => {
       expect(first.status, first.stderr).toBe(0);
       const after1 = readFileSync(hookPath, 'utf8');
 
-      // The pre-existing block must survive byte-for-byte.
-      expect(after1).toContain(seeded.trim());
+      // The pre-existing BLOCK must survive byte-for-byte — that is what this assertion has
+      // always been about. It is no longer contiguous with the shebang, because block order is
+      // now canonical (LC_ALL=C by name) rather than append-order, so `session-drift` sorts
+      // ahead of `test-gate`. Asserting on the block itself keeps the original intent without
+      // pinning an incidental layout detail.
+      expect(after1).toContain(
+        [
+          '# >>> algovault test-gate (OPS-VITEST-SUITE-REPAIR-W1) >>>',
+          '"$(git rev-parse --show-toplevel)/scripts/check_test_baseline.sh" || exit 1',
+          '# <<< algovault test-gate <<<',
+        ].join('\n'),
+      );
+      expect(after1.startsWith('#!/usr/bin/env bash\n')).toBe(true);
       expect(after1).toContain('algovault session-drift');
 
       const second = spawnSync('bash', [local], { cwd: dir, encoding: 'utf8' });
