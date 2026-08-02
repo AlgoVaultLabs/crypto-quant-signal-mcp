@@ -103,9 +103,40 @@ hook_block_default_ref() {
   fi
 }
 
+# Where a script can be obtained from, as ONE word: `default`, `other:<ref>`, or `none`.
+#
+# The distinction matters and the incident record is what settles it. status.md's account of
+# 2026-08-01 says the script "existed only in its own worktree AND ON NO REMOTE BRANCH" — that
+# conjunction is the hazard, because a worktree can always recover a script that exists on SOME
+# remote ref (`git checkout <ref> -- <path>`), and can recover nothing that exists on none.
+#
+# Testing only the default ref is therefore stricter than the incident warrants, and it has a
+# concrete cost: the wave that INTRODUCES a gate could never install it, since its script is on
+# the feature branch until merge. That would push every new guard into a post-merge manual step
+# — the "MANUAL_PENDING that never happens" class this repo has already been bitten by twice.
+hook_block_remote_reachability() {
+  local script="$1" ref found="" r
+  ref="$(hook_block_default_ref)"
+  if [ -n "$ref" ] && git cat-file -e "$ref:$script" 2>/dev/null; then
+    printf 'default\n'; return 0
+  fi
+  # Heredoc, not a pipe: a `while` on the right of a pipe runs in a SUBSHELL, so `found` would
+  # be discarded at the loop's end. And the /HEAD filter is a grep here rather than a `case`
+  # inside the loop — an unbalanced `)` in a case pattern nested in `$( )` is a real bash
+  # parser trap, and it bit this very function on first run.
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    if git cat-file -e "$r:$script" 2>/dev/null; then found="$r"; break; fi
+  done <<EOF
+$(git for-each-ref --format='%(refname:short)' refs/remotes/ 2>/dev/null | grep -v '/HEAD$' || true)
+EOF
+  if [ -n "$found" ]; then printf 'other:%s\n' "$found"; return 0; fi
+  printf 'none\n'
+}
+
 # ── THE PRECONDITION ────────────────────────────────────────────────────────────────────────
-# Refuse to write a block whose script is not reachable from the remote default ref. This is
-# "install the block last", enforced instead of remembered.
+# Refuse to write a block whose script is reachable from NO remote ref. This is "install the
+# block last", enforced instead of remembered.
 #
 # FAIL-CLOSED on an unresolvable default ref: this runs at INSTALL time on a developer machine,
 # where refusing costs one re-run, while a wrong "yes" costs every parallel session a blocked
@@ -114,7 +145,7 @@ hook_block_default_ref() {
 # $2 = "1" enables the --allow-unpublished bootstrap escape hatch: loud banner AND a ledger
 # row, so an override is auditable rather than invisible.
 hook_block_assert_publishable() {
-  local script="$1" allow="${2:-0}" ref
+  local script="$1" allow="${2:-0}" ref reach
   ref="$(hook_block_default_ref)"
 
   if [ -z "$ref" ]; then
@@ -124,8 +155,19 @@ hook_block_assert_publishable() {
     return 1
   fi
 
-  if git cat-file -e "$ref:$script" 2>/dev/null; then
+  reach="$(hook_block_remote_reachability "$script")"
+
+  if [ "$reach" = "default" ]; then
     printf '%s\n' "[hook-block] precondition OK — $script is reachable from $ref"
+    return 0
+  fi
+
+  if [ "${reach#other:}" != "$reach" ]; then
+    # Published, just not merged. Recoverable everywhere, so this is NOT incident A — but a
+    # worktree based on the default ref still will not have it, and will skip the guard until
+    # the branch lands. Say so plainly rather than passing silently.
+    printf '%s\n' "[hook-block] precondition OK (pending merge) — $script is on ${reach#other:}, not yet on $ref."
+    printf '%s\n' "[hook-block]   Worktrees based on $ref will SKIP this guard (loudly, with a ledger row) until it merges."
     return 0
   fi
 
@@ -144,8 +186,8 @@ hook_block_assert_publishable() {
   fi
 
   printf '%s\n' "✖ hook-block: REFUSING to install a block for $script" >&2
-  printf '%s\n' "  It is not reachable from $ref, so every worktree that lacks it would be" >&2
-  printf '%s\n' "  affected. On 2026-08-01 this exact condition blocked ~70 checkouts at once." >&2
+  printf '%s\n' "  It is reachable from NO remote ref, so no other worktree can obtain it and none" >&2
+  printf '%s\n' "  can run this guard. On 2026-08-01 this exact condition blocked ~70 checkouts at once." >&2
   printf '%s\n' "" >&2
   printf '%s\n' "  Fix — push the script FIRST, then re-run this installer:" >&2
   printf '%s\n' "      git add $script && git commit && git push" >&2

@@ -95,17 +95,26 @@ export function evaluate(registry, facts) {
   const blocks = registry.resources.filter((r) => r.kind === 'hook-block');
 
   // ── UNPUBLISHED_DEP — the only blocking check. This IS incident A. ───────────────────────
+  //
+  // THREE states, not two. status.md's account of 2026-08-01 is precise: the script "existed
+  // only in its own worktree AND ON NO REMOTE BRANCH". The conjunction is the hazard — a
+  // worktree can recover a script that exists on SOME remote ref and can recover nothing that
+  // exists on none. Blocking on "not on the default ref" would also mean the wave that
+  // INTRODUCES a gate can never install it (its script is on the feature branch until merge),
+  // pushing every new guard into a post-merge manual step — the "MANUAL_PENDING that never
+  // happens" class this repo has already been bitten by.
   for (const b of blocks) {
-    const ok = facts.reachable[b.script];
-    if (ok) {
+    const reach = facts.reachable[b.script]; // 'default' | 'other:<ref>' | 'none'
+    if (reach === 'default') {
       add('UNPUBLISHED_DEP', 'ok', `${b.block_name}: ${b.script} reachable from the remote default ref`);
+    } else if (typeof reach === 'string' && reach.startsWith('other:')) {
+      add('UNPUBLISHED_DEP', 'report',
+        `${b.block_name}: ${b.script} is on ${reach.slice('other:'.length)} but not yet on the default ref — recoverable everywhere, so not incident A, but checkouts based on the default ref will skip this guard until it merges`,
+        `merge ${reach.slice('other:'.length)} into the remote default ref`);
     } else {
-      add(
-        'UNPUBLISHED_DEP',
-        'block',
-        `${b.block_name}: ${b.script} is NOT reachable from the remote default ref — every worktree that lacks it runs unguarded, and before the skip-guard this condition blocked ~70 checkouts at once`,
-        `git add ${b.script} && git commit && git push   # then re-run this gate`,
-      );
+      add('UNPUBLISHED_DEP', 'block',
+        `${b.block_name}: ${b.script} is reachable from NO remote ref — no other worktree can obtain it, and this is exactly the 2026-08-01 condition that blocked ~70 checkouts at once`,
+        `git add ${b.script} && git commit && git push   # then re-run this gate`);
     }
   }
 
@@ -261,9 +270,16 @@ function gatherFacts(registry) {
   if (!ref) throw new Error('cannot resolve the remote default ref (origin/HEAD unset and no origin/main)');
 
   const scripts = [...new Set(registry.resources.filter((r) => r.kind === 'hook-block').map((r) => r.script))];
+  const remoteRefs = git(['for-each-ref', '--format=%(refname)', 'refs/remotes/'])
+    .split('\n').filter((r) => r && !r.endsWith('/HEAD')).map((r) => r.replace(/^refs\/remotes\//, ''));
   const reachable = {};
   for (const s of scripts) {
-    reachable[s] = spawnSync('git', ['cat-file', '-e', `${ref}:${s}`], { cwd: ROOT }).status === 0;
+    if (spawnSync('git', ['cat-file', '-e', `${ref}:${s}`], { cwd: ROOT }).status === 0) {
+      reachable[s] = 'default';
+      continue;
+    }
+    const other = remoteRefs.find((r) => spawnSync('git', ['cat-file', '-e', `${r}:${s}`], { cwd: ROOT }).status === 0);
+    reachable[s] = other ? `other:${other}` : 'none';
   }
 
   const wtPaths = git(['worktree', 'list', '--porcelain'])
@@ -325,7 +341,7 @@ function selfTest() {
   const cleanFacts = {
     worktrees: [{ path: '/w/a', reclaimable: false, scripts: Object.fromEntries(blockRows.map((b) => [b.script, true])) }],
     hookBlocks: Object.fromEntries([...new Set(blockRows.map((b) => b.hook))].map((h) => [h, blockRows.filter((b) => b.hook === h).map((b) => b.block_name)])),
-    reachable: Object.fromEntries(blockRows.map((b) => [b.script, true])),
+    reachable: Object.fromEntries(blockRows.map((b) => [b.script, 'default'])),
     skipLedgerRows: 0,
     dbPresent: false,
   };
@@ -337,11 +353,19 @@ function selfTest() {
   assert(f.some((x) => x.check === 'UNPUBLISHED_DEP' && x.severity === 'ok'), 'clean fixture produced no positive UNPUBLISHED_DEP row');
 
   // ── direction 2: each defect is DETECTED ──
-  const unpublished = { ...cleanFacts, reachable: { ...cleanFacts.reachable, [blockRows[0].script]: false } };
+  const unpublished = { ...cleanFacts, reachable: { ...cleanFacts.reachable, [blockRows[0].script]: 'none' } };
   f = evaluate(registry, unpublished);
   const blocked = f.filter((x) => x.severity === 'block');
   assert(blocked.length === 1, `an unpublished dep must produce exactly 1 blocking finding, got ${blocked.length}`);
   assert(Boolean(blocked[0].remediation), 'a blocking finding without remediation is hostile');
+
+  // The middle state. Published on a branch but not merged is RECOVERABLE everywhere, so it is
+  // not incident A and must NOT block — otherwise the wave that introduces a gate could never
+  // install it, and every new guard would become a post-merge manual step.
+  const pendingMerge = { ...cleanFacts, reachable: { ...cleanFacts.reachable, [blockRows[0].script]: 'other:origin/some-branch' } };
+  f = evaluate(registry, pendingMerge);
+  assert(!f.some((x) => x.severity === 'block'), 'a script published on a non-default remote ref must NOT block');
+  assert(f.some((x) => x.check === 'UNPUBLISHED_DEP' && x.severity === 'report'), 'a pending-merge script must REPORT');
 
   const orphan = { ...cleanFacts, hookBlocks: { ...cleanFacts.hookBlocks, [blockRows[0].hook]: [...cleanFacts.hookBlocks[blockRows[0].hook], 'not-in-registry'] } };
   f = evaluate(registry, orphan);
@@ -379,7 +403,7 @@ function selfTest() {
   assert(mapCode('FAIL', 'warn') === 0 && mapCode('INDETERMINATE', 'warn') === 0, 'warn must downgrade the CODE');
   assert(mapCode('PASS', 'warn') === 0, 'warn must not change PASS');
 
-  console.log(`✓ self-test: ${blockRows.length} registry block rows; clean fixture passes, 6 defect fixtures detected, token→exit mapping asserted.`);
+  console.log(`✓ self-test: ${blockRows.length} registry block rows; clean fixture passes, 7 defect fixtures detected, token→exit mapping asserted.`);
 }
 
 // ── main ───────────────────────────────────────────────────────────────────────────────────
