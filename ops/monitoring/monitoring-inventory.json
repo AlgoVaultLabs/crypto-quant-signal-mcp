@@ -36,12 +36,39 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "12598b6d20fa140818b07884c2f46561ecbb7ed5998b4bcf9a3f92153a8e0e5b",
+      "sha256": "9a61457f0728bd4a55eabcf30c6253e920970abf405adad5fa614f05f56a4ad2",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
       "owner_wave": "OPS-MONITORING-INVENTORY-PARITY-W1",
-      "notes": "Row 1 of its own inventory. As of OPS-AOE-MONITORING-PARITY-W1 it is ALSO a vendored shared primitive under the same canonical + committed-.sha256 + parity contract as the wrapper — one artifact installed twice, not two artifacts to maintain. Each instance evaluates only the rows it owns (MONITORING_HOST_LABELS)."
+      "notes": "Row 1 of its own inventory. As of OPS-AOE-MONITORING-PARITY-W1 it is ALSO a vendored shared primitive under the same canonical + committed-.sha256 + parity contract as the wrapper — one artifact installed twice, not two artifacts to maintain. Each instance evaluates only the rows it owns (MONITORING_HOST_LABELS). DOC_PATH_CLAIM added by OPS-CLAIM-VERIFIER-COVERAGE-W1: the prescriptive docs' host-path claims are verified LOCALLY on the owning host, because CI has no prod SSH and must never get any."
+    },
+    {
+      "id": "doc-host-path-claims",
+      "artifact": "ops/monitoring/doc-host-path-claims.json",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/doc-host-path-claims.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/doc-host-path-claims.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/doc-host-path-claims.json"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "install_state": "installed",
+      "sha256": "19b502b4c3697c87ed75bedb24ca6cab01f16b3997ede7480dd6e0ec082e452a",
+      "alert_ids": [
+        "MONITORING_INVENTORY_DRIFT"
+      ],
+      "owner_wave": "OPS-CLAIM-VERIFIER-COVERAGE-W1",
+      "notes": "The host-path claims made by the prescriptive docs, read by the reconciler's DOC_PATH_CLAIM check on the host that owns each claim. Closes the gap OPS-CLAUDEMD-CLAIM-VERIFIER-W1 shipped (9 claims UNPROBED behind --probe-hosts, unusable from CI). Existence is the ONE assertion the rest of this inventory delegates away: a DELETED artifact fires nothing (HASH_DRIFT skips what it cannot find, DARK needs a schedule, ORPHAN runs host->repo) - measured 2026-08-02 against send_telegram.sh."
     },
     {
       "id": "monitoring-inventory",
@@ -878,6 +905,28 @@
       "sha256": "4babde829a321782181903e3678be5d4817d37c7c83de02f4d006dc4e9debaa3",
       "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
       "notes": "SHA-pinned deploy primitive. Runs on the OPERATOR's machine, not on a host — hence installed_at is empty and host/host_path are n-a rather than invented; it is listed so the registry records the tool that governs deploys, and REGISTRY_PARITY has nothing to assert for it. Refuses any ref that is not an ancestor of origin/main, materializes git archive <sha>, swaps per manifest entry (never whole-directory — /opt/algovault-bot holds a 171M .venv the units execute), sets ownership at the destination including the .bak copy, and stamps DEPLOYED_SHA + DEPLOYED_MANIFEST.sha256. Generic: 7 substantive /opt services share the class it closes; rollout is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT}."
+    },
+    {
+      "id": "checkout-parity",
+      "artifact": "ops/cron/checkout-parity.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/checkout-parity.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/checkout-parity.sh",
+          "schedule": "47 6 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "47 6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "d5e2eb933e2f677265f4e0ddf5d1f81c66a2e36a6ebce997c3206e3a7f71f7c5",
+      "owner_wave": "OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W1",
+      "notes": "Daily provenance assertion for the three GIT-CHECKOUT services on this host (crypto-quant-signal-mcp, algovault-editorial, algovault-blog-assets): HEAD is an ancestor of origin/main, the tree is clean modulo a DECLARED allowlist, and no file is owned by a uid that does not exist. Sibling of bot-deploy-parity.sh but a different evidence source: those services are placed by git, so git IS the lockfile, whereas the bot's tree is placed by ops/scripts/host-deploy.sh and verified against the lockfile that tool writes. Configured by ops/deploy/checkout-parity.conf, which also records the DEFER/EXEMPT set so the un-covered estate is declared rather than forgotten. Emits one CHECKOUT_PARITY_VERDICT= token; 0=PASS/1=FAIL/3=INDETERMINATE, fails closed. KNOWN LIMITATION: `git fetch` fails for algovault-blog-assets (SSH remote, no key for root), so its ancestry is judged against a CACHED origin/main — the run prints an explicit WARNING rather than passing silently. Closing that needs a deploy key: OPS-BLOG-ASSETS-FETCH-KEY-W{NEXT}."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
