@@ -432,7 +432,14 @@ function extractApiKey(authHeader?: string): string | null {
     if (match) headerKey = match[1];
   }
 
-  const key = envKey || headerKey;
+  // SEC-25 (OPS-AUDIT-REMEDIATION-LOW-W1): the CALLER's credential wins. This was
+  // `envKey || headerKey`, so setting CQS_API_KEY on the server silently overrode every
+  // caller's Authorization header — one env var re-tiering every request on the box, and an
+  // authenticated caller being billed/limited against somebody else's key.
+  // The stdio path is unaffected by construction: there is no Authorization header there, so
+  // `headerKey` is null and the operator's own CQS_API_KEY still applies (see the
+  // resolveFromApiKeyAsync note above — "operators tier their own local CQS_API_KEY").
+  const key = headerKey || envKey;
   if (!key || key.trim().length === 0) return null;
   return key;
 }

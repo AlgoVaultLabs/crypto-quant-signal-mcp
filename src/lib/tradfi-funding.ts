@@ -67,7 +67,10 @@ export const TRADFI_FUNDING_PROBED_AT = '2026-06-04';
  * cross-venue rates are considered to disagree directionally. MEASURED: p90 of
  * the 30d cross-venue spread distribution over 10 liquid TradFi symbols × 4 CEX
  * venues (902 samples) — see `audits/OPS-TRADFI-XVENUE-FUNDING-W1-funding-matrix.md`.
- * // TODO: revisit by 2026-06-18 (re-pull once more venues accrue ≥30d + HL xyz history wired)
+ * // TODO: revisit by 2026-09-01 (re-pull once more venues accrue >=30d + HL xyz history wired)
+ * // SEC-26 (OPS-AUDIT-REMEDIATION-LOW-W1, 2026-08-02): re-dated after 45d overdue. The band still
+ * // rests on the original 902-sample study; the re-pull is blocked on venue history that has not
+ * // accrued. Owner: OPS-TRADFI-BAND-REPULL-W{NEXT}; registered in the revisit ledger.
  */
 export const TRADFI_DIVERGENCE_BAND_8H = 0.001; // 10 bps / 8h
 
