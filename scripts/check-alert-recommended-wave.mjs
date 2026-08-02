@@ -37,6 +37,7 @@ const REPO = join(HERE, '..');
 const SCANNED = [
   'ops/monitoring/closedbar-w1-liveness.sh',
   'ops/cron/candle-basis-shadow-report.sh',
+  'ops/cron/bot-deploy-parity.sh',
 ];
 
 const WAVE_RE = /\b(?:OPS|SIGNAL|RELEASE|DEV|TG|GEO)-[A-Z0-9-]*?-W(?:\{NEXT\}|\d+)/g;
@@ -98,9 +99,15 @@ export function extractPairs(text) {
   };
   const ids = caseMap('alert_id_for');
   const waves = caseMap('recommended_wave_for');
-  for (const [key, id] of ids) {
-    const wave = waves.get(key);
-    if (wave) out.push({ id, wave, line: 0, raw: `${fnKeyLine(body, key)}` });
+  for (const [key, wave] of waves) {
+    // Two real shapes, both in this tree:
+    //   (i)  an `alert_id_for` case keyed by the same verdict token — join on the key
+    //        (closedbar-w1-liveness.sh: RATCHET -> CLOSEDBAR_DISPATCH_RATCHET_REGRESSION)
+    //   (ii) no `alert_id_for` at all, because the case KEY already IS the alert id
+    //        (bot-deploy-parity.sh: BOT_DEPLOY_TREE_DIVERGED -> …)
+    // Requiring (i) would silently scan zero pairs in (ii) and report a vacuous PASS.
+    const id = ids.get(key) ?? key;
+    out.push({ id, wave, line: 0, raw: `${fnKeyLine(body, key)}` });
   }
   return out;
 }
