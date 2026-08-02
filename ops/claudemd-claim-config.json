@@ -1,0 +1,86 @@
+{
+  "_doc": "OPS-CLAUDEMD-CLAIM-VERIFIER-W1 — config for scripts/check-claudemd-claims.mjs, the verifier for the vault CLAUDE.md's machine-checkable assertions. Every exemption row carries its OWN `reason`: an exemption that lives only in prose gets 'fixed' by a future wave enforcing the contract. Missing or unparseable ⇒ CLAUDEMD_CLAIMS_VERDICT=INDETERMINATE, exit 3 — never a pass.",
+
+  "_corpus": "The corpus is the vault CLAUDE.md (private, outside this repo). CI runners cannot read it, so the gate verifies the committed claim lock (ops/claudemd-claims.lock.json) — identifiers only, never the manual's prose. When the corpus IS reachable (operator Mac), the gate re-extracts fresh, enforces lock freshness by corpus sha256, and additionally verifies the local-only classes (vault paths, home paths). The manual's text never enters this public repo.",
+
+  "_step0_measurement": "R1 measured 2026-08-02 on corpus sha 50920a2d…: 911 backtick spans; 22 _( … )_ correction blocks (8% of corpus chars) containing 60 spans. Raw would-fire on path classes WITHOUT the correction-block strip: 14 distinct (17 sites); WITH strip: 12 distinct. After the three measured classifier refinements (bare-directory spans are prose not claims; dist/** is build output never tracked by construction; absence/deprecated markers invert or skip the check), LIVE false positives on the blocking classes = 0, and the strip alone accounts for the historical `dispatch_schedule.py` + `dist/lib/x402.js` + paths-ignore-glob citations. Ladder assignments below follow that measurement, not intuition.",
+
+  "classes": {
+    "repo-path": { "ship": "block", "note": "Backticked concrete repo file (known prefix + extension, no glob/template chars, not dist/**). Verified against git ls-files. Measured FP after refinements: 0. Highest-frequency drift class (the /app/dist/index.js and lib/check-numerical-fact-density.mjs incidents)." },
+    "root-file": { "ship": "block", "note": "Bare root filenames via root_file_map (deploy.yml → .github/workflows/deploy.yml). Measured FP: 0/19." },
+    "basename": { "ship": "block", "note": "Bare extension-bearing basenames resolved via the git ls-files basename join. Measured FP after template (XXXXXX) + DEPRECATED-marker refinements: 0." },
+    "wiring": { "ship": "block", "note": "‘wired into X’ / ‘at `pre-push` by Y’ claims, resolved by IMPORTING check-canaries-wired.mjs's findInvocations — never a second implementation — then intersecting with wiring_point_map." },
+    "script-content": { "ship": "report", "note": "Exit-code and verdict-token claims: the named script must contain the claimed exit code / token. Grep-level association — promote on the numeric criterion below." },
+    "cron-schedule": { "ship": "report", "note": "`MM HH` pairs associated to a script on the same line, cross-checked against ops/monitoring/monitoring-inventory.json schedule (the committed SoT the daily reconciler asserts against the host — this gate never re-implements the host probe). Host state is operator-mutable → report." },
+    "env-var": { "ship": "report", "note": "NAME= tokens: the NAME must appear in ≥1 tracked file. Weak association → report." },
+    "absence": { "ship": "report", "note": "Claims marked DOES-NOT-EXIST/never-built/retired verify the INVERSE (must NOT exist). Precise but new — promote on the numeric criterion." },
+    "vault-path": { "ship": "report", "local_only": true, "note": "Vault files (status.md, system-map.md, Claude files/…). Checked only when the vault is reachable; UNREACHABLE in CI is distinct from MISSING and never fires. First run found 3 true positives (all moved files)." },
+    "host-path": { "ship": "report", "local_only": true, "note": "/opt|/var|/etc paths. Probed read-only ONLY under --probe-hosts; default UNPROBED. /app/** is container-scoped and never probed. Never committed to the lock." },
+    "home-path": { "ship": "report", "local_only": true, "note": "~/… paths, existence-only (never read contents — admin.env is a secret store)." },
+    "package-version": { "ship": "skip", "note": "MEASURED EMPTY: the corpus's package mentions are historical pins (@x402/core 2.9.0→2.20.0, inside a correction block) or non-npm CLIs (mcp-publisher, caddy) — zero live npm-dependency claims to verify. Class deliberately unimplemented until one exists; revisit then, per the prompt's ladder." },
+    "glob": { "ship": "skip", "note": "Glob patterns are pattern REASONING, not file claims — the deploy.yml paths-ignore lesson: the enumerated list was deleted in favour of pointing at the SoT. Enforcing globs would re-create that duplication." },
+    "prose": { "ship": "skip", "note": "Spans with whitespace (commands), template placeholders (<…>, {NEXT}, X.Y.Z, XXXXXX), bare directory references, and bare symbol tokens. Measured 720/911 spans; verifying symbols would need an AST join with unbounded FP surface — out of scope v1." }
+  },
+
+  "report_class_promotion": {
+    "runs_required": 30,
+    "false_positives_allowed": 0,
+    "criterion": "A report class promotes to block only after ≥30 consecutive --check runs (CI + local combined) with ZERO false positives in that class, counted from the gate's own printed per-claim output — a number that can be checked, not a vibe. The flip is a config edit owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; do not flip it inline."
+  },
+
+  "absence_markers": ["DOES NOT EXIST", "does not exist", "never built", "NEVER built", "retired by", "retired 2", "— retired", "RETIRED"],
+  "nonclaim_markers": ["DEPRECATED", "deprecated"],
+
+  "repo_prefixes": [".github/", "scripts/", "src/", "tests/", "ops/", "docs/", "audits/", "landing/", "examples/", "deploy/"],
+  "_repo_prefixes_note": "hooks/ is deliberately absent: the corpus's `hooks/pre-push` refers to the AOE repo's hook, and cqsm tracks no hooks/ (measured) — including it would be a permanent false positive. dist/ is absent because build output is never tracked by construction (the tsc-emits-per-module law explains why greps there mislead).",
+
+  "root_file_map": {
+    "deploy.yml": ".github/workflows/deploy.yml",
+    "Dockerfile": "Dockerfile",
+    "package.json": "package.json",
+    "package-lock.json": "package-lock.json",
+    "server.json": "server.json",
+    "manifest.json": "manifest.json",
+    "lobehub-manifest.json": "lobehub-manifest.json",
+    "Caddyfile": "Caddyfile",
+    "CHANGELOG.md": "CHANGELOG.md",
+    "README.md": "README.md",
+    "tsconfig.json": "tsconfig.json"
+  },
+
+  "vault_names": ["status.md", "system-map.md", "Design.md", "XPost.md", "trim-status-config.md", "Marketing.md", "brand-facts.md", "AlgoVault-MCP-roadmap.md", "NPM-readme.md", "defensive-reductions-to-revisit.md", "algovault-automation-guide.md", "Autonomous-Optimization-Engine.md"],
+  "vault_prefixes": ["Claude files/", "experiments/", "Prompt/", "Old Status/", "skills/", "research/"],
+
+  "wiring_point_map": {
+    "deploy.yml": [".github/workflows/deploy.yml"],
+    "prepublishOnly": ["package.json"],
+    "pre-push": ["scripts/install_", "scripts/check_test_baseline.sh", "tests/"],
+    "pre-commit": ["scripts/install_system_map_hook.sh"],
+    "package.json": ["package.json"],
+    "monitoring-inventory": ["ops/monitoring/monitoring-inventory.json"]
+  },
+  "_wiring_point_map_note": "Entries ending in / or _ are PREFIXES. pre-push resolves through the per-gate hook installers (scripts/install_*_hook.sh — measured: session-drift and source-greppable each ship their own), the baseline gate script, or the vitest suite the pre-push hook runs (tests/).",
+
+  "exemptions": [
+    {
+      "value": "LABEL=",
+      "class": "env-var",
+      "reason": "Redaction-STRUCTURE example in the secret-redaction law (‘mask everything after LABEL=’) — a placeholder, not an environment variable any script reads."
+    },
+    {
+      "value": "endpoint-truth.md",
+      "class": "vault-path",
+      "reason": "Per-wave OUTPUT template name (waves produce audits/<wave>-endpoint-truth.md in this repo — several exist); there is deliberately no vault-root file of that literal name."
+    },
+    {
+      "value": "hashnode_runbook.mjs",
+      "class": "basename",
+      "reason": "Editorial-host artifact (/opt/algovault-editorial) cited in the Hashnode-DEPRECATED law; it never had a committed ancestor in this repo, and the deprecation context makes it a status claim, not an existence claim."
+    },
+    {
+      "value": "17 7",
+      "class": "cron-schedule",
+      "reason": "aoe-1 instance of monitoring-inventory-reconcile.py. Live-verified 2026-08-02 on the aoe host crontab (`17 7 * * * MONITORING_HOST_LABELS=aoe-1 …`); its inventory row lives in the AOE repo's vendored copy (OPS-AOE-MONITORING-PARITY-W1), so this repo's inventory legitimately cannot confirm it."
+    }
+  ]
+}

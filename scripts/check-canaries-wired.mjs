@@ -38,8 +38,13 @@ import { dirname, resolve, join, basename } from 'node:path';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 
-/** Files that legitimately reference a gate without running it. Docs describe; they don't invoke. */
-const NON_INVOKING = /^(docs\/|README|CHANGELOG|audits\/|landing\/|\.claude\/)/;
+/**
+ * Files that legitimately reference a gate without running it. Docs describe; they don't invoke.
+ * ops/claudemd- covers the CLAUDE.md claim-verifier's config + lock (OPS-CLAUDEMD-CLAIM-VERIFIER-W1):
+ * the lock RECORDS that CLAUDE.md cites a gate — counting that citation as wiring would let the
+ * manual's own prose mask a genuinely orphaned gate, the exact false comfort this canary removes.
+ */
+const NON_INVOKING = /^(docs\/|README|CHANGELOG|audits\/|landing\/|\.claude\/|ops\/claudemd-)/;
 
 /**
  * Gates that are deliberately not wired, each with the reason. An entry here is a DECISION, not a
@@ -61,7 +66,7 @@ const ALLOWLIST = new Map([
 // These line comments are deliberate: writing this explanation as a JSDoc block is impossible,
 // because the literal sequence it has to describe would close the block early. That is the same
 // documented trap, one level up.
-function strip(text, file) {
+export function strip(text, file) {
   if (/\.(sh|ya?ml)$/.test(file)) {
     // Shell and YAML both comment with '#'. No block-comment form exists in either.
     return text.split('\n').map((l) => l.replace(/(^|\s)#.*$/, '$1')).join('\n');
@@ -72,12 +77,12 @@ function strip(text, file) {
   return text; // JSON and anything else: no comment syntax to strip.
 }
 
-function tracked() {
+export function tracked() {
   return execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 }
 
 /** Every committed gate script: scripts/check-*, scripts/check_*, and anything named *canary*. */
-function gateScripts(files) {
+export function gateScripts(files) {
   return files.filter((f) => /^scripts\/(check[-_][^/]+|[^/]*canary[^/]*)\.(mjs|js|cjs|sh|ts)$/.test(f));
 }
 
@@ -90,7 +95,7 @@ function gateScripts(files) {
  * push through the pre-push baseline gate. `check-caddy-route-parity.mjs` is wired exactly that
  * way (tests/unit/caddy-route-parity.test.mjs), and excluding tests reported it as an orphan.
  */
-function invokerFiles(files) {
+export function invokerFiles(files) {
   return files.filter(
     (f) =>
       !NON_INVOKING.test(f) &&
@@ -104,7 +109,7 @@ function invokerFiles(files) {
   );
 }
 
-function findInvocations(gate, files) {
+export function findInvocations(gate, files) {
   const name = basename(gate);
   const hits = [];
   for (const f of files) {
@@ -163,34 +168,46 @@ function selfTest() {
   // (d) the gate glob must actually match the known gate shapes
   const globbed = gateScripts(['scripts/check-mcp-stateless.mjs', 'scripts/check_mobile_nav_parity.sh', 'scripts/security-canary.mjs', 'scripts/build_nav.mjs']);
   if (globbed.length !== 3) fails.push(`gate glob matched ${globbed.length}/3 known gate shapes`);
+  // (e) the CLAUDE.md claim lock/config must NOT count as invokers — the lock RECORDS a citation;
+  // treating it as wiring would let the manual's prose mask a real orphan.
+  const inv = invokerFiles(['ops/claudemd-claims.lock.json', 'ops/claudemd-claim-config.json', 'package.json']);
+  if (inv.some((f) => f.startsWith('ops/claudemd-'))) fails.push('the CLAUDE.md claims lock/config counted as an invoker');
+  if (!inv.includes('package.json')) fails.push('package.json wrongly excluded from invoker files');
   return fails;
 }
 
-if (argv.includes('--self-test')) {
+// Importable by scripts/check-claudemd-claims.mjs (OPS-CLAUDEMD-CLAIM-VERIFIER-W1): the wiring
+// RESOLUTION lives here and only here — a second implementation of "what invokes this gate" is
+// the duplicated-fact drift this repo forbids. The CLI below runs only when executed directly.
+const IS_MAIN = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (IS_MAIN && argv.includes('--self-test')) {
   const fails = selfTest();
   if (fails.length) { console.error('✖ canary-wiring self-test FAILED:'); fails.forEach((f) => console.error('   - ' + f)); process.exit(1); }
   console.log('✓ canary-wiring self-test passed (detects an orphan; comment mentions do not count as wiring)');
   process.exit(0);
 }
 
-const stFails = selfTest();
-if (stFails.length) {
-  console.error('✖ canary-wiring self-test FAILED — refusing to report a vacuous pass:');
-  stFails.forEach((f) => console.error('   - ' + f));
-  process.exit(1);
-}
+if (IS_MAIN) {
+  const stFails = selfTest();
+  if (stFails.length) {
+    console.error('✖ canary-wiring self-test FAILED — refusing to report a vacuous pass:');
+    stFails.forEach((f) => console.error('   - ' + f));
+    process.exit(1);
+  }
 
-const { rows, orphans } = audit();
-for (const [gate, reason] of ALLOWLIST) console.log(`  ⚠ allowlisted (not wired): ${gate} — ${reason}`);
-if (orphans.length) {
-  console.error(`✖ ${orphans.length} committed gate script(s) are invoked by NOTHING:`);
-  for (const o of orphans) console.error(`   - ${o.gate}`);
-  console.error('\n  A gate nobody runs is theatre — it reads as coverage while protecting nothing.');
-  console.error('  Wire it into .github/workflows/, a package.json script, a committed ops/cron');
-  console.error('  wrapper, or ops/monitoring/monitoring-inventory.json — or add it to ALLOWLIST');
-  console.error('  in this file WITH a reason.');
-  process.exit(1);
+  const { rows, orphans } = audit();
+  for (const [gate, reason] of ALLOWLIST) console.log(`  ⚠ allowlisted (not wired): ${gate} — ${reason}`);
+  if (orphans.length) {
+    console.error(`✖ ${orphans.length} committed gate script(s) are invoked by NOTHING:`);
+    for (const o of orphans) console.error(`   - ${o.gate}`);
+    console.error('\n  A gate nobody runs is theatre — it reads as coverage while protecting nothing.');
+    console.error('  Wire it into .github/workflows/, a package.json script, a committed ops/cron');
+    console.error('  wrapper, or ops/monitoring/monitoring-inventory.json — or add it to ALLOWLIST');
+    console.error('  in this file WITH a reason.');
+    process.exit(1);
+  }
+  console.log(`✓ canary wiring: all ${rows.length} committed gate scripts are invoked by something.`);
+  for (const r of rows) console.log(`    ${r.gate}  ←  ${r.refs.slice(0, 2).join(', ')}${r.refs.length > 2 ? ` (+${r.refs.length - 2})` : ''}`);
+  process.exit(0);
 }
-console.log(`✓ canary wiring: all ${rows.length} committed gate scripts are invoked by something.`);
-for (const r of rows) console.log(`    ${r.gate}  ←  ${r.refs.slice(0, 2).join(', ')}${r.refs.length > 2 ? ` (+${r.refs.length - 2})` : ''}`);
-process.exit(0);
