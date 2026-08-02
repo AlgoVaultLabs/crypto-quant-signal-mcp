@@ -18,6 +18,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: the one notice contract (pure leaf — no cycle).
+import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from './quota-notice.js';
+import { nudgeSignupUrl } from './nudge-copy.js';
 
 export type ChatTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -45,6 +48,61 @@ export function chatQuotaApiKey(licenseKey: string | null, ipHash: string | null
   return `unidentified:${randomUUID()}`;
 }
 
+/**
+ * The chat wall's notice — the SAME contract every other free-tier surface renders
+ * (OPS-QUOTA-EXHAUSTION-NOTICE-W1, 2026-08-02), rendered here once for both consumers
+ * (`POST /api/chat` and the `chat_knowledge` MCP tool) so they cannot drift apart.
+ *
+ * What it replaces, and why each was a real gap:
+ *   - no usage figure — the caller could not see `N/10`;
+ *   - no reset DATE, only "Resets in 30 day(s)" — and chat's reset is a UTC CALENDAR-month
+ *     boundary, not the rolling 30-day window the call meter uses, so a day count was the
+ *     only thing being said and it said it ambiguously;
+ *   - no `suggested_action` (the structured-error law requires one);
+ *   - `upgrade_url: https://algovault.com/#pricing` — a DIFFERENT destination from every
+ *     other surface, carrying no `upgrade_from`, so every chat-wall click was invisible to
+ *     the funnel (`/signup` records `upgrade_cta_clicked` on ANY `upgrade_from` value).
+ *
+ * `code` is deliberately UNCHANGED (`CHAT_QUOTA_EXHAUSTED`): it is one of the six error codes
+ * pinned by `audits/chat-knowledge-shape-snapshot-2026-05-18.json`, and the call meter's
+ * `TIER_LIMIT_REACHED` is a genuinely different event — the two quotas are independent, and
+ * exhausting chat leaves the trading tools working. Every prior field is retained; the new
+ * ones are additive.
+ */
+export function buildChatQuotaNotice(
+  tier: ChatTier,
+  check: Pick<ChatRateLimitCheck, 'limit' | 'used' | 'resetAt'>,
+): {
+  code: 'CHAT_QUOTA_EXHAUSTED';
+  message: string;
+  retry_after_days: number;
+  resets_at: string;
+  usage_display: string;
+  limit: number;
+  tier: ChatTier;
+  upgrade_url: string;
+  suggested_action: string;
+} {
+  const ctx = {
+    meter: 'chat' as const,
+    used: check.used,
+    limit: check.limit,
+    resetAtMs: check.resetAt.getTime(),
+  };
+  const facts = quotaNoticeFacts(ctx);
+  return {
+    code: 'CHAT_QUOTA_EXHAUSTED',
+    message: buildQuotaNoticeMessage(ctx),
+    retry_after_days: facts.retry_after_days,
+    resets_at: facts.resets_at,
+    usage_display: facts.usage_display,
+    limit: check.limit,
+    tier,
+    upgrade_url: nudgeSignupUrl('limit_chat'),
+    suggested_action: buildQuotaSuggestedAction(ctx),
+  };
+}
+
 export interface ChatRateLimitOpts {
   freeQuotaPerMonth: number;
   starterQuotaPerMonth: number;
@@ -64,6 +122,12 @@ export interface ChatRateLimitCheck {
   remaining: number;
   resetAt: Date;
   limit: number;
+  /**
+   * Calls consumed this month. Added by OPS-QUOTA-EXHAUSTION-NOTICE-W1 so the exhaustion notice
+   * can state `N/limit` — `limit - remaining` is NOT a safe substitute, because `remaining`
+   * clamps at 0 and would silently under-report a caller who went past the cap.
+   */
+  used: number;
 }
 
 function getMonthIso(now: Date = new Date()): string {
@@ -137,6 +201,7 @@ export class ChatRateLimit {
       remaining,
       resetAt: nextMonthBoundary(),
       limit,
+      used,
     };
   }
 

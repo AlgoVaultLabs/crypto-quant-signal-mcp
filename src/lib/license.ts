@@ -11,13 +11,16 @@ import { verifyX402Payment, isX402Configured, paymentMatchesToolRoute, classifyT
 import { extractPaymentNonce, extractPayerWallet, tryClaimPayment } from './x402-idempotency-store.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import { dbExec, dbRun, dbQuery, recordFunnelEvent } from './performance-db.js';
-import type { LicenseInfo, LicenseTier } from '../types.js';
+import type { LicenseInfo, LicenseTier, SuggestedX402 } from '../types.js';
 // ACTIVATION-NUDGE-W1 (2026-06-18): the soft-quota + 100%-limit upgrade copy is
 // now the architect-approved CTA copy with LIVE track-record values + the single
 // SOFT_THRESHOLD source (shared with tier-warning's quota_hit_soft band).
 import { SOFT_THRESHOLD } from './activation-thresholds.js';
 import { getTrackRecord } from './track-record-snapshot.js';
-import { buildSoftNudge, buildLimitMessage } from './nudge-copy.js';
+import { buildSoftNudge } from './nudge-copy.js';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message moved to the one notice contract.
+import { buildQuotaNoticeMessage } from './quota-notice.js';
+import { PLANS, FREE_MONTHLY_CALLS } from './plans.js';
 // REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
@@ -715,16 +718,18 @@ function clampUnits(units: number): number {
   return Number.isFinite(units) && units >= 1 ? Math.floor(units) : 1;
 }
 
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: the allowances now project from the ONE plan SoT
+// (`plans.ts`) instead of being a fourth copy of the same literals. Behaviour identical.
 export function getMonthlyQuota(tier: LicenseTier): number {
   switch (tier) {
-    case 'starter': return 3_000;
-    case 'pro': return 15_000;
-    case 'enterprise': return 100_000;
+    case 'starter': return PLANS.starter.monthlyCalls;
+    case 'pro': return PLANS.pro.monthlyCalls;
+    case 'enterprise': return PLANS.enterprise.monthlyCalls;
     case 'x402': return Infinity;
     // BOT-W1 / D1-C: internal bypass — server-side counter is bypassed; the
     // bot enforces per-user quota in its own SQLite.
     case 'internal': return Infinity;
-    default: return 100;
+    default: return FREE_MONTHLY_CALLS;
   }
 }
 
@@ -898,14 +903,31 @@ export function getUpgradeHint(
   return undefined;
 }
 
-export function getQuotaExhaustedMessage(used: number, total: number, referralCode: string | null = null): string {
-  // REFERRAL-INPRODUCT-NUDGE-W1: same referral-prominent + upgrade-retained string
-  // the TIER_LIMIT_REACHED envelope renders (single source). State-adaptive on
-  // `referralCode` (keyed → own link; keyless/default → get-your-link path).
-  // `used` is unused in the copy (the message states the `total` cap) but kept in
-  // the signature for call-site compatibility.
-  void used;
-  return buildLimitMessage({ total, referralCode });
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1 (2026-08-02): `getQuotaExhaustedMessage` DELETED.
+// It was a second name for the wall message, and after `scan_trade_calls` (its last
+// production caller) moved to the shared notice it had zero consumers outside one test —
+// a dead export that still LOOKS like the source of truth is how a future surface ends up
+// rendering a fifth, stale variant. Call `buildQuotaNoticeMessage` from `quota-notice.ts`.
+
+/**
+ * Epoch ms at which the caller's rolling monthly meter resets — `periodStart + MONTH_MS`.
+ *
+ * The companion to `daysUntilMonthReset`, and the field the exhaustion notice actually needs:
+ * a day count tells a caller roughly how long, a date tells them WHEN. Note the window is
+ * ROLLING (anchored on the caller's first call), not a calendar month — so the reset lands on
+ * an arbitrary date and cannot be reconstructed as "1st of next month".
+ *
+ * No tracker (caller has made no call — not reachable from the exhausted path) → a full
+ * window from now, matching `daysUntilMonthReset`'s 30-day default.
+ */
+export function monthResetAtMs(license: LicenseInfo): number {
+  const tracker = callTrackers.get(deriveTrackerKey(license));
+  return (tracker?.periodStart ?? Date.now()) + MONTH_MS;
+}
+
+/** Epoch ms the caller's current metering period began, or `undefined` with no tracker. */
+export function periodStartMs(license: LicenseInfo): number | undefined {
+  return callTrackers.get(deriveTrackerKey(license))?.periodStart;
 }
 
 /**

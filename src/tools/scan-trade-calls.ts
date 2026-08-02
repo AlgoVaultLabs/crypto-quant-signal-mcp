@@ -24,7 +24,8 @@ import {
   type ScanTradeCallsResult,
   type ScanCallItem,
 } from '../lib/trade-call-scanner.js';
-import { checkQuota, trackCall, getQuotaExhaustedMessage, getRequestSessionId } from '../lib/license.js';
+import { checkQuota, trackCall, getRequestSessionId, monthResetAtMs, periodStartMs } from '../lib/license.js';
+import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from '../lib/quota-notice.js';
 import { formatScanReceipts, type ScanReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
@@ -102,7 +103,8 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
 export interface ScanAlgovaultMeta {
   tool: 'scan_trade_calls';
   version: string;
-  quota: { used: number; total: number; remaining: number };
+  /** `resets_at` added additively by OPS-QUOTA-EXHAUSTION-NOTICE-W1 — see `QuotaState`. */
+  quota: { used: number; total: number; remaining: number; resets_at: string };
   compatible_with: string[];
   signal_performance: string;
   session_id: string | null;
@@ -128,9 +130,21 @@ export interface ScanTradeCallsResponse extends ScanTradeCallsResult {
 
 export interface ScanQuotaExhaustedResponse {
   error: 'quota_exhausted';
-  code: 'tier_limit_reached';
+  /**
+   * OPS-QUOTA-EXHAUSTION-NOTICE-W1: aligned to the ONE code every other surface emits. It was
+   * lowercase `tier_limit_reached` here and `TIER_LIMIT_REACHED` everywhere else, so an agent
+   * branching on the code needed two branches for one event. `error` keeps its original
+   * lowercase `quota_exhausted` value, so a consumer matching on THAT is unaffected.
+   */
+  code: 'TIER_LIMIT_REACHED';
   message: string;
-  quota: { used: number; total: number; remaining: number };
+  /** `resets_at` added (additive) — the pre-wave shape carried no reset instant at all. */
+  quota: { used: number; total: number; remaining: number; resets_at: string };
+  /** OPS-QUOTA-EXHAUSTION-NOTICE-W1 notice facts — additive, mirroring the TIER_LIMIT envelope. */
+  usage_display: string;
+  resets_at: string;
+  retry_after_days: number;
+  recommended_path: 'subscription' | 'x402';
   suggested_action: string;
   /** REFERRAL-INPRODUCT-NUDGE-W1: the limit moment also carries the structured,
    *  allow-listed referral hint (`from: 'limit'`); the `message` leads with it. */
@@ -158,7 +172,10 @@ export interface ScanInvalidRankResponse {
  *  to count as a "multi-hit" referral moment (Step-0; scan default limit is 10). */
 const SCAN_REFERRAL_MIN_HITS = 3;
 
-const UPGRADE_HINT = 'Upgrade to Starter at https://api.algovault.com/signup?plan=starter or pay per call via x402.';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: `UPGRADE_HINT` deleted. It was a hardcoded `suggested_action`
+// that promised "or pay per call via x402" on EVERY scan wall — including when no x402 rail was
+// live — and duplicated the plan name + signup URL a third time. `buildQuotaSuggestedAction`
+// derives the same sentence from the notice context, so the rail is named only when it exists.
 const TRACK_RECORD_POINTER =
   'PFE win-rate track record: performance://signal-performance resource (or GET /api/performance-public).';
 
@@ -195,12 +212,35 @@ export async function runScanTradeCall(
     // FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): + the additive in-protocol x402 branch, dark behind
     // X402_NUDGE_ENABLED, omitted when no public rail is live (default-deny ⇒ envelope unchanged).
     const suggestedX402 = isX402NudgeEnabled() ? buildSuggestedX402('scan_trade_calls') : undefined;
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the scanner wall now renders the SAME notice contract as
+    // every other surface. Three things changed and each was a real defect:
+    //   • `code` was lowercase `tier_limit_reached` while every other surface emitted
+    //     `TIER_LIMIT_REACHED` — an agent branching on the code needed two branches for one
+    //     event. `error` KEEPS the old lowercase value so existing consumers do not break.
+    //   • `suggested_action` was a hardcoded literal promising "or pay per call via x402"
+    //     UNCONDITIONALLY — it advertised the rail even when no rail was live. It is now
+    //     derived from the same context that decides whether `suggested_x402` is attached.
+    //   • the message stated no usage figure and no reset date.
+    const noticeCtx = {
+      meter: 'calls' as const,
+      used: entry.used,
+      limit: entry.total,
+      resetAtMs: monthResetAtMs(license),
+      periodStartMs: periodStartMs(license),
+      referralCode: refCode,
+      x402: suggestedX402,
+    };
+    const facts = quotaNoticeFacts(noticeCtx);
     return {
       error: 'quota_exhausted',
-      code: 'tier_limit_reached',
-      message: getQuotaExhaustedMessage(entry.used, entry.total, refCode),
-      quota: { used: entry.used, total: entry.total, remaining: 0 },
-      suggested_action: UPGRADE_HINT,
+      code: 'TIER_LIMIT_REACHED',
+      message: buildQuotaNoticeMessage(noticeCtx),
+      quota: { used: entry.used, total: entry.total, remaining: 0, resets_at: facts.resets_at },
+      usage_display: facts.usage_display,
+      resets_at: facts.resets_at,
+      retry_after_days: facts.retry_after_days,
+      recommended_path: facts.recommended_path,
+      suggested_action: buildQuotaSuggestedAction(noticeCtx),
       referral_hint: buildReferralHint({ from: 'limit', code: refCode }),
       ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
       _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
@@ -216,7 +256,9 @@ export async function runScanTradeCall(
   const meta: ScanAlgovaultMeta = {
     tool: 'scan_trade_calls',
     version: PKG_VERSION,
-    quota: { used: tracked.used, total: tracked.total, remaining: tracked.remaining },
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (R3): `resets_at` joins the long-shipped used/total/remaining
+    // so the scanner envelope carries the same quota state as every other tool's `_algovault`.
+    quota: { used: tracked.used, total: tracked.total, remaining: tracked.remaining, resets_at: new Date(monthResetAtMs(license)).toISOString() },
     compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
     signal_performance: TRACK_RECORD_POINTER,
     session_id: sid,

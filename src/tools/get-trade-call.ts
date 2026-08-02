@@ -4,7 +4,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 // full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
 // The extraction surfaced it; the golden fixture proves removing it changed no output.
 import { rsi, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
@@ -21,7 +21,7 @@ import { recordEmitSuppression } from '../lib/emit-suppressions.js';
 // import of the same module. candle-guard owns TF_INTERVAL_MS outright: this file's private
 // getIntervalMs was a THIRD copy of that table and is deleted below.
 import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from '../lib/candle-guard.js';
-import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { computeOiDelta, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
@@ -404,7 +404,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       monthlyLimit: quota.total,
       tier: licenseForReset.tier,
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
-      retryAfterDays: daysUntilMonthReset(licenseForReset),
+      // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the reset INSTANT (retry_after_days is derived from it),
+      // plus the period anchor so the notice can rank subscription vs x402 by measured burn rate.
+      resetAtMs: monthResetAtMs(licenseForReset),
+      periodStartMs: periodStartMs(licenseForReset),
       referralCode: referralCodeForKey(licenseForReset.key),
       tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
     });
@@ -773,8 +776,14 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // Increment quota counter only for non-HOLD (HOLDs are free).
   // Internal grid-refresh calls skip the counter entirely.
   const license = input.license || { tier: 'free' as const, key: null };
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1: keep the POST-charge meter reading for `_algovault.quota`.
+  // `quota` above is the pre-charge `checkQuota` read, so on a billable call it is one behind —
+  // an advance-warning field that under-reports by one is exactly the kind of off-by-one a
+  // caller would mistrust. `upgradeHint` deliberately still reads the pre-charge value so the
+  // 80% nudge threshold is unchanged by this wave.
+  let charged: ReturnType<typeof trackCall> | null = null;
   if (!input.internal && signal !== 'HOLD') {
-    trackCall(license);
+    charged = trackCall(license);
   }
 
   // Upgrade hint: only for free tier, never for HOLD signals, never for
@@ -809,6 +818,15 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       isBotInternal: license.tier === 'internal',
       upgradeUrl: DEFAULT_UPGRADE_URL,
       tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
+    });
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (R3): always-on quota state — the advance warning that
+    // `tier_warning` (80%+) cannot give. Additive; omitted for unmetered/bot-internal callers.
+    meta = withQuotaState(meta, {
+      tier: license.tier,
+      used: (charged ?? quota).used,
+      total: (charged ?? quota).total || getMonthlyQuota(license.tier),
+      resetAtMs: monthResetAtMs(license),
+      isBotInternal: license.tier === 'internal',
     });
   }
 

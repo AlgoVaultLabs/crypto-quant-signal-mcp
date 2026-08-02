@@ -275,6 +275,34 @@ export interface AlgoVaultMeta {
    * OMITTED entirely below the soft threshold or for paid/bot-internal tiers.
    */
   tier_warning?: TierWarning;
+  /**
+   * Live quota state on a SUCCESSFUL response (OPS-QUOTA-EXHAUSTION-NOTICE-W1, 2026-08-02).
+   *
+   * Before this wave a free caller got NO quota signal at all until 80% (`tier_warning`), so
+   * a developer debugging an agent could not see the wall coming — the first and only signal
+   * was total failure. This field is the advance warning: it rides every successful metered
+   * response so usage is observable from call one.
+   *
+   * Key names match `scan_trade_calls`' long-shipped `_algovault.quota` (`used`/`total`/
+   * `remaining`) rather than inventing a second vocabulary for the same fact.
+   *
+   * STRICTLY ADDITIVE — it does NOT alter the cutoff and does not weaken it. OMITTED for
+   * unmetered tiers (`x402`/`internal`, whose quota is Infinity and has no JSON form) and for
+   * bot-internal traffic. Absent the field, every existing consumer behaves identically.
+   */
+  quota?: QuotaState;
+}
+
+/**
+ * Live quota state for the `_algovault` envelope (OPS-QUOTA-EXHAUSTION-NOTICE-W1).
+ * `resets_at` is the ISO instant the meter rolls over — the ROLLING 30-day window anchored on
+ * the caller's first call, not a calendar month.
+ */
+export interface QuotaState {
+  used: number;
+  total: number;
+  remaining: number;
+  resets_at: string;
 }
 
 // ── Cross-asset grid (v1.9.0 L2/L4 activation patch) ──

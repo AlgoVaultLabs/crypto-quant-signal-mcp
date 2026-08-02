@@ -9,7 +9,7 @@
  * call (like get_market_regime — regime has no HOLD). QUOTA-CONSISTENCY-COUNT-
  * ALL-W1 (2026-06-08, Q2=B).
  */
-import { trackCall, checkQuota, daysUntilMonthReset } from '../license.js';
+import { trackCall, checkQuota, monthResetAtMs, periodStartMs } from '../license.js';
 import { TierLimitReachedError } from '../errors.js';
 import { referralCodeForKey } from '../referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { PKG_VERSION } from '../pkg-version.js';
@@ -98,7 +98,11 @@ function tierLimitError(license: LicenseInfo, q: { used: number; total: number }
     monthlyLimit: q.total,
     tier: license.tier,
     suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
-    retryAfterDays: daysUntilMonthReset(license),
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the reset INSTANT (retry_after_days derives from it) plus
+    // the period anchor. Equity tools are dark-retired behind EQUITY_TOOLS_ENABLED, but they
+    // share the one notice contract so they inherit the fix if the flag ever flips.
+    resetAtMs: monthResetAtMs(license),
+    periodStartMs: periodStartMs(license),
     referralCode: referralCodeForKey(license.key),
     // FUNNEL-FIX-AGENT-X402-NUDGE-W1: equities are HELD (no suggested_x402 today) — but passing
     // the tool means they AUTO-JOIN the x402 nudge the moment EQUITY_PUBLIC_COPY_HOLD flips.
@@ -111,8 +115,12 @@ function tierLimitError(license: LicenseInfo, q: { used: number; total: number }
  * (regime has no HOLD, so every call is billable). Used by get_equity_regime.
  */
 function quotaGate(license: LicenseInfo): void {
-  const q = trackCall(license);
-  if (!q.allowed) throw tierLimitError(license, q, 'get_equity_regime');
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1: read-only gate first, charge second — same correction as
+  // get_market_regime / scan_funding_arb. Charging a call we then refuse made `current_usage`
+  // report above the cap. The refusal is unchanged.
+  const gate = checkQuota(license);
+  if (!gate.allowed) throw tierLimitError(license, gate, 'get_equity_regime');
+  trackCall(license);
 }
 
 /**

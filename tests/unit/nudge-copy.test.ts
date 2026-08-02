@@ -12,7 +12,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSoftNudge,
   buildAhaHint,
-  buildLimitMessage,
   buildAhaReferral,
   buildReferralHint,
   referralSignupUrl,
@@ -21,6 +20,10 @@ import {
   SIGNUP_BASE,
   TRACK_RECORD_URL,
 } from '../../src/lib/nudge-copy.js';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message MOVED out of nudge-copy into the one
+// notice contract — it needs the meter's reset instant and the live x402 rail, which a pure copy
+// module cannot supply. `buildLimitMessage` is now a thin adapter over `buildQuotaNoticeMessage`.
+import { buildLimitMessage } from '../../src/lib/quota-notice.js';
 import { bonusCallsLabel, shareLink, REFERRAL_TERMS } from '../../src/lib/referral-constants.js';
 
 const STATS = { pfeWr: '91.6', callCount: '246,331' };
@@ -73,33 +76,50 @@ describe('buildAhaHint (celebrate-the-aha) — unchanged (keyless aha fallback)'
   });
 });
 
-describe('buildLimitMessage (100% limit) — referral-prominent + upgrade-retained', () => {
-  const upgradeLine = 'Or Upgrade → Starter, 3,000 calls/mo, $9.99: https://api.algovault.com/signup?plan=starter&upgrade_from=limit';
+describe('buildLimitMessage (100% limit) — the ONE exhaustion notice', () => {
+  // Fixed clock + reset instant: the notice states a DATE, so a test that let the clock float
+  // could only assert its shape, never that the date is the caller's own.
+  const NOW = Date.parse('2026-08-02T00:00:00.000Z');
+  const RESET_AT = NOW + 5 * 24 * 60 * 60 * 1000;
+  const limit = (referralCode: string | null) =>
+    buildLimitMessage({ used: 100, total: 100, referralCode, resetAtMs: RESET_AT, nowMs: NOW });
+  const headline = 'Free monthly quota used: 100/100. Access returns 2026-08-07 (5 days).';
+  const upgradeLine =
+    'Recommended for sustained volume: Starter — 3,000 calls/month, card required: ' +
+    'https://api.algovault.com/signup?plan=starter&upgrade_from=limit';
+  const offer = `Keep going free: refer a friend — you both get ${BONUS} bonus calls.`;
 
-  it('KEYED: leads with the user\'s own give-get link, upgrade retained beneath', () => {
-    expect(buildLimitMessage({ total: 100, referralCode: CODE })).toBe(
-      "You've hit your 100 free calls this month.\n" +
-      `Keep going free: refer a friend — you both get ${BONUS} bonus calls.\n` +
-      `Your link: ${KEYED_LINK}.\n` +
-      upgradeLine,
+  it("KEYED: renders the user's own give-get link, upgrade retained", () => {
+    expect(limit(CODE)).toBe(
+      `${headline}\n${upgradeLine}\n${offer} Your link: ${KEYED_LINK}`,
     );
   });
 
-  it('KEYLESS: leads with the get-your-link free-signup path (never a fake link)', () => {
-    expect(buildLimitMessage({ total: 100, referralCode: null })).toBe(
-      "You've hit your 100 free calls this month.\n" +
-      `Keep going free: create a free account to get your referral link — refer a friend and you both get ${BONUS} bonus calls → ${referralSignupUrl('limit')}.\n` +
-      upgradeLine,
+  it('KEYLESS: renders the get-your-link free-signup path (never a fake link)', () => {
+    expect(limit(null)).toBe(
+      `${headline}\n${upgradeLine}\n${offer} Create your free account for a referral link → ${referralSignupUrl('limit')}`,
     );
   });
 
-  it('always retains the upgrade path (acquisition > revenue, never removed)', () => {
+  it('always retains BOTH arms (acquisition > revenue — neither is ever removed)', () => {
     for (const code of [CODE, null]) {
-      const m = buildLimitMessage({ total: 100, referralCode: code });
-      expect(m).toContain('Or Upgrade → Starter, 3,000 calls/mo, $9.99');
+      const m = limit(code);
+      expect(m).toContain('Starter — 3,000 calls/month');
       expect(m).toContain('upgrade_from=limit');
-      expect(m.toLowerCase()).toContain('refer a friend'); // referral leads
+      expect(m.toLowerCase()).toContain('refer a friend');
     }
+  });
+
+  it('states usage and a computed reset date — the two facts the pre-wave copy omitted', () => {
+    expect(limit(null)).toContain('used: 100/100');
+    expect(limit(null)).toContain('Access returns 2026-08-07');
+    // Not a hardcoded interval: a different reset instant renders a different date.
+    expect(buildLimitMessage({ used: 100, total: 100, referralCode: null, resetAtMs: NOW + 864e5, nowMs: NOW }))
+      .toContain('Access returns 2026-08-03 (1 days)');
+  });
+
+  it('never inlines the subscription price — it links, so the copy cannot rot', () => {
+    for (const code of [CODE, null]) expect(limit(code)).not.toContain('$9.99');
   });
 });
 
@@ -178,8 +198,8 @@ describe('copy-rule guards', () => {
     buildAhaHint(STATS),
   ];
   const referralCopy = [
-    buildLimitMessage({ total: 100, referralCode: CODE }),
-    buildLimitMessage({ total: 100, referralCode: null }),
+    buildLimitMessage({ used: 100, total: 100, referralCode: CODE, resetAtMs: Date.now() + 864e5 }),
+    buildLimitMessage({ used: 100, total: 100, referralCode: null, resetAtMs: Date.now() + 864e5 }),
     buildAhaReferral({ from: 'aha_call', code: CODE, stats: STATS, verdict: 'BUY' }),
     buildAhaReferral({ from: 'aha_scan', code: CODE, stats: STATS, k: 3 }),
     buildAhaReferral({ from: 'aha_milestone', code: CODE, stats: STATS, callCountUser: 25 }),

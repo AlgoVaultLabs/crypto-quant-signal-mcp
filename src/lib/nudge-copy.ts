@@ -30,7 +30,11 @@ export const SIGNUP_BASE = 'https://api.algovault.com/signup';
 /** Public track-record page (verified live 200, 2026-06-18). Visible in copy. */
 export const TRACK_RECORD_URL = 'algovault.com/track-record';
 
-export type UpgradeFrom = 'soft' | 'aha' | 'limit';
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1 (2026-08-02): `limit_chat` added so the /api/chat +
+// chat_knowledge wall attributes its OWN conversions. It previously pointed at
+// `algovault.com/#pricing` with no `upgrade_from` at all, so every chat-wall click was
+// invisible to the funnel (the `/signup` handler keys `upgrade_cta_clicked` on ANY value).
+export type UpgradeFrom = 'soft' | 'aha' | 'limit' | 'limit_chat';
 
 /** Bare signup URL with the surface attribution param (no utm on human copy). */
 export function nudgeSignupUrl(from: UpgradeFrom): string {
@@ -70,35 +74,15 @@ export function buildAhaHint(stats: NudgeStats): string {
   );
 }
 
-/**
- * 100% limit message — referral-PROMINENT + upgrade-RETAINED (REFERRAL-INPRODUCT-
- * NUDGE-W1, Mr.1-approved 2026-06-22). The free path (refer a friend) LEADS; the
- * paid path (upgrade) is retained beneath it — never removed (North Star:
- * acquisition > revenue until 1K paying). Rendered by BOTH the
- * `TierLimitReachedError` envelope and `getQuotaExhaustedMessage` (single source).
- *
- * State-adaptive: a KEYED user (has a referral code) sees their OWN give-get link;
- * a KEYLESS user sees the free-account get-your-link path (sign up free → key +
- * link) — NEVER a fake link. Line breaks are intentional (Mr.1 readability).
- * `{BONUS_CALLS}` from the REFERRAL_TERMS SoT; `3,000/mo·$9.99` = the live upgrade
- * copy. No proof line here (Mr.1's approved limit copy — proof rides the aha lines).
- */
-export function buildLimitMessage(ctx: { total: number; referralCode: string | null }): string {
-  const upgradeLine = `Or Upgrade → Starter, 3,000 calls/mo, $9.99: ${nudgeSignupUrl('limit')}`;
-  if (ctx.referralCode) {
-    return (
-      `You've hit your ${ctx.total} free calls this month.\n` +
-      `Keep going free: refer a friend — you both get ${bonusCallsLabel()} bonus calls.\n` +
-      `Your link: ${shareLink(ctx.referralCode, 'algovault.com')}.\n` +
-      upgradeLine
-    );
-  }
-  return (
-    `You've hit your ${ctx.total} free calls this month.\n` +
-    `Keep going free: create a free account to get your referral link — refer a friend and you both get ${bonusCallsLabel()} bonus calls → ${referralSignupUrl('limit')}.\n` +
-    upgradeLine
-  );
-}
+// ── 100% limit message: MOVED (OPS-QUOTA-EXHAUSTION-NOTICE-W1, 2026-08-02) ──
+// `buildLimitMessage` now lives in `quota-notice.ts`, which owns the ONE exhaustion notice
+// rendered by every free-tier surface. It could not stay here: the notice needs the meter's
+// reset instant + the live x402 rail to say "when access returns" and to RANK the two paths,
+// and this module is deliberately a pure copy leaf. The old copy stated neither the usage
+// figure nor a reset date, and inlined `Starter, 3,000 calls/mo, $9.99` — three facts that
+// rot independently of the plan SoT. Import it from `./quota-notice.js`.
+//
+// The soft (80%) + aha nudges STAY here — they are nudges on a healthy call, not the wall.
 
 // ── REFERRAL-INPRODUCT-NUDGE-W1 (2026-06-22): referral arm at the value moments ──
 // Mr.1-approved copy applied VERBATIM (line breaks intentional). Numbers from the

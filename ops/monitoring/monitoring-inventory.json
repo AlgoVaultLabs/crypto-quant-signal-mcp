@@ -779,6 +779,23 @@
       "sha256": "69cd905c3641cc3ed049107427542d1b385f6de6ddbc95b5a32613dd16bab1d2",
       "owner_wave": "SIGNAL-CLOSEDBAR-SHADOW-W1",
       "notes": "Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
+    },
+    {
+      "id": "quota-exhaustion-canary",
+      "artifact": "ops/monitoring/quota-exhaustion-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/quota-exhaustion-canary.py",
+      "criticality": "load-bearing",
+      "schedule": "31 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "767ce00985d2daae8aa20b2ebcd7c17f8a8a465ae25d8075c0765db0a684bbc0",
+      "alert_ids": [
+        "QUOTA_EXHAUSTION_HIGH_VOLUME"
+      ],
+      "owner_wave": "OPS-QUOTA-EXHAUSTION-NOTICE-W1",
+      "notes": "R4: pages ONLY when a HIGH-VOLUME free bucket exhausts the 100/mo cap (burn rate >= QUOTA_CANARY_MIN_CALLS_PER_DAY, default 50/day, i.e. spent the allowance in <=2 days). Ordinary low-volume exhaustion is SILENT BY DESIGN — the alert marks a conversion moment for a caller with no account and no email, not a fault. Dedup identity is (tracker_key, period_start), so a bucket that stays exhausted does not re-fire hourly while the SAME caller exhausting a NEW rolling period does. No sustain gate: a quota counter only climbs within a period, so sustain would add latency and detect nothing. SECRET HYGIENE: a keyed bucket's tracker_key IS the caller's av_free_ API key and is redacted by STRUCTURE (key:sha16:<digest>) in every log line and alert body; keyless free:v2:<hash> ids pass through. Alert body keeps IDs and COUNTS on SEPARATE lines (the 2026-08-01 '(new: 6)' misread class). Prints one QUOTA_EXHAUSTION_CANARY_VERDICT= token per run; the alert contract forces exit 0 on error, so the token is the only thing that can say a run verified NOTHING (INDETERMINATE). --self-test is hermetic (no DB, no wrapper, temp state) and was PROVEN able to fail: four deliberate breaks — bare parenthesised ID, count inside the ID line, removed secret redaction, removed volume threshold, removed period-scoped dedup — each yields SELF-TEST: FAIL. The ID-line assertion is written defensively (no split-index) so a missing label reports FAIL instead of raising."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

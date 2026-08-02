@@ -1,8 +1,8 @@
 import { getAdapter, type ExchangeAdapter } from '../lib/exchange-adapter.js';
-import { getFundingArbLimit, isFreeTier, trackCall, getUpgradeHint, getQuotaExhaustedMessage, getRequestSessionId, daysUntilMonthReset, getMonthlyQuota } from '../lib/license.js';
+import { getFundingArbLimit, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
 import { TierLimitReachedError } from '../lib/errors.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
-import { withTierWarning, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type {
   FundingArbResult,
@@ -186,19 +186,26 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
   const license = input.license || { tier: 'free' as const, key: null };
   const limit = getFundingArbLimit(requestedLimit, license);
 
-  // Quota tracking (all tiers)
-  const quota = trackCall(license);
-  if (!quota.allowed) {
+  // Quota tracking (all tiers).
+  //
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1: READ-ONLY gate first, charge second — see the identical
+  // note in `get-market-regime.ts`. Gating on the INCREMENTING `trackCall` charged calls we
+  // then refused, so `current_usage` reported above the cap and grew on every retry. The
+  // refusal is unchanged; only the metering of a refused call is.
+  const gate = checkQuota(license);
+  if (!gate.allowed) {
     throw new TierLimitReachedError({
-      currentUsage: quota.used,
-      monthlyLimit: quota.total,
+      currentUsage: gate.used,
+      monthlyLimit: gate.total,
       tier: license.tier,
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
-      retryAfterDays: daysUntilMonthReset(license),
+      resetAtMs: monthResetAtMs(license),
+      periodStartMs: periodStartMs(license),
       referralCode: referralCodeForKey(license.key),
       tool: 'scan_funding_arb', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
     });
   }
+  const quota = trackCall(license);
 
   // OPS-FUNDING-ARB-EXPAND-W1: fetch every qualifying adapter's predicted-funding feed (fail-soft PER
   // adapter — a down venue is skipped, never crashes the scan) and MERGE by coin. HL's feed is the
@@ -452,6 +459,14 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     isBotInternal: license.tier === 'internal',
     upgradeUrl: DEFAULT_UPGRADE_URL,
     tool: 'scan_funding_arb', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
+  });
+  // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (R3): always-on quota state (additive).
+  meta = withQuotaState(meta, {
+    tier: license.tier,
+    used: quota.used,
+    total: quota.total || getMonthlyQuota(license.tier),
+    resetAtMs: monthResetAtMs(license),
+    isBotInternal: license.tier === 'internal',
   });
 
   return {

@@ -144,7 +144,7 @@ import { formatSearchKnowledgeResponse } from './lib/search-knowledge-formatter.
 // against the new `chat_usage_monthly` Postgres table.
 import { getLLMProvider, type LLMProvider, type LLMProviderName } from './lib/llm-provider.js';
 import { ChatEngine, type ChatResult } from './lib/chat-engine.js';
-import { ChatRateLimit, ensureChatUsageTable, chatQuotaApiKey, type ChatTier } from './lib/chat-rate-limit.js';
+import { ChatRateLimit, ensureChatUsageTable, chatQuotaApiKey, buildChatQuotaNotice, type ChatTier } from './lib/chat-rate-limit.js';
 import { formatChatKnowledgeResponse } from './lib/chat-knowledge-formatter.js';
 // CHAT-USAGE-ANALYTICS-W1 (2026-05-18) — single recording middleware for both
 // chat surfaces (MCP tool + HTTP route). PII-safe (SHA256 hash + length only).
@@ -815,7 +815,6 @@ function createServer(): McpServer {
         const quotaKey = chatQuotaApiKey(license.key, getRequestIpHash() ?? null);
         const check = await rateLimit.check(quotaKey, tier);
         if (!check.allowed) {
-          const days = Math.max(1, Math.ceil((check.resetAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
           // CHAT-USAGE-ANALYTICS-W1: quota-exhausted recorded as event (errorCode, cost=0)
           recordChatEvent({
             apiKeyId: license.key,
@@ -830,14 +829,7 @@ function createServer(): McpServer {
             latencyMs: Date.now() - startMs,
             errorCode: 'CHAT_QUOTA_EXHAUSTED',
           });
-          const payload = {
-            code: 'CHAT_QUOTA_EXHAUSTED',
-            message: `Monthly chat quota exhausted for tier ${tier} (${check.limit}/mo). Resets in ${days} day(s).`,
-            retry_after_days: days,
-            limit: check.limit,
-            tier,
-            upgrade_url: 'https://algovault.com/#pricing',
-          };
+          const payload = buildChatQuotaNotice(tier, check);
           return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
         }
         const result = await runAsCaller('chat_knowledge', () => chatEngine.chat(question, { model }));
@@ -3107,7 +3099,6 @@ async function startHttp() {
       const quotaKey = chatQuotaApiKey(license.key, ipHash);
       const check = await rateLimit.check(quotaKey, tier);
       if (!check.allowed) {
-        const days = Math.max(1, Math.ceil((check.resetAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
         // CHAT-USAGE-ANALYTICS-W1: quota-exhausted recorded as event
         recordChatEvent({
           apiKeyId: _analyticsApiKey,
@@ -3122,14 +3113,7 @@ async function startHttp() {
           latencyMs: Date.now() - startMs,
           errorCode: 'CHAT_QUOTA_EXHAUSTED',
         });
-        return res.status(429).json({
-          code: 'CHAT_QUOTA_EXHAUSTED',
-          message: `Monthly chat quota exhausted for tier ${tier} (${check.limit}/mo). Resets in ${days} day(s).`,
-          retry_after_days: days,
-          limit: check.limit,
-          tier,
-          upgrade_url: 'https://algovault.com/#pricing',
-        });
+        return res.status(429).json(buildChatQuotaNotice(tier, check));
       }
       const result = await chatEngine.chat(question, model ? { model } : undefined);
       await rateLimit.record(quotaKey, result.usage);

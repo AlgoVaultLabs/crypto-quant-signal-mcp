@@ -11,13 +11,19 @@ import { describe, it, expect } from 'vitest';
 import { TierLimitReachedError, buildTierLimitPayload } from '../src/lib/errors.js';
 import type { SuggestedX402 } from '../src/types.js';
 
+// OPS-QUOTA-EXHAUSTION-NOTICE-W1: `retry_after_days` is DERIVED from the reset instant, so the
+// fixture pins a frozen clock 12 days before the reset instead of passing the day count directly.
+const NOW = Date.parse('2026-08-02T00:00:00.000Z');
+const RESET_AT = NOW + 12 * 24 * 60 * 60 * 1000;
+
 function mkErr() {
   return new TierLimitReachedError({
     currentUsage: 100,
     monthlyLimit: 100,
     tier: 'free',
     suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter',
-    retryAfterDays: 12,
+    resetAtMs: RESET_AT,
+    nowMs: NOW,
     referralCode: null,
     tool: 'get_trade_call',
   });
@@ -42,11 +48,22 @@ describe('buildTierLimitPayload', () => {
     expect(p.retry_after_days).toBe(12);
     expect(p.referral_hint).toBeDefined();
     expect('suggested_x402' in p).toBe(false);
-    // the exact key set of today's envelope (order-preserving JSON)
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1 grew the envelope by four ADDITIVE notice fields. Every
+    // pre-existing key keeps its name, value and relative order — an existing consumer reading
+    // `retry_after_days` or `referral_hint` is untouched.
     expect(Object.keys(p)).toEqual([
       'code', 'error_code', 'message', 'current_usage', 'monthly_limit',
-      'tier', 'suggested_upgrade_url', 'retry_after_days', 'referral_hint',
+      'tier', 'suggested_upgrade_url', 'retry_after_days',
+      'resets_at', 'usage_display', 'recommended_path', 'suggested_action',
+      'referral_hint',
     ]);
+    expect(p.resets_at).toBe('2026-08-14T00:00:00.000Z');
+    expect(p.usage_display).toBe('100/100');
+    // No live rail was passed ⇒ nothing to compare ⇒ the subscription leads, and the prose
+    // must NOT name x402 (the pre-wave scan copy advertised it unconditionally).
+    expect(p.recommended_path).toBe('subscription');
+    expect(p.message).not.toContain('x402');
+    expect(p.suggested_action).not.toContain('x402');
   });
 
   it('adds suggested_x402 as an additive last sibling when provided; Stripe/referral intact', () => {
@@ -55,5 +72,9 @@ describe('buildTierLimitPayload', () => {
     expect(p.suggested_upgrade_url).toContain('upgrade_from=limit'); // Stripe path intact
     expect(p.referral_hint).toBeDefined(); // referral intact
     expect(Object.keys(p)[Object.keys(p).length - 1]).toBe('suggested_x402'); // additive last
+    // With a LIVE rail the prose names it — and names it at the SoT price, never a literal.
+    expect(p.message).toContain('https://api.algovault.com/x402/get_trade_call');
+    expect(p.message).toContain('$0.02');
+    expect(p.suggested_action).toContain('x402');
   });
 });
