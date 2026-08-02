@@ -33,6 +33,7 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const { runScript } = require('../lib/script-lifecycle.js');
 const { Pool } = require('pg');
 
 interface ShadowVenueSeed {
@@ -115,13 +116,9 @@ async function main(): Promise<void> {
   }
 }
 
-// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): a cron/CLI entrypoint must guard its top-level
-// main() so importing this module for a test does not execute it. Live cron invokes
-// `node dist/scripts/<name>.js`, so require.main === module is true there and the
-// scheduled run is unaffected.
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): guard the entrypoint AND terminate through
+// runScript(), which drains and exits. A bare main().catch() leaves the process alive
+// on success and pins a Postgres connection forever (OPS-SCRIPT-EXIT-LIFECYCLE-W1).
 if (require.main === module) {
-  main().catch((err) => {
-    console.error('[seed-shadow-venues-w3a] FATAL:', err);
-    process.exit(1);
-  });
+  void runScript('seed-shadow-venues-w3a', main);
 }

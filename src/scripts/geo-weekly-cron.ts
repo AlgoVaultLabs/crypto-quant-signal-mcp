@@ -11,6 +11,7 @@
  * `--dry-run` builds + prints the digest from existing DB state (no LLM / DB
  * writes / Telegram).
  */
+import { runScript } from '../lib/script-lifecycle.js';
 import { runWeeklyProbe, resolveGeoProbe } from '../lib/geo-orchestrator.js';
 import { dbQuery } from '../lib/performance-db.js';
 import { sendAlert, sendDigest } from '../lib/telegram.js';
@@ -611,15 +612,9 @@ async function main(): Promise<void> {
   }
 }
 
-// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): a cron/CLI entrypoint must guard its top-level
-// main() so importing this module for a test does not execute it. Live cron invokes
-// `node dist/scripts/<name>.js`, so require.main === module is true there and the
-// scheduled run is unaffected.
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): guard the entrypoint AND terminate through
+// runScript(), which drains and exits. A bare main().catch() leaves the process alive
+// on success and pins a Postgres connection forever (OPS-SCRIPT-EXIT-LIFECYCLE-W1).
 if (require.main === module) {
-  main().catch((err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[geo-cron] fatal:', msg);
-    sendAlert(`GEO weekly cron failed: ${msg}`, 'critical').catch(() => {});
-    process.exit(1);
-  });
+  void runScript('geo-weekly-cron', main);
 }
