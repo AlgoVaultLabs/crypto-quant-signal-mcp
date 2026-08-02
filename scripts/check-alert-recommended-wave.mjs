@@ -38,6 +38,7 @@ const SCANNED = [
   'ops/monitoring/closedbar-w1-liveness.sh',
   'ops/cron/candle-basis-shadow-report.sh',
   'ops/cron/bot-deploy-parity.sh',
+  'ops/cron/checkout-parity.sh',
 ];
 
 const WAVE_RE = /\b(?:OPS|SIGNAL|RELEASE|DEV|TG|GEO)-[A-Z0-9-]*?-W(?:\{NEXT\}|\d+)/g;

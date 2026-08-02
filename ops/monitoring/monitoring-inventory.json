@@ -878,6 +878,28 @@
       "sha256": "4babde829a321782181903e3678be5d4817d37c7c83de02f4d006dc4e9debaa3",
       "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
       "notes": "SHA-pinned deploy primitive. Runs on the OPERATOR's machine, not on a host — hence installed_at is empty and host/host_path are n-a rather than invented; it is listed so the registry records the tool that governs deploys, and REGISTRY_PARITY has nothing to assert for it. Refuses any ref that is not an ancestor of origin/main, materializes git archive <sha>, swaps per manifest entry (never whole-directory — /opt/algovault-bot holds a 171M .venv the units execute), sets ownership at the destination including the .bak copy, and stamps DEPLOYED_SHA + DEPLOYED_MANIFEST.sha256. Generic: 7 substantive /opt services share the class it closes; rollout is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT}."
+    },
+    {
+      "id": "checkout-parity",
+      "artifact": "ops/cron/checkout-parity.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/checkout-parity.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/checkout-parity.sh",
+          "schedule": "47 6 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "47 6 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "d5e2eb933e2f677265f4e0ddf5d1f81c66a2e36a6ebce997c3206e3a7f71f7c5",
+      "owner_wave": "OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W1",
+      "notes": "Daily provenance assertion for the three GIT-CHECKOUT services on this host (crypto-quant-signal-mcp, algovault-editorial, algovault-blog-assets): HEAD is an ancestor of origin/main, the tree is clean modulo a DECLARED allowlist, and no file is owned by a uid that does not exist. Sibling of bot-deploy-parity.sh but a different evidence source: those services are placed by git, so git IS the lockfile, whereas the bot's tree is placed by ops/scripts/host-deploy.sh and verified against the lockfile that tool writes. Configured by ops/deploy/checkout-parity.conf, which also records the DEFER/EXEMPT set so the un-covered estate is declared rather than forgotten. Emits one CHECKOUT_PARITY_VERDICT= token; 0=PASS/1=FAIL/3=INDETERMINATE, fails closed. KNOWN LIMITATION: `git fetch` fails for algovault-blog-assets (SSH remote, no key for root), so its ancestry is judged against a CACHED origin/main — the run prints an explicit WARNING rather than passing silently. Closing that needs a deploy key: OPS-BLOG-ASSETS-FETCH-KEY-W{NEXT}."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
