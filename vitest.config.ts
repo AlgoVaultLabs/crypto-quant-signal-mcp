@@ -57,6 +57,9 @@ export default defineConfig({
       'tests/unit/landing_faq_glossary_substrate.test.mjs',
       // OPS-CADDY-ROUTE-PARITY-W1 — node:test apex-route-parity guard (canonical runner is
       // node:test; exclude from vitest so it doesn't false-fail "No test suite found").
+      // OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1 — node:test alert-remedy canary (canonical
+      // runner is node:test; exclude from vitest so it doesn't false-fail "No test suite found").
+      'tests/unit/alert-recommended-wave.test.mjs',
       'tests/unit/caddy-route-parity.test.mjs',
       // ATTRIBUTION-SRC-COVERAGE-W1 — node:test acquisition `?src=` coverage canary (same
       // node:test ownership; exclude from vitest so it doesn't false-fail "No test suite found").
