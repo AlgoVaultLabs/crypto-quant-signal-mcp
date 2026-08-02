@@ -585,7 +585,14 @@ function createServer(): McpServer {
       try {
         const license = getRequestLicense();
         // Quota tracking is handled inside getMarketRegime
-        const result = await runAsCaller('get_market_regime', () => getMarketRegime({ coin, timeframe, exchange }));
+        // OPS-QUOTA-EXHAUSTION-NOTICE-W1: forward the RESOLVED license. It was read on the line
+        // above and then used only for logRequest, so `getMarketRegime` fell back to its
+        // `{tier:'free', key:null}` default and metered every caller against the IP-derived free
+        // bucket instead of their own. Found live post-deploy: a keyed free caller whose key
+        // bucket read 100/100 was still SERVED by this tool (its IP bucket read 8/100), so the
+        // operator-frozen cutoff did not actually hold here — and a PAID caller's regime calls
+        // were metered, and would eventually be refused, against the free 100 cap.
+        const result = await runAsCaller('get_market_regime', () => getMarketRegime({ coin, timeframe, exchange, license }));
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'get_market_regime',

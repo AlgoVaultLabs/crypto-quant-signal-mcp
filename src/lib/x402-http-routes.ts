@@ -252,11 +252,15 @@ export async function callCoreHandler(
         license,
       });
     case 'get_market_regime':
-      // Matches the MCP handler exactly (does not forward license — parity).
+      // OPS-QUOTA-EXHAUSTION-NOTICE-W1: forwards the license, like every sibling. The old
+      // comment claimed parity with the MCP handler — true, but both were wrong: without it a
+      // PAID x402 caller ran as keyless free and was metered against (and eventually refused
+      // by) the free 100/mo cap on a shared IP bucket. Parity is preserved; both are fixed.
       return getMarketRegime({
         coin: input.coin as string,
         timeframe: input.timeframe as string,
         exchange: input.exchange as ExchangeId,
+        license,
       });
     // OPS-X402-PRICING-EXPANSION-W1: the 3 newly-priced tools — SAME core fns the MCP
     // handlers call (index.ts), so the x402-HTTP twin is byte-parity. The x402 CHARGE is

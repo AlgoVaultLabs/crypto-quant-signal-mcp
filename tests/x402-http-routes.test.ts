@@ -246,8 +246,13 @@ describe('x402 HTTP routes — handler parity (R1: same core fn + args as MCP)',
     await callCoreHandler('scan_funding_arb', { minSpreadBps: 5, limit: 10 }, license);
     expect(calls.scanFundingArb).toEqual({ minSpreadBps: 5, limit: 10, license });
 
+    // OPS-QUOTA-EXHAUSTION-NOTICE-W1: this line previously asserted the ABSENCE of `license`
+    // ("no license — matches MCP handler"), i.e. it certified the defect. Parity was real and
+    // both sides were wrong: without the license a PAID x402 caller ran as keyless free and was
+    // metered against — and eventually refused by — the free 100/mo cap on a shared IP bucket.
+    // Both call sites now forward it, so parity holds and the meter is correct.
     await callCoreHandler('get_market_regime', { coin: 'ETH', timeframe: '4h', exchange: 'HL' }, license);
-    expect(calls.getMarketRegime).toEqual({ coin: 'ETH', timeframe: '4h', exchange: 'HL' }); // no license — matches MCP handler
+    expect(calls.getMarketRegime).toEqual({ coin: 'ETH', timeframe: '4h', exchange: 'HL', license });
 
     vi.doUnmock('../src/tools/get-trade-call.js');
     vi.doUnmock('../src/tools/scan-funding-arb.js');
