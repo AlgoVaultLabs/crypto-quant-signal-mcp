@@ -170,6 +170,13 @@ self_test() {
   nofire=$((nofire + 1)); check "jitter spread -> OK"         "OK" "$(classify_offsets 900 735 795 855)"
   nofire=$((nofire + 1)); check "1h late-bar -> OK"           "OK" "$(classify_offsets 3600 2944 2945 2942)"
   nofire=$((nofire + 1)); check "empty -> INSUFFICIENT"  "INSUFFICIENT" "$(classify_offsets 900)"
+  # Ordering regression guard: a row whose last fire predates a JUST-completed deploy is
+  # REALIGNING, never a ratchet. Encoded as the arithmetic the live path uses, since the branch
+  # itself needs a database.
+  nofire=$((nofire + 1)); check "fresh deploy is inside the realignment window" "REALIGNING" \
+    "$( [ 100 -lt $(( 900 * 2 )) ] && echo REALIGNING || echo JUDGE )"
+  nofire=$((nofire + 1)); check "two bars past deploy leaves the window" "JUDGE" \
+    "$( [ 1900 -lt $(( 900 * 2 )) ] && echo REALIGNING || echo JUDGE )"
 
   # The alert must never point at the basis-flip wave, and must stay templated.
   map=$((map + 1)); check "ratchet wave" "OPS-CLOSEDBAR-DISPATCH-RATCHET-INCIDENT-W{NEXT}" "$(recommended_wave_for RATCHET)"
@@ -203,14 +210,28 @@ LAST_EPOCH=$(iso_to_epoch "$LAST_RAW")
 if [ -z "$LAST_EPOCH" ]; then
   fail RATCHET "watchlist row not found or last_fetched_at unparseable (raw='$LAST_RAW')"
 fi
+# The realignment window is evaluated FIRST, against the WALL CLOCK rather than the row's own
+# stamp. Ordering matters and this got it wrong once: the "has not dispatched since deploy"
+# check below used to run first, so any run within two bars of a deploy paged a RATCHET for a
+# row that had simply not reached its next bar yet. A probe that false-pages after every deploy
+# trains the operator to ignore it, which is how a real one gets missed.
+NOW_EPOCH=$(date -u +%s)
+if [ $(( NOW_EPOCH - DEPLOY_EPOCH )) -lt $(( TF_SECONDS * 2 )) ]; then
+  log "CHECK1 REALIGNING — only $(( NOW_EPOCH - DEPLOY_EPOCH ))s of wall clock since deploy (< 2 bars); the row may legitimately not have reached its next bar yet. No alert."
+  exit 0
+fi
+
 if [ "$LAST_EPOCH" -le "$DEPLOY_EPOCH" ]; then
-  fail RATCHET "row has not dispatched since deploy (last=$LAST_EPOCH <= deploy=$DEPLOY_EPOCH) — the cron may be dark"
+  fail RATCHET "row has not dispatched in the $(( NOW_EPOCH - DEPLOY_EPOCH ))s since deploy, which is over 2 bars (last=$LAST_EPOCH <= deploy=$DEPLOY_EPOCH) — the cron may be dark"
 fi
 
 OFFSET=$(secs_into_bar "$LAST_EPOCH" "$TF_SECONDS")
 AGE=$(( LAST_EPOCH - DEPLOY_EPOCH ))
 log "CHECK1 last='$LAST_RAW' epoch=$LAST_EPOCH offset_into_bar=${OFFSET}s of ${TF_SECONDS}s age_since_deploy=${AGE}s"
 
+# Second realignment guard, on the ROW's own age rather than the wall clock. NOT a duplicate of
+# the one above: that covers "no fire yet since the deploy", this covers "one fire, and it is
+# the ragged realignment one".
 # The first fire after a change is the REALIGNMENT fire: the anchor was written under the old
 # contract, so its first bucket comparison can come due anywhere in the bar (measured: 464s).
 # By design — judging it would be a false page.

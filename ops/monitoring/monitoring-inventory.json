@@ -798,7 +798,7 @@
       "schedule": null,
       "invoked_by": "systemd:transient (systemd-run --on-active, armed per deploy)",
       "install_state": "installed",
-      "sha256": "42056eedf6315ca77293a00a9bb08b94e1e7b4d262510d6bdff480d2b78da8d5",
+      "sha256": "dbc55e06f39a98fa16fa7fa90e7f4773dcd46bafc3cdcbf4b4ca445d2be5e7e6",
       "owner_wave": "OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1",
       "notes": "Deferred liveness probe for bucket-deterministic watchlist dispatch. SIGNAL-CLOSEDBAR-SHADOW-W1 CH6 installed it to /usr/local/bin with NO committed ancestor and no inventory row, so when a full-tree rsync reverted the bot on 2026-08-01 nothing detected it — the probe itself caught the symptom 90 minutes later, by luck of timing. Canonical home is now ops/monitoring/; the host copy carries the __DEPLOY_EPOCH__ substitution, so REGISTRY_PARITY is asserted against the HOST sha, not the repo one. Has a hermetic, vacuity-guarded --self-test (GNU and BSD date both exercised). Committed ancestor at ops/monitoring/closedbar-w1-liveness.sh, so git IS the recovery path; the host copy differs only by the __DEPLOY_EPOCH__ substitution. NO_BACKUP only scans /opt/algovault-monitoring/, which this artifact is not in."
     },
