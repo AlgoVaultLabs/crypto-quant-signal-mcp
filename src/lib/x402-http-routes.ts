@@ -493,10 +493,17 @@ export function mountX402HttpRoutes(app: Express): string[] {
         } catch { /* best-effort; never blocks the request */ }
       } catch (err: unknown) {
         if (!res.headersSent) {
+          // SEC-50 (OPS-AUDIT-REMEDIATION-LOW-W1): the raw upstream message went to the client,
+          // which leaks internal paths, hostnames and driver text on a PAID public route. Log it
+          // server-side; the wire keeps the machine-readable `code` it already had.
+          console.error(
+            '[x402-http] handler error:',
+            err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err),
+          );
           res.status(500).json({
             error: 'internal_error',
             code: 'X402_HTTP_HANDLER_ERROR',
-            message: err instanceof Error ? err.message : 'handler failed',
+            message: 'An internal error occurred while handling the x402 request.',
           });
         }
       }

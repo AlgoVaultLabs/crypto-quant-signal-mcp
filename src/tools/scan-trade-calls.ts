@@ -79,7 +79,15 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
   // SCAN-RANKBY-W1: universe-selection lens (param, not a tool — tools/list stays 9).
   // Raw string so the bot can forward an alias (nfr/pfr/…) verbatim; the MCP resolves
   // it via resolveRankBy (the single alias map). Default 'oi' ⇒ byte-identical output.
-  rankBy: z.string().optional().default('oi').describe(PARAM_DESC_SCAN_RANK_BY),
+  rankBy: z
+    // SEC-45 (OPS-AUDIT-REMEDIATION-LOW-W1): the only unbounded z.string() on the MCP tool
+    // surface. An invalid value is reflected back in the structured rejection, so an unbounded
+    // string is an unbounded reflection. 32 chars clears the longest canonical token plus alias
+    // headroom; resolveRankBy still owns which tokens are actually valid.
+    .string()
+    .max(32)
+    .optional()
+    .default('oi').describe(PARAM_DESC_SCAN_RANK_BY),
   // SCAN-DIGEST-MCP-PARITY-W1 CH1: opt-in per-call enrichment. Default false ⇒ bare
   // output, byte-identical to today. Mirrors get_trade_call's param name (NB:
   // get_trade_call defaults TRUE; scan defaults FALSE — bare back-compat is the firewall).

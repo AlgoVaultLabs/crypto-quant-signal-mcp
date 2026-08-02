@@ -1,0 +1,23 @@
+{
+  "_comment": "SEC-40 ratchet baseline (OPS-AUDIT-REMEDIATION-LOW-W1). Per-file count of raw parseFloat/parseInt sites in venue adapters. A file may never EXCEED its number; lowering one (by converting to safeUpstreamNum) requires re-baselining downward, so the ratchet only tightens. Sweep of the existing backlog is owned by OPS-ADAPTER-SAFENUM-SWEEP-W{NEXT}.",
+  "_total": 195,
+  "counts": {
+    "aster.ts": 0,
+    "binance.ts": 15,
+    "bingx.ts": 12,
+    "bitget.ts": 17,
+    "bitmart.ts": 15,
+    "bybit.ts": 17,
+    "edgex.ts": 7,
+    "gateio.ts": 17,
+    "htx.ts": 6,
+    "hyperliquid.ts": 15,
+    "kucoin.ts": 1,
+    "mexc.ts": 0,
+    "okx.ts": 22,
+    "phemex.ts": 12,
+    "weex.ts": 15,
+    "whitebit.ts": 14,
+    "xt.ts": 10
+  }
+}

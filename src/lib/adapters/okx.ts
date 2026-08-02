@@ -209,8 +209,26 @@ export class OKXAdapter implements ExchangeAdapter {
     return histAsc.length > 0 ? histAsc : candles;
   }
 
+  /**
+   * SEC-35: a single-entity read off a LIST endpoint must prove the row it got back is the row
+   * it asked for. Returns the row when it matches; throws otherwise, so the caller default-denies
+   * instead of emitting a confident number about the wrong asset. A missing row is NOT an
+   * identity failure (the venue may simply not list the instrument) and is passed through
+   * unchanged, preserving the existing `funding?.fundingRate || '0'` handling below.
+   */
+  private assertRow<T extends { instId?: string }>(row: T | undefined, instId: string, endpoint: string): T | undefined {
+    if (row && row.instId && row.instId !== instId) {
+      throw new Error(
+        `OKX ${endpoint} identity mismatch: requested instId=${instId} but the row returned instId=${row.instId}. ` +
+        `Refusing a wrong-but-plausible row (SEC-35).`,
+      );
+    }
+    return row;
+  }
+
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
     const instId = toOKXInstId(coin);
+    const assertOkxRow = this.assertRow.bind(this);
 
     // Parallel fetch: ticker + funding-rate + open-interest + mark-price
     const [tickerResp, fundingResp, oiResp, markResp] = await Promise.all([
@@ -220,10 +238,16 @@ export class OKXAdapter implements ExchangeAdapter {
       okxGet<OKXMarkPrice[]>('/api/v5/public/mark-price', { instType: 'SWAP', instId }),
     ]);
 
-    const ticker = tickerResp.data[0];
-    const funding = fundingResp.data[0];
-    const oi = oiResp.data[0];
-    const mark = markResp.data[0];
+    // SEC-35 (OPS-AUDIT-REMEDIATION-LOW-W1): assert the returned row IS the row we asked for.
+    // These are LIST endpoints being used as single-entity reads (`?instId=` + `[0]`). A
+    // filtered-list endpoint that ignores its filter — on a bad param, an upstream regression,
+    // or a cache serving a neighbouring key — returns a wrong-but-PLAUSIBLE row, and every
+    // downstream number is then silently about the wrong asset. There is no natural detector
+    // for that: the shape is valid and the values look reasonable. Assert identity at the seam.
+    const ticker = assertOkxRow(tickerResp.data[0], instId, 'ticker');
+    const funding = assertOkxRow(fundingResp.data[0], instId, 'funding-rate');
+    const oi = assertOkxRow(oiResp.data[0], instId, 'open-interest');
+    const mark = assertOkxRow(markResp.data[0], instId, 'mark-price');
 
     // R2: OKX funding is per-8h period → annualized = raw × 1095 (8h periods/year)
     const fundingRaw = parseFloat(funding?.fundingRate || '0');

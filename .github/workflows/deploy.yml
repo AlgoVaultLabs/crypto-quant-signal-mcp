@@ -354,6 +354,19 @@ jobs:
           node scripts/check-build-context-hygiene.mjs --self-test
           node scripts/check-build-context-hygiene.mjs
 
+      # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-40 — a RATCHET, not a claim of victory.
+      # safeUpstreamNum() shipped as the "generator" fix for default-deny numeric parsing and
+      # exactly 2 of 18 adapters ever called it, against 176 raw parseFloat sites — a lane fix
+      # wearing a generator's clothes. parseFloat('0x1') is 0 and Number('0x1') is 1: finite,
+      # plausible, and the WRONG PRICE feeding a paid verdict. This pins the raw-parse
+      # population per file so a NEW adapter starts at 0 and no file can grow. It does NOT
+      # convert the existing backlog — that is OPS-ADAPTER-SAFENUM-SWEEP-W{NEXT}, and the gate
+      # says so on every run rather than reading as coverage it does not have.
+      - name: Adapter numeric-guard ratchet (fail-closed)
+        run: |
+          node scripts/check-adapter-numeric-guard.mjs --self-test
+          node scripts/check-adapter-numeric-guard.mjs
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
       # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
       # applied to customer.subscription.created, which mints an API key. Also asserts no

@@ -5,6 +5,12 @@ services:
       - "127.0.0.1:3000:3000"
     env_file: .env
     environment:
+      # SEC-27 (OPS-AUDIT-REMEDIATION-LOW-W1): NODE_ENV was UNSET here, so Express's default
+      # error handler treated production as development and returned full stack traces —
+      # /app/node_modules/... frames — to unauthenticated remote callers. This is the BELT;
+      # the braces is the terminal error handler in src/index.ts, which holds even if this
+      # line is lost to an env rewrite or a fresh host. Do not remove either one.
+      - NODE_ENV=production
       - X402_FACILITATOR_URL=http://facilitator:4022
       - X402_NETWORK=base-mainnet
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
