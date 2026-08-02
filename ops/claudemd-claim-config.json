@@ -77,15 +77,8 @@
     "promotion_criterion": "A corpus moves from `out` to verified only with its own measurement showing ZERO false positives on the classes it would block, plus an exemption list for its cross-repo/external artifacts carrying a reason per row. Re-measure with `node scripts/check-claudemd-claims.mjs --measure`; do not inherit CLAUDE.md's rate."
   },
 
-  "in_flight_claims": [
-    {
-      "value": "ops/cron/checkout-parity.sh",
-      "class": "repo-path",
-      "wave": "OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W1",
-      "declared_on": "2026-08-02",
-      "reason": "MEASURED MID-WAVE, not hypothetical: a concurrent session edited the shared vault CLAUDE.md (adding the git-checkout-parity law) while its files were still local to its own worktree — absent from the working tree, from origin/main, and from every pushed branch (checked 2026-08-02). CLAUDE.md and the repo are two shared artifacts with no shared transaction, so a doc edit landing before its code is a race the lock cannot prevent, only DECLARE. Blocking here would make every unrelated wave hostage to another wave's push order; silently tolerating it would let a genuinely false claim hide behind 'probably in flight'. So: reported every run, and the gate FAILS once the claim RESOLVES, forcing this row's deletion instead of letting it rot."
-    }
-  ],
+  "in_flight_claims": [],
+  "_in_flight_claims_history": "Held ONE row on 2026-08-02: `ops/cron/checkout-parity.sh`, owed by OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W1, whose files were still local to a concurrent session's worktree — absent from the working tree, origin/main, and every pushed branch. That wave landed the same day, the self-cleaning check FAILED with 'the claim now RESOLVES … DELETE this row', and the row was deleted. Recorded because the mechanism's whole point is that a declaration cannot outlive its race, and this is the proof it does not.",
   "_in_flight_semantics": "A declared in-flight claim downgrades BLOCK → REVIEW for that ONE claim, never for its class. It is self-cleaning: once the claim resolves, the gate FAILS until the row is removed, so a declaration cannot outlive the race it describes. Adding a row is a deliberate reviewed act — it is not a way to silence a real finding, and every row names the wave that owes the file.",
 
   "exemptions": [
