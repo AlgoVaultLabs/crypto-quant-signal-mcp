@@ -105,6 +105,16 @@ def load_fired_set():
         return set()
 
 
+def state_exists():
+    """True once this canary has completed at least one cycle on this host.
+
+    The distinction matters: an EMPTY state file means "nothing is currently exhausted",
+    while a MISSING one means "this canary has never run here" — and those must behave
+    differently on the very first cycle (see the bootstrap branch in run_cycle).
+    """
+    return os.path.exists(FIRED_SET_FILE)
+
+
 def save_fired_set(ids):
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
@@ -154,7 +164,10 @@ def query_rows():
             rows.append((key, int(count), int(start)))
         return rows
     sql = (
-        "SELECT tracker_key, call_count, EXTRACT(EPOCH FROM period_start)::bigint "
+        # `period_start` is a TEXT column (persistTracker writes an ISO-8601 string), NOT a
+    # timestamp — so it must be cast before EXTRACT or psql errors out and this canary
+    # fail-opens on every single run. Probed live 2026-08-02 before install.
+    "SELECT tracker_key, call_count, EXTRACT(EPOCH FROM period_start::timestamptz)::bigint "
         "FROM quota_usage "
         "WHERE (tracker_key LIKE 'free:%' OR tracker_key LIKE 'av_free_%') "
         "AND call_count >= %d" % FREE_LIMIT
@@ -288,6 +301,20 @@ def run_cycle(rows, now_s):
         log("EVAL stale-period: bucket %s used %d/%d verdict=SKIPPED_PERIOD_ROLLED"
             % (render_bucket(key), count, FREE_LIMIT))
 
+    # BOOTSTRAP — report, do not page. On the FIRST cycle on a host every currently-exhausted
+    # bucket looks "new", so a naive first run pages the entire accumulated backlog as though it
+    # had just happened. Live measurement before install: 19 exhausted buckets, 5 of them above
+    # the volume threshold — an opening alert naming five historical exhaustions, none of which
+    # was a fresh conversion moment. Seed the state instead and page only on what happens NEXT.
+    # (Same shape as the "bootstrap report-not-page for never-attempted keys" rule.)
+    if not state_exists():
+        seeded = set("%s@%d" % (k, st) for k, _c, st, _r in high)
+        save_fired_set(seeded)
+        log("BOOTSTRAP: first cycle on this host — seeded %d high-volume bucket-period(s) WITHOUT "
+            "paging (historical backlog, not new events). high=%d low=%d stale=%d"
+            % (len(seeded), len(high), len(low), len(stale)))
+        return {"action": "bootstrap", "seeded": len(seeded), "high": len(high), "low": len(low)}
+
     new_entries = [e for e in high if "%s@%d" % (e[0], e[2]) not in fired]
     if not new_entries:
         log("HEALTHY: high=%d low=%d stale=%d, no NEW high-volume exhaustion (rows=%d)"
@@ -332,6 +359,16 @@ def self_test():
 
     NOW = 1_785_000_000
     HOUR = 3600
+
+    # A0) BOOTSTRAP — the first cycle seeds and does NOT page, even with high-volume backlog.
+    backlog = [("free:v2:9999aaaa8888bbbb", 900, NOW - 2 * DAY_S),
+               ("free:v2:7777cccc6666dddd", 400, NOW - 2 * DAY_S)]
+    r = run_cycle(backlog, NOW)
+    check("first cycle with a backlog → bootstrap, NOT a page",
+          r["action"] == "bootstrap" and r["seeded"] == 2)
+    check("bootstrap seeded the state (so the backlog never pages later)", len(load_fired_set()) == 2)
+    check("bootstrap wrote NO alert body", LAST_FIRE_BODY is None)
+    check("the same backlog on the NEXT cycle stays silent", run_cycle(backlog, NOW)["action"] == "silent")
 
     # A) nothing exhausted → silent
     check("no exhausted buckets → silent", run_cycle([], NOW)["action"] == "silent")
