@@ -146,6 +146,27 @@ def _psql(sql, fieldsep="|"):
     return out.stdout
 
 
+def build_query(free_limit):
+    """The exhausted-free-bucket query.
+
+    Built by CONCATENATION, never %-formatting: the WHERE clause contains SQL LIKE wildcards
+    (`'free:%'`), and a `%`-format string chokes on them with
+    `ValueError: unsupported format character`. That is not hypothetical — it is exactly what
+    the first live run on the host reported, caught only because the fail-open branch prints
+    INDETERMINATE rather than letting `exit 0` pass for healthy.
+
+    `period_start` is a TEXT column (persistTracker writes an ISO-8601 string), NOT a
+    timestamp, so it must be cast before EXTRACT or psql errors and this canary fail-opens on
+    every single run. Probed live 2026-08-02 before install.
+    """
+    return (
+        "SELECT tracker_key, call_count, EXTRACT(EPOCH FROM period_start::timestamptz)::bigint "
+        "FROM quota_usage "
+        "WHERE (tracker_key LIKE 'free:%' OR tracker_key LIKE 'av_free_%') "
+        "AND call_count >= " + str(int(free_limit))
+    )
+
+
 def query_rows():
     """[(tracker_key, call_count, period_start_epoch)] for CURRENT free-tier periods.
 
@@ -163,15 +184,7 @@ def query_rows():
             key, count, start = chunk.split(":")[0], chunk.split(":")[1], chunk.split(":")[2]
             rows.append((key, int(count), int(start)))
         return rows
-    sql = (
-        # `period_start` is a TEXT column (persistTracker writes an ISO-8601 string), NOT a
-    # timestamp — so it must be cast before EXTRACT or psql errors out and this canary
-    # fail-opens on every single run. Probed live 2026-08-02 before install.
-    "SELECT tracker_key, call_count, EXTRACT(EPOCH FROM period_start::timestamptz)::bigint "
-        "FROM quota_usage "
-        "WHERE (tracker_key LIKE 'free:%' OR tracker_key LIKE 'av_free_%') "
-        "AND call_count >= %d" % FREE_LIMIT
-    )
+    sql = build_query(FREE_LIMIT)
     rows = []
     for line in _psql(sql).splitlines():
         if not line.strip():
@@ -434,6 +447,19 @@ def self_test():
           _id_line_has_no_count(body2, ["free:v2:1111aaaa2222bbbb", "free:v2:3333cccc4444dddd"]))
     check("counts are rendered on a separate, labelled line",
           "Newly exhausted count: 2" in body2)
+
+    # I2) THE QUERY ITSELF. Every scenario above feeds rows in through the FORCE_ROWS seam, so
+    #     none of them ever touched `build_query` — which is precisely how a %-format error in
+    #     the SQL reached the host and made the FIRST live run report INDETERMINATE.
+    try:
+        q = build_query(FREE_LIMIT)
+        built = True
+    except Exception as e:  # noqa: BLE001
+        q, built = "%s: %s" % (type(e).__name__, e), False
+    check("the SQL builds at all (no %-format error on the LIKE wildcards)", built)
+    check("the SQL keeps its LIKE wildcards intact", built and "LIKE 'free:%'" in q and "LIKE 'av_free_%'" in q)
+    check("the SQL casts the TEXT period_start before EXTRACT", built and "period_start::timestamptz" in q)
+    check("the SQL carries the free limit", built and q.rstrip().endswith(str(FREE_LIMIT)))
 
     # J) VACUITY GUARD — refuse to report a pass over an empty corpus. Without this, a future
     #    change that made every scenario a no-op would still print PASS.
