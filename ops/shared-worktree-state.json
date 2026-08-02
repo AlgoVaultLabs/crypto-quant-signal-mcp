@@ -100,6 +100,23 @@
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism."
     },
     {
+      "id": "block-push-safety",
+      "path": "$GIT_COMMON_DIR/hooks/pre-push",
+      "kind": "hook-block",
+      "hook": "pre-push",
+      "block_name": "push-safety",
+      "script": "scripts/check-push-safety.sh",
+      "writers": ["scripts/install_push_safety_hook.sh"],
+      "consumers": ["$GIT_COMMON_DIR/hooks/pre-push"],
+      "invariant": "Refuses HISTORY DESTRUCTION — a non-fast-forward or a deletion — on a ref declared in ops/push-safety-config.json, and NOTHING else. Ordinary fast-forward pushes, brand-new branches and every non-protected ref are explicitly allowed: this repo's LAW is auto-commit + auto-push and merges land as fast-forwards, so a conventional main-protection hook would halt every wave. Converts two CLAUDE.md laws ('Never force push to main/master', 'Never reset --hard / push --force / branch -D without auth') from prose into mechanical enforcement — measured 2026-08-02, ZERO of the four then-live blocks read the hook's stdin, so neither law was enforced by anything.",
+      "severity": "block",
+      "backstopped_by": [".github/workflows/deploy.yml"],
+      "_backstopped_by_reason": "CI runs --self-test ONLY. The live check needs a real push's stdin, which a CI runner does not have — the same structural limit that keeps check-session-drift.mjs and check-shared-state.mjs self-test-only. tests/unit/push-safety.test.ts covers the same logic a second way, deliberately: a dedicated workflow step keeps CI coverage if that test is ever quarantined.",
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "notes": "Sorts FIRST under the helper's canonical LC_ALL=C block order (push-safety < session-drift < shared-state < source-greppable < test-gate) — the cheapest guard and the most consequential, so history destruction is refused in milliseconds rather than after a full vitest run. CONSEQUENCE: it CONSUMES the hook's stdin. Measured, none of the other four read stdin, so nothing breaks today; a future stdin-reading block would find it drained and should tee here rather than reorder. This was the FIRST consumer of scripts/lib/hook-block.sh written by someone other than its author, and it installed with no --allow-unpublished: the three-state publish precondition correctly reported 'pending merge' and allowed it."
+    },
+    {
       "id": "block-shared-state",
       "path": "$GIT_COMMON_DIR/hooks/pre-push",
       "kind": "hook-block",
