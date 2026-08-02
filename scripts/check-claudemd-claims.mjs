@@ -280,8 +280,10 @@ export function makeContext(cfg, { vaultDir } = {}) {
   let inventory = null;
   try { inventory = JSON.parse(fileText('ops/monitoring/monitoring-inventory.json') || 'null'); } catch { inventory = null; }
   const invRows = inventory && Array.isArray(inventory.artifacts) ? inventory.artifacts : [];
+  let docClaims = null;
+  try { docClaims = JSON.parse(fileText('ops/monitoring/doc-host-path-claims.json') || 'null'); } catch { docClaims = null; }
   return {
-    trackedSet, basenames, fileText, invRows,
+    trackedSet, basenames, fileText, invRows, docClaims,
     refs: (gatePath) => findInvocations(gatePath, invokers),
     vaultDir: vaultDir ?? dirname(CORPUS_PATH),
     vaultReachable: existsSync(dirname(CORPUS_PATH)),
@@ -339,8 +341,28 @@ export function verifyClaim(claim, ctx, cfg) {
       const p = claim.value.replace(/^~/, homedir());
       return existsSync(p) ? { status: 'OK' } : { status: 'MISSING', detail: `not found at ${p} (existence-only probe)` };
     }
-    case 'host-path':
-      return { status: 'UNPROBED', detail: 'host probes run only under --probe-hosts (read-only)' };
+    case 'host-path': {
+      // COVERAGE, not a second probe (OPS-CLAIM-VERIFIER-COVERAGE-W1). The TRUTH of a host path
+      // is asserted on-host by monitoring-inventory-reconcile.py's DOC_PATH_CLAIM check, where
+      // these are ordinary local files and no SSH is needed. What this gate owns is the inverse
+      // question — is every host-path claim ROUTED there at all? A claim nobody routed is exactly
+      // the blind spot W1 shipped, and asking "did my probe match something?" could never find it.
+      const want = claim.value.replace(/\/+$/, '');
+      // Inventory membership deliberately does NOT count as coverage, and this was MEASURED rather
+      // than reasoned: simulate a DELETED send_telegram.sh against the live inventory and NOTHING
+      // fires. HASH_DRIFT skips a file it cannot find ("absence is DARK/ORPHAN's business"), DARK
+      // only looks at rows carrying a schedule and the wrapper has none, and ORPHAN runs host→repo
+      // so a missing file is invisible to it. The shared alert wrapper every consumer depends on
+      // could vanish silently. So an inventory row is not a substitute for an existence claim.
+      const routed = (ctx.docClaims?.claims || []).some((c) => (c.path || '').replace(/\/+$/, '') === want);
+      if (routed) return { status: 'OK', detail: 'routed to the daily on-host reconciler (DOC_PATH_CLAIM)' };
+      const exempt = (ctx.docClaims?.exempt_claims || []).find((e) => e.value === claim.value);
+      if (exempt) return { status: 'OK', detail: `exempt: ${exempt.reason.slice(0, 60)}…` };
+      return {
+        status: 'REVIEW',
+        detail: `host-path claim is neither routed nor exempted — add a row to ops/monitoring/doc-host-path-claims.json (with hosts[] + expect + reason) so the daily reconciler checks it on-host, or an exempt_claims row explaining why it is not a real path claim`,
+      };
+    }
     case 'env-var': {
       try {
         execFileSync('git', ['grep', '-l', '-F', claim.value], { cwd: ROOT, stdio: 'pipe' });
@@ -419,20 +441,98 @@ export function verifyClaim(claim, ctx, cfg) {
   }
 }
 
+/** A declared in-flight race (OPS-CLAIM-VERIFIER-COVERAGE-W1), or undefined. */
+export function inFlightRow(claim, cfg) {
+  return (cfg.in_flight_claims || []).find((r) => r.value === claim.value && r.class === claim.class);
+}
+
 /** Which severities fail the gate, per the config ladder. */
 export function isBlocking(claim, result, cfg) {
   if (result.status === 'OK' || result.status === 'UNREACHABLE' || result.status === 'UNPROBED') return false;
+  // In flight on a pushed branch (stamped by --sync), or declared in config for the no-ref case.
+  // Downgrades to REVIEW for that ONE claim — never for its class. See _in_flight_semantics.
+  if (claim.in_flight) return false;
+  if (inFlightRow(claim, cfg)) return false;
   const cls = claim.class === 'absence-repo' || claim.class === 'absence-vault' ? 'absence' : claim.class;
   const ship = cfg.classes[cls]?.ship;
   return ship === 'block';
 }
 
+/**
+ * In-flight declarations are self-cleaning: once the race resolves, the declaration is a lie about
+ * the present, so it must be deleted. Returns the rows that have outlived their race.
+ */
+export function staleInFlight(claims, ctx, cfg) {
+  const stale = [];
+  for (const row of cfg.in_flight_claims || []) {
+    const claim = claims.find((c) => c.value === row.value && c.class === row.class);
+    if (!claim) { stale.push({ row, why: 'the claim is no longer made by CLAUDE.md at all' }); continue; }
+    const r = verifyClaim(claim, ctx, cfg);
+    if (r.status === 'OK') stale.push({ row, why: `the claim now RESOLVES (${row.wave} landed)` });
+  }
+  return stale;
+}
+
 // ── lock ──────────────────────────────────────────────────────────────────────
+
+/**
+ * The remote refs this checkout can see. Only consulted for a path that is NOT in the working
+ * tree, so the cost is paid only when something is already anomalous.
+ */
+function remoteRefs() {
+  try {
+    return execFileSync('git', ['for-each-ref', '--format=%(refname:short)', 'refs/remotes'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\n').map((s) => s.trim()).filter((s) => s && !s.endsWith('/HEAD'));
+  } catch { return []; }
+}
+
+/**
+ * For each of `paths`, the first pushed ref whose tree contains it (or null). ONE `git cat-file
+ * --batch-check` process for the whole cross-product — the naive form spawned a process per
+ * (ref, path) pair, ~160 of them, which pushed the pre-push suite's copy of this gate past
+ * vitest's 5s default and blocked a push whose tests all passed individually.
+ *
+ * MEASURED 2026-08-02, and the reason this exists at all: three concurrent sessions had edited the
+ * shared vault CLAUDE.md to describe files still on their own un-merged branches. CLAUDE.md and the
+ * repo are two shared artifacts with no shared transaction, so "the doc landed before the code" is
+ * a routine race, not a defect — while "the file exists on no ref anywhere" is the real defect
+ * class this gate was built for (a gate never built; a file moved). Collapsing the two would make
+ * every wave hostage to every other wave's push order, and a gate that cries wolf gets disabled.
+ */
+function firstRefContaining(paths, refs) {
+  const out = new Map(paths.map((p) => [p, null]));
+  if (!paths.length || !refs.length) return out;
+  const pairs = [];
+  for (const p of paths) for (const ref of refs) pairs.push([p, ref]);
+  let stdout = '';
+  try {
+    stdout = execFileSync('git', ['cat-file', '--batch-check=%(objectname) %(objecttype)'], {
+      cwd: ROOT, encoding: 'utf8', input: pairs.map(([p, ref]) => `${ref}:${p}`).join('\n') + '\n',
+    });
+  } catch { return out; }
+  const lines = stdout.split('\n');
+  pairs.forEach(([p, ref], i) => {
+    // a hit prints "<sha> blob"; a miss prints "<rev> missing"
+    if (out.get(p) === null && lines[i] && / blob$/.test(lines[i].trim())) out.set(p, ref);
+  });
+  return out;
+}
 
 export function buildLock(rawText, cfg) {
   const { claims } = extractClaims(rawText, cfg);
-  const lockClaims = claims
-    .filter((c) => LOCK_CLASSES.has(c.class))
+  const trackedSet = new Set(tracked());
+  const refs = remoteRefs();
+  const locked = claims.filter((c) => LOCK_CLASSES.has(c.class));
+  // Derived, never hand-maintained: stamped at --sync (where remote refs are visible) so CI —
+  // which checks out one branch and can see none of them — inherits the same verdict. Resolved in
+  // ONE batch for every missing path, so the cost does not scale with refs × claims.
+  const missing = [...new Set(locked.filter((c) => c.class === 'repo-path' && !trackedSet.has(c.value)).map((c) => c.value))];
+  const inFlightBy = firstRefContaining(missing, refs);
+  const lockClaims = locked
+    .map((c) => {
+      const ref = c.class === 'repo-path' ? inFlightBy.get(c.value) : null;
+      return ref ? { ...c, in_flight: ref } : c;
+    })
     .sort((a, b) => a.line - b.line || a.class.localeCompare(b.class) || a.value.localeCompare(b.value));
   return {
     _comment: 'GENERATED by scripts/check-claudemd-claims.mjs --sync from the vault CLAUDE.md. Identifiers only — the manual’s prose never enters this repo. Do not hand-edit; --check fails on any divergence from a fresh extraction.',
@@ -464,8 +564,13 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     corpusLines = rawText.split('\n');
     if (!rawText.trim()) return { verdict: 'INDETERMINATE', why: `corpus at ${CORPUS_PATH} is empty` };
     const ex = extractClaims(rawText, cfg);
-    claims = ex.claims; stats = ex.stats;
+    stats = ex.stats;
     freshLock = buildLock(rawText, cfg);
+    // The in-flight markers are DERIVED during buildLock (it can see remote refs). Carry them onto
+    // the fresh claim set so the local run and CI's lock-only run reach the SAME verdict — a gate
+    // that passes locally and fails in CI teaches people to distrust it.
+    const marked = new Map(freshLock.claims.filter((c) => c.in_flight).map((c) => [`${c.class}|${c.value}`, c.in_flight]));
+    claims = ex.claims.map((c) => (marked.has(`${c.class}|${c.value}`) ? { ...c, in_flight: marked.get(`${c.class}|${c.value}`) } : c));
     if (!existsSync(LOCK_PATH)) {
       return { verdict: 'FAIL', why: `lock missing at ops/claudemd-claims.lock.json — run: node scripts/check-claudemd-claims.mjs --sync (and commit the lock)` };
     }
@@ -510,6 +615,20 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     }
   }
   console.log(`\nclaims: ${claims.length} verified — ${ok} OK · ${blockFails} blocking · ${reports} report-only · ${unreachable} unreachable (local-only class in CI) · ${unprobed} unprobed (host)`);
+  for (const row of cfg.in_flight_claims || []) {
+    console.log(`  ⧖ in-flight (declared): ${row.value} — owed by ${row.wave}, declared ${row.declared_on}`);
+  }
+  for (const c of claims.filter((x) => x.in_flight)) {
+    const landed = verifyClaim({ ...c, in_flight: undefined }, ctx, cfg).status === 'OK';
+    console.log(landed
+      ? `  ⚠ in-flight marker is STALE: ${c.value} — ${c.in_flight} has merged; the marker clears on the next --sync (reported, not failed: another wave's merge must never break main)`
+      : `  ⧖ in-flight (on a pushed branch): ${c.value} — ${c.in_flight}; resolves when that branch merges`);
+  }
+  const stale = staleInFlight(claims, ctx, cfg);
+  for (const { row, why } of stale) {
+    console.log(`  ✖ [in-flight] ${row.value} — ${why}; DELETE this row from ops/claudemd-claim-config.json (a declaration must not outlive its race), then run --sync`);
+  }
+  if (stale.length) return { verdict: 'FAIL', why: `${stale.length} in-flight declaration(s) have outlived the race they describe` };
   if (blockFails) return { verdict: 'FAIL', why: `${blockFails} blocking claim failure(s) — the prescriptive SoT asserts something the repo contradicts` };
   return { verdict: 'PASS' };
 }
@@ -589,6 +708,41 @@ export function selfTest(cfg) {
   // (h) nested parens inside a correction block are stripped correctly
   const nested = extractClaims('ok. _(Corrected — the prior line (see `scripts/gone-file.mjs` (v2)) was wrong.)_\n', cfg);
   if (nested.claims.length !== 0) fails.push('nested-paren correction block leaked a claim');
+  // (i1) in-flight declarations (OPS-CLAIM-VERIFIER-COVERAGE-W1) downgrade ONE claim, not a class,
+  // and are self-cleaning — a declaration that has outlived its race must FAIL.
+  const ifCfg = { ...cfg, in_flight_claims: [{ value: 'scripts/not-a-real-file.mjs', class: 'repo-path', wave: 'W', declared_on: '2026-01-01', reason: 'fixture' }] };
+  const ifClaim = { class: 'repo-path', value: 'scripts/not-a-real-file.mjs', line: 1 };
+  if (isBlocking(ifClaim, { status: 'MISSING' }, ifCfg)) fails.push('a declared in-flight claim still blocked');
+  if (!isBlocking({ class: 'repo-path', value: 'scripts/other-missing.mjs', line: 1 }, { status: 'MISSING' }, ifCfg)) {
+    fails.push('an in-flight declaration leaked to another claim in the same class');
+  }
+  const resolvedCfg = { ...cfg, in_flight_claims: [{ value: 'scripts/check-canaries-wired.mjs', class: 'repo-path', wave: 'W', declared_on: '2026-01-01', reason: 'fixture' }] };
+  if (staleInFlight([{ class: 'repo-path', value: 'scripts/check-canaries-wired.mjs', line: 1 }], ctx, resolvedCfg).length !== 1) {
+    fails.push('an in-flight declaration that has RESOLVED was not reported stale');
+  }
+  if (staleInFlight([], ctx, resolvedCfg).length !== 1) fails.push('an in-flight row for a claim CLAUDE.md no longer makes was not reported stale');
+  // the DERIVED marker (stamped by --sync from a pushed branch) downgrades the same way
+  if (isBlocking({ class: 'repo-path', value: 'scripts/gone.mjs', line: 1, in_flight: 'origin/x' }, { status: 'MISSING' }, cfg)) {
+    fails.push('a claim marked in_flight on a pushed branch still blocked');
+  }
+  if (!isBlocking({ class: 'repo-path', value: 'scripts/gone.mjs', line: 1 }, { status: 'MISSING' }, cfg)) {
+    fails.push('an unmarked missing repo-path stopped blocking — the in-flight downgrade leaked');
+  }
+
+  // (i2) host-path COVERAGE (OPS-CLAIM-VERIFIER-COVERAGE-W1): an unrouted, unexempted host path
+  // must fire — the blind spot W1 shipped. A routed one must not.
+  const unrouted = firingsOf('deploy to `/opt/algovault-nowhere/thing.py` on the box.\n');
+  if (unrouted.length !== 1 || unrouted[0].r.status !== 'REVIEW') fails.push('an unrouted host-path claim did not fire');
+  const rerouted = firingsOf('the wrapper lives at `/opt/algovault-monitoring/send_telegram.sh`.\n');
+  if (rerouted.length !== 0) fails.push('a routed host-path claim fired');
+  // and the claims file itself must carry a reason on every row, both kinds
+  const dc = ctx.docClaims || {};
+  for (const row of [...(dc.claims || []), ...(dc.exempt_claims || [])]) {
+    if (!row.reason) { fails.push(`doc-host-path-claims row ${row.path || row.value} has no reason`); break; }
+  }
+  for (const row of dc.claims || []) {
+    if (!Array.isArray(row.hosts) || !row.hosts.length) { fails.push(`doc-host-path-claims row ${row.path} names no owning host`); break; }
+  }
   // (i) config validation fail-closed: an exemption row without a reason must be rejected
   const bad = JSON.parse(JSON.stringify(cfg));
   bad.exemptions.push({ value: 'x', class: 'env-var' });

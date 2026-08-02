@@ -61,6 +61,33 @@
   },
   "_wiring_point_map_note": "Entries ending in / or _ are PREFIXES. pre-push resolves through the per-gate hook installers (scripts/install_*_hook.sh — measured: session-drift and source-greppable each ship their own), the baseline gate script, or the vitest suite the pre-push hook runs (tests/).",
 
+  "_corpus_enumeration": {
+    "_doc": "OPS-CLAIM-VERIFIER-COVERAGE-W1 R1 — every PRESCRIPTIVE doc assessed for inclusion, with the measured firing rate that decided it. Historical sources (status.md, Old Status/**, audits/**, and any _( … )_ note) are excluded by definition: their entries are past-tense by design and must never be 'corrected' to match present reality.",
+    "_measured_2026_08_02": "W1's `_( … )_` correction convention does NOT generalise — ZERO correction blocks in EVERY sibling corpus measured. So the strip is a no-op there, and the dominant false-positive class is entirely different: CROSS-REPO and EXTERNAL artifacts (a TS repo's doc citing capabilities.py, an upstream registry's openapi.yaml, another host process's env var). That is why no sibling corpus inherits CLAUDE.md's blocking classes on the strength of W1's measurement.",
+    "in": [
+      { "corpus": "CLAUDE.md", "state": "verified (blocking classes live)", "reason": "The prescriptive SoT every wave spec derives from. Measured 0 FPs on blocking classes (W1), re-confirmed here." }
+    ],
+    "out": [
+      { "corpus": "Claude files/monitoring-runbook.md", "state": "duplications DELETED; not added as a verified corpus", "reason": "Measured: after R2 removed its stale restatements, every remaining machine-checkable mention is a runtime state dir, a cache dir, a mode-600 SECRET (autopilot-pg-creds — which the reconciler's own ORPHAN scan excludes as 'must never be proposed for commit'), or a cross-repo path — a ~100% FP profile for the coverage rule. The artifacts that DO matter already have monitoring-inventory rows plus DOC_PATH_CLAIM existence checks. Verifying it would be a gate that cries wolf; deleting the duplication is the durable fix and shrinks what can drift." },
+      { "corpus": "Design.md", "state": "MEASURED, correction DEFERRED", "reason": "Highest-value candidate found: 15 claims, 5 firing, and all 5 verified as TRUE positives (0 FP) — 2 stale renames (check_caddy_api_route_parity.sh → live check-caddy-route-parity.mjs; tests/baseline-failures-quarantine.json → live audits/test-baseline-known-failures.txt) and 3 gates prescribed but never built. The never-built three need a build-or-retire decision that is the architect's, not this wave's — same shape as W1's numerical-fact-density finding. Owner: OPS-DESIGNMD-CLAIM-RECONCILE-W{NEXT}." },
+      { "corpus": "trim-status-config.md", "state": "out", "reason": "Measured 0 extractable claims — it prescribes KEEP/ARCHIVE prose rules, not artifacts. Nothing to verify." },
+      { "corpus": "research/algovault-automation-guide.md", "state": "out", "reason": "Measured 4 claims, 0 firing. A research/reference guide rather than an execution SoT; no wave derives ACs from it." },
+      { "corpus": "docs/RUNBOOK-*.md (repo)", "state": "out", "reason": "Sampled 3: PARALLEL-SESSIONS 4/0, POSTGRES-MAINT 2/0, FEATURE-REGISTRY 15/2 — and both FEATURE-REGISTRY firings are cross-repo Python (capabilities.py, tests/test_capabilities_parity.py) in a TypeScript repo, i.e. the measured FP class. Low claim density, no blocking case." }
+    ],
+    "promotion_criterion": "A corpus moves from `out` to verified only with its own measurement showing ZERO false positives on the classes it would block, plus an exemption list for its cross-repo/external artifacts carrying a reason per row. Re-measure with `node scripts/check-claudemd-claims.mjs --measure`; do not inherit CLAUDE.md's rate."
+  },
+
+  "in_flight_claims": [
+    {
+      "value": "ops/cron/checkout-parity.sh",
+      "class": "repo-path",
+      "wave": "OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W1",
+      "declared_on": "2026-08-02",
+      "reason": "MEASURED MID-WAVE, not hypothetical: a concurrent session edited the shared vault CLAUDE.md (adding the git-checkout-parity law) while its files were still local to its own worktree — absent from the working tree, from origin/main, and from every pushed branch (checked 2026-08-02). CLAUDE.md and the repo are two shared artifacts with no shared transaction, so a doc edit landing before its code is a race the lock cannot prevent, only DECLARE. Blocking here would make every unrelated wave hostage to another wave's push order; silently tolerating it would let a genuinely false claim hide behind 'probably in flight'. So: reported every run, and the gate FAILS once the claim RESOLVES, forcing this row's deletion instead of letting it rot."
+    }
+  ],
+  "_in_flight_semantics": "A declared in-flight claim downgrades BLOCK → REVIEW for that ONE claim, never for its class. It is self-cleaning: once the claim resolves, the gate FAILS until the row is removed, so a declaration cannot outlive the race it describes. Adding a row is a deliberate reviewed act — it is not a way to silence a real finding, and every row names the wave that owes the file.",
+
   "exemptions": [
     {
       "value": "LABEL=",
