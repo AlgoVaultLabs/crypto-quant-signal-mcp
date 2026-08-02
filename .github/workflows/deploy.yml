@@ -341,6 +341,19 @@ jobs:
           node scripts/check-entrypoint-guards.mjs --self-test
           node scripts/check-entrypoint-guards.mjs
 
+      # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-31 + SEC-37 — key material must not enter git or the
+      # Docker build context, AND trimming the context must never silently drop a COPY source.
+      # .gitignore carried only the bare literal `.env` (SEC-02 is what that costs in a PUBLIC
+      # repo), and no .dockerignore existed at all, so the live host `.env` was shipped to the
+      # daemon on every build. The load-bearing check is the INVERSE one: `audits/` and
+      # `README.md` are Stage-1 inputs to `npm run build:knowledge`, so a future "trim the
+      # context" that excludes them would produce a GREEN build shipping a stale public
+      # knowledge bundle. Emits BUILD_CONTEXT_HYGIENE_VERDICT=PASS|FAIL|INDETERMINATE.
+      - name: Build-context hygiene gate (fail-closed)
+        run: |
+          node scripts/check-build-context-hygiene.mjs --self-test
+          node scripts/check-build-context-hygiene.mjs
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
       # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
       # applied to customer.subscription.created, which mints an API key. Also asserts no
