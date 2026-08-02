@@ -1,0 +1,14 @@
+{
+  "_doc": "OPS-AOE-PREPUSH-RESTORE-W1 — protected refs for scripts/check-push-safety.sh. CLAUDE.md states as LAW 'Never force push to main/master' and 'Never reset --hard / push --force / branch -D without auth', and until this wave NOTHING enforced either: none of the live pre-push blocks reads the hook's stdin, which is the only channel by which a pre-push hook learns which refs are being pushed (measured 2026-08-02, 0 of 4). This file is the declaration point. Missing or unparseable ⇒ PUSH_SAFETY_VERDICT=INDETERMINATE, exit 3 — never a pass.",
+
+  "_why_a_config_and_not_a_regex": "A ref pattern living in the script is one a future wave 'fixes' without noticing it is load-bearing, and an exemption that lives only in code has no reason attached to it. Every row carries its own `reason`. This is the same law the monitoring-inventory and session-drift configs already follow.",
+
+  "_what_this_does_NOT_protect": "Ordinary pushes. This repo's LAW is auto-commit + auto-push on R-step completion, and merges land on the default branch as plain fast-forwards — a conventional 'no direct pushes to main' hook would halt every wave in the repo, which is a worse outage than the one this arc just retired. The protectable surface is HISTORY DESTRUCTION (non-fast-forward and deletion), nothing else.",
+
+  "protected_refs": [
+    {
+      "ref": "refs/heads/main",
+      "reason": "The repo's default branch and the deploy trigger — a push to it rebuilds and restarts production. History destruction here is unrecoverable from the remote alone and would silently un-deploy whatever the rewritten commits carried. Fast-forward pushes to this ref are EXPLICITLY still allowed: they are the normal path every wave takes to ship, and blocking them was the failure mode this guard was designed around."
+    }
+  ]
+}

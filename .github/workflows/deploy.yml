@@ -287,6 +287,22 @@ jobs:
       - name: Shared-worktree-state reconciler logic (fail-closed)
         run: node scripts/check-shared-state.mjs --self-test
 
+      # OPS-AOE-PREPUSH-RESTORE-W1 — CLAUDE.md states as LAW "Never force push to main/master"
+      # and "Never reset --hard / push --force / branch -D without auth", and until this wave
+      # NOTHING enforced either: measured on origin/main, ZERO of the four live pre-push blocks
+      # read the hook's stdin, which is the only channel by which a pre-push hook learns which
+      # refs are being pushed. Both laws were enforced by prose alone.
+      #
+      # --self-test only, like its four siblings: the live check needs a real push's stdin,
+      # which a CI runner does not have. Deliberately redundant with
+      # tests/unit/push-safety.test.ts — a dedicated step keeps CI coverage if that test is ever
+      # quarantined, which is exactly how a guard quietly stops being covered.
+      #
+      # NB INDETERMINATE is 3 here, the token-law default for a new gate — deliberately NOT the
+      # test gate's 2. Do not align them.
+      - name: Push-safety guard logic (fail-closed)
+        run: bash scripts/check-push-safety.sh --self-test
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch1 — SEC-14 + SEC-10 were CLAUDE.md laws that no gate
       # enforced ("redact by STRUCTURE, never by vendor prefix"; no credential in a URL). Patching
       # the two call sites fixes today; this makes a NEW leaking lane fail the build. Emits
