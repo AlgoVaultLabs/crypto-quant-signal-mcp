@@ -167,6 +167,24 @@ def build_query(free_limit):
     )
 
 
+def parse_forced_rows(spec):
+    """Parse the `key:count:epoch,...` test seam.
+
+    Splits from the RIGHT. Tracker keys contain colons of their own — `free:v2:<hash>` is the
+    canonical keyless form — so a left-to-right `split(":")[0:3]` reads the key as `free`, the
+    count as `v2`, and dies on `int('v2')`. That is not hypothetical: it made the very first
+    fire-proof run on the host report INDETERMINATE, and the scenario suite could not see it
+    because every case calls `run_cycle` directly and never touches this seam.
+    """
+    rows = []
+    for chunk in spec.split(","):
+        if not chunk.strip():
+            continue
+        key, count, start = chunk.rsplit(":", 2)
+        rows.append((key, int(count), int(start)))
+    return rows
+
+
 def query_rows():
     """[(tracker_key, call_count, period_start_epoch)] for CURRENT free-tier periods.
 
@@ -177,13 +195,7 @@ def query_rows():
     """
     forced = os.environ.get("QUOTA_CANARY_FORCE_ROWS")
     if forced is not None:
-        rows = []
-        for chunk in forced.split(","):
-            if not chunk.strip():
-                continue
-            key, count, start = chunk.split(":")[0], chunk.split(":")[1], chunk.split(":")[2]
-            rows.append((key, int(count), int(start)))
-        return rows
+        return parse_forced_rows(forced)
     sql = build_query(FREE_LIMIT)
     rows = []
     for line in _psql(sql).splitlines():
@@ -460,6 +472,21 @@ def self_test():
     check("the SQL keeps its LIKE wildcards intact", built and "LIKE 'free:%'" in q and "LIKE 'av_free_%'" in q)
     check("the SQL casts the TEXT period_start before EXTRACT", built and "period_start::timestamptz" in q)
     check("the SQL carries the free limit", built and q.rstrip().endswith(str(FREE_LIMIT)))
+
+    # I3) THE TEST SEAM ITSELF — every scenario above calls run_cycle directly, so the parser
+    #     that the host-side fire-proof depends on was never exercised. A colon-bearing key
+    #     (`free:v2:<hash>`, the canonical keyless form) is the case that broke it.
+    #     Wrapped defensively: a parser that RAISES must report FAIL, not abort the suite —
+    #     an assertion that crashes is not an assertion.
+    try:
+        parsed = parse_forced_rows("free:v2:aaaa1111bbbb2222:100:1785000000,av_free_x:250:1785000001")
+    except Exception as e:  # noqa: BLE001
+        log("seam parse raised: %s: %s" % (type(e).__name__, e))
+        parsed = []
+    check("seam parses a COLON-BEARING key (rsplit, not split)",
+          len(parsed) == 2 and parsed[0] == ("free:v2:aaaa1111bbbb2222", 100, 1785000000))
+    check("seam parses a colon-free key too",
+          len(parsed) == 2 and parsed[1] == ("av_free_x", 250, 1785000001))
 
     # J) VACUITY GUARD — refuse to report a pass over an empty corpus. Without this, a future
     #    change that made every scenario a no-op would still print PASS.
