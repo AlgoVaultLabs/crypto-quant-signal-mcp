@@ -255,6 +255,23 @@ def main(argv: list[str]) -> int:
     digest_file = Path(os.environ.get("LF_DIGEST_FILE", "/var/lib/algovault-monitoring/label-freshness-digest.txt"))
     wrapper = os.environ.get("LF_WRAPPER", "/opt/algovault-monitoring/send_telegram.sh")
 
+    # SEC-30 (OPS-AUDIT-REMEDIATION-LOW-W1): a SYNTHETIC breach must never be written into
+    # production state. --force-stale marks a venue bad inside evaluate(), that venue lands in
+    # majors_bad, majors_bad builds `consecutive`, and `consecutive` is persisted below — so a
+    # single smoke run incremented the REAL sustained-drift counter for a healthy venue. The
+    # next genuine run then reads an inflated prior and can page a day early, which defeats the
+    # entire point of the sustained-drift gate the smoke was exercising.
+    #
+    # Redirecting the artifacts (rather than filtering the forced venue out of `consecutive`)
+    # is deliberate: the smoke still exercises the real read/evaluate/page path end to end, but
+    # NOTHING it computes can reach the durable files. A filter would leave the digest write and
+    # the `updated` stamp still landing on production.
+    if force_stale:
+        state_file = state_file.with_suffix(state_file.suffix + ".forced-smoke")
+        digest_file = digest_file.with_suffix(digest_file.suffix + ".forced-smoke")
+        log(f"FORCED_SMOKE --force-stale={force_stale}: state/digest redirected to "
+            f"{state_file.name} / {digest_file.name}; production state is NOT touched")
+
     try:
         rows = census()
     except Exception as exc:  # fail-open: probe failure never pages, never bounces cron

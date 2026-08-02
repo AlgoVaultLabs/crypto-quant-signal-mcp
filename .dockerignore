@@ -1,0 +1,67 @@
+# .dockerignore — SEC-37 (OPS-AUDIT-REMEDIATION-LOW-W1)
+#
+# Without this file, `docker build` sends the ENTIRE repo root to the Docker daemon as build
+# context — including the live production `.env` sitting in the deploy directory on the host.
+# Nothing in the Dockerfile COPYs it, so it never reached an image layer, but it was transmitted
+# to the daemon and written into its build cache on every deploy. That is a live credential
+# crossing a boundary it has no reason to cross, and it is free to stop.
+#
+# ⚠️ THIS FILE CAN BREAK THE BUILD. Excluding a path the Dockerfile COPYs fails the build at
+# best, and at worst ships a STALE artifact. The Stage-1 (builder) inputs are the dangerous
+# ones, because `RUN npm run build:knowledge` consumes them and their content ships inside
+# dist/knowledge/*.json — a silent content regression with a green build. The COPY set was
+# enumerated from BOTH Dockerfiles before this file was written:
+#
+#   src/ · package*.json · tsconfig.json · scripts/build-knowledge-json.mjs · audits/
+#   landing/integrations/ · README.md · CHANGELOG.md · landing/Prompt/ · landing/skills.html
+#   landing/integrations.html · scripts/fetchers/ · scripts/refresh-knowledge-pages.mjs
+#   scripts/funnel-by-channel.mjs
+#
+# NONE of those may be excluded here. Re-derive the list before adding any rule:
+#   grep -hE '^COPY' Dockerfile Dockerfile.facilitator
+
+# ── Key material — the reason this file exists ───────────────────────────────
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+*_rsa
+*_ed25519
+credentials.json
+service-account*.json
+.mcpregistry_github_token
+.mcpregistry_registry_token
+
+# ── Build noise: rebuilt inside the image, or irrelevant to it ───────────────
+node_modules
+dist
+*.db
+*.sqlite
+.DS_Store
+
+# ── VCS and local tooling ────────────────────────────────────────────────────
+.git
+.gitignore
+.github
+.claude
+.smithery
+*.mcpb
+
+# ── Test and local-only artifacts ────────────────────────────────────────────
+coverage
+.nyc_output
+*.log
+npm-debug.log*
+
+# NOTE: `audits/`, `README.md`, `CHANGELOG.md` and `landing/` are deliberately ABSENT from this
+# file. They are Dockerfile COPY sources — `audits/` and `README.md` are Stage-1 inputs to
+# `npm run build:knowledge`, so excluding them would ship a stale knowledge bundle rather than
+# fail loudly. If you are here to "trim the context further", that is the trap.

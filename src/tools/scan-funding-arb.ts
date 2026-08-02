@@ -61,7 +61,12 @@ const liquidityCache = new Map<string, { at: number; byCoin: Map<string, number>
 // (BTW/STABLE/SLX) whose 100–290% annualized spreads are only marginally executable; $5M drops those and
 // keeps the $5M+/leg opportunities (LAB/SKHYNIX). Liquid majors (BTC/ETH) never surface at meaningful
 // thresholds regardless — their cross-venue funding is a few % — so this floor only trims the thin tail.
-// TODO(revisit by 2026-07-15): re-tune against more data — raise for fewer thin coins, lower for reach.
+// TODO(revisit by 2026-09-01): re-tune against more data — raise for fewer thin coins, lower for reach.
+// SEC-26 (OPS-AUDIT-REMEDIATION-LOW-W1, 2026-08-02): re-dated, NOT silently extended. The floor is
+// still doing its job (it trims the thin tail; liquid majors never surface at meaningful thresholds
+// either way), but the re-tune it asks for needs a funding-spread distribution study that does not
+// exist yet. Owner: OPS-FUNDING-ARB-LIQUIDITY-RETUNE-W{NEXT}. Registered in
+// `Claude files/defensive-reductions-to-revisit.md` so the date has an alert behind it.
 const MIN_LIQUIDITY_USD = 5_000_000;
 
 async function getCachedPredictedFundings(exchangeId: ExchangeId): Promise<FundingData[]> {

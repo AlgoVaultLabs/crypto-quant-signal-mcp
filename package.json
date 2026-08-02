@@ -10,7 +10,7 @@
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues"
   },
   "mcpName": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
-  "description": "The Brain Layer for AI Trading Agents — one MCP call returns a composite trade verdict (direction, confidence, regime) across major crypto perp venues. On-chain Merkle-verified track record.",
+  "description": "The Brain Layer for AI Trading Agents \u2014 one MCP call returns a composite trade verdict (direction, confidence, regime) across major crypto perp venues. On-chain Merkle-verified track record.",
   "main": "dist/index.js",
   "module": "src/index.ts",
   "bin": {
@@ -103,7 +103,8 @@
     "stripe": "^22.0.1",
     "undici": "^6.24.1",
     "viem": "~2.54.0",
-    "wink-bm25-text-search": "^3.1.2"
+    "wink-bm25-text-search": "^3.1.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

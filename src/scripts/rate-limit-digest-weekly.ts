@@ -23,6 +23,7 @@
  *   0 0 * * 0 docker exec crypto-quant-signal-mcp-mcp-server-1 node dist/scripts/rate-limit-digest-weekly.js >> /var/log/shadow-digest.log 2>&1
  */
 
+import { runScript } from '../lib/script-lifecycle.js';
 import { closeDb } from '../lib/performance-db.js';
 import { sendDigest } from '../lib/telegram.js';
 import { buildDigest } from '../lib/rate-limit-digest.js';
@@ -46,8 +47,9 @@ async function main() {
   closeDb();
 }
 
-main().catch((err) => {
-  console.error('Fatal:', err);
-  closeDb();
-  process.exit(1);
-});
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): guard the entrypoint AND terminate through
+// runScript(), which drains and exits. A bare main().catch() leaves the process alive
+// on success and pins a Postgres connection forever (OPS-SCRIPT-EXIT-LIFECYCLE-W1).
+if (require.main === module) {
+  void runScript('rate-limit-digest-weekly', main);
+}

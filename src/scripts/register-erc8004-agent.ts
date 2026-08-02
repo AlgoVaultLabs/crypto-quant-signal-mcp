@@ -54,6 +54,7 @@
  *   --update-uri  Adopt + update existing agentId (see mode 2 above).
  */
 
+import { runScript } from '../lib/script-lifecycle.js';
 import { mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -483,7 +484,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(`[${ts()}] Fatal:`, err);
-  process.exit(1);
-});
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): guard the entrypoint AND terminate through
+// runScript(), which drains and exits. A bare main().catch() leaves the process alive
+// on success and pins a Postgres connection forever (OPS-SCRIPT-EXIT-LIFECYCLE-W1).
+if (require.main === module) {
+  void runScript('register-erc8004-agent', main);
+}

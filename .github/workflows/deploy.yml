@@ -329,6 +329,44 @@ jobs:
           node scripts/check-claudemd-claims.mjs --self-test
           node scripts/check-claudemd-claims.mjs --check
 
+      # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-22 — a cron/CLI entrypoint must guard its top-level
+      # main(), or anything that imports it RUNS it (a test, a canary, another script reusing one
+      # helper) and the failure is silent and expensive. CLAUDE.md already carried this as prose
+      # with no executable gate: SEC-22 was filed against 2 files, and a re-grep at HEAD found
+      # those 2 already fixed while SEVEN others had never been guarded at all. Emits
+      # ENTRYPOINT_GUARDS_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (scanned nothing, or found no
+      # entrypoints at all) blocks too, so a broken detector can never read as "verified clean".
+      - name: Entrypoint-guard gate (fail-closed)
+        run: |
+          node scripts/check-entrypoint-guards.mjs --self-test
+          node scripts/check-entrypoint-guards.mjs
+
+      # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-31 + SEC-37 — key material must not enter git or the
+      # Docker build context, AND trimming the context must never silently drop a COPY source.
+      # .gitignore carried only the bare literal `.env` (SEC-02 is what that costs in a PUBLIC
+      # repo), and no .dockerignore existed at all, so the live host `.env` was shipped to the
+      # daemon on every build. The load-bearing check is the INVERSE one: `audits/` and
+      # `README.md` are Stage-1 inputs to `npm run build:knowledge`, so a future "trim the
+      # context" that excludes them would produce a GREEN build shipping a stale public
+      # knowledge bundle. Emits BUILD_CONTEXT_HYGIENE_VERDICT=PASS|FAIL|INDETERMINATE.
+      - name: Build-context hygiene gate (fail-closed)
+        run: |
+          node scripts/check-build-context-hygiene.mjs --self-test
+          node scripts/check-build-context-hygiene.mjs
+
+      # OPS-AUDIT-REMEDIATION-LOW-W1 · SEC-40 — a RATCHET, not a claim of victory.
+      # safeUpstreamNum() shipped as the "generator" fix for default-deny numeric parsing and
+      # exactly 2 of 18 adapters ever called it, against 176 raw parseFloat sites — a lane fix
+      # wearing a generator's clothes. parseFloat('0x1') is 0 and Number('0x1') is 1: finite,
+      # plausible, and the WRONG PRICE feeding a paid verdict. This pins the raw-parse
+      # population per file so a NEW adapter starts at 0 and no file can grow. It does NOT
+      # convert the existing backlog — that is OPS-ADAPTER-SAFENUM-SWEEP-W{NEXT}, and the gate
+      # says so on every run rather than reading as coverage it does not have.
+      - name: Adapter numeric-guard ratchet (fail-closed)
+        run: |
+          node scripts/check-adapter-numeric-guard.mjs --self-test
+          node scripts/check-adapter-numeric-guard.mjs
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
       # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
       # applied to customer.subscription.created, which mints an API key. Also asserts no

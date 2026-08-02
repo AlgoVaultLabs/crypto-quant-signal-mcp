@@ -3534,6 +3534,47 @@ async function startHttp() {
     })
     .catch((e) => console.error('[ACP] worker bootstrap error (ACP stays dark):', e instanceof Error ? e.message : e));
 
+  // ── SEC-27 (OPS-AUDIT-REMEDIATION-LOW-W1): terminal error handler ─────────────
+  // Until this existed there was NO error-handling middleware at all, so Express's DEFAULT
+  // handler answered every unhandled throw — and that handler includes the stack trace
+  // whenever NODE_ENV !== 'production'. NODE_ENV was unset in the production container, so a
+  // malformed unauthenticated POST to https://api.algovault.com/mcp returned an HTML page
+  // containing /app/node_modules/... frames to anyone on the internet. Reproduced live on
+  // 2026-08-02 against both /mcp and /api/chat.
+  //
+  // This is deliberately CODE, not just an env fix. Setting NODE_ENV=production closes it
+  // today and reopens it the next time an env file is rewritten, a container is recreated
+  // without it, or a new host is provisioned — the class has to be impossible, not merely
+  // absent. Express identifies an error handler by its FOUR-argument arity; `next` must stay
+  // in the signature even though it is unused, or this silently becomes a normal middleware
+  // and stops catching anything.
+  //
+  // Diagnostics stay server-side in the log; the wire gets a stable machine-readable `code`.
+  app.use((
+    err: unknown,
+    req: import('express').Request,
+    res: import('express').Response,
+    _next: import('express').NextFunction,
+  ) => {
+    // body-parser marks a malformed-JSON SyntaxError by hanging a `body` property on it; that
+    // is a 400 (the caller sent bad input), not a 500.
+    const isSyntax = err instanceof SyntaxError && 'body' in (err as unknown as Record<string, unknown>);
+    const status = isSyntax ? 400 : 500;
+    console.error(
+      `[http-error] ${req.method} ${req.path} -> ${status}:`,
+      err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err),
+    );
+    if (res.headersSent) return;
+    res.status(status).json({
+      error: isSyntax ? 'invalid_request' : 'internal_error',
+      code: isSyntax ? 'MALFORMED_JSON_BODY' : 'INTERNAL_ERROR',
+      message: isSyntax
+        ? 'Request body is not valid JSON.'
+        : 'An internal error occurred. If this persists, contact support with the timestamp.',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   const httpServer = app.listen(port, () => {
     console.log(`crypto-quant-signal-mcp running on http://0.0.0.0:${port}/mcp`);
     console.log(`Health check: http://0.0.0.0:${port}/health`);

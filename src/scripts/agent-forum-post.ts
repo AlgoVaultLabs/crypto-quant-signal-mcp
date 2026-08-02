@@ -17,6 +17,7 @@
  *   FORUM_POST_KILL_SWITCH=1 — abort without publishing (for emergency halt)
  */
 
+import { runScript } from '../lib/script-lifecycle.js';
 import { stripExternalUrlsForModeration } from '../lib/forum-post-content.js';
 import { checkForumPost } from '../lib/forum-post-gate.js';
 import { type RenderableScanCall } from '../lib/scan-digest.js';
@@ -1624,7 +1625,9 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('Fatal:', err);
-  process.exit(1);
-});
+// SEC-22 (OPS-AUDIT-REMEDIATION-LOW-W1): guard the entrypoint AND terminate through
+// runScript(), which drains and exits. A bare main().catch() leaves the process alive
+// on success and pins a Postgres connection forever (OPS-SCRIPT-EXIT-LIFECYCLE-W1).
+if (require.main === module) {
+  void runScript('agent-forum-post', main);
+}
