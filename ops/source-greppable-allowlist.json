@@ -1,0 +1,28 @@
+{
+  "_comment": "OPS-GREPPABLE-SOURCE-GUARD-W1 — exemptions for scripts/check-source-greppable.mjs. Every row carries a `reason`: an exemption that lives only in a code comment gets 'fixed' by a future wave enforcing the contract (CLAUDE.md). Adding a row is a deliberate act — a genuinely binary asset belongs here; a source file that happens to contain a raw NUL does NOT, it gets the escape instead.",
+  "_scope": "The canary scans EVERY tracked file (git ls-files), not just src/scripts/ops/tests. That widening is deliberate: every raw NUL actually observed in this repo landed in MARKDOWN outside those four directories — audits/*.md and status.md (2026-08-01), and the wave's own Prompt spec. audits/** is additionally a Dockerfile Stage-1 input consumed by `npm run build:knowledge`, so a NUL there can reach the shipped knowledge bundle.",
+  "extensions": [
+    { "ext": ".png", "reason": "Raster image. Binary by format; PNG's 8-byte signature alone contains NULs." },
+    { "ext": ".jpg", "reason": "Raster image. Binary by format." },
+    { "ext": ".jpeg", "reason": "Raster image. Binary by format." },
+    { "ext": ".gif", "reason": "Raster image. Binary by format." },
+    { "ext": ".webp", "reason": "Raster image. Binary by format." },
+    { "ext": ".ico", "reason": "Icon bundle. Binary by format." },
+    { "ext": ".pdf", "reason": "Document container. Binary by format." },
+    { "ext": ".woff", "reason": "Web font. Binary by format." },
+    { "ext": ".woff2", "reason": "Web font. Binary by format." },
+    { "ext": ".ttf", "reason": "Font. Binary by format." },
+    { "ext": ".otf", "reason": "Font. Binary by format." },
+    { "ext": ".eot", "reason": "Font. Binary by format." },
+    { "ext": ".zip", "reason": "Archive. Binary by format." },
+    { "ext": ".gz", "reason": "Compressed stream. Binary by format." },
+    { "ext": ".tgz", "reason": "Compressed archive. Binary by format." },
+    { "ext": ".db", "reason": "SQLite database fixture. Binary by format." },
+    { "ext": ".sqlite", "reason": "SQLite database fixture. Binary by format." },
+    { "ext": ".wasm", "reason": "WebAssembly module. Binary by format." },
+    { "ext": ".mp4", "reason": "Video. Binary by format." },
+    { "ext": ".mov", "reason": "Video. Binary by format." },
+    { "ext": ".onnx", "reason": "Serialised model. Binary by format." }
+  ],
+  "paths": []
+}

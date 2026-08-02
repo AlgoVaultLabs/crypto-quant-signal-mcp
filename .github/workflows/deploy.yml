@@ -278,6 +278,22 @@ jobs:
           node scripts/check-secret-log-redaction.mjs --self-test
           node scripts/check-secret-log-redaction.mjs
 
+      # OPS-GREPPABLE-SOURCE-GUARD-W1 — a raw NUL byte in a tracked text file makes every
+      # grep-class tool that skips binaries drop the WHOLE file SILENTLY at exit 0, so its
+      # contents read as ABSENT. Measured 2026-08-01: `grep -c export performance-db.ts`
+      # returned empty under the agent shell (ugrep invoked -I) while BSD grep and rg both
+      # returned 73. That produced a 3-chapter false Plan-Mode HALT on primitives that were
+      # live the whole time — the 4th incident of this class in ~8 weeks.
+      #
+      # Detection is byte-level and TOOL-INDEPENDENT (it never shells out to whichever grep
+      # is installed), so macOS and this runner return the same verdict. Emits
+      # SOURCE_GREPPABLE_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (enumerated nothing) blocks
+      # too, so a broken scan can never read as "verified clean".
+      - name: Source greppability gate (fail-closed)
+        run: |
+          node scripts/check-source-greppable.mjs --self-test
+          node scripts/check-source-greppable.mjs --check
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
       # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
       # applied to customer.subscription.created, which mints an API key. Also asserts no
