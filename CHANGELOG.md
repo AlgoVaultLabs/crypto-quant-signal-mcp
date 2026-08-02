@@ -5,6 +5,26 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0] - 2026-08-02
+
+### Changed
+- **Breaking: requires Node 22 or newer.** The package now declares `engines: >=22`. Self-hosters on Node 18 or 20 get an engine warning on install — upgrade Node to continue. The hosted endpoint is unaffected.
+
+### Added
+- `scan_trade_calls` takes an optional `minLiquidityUsd` floor. It screens the scan universe by notional open interest, or by 24h volume where a venue exposes no bulk open interest. Omit it for no floor.
+- Pay-per-call now settles over Circle Gateway on Optimism, alongside the existing Base rail. Point an x402 client at either advertised rail.
+- Webhook subscribers are told when their endpoint is quarantined, and paid tiers get a longer recovery window than free.
+
+### Fixed
+- A paid request whose body was dropped in transit could return a defaults-only result on routes where every field is optional. Every payable route now rejects a dropped body.
+- Rejected paid requests explain why, instead of returning an opaque failure.
+- Payment proofs bind to any advertised rail, not only the first.
+- Funding rates annualize at each contract's own funding period, so cross-venue spreads compare like with like.
+- Free-tier quota exhaustion returns one consistent notice across every surface.
+- `get_market_regime` now receives the caller's licence, so quota applies correctly.
+- 24h change on Aster reads from the correct upstream field.
+- Webhook status reports when an endpoint last worked, not when it was last probed.
+
 ## [1.24.1] - 2026-07-25
 
 ### Internal
