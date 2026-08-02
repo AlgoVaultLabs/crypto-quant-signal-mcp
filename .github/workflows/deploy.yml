@@ -294,6 +294,22 @@ jobs:
           node scripts/check-source-greppable.mjs --self-test
           node scripts/check-source-greppable.mjs --check
 
+      # OPS-CLAUDEMD-CLAIM-VERIFIER-W1 — the vault CLAUDE.md is the prescriptive SoT every wave
+      # spec derives from, and it had no verifier: five recorded incidents of claims rotting
+      # silently (a gate cited for months that was never built; a dist/index.js grep whose
+      # structural 0 shipped an unsatisfiable AC; the paths-ignore list drifting twice in one
+      # session; an exit code documented 3 while live main deployed 2; --dry-run publishing).
+      # The corpus is private and unreachable here, so this verifies the committed identifier
+      # lock (ops/claudemd-claims.lock.json) against THIS tree — the commit that deletes or
+      # renames a file the manual prescribes fails right here. Historical _( … )_ correction
+      # blocks were stripped at extraction, so cited-dead-things in the file's own history can
+      # never fire. Emits CLAUDEMD_CLAIMS_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (missing
+      # config/lock, vacuous extraction) blocks too, so a broken verify never reads as clean.
+      - name: CLAUDE.md claim-lock gate (fail-closed)
+        run: |
+          node scripts/check-claudemd-claims.mjs --self-test
+          node scripts/check-claudemd-claims.mjs --check
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch2 — the executable form of the CLAUDE.md webhook
       # law ("tryClaimEvent() BEFORE the side-effect"). SEC-20 was that law simply never
       # applied to customer.subscription.created, which mints an API key. Also asserts no
