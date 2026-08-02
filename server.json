@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
-  "title": "AlgoVault \u2014 Crypto Quant Trade Calls",
-  "description": "The Brain Layer for AI Trading Agents \u2014 quant calls + cross-venue arb across perp venues via MCP.",
-  "version": "1.24.1",
+  "title": "AlgoVault — Crypto Quant Trade Calls",
+  "description": "The Brain Layer for AI Trading Agents — quant calls + cross-venue arb across perp venues via MCP.",
+  "version": "1.25.0",
   "repository": {
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp",
     "source": "github"
