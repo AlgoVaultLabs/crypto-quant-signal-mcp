@@ -175,7 +175,14 @@ Remaining deploy work is already named and **not ours**: `OPS-HOST-DEPLOY-PROVEN
 | `scripts/lib/hook-block.sh` · `ops/shared-worktree-state.json` · `scripts/check-shared-state.mjs` | correctly ABSENT — this wave creates them |
 | `ops/deploy/assert-deploy-ref.sh` | ABSENT and **stays absent** per A1 |
 
-`check-canaries-wired.mjs` live count: **29** → CH3 target **30** (asserted against the live value, never this literal).
+`check-canaries-wired.mjs` live count: **29** at the Plan-Mode base `a0046e7`.
+
+> **Corrected during CH3 (same day).** By `657a459` the live count was **31** — `origin/main` gained
+> two committed gate scripts while this wave was in flight. CH3 therefore asserts **31 → 32**, and
+> the point stands rather than being undermined: the spec's own rule is to assert the **live** count
+> `+1` and never a literal from any document, and this audit's own literal went stale within hours.
+> Note also that `check-canaries-wired.mjs` enumerates **tracked** files, so a new gate is invisible
+> to it until committed — the `+1` can only be verified after the commit, never before.
 
 ### 🛑 `install_system_map_hook.sh` is worktree-broken AND truncating
 

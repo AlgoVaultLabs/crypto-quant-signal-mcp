@@ -268,6 +268,25 @@ jobs:
       - name: Session-drift detector logic (fail-closed)
         run: node scripts/check-session-drift.mjs --self-test
 
+      # OPS-SHARED-WORKTREE-STATE-REGISTRY-W1 — worktrees isolate the git INDEX and nothing
+      # else. The shared $GIT_COMMON_DIR hooks, the shared SQLite test DB and the ledgers are
+      # common to every checkout, and none of them had an enumeration until this wave; that is
+      # why the 4th writer to pre-push halted every parallel session on 2026-08-01 (69 of 75
+      # checkouts could not push).
+      #
+      # --self-test ONLY, for the same reason as the session-drift gate directly above: a live
+      # --check here is structurally VACUOUS. A CI runner is a fresh clone with exactly one
+      # worktree and no installed hooks, so every worktree-local check would pass over an empty
+      # corpus and read as coverage. What CI can protect is that the gate's own logic has not
+      # rotted into an always-pass, which is exactly what the vacuity-guarded self-test asserts
+      # (1 clean fixture + 6 defect fixtures + the token→exit-code mapping). The live --check
+      # runs at pre-push, where the hooks and the worktrees actually exist.
+      #
+      # NB its INDETERMINATE code is 3 — the token-law default for a NEW gate, matching the
+      # session-drift gate and deliberately NOT the test gate's 2. Do not align them.
+      - name: Shared-worktree-state reconciler logic (fail-closed)
+        run: node scripts/check-shared-state.mjs --self-test
+
       # OPS-AUDIT-REMEDIATION-MEDIUM-W1 Ch1 — SEC-14 + SEC-10 were CLAUDE.md laws that no gate
       # enforced ("redact by STRUCTURE, never by vendor prefix"; no credential in a URL). Patching
       # the two call sites fixes today; this makes a NEW leaking lane fail the build. Emits
