@@ -252,12 +252,19 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 ---
 
-## What's new in v1.24.0
+## What's new in v1.25.0
 
-- **🌐 Three new exchanges: WhiteBIT, BitMart, XT.** AlgoVault's signal engine now spans 15 perpetual-futures venues. Point any tool at the new venues via the `exchange` parameter.
+- **🎯 Screen the scan universe by liquidity.** `scan_trade_calls` now takes an optional `minLiquidityUsd` floor — filter to names with real depth, by notional open interest or 24h volume. Omit it for no floor.
+- **💳 Charge-correctness on the paid path.** A paid request whose body was dropped could return a defaults-only result. Every payable route now rejects a dropped body, and a rejected request explains why.
+- **⛓️ Pay per call on a second rail.** x402 settlement now runs over Circle Gateway on Optimism alongside Base — point your agent at either advertised rail.
+- **📊 Truer funding comparisons.** Funding rates annualize at each contract's own period, so cross-venue spreads compare like with like.
+
+> New optional parameter — MCP clients cache `tools/list` at session start. Toggle the connector off/on (or restart the MCP connection) to see `minLiquidityUsd`.
+
+### v1.24.0 highlights (recap)
+
+- **🌐 Three new exchanges: WhiteBIT, BitMart, XT.** AlgoVault's signal engine spans more perpetual-futures venues. Point any tool at the new venues via the `exchange` parameter.
 - **🔌 New venue integration pages.** Per-venue connect guides at [algovault.com/integrations](https://algovault.com/integrations).
-
-> The `exchange` parameter now accepts 15 venues — MCP clients cache `tools/list` at session start, so toggle the connector off/on (or restart the MCP connection) to pick up the new options.
 
 ### v1.23.1 highlights (recap)
 
@@ -270,11 +277,6 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 > MCP clients cache `tools/list` at session start — toggle the connector off/on (or restart the MCP connection) to pick up the updated `scan_funding_arb`.
 
-### v1.22.0 highlights (recap)
-
-- **🌐 <span data-tr-field="exchange_count">12</span> exchanges live.** **ASTER, BingX, Gate, HTX, KuCoin, MEXC, and Phemex** join Hyperliquid, Binance, Bybit, OKX, and Bitget on the verified, Merkle-anchored public track record — composite trade calls, market-regime detection, and the per-venue PFE leaderboard now span every promoted venue.
-- **🏆 Per-venue leaderboard.** The live [track-record leaderboard](https://algovault.com/track-record) ranks per-venue PFE win rate across every venue — filter to any newly-added one.
-- **🔁 Forward-stable coverage.** The venue count reads live everywhere it appears, so coverage stays accurate as we keep adding venues.
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
