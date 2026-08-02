@@ -86,6 +86,10 @@ export default defineConfig({
       // (canonical runner is node:test; exclude from vitest so it doesn't false-fail
       // "No test suite found"). Same content-detection note as the parity canary above.
       'tests/unit/network-posture-declaration.test.mjs',
+      // OPS-SHARED-WORKTREE-STATE-REGISTRY-W1 — node:test property suite for the shared
+      // git-hook block emitter (canonical runner is node:test; exclude from vitest so it
+      // doesn't false-fail "No test suite found"). Same content-detection note as above.
+      'tests/unit/hook-block.test.mjs',
       // OPS-VITEST-MAIN-RED-FIX-W1: check-system-map.test.ts drives
       // scripts/check_system_map.sh against throwaway temp git repos. It passes on
       // macOS (local dev + the pre-push gate) but fails on ubuntu CI — a BSD-vs-GNU
