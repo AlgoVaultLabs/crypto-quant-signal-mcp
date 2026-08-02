@@ -18,7 +18,7 @@
     {
       "registryType": "npm",
       "identifier": "crypto-quant-signal-mcp",
-      "version": "1.24.1",
+      "version": "1.25.0",
       "transport": {
         "type": "stdio"
       },
