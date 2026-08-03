@@ -33,12 +33,14 @@ import { dbExec, dbQuery } from './performance-db.js';
 
 const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   CREATE TABLE IF NOT EXISTS processed_x402_payments (
-    nonce TEXT PRIMARY KEY,
+    nonce TEXT NOT NULL,
     tool TEXT,
     amount TEXT,
-    payer_wallet TEXT,
-    created_at ${process.env.DATABASE_URL ? 'TIMESTAMPTZ' : 'TIMESTAMP'} DEFAULT ${process.env.DATABASE_URL ? 'now()' : "(datetime('now'))"}
+    payer_wallet TEXT NOT NULL DEFAULT '',
+    created_at ${process.env.DATABASE_URL ? 'TIMESTAMPTZ' : 'TIMESTAMP'} DEFAULT ${process.env.DATABASE_URL ? 'now()' : "(datetime('now'))"},
+    PRIMARY KEY (payer_wallet, nonce)
   );
+  CREATE INDEX IF NOT EXISTS idx_processed_x402_payments_nonce ON processed_x402_payments (nonce);
   CREATE INDEX IF NOT EXISTS idx_processed_x402_payments_created_at ON processed_x402_payments (created_at);
   ${process.env.DATABASE_URL ? 'ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS payer_wallet TEXT;' : ''}
 `;
@@ -67,7 +69,7 @@ export function ensureProcessedX402PaymentsSchema(): void {
  *
  * The ON CONFLICT/OR IGNORE clause is keyed on `nonce` (the PRIMARY KEY); the
  * RETURNING clause yields the row only when the insert actually happened, which
- * is the signal we read. PG: `ON CONFLICT (nonce) DO NOTHING RETURNING nonce`.
+ * is the signal we read. PG: `ON CONFLICT (payer_wallet, nonce) DO NOTHING RETURNING nonce`.
  * SQLite: `INSERT OR IGNORE ... RETURNING nonce`.
  *
  * DB-unreachable / error path: FAIL SAFE (default-deny on the paid path, per
@@ -105,7 +107,10 @@ export async function tryClaimPayment(
          RETURNING nonce`;
     // Conflict is STILL arbitrated on the nonce PK (DO NOTHING / OR IGNORE) → dedup byte-identical;
     // payer_wallet rides only on the winning insert, and a replay's DO-NOTHING never overwrites it.
-    const inserted = await dbQuery<{ nonce: string }>(sql, [nonce, tool, amount, payerWallet ?? null]);
+    // SEC-49: '' (not NULL) for an unextractable payer. Under the composite key a NULL would
+    // make every such row DISTINCT in Postgres — NULL != NULL — so an unattributable replay
+    // would bypass the claim entirely and re-serve for free. '' dedupes; NULL does not.
+    const inserted = await dbQuery<{ nonce: string }>(sql, [nonce, tool, amount, payerWallet ?? '']);
     // Row returned ⇒ this call won the insert ⇒ first use. Empty ⇒ replay.
     return inserted.length > 0;
   } catch (err) {
