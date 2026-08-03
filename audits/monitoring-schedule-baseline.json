@@ -1,0 +1,36 @@
+{
+  "_comment": "RATCHET baseline for scripts/check-monitoring-schedules.mjs. These rows violated CLAUDE.md's off-:00 boundary law at the moment the gate landed (OPS-MONITORING-SCHEDULE-SOT-W1, 2026-08-03). They REPORT; they do not block. A NEW violation blocks. A row here that moves to a DIFFERENT violating minute blocks. This file only ever SHRINKS — deleting an entry is always allowed, adding one is a deliberate edit a reviewer sees.",
+
+  "_why_a_baseline": "A fail-closed gate + known pre-existing violations + an explicit instruction not to fix them in this wave are mutually unsatisfiable: wired as a hard block, this gate would have failed every deploy from the commit that introduced it. Same resolution the repo already runs for scripts/check_test_baseline.sh vs audits/test-baseline-known-failures.txt.",
+
+  "retirement_wave": "OPS-MONITORING-SCHEDULE-SWEEP-W{NEXT}",
+  "baselined_at": "2026-08-03",
+  "baselined_by": "OPS-MONITORING-SCHEDULE-SOT-W1",
+
+  "entries": [
+    {
+      "id": "recommendation-drift-canary",
+      "source": "row",
+      "schedule": "0 12 * * 2",
+      "min_offset_minutes": 0,
+      "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1",
+      "note": "Fires exactly ON the :00 boundary — the same defect SEC-48 raised against venue-slo-tiers-drift-canary, on a load-bearing row. Moving it is a live crontab mutation plus an inventory re-stamp, which is the sweep wave's job, not this one's. Suggested target: 27 12 * * 2 (already occupied Mondays by venue-slo; Tuesday is free)."
+    },
+    {
+      "id": "webhook-delivery-canary",
+      "source": "row",
+      "schedule": "13,28,43,58 * * * *",
+      "min_offset_minutes": 2,
+      "owner_wave": "WEBHOOK-HARDENING-W1",
+      "note": "A deliberate 15-minute grid whose LAST member, :58, sits 2 minutes before the next hour's :00. Three of its four minutes are fine; only :58 breaches. Cheapest fix is a grid shifted to 13,28,43,57 or 12,27,42,57 — but it is a live crontab change on a load-bearing canary and belongs to the sweep."
+    },
+    {
+      "id": "aoe-shadow-writer-stall-canary",
+      "source": "row",
+      "schedule": "13,18,23,28,33,38,43,48,53,58 * * * *",
+      "min_offset_minutes": 2,
+      "owner_wave": "OPS-AOE-MONITORING-PARITY-W1",
+      "note": "Same shape as webhook-delivery-canary: a 5-minute grid running 13..58, where only the trailing :58 breaches. Also an aoe-1 artifact, so the sweep must touch the AOE host's crontab as well as the inventory row."
+    }
+  ]
+}

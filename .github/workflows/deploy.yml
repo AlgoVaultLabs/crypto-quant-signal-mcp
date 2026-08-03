@@ -216,6 +216,16 @@ jobs:
           node scripts/check-canaries-wired.mjs --self-test
           node scripts/check-canaries-wired.mjs
 
+      # OPS-MONITORING-SCHEDULE-SOT-W1 — CLAUDE.md's off-:00 cron law, enforced instead of
+      # remembered. SEC-48 was one monitoring row scheduled on :00; a human fixed that one row
+      # and the next such row was free to land. Runs here for commits that touch src/; the
+      # monitoring-ONLY commit shape is covered by .github/workflows/monitoring-schedules.yml,
+      # because `paths-ignore: ops/monitoring/**` above means THIS workflow never fires on one.
+      - name: Off-:00 schedule boundary gate (fail-closed)
+        run: |
+          node scripts/check-monitoring-schedules.mjs --self-test
+          node scripts/check-monitoring-schedules.mjs
+
       # OPS-SEC-CLIENT-IP-VERIFY-W1 R5 — the proxy-hop drift gate. SEC-07 was `req.ip` silently
       # becoming a Cloudflare PoP address, which collapsed every free-tier and rate-limit bucket to
       # per-PoP with nothing failing and nothing alerting. This asserts the address the app meters

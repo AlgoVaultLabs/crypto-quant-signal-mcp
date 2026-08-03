@@ -1,0 +1,65 @@
+name: Monitoring schedule boundary
+
+# OPS-MONITORING-SCHEDULE-SOT-W1.
+#
+# WHY THIS WORKFLOW EXISTS AT ALL, rather than the gate living only in deploy.yml.
+#
+# deploy.yml is the ONLY push-on-main workflow in this repo, and it carries
+# `paths-ignore: ops/monitoring/**` — deliberately, so that editing a host-side
+# monitoring artifact does not rebuild the image and restart prod. GitHub skips a
+# run only when EVERY changed file matches paths-ignore, so a commit touching ONLY
+# `ops/monitoring/monitoring-inventory.json` runs NO workflow at all.
+#
+# That is exactly the commit shape this gate exists to police. Wired solely into
+# deploy.yml it would have been structurally DARK for its primary corpus: green on
+# every mixed commit, absent on every monitoring-only one — the "installed is not
+# working" class CLAUDE.md records four prior instances of.
+#
+# So the gate is wired in BOTH places. Here, on the monitoring paths, it runs alone:
+# no build, no image, no SSH, no deploy — a static lint over committed JSON. In
+# deploy.yml it runs as one more fail-closed gate for commits that touch src/.
+#
+# It is deliberately NOT a `pre-push` hook block. That hook already carries five
+# guarded blocks, and installing a sixth is the action that deadlocked ~70 checkouts
+# twice inside 27 hours. If a later wave concludes it must be a hook block, that is
+# OPS-MONITORING-SCHEDULE-HOOK-W{NEXT} and it goes through scripts/lib/hook-block.sh
+# + hook_block_assert_publishable.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/monitoring/monitoring-inventory.json'
+      - 'ops/monitoring/schedule-boundary-rule.json'
+      - 'audits/monitoring-schedule-baseline.json'
+      - 'scripts/check-monitoring-schedules.mjs'
+      - '.github/workflows/monitoring-schedules.yml'
+  pull_request:
+    paths:
+      - 'ops/monitoring/monitoring-inventory.json'
+      - 'ops/monitoring/schedule-boundary-rule.json'
+      - 'audits/monitoring-schedule-baseline.json'
+      - 'scripts/check-monitoring-schedules.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schedule-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Self-test FIRST and separately: a gate whose own logic is broken must never
+      # be allowed to report on the corpus. Callers gate on the TOKEN, not the code.
+      - name: Off-:00 schedule boundary gate (fail-closed)
+        run: |
+          node scripts/check-monitoring-schedules.mjs --self-test
+          node scripts/check-monitoring-schedules.mjs

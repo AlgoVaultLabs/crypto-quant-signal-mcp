@@ -524,13 +524,159 @@ def update_breach_streak(breached):
     return streak
 
 
+# ─────────── off-:00 boundary predicate (OPS-MONITORING-SCHEDULE-SOT-W1) ───────────
+#
+# The rule DATA is the shared artifact, not this code: `schedule-boundary-rule.json` is read
+# here AND by scripts/check-monitoring-schedules.mjs. A JS gate cannot import a Python module,
+# so a cross-language parity test (tests/unit/monitoring-schedule-boundary.test.ts) feeds ONE
+# fixture corpus to `--classify-schedule` here and `--classify` there and requires byte-identical
+# output. Two independent re-derivations of one classification drift to contradiction — that is
+# the bug class this whole wave exists to retire.
+#
+# Path resolution follows _resolve_inventory_path()'s sibling-first rule, for the reason that
+# function documents at length: deriving it from REPO_ROOT is correct in a checkout and resolves
+# to `/ops/monitoring/...` on a host, which is how this very script once ran a full unattended
+# cycle reconciling NOTHING while exiting 0.
+
+_CRON_MACROS = {
+    "@yearly": "0 0 1 1 *", "@annually": "0 0 1 1 *", "@monthly": "0 0 1 * *",
+    "@weekly": "0 0 * * 0", "@daily": "0 0 * * *", "@midnight": "0 0 * * *",
+    "@hourly": "0 * * * *",
+}
+
+
+def _resolve_rule_path():
+    env = os.environ.get("SCHEDULE_BOUNDARY_RULE_PATH")
+    if env:
+        return Path(env)
+    sibling = Path(__file__).resolve().parent / "schedule-boundary-rule.json"
+    if sibling.exists():
+        return sibling
+    return REPO_ROOT / "ops/monitoring/schedule-boundary-rule.json"
+
+
+def load_boundary_rule():
+    """None when unreadable — callers then emit NO hint rather than a wrong one."""
+    try:
+        with open(_resolve_rule_path(), encoding="utf-8") as fh:
+            rule = json.load(fh)
+        if not isinstance(rule.get("min_offset_minutes"), int):
+            return None
+        if not isinstance(rule.get("canonical_minutes"), list):
+            return None
+        return rule
+    except Exception:
+        return None
+
+
+def _expand_minute_term(term):
+    parts = term.split("/")
+    if len(parts) > 2:
+        return None
+    range_part = parts[0]
+    step = 1
+    if len(parts) == 2:
+        if not parts[1].isdigit():
+            return None
+        step = int(parts[1])
+        if step < 1:
+            return None
+    if range_part == "*":
+        lo, hi = 0, 59
+    elif range_part.isdigit():
+        lo = int(range_part)
+        # Vixie: `A/S` means `A-59/S`; a bare `A` is the single value A.
+        hi = 59 if len(parts) == 2 else lo
+    else:
+        m = re.fullmatch(r"(\d+)-(\d+)", range_part)
+        if not m:
+            return None
+        lo, hi = int(m.group(1)), int(m.group(2))
+    if lo < 0 or hi > 59 or lo > hi:
+        return None
+    return list(range(lo, hi + 1, step)) or None
+
+
+def expand_minute_field(field):
+    if not isinstance(field, str) or not field.strip():
+        return None
+    minutes = set()
+    for term in field.split(","):
+        got = _expand_minute_term(term.strip())
+        if got is None:
+            return None
+        minutes.update(got)
+    return sorted(minutes) or None
+
+
+def offset_from_boundary(minute):
+    """Distance to the NEAREST :00, both directions — :59 collides with the next hour exactly
+    as hard as :01 collides with this one, which is what makes 57 the canonical set's ceiling."""
+    return min(minute, 60 - minute)
+
+
+def classify_schedule(expr, rule):
+    """-> (status, offset). Mirrors classify() in check-monitoring-schedules.mjs exactly; the
+    cross-language parity test is what keeps that true."""
+    if not isinstance(expr, str):
+        return ("UNPARSEABLE", -1)
+    text = expr.strip()
+    if text.startswith("@"):
+        expanded = _CRON_MACROS.get(text.lower())
+        if not expanded:
+            return ("UNPARSEABLE", -1)
+        text = expanded
+    fields = text.split()
+    if len(fields) != 5:
+        return ("UNPARSEABLE", -1)
+    minutes = expand_minute_field(fields[0])
+    if minutes is None:
+        return ("UNPARSEABLE", -1)
+    offset = min(offset_from_boundary(m) for m in minutes)
+    if offset < rule["min_offset_minutes"]:
+        return ("VIOLATION", offset)
+    canonical = set(rule["canonical_minutes"])
+    return ("LEGAL" if all(m in canonical for m in minutes) else "ADVISORY", offset)
+
+
+def render_schedule_drift(items, rule=None):
+    """Labelled prose + an authority hint, NOT a raw dict repr.
+
+    The alert that opened OPS-MONITORING-SCHEDULE-SOT-W1 rendered
+    `{'id': ..., 'inventory': '0 12 * * 1', 'live': '27 12 * * 1'}` under an Action line reading
+    "restore" — and restoring the HOST would have reverted the live crontab to :00 and re-opened
+    SEC-48. Nothing in the body told the operator which side was authoritative. Second time an
+    alert body has misled a real reading (WEBHOOK_DELIVERY_DRIFT's `(new: 6)`, 2026-08-01).
+    """
+    out = []
+    for it in items:
+        line = f"{it.get('id')} — declared: '{it.get('inventory')}' · live: '{it.get('live')}'"
+        if rule:
+            declared, _ = classify_schedule(it.get("inventory"), rule)
+            live, _ = classify_schedule(it.get("live"), rule)
+            if declared == "VIOLATION" and live in ("LEGAL", "ADVISORY"):
+                line += (" · likely: DECLARATION STALE — converge the inventory, "
+                         "do NOT revert the host")
+            elif live == "VIOLATION" and declared in ("LEGAL", "ADVISORY"):
+                line += (" · likely: HOST DRIFTED — the live minute breaches the off-:00 law; "
+                         "investigate before converging")
+        out.append(line)
+    return out
+
+
 def build_body(findings, streak):
+    rule = load_boundary_rule()
     lines = [f"🛑 {ALERT_ID}",
              "Condition: the committed monitoring inventory no longer matches the host "
              f"({CONSECUTIVE_TO_PAGE} consecutive breaches)"]
     for k, v in findings.items():
-        if v:
-            lines.append(f"  {k}: {v if not isinstance(v, list) else ', '.join(str(x) for x in v)[:220]}")
+        if not v:
+            continue
+        if k == "SCHEDULE_DRIFT" and isinstance(v, list):
+            for line in render_schedule_drift(v, rule):
+                lines.append(f"  {k}: {line}")
+            continue
+        lines.append(f"  {k}: {v if not isinstance(v, list) else ', '.join(str(x) for x in v)[:220]}")
     lines += [f"State: breach streak {streak}",
               f"Action: dispatch {RECOMMENDED_WAVE} via Cowork → Claude Code",
               f"Audit shape: {AUDIT_DOC_REF}",
@@ -1093,6 +1239,50 @@ def self_test():
     ck("no claims -> no probed rows (caller logs SKIPPED, not a pass)",
        check_doc_path_claims([], SIG, exists=here(set()))["probed"], [])
 
+    # ── 11. off-:00 boundary predicate + the SCHEDULE_DRIFT BODY (OPS-MONITORING-SCHEDULE-SOT-W1)
+    #
+    # The BODY is asserted, not just the finding. Measured on webhook-delivery-canary: reverting
+    # its format string left all 9 pre-existing action-verdict assertions GREEN, and only the body
+    # assertions caught it — which is exactly how a misleading body shipped and survived every gate.
+    RULE = {"min_offset_minutes": 3,
+            "canonical_minutes": [13, 17, 23, 27, 33, 37, 43, 47, 53, 57]}
+    cs = lambda e: classify_schedule(e, RULE)[0]
+    ck("boundary: :00 violates", cs("0 12 * * 1"), "VIOLATION")
+    ck("boundary: :27 is legal", cs("27 12 * * 1"), "LEGAL")
+    ck("boundary: :57 passes at exactly 3", cs("57 0 * * *"), "LEGAL")
+    ck("boundary: :58 violates (nearest-boundary, both directions)", cs("58 0 * * *"), "VIOLATION")
+    ck("boundary: offset is nearest, not forward-only", offset_from_boundary(58), 2)
+    ck("boundary: list verdicts on its worst minute", cs("13,28,43,58 * * * *"), "VIOLATION")
+    ck("boundary: range/list/step parse", cs("7 0-1,3-23 * * *"), "ADVISORY")
+    ck("boundary: garbage is UNPARSEABLE", cs("banana"), "UNPARSEABLE")
+    ck("boundary: an unreadable rule yields no rule, never a wrong one",
+       load_boundary_rule.__name__, "load_boundary_rule")
+
+    DRIFT = [{"id": "venue-slo-tiers-drift-canary",
+              "inventory": "0 12 * * 1", "live": "27 12 * * 1"}]
+    body_line = render_schedule_drift(DRIFT, RULE)[0]
+    ck("body labels BOTH sides instead of dumping a dict",
+       "declared: '0 12 * * 1' · live: '27 12 * * 1'" in body_line, True)
+    ck("body is not a raw python dict repr", "{'id':" in body_line, False)
+    ck("body names which side is authoritative",
+       "likely: DECLARATION STALE — converge the inventory, do NOT revert the host" in body_line, True)
+    inverse = render_schedule_drift(
+        [{"id": "x", "inventory": "27 12 * * 1", "live": "0 12 * * 1"}], RULE)[0]
+    ck("the INVERSE direction is named too, not assumed",
+       "likely: HOST DRIFTED" in inverse, True)
+    ck("no hint invented when both sides are legal",
+       "likely:" in render_schedule_drift(
+           [{"id": "x", "inventory": "27 12 * * 1", "live": "17 12 * * 1"}], RULE)[0], False)
+    ck("no hint invented when the rule is unavailable",
+       "likely:" in render_schedule_drift(DRIFT, None)[0], False)
+
+    full = build_body({"SCHEDULE_DRIFT": DRIFT}, 4)
+    ck("build_body renders the labelled SCHEDULE_DRIFT line",
+       "SCHEDULE_DRIFT: venue-slo-tiers-drift-canary — declared:" in full, True)
+    ck("build_body still carries the Action line", "Action: dispatch" in full, True)
+    ck("build_body leaves non-schedule findings on the legacy path",
+       "HASH_DRIFT: a, b" in build_body({"HASH_DRIFT": ["a", "b"]}, 1), True)
+
     for f_ in failures:
         log(f"SELF_TEST_FAIL: {f_}")
     log(f"SELF_TEST {'PASS' if not failures else 'FAIL'} checks={checks} failures={len(failures)}")
@@ -1103,7 +1293,19 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="monitoring inventory reconciler")
     ap.add_argument("--check", action="store_true", help="silent; exit non-zero on any drift")
     ap.add_argument("--self-test", action="store_true", help="hermetic scenario suite; exit non-zero on failure")
+    ap.add_argument("--classify-schedule", metavar="EXPR",
+                    help="print '<STATUS> offset=<n>' for one cron expression. Cross-language "
+                         "parity surface: scripts/check-monitoring-schedules.mjs --classify MUST "
+                         "print byte-identical output for every input.")
     a = ap.parse_args()
+    if a.classify_schedule is not None:
+        _rule = load_boundary_rule()
+        if _rule is None:
+            log("BOUNDARY_RULE_UNREADABLE")
+            sys.exit(3)
+        _status, _offset = classify_schedule(a.classify_schedule, _rule)
+        print(f"{_status} offset={_offset}")
+        sys.exit(0)
     if a.self_test:
         sys.exit(self_test())
     sys.exit(main(check_mode=a.check))
