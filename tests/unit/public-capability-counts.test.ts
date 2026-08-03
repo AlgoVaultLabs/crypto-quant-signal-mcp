@@ -66,9 +66,18 @@ describe('SEC-46 — the prose asset count is manifest-managed, not baked', () =
     expect(claim.apply_to_files).toContain('docs-src/template.html');
   });
 
-  it('its pattern matches the live literal (a claim matching zero is silent rot)', () => {
-    const src = read('docs-src/template.html');
-    expect(new RegExp(claim.find_pattern).test(src), 'CLAIM_MATCHED_ZERO — the phrasing drifted').toBe(true);
+  it('its pattern matches the live literal in EVERY declared file (zero match = silent rot)', () => {
+    // SCOPE CORRECTION: this row first listed only the GENERATOR SOURCE, so the injector patched a
+    // file nobody serves while all five SERVED pages kept the stale literal — verified live after
+    // deploy, /docs still read '850+ assets'. Binding the source is not binding the surface.
+    for (const f of claim.apply_to_files) {
+      expect(new RegExp(claim.find_pattern).test(read(f)), `CLAIM_MATCHED_ZERO in ${f}`).toBe(true);
+    }
+  });
+
+  it('covers the SERVED pages, not just the generator source', () => {
+    expect(claim.apply_to_files).toContain('landing/docs.html');
+    expect(claim.apply_to_files.filter((f: string) => f.startsWith('landing/')).length).toBeGreaterThanOrEqual(5);
   });
 
   it('preserves the "+" floor semantics of the sentence', () => {
