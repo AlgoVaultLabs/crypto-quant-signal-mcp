@@ -1,0 +1,57 @@
+-- 025_add_review_deadline_at.sql — OPS-VENUE-DAY30-DECISION-W1 (2026-08-03)
+--
+-- Adds the DECISION DEADLINE to `venues`, separating it from the MEASUREMENT
+-- FLOOR. Before this wave the two were conflated in one column
+-- (`seeding_started_at`), which is why the only way to buy a venue more time
+-- was `resetSeedingStarted()` — a call that restarts the promotion clock AND
+-- the sample/PFE-WR measurement window together. Using it on WEEX would have
+-- discarded 3,412 accrued BUY/SELL samples at a 95.15% PFE WR. It is a
+-- data-destroying tool wearing an extension's name.
+--
+-- The two meanings, now permanently separate:
+--   seeding_started_at  — WHERE MEASUREMENT STARTS. Never touched by an
+--                         extension. (OPS-SHADOW-ALERT-HYGIENE-W1, mig 004.)
+--   review_deadline_at  — WHEN A HUMAN DECISION IS NEXT DUE. The ONE field
+--                         gating the day-30 manual_required alert.
+--
+-- WHY: evaluate-venues.ts Branch 3 read `days_since >= DAY_30_FLOOR &&
+-- venue.extension_count >= 1`. Nothing could falsify that predicate — bumping
+-- extension_count 1 → 2 leaves it TRUE, and the only clock counts up — so a
+-- venue reaching day-30 re-fired `manual_required` EVERY SINGLE DAY, forever.
+-- MEASURED: 33 consecutive daily fires, 2026-07-02 → 2026-08-03, unbroken
+-- (`grep -c "manual_required=[1-9]" /var/log/algovault-evaluate-venues.log`).
+--
+-- Two writers, one field, one meaning (single-derivation — deliberately NOT a
+-- second `last_alert_at` column; two predicates on one question is how they
+-- drift):
+--   1. evaluate-venues cron — auto-defers to now+7d when manual_required fires
+--      with the deadline unset, self-throttling the alert to weekly with no
+--      operator action.
+--   2. extend-venue.ts — an explicit operator extension, sized to the venue's
+--      MEASURED accrual rate.
+-- NULL = a decision is due now (byte-identical to pre-wave behaviour).
+--
+-- IDEMPOTENT: ADD COLUMN IF NOT EXISTS (Postgres ≥9.6). Safe to re-run.
+-- PRE-APPLIED to prod (db `signal_performance`, container
+-- `crypto-quant-signal-mcp-postgres-1`) via SSH on 2026-08-03T08:5xZ, BEFORE
+-- this commit existed — per CLAUDE.md "pre-apply schema via SSH then deploy
+-- code with IF NOT EXISTS idempotency", because the Dockerfile does NOT COPY
+-- `migrations/` (verified: the COPY set is package*.json, tsconfig.json, src/,
+-- scripts/build-knowledge-json.mjs, audits/, landing/integrations/, README.md,
+-- CHANGELOG.md, landing/skills.html, landing/integrations.html,
+-- landing/Prompt/, scripts/fetchers/, scripts/refresh-knowledge-pages.mjs,
+-- scripts/funnel-by-channel.mjs — and no migrations/). This file is therefore
+-- the operator/audit reference; the running code reaches the same state via
+-- `initVenuesTable()`'s CREATE DDL + column-ensure guard, which is a no-op
+-- against the already-prepared column. Verified post-apply:
+--   review_deadline_at | timestamp with time zone | YES | (no default)
+-- and both shadow rows unchanged (EDGEX 361/2920 ext=1, WEEX 3412/7230 ext=1,
+-- seeding_started_at intact on both).
+--
+-- ROLLBACK: see 025_add_review_deadline_at.down.sql. It is ORDER-DEPENDENT —
+-- read that file's header before running it.
+
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS review_deadline_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN venues.review_deadline_at IS
+  'OPS-VENUE-DAY30-DECISION-W1: when a human decision is next due. The ONE field gating the day-30 manual_required alert. NULL = decision due now. NEVER a measurement floor - that is seeding_started_at, which an extension must never touch.';

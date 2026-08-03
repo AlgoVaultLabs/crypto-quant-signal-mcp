@@ -44,6 +44,18 @@ const CREATE_VENUES_TABLE_SQL = `
     -- integrated_at. Pre-applied to prod via
     -- migrations/004_add_seeding_started_at.sql (ADD COLUMN IF NOT EXISTS).
     seeding_started_at    TIMESTAMPTZ,
+    -- OPS-VENUE-DAY30-DECISION-W1 (2026-08-03): the DECISION DEADLINE, kept
+    -- deliberately separate from the MEASUREMENT FLOOR above. seeding_started_at
+    -- answers "where does measurement start" and an extension must NEVER touch it;
+    -- this answers "when is a human decision next due" and is the ONE field gating
+    -- the day-30 manual_required alert. Two writers (the evaluate-venues cron's
+    -- auto-deferral throttle, and an explicit operator extension via
+    -- extend-venue.ts), one field, one meaning — NOT a second last_alert_at
+    -- column, because two predicates on one question is how they drift.
+    -- (No backticks in this comment: it lives inside a JS template literal.)
+    -- NULL = a decision is due now. Pre-applied to prod via
+    -- migrations/025_add_review_deadline_at.sql (ADD COLUMN IF NOT EXISTS).
+    review_deadline_at    TIMESTAMPTZ,
     notes                 TEXT
   );
 `;
@@ -51,6 +63,22 @@ const CREATE_VENUES_TABLE_SQL = `
 const CREATE_VENUES_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_venues_status ON venues(status);
 `;
+
+// OPS-VENUE-DAY30-DECISION-W1: idempotent ALTER for deployments whose `venues`
+// table predates `review_deadline_at`. `CREATE TABLE IF NOT EXISTS` above does
+// NOT add a column to an existing table, so a live DB needs this separately.
+//
+// Split per backend, mirroring the established pattern in analytics.ts /
+// geo-gap-list.ts / candle-basis-shadow.ts (NOT an information_schema pre-check
+// — that would be a third serialization of an idiom this repo already has, and
+// an awaited read here could race the fire-and-forget dbExec(CREATE) above on a
+// fresh DB). PG: IF NOT EXISTS → idempotent no-op. SQLite: bare, because SQLite
+// has NO `ADD COLUMN IF NOT EXISTS` (verified 3.49 in DASH-EXTERNAL-ONLY-W1-
+// PATCH-A) and throws "duplicate column" on re-run — caught by the dedicated
+// try/catch in initVenuesTable().
+const ALTER_REVIEW_DEADLINE_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE venues ADD COLUMN IF NOT EXISTS review_deadline_at TIMESTAMPTZ;`
+  : `ALTER TABLE venues ADD COLUMN review_deadline_at TIMESTAMPTZ;`;
 
 // Mirrors migrations/003_seed_venues_promoted.sql verbatim — see that file's
 // header for the `asset_count` semantics note (cosmetic for already-promoted
@@ -98,6 +126,15 @@ let initialized = false;
 export async function initVenuesTable(): Promise<void> {
   if (initialized) return;
   dbExec(CREATE_VENUES_TABLE_SQL);
+  // OPS-VENUE-DAY30-DECISION-W1: own try/catch, deliberately — a SQLite
+  // "duplicate column" throw here must not skip the index creation below.
+  // Ordered AFTER the CREATE and issued through the same dbExec queue, so it
+  // cannot race the table's existence on a fresh DB.
+  try {
+    dbExec(ALTER_REVIEW_DEADLINE_SQL);
+  } catch {
+    // Column already present (SQLite re-run). PG's IF NOT EXISTS never throws.
+  }
   dbExec(CREATE_VENUES_INDEX_SQL);
   // SEED_PROMOTED_VENUES_SQL depends on the `signals` table being non-empty
   // (production case). Wrapped in try/catch so fresh-dev-DB / empty-signals
@@ -149,6 +186,13 @@ function rowToRecord(row: Record<string, unknown>): VenueRecord {
     // serialization). NULL until OPS-SHADOW-PIPELINE-W1 C3 stamps first signal.
     seeding_started_at: row.seeding_started_at
       ? (row.seeding_started_at instanceof Date ? row.seeding_started_at.toISOString() : String(row.seeding_started_at))
+      : null,
+    // OPS-VENUE-DAY30-DECISION-W1: identical null-safe Date-or-string shape to
+    // promoted_at / seeding_started_at above. Always populated (never left
+    // undefined) even though the type is optional, so every consumer reading a
+    // record that came from the DB sees a concrete `string | null`.
+    review_deadline_at: row.review_deadline_at
+      ? (row.review_deadline_at instanceof Date ? row.review_deadline_at.toISOString() : String(row.review_deadline_at))
       : null,
     notes: row.notes === null || row.notes === undefined ? null : String(row.notes),
   };
@@ -263,6 +307,81 @@ export async function incrementExtension(exchangeId: string): Promise<void> {
   dbRun(
     `UPDATE venues SET extension_count = extension_count + 1 WHERE exchange_id = ?`,
     exchangeId
+  );
+}
+
+/** Schema CHECK: `extension_count >= 0 AND extension_count <= 2`. Mirrored in code. */
+export const MAX_EXTENSION_COUNT = 2;
+
+export interface SetReviewDeadlineOptions {
+  /** Appended to `notes` (never overwrites). Skipped when absent/empty. */
+  note?: string;
+  /**
+   * When supplied, `extension_count` is written in the SAME statement, clamped
+   * to [0, MAX_EXTENSION_COUNT]. Omit to move the deadline without spending
+   * budget — which is what the cron's auto-deferral does, and what `--force`
+   * does once the budget is already spent.
+   */
+  extensionCount?: number;
+}
+
+/**
+ * OPS-VENUE-DAY30-DECISION-W1 — set the DECISION DEADLINE for a shadow venue.
+ *
+ * `review_deadline_at` is the ONE field gating the day-30 `manual_required`
+ * alert. Two writers, deliberately the same field: the evaluate-venues cron
+ * (auto-deferral throttle) and extend-venue.ts (explicit operator extension).
+ * A second `last_alert_at` column would be two predicates on one question,
+ * which is how they drift.
+ *
+ * `seeding_started_at` is NEVER touched here. That is the entire point of the
+ * wave: before it, the only way to buy a venue more time was
+ * `resetSeedingStarted()`, which restarts the measurement floor and discards
+ * the accrued BUY/SELL sample and PFE WR along with the clock.
+ *
+ * ONE awaited `dbQuery` statement, not two calls. `incrementExtension` uses
+ * fire-and-forget `dbRun`, so pairing it with a post-write read would race
+ * (PgBackend.run tracks the promise in `pending` and only drains at close(),
+ * and PG_POOL_MAX > 1 means a following read can land on another client).
+ * Folding the optional bump in here makes the deadline + the budget spend
+ * atomic and makes a post-flip verification read meaningful.
+ *
+ * Guarded `status = 'shadow'`: a promoted or retired venue has no pending
+ * decision, so this is a silent no-op for them — matching `stampSeedingStarted`
+ * and `resetSeedingStarted`, which carry the same guard.
+ *
+ * `extensionCount` is clamped to [0, MAX_EXTENSION_COUNT] BEFORE the write, so
+ * this helper cannot violate the schema CHECK regardless of what a caller asks
+ * for.
+ */
+export async function setReviewDeadline(
+  exchangeId: string,
+  deadline: Date | null,
+  opts: SetReviewDeadlineOptions = {}
+): Promise<void> {
+  await initVenuesTable();
+
+  const sets: string[] = ['review_deadline_at = ?'];
+  const params: unknown[] = [deadline];
+
+  if (opts.extensionCount !== undefined) {
+    const clamped = Math.max(0, Math.min(MAX_EXTENSION_COUNT, Math.floor(opts.extensionCount)));
+    sets.push('extension_count = ?');
+    params.push(clamped);
+  }
+
+  if (opts.note) {
+    sets.push(`notes = COALESCE(notes, '') || ?`);
+    params.push(opts.note);
+  }
+
+  params.push(exchangeId);
+
+  await dbQuery(
+    `UPDATE venues
+     SET ${sets.join(', ')}
+     WHERE exchange_id = ? AND status = 'shadow'`,
+    params
   );
 }
 

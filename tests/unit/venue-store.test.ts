@@ -59,11 +59,17 @@ beforeEach(() => {
 });
 
 describe('initVenuesTable — idempotent bootstrap', () => {
-  it('runs CREATE TABLE + CREATE INDEX + seed SQL on first call', async () => {
+  // OPS-VENUE-DAY30-DECISION-W1 (CH1): the exec count went 2 → 3 with the
+  // `review_deadline_at` column-ensure ALTER. It sits BETWEEN the CREATE and the
+  // index — it cannot precede the table it alters, and a SQLite duplicate-column
+  // throw must not skip the index, which is why it has its own try/catch in
+  // initVenuesTable(). Positional assertions below pin that ordering.
+  it('runs CREATE TABLE + ensure-column ALTER + CREATE INDEX + seed SQL on first call', async () => {
     await initVenuesTable();
-    expect(mockExec).toHaveBeenCalledTimes(2);
+    expect(mockExec).toHaveBeenCalledTimes(3);
     expect(mockExec.mock.calls[0][0]).toMatch(/CREATE TABLE IF NOT EXISTS venues/);
-    expect(mockExec.mock.calls[1][0]).toMatch(/CREATE INDEX IF NOT EXISTS idx_venues_status/);
+    expect(mockExec.mock.calls[1][0]).toMatch(/ALTER TABLE venues ADD COLUMN( IF NOT EXISTS)? review_deadline_at TIMESTAMPTZ/);
+    expect(mockExec.mock.calls[2][0]).toMatch(/CREATE INDEX IF NOT EXISTS idx_venues_status/);
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(mockQuery.mock.calls[0][0]).toMatch(/INSERT INTO venues/);
     expect(mockQuery.mock.calls[0][0]).toMatch(/ON CONFLICT \(exchange_id\) DO NOTHING/);
@@ -73,14 +79,14 @@ describe('initVenuesTable — idempotent bootstrap', () => {
     await initVenuesTable();
     await initVenuesTable();
     await initVenuesTable();
-    expect(mockExec).toHaveBeenCalledTimes(2); // only the first call's 2 exec runs
+    expect(mockExec).toHaveBeenCalledTimes(3); // only the first call's 3 exec runs
     expect(mockQuery).toHaveBeenCalledTimes(1); // only the first call's seed
   });
 
   it('survives seed failure non-fatally (table still created)', async () => {
     mockQuery.mockRejectedValueOnce(new Error('signals table empty'));
     await expect(initVenuesTable()).resolves.toBeUndefined();
-    expect(mockExec).toHaveBeenCalledTimes(2);
+    expect(mockExec).toHaveBeenCalledTimes(3);
   });
 });
 

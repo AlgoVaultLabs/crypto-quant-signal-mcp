@@ -145,6 +145,19 @@ export interface VenueRecord {
   // promotion clock derives from COALESCE(seeding_started_at, integrated_at).
   // NULL until OPS-SHADOW-PIPELINE-W1 (C3) stamps the first-signal timestamp.
   seeding_started_at: string | null;  // ISO 8601 | null (Postgres TIMESTAMPTZ)
+  // OPS-VENUE-DAY30-DECISION-W1 (2026-08-03): the DECISION DEADLINE — when a
+  // human decision is next due. The ONE field gating the day-30
+  // `manual_required` alert. NULL = due now. Distinct from
+  // `seeding_started_at`, which is the MEASUREMENT FLOOR and which an
+  // extension must never touch.
+  //
+  // OPTIONAL by design, not an oversight: `rowToRecord` in venue-store always
+  // populates it, so anything read from the DB carries a concrete
+  // `string | null`. Making it REQUIRED would instead force an edit to all 22
+  // `VenueRecord` object literals across 8 test files — including suites this
+  // wave has no business touching. Consumers must therefore test it with
+  // `!= null` (which covers `undefined`), never `!== null`.
+  review_deadline_at?: string | null; // ISO 8601 | null (Postgres TIMESTAMPTZ)
   notes: string | null;
 }
 
