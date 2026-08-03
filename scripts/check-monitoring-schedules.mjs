@@ -73,6 +73,18 @@ const BASELINE_PATH = join(ROOT, 'audits/monitoring-schedule-baseline.json');
  */
 const EXIT_FOR = { PASS: 0, FAIL: 1, INDETERMINATE: 3 };
 
+/**
+ * Separator for the composite `(id, source)` key.
+ *
+ * Written as an ESCAPE and never as a raw byte. A raw U+0000 in a tracked text file
+ * makes a grep-class tool classify the whole file as binary and skip it SILENTLY at
+ * exit 0, so its contents read as ABSENT rather than as unsearched —
+ * scripts/check-source-greppable.mjs exists to make that unauthorable, and it caught
+ * this very file on its first full-suite run. Neither an `id` nor a `source` can
+ * contain this character, so the key stays unambiguous.
+ */
+const KEY_SEP = '\u0000';
+
 /** Vixie-cron nickname expansions. @reboot has no minute semantics -> unparseable. */
 const MACROS = {
   '@yearly': '0 0 1 1 *',
@@ -222,10 +234,10 @@ export function evaluate(corpus, rule, baselineEntries) {
   const seenViolationKeys = new Set();
 
   const baseIndex = new Map();
-  for (const e of baselineEntries) baseIndex.set(`${e.id} ${e.source}`, e);
+  for (const e of baselineEntries) baseIndex.set(`${e.id}${KEY_SEP}${e.source}`, e);
 
   for (const item of corpus) {
-    const key = `${item.id} ${item.source}`;
+    const key = `${item.id}${KEY_SEP}${item.source}`;
 
     if (item.exemption !== undefined && item.exemption !== null && item.exemption !== false) {
       const reason = item.exemption?.reason;
@@ -264,7 +276,7 @@ export function evaluate(corpus, rule, baselineEntries) {
   // A baselined row that no longer violates is debt PAID. Report so the baseline can
   // shrink; never block, or fixing a row would break the build that rewards it.
   const staleBaseline = baselineEntries
-    .filter((e) => !seenViolationKeys.has(`${e.id} ${e.source}`))
+    .filter((e) => !seenViolationKeys.has(`${e.id}${KEY_SEP}${e.source}`))
     .map((e) => ({ ...e, why: 'no longer violating (or row removed) — delete this baseline entry' }));
 
   const verdict = indeterminate.length ? 'INDETERMINATE' : blocking.length ? 'FAIL' : 'PASS';
