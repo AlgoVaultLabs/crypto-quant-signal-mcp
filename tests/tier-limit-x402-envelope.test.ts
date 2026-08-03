@@ -78,3 +78,25 @@ describe('buildTierLimitPayload', () => {
     expect(p.suggested_action).toContain('x402');
   });
 });
+
+/**
+ * OPS-AUDIT-REMEDIATION-LOW-W2 wave-close. The suite above was failing on `main` — not from any
+ * wave's change, but because `noticeContext()` dropped `nowMs`, so `buildTierLimitPayload`
+ * re-derived `retry_after_days` from `Date.now()` while the constructor used the injected clock.
+ * The two derivations agreed only while the real date sat inside the frozen window, which is why
+ * it looked like a date-dependent flake. It was a SINGLE-DERIVATION violation with a clock in it.
+ */
+describe('single-derivation: the error and its wire payload read ONE clock', () => {
+  it('buildTierLimitPayload honours the injected clock, not Date.now()', () => {
+    const err = mkErr();
+    const p = buildTierLimitPayload(err);
+    expect(p.retry_after_days, 'the payload must not re-derive from the live clock').toBe(err.retry_after_days);
+    expect(p.resets_at).toBe(err.resets_at);
+  });
+
+  it('is stable no matter what day the suite runs on', () => {
+    // The frozen NOW is 12 days before RESET_AT, so this is 12 forever — the assertion that was
+    // silently drifting with the wall clock before the fix.
+    expect(buildTierLimitPayload(mkErr()).retry_after_days).toBe(12);
+  });
+});
