@@ -12,4 +12,3 @@
 #
 # To quarantine a genuinely-intractable test in a future wave: `.skip` it, add a
 # ledger row explaining why + a tracked OPS-… follow-up, and add its path here.
-tests/tier-limit-x402-envelope.test.ts

@@ -72,7 +72,7 @@ All import `node:test`/`node:assert`; vitest reports **"No test suite found in f
 - **Pre-push gate:** `scripts/check_test_baseline.sh` (vitest + node:test, diff vs baseline, fail-open, `ALGOVAULT_TEST_GATE=warn|block`) + `scripts/install_test_gate_hook.sh` (composable `.git/hooks/pre-push`). Gate-bite proven: dummy fail → exit 1; warn → exit 0; revert → exit 0.
 - **Hygiene:** 5 untracked leftovers removed (4× `NPM-PUBLISH-v1.*`, `chatgpt-app-directory-submission-package.md` — relocated to the vault first). `GEO-AUTOPILOT-W1-endpoint-truth.md` kept (tracked). **`.claude/napkin.md` KEPT** — inspection showed it is the napkin-skill's live curated runbook (2026-06-11, high-value), not "expired scratch" as the Q3 brief assumed → surfaced to the operator rather than deleted (deletion-safety discipline).
 
-## tests/tier-limit-x402-envelope.test.ts — quarantined 2026-08-02 by OPS-AUDIT-REMEDIATION-LOW-W2
+## tests/tier-limit-x402-envelope.test.ts — quarantined AND UNQUARANTINED 2026-08-02 by OPS-AUDIT-REMEDIATION-LOW-W2
 
 **Not a regression from this wave, and not a regression at all — a DATE-DEPENDENT FLAKE.**
 
@@ -94,3 +94,7 @@ allow-list entry would then hide a genuine future regression in it.
 Fix owed by **`OPS-TIER-LIMIT-CLOCK-FREEZE-W{NEXT}`**: inject/freeze the clock in the test (the
 repo already has this seam elsewhere) and assert the value against the same computed boundary
 rather than a literal, then DELETE this allow-list line in the same commit.
+
+**RESOLVED SAME DAY — quarantine REMOVED, allow-list line deleted.** The diagnosis above ("date-dependent flake, out of scope") was WRONG, and the CI deploy proved it: the pre-deploy vitest step runs the suite DIRECTLY and does not read this allow-list, so quarantining left `main` RED instead of unblocking it. Forced to look properly, the real cause was a SINGLE-DERIVATION violation: `TierLimitReachedError.noticeContext()` dropped `nowMs`, so `buildTierLimitPayload` re-derived `retry_after_days`/`resets_at` from `Date.now()` while the constructor used the injected clock. The two agreed only while the real date sat inside the frozen test window — which is exactly what a flake looks like from the outside. Fixed at the root, regression-tested, and `OPS-TIER-LIMIT-CLOCK-FREEZE-W{NEXT}` is NOT needed.
+
+**Lesson:** an allow-list entry is not a substitute for a diagnosis, and a quarantine that satisfies only the pre-push gate does not make CI green — the two gates read different inputs.

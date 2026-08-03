@@ -129,6 +129,17 @@ export class TierLimitReachedError extends Error {
   readonly resetAtMs: number;
   /** Caller's referral code (keyed) or null. camelCase ⇒ NOT a wire field. */
   readonly referralCode: string | null;
+  /**
+   * The clock this error was raised against. camelCase ⇒ NOT a wire field.
+   *
+   * SINGLE-DERIVATION (OPS-AUDIT-REMEDIATION-LOW-W2): the constructor computes
+   * `retry_after_days` / `resets_at` from `args.nowMs`, and `buildTierLimitPayload` recomputes
+   * them from `noticeContext()`. Until this field existed, `noticeContext()` dropped `nowMs`, so
+   * the SECOND derivation silently fell back to `Date.now()` — the error object and its own wire
+   * payload could report different values for the same fact, and any injected clock was honoured
+   * by one and ignored by the other. Retaining it makes both projections read ONE clock.
+   */
+  readonly nowMs?: number;
 
   constructor(args: {
     currentUsage: number;
@@ -174,6 +185,7 @@ export class TierLimitReachedError extends Error {
     this.periodStartMs = args.periodStartMs;
     this.resetAtMs = args.resetAtMs;
     this.referralCode = args.referralCode ?? null;
+    this.nowMs = args.nowMs;
     this.referral_hint = buildReferralHint({ from: 'limit', code: args.referralCode ?? null });
     this.current_usage = args.currentUsage;
     this.monthly_limit = args.monthlyLimit;
@@ -207,6 +219,9 @@ export class TierLimitReachedError extends Error {
       resetAtMs: this.resetAtMs,
       periodStartMs: this.periodStartMs,
       referralCode: this.referralCode,
+      // SINGLE-DERIVATION: without this, buildTierLimitPayload() re-derives retry_after_days /
+      // resets_at from Date.now() instead of the clock the error was raised against.
+      nowMs: this.nowMs,
       x402,
     };
   }
