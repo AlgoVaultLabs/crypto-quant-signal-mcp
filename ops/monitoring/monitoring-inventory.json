@@ -36,7 +36,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "9a61457f0728bd4a55eabcf30c6253e920970abf405adad5fa614f05f56a4ad2",
+      "sha256": "069723308bbd45b5c3f4fbd87ff00d5ab00b6f3bcfdbe2ff964b31a07292461f",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
@@ -69,6 +69,33 @@
       ],
       "owner_wave": "OPS-CLAIM-VERIFIER-COVERAGE-W1",
       "notes": "The host-path claims made by the prescriptive docs, read by the reconciler's DOC_PATH_CLAIM check on the host that owns each claim. Closes the gap OPS-CLAUDEMD-CLAIM-VERIFIER-W1 shipped (9 claims UNPROBED behind --probe-hosts, unusable from CI). Existence is the ONE assertion the rest of this inventory delegates away: a DELETED artifact fires nothing (HASH_DRIFT skips what it cannot find, DARK needs a schedule, ORPHAN runs host->repo) - measured 2026-08-02 against send_telegram.sh."
+    },
+    {
+      "id": "schedule-boundary-rule",
+      "artifact": "ops/monitoring/schedule-boundary-rule.json",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/schedule-boundary-rule.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/schedule-boundary-rule.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/schedule-boundary-rule.json"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:monitoring-inventory-reconcile",
+      "install_state": "installed",
+      "sha256": "f8817f5be0187fd7473920a1c1d5740fb443aa6307a8c6d4c39f1e109e7fe539",
+      "alert_ids": [
+        "MONITORING_INVENTORY_DRIFT"
+      ],
+      "owner_wave": "OPS-MONITORING-SCHEDULE-SOT-W1",
+      "notes": "SoT for CLAUDE.md's off-:00 cron law, with exactly TWO consumers and no third derivation: scripts/check-monitoring-schedules.mjs (authoring-time CI gate) and this inventory's own reconciler (the SCHEDULE_DRIFT authority hint). A JS gate cannot import a Python module, so the RULE DATA is the shared artifact and tests/unit/monitoring-schedule-boundary.test.ts pins both implementations to byte-identical verdicts over one fixture corpus. Installed on BOTH hosts because the reconciler runs once per host; a rule file present on only one would make the two hosts render the same drift differently, which is how send_telegram.sh sat behaviourally forked for 7 days."
     },
     {
       "id": "monitoring-inventory",

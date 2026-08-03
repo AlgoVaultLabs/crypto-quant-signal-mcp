@@ -1,0 +1,18 @@
+{
+  "_comment": "SINGLE SOURCE OF TRUTH for CLAUDE.md's off-:00 cron-boundary law. Two consumers read this file and NOTHING re-derives its numbers: scripts/check-monitoring-schedules.mjs (authoring-time CI gate) and ops/monitoring/monitoring-inventory-reconcile.py (the SCHEDULE_DRIFT alert's authority hint). A JS gate cannot import a Python module, so the RULE DATA is the shared artifact and a cross-language parity test (tests/unit/monitoring-schedule-boundary.test.ts) pins both implementations to identical verdicts over one fixture corpus. Introduced by OPS-MONITORING-SCHEDULE-SOT-W1.",
+
+  "law": "Snapshot-sampler cron off :00 boundary by >=3 min. :00 crons collide -> over-count CPU 50-90x.",
+  "law_source": "CLAUDE.md — Plan Mode rules",
+
+  "min_offset_minutes": 3,
+
+  "_offset_semantics": "offset(m) = min(m, 60 - m) — distance to the NEAREST :00 in BOTH directions, because :59 collides with the next hour's boundary exactly as hard as :01 collides with this one. This is not an interpretation: it is what makes 57 the canonical set's ceiling (60 - 57 = 3). A forward-only reading would admit :58 and :59, the two minutes the law most needs to exclude. A schedule VIOLATES when the minimum offset across every minute it fires at is < min_offset_minutes.",
+
+  "canonical_minutes": [13, 17, 23, 27, 33, 37, 43, 47, 53, 57],
+
+  "_canonical_semantics": "The CLAUDE.md-recommended set. Membership is ADVISORY ONLY and is REPORTED, never blocked — blocking on set-membership would refuse a compliant :41 and the gate would be disabled inside a week. The >=3 rule is what blocks.",
+
+  "_exemption_semantics": "A row may carry `exempt_schedule_boundary: { reason: \"<why>\" }`. The reason is MANDATORY: a missing/empty reason is INDETERMINATE, never a silent pass. Exemptions live ON THE ROW and never in prose — an exemption that lives only in a comment gets 'fixed' by a future wave enforcing the contract.",
+
+  "_baseline_semantics": "Pre-existing violations are ratcheted in audits/monitoring-schedule-baseline.json rather than blocking every deploy from the moment this gate landed. A baselined row REPORTS; a NEW violation, or a baselined row moving to a DIFFERENT violating minute, BLOCKS. The baseline only ever shrinks."
+}
