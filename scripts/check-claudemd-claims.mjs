@@ -55,7 +55,10 @@ import { tracked, invokerFiles, findInvocations } from './check-canaries-wired.m
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG_PATH = join(ROOT, 'ops', 'claudemd-claim-config.json');
-const LOCK_PATH = join(ROOT, 'ops', 'claudemd-claims.lock.json');
+// Overridable for the same reason CORPUS_PATH is: the freshness contract can only be tested by
+// driving a fixture corpus AND its own lock, and a test that had to overwrite the committed lock
+// to prove anything would be a test nobody dares run.
+const LOCK_PATH = process.env.ALGOVAULT_CLAUDEMD_LOCK || join(ROOT, 'ops', 'claudemd-claims.lock.json');
 const DEFAULT_CORPUS = join(homedir(), 'My Drive', 'Obsidian Vault', 'AlgoVault MCP', 'CLAUDE.md');
 const CORPUS_PATH = process.env.ALGOVAULT_CLAUDEMD_CORPUS || DEFAULT_CORPUS;
 
@@ -452,6 +455,13 @@ export function isBlocking(claim, result, cfg) {
   // In flight on a pushed branch (stamped by --sync), or declared in config for the no-ref case.
   // Downgrades to REVIEW for that ONE claim — never for its class. See _in_flight_semantics.
   if (claim.in_flight) return false;
+  // On NO remote ref at all — the file is in some session's working tree.
+  // OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1: the pusher can neither verify this nor fix it,
+  // and the escape hatch (an in_flight_claims row) can only be authored honestly by the OWNING
+  // session — so blocking here lands the verdict on someone with no move available. That is the
+  // deadlock this gate kept causing, not the guard doing its job. The marker is stripped in CI,
+  // where the world is merged and settled and a miss IS real.
+  if (claim.unpublished && !claim.was_verified) return false;
   if (inFlightRow(claim, cfg)) return false;
   const cls = claim.class === 'absence-repo' || claim.class === 'absence-vault' ? 'absence' : claim.class;
   const ship = cfg.classes[cls]?.ship;
@@ -518,6 +528,56 @@ function firstRefContaining(paths, refs) {
   return out;
 }
 
+/**
+ * The identity of a claim: its class, its subject, AND the value it asserts.
+ * OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1.
+ *
+ * ── WHY THE ASSERTED VALUE MUST BE IN HERE ──────────────────────────────────────────────────
+ * Freshness is now claim-set equality and `--sync` is id-gated, so an id that captured only the
+ * SUBJECT would let a claim change WHAT IT ASSERTS while the id set stayed identical: the sync
+ * would no-op and the lock would silently record a claim set that no longer matches the corpus's
+ * meaning. That is not hypothetical in this corpus — `wiring` claims carry `points`, so
+ * "scripts/foo.mjs is wired into pre-push" → "…into deploy.yml" is a same-subject, different-
+ * assertion edit. Measured at design time: 10 of 102 claims carry an asserted value beyond their
+ * subject (2 `wiring`, 8 `script-content`); the other 92 assert existence or absence, where the
+ * subject IS the assertion.
+ *
+ * ── WHAT IS DELIBERATELY EXCLUDED ───────────────────────────────────────────────────────────
+ * · `line` — line numbers shift on every prose edit, which is the whole defect being retired.
+ *   They stay in MESSAGES, where they are useful, and out of IDENTITY, where they are poison.
+ * · `candidates` — a RESOLUTION helper (which files the claim might refer to), not an assertion.
+ *   Including it would re-introduce prose-sensitivity through the back door.
+ * · prose, always — the corpus is private and must never enter this repo.
+ *
+ * Because this is line-agnostic, it computes the SAME id from an old-shape lock claim (which
+ * carries `line`) as from a new one. That is what makes the migration back-compatible by
+ * construction rather than by a legacy code path.
+ */
+export function claimId(c) {
+  const base = `${c.class}:${c.value}`;
+  if (c.class === 'wiring' && Array.isArray(c.points) && c.points.length) {
+    return `${base}=${[...c.points].sort().join('+')}`;
+  }
+  if (c.class === 'script-content') {
+    const parts = [];
+    if (c.token) parts.push(`token:${c.token}`);
+    if (Array.isArray(c.codes) && c.codes.length) parts.push(`exit:${[...c.codes].map(String).sort().join('/')}`);
+    if (parts.length) return `${base}=${parts.join('|')}`;
+  }
+  return base;
+}
+
+/** The claim-id SET of a claim list — deduped and canonically ordered. */
+export function claimIdSet(claims) {
+  return [...new Set((claims || []).map(claimId))].sort();
+}
+
+/** Set equality over claim ids. The freshness predicate, and nothing else. */
+export function sameClaimSet(a, b) {
+  const x = claimIdSet(a), y = claimIdSet(b);
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
 export function buildLock(rawText, cfg) {
   const { claims } = extractClaims(rawText, cfg);
   const trackedSet = new Set(tracked());
@@ -528,15 +588,27 @@ export function buildLock(rawText, cfg) {
   // ONE batch for every missing path, so the cost does not scale with refs × claims.
   const missing = [...new Set(locked.filter((c) => c.class === 'repo-path' && !trackedSet.has(c.value)).map((c) => c.value))];
   const inFlightBy = firstRefContaining(missing, refs);
+  const missingSet = new Set(missing);
   const lockClaims = locked
     .map((c) => {
-      const ref = c.class === 'repo-path' ? inFlightBy.get(c.value) : null;
-      return ref ? { ...c, in_flight: ref } : c;
+      // `line` is DROPPED from the lock: a duplicated fact with no consumer. Locally the verifier
+      // re-extracts and always has correct line numbers for its messages; in CI the corpus is
+      // UNREACHABLE by design, so a locked line number is a pointer into a file CI cannot open —
+      // authoritative-looking, uncheckable, and stale by however much prose has moved since.
+      const { line: _line, ...rest } = c;
+      if (c.class !== 'repo-path' || !missingSet.has(c.value)) return rest;
+      const ref = inFlightBy.get(c.value);
+      // Three states, and the third is the one this wave adds. A path on NO remote ref is not
+      // "a file that exists nowhere and never will" — it is in-flight one step earlier, sitting
+      // in some session's working tree. The pusher can neither verify it nor fix it, so blocking
+      // them is the deadlock, not the guard.
+      return ref ? { ...rest, in_flight: ref } : { ...rest, unpublished: true };
     })
-    .sort((a, b) => a.line - b.line || a.class.localeCompare(b.class) || a.value.localeCompare(b.value));
+    .sort((a, b) => (claimId(a) < claimId(b) ? -1 : claimId(a) > claimId(b) ? 1 : 0));
   return {
-    _comment: 'GENERATED by scripts/check-claudemd-claims.mjs --sync from the vault CLAUDE.md. Identifiers only — the manual’s prose never enters this repo. Do not hand-edit; --check fails on any divergence from a fresh extraction.',
-    corpus_sha256: createHash('sha256').update(rawText).digest('hex'),
+    _comment: 'GENERATED by scripts/check-claudemd-claims.mjs --sync from the vault CLAUDE.md. Identifiers only — the manual’s prose never enters this repo. Do not hand-edit; --check fails on any divergence from a fresh extraction. Freshness is CLAIM-SET equality (see claimId): an edit that touches no claim does not invalidate this lock.',
+    _extracted_from_corpus_sha256_semantics: 'PROVENANCE, not freshness. It records the corpus state this claim set was extracted from — it is NOT a live hash of the current CLAUDE.md and must never be compared against one. Keying freshness on a whole-file hash is exactly the defect OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1 retired: the corpus is shared and concurrently edited (measured: three distinct shas in ~12 minutes), so a container hash makes every unrelated prose edit a false invalidation.',
+    extracted_from_corpus_sha256: createHash('sha256').update(rawText).digest('hex'),
     corpus_lines: rawText.split('\n').length,
     claims: lockClaims,
   };
@@ -545,7 +617,10 @@ export function buildLock(rawText, cfg) {
 // ── check runner ──────────────────────────────────────────────────────────────
 
 function printFinding(kind, claim, result, corpusLineText) {
-  const loc = `CLAUDE.md L${claim.line}`;
+  // `line` exists only on freshly-extracted claims. Lock-sourced claims (CI) carry none by
+  // design — see buildLock — so say that plainly rather than printing "Lundefined", which reads
+  // like a bug in the gate.
+  const loc = claim.line ? `CLAUDE.md L${claim.line}` : 'CLAUDE.md (line: re-run locally)';
   const what = claim.token || (claim.codes ? `exit ${claim.codes.join('/')}` : '') || (claim.points ? `→ ${claim.points.join('+')}` : '');
   console.log(`  ${kind} [${claim.class}] ${loc}  ${claim.value} ${what ? `(${what}) ` : ''}— ${result.status}${result.detail ? `: ${result.detail}` : ''}`);
   if (corpusLineText) console.log(`      claim line: ${corpusLineText.trim().slice(0, 160)}`);
@@ -569,22 +644,60 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     // The in-flight markers are DERIVED during buildLock (it can see remote refs). Carry them onto
     // the fresh claim set so the local run and CI's lock-only run reach the SAME verdict — a gate
     // that passes locally and fails in CI teaches people to distrust it.
-    const marked = new Map(freshLock.claims.filter((c) => c.in_flight).map((c) => [`${c.class}|${c.value}`, c.in_flight]));
-    claims = ex.claims.map((c) => (marked.has(`${c.class}|${c.value}`) ? { ...c, in_flight: marked.get(`${c.class}|${c.value}`) } : c));
+    const marked = new Map(freshLock.claims.filter((c) => c.in_flight).map((c) => [claimId(c), c.in_flight]));
+    const unpub = new Set(freshLock.claims.filter((c) => c.unpublished).map((c) => claimId(c)));
+    claims = ex.claims.map((c) => {
+      const id = claimId(c);
+      if (marked.has(id)) return { ...c, in_flight: marked.get(id) };
+      if (unpub.has(id)) return { ...c, unpublished: true };
+      return c;
+    });
     if (!existsSync(LOCK_PATH)) {
       return { verdict: 'FAIL', why: `lock missing at ops/claudemd-claims.lock.json — run: node scripts/check-claudemd-claims.mjs --sync (and commit the lock)` };
     }
     const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
-    if (lock.corpus_sha256 !== freshLock.corpus_sha256 || JSON.stringify(lock.claims) !== JSON.stringify(freshLock.claims)) {
-      return { verdict: 'FAIL', why: `lock is STALE vs the live corpus (CLAUDE.md changed, or the lock was hand-edited) — run: node scripts/check-claudemd-claims.mjs --sync (and commit the lock)` };
+    // FRESHNESS = CLAIM-SET EQUALITY, and nothing else.
+    //
+    // It used to be `corpus_sha256 !== fresh || JSON.stringify(claims) !== …`, which made THREE
+    // independent things invalidate the lock while only one of them was a claim change: any byte
+    // of the corpus, every claim's `line` (a paragraph insert shifts all of them), and the array
+    // ORDER (the old sort was line-first). On a corpus every parallel session can edit — measured
+    // at three distinct shas in ~12 minutes — that made false invalidation the steady state and
+    // `--sync` unable to converge.
+    //
+    // claimId() is line-agnostic, so this computes the same id set from an OLD-shape lock as from
+    // a new one. That is why the migration needs no legacy compare path: a new verifier reading
+    // the not-yet-regenerated lock simply passes, which is exactly the intra-wave transition.
+    if (!sameClaimSet(lock.claims, freshLock.claims)) {
+      const before = new Set(claimIdSet(lock.claims)), after = new Set(claimIdSet(freshLock.claims));
+      const added = [...after].filter((x) => !before.has(x));
+      const removed = [...before].filter((x) => !after.has(x));
+      for (const id of added.slice(0, 10)) console.log(`  + claim not in the lock: ${id}`);
+      for (const id of removed.slice(0, 10)) console.log(`  - locked claim no longer made: ${id}`);
+      return { verdict: 'FAIL', why: `lock is STALE vs the live corpus — the CLAIM SET changed (+${added.length}/-${removed.length}). Run: node scripts/check-claudemd-claims.mjs --sync (and commit the lock)` };
     }
-    console.log(`corpus: ${CORPUS_PATH} (reachable; ${corpusLines.length} lines, ${stats.blocks} correction blocks stripped) — lock fresh`);
+    console.log(`corpus: ${CORPUS_PATH} (reachable; ${corpusLines.length} lines, ${stats.blocks} correction blocks stripped) — lock fresh (${claimIdSet(lock.claims).length} claim ids)`);
+    // The committed lock is the MEMORY of what was once verified, and it is what separates the two
+    // reasons a path can be missing. A claim locked with no marker was satisfied at sync time; if
+    // its path is gone now, a commit removed a prescribed path — definitively wrong, and
+    // definitively the pusher's doing, so it BLOCKS. A claim that was never verified (new, or
+    // already marked) only REPORTS. Without this the two collapse, and `unpublished` would become
+    // a way to delete a prescribed file unnoticed.
+    const lockedVerified = new Set(
+      lock.claims.filter((c) => !c.in_flight && !c.unpublished).map((c) => claimId(c)),
+    );
+    claims = claims.map((c) => (lockedVerified.has(claimId(c)) ? { ...c, was_verified: true } : c));
   } else {
     if (!existsSync(LOCK_PATH)) return { verdict: 'INDETERMINATE', why: 'corpus unreachable AND lock missing — nothing to verify' };
     const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
-    claims = lock.claims;
-    if (!Array.isArray(claims)) return { verdict: 'INDETERMINATE', why: 'lock is malformed (claims not an array)' };
-    console.log(`corpus: UNREACHABLE (CI) — verifying committed lock (${claims.length} claims, corpus sha ${String(lock.corpus_sha256).slice(0, 12)}…)`);
+    if (!Array.isArray(lock.claims)) return { verdict: 'INDETERMINATE', why: 'lock is malformed (claims not an array)' };
+    // CI sees a MERGED, settled world, so "it was only in someone's working tree" is no longer an
+    // excuse — a prescribed path missing here is real. The `unpublished` downgrade is therefore
+    // stripped; `in_flight` is deliberately NOT, because a branch that has not merged yet is a
+    // statement about the future, and another wave's merge order must never break main.
+    claims = lock.claims.map(({ unpublished: _unpublished, ...rest }) => rest);
+    const prov = lock.extracted_from_corpus_sha256 ?? lock.corpus_sha256; // old-shape locks pre-date the rename
+    console.log(`corpus: UNREACHABLE (CI) — verifying committed lock (${claims.length} claims, extracted from corpus ${String(prov).slice(0, 12)}…)`);
   }
 
   if (!claims.length) return { verdict: 'INDETERMINATE', why: 'zero claims extracted — vacuous run refuses to report a pass' };
@@ -749,6 +862,65 @@ export function selfTest(cfg) {
   let threw = false;
   try { validateConfig(bad); } catch { threw = true; }
   if (!threw) fails.push('validateConfig accepted an exemption row without a reason');
+
+  // ── OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1 ──────────────────────────────────────────
+  //
+  // (j) IDENTITY IS LINE-AGNOSTIC. This is the whole fix, and it is also what makes the lock
+  // migration back-compatible with no legacy compare path: an old-shape (line-bearing) claim
+  // must yield the SAME id as its line-free equivalent.
+  const wLine = { class: 'repo-path', value: 'scripts/x.mjs', line: 42 };
+  const wNone = { class: 'repo-path', value: 'scripts/x.mjs' };
+  if (claimId(wLine) !== claimId(wNone)) fails.push('claimId is line-sensitive — the defect this wave exists to retire');
+  if (/\b42\b/.test(claimId(wLine))) fails.push('a line number leaked into a claim id');
+
+  // (k) THE SAFETY REQUIREMENT. An id must encode the ASSERTED VALUE, not just the subject —
+  // otherwise a claim can change what it asserts while the id set stays identical, --sync
+  // no-ops, and the lock silently records a claim set that no longer matches the corpus.
+  // Both classes that carry an asserted value are covered.
+  const wire1 = { class: 'wiring', value: 'scripts/foo.mjs', points: ['pre-push'], line: 1 };
+  const wire2 = { class: 'wiring', value: 'scripts/foo.mjs', points: ['deploy.yml'], line: 1 };
+  if (claimId(wire1) === claimId(wire2)) {
+    fails.push('SUBJECT-ONLY id: a wiring claim changed its asserted point and the id did not change');
+  }
+  const sc1 = { class: 'script-content', value: 'scripts/g.sh', codes: [2], line: 1 };
+  const sc2 = { class: 'script-content', value: 'scripts/g.sh', codes: [3], line: 1 };
+  if (claimId(sc1) === claimId(sc2)) {
+    fails.push('SUBJECT-ONLY id: a script-content claim changed its asserted exit code and the id did not change');
+  }
+  const tok1 = { class: 'script-content', value: 'scripts/g.sh', token: 'A_VERDICT', line: 1 };
+  const tok2 = { class: 'script-content', value: 'scripts/g.sh', token: 'B_VERDICT', line: 1 };
+  if (claimId(tok1) === claimId(tok2)) fails.push('SUBJECT-ONLY id: a script-content claim changed its asserted token and the id did not change');
+  // …and the same assertion in a different ORDER is the SAME claim, or the set is not a set.
+  if (claimId({ class: 'wiring', value: 'a', points: ['x', 'y'] }) !== claimId({ class: 'wiring', value: 'a', points: ['y', 'x'] })) {
+    fails.push('claimId is order-sensitive over an asserted list — the same assertion must have one id');
+  }
+  // `candidates` is a RESOLUTION helper, not an assertion; if it entered identity, prose changes
+  // that merely alter which files a claim might refer to would invalidate the lock again.
+  if (claimId({ class: 'script-content', value: 'a', codes: [2], candidates: ['p'] })
+      !== claimId({ class: 'script-content', value: 'a', codes: [2], candidates: ['q'] })) {
+    fails.push('`candidates` leaked into claim identity — prose-sensitivity re-introduced');
+  }
+
+  // (l) FRESHNESS IS SET EQUALITY: order and duplication must not matter, membership must.
+  const A = [{ class: 'repo-path', value: 'a' }, { class: 'repo-path', value: 'b' }];
+  if (!sameClaimSet(A, [...A].reverse())) fails.push('claim-set comparison is order-sensitive');
+  if (!sameClaimSet(A, [...A, { class: 'repo-path', value: 'a', line: 9 }])) fails.push('a duplicate id changed the set');
+  if (sameClaimSet(A, [{ class: 'repo-path', value: 'a' }])) fails.push('a REMOVED claim did not change the set');
+  if (sameClaimSet(A, [...A, { class: 'repo-path', value: 'c' }])) fails.push('an ADDED claim did not change the set');
+  if (claimIdSet([]).length !== 0) fails.push('claimIdSet of nothing is not empty');
+
+  // (m) PUSHER-RELATIVE VERDICTS. A path on no remote ref REPORTS — the pusher can neither
+  // verify nor fix it. But a claim that WAS verified when locked and is now missing BLOCKS:
+  // that is a commit removing a prescribed path, and it is the pusher's doing.
+  if (isBlocking({ class: 'repo-path', value: 'scripts/only-in-a-worktree.mjs', unpublished: true }, { status: 'MISSING' }, cfg)) {
+    fails.push('an unpublished path BLOCKED the pusher — the deadlock this wave exists to retire');
+  }
+  if (!isBlocking({ class: 'repo-path', value: 'scripts/deleted.mjs', unpublished: true, was_verified: true }, { status: 'MISSING' }, cfg)) {
+    fails.push('a previously-VERIFIED path that is now missing did not block — unpublished became a way to delete a prescribed file unnoticed');
+  }
+  if (isBlocking({ class: 'repo-path', value: 'scripts/x.mjs', unpublished: true }, { status: 'OK' }, cfg)) {
+    fails.push('an unpublished marker turned a satisfied claim into a failure');
+  }
   return fails;
 }
 
@@ -789,10 +961,28 @@ if (IS_MAIN) {
     const rawText = readFileSync(CORPUS_PATH, 'utf8');
     const lock = buildLock(rawText, cfg);
     const next = JSON.stringify(lock, null, 2) + '\n';
-    const prev = existsSync(LOCK_PATH) ? readFileSync(LOCK_PATH, 'utf8') : null;
-    if (prev === next) { console.log(`lock already fresh (${lock.claims.length} claims, corpus sha ${lock.corpus_sha256.slice(0, 12)}…)`); process.exit(0); }
+    const prevRaw = existsSync(LOCK_PATH) ? readFileSync(LOCK_PATH, 'utf8') : null;
+    const prevLock = prevRaw ? JSON.parse(prevRaw) : null;
+
+    // ── ID-GATED SYNC ───────────────────────────────────────────────────────────────────────
+    // The whole point of claim-set freshness is that a prose edit is not a claim change. If
+    // --sync still rewrote the file on every prose edit, the lock would churn anyway and two
+    // sessions syncing would keep colliding on the same rows — the defect would survive in the
+    // one place it is most visible. So: no-op unless the CLAIM SET changed.
+    //
+    // The exception is a lock still in the OLD shape (line-bearing, `corpus_sha256`). That must
+    // be rewritten once even though its id set is identical — that rewrite IS the migration.
+    const oldShape = Boolean(prevLock) && prevLock.extracted_from_corpus_sha256 === undefined;
+    if (prevLock && !oldShape && sameClaimSet(prevLock.claims, lock.claims)) {
+      console.log(`lock already fresh — claim set unchanged (${claimIdSet(lock.claims).length} claim ids).`);
+      console.log('  Prose moved but no claim did, so the lock is NOT rewritten: freshness is claim-set');
+      console.log('  equality, and rewriting here is what used to make every session collide on this file.');
+      process.exit(0);
+    }
+    if (prevRaw === next) { console.log(`lock already fresh (${lock.claims.length} claims)`); process.exit(0); }
     writeFileSync(LOCK_PATH, next);
-    console.log(`lock written: ${lock.claims.length} claims, corpus sha ${lock.corpus_sha256.slice(0, 12)}… — commit ops/claudemd-claims.lock.json`);
+    const why = oldShape ? ' (migrated to claim-set shape: line numbers dropped, provenance field renamed)' : '';
+    console.log(`lock written: ${lock.claims.length} claims, ${claimIdSet(lock.claims).length} ids${why} — commit ops/claudemd-claims.lock.json`);
     process.exit(0);
   }
 
