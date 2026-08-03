@@ -444,14 +444,15 @@
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/venue-slo-tiers-drift-canary.sh",
       "criticality": "advisory",
-      "schedule": "0 12 * * 1",
+      "schedule": "27 12 * * 1",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "68d026ea595091c2cc5a689484068229f112d152246e04e244fa017c4001d90d",
+      "sha256": "b2280d27a9f15bb7a2f67d6ec187b9b5b243620649d951a3c7e2e1b75f8ced66",
       "alert_ids": [
         "VENUE_SLO_TIER_DRIFT"
       ],
-      "owner_wave": "OPS-VENUE-SLO-TIERS-W1"
+      "owner_wave": "OPS-VENUE-SLO-TIERS-W1",
+      "notes": "Schedule + sha256 converged onto the LIVE host by OPS-MONITORING-SCHEDULE-SOT-W1. OPS-AUDIT-REMEDIATION-LOW-W1 (90610fa) applied SEC-48 — an off-:00 minute per CLAUDE.md — to the live crontab and to this script's suggested-cron comment IN THE REPO, but updated neither this row's schedule nor the INSTALLED host copy. HASH_DRIFT structurally could not catch the latter: it compares this row's recorded sha256 against the HOST file, so a repo-only edit leaves it green by construction. Both copies are closed here; the live crontab was never touched."
     },
     {
       "id": "venue-slo-tiers",
