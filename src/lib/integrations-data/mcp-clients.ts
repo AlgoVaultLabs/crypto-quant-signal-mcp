@@ -144,7 +144,7 @@ const MCP_CLIENTS: SurfaceModule = {
   }
 }</code></pre>
       </div>
-      <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its 3 tools.</p>`,
+      <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its tools.</p>`,
       fullTutorialUrl: '/integrations/claude-code',
       hasDedicatedPage: true,
     },
