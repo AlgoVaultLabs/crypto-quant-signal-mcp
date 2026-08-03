@@ -38,9 +38,9 @@ Set `AV_API_KEY` in your shell or `.envrc`.
 
 ## Example: get a BTC trade call
 
-In a Claude Code session, type `/mcp` to list connected servers. AlgoVault should appear with 4 tools (`get_trade_call`, `get_trade_signal`, `scan_funding_arb`, `get_market_regime`). Then ask: *"Use AlgoVault to get a trade call for BTC 4h."* Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.
+In a Claude Code session, type `/mcp` to list connected servers. AlgoVault should appear with its tools (`get_trade_call`, `get_trade_signal`, `scan_funding_arb`, `get_market_regime`, and others). Then ask: *"Use AlgoVault to get a trade call for BTC 4h."* Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.
 
-> *Screenshot placeholder — Claude Code terminal showing `/mcp` list with AlgoVault + 4 tools and a `get_trade_call` response.*
+> *Screenshot placeholder — Claude Code terminal showing `/mcp` list with AlgoVault + its tools and a `get_trade_call` response.*
 
 ## Troubleshooting
 

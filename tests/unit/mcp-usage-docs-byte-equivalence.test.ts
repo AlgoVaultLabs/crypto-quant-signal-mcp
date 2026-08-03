@@ -18,6 +18,12 @@
  * snippets (architect-approved public-copy edit). The canary still guards
  * against *accidental* drift from this new baseline; any future intentional
  * snippet edit must regenerate the fixture in the same commit.
+ *
+ * FIXTURE MAINTENANCE — OPS-AUDIT-REMEDIATION-LOW-W2 (2026-08-02, SEC-44): regenerated to
+ * absorb the removal of a hardcoded capability count ("its 3 tools" -> "its tools"). The
+ * count was stale — live tools/list returns 7 — and several tools are conditionally exposed,
+ * so a number would rot again on the next flag flip. Verified before regenerating that the
+ * word-level diff against the old fixture was EXACTLY that edit and nothing else.
  */
 
 import { describe, it, expect } from 'vitest';

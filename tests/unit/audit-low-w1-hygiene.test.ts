@@ -53,7 +53,12 @@ describe('SEC-41 — every version field must agree (the generator, not the lane
 });
 
 describe('SEC-24 — migration ordinals must be unambiguous', () => {
-  const files = readdirSync(join(ROOT, 'migrations')).filter((f) => f.endsWith('.sql')).sort();
+  // A `<n>_x.down.sql` is the DOWN-PATH COMPANION of `<n>_x.sql`, not a competing migration —
+  // counting it as one made this test fire on OPS-AUDIT-REMEDIATION-LOW-W2's own down-path, which
+  // is a false positive: shipping a revert is the behaviour we WANT.
+  const files = readdirSync(join(ROOT, 'migrations'))
+    .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
+    .sort();
 
   it('finds migrations to check (vacuity guard)', () => {
     expect(files.length).toBeGreaterThan(5);

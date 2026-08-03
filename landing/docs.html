@@ -370,7 +370,7 @@ tailwind.config = {
       <div class="bg-navy-700 border border-white/5 rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
         "Get me a trade call for BTC on the 1h timeframe"
       </div>
-      <p class="text-gray-500 text-xs">Free tier: all 716 assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
+      <p class="text-gray-500 text-xs">Free tier: all supported assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
       <p class="text-gray-400 text-sm mt-4">Your agent can also ask AlgoVault to teach itself how to use the tools &mdash; see <a href="#knowledge-tools-overview" class="text-mint-400 hover:underline">Knowledge Tools</a> below.</p>
     </section>
 
@@ -1045,7 +1045,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
   }
 }</code></pre>
       </div>
-      <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its 3 tools.</p>
+      <p><strong>Verify:</strong> in Claude Code, run <code class="text-xs bg-navy-800 px-1 rounded">/mcp</code> to list connected servers; AlgoVault should appear with its tools.</p>
     </div>
   </details>
 
@@ -1152,7 +1152,7 @@ verdict = await tools[0].ainvoke({"coin": "BTC", "timeframe": "4h"})</code></pre
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">pip install llama-index-tools-mcp</code></pre>
       </div>
-      <p>Call directly via <code class="text-xs bg-navy-800 px-1 rounded">BasicMCPClient</code>, or adapt all 4 tools to <code class="text-xs">FunctionTool</code> via <code class="text-xs">McpToolSpec</code>:</p>
+      <p>Call directly via <code class="text-xs bg-navy-800 px-1 rounded">BasicMCPClient</code>, or adapt its tools to <code class="text-xs">FunctionTool</code> via <code class="text-xs">McpToolSpec</code>:</p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">from llama_index.tools.mcp import BasicMCPClient
 
@@ -1866,7 +1866,7 @@ cfg = gate_api.Configuration(
           </div>
           <p class="text-gray-400 text-sm mb-3">Three specialized agents, one coordinator. Agent A handles regime detection, Agent B runs trade calls, Agent C monitors funding arbs. The coordinator synthesizes all three into a single decision.</p>
           <div class="bg-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-300 italic">"Set up three agents: Agent A gets market regime for BTC, ETH, SOL on 4h. Agent B gets trade calls for the same assets on 15m. Agent C scans funding arb for spreads above 8 bps. Combine all results into a single dashboard showing: regime, direction, confidence, and best arb for each asset."</div>
-          <div class="text-gray-600 text-xs mt-2">Tools: All 3 tools in parallel &nbsp;|&nbsp; Pattern: multi-agent orchestration</div>
+          <div class="text-gray-600 text-xs mt-2">Tools: All core tools in parallel &nbsp;|&nbsp; Pattern: multi-agent orchestration</div>
           <div class="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
             <code class="text-xs text-mint-400 bg-mint-500/10 px-2 py-1 rounded">claude plugin install AlgoVaultLabs/algovault-skills</code>
             <a href="https://github.com/AlgoVaultLabs/algovault-skills/tree/main/skills/multi-agent-war-room?utm_source=docs&utm_medium=card&utm_campaign=skill-install-multi-agent-war-room"

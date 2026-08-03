@@ -82,7 +82,7 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-C
 
 ---
 
-## The 3 MCP Tools
+## The MCP Tools
 
 ### 1. `get_trade_call`
 
