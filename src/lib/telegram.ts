@@ -128,22 +128,36 @@ const ACTION_TITLE: Record<VenueStatusChangeAlert['action'], string> = {
   manual_required: 'Venue MANUAL DECISION REQUIRED (day-30, 2nd miss)',
 };
 
-/**
- * Fire a structured Telegram alert for a venue lifecycle transition. Reuses
- * the existing TELEGRAM_CHAT_ID env var (single chat — alert routing
- * distinguished by emoji + action title in the message body, not by separate
- * chat). Silently no-ops in dev/test where the bot token isn't configured.
- */
-export async function sendVenueStatusChange(payload: VenueStatusChangeAlert): Promise<boolean> {
-  if (!isConfigured()) return false;
+// OPS-VENUE-DAY30-DECISION-W1: the alert prints RUNNABLE commands, so it has
+// to name the real container. Env-overridable, defaulting to the live name
+// probed on 204.168.185.24 at wave time — never a bare placeholder, and never
+// a literal with no way to correct it if the container is renamed.
+const APP_CONTAINER = process.env.ALGOVAULT_APP_CONTAINER || 'crypto-quant-signal-mcp-mcp-server-1';
+const DEPLOY_HOST = process.env.ALGOVAULT_DEPLOY_HOST || '204.168.185.24';
 
+/**
+ * Render the venue-lifecycle alert body. EXPORTED and pure so the rendered
+ * BODY can be asserted directly — `sendVenueStatusChange` short-circuits on
+ * `isConfigured()` in dev/test, so a test that called it would assert nothing,
+ * and grepping this source would only prove a string exists somewhere, not
+ * that it reaches the message (CLAUDE.md, OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH2:
+ * a canary rendering entity IDs must assert the body).
+ *
+ * Every interpolated value goes through `mdValue()`. Telegram's LEGACY
+ * `Markdown` parse mode has NO escape syntax, and this body carries
+ * `~/.ssh/algovault_deploy` plus container and venue identifiers — an odd
+ * underscore count 400s the whole message. Bold and code spans are kept on
+ * separate entities (never nested), because the legacy parser does not support
+ * nesting.
+ */
+export function renderVenueStatusChange(payload: VenueStatusChangeAlert): string {
   const emoji = ACTION_EMOJI[payload.action];
   const title = ACTION_TITLE[payload.action];
   const wr = payload.pfe_wr === null ? 'n/a (no Phase-E outcomes yet)' : `${(payload.pfe_wr * 100).toFixed(1)}%`;
   const sample = `${payload.buy_sell_count} / ${payload.min_buy_sell_sample}`;
 
   const lines = [
-    `${emoji} *${title}: ${payload.venue}*`,
+    `${emoji} *${title}*: ${mdValue(payload.venue)}`,
     ``,
     `PFE Win Rate: ${wr}`,
     `BUY+SELL sample: ${sample}`,
@@ -152,9 +166,54 @@ export async function sendVenueStatusChange(payload: VenueStatusChangeAlert): Pr
   ];
 
   if (payload.action === 'manual_required') {
-    lines.push(``);
-    lines.push(`Action required: reply PROMOTE | RETIRE | EXTEND_AGAIN`);
+    // Escalation LEADS when it applies: a decision deferred this many times
+    // with no operator action is itself the operator-action-required event.
+    // `escalated` is derived once in evaluate-venues.ts; nothing is decided
+    // here, so the two surfaces cannot disagree.
+    if (payload.escalated) {
+      lines.unshift(
+        `⚠️ *ESCALATION — deferred ${payload.deferral_count} times with no decision.*`,
+        ``,
+      );
+    }
+
+    // Say when the self-throttle next re-asks. Silence about the throttle would
+    // make a self-limiting alert look like a broken one.
+    if (payload.next_review_at) {
+      lines.push(`Next auto re-ask: ${mdValue(payload.next_review_at)}`);
+    }
+
+    const exec = `docker exec ${APP_CONTAINER} node dist/scripts`;
+    lines.push(
+      ``,
+      `Decide — run on ${mdValue(DEPLOY_HOST)}:`,
+      `  ssh: ${mdValue(`ssh -i ~/.ssh/algovault_deploy root@${DEPLOY_HOST}`)}`,
+      ``,
+      `  PROMOTE venue ${mdValue(payload.venue)}:`,
+      `    ${mdValue(`${exec}/promote-venue.js ${payload.venue}`)}`,
+      `  RETIRE venue ${mdValue(payload.venue)}:`,
+      `    ${mdValue(`${exec}/retire-venue.js ${payload.venue}`)}`,
+      `  EXTEND venue ${mdValue(payload.venue)} (sized to measured accrual):`,
+      `    ${mdValue(`${exec}/extend-venue.js ${payload.venue} --days <N>`)}`,
+      ``,
+      // The pre-wave body said "reply PROMOTE | RETIRE | EXTEND_AGAIN". This
+      // module has one outbound post() helper and NO inbound handler, webhook
+      // or getUpdates poller — replying had never done anything, and
+      // EXTEND_AGAIN had no implementation at all until this wave.
+      `No reply to this message is read — this bot has no inbound handler.`,
+    );
   }
 
-  return post(lines.join('\n'));
+  return lines.join('\n');
+}
+
+/**
+ * Fire a structured Telegram alert for a venue lifecycle transition. Reuses
+ * the existing TELEGRAM_CHAT_ID env var (single chat — alert routing
+ * distinguished by emoji + action title in the message body, not by separate
+ * chat). Silently no-ops in dev/test where the bot token isn't configured.
+ */
+export async function sendVenueStatusChange(payload: VenueStatusChangeAlert): Promise<boolean> {
+  if (!isConfigured()) return false;
+  return post(renderVenueStatusChange(payload));
 }

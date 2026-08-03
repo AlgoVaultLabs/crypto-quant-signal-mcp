@@ -186,38 +186,73 @@ fires daily at 06:00 UTC. The decision tree:
 
 - **Day 0-14**: NO-OP (within initial window).
 - **Day 15+**:
-  - IF `buy_sell_count ≥ asset_count × 10` AND `pfe_wr ≥ 0.80` → auto-promote
-    + Telegram 🟢 `Venue PROMOTED: <VENUE>`.
+  - IF `buy_sell_count ≥ asset_count × 10` AND `pfe_wr ≥ 0.80` → flagged
+    `ready_for_promotion`. **NOT an auto-promote** — shadow auto-promote was
+    disabled by OPS-SHADOW-PIPELINE-W1/C4. Nothing changes status on its own;
+    the daily readiness digest surfaces it and you run `promote-venue.js`.
   - ELSE (one-shot) → auto-extend + Telegram 🟡 `Venue auto-EXTENDED (day-15 miss)`.
-- **Day 30+** after one extension:
+- **Day 30+** after one extension, **and no unexpired `review_deadline_at`**:
   - Telegram 🔴 `Venue MANUAL DECISION REQUIRED (day-30, 2nd miss)`. NO
-    automatic state change. Mr.1 manually decides PROMOTE / RETIRE /
-    EXTEND_AGAIN.
+    automatic status change. You decide PROMOTE / RETIRE / EXTEND — see Step 5,
+    whose three commands the alert body now prints verbatim.
+  - The cron then **self-throttles**: it sets `review_deadline_at = now + 7d`
+    and appends an `auto-deferred` marker to `notes`, so the same venue re-asks
+    **weekly**, not daily, with no action from you. After 3 auto-deferrals with
+    no operator action the alert leads with an ESCALATION line.
+  - *(Before OPS-VENUE-DAY30-DECISION-W1, 2026-08-03, there was no deadline
+    field and the predicate was just `extension_count >= 1` — which nothing
+    could falsify, so this alert re-fired **every single day**. Measured streak
+    before the fix: 33 consecutive daily fires, 2026-07-02 → 2026-08-03.)*
 
 Watch logs: `ssh ... 'tail -f /var/log/algovault-evaluate-venues.log'`.
 
 ---
 
-## Step 5 — Manual promotion / retirement (when needed)
+## Step 5 — Manual promotion / retirement / extension (when needed)
 
-On day-30 second miss, Mr.1's decision options:
+On day-30 second miss you have exactly three options. **These are the same
+three commands the Telegram alert body prints** — it resolves `<VENUE>` for you,
+so in practice you copy them straight out of the message.
+
+Use these scripts, **not raw psql**. They re-check criteria, refuse an invalid
+transition, verify the write landed, and go through `venue-store` so every
+lifecycle field stays consistent. A hand-written `UPDATE` bypasses all of that —
+and since OPS-VENUE-DAY30-DECISION-W1 it also bypasses `review_deadline_at`,
+so the venue keeps re-alerting even though you "decided".
 
 ```bash
-# Option A — manually promote (if WR is high enough to trust despite low sample)
-ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
-  'docker exec crypto-quant-signal-mcp-postgres-1 psql -U algovault -d signal_performance -c \
-  "UPDATE venues SET status='\''promoted'\'', promoted_at=NOW(), notes=COALESCE(notes,'\'''\'') || '\'' / manually promoted by Mr.1 <date>'\'' WHERE exchange_id='\''<VENUE>'\''"'
+SSH='ssh -i ~/.ssh/algovault_deploy root@204.168.185.24'
+CTR=crypto-quant-signal-mcp-mcp-server-1
 
-# Option B — retire (venue is structurally unsuitable; adapter stays but venue not routed)
-ssh -i ~/.ssh/algovault_deploy root@204.168.185.24 \
-  'docker exec crypto-quant-signal-mcp-postgres-1 psql -U algovault -d signal_performance -c \
-  "UPDATE venues SET status='\''retired'\'', retired_at=NOW(), notes=COALESCE(notes,'\'''\'') || '\'' / retired by Mr.1 <date>: <reason>'\'' WHERE exchange_id='\''<VENUE>'\''"'
+# Option A — PROMOTE (WR is high enough to trust despite a low sample).
+# Re-checks the criteria and refuses unless they pass; --force to override.
+$SSH "docker exec $CTR node dist/scripts/promote-venue.js <VENUE>"
 
-# Option C — reset extension counter to grant another auto-extend cycle (rare)
-ssh ... 'docker exec ... -c "UPDATE venues SET extension_count=0 WHERE exchange_id='\''<VENUE>'\''"'
+# Option B — RETIRE (structurally unsuitable; the adapter stays, the venue
+# stops being seeded — the seed crons select --status shadow).
+$SSH "docker exec $CTR node dist/scripts/retire-venue.js <VENUE>"
+
+# Option C — EXTEND (the venue is sample-bound but its edge looks real).
+# Moves review_deadline_at ONLY. It never touches seeding_started_at, so the
+# accrued BUY/SELL sample and PFE WR survive the extension.
+# It measures the venue's real accrual rate and REFUSES a window that provably
+# cannot reach the sample target, printing the projected date and the minimum
+# workable --days instead. --force overrides for a deliberately short review.
+$SSH "docker exec $CTR node dist/scripts/extend-venue.js <VENUE> --days <N> --reason '<why>'"
 ```
 
-Container restart NOT required — the cron re-reads venues table on every fire.
+⚠️ **Do NOT reset `extension_count` to 0 to "grant another cycle".** That was
+this runbook's old Option C and it is wrong twice over: `extension_count` is a
+budget (schema CHECK bounds it at 2), and since OPS-VENUE-DAY30-DECISION-W1 the
+field that actually buys time is `review_deadline_at`. Use Option C above.
+
+⚠️ **Never use `resetSeedingStarted` / `reset-venue-window.js` as an
+extension.** It overwrites `seeding_started_at`, which restarts the promotion
+clock **and** the sample/WR measurement floor together — discarding every
+accrued signal behind it. It exists to quarantine bug-contaminated data, and
+that is its only correct use.
+
+Container restart NOT required — the cron re-reads the venues table on every fire.
 
 ---
 

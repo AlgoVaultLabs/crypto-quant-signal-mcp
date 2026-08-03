@@ -19,14 +19,28 @@
  *      (HOLDs EXCLUDED + only Phase-E-backfilled signals count toward WR.)
  *   4. recordEval(venue, pfe_wr, buy_sell_count)
  *   5. Decision tree:
+ *        - buy_sell_count == 0 → no_op:'no_pipeline_yet'. Runs FIRST so a
+ *          venue with no seed pipeline never alerts on empty data
+ *          (OPS-SHADOW-ALERT-HYGIENE-W1).
  *        - days_since ≥ 15 AND buy_sell_count ≥ min_buy_sell_sample
- *          AND pfe_wr ≥ 0.80 → setStatus(venue, 'promoted') +
- *          Telegram alert (action='promoted')
+ *          AND pfe_wr ≥ 0.80 → 'ready_for_promotion'. NO setStatus: shadow
+ *          auto-promote was DISABLED by OPS-SHADOW-PIPELINE-W1/C4. The daily
+ *          readiness digest surfaces it; the operator runs promote-venue.ts.
  *        - days_since ≥ 15 AND extension_count == 0 →
  *          incrementExtension(venue) + Telegram alert (action='extended')
- *        - days_since ≥ 30 AND extension_count == 1 →
- *          Telegram alert (action='manual_required') — NO automatic state
- *          change; Mr.1 manually triggers PROMOTE / RETIRE / EXTEND_AGAIN.
+ *        - days_since ≥ 30 AND extension_count ≥ 1 AND no unexpired
+ *          review_deadline_at → Telegram alert (action='manual_required') —
+ *          NO automatic status change — then SELF-THROTTLE: set
+ *          review_deadline_at = now + AUTO_DEFERRAL_DAYS so the re-ask is
+ *          weekly, not daily. The operator decides via promote-venue.ts /
+ *          retire-venue.ts / extend-venue.ts, whose exact commands the alert
+ *          body prints. (OPS-VENUE-DAY30-DECISION-W1, 2026-08-03: before it,
+ *          this branch had no deadline to check and re-fired EVERY DAY —
+ *          measured 33 consecutive fires. There was also no extend-venue.ts,
+ *          so the "EXTEND_AGAIN" this docblock used to name was not a thing
+ *          the operator could actually do.)
+ *        - days_since ≥ 30 AND extension_count ≥ 1 AND review_deadline_at is
+ *          still in the future → no_op:'manual_review_deferred'. Silent.
  *        - else → no action (still inside window OR sample/WR criteria not
  *          yet met but pre-deadline).
  *
