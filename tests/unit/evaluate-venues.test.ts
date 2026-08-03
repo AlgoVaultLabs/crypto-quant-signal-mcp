@@ -16,6 +16,9 @@ vi.mock('../../src/lib/venue-store.js', () => ({
   recordEval: vi.fn(),
   setStatus: vi.fn(),
   incrementExtension: vi.fn(),
+  // OPS-VENUE-DAY30-DECISION-W1 / CH2: the manual_required path now
+  // self-throttles by writing review_deadline_at, so the mock must expose it.
+  setReviewDeadline: vi.fn(),
 }));
 
 vi.mock('../../src/lib/telegram.js', () => ({

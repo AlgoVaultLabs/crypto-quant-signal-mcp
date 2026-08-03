@@ -98,6 +98,22 @@ export interface VenueStatusChangeAlert {
   min_buy_sell_sample: number;
   days_since: number;
   extension_count: number;
+  // OPS-VENUE-DAY30-DECISION-W1 / CH2 — additive and ALL OPTIONAL, so the
+  // existing interface and every existing caller are unchanged (CLAUDE.md
+  // "side-fix with interface-preserved exception"). Populated only on the
+  // `manual_required` path, by the cron's auto-deferral throttle. CH3 renders
+  // them; this chapter only declares them, because the producing call site
+  // lives in evaluate-venues.ts and cannot reach a field that does not exist.
+  /** ISO 8601 — when the self-throttled alert will next re-ask. */
+  next_review_at?: string;
+  /** 1-based count of auto-deferrals since the last operator action. */
+  deferral_count?: number;
+  /**
+   * Whether that count has crossed the escalation threshold. DERIVED ONCE in
+   * evaluate-venues.ts and rendered verbatim here — this module deliberately
+   * owns no threshold of its own, so the two can never disagree.
+   */
+  escalated?: boolean;
 }
 
 const ACTION_EMOJI: Record<VenueStatusChangeAlert['action'], string> = {

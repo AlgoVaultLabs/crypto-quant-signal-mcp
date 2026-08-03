@@ -46,6 +46,7 @@ import {
   listVenues,
   recordEval,
   incrementExtension,
+  setReviewDeadline,
 } from '../lib/venue-store.js';
 import { sendVenueStatusChange } from '../lib/telegram.js';
 import type { VenueRecord } from '../types.js';
@@ -54,6 +55,58 @@ const PFE_WR_THRESHOLD = 0.80;
 const DAY_15_FLOOR = 15;
 const DAY_30_FLOOR = 30;
 const SECONDS_PER_DAY = 86400;
+
+// ── OPS-VENUE-DAY30-DECISION-W1: the auto-deferral re-ask throttle ────────
+
+/**
+ * How far ahead the cron pushes `review_deadline_at` when `manual_required`
+ * fires with no deadline set. Turns a DAILY alert stream into a WEEKLY re-ask
+ * with no operator action required, and makes operator inaction durable state
+ * rather than an unread message backlog.
+ */
+export const AUTO_DEFERRAL_DAYS = 7;
+
+/** Deferrals accumulated since the last operator action before we escalate. */
+export const DEFERRAL_ESCALATION_THRESHOLD = 3;
+
+/**
+ * `notes` is free-text carrying multi-wave prose, so the deferral counter is a
+ * ONE machine-parsable marker shape rather than a grep over arbitrary text —
+ * and it is written by the SAME call that moves the deadline, so the count can
+ * never drift from the field it describes. A dedicated `deferral_count` column
+ * is deliberately NOT added: two predicates on one question is how they drift.
+ */
+const AUTO_DEFERRAL_TAG = 'auto-deferred';
+const OPERATOR_ACTION_TAG = 'operator-extended';
+const AUTO_DEFERRAL_RE = new RegExp(`\\| ${AUTO_DEFERRAL_TAG} [^|]*?\\(#\\d+\\)`, 'g');
+
+/** The exact marker the cron appends. `nth` is 1-based. */
+export function formatAutoDeferralNote(when: Date, nth: number): string {
+  return ` | ${AUTO_DEFERRAL_TAG} ${when.toISOString()} (#${nth})`;
+}
+
+/**
+ * The marker an OPERATOR extension appends (extend-venue.ts imports this, so
+ * the two sides of the counter are single-derived from one module).
+ */
+export function formatOperatorExtensionNote(when: Date, days: number, reason?: string): string {
+  const tail = reason ? ` — ${reason}` : '';
+  return ` | ${OPERATOR_ACTION_TAG} ${when.toISOString()} +${days}d${tail}`;
+}
+
+/**
+ * Count auto-deferrals since the last OPERATOR action. Deferrals before an
+ * explicit operator extension do not count: the escalation exists to surface
+ * "nobody has decided this", and an operator extension IS a decision. Counting
+ * lifetime markers instead would re-escalate immediately after the operator
+ * just acted — a false alarm on the one venue whose owner is paying attention.
+ */
+export function countAutoDeferrals(notes: string | null | undefined): number {
+  if (!notes) return 0;
+  const lastAction = notes.lastIndexOf(`| ${OPERATOR_ACTION_TAG} `);
+  const window = lastAction === -1 ? notes : notes.slice(lastAction);
+  return (window.match(AUTO_DEFERRAL_RE) ?? []).length;
+}
 
 export type EvalDecision =
   // OPS-SHADOW-PIPELINE-W1/C4: shadow auto-promote DISABLED — a qualifying shadow
@@ -129,7 +182,7 @@ export async function computeVenueStats(
  * Apply the C3 decision tree to a single shadow venue's stats. Pure logic —
  * exported for unit-test coverage of every branch.
  */
-export function decide(venue: VenueRecord, stats: EvalStats): EvalDecision {
+export function decide(venue: VenueRecord, stats: EvalStats, now: Date = new Date()): EvalDecision {
   const { pfe_wr, buy_sell_count, days_since } = stats;
 
   // Branch 0 (OPS-SHADOW-ALERT-HYGIENE-W1, 2026-06-01): NO PIPELINE YET —
@@ -164,8 +217,27 @@ export function decide(venue: VenueRecord, stats: EvalStats): EvalDecision {
     return { action: 'extended', pfe_wr, buy_sell_count };
   }
 
-  // Branch 3: MANUAL REQUIRED — day-30 hit after one extension.
+  // Branch 3: MANUAL REQUIRED — day-30 hit after one extension, and no
+  // unexpired review deadline.
+  //
+  // OPS-VENUE-DAY30-DECISION-W1 (2026-08-03): `review_deadline_at` is the ONE
+  // field gating this alert. Before this wave the predicate was just
+  // `days_since >= DAY_30_FLOOR && venue.extension_count >= 1`, which NOTHING
+  // could falsify — bumping extension_count 1 → 2 leaves it TRUE, and the only
+  // clock (COALESCE(seeding_started_at, integrated_at)) counts up — so a venue
+  // in this state re-alerted EVERY SINGLE DAY, forever. Measured before the
+  // fix: 33 consecutive daily fires, 2026-07-02 → 2026-08-03, unbroken.
+  //
+  // `!= null` NOT `!== null`: VenueRecord.review_deadline_at is optional, so a
+  // literal built without it is `undefined`, and `undefined !== null` is true —
+  // which would send `new Date(undefined)` (Invalid Date) into the comparison.
+  //
+  // Boundary is `<`, not `<=`: a deadline of exactly `now` has ARRIVED, so the
+  // decision is due and the alert fires.
   if (days_since >= DAY_30_FLOOR && venue.extension_count >= 1) {
+    if (venue.review_deadline_at != null && now < new Date(venue.review_deadline_at)) {
+      return { action: 'no_op', reason: 'manual_review_deferred', pfe_wr, buy_sell_count, days_since };
+    }
     return { action: 'manual_required', pfe_wr, buy_sell_count };
   }
 
@@ -200,7 +272,7 @@ export async function evaluateAllShadowVenues(now: Date = new Date()): Promise<{
     const stats = await computeVenueStats(venue, now);
     await recordEval(venue.exchange_id, stats.pfe_wr, stats.buy_sell_count, now);
 
-    const decision = decide(venue, stats);
+    const decision = decide(venue, stats, now);
     actions.push({ venue: venue.exchange_id, decision });
 
     // OPS-SHADOW-PIPELINE-W1/C4: 'ready_for_promotion' is intentionally a NO-OP
@@ -219,8 +291,23 @@ export async function evaluateAllShadowVenues(now: Date = new Date()): Promise<{
         extension_count: venue.extension_count + 1,
       });
     } else if (decision.action === 'manual_required') {
-      // NO automatic state change. Mr.1 manually decides PROMOTE / RETIRE /
-      // EXTEND_AGAIN via direct postgres update + redeploy.
+      // NO automatic status change — the operator decides PROMOTE / RETIRE /
+      // EXTEND, and the alert body now carries the three runnable commands.
+      //
+      // OPS-VENUE-DAY30-DECISION-W1: SELF-THROTTLE. The alert has just fired
+      // with no deadline set, so push the next re-ask out by AUTO_DEFERRAL_DAYS.
+      // The daily stream becomes weekly with zero operator action, and the
+      // operator's inaction becomes durable state instead of an unread backlog.
+      //
+      // Deliberately the SAME field an explicit extension writes — one field,
+      // one meaning, two writers. A separate `last_alert_at` would be a second
+      // predicate on the same question, which is how they drift apart.
+      const nth = countAutoDeferrals(venue.notes) + 1;
+      const nextReview = new Date(now.getTime() + AUTO_DEFERRAL_DAYS * SECONDS_PER_DAY * 1000);
+      await setReviewDeadline(venue.exchange_id, nextReview, {
+        note: formatAutoDeferralNote(now, nth),
+      });
+
       await sendVenueStatusChange({
         venue: venue.exchange_id,
         action: 'manual_required',
@@ -229,6 +316,19 @@ export async function evaluateAllShadowVenues(now: Date = new Date()): Promise<{
         min_buy_sell_sample: venue.min_buy_sell_sample,
         days_since: stats.days_since,
         extension_count: venue.extension_count,
+        // Escalation, not silence: a decision deferred this many times without
+        // an operator action IS itself the operator-action-required event.
+        // Silence about the throttle would make a self-limiting alert look
+        // like a broken one, so the next re-ask date is always stated.
+        //
+        // `escalated` is DERIVED HERE, once. telegram.ts renders it and
+        // compares nothing — otherwise DEFERRAL_ESCALATION_THRESHOLD would
+        // have to exist in two modules (and telegram.ts cannot import it from
+        // here anyway: this module already imports sendVenueStatusChange, so
+        // the reverse edge would be a cycle).
+        next_review_at: nextReview.toISOString(),
+        deferral_count: nth,
+        escalated: nth >= DEFERRAL_ESCALATION_THRESHOLD,
       });
     }
   }
