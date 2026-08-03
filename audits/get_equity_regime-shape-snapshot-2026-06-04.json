@@ -2,26 +2,73 @@
   "endpoint": "MCP tool get_equity_regime",
   "wave": "EQUITIES-ENGINE-W1 C4",
   "as_of": "2026-06-04",
-  "allowed_keys": ["symbol", "regime", "confidence", "as_of_session", "_algovault"],
-  "forbidden_keys": ["outcome_return_pct", "outcome_price"],
+  "allowed_keys": [
+    "symbol",
+    "regime",
+    "confidence",
+    "as_of_session",
+    "_algovault"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price"
+  ],
   "default_symbol": "SPY",
-  "regime_values": ["trending_up", "trending_down", "compression", "ranging", "quarantined", "insufficient_data", "unknown"],
+  "regime_values": [
+    "trending_up",
+    "trending_down",
+    "compression",
+    "ranging",
+    "quarantined",
+    "insufficient_data",
+    "unknown"
+  ],
   "error_contract": {
     "SYMBOL_NOT_IN_UNIVERSE": {
       "returned": true,
-      "keys": ["error", "code", "message", "suggested_symbols", "universe_size", "_algovault"]
+      "keys": [
+        "error",
+        "code",
+        "message",
+        "suggested_symbols",
+        "universe_size",
+        "_algovault"
+      ]
     },
     "NO_VERDICT_FOR_SESSION": {
       "returned": true,
-      "keys": ["error", "code", "message", "suggested_action", "_algovault"]
+      "keys": [
+        "error",
+        "code",
+        "message",
+        "suggested_action",
+        "_algovault"
+      ]
     },
     "TIER_LIMIT_REACHED": {
       "thrown": true,
       "via": "toolErrorContent",
-      "keys": ["code", "error_code", "message", "current_usage", "monthly_limit", "tier", "suggested_upgrade_url", "retry_after_days"]
+      "keys": [
+        "code",
+        "error_code",
+        "message",
+        "current_usage",
+        "monthly_limit",
+        "tier",
+        "suggested_upgrade_url",
+        "retry_after_days"
+      ]
     }
   },
-  "cache_contract": "MCP clients cache tools/list at session start; adding/renaming this tool requires a cache-refresh notice in status.md.",
-  "consumers": ["MCP agents via https://api.algovault.com/mcp (tools/call)"],
-  "drift_check_command": "rm -rf dist && npm run build && grep -q \"get_equity_regime\" dist/index.js && ! grep -RnE \"outcome_return_pct|outcome_price\" dist/lib/equities/equity-tool-formatters.js && echo SHAPE_OK"
+  "cache_contract": {
+    "description": "MCP clients cache tools/list at session start; adding/renaming this tool requires a cache-refresh notice in status.md.",
+    "_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): was a bare STRING. build-knowledge-json.mjs only projects cache_contract when it is an OBJECT, so the public bundle silently dropped it. Wrapped, preserving the original text verbatim under `description`."
+  },
+  "consumers": [
+    "MCP agents via https://api.algovault.com/mcp (tools/call)"
+  ],
+  "drift_check_command": "rm -rf dist && npm run build && grep -q \"get_equity_regime\" dist/index.js && ! grep -RnE '\"(outcome_return_pct|outcome_price)\"[[:space:]]*:[[:space:]]*[-0-9.]' dist/lib/equities/equity-tool-formatters.js && echo SHAPE_OK",
+  "drift_check_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W1/W2): this check COULD NEVER PRINT SHAPE_OK. It grepped the BARE FIELD NAMES, and equity-tool-formatters.js line 12 carries a comment reading \"outcome_return_pct / outcome_price can never appear because they are never ...\" \u2014 so the grep matched the comment, `!` inverted it to false, and the && chain short-circuited. The file's own comment documenting that the fields never appear is what broke the check verifying they never appear. Now uses the value-binding regex CLAUDE.md prescribes, which matches a KEY:VALUE pair and is therefore blind to prose. Proven both directions by tests/unit/shape-snapshot-drift-checks.test.ts.",
+  "snapshot_date": "2026-06-04",
+  "projection_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): scripts/build-knowledge-json.mjs projects this file into the PUBLIC knowledge bundle and reads the field name `snapshot_date`, with a TOTAL per-field fallback. This file carried its date under a different key, so the public bundle advertised snapshot_date:'unknown' (and, where allowed_keys/endpoint were absent, allowed_keys:[] and the filename as the endpoint) with a perfectly green build. Canonical keys added; the original keys are retained so no other reader breaks."
 }
