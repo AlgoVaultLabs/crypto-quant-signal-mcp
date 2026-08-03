@@ -84,22 +84,34 @@ describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-
     return rows.length ? rows[0].payer_wallet : null;
   }
 
-  it('stores payer_wallet on the winning claim; nonce stays PK; replay never overwrites it', async () => {
+  // FLIPPED by OPS-AUDIT-REMEDIATION-LOW-W2 (SEC-49). This test previously asserted "nonce stays
+  // PK" and that a SECOND wallet replaying the same nonce was REJECTED. That was the defect: an
+  // ERC-3009 nonce is unique per AUTHORIZER, so the second payer was a legitimate customer being
+  // silently refused after paying on-chain. The exemption and its test are a pair — fixing the key
+  // without flipping this test would have left the suite asserting the bug.
+  it('stores payer_wallet on the winning claim; a SAME-payer replay is rejected and never overwrites it', async () => {
     const nonce = '0xaa11000000000000000000000000000000000000000000000000000000000001';
     const wallet = '0x76de895f0000000000000000000000000000c755';
     expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe(true);
     expect(await payerWalletOf(nonce)).toBe(wallet);
-    // Replay (same nonce) is still rejected (idempotency byte-identical) AND the stored
-    // wallet is NOT overwritten by the DO-NOTHING conflict.
-    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xdeadbeef00000000000000000000000000000000')).toBe(false);
+    // Same payer, same nonce → still rejected, and the DO-NOTHING conflict does not overwrite.
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe(false);
     expect(await payerWalletOf(nonce)).toBe(wallet);
+    // DIFFERENT payer, same nonce → now settles, which is the whole point of the key change.
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xdeadbeef00000000000000000000000000000000')).toBe(true);
   });
 
-  it('fail-open: omitted payer_wallet → null column, the claim still succeeds', async () => {
+  // FLIPPED by OPS-AUDIT-REMEDIATION-LOW-W2 (SEC-49): an omitted payer now stores '' , NOT null.
+  // Under the composite key Postgres treats NULL != NULL, so a null payer would make every
+  // unattributable row DISTINCT — an unattributable replay would bypass the claim and re-serve
+  // for free. '' dedupes; null does not. The claim still succeeds, so it stays fail-OPEN.
+  it("fail-open: omitted payer_wallet → '' column (not null), and the claim still succeeds", async () => {
     const nonce = '0xbb22000000000000000000000000000000000000000000000000000000000002';
     expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe(true); // no wallet arg
-    expect(await payerWalletOf(nonce)).toBeNull();
+    expect(await payerWalletOf(nonce)).toBe('');
     expect(await store.getClaimedPaymentCount()).toBe(1);
+    // and it must still DEDUPE despite being unattributable
+    expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe(false);
   });
 
   it('idempotency unchanged: N concurrent claims WITH a wallet → exactly one winner', async () => {

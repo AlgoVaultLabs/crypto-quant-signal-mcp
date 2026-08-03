@@ -71,3 +71,26 @@ All import `node:test`/`node:assert`; vitest reports **"No test suite found in f
 - **Committed baseline:** `audits/test-baseline-known-failures.txt` = GREEN (0 known-failing). 0 quarantines.
 - **Pre-push gate:** `scripts/check_test_baseline.sh` (vitest + node:test, diff vs baseline, fail-open, `ALGOVAULT_TEST_GATE=warn|block`) + `scripts/install_test_gate_hook.sh` (composable `.git/hooks/pre-push`). Gate-bite proven: dummy fail → exit 1; warn → exit 0; revert → exit 0.
 - **Hygiene:** 5 untracked leftovers removed (4× `NPM-PUBLISH-v1.*`, `chatgpt-app-directory-submission-package.md` — relocated to the vault first). `GEO-AUTOPILOT-W1-endpoint-truth.md` kept (tracked). **`.claude/napkin.md` KEPT** — inspection showed it is the napkin-skill's live curated runbook (2026-06-11, high-value), not "expired scratch" as the Q3 brief assumed → surfaced to the operator rather than deleted (deletion-safety discipline).
+
+## tests/tier-limit-x402-envelope.test.ts — quarantined 2026-08-02 by OPS-AUDIT-REMEDIATION-LOW-W2
+
+**Not a regression from this wave, and not a regression at all — a DATE-DEPENDENT FLAKE.**
+
+`buildTierLimitPayload > omits suggested_x402 entirely when not provided` asserts
+`expect(p.retry_after_days).toBe(12)` at `tests/tier-limit-x402-envelope.test.ts:48`.
+`retry_after_days` is derived from the CURRENT date (days remaining until the quota window
+resets), so the literal `12` is only true on the subset of days where that arithmetic yields 12.
+Measured 2026-08-02: it yields **11**, and the test fails.
+
+Verified pre-existing and unrelated to this wave: it fails identically on `origin/main` at
+`36bbdc7` with none of this wave's changes applied. This wave touched no quota, tier-limit or
+envelope code.
+
+Quarantined rather than fixed because it is outside this wave's declared scope (Ch1 shape
+snapshots · Ch2 public copy · Ch3 x402 idempotency) and a concurrent session may own the file.
+**It should NOT stay quarantined** — the file will silently pass again in a few days and the
+allow-list entry would then hide a genuine future regression in it.
+
+Fix owed by **`OPS-TIER-LIMIT-CLOCK-FREEZE-W{NEXT}`**: inject/freeze the clock in the test (the
+repo already has this seam elsewhere) and assert the value against the same computed boundary
+rather than a literal, then DELETE this allow-list line in the same commit.
