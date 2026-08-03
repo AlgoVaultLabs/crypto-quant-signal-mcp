@@ -308,14 +308,19 @@
     },
     {
       "id": "jsonld-description-asset-count",
-      "_comment": "SEC-46 (OPS-AUDIT-REMEDIATION-LOW-W2). A THIRD phrasing of the asset count, in JSON-LD description PROSE \u2014 `venues, 850+ assets,`. jsonld-asset-count matches only the PropertyValue form and dtrf-asset-count only the span form, so this prose site was owned by no claim and sat at 850+ against a live 1502. Same phrasing-variant class OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 retired for the PFE rate. The `+` is preserved: the sentence asserts a floor, and the live value only grows.",
+      "_comment": "SEC-46 (OPS-AUDIT-REMEDIATION-LOW-W2). A THIRD phrasing of the asset count, in JSON-LD description PROSE \u2014 `venues, 850+ assets,`. jsonld-asset-count matches only the PropertyValue form and dtrf-asset-count only the span form, so this prose site was owned by no claim and sat at 850+ against a live 1502. Same phrasing-variant class OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1 retired for the PFE rate. The `+` is preserved: the sentence asserts a floor, and the live value only grows. SCOPE CORRECTION (same wave, post-deploy): this row first listed ONLY docs-src/template.html \u2014 the GENERATOR SOURCE \u2014 so the injector patched a file nobody serves while all five SERVED pages kept the stale literal. Verified live: /docs still read '850+ assets' after deploy. Every file below is confirmed to MATCH the pattern, so none is a CLAIM_MATCHED_ZERO waiting to happen.",
       "find_pattern": "(venues, )\\d+\\+( assets)",
       "replace_template": "$1{value}+$2",
       "sot": "performance",
       "accessor": "asset_count",
       "format": "integer",
       "apply_to_files": [
-        "docs-src/template.html"
+        "docs-src/template.html",
+        "landing/docs.html",
+        "landing/faq.html",
+        "landing/glossary.html",
+        "landing/how-it-works.html",
+        "landing/integrations.html"
       ],
       "replace_all": true
     },
