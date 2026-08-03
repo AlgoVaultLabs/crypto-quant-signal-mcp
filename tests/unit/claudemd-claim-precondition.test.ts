@@ -13,22 +13,49 @@
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { claimId, claimIdSet, sameClaimSet, isBlocking } from '../../scripts/check-claudemd-claims.mjs';
 
 const GATE = resolve(__dirname, '..', '..', 'scripts', 'check-claudemd-claims.mjs');
-const CORPUS = join(homedir(), 'My Drive', 'Obsidian Vault', 'AlgoVault MCP', 'CLAUDE.md');
 const cfg = JSON.parse(readFileSync(resolve(__dirname, '..', '..', 'ops', 'claudemd-claim-config.json'), 'utf8'));
 
+/**
+ * A SYNTHETIC corpus, never the real one.
+ *
+ * The vault CLAUDE.md is unreachable from a CI runner BY DESIGN — that privacy property is the
+ * entire reason the committed identifier lock exists, and it is stated as non-negotiable in this
+ * gate's own header. An earlier cut of this file copied the real corpus into its fixture; it
+ * passed locally (where the vault is mounted) and failed the pre-deploy gate with ENOENT on
+ * `/home/runner/My Drive/…`. Depending on the private corpus to test the gate that exists
+ * because the corpus is private is the mistake this comment is here to stop recurring.
+ *
+ * A synthetic corpus is also simply better: the claim set is fixed and known, so "adding a
+ * claim" means what the test says rather than depending on what a 450-line living document
+ * happens to assert today.
+ */
+const SYNTHETIC_CORPUS = [
+  '# Fixture manual',
+  '',
+  'Some prose that asserts nothing whatsoever.',
+  '',
+  '- The wiring canary lives at `scripts/check-canaries-wired.mjs` and gates every commit.',
+  '- Dependencies are declared in `package.json` at the repo root.',
+  '- The shared hook emitter is `scripts/lib/hook-block.sh`.',
+  '',
+  'More prose. Still asserting nothing.',
+  '',
+].join('\n');
+
 /** A throwaway corpus + its own lock, so nothing here can touch the committed lock. */
-function sandbox() {
+function sandbox(corpusText: string = SYNTHETIC_CORPUS) {
   const dir = mkdtempSync(join(tmpdir(), 'claimlock-'));
-  copyFileSync(CORPUS, join(dir, 'corpus.md'));
+  const corpus = join(dir, 'corpus.md');
+  writeFileSync(corpus, corpusText);
   return {
     dir,
-    corpus: join(dir, 'corpus.md'),
+    corpus,
     lock: join(dir, 'lock.json'),
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
@@ -105,10 +132,11 @@ describe('freshness is claim-set equality, not container equality (R1b)', () => 
       expect(gate(sb, ['--sync']).code).toBe(0);
       const before = readFileSync(sb.lock, 'utf8');
 
-      // Insert a paragraph near the top: every line below it shifts, which under the old
-      // predicate (corpus sha + line-bearing claims + line-ordered array) was an instant STALE.
+      // Insert a paragraph ABOVE every claim, so all of their line numbers shift — which under
+      // the old predicate (corpus sha + line-bearing claims + line-ordered array) was an
+      // instant STALE for reasons that had nothing to do with any claim.
       const text = readFileSync(sb.corpus, 'utf8').split('\n');
-      text.splice(30, 0, '', 'A sentence asserting nothing at all.', '');
+      text.splice(3, 0, '', 'A sentence asserting nothing at all.', '');
       writeFileSync(sb.corpus, text.join('\n'));
 
       const checked = gate(sb, ['--check']);
