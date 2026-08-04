@@ -13,7 +13,7 @@
 #
 # ── GENUINE PG-path findings (the reason this lane exists) ───────────────────
 tests/unit/perf-stats-cache.test.ts        # owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — 5 tests fail on PG incl. a DATA-INTEGRITY assertion ("signals older than 20 days are included"). Cache-bucket and column-projection behaviour diverges from the SQLite path. Highest-value row here: a data-integrity assertion that has never run against the production engine.
-tests/unit/funding-zscore-cache.test.ts    # owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — "stdDev === 0 returns 0 and caches" fails on PG. Sibling of perf-stats-cache; same triage wave.
+tests/unit/funding-zscore-cache.test.ts    # flaky: owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — NON-DETERMINISTIC on PG: failed the lane first run ("stdDev === 0 returns 0 and caches"), passed the second with an identical tree. A flaky row in a shrink-only ratchet oscillates and would turn the lane red on ~half of all pushes, so it is marked flaky (reported, never blocking) until someone makes it deterministic. Flakiness on a cache path against the real engine is itself the finding.
 tests/unit/funding-bulk-warm.test.ts       # owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — bulk-warm math-equivalence + the n_matview/n_fallback log format fail on PG. This path reads a MATERIALIZED VIEW, which SQLite cannot have, so the SQLite lane was asserting a fallback that production never takes.
 #
 # ── NOT PG defects: the test encodes an environment assumption ───────────────

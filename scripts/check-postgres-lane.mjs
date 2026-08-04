@@ -81,7 +81,13 @@ export function parseBaseline(text) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const [path, ...rest] = line.split('#');
-    rows.push({ path: path.trim(), note: rest.join('#').trim() });
+    const note = rest.join('#').trim();
+    // A `flaky:` row NEVER blocks in either direction. A shrink-only ratchet over a
+    // NON-DETERMINISTIC test oscillates — it failed run 1, passed run 2 — so it would turn the
+    // lane red on roughly half of all pushes, and a lane that is red half the time gets ignored,
+    // which is the outcome this whole wave exists to prevent. Flaky rows are REPORTED loudly with
+    // their owner instead, and stay visible until someone makes them deterministic.
+    rows.push({ path: path.trim(), note, flaky: /^flaky:/i.test(note) });
   }
   return rows;
 }
@@ -104,6 +110,9 @@ export function selfTest() {
   if (summaryFailedCount(log) !== 2) f.push(`summaryFailedCount read ${summaryFailedCount(log)}, expected 2`);
   if (summaryFailedCount(' Test Files  5 passed (5)\n') !== 0) f.push('summaryFailedCount misread a clean summary');
   if (failingFiles(log).length !== summaryFailedCount(log)) f.push('parsed failures disagree with the summary on a known-good log');
+  const fb = parseBaseline('tests/a.test.ts  # flaky: owner: W — oscillates\ntests/b.test.ts  # owner: W — deterministic\n');
+  if (!fb[0].flaky) f.push('a `flaky:` row was not recognised');
+  if (fb[1].flaky) f.push('a normal row was wrongly treated as flaky');
   return f;
 }
 
@@ -138,6 +147,7 @@ if (IS_MAIN) {
   }
 
   const known = new Set(baseline.map((r) => r.path));
+  const flaky = new Set(baseline.filter((r) => r.flaky).map((r) => r.path));
   const failing = failingFiles(log);
 
   // FAIL-CLOSED on a parser/summary disagreement. Without this, a log format change silently
@@ -150,10 +160,11 @@ if (IS_MAIN) {
       `over failures it cannot see.`);
   }
   const fresh = failing.filter((f) => !known.has(f));
-  const fixed = [...known].filter((k) => !failing.includes(k));
+  const fixed = [...known].filter((k) => !failing.includes(k) && !flaky.has(k));
 
   console.log(`postgres lane: ${failing.length} failing file(s); ${known.size} baselined; ${fresh.length} NEW; ${fixed.length} now passing`);
-  for (const f of failing) console.log(`   ${known.has(f) ? '· known' : '✖ NEW  '} ${f}`);
+  for (const f of failing) console.log(`   ${flaky.has(f) ? '~ flaky' : known.has(f) ? '· known' : '✖ NEW  '} ${f}`);
+  for (const f of flaky) if (!failing.includes(f)) console.log(`   ~ flaky ${f} (passed THIS run — non-deterministic, still owned)`);
 
   if (fixed.length) {
     console.error(`\n✖ ${fixed.length} baselined file(s) now PASS — the ratchet only shrinks, so remove them from audits/postgres-lane-baseline.txt in this change:`);
