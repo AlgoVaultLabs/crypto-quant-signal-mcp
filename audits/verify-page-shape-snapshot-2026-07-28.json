@@ -1,11 +1,10 @@
 {
-  "_comment": "OPS-FRESHNESS-SOURCE-TRUTH-W1 R4.5 — public-shape snapshot for the /verify page. Per the CLAUDE.md public-shape-snapshot rule, but for a PAGE rather than a JSON endpoint: the 'shape' is the set of data-tr-field spans, their committed fallbacks, and which of them a producer re-bakes. A span's COMMITTED literal is public copy — Caddy serves landing/verify.html statically and no-JS readers plus every LLM crawler read the bake, not the hydrated value.",
+  "_comment": "OPS-FRESHNESS-SOURCE-TRUTH-W1 R4.5 \u2014 public-shape snapshot for the /verify page. Per the CLAUDE.md public-shape-snapshot rule, but for a PAGE rather than a JSON endpoint: the 'shape' is the set of data-tr-field spans, their committed fallbacks, and which of them a producer re-bakes. A span's COMMITTED literal is public copy \u2014 Caddy serves landing/verify.html statically and no-JS readers plus every LLM crawler read the bake, not the hydrated value.",
   "wave": "OPS-FRESHNESS-SOURCE-TRUTH-W1",
   "snapshot_date": "2026-07-28",
   "surface": "https://algovault.com/verify",
-  "served_from": "/var/www/algovault/verify.html (Caddy static). NOT in the Docker image — the Dockerfile COPYs only landing/integrations/, landing/skills.html, landing/integrations.html, landing/Prompt/.",
+  "served_from": "/var/www/algovault/verify.html (Caddy static). NOT in the Docker image \u2014 the Dockerfile COPYs only landing/integrations/, landing/skills.html, landing/integrations.html, landing/Prompt/.",
   "render_source": "landing/verify.html (committed) -> rewritten host-side by scripts/snapshot-landing-data.mjs -> cp landing/*.html /var/www/algovault/",
-
   "producers": {
     "merkle_publish": {
       "cron": "5 0 * * *",
@@ -22,10 +21,9 @@
     "drift_canary": {
       "cron": "57 0 * * *",
       "command": "/opt/algovault-monitoring/website-drift-canary.py",
-      "cadence_before_this_wave": "0 12 * * 1 (weekly — a 7-day blind window on a row whose notes said CRITICAL)"
+      "cadence_before_this_wave": "0 12 * * 1 (weekly \u2014 a 7-day blind window on a row whose notes said CRITICAL)"
     }
   },
-
   "allowed_keys": [
     "latest_batch",
     "latest_batch_n",
@@ -33,17 +31,39 @@
     "next_batch_in",
     "erc8004_agent_id"
   ],
-
   "span_contract": {
-    "latest_batch":     { "occurrences": 2, "committed_fallback": "&mdash;", "manifest_backed": true,  "manifest_claim": "dtrf-latest-batch-hash-n" },
-    "latest_batch_n":   { "occurrences": 2, "committed_fallback": "&mdash;", "manifest_backed": true,  "manifest_claim": "dtrf-latest-batch-n" },
-    "latest_batch_at":  { "occurrences": 2, "committed_fallback": "&mdash;", "manifest_backed": true,  "manifest_claim": "dtrf-latest-batch-at" },
-    "next_batch_in":    { "occurrences": 2, "committed_fallback": "&mdash;", "manifest_backed": false, "rationale": "A RELATIVE countdown cannot be correctly baked at any cadence, so it must never gain a manifest row. Hydrated in-browser by verify.html's inline updateNextBatchCountdown() on a 60s interval; inert for crawlers, which is the honest degradation." },
-    "erc8004_agent_id": { "occurrences": 2, "committed_fallback": "44544",   "manifest_backed": false, "rationale": "A STABLE identity, not a clock-dependent metric. Freezing it is correct; the forward-stability guard deliberately does not flag bare integers." }
+    "latest_batch": {
+      "occurrences": 2,
+      "committed_fallback": "&mdash;",
+      "manifest_backed": true,
+      "manifest_claim": "dtrf-latest-batch-hash-n"
+    },
+    "latest_batch_n": {
+      "occurrences": 2,
+      "committed_fallback": "&mdash;",
+      "manifest_backed": true,
+      "manifest_claim": "dtrf-latest-batch-n"
+    },
+    "latest_batch_at": {
+      "occurrences": 2,
+      "committed_fallback": "&mdash;",
+      "manifest_backed": true,
+      "manifest_claim": "dtrf-latest-batch-at"
+    },
+    "next_batch_in": {
+      "occurrences": 2,
+      "committed_fallback": "&mdash;",
+      "manifest_backed": false,
+      "rationale": "A RELATIVE countdown cannot be correctly baked at any cadence, so it must never gain a manifest row. Hydrated in-browser by verify.html's inline updateNextBatchCountdown() on a 60s interval; inert for crawlers, which is the honest degradation."
+    },
+    "erc8004_agent_id": {
+      "occurrences": 2,
+      "committed_fallback": "44544",
+      "manifest_backed": false,
+      "rationale": "A STABLE identity, not a clock-dependent metric. Freezing it is correct; the forward-stability guard deliberately does not flag bare integers."
+    }
   },
-
   "forbidden_keys": [],
-
   "forbidden_committed_literal_shapes": {
     "_comment": "A data-tr-field span may hold one of these ONLY if the snapshot manifest owns the key. Enforced by tests/unit/landing-fallback-forward-stability.test.ts (self-tests both directions).",
     "shapes": [
@@ -61,21 +81,18 @@
       "next_batch_in": "3h 41m"
     }
   },
-
   "alarm_contract": {
-    "MERKLE_PUBLISH_LIVENESS": "freshness_source: sot. Measures the PUBLISHER via .batches|max_by(.published_at). tolerance_value 0.5d inside the cadence-coherence band (0.0361, 1.0361). Single-fire — a missed publish IS the incident.",
-    "VERIFY_BAKED_BATCH_COPY_DRIFT": "EXACT_ISO_MINUTE, page vs SoT. Guards the daily re-bake. Requires 2 consecutive breaches — the injector self-heals daily, so a one-day transient must not page.",
+    "MERKLE_PUBLISH_LIVENESS": "freshness_source: sot. Measures the PUBLISHER via .batches|max_by(.published_at). tolerance_value 0.5d inside the cadence-coherence band (0.0361, 1.0361). Single-fire \u2014 a missed publish IS the incident.",
+    "VERIFY_BAKED_BATCH_COPY_DRIFT": "EXACT_ISO_MINUTE, page vs SoT. Guards the daily re-bake. Requires 2 consecutive breaches \u2014 the injector self-heals daily, so a one-day transient must not page.",
     "SNAPSHOT_INJECTOR_HEARTBEAT_FRESH": "freshness_source: sot reading the heartbeat FILE (attempt-recency, stamped at job start). tolerance 1.5d with missed_cycles_tolerated: 2.",
     "RETIRED__VERIFY_LATEST_BATCH_FRESH": "Derived its measured value from claim_pattern (a page scrape) while naming the publisher, so it actually measured max(deploy_gap, publish_gap) and had zero discriminating power. Its sot_endpoint/sot_jq were dead config. Reintroducing a page-sourced FRESH row is now impossible: the canary fail-CLOSED rejects any FRESH row lacking freshness_source (exit 3)."
   },
-
   "consumers": [
     "no-JS readers + LLM crawlers (read the committed/baked literal directly)",
     "browsers via landing/js/track-record-proxy.js (latest_batch, latest_batch_n, latest_batch_at, erc8004_agent_id) and verify.html's inline script (next_batch_in)",
     "/opt/algovault-monitoring/website-drift-canary.py rows VERIFY_BAKED_BATCH_COPY_DRIFT + MERKLE_PUBLISH_LIVENESS"
   ],
-
   "drift_check_command": "LIVE=$(curl -fsS https://algovault.com/api/merkle-batches | jq -r .latest_batch_id); PAGE=$(curl -fsS https://algovault.com/verify | grep -oE 'data-tr-field=\"latest_batch\"[^>]*>#[0-9]+' | head -1 | grep -oE '[0-9]+$'); [ \"$LIVE\" = \"$PAGE\" ] && echo \"OK batch #$LIVE\" || echo \"DRIFT live=$LIVE page=$PAGE\"",
-
-  "drift_check_notes": "Run any time AFTER 00:39 UTC on a given day. Before the day's re-bake the served page legitimately holds the previous batch. This is the assertion that failed by 3 batches (#106 vs #109) on 2026-07-28 before this wave."
+  "drift_check_notes": "Run any time AFTER 00:39 UTC on a given day. Before the day's re-bake the served page legitimately holds the previous batch. This is the assertion that failed by 3 batches (#106 vs #109) on 2026-07-28 before this wave.",
+  "endpoint": "GET https://algovault.com/verify (rendered page)"
 }

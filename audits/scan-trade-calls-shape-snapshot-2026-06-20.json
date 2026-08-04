@@ -6,31 +6,82 @@
     "captured_at": "2026-06-20",
     "purpose": "Public-response-shape SoT after the ADDITIVE envelope-shared `_receipts` block. ADDITIVE-ONLY: top level gains `_receipts` (sibling of `_algovault`); content gains an optional 2nd text item (proof footer). NO existing field removed/renamed. outcome_* must NEVER appear."
   },
-  "top_level_allowed_keys": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault", "_receipts"],
-  "calls_item_allowed_keys": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
-  "receipts_allowed_keys": ["track_record", "verification_uri", "disclaimer"],
-  "receipts_track_record_allowed_keys": ["pfe_win_rate", "n", "window", "as_of"],
+  "top_level_allowed_keys": [
+    "scanned",
+    "eligible_non_hold",
+    "holds",
+    "errors",
+    "partial",
+    "calls",
+    "_algovault",
+    "_receipts"
+  ],
+  "calls_item_allowed_keys": [
+    "coin",
+    "timeframe",
+    "exchange",
+    "call",
+    "confidence",
+    "regime"
+  ],
+  "receipts_allowed_keys": [
+    "track_record",
+    "verification_uri",
+    "disclaimer"
+  ],
+  "receipts_track_record_allowed_keys": [
+    "pfe_win_rate",
+    "n",
+    "window",
+    "as_of"
+  ],
   "receipts_shape_decision": "ENVELOPE-SHARED (the lower-token option per the wave spec). Each calls[] row already stands alone with its own verdict (`call`) + conviction (`confidence`) + regime; the proof (track_record + verify link + disclaimer) is shared ONCE at the envelope `_receipts`. A row + this envelope (and the content[1] proof footer) stands alone in a screenshot. NO per-row receipt duplication.",
   "new_in_this_wave": {
     "_receipts": "ADDITIVE envelope block {track_record?, verification_uri, disclaimer}. Present on the success envelope only (NOT on the quota_exhausted error envelope).",
     "_receipts.track_record": "LIVE {pfe_win_rate (fraction), n (EVALUATED), window, as_of} from the in-process performance source (cached warmer, NOT an HTTP self-call). OMITTED fail-open when unavailable.",
     "_receipts.verification_uri": "ALWAYS https://algovault.com/track-record (never a per-call /verify/<id>).",
-    "content[1]": "ADDITIVE optional 2nd MCP text item = the proof footer ('Proof: …Verify → …'), present only when track_record is available. content[0] remains the JSON envelope unchanged."
+    "content[1]": "ADDITIVE optional 2nd MCP text item = the proof footer ('Proof: \u2026Verify \u2192 \u2026'), present only when track_record is available. content[0] remains the JSON envelope unchanged."
   },
   "enums": {
-    "calls.call": ["BUY", "SELL", "HOLD"],
-    "calls.regime": ["TRENDING_UP", "TRENDING_DOWN", "RANGING", "VOLATILE"]
+    "calls.call": [
+      "BUY",
+      "SELL",
+      "HOLD"
+    ],
+    "calls.regime": [
+      "TRENDING_UP",
+      "TRENDING_DOWN",
+      "RANGING",
+      "VOLATILE"
+    ]
   },
-  "forbidden_keys": ["outcome_return_pct", "outcome_price", "phase_e_wr", "outcome_win_rate", "realized_return", "pnl", "rsi", "ema_9", "ema_21", "funding_z_score", "squeeze_active"],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "outcome_win_rate",
+    "realized_return",
+    "pnl",
+    "rsi",
+    "ema_9",
+    "ema_21",
+    "funding_z_score",
+    "squeeze_active"
+  ],
   "error_contract": {
-    "quota_exhausted": "{error:'quota_exhausted', code:'tier_limit_reached', message, quota:{used,total,remaining}, suggested_action, _algovault:{tool,version,session_id}} — NO _receipts on this envelope."
+    "quota_exhausted": "{error:'quota_exhausted', code:'tier_limit_reached', message, quota:{used,total,remaining}, suggested_action, _algovault:{tool,version,session_id}} \u2014 NO _receipts on this envelope."
   },
-  "cache_contract": "no server-side response cache; scanner computes per-call. _receipts.track_record read from the 15m in-process warmer (fail-open to omitted).",
+  "cache_contract": {
+    "description": "no server-side response cache; scanner computes per-call. _receipts.track_record read from the 15m in-process warmer (fail-open to omitted)."
+  },
   "consumers": [
     "MCP agent callers (Claude/Cursor/ChatGPT/etc.) via tools/call",
-    "future P2 landing scanner card — consumes the same envelope _receipts shape"
+    "future P2 landing scanner card \u2014 consumes the same envelope _receipts shape"
   ],
-  "additive_only_rule": "top level may GAIN `_receipts` but never LOSE/RENAME the 7 pre-existing keys; calls[] item shape unchanged; content[0] stays the JSON envelope. A removed/renamed key or a forbidden_key under _receipts = Data Integrity violation → HALT.",
+  "additive_only_rule": "top level may GAIN `_receipts` but never LOSE/RENAME the 7 pre-existing keys; calls[] item shape unchanged; content[0] stays the JSON envelope. A removed/renamed key or a forbidden_key under _receipts = Data Integrity violation \u2192 HALT.",
   "drift_check_command": "cd /Users/tank/code/crypto-quant-signal-mcp && npx vitest run tests/unit/receipts.test.ts   # formatScanReceipts allow-list (track_record/verification_uri/disclaimer only; no outcome_*) + fail-open omission",
-  "live_probe_command": "SID=$(curl -s -D- -o/dev/null -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"drift\",\"version\":\"1\"}}}' | tr -d '\\r' | awk -F': ' '/^mcp-session-id/{print $2}'); curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}' >/dev/null; curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":5,\"timeframe\":\"15m\"}}}' | grep -o '_receipts[^}]*verification_uri[^,]*'   # expect envelope _receipts with verification_uri == https://algovault.com/track-record; assert NO outcome_return_pct"
+  "live_probe_command": "SID=$(curl -s -D- -o/dev/null -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"drift\",\"version\":\"1\"}}}' | tr -d '\\r' | awk -F': ' '/^mcp-session-id/{print $2}'); curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}' >/dev/null; curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":5,\"timeframe\":\"15m\"}}}' | grep -o '_receipts[^}]*verification_uri[^,]*'   # expect envelope _receipts with verification_uri == https://algovault.com/track-record; assert NO outcome_return_pct",
+  "snapshot_date": "2026-06-20",
+  "superseded_by": "scan-trade-calls-shape-snapshot-2026-06-04.json",
+  "superseded_reason": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: a LATER snapshot for the same subject carries the canonical declaration. This row published an EMPTY allowed_keys under its FILENAME as the endpoint \u2014 a contract asserting nothing \u2014 and only avoided a duplicate-doc-id collision because the filename fallback hid that it describes the same surface. Kept on disk as history; the builder skips a superseded row rather than projecting it."
 }

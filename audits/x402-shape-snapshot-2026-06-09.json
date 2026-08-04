@@ -60,5 +60,9 @@
     "get_trade_call",
     "scan_funding_arb",
     "scan_trade_calls"
-  ]
+  ],
+  "snapshot_date": "2026-06-09",
+  "endpoint": "POST https://api.algovault.com/x402/<tool> \u2014 402 payment-required contract",
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys DEFERRED, not invented: this is an MCP tool / JSON surface whose public response is CONDITIONAL (verdict, tier and flag state change which fields are present), so a single live probe cannot settle a COMPLETE allow-list, and an incomplete one published to crawlers is worse than an empty one because it looks authoritative. Deriving it correctly means enumerating the exported PUBLIC formatter's full output surface \u2014 never an internal type. Owner: OPS-SHAPE-ALLOWLIST-FROM-FORMATTER-W{NEXT}."
 }

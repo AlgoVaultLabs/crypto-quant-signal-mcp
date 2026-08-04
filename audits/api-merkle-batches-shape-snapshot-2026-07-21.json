@@ -3,8 +3,8 @@
   "endpoint": "/api/merkle-batches",
   "snapshot_date": "2026-07-21",
   "captured_at_utc": "2026-07-21",
-  "change_class": "ADDITIVE KEYS — three new top-level scalars, no existing field changed",
-  "change_note": "Adds latest_batch_id (MAX(batch_id)), batch_count (COUNT(*)) and total_signals (SUM(signal_count)), all single-derived server-side by getMerkleBatchSummary() in src/lib/performance-db.ts. FIRST snapshot for this endpoint — none existed, which is part of why the defect below shipped unnoticed. Root cause: `batches` is LIMIT-capped at 100 (getMerkleBatches(limit = 100)), and consumers derived the displayed batch NUMBER, the batch COUNT and the verified-calls TOTAL from that array. Correct only while fewer than `limit` batches exist; batch 101 (2026-07-20) crossed the line. Two surfaces then disagreed ON THE SAME PAGE: /track-record rendered '100 batches published' (md.batches.length) five lines above a span rendering '102' (latest.batch_id), and under-reported calls verified as 386,038 against a true 387,834 (the oldest batches' signals are not in the capped array). total_signals exists because the array CANNOT produce it at any limit. All pre-existing fields are BYTE-UNCHANGED. No outcome_* / internal fields — batch metadata is public by construction (it is the on-chain anchor).",
+  "change_class": "ADDITIVE KEYS \u2014 three new top-level scalars, no existing field changed",
+  "change_note": "Adds latest_batch_id (MAX(batch_id)), batch_count (COUNT(*)) and total_signals (SUM(signal_count)), all single-derived server-side by getMerkleBatchSummary() in src/lib/performance-db.ts. FIRST snapshot for this endpoint \u2014 none existed, which is part of why the defect below shipped unnoticed. Root cause: `batches` is LIMIT-capped at 100 (getMerkleBatches(limit = 100)), and consumers derived the displayed batch NUMBER, the batch COUNT and the verified-calls TOTAL from that array. Correct only while fewer than `limit` batches exist; batch 101 (2026-07-20) crossed the line. Two surfaces then disagreed ON THE SAME PAGE: /track-record rendered '100 batches published' (md.batches.length) five lines above a span rendering '102' (latest.batch_id), and under-reported calls verified as 386,038 against a true 387,834 (the oldest batches' signals are not in the capped array). total_signals exists because the array CANNOT produce it at any limit. All pre-existing fields are BYTE-UNCHANGED. No outcome_* / internal fields \u2014 batch metadata is public by construction (it is the on-chain anchor).",
   "source": "origin/main src/index.ts /api/merkle-batches builder (res.json) + src/lib/performance-db.ts getMerkleBatchSummary(); pre-deploy capture",
   "allowed_keys": [
     "_algovault",
@@ -33,14 +33,16 @@
     "signal_count",
     "tx_hash"
   ],
-  "error_contract": "Unchanged: 500 {error:'Failed to load batches'} on throw. getMerkleBatchSummary() is awaited in the SAME Promise.all as getMerkleBatches(), so a summary failure degrades identically to an existing batches failure — it cannot half-render.",
-  "cache_contract": "Unchanged. Cloudflare edge Cache Rule (45s) on /api/merkle-batches per system-map annotation; the two new scalars are folded into the same cached body.",
+  "error_contract": "Unchanged: 500 {error:'Failed to load batches'} on throw. getMerkleBatchSummary() is awaited in the SAME Promise.all as getMerkleBatches(), so a summary failure degrades identically to an existing batches failure \u2014 it cannot half-render.",
+  "cache_contract": {
+    "description": "Unchanged. Cloudflare edge Cache Rule (45s) on /api/merkle-batches per system-map annotation; the two new scalars are folded into the same cached body."
+  },
   "consumers": [
     "LANDING /verify badge + chip (data-tr-field latest_batch, latest_batch_n, latest_batch_at)",
-    "SIGNAL /track-record function-rendered page — inline merkle-stats block + data-tr-field merkle_batch_count (src/index.ts; uses batch_count + total_signals + latest_batch_id)",
+    "SIGNAL /track-record function-rendered page \u2014 inline merkle-stats block + data-tr-field merkle_batch_count (src/index.ts; uses batch_count + total_signals + latest_batch_id)",
     "LANDING /skills + /integrations/* (data-tr-field batch_count)",
-    "landing/js/track-record-proxy.js (runtime hydration — latest_batch_id / batch_count, row-derived fallback for mid-deploy skew)",
-    "scripts/render-integrations.mjs + scripts/refresh-integrations-numbers.mjs (baked batchCount fallback — use batch_count)",
+    "landing/js/track-record-proxy.js (runtime hydration \u2014 latest_batch_id / batch_count, row-derived fallback for mid-deploy skew)",
+    "scripts/render-integrations.mjs + scripts/refresh-integrations-numbers.mjs (baked batchCount fallback \u2014 use batch_count)",
     "scripts/snapshot-landing-data.mjs (deploy-time injector; accessor batches.latest.batch_id was ALREADY correct, unchanged)",
     "ops/monitoring/website-drift-canary.py"
   ],
@@ -51,6 +53,6 @@
     "batch_count": 102,
     "total_signals": 387834,
     "returned_rows": 100,
-    "note": "returned_rows is CAPPED at 100 by design — it is NOT the count, NEVER the batch number, and its signal_count sum is NOT the verified total (386,038 vs 387,834). latest_batch_id == batch_count only because batch_ids are contiguous from 1; do not rely on that coincidence. Drift signal: a KEY-set change, latest_batch_id != max(batch_id) over returned rows, batch_count < returned_rows, or total_signals < the sum over returned rows."
+    "note": "returned_rows is CAPPED at 100 by design \u2014 it is NOT the count, NEVER the batch number, and its signal_count sum is NOT the verified total (386,038 vs 387,834). latest_batch_id == batch_count only because batch_ids are contiguous from 1; do not rely on that coincidence. Drift signal: a KEY-set change, latest_batch_id != max(batch_id) over returned rows, batch_count < returned_rows, or total_signals < the sum over returned rows."
   }
 }

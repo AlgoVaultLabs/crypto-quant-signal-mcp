@@ -387,6 +387,20 @@ jobs:
       # `README.md` are Stage-1 inputs to `npm run build:knowledge`, so a future "trim the
       # context" that excludes them would produce a GREEN build shipping a stale public
       # knowledge bundle. Emits BUILD_CONTEXT_HYGIENE_VERDICT=PASS|FAIL|INDETERMINATE.
+      # OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 — build-knowledge-json.mjs projects every shape snapshot
+      # into the PUBLIC knowledge bundle with a TOTAL per-field fallback, so a snapshot naming its
+      # date `as_of` publishes snapshot_date:"unknown" on a GREEN build. Measured before this wave:
+      # 20 of 46 shapes published "unknown", 22 published an EMPTY allowed_keys (a contract
+      # asserting nothing), and 20 published the FILENAME as the endpoint — on the surface AI
+      # answer-engines read, for the product whose pitch is verifiability. Also catches the
+      # near-miss FILENAME case, where a plural `-shape-snapshots-` never reached the bundle at
+      # all. Emits SHAPE_SNAPSHOT_VERDICT=PASS|FAIL|INDETERMINATE; exit 3 (zero snapshots found)
+      # blocks too, because this corpus is one WE author.
+      - name: Shape-snapshot integrity gate (fail-closed)
+        run: |
+          node scripts/check-shape-snapshot-integrity.mjs --self-test
+          node scripts/check-shape-snapshot-integrity.mjs
+
       - name: Build-context hygiene gate (fail-closed)
         run: |
           node scripts/check-build-context-hygiene.mjs --self-test

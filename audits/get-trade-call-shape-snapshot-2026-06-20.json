@@ -1,12 +1,26 @@
 {
   "_meta": {
     "wave": "VERDICT-WITH-RECEIPTS-W1 (P0)",
-    "tool": "get_trade_call (+ get_trade_signal alias — same producer getTradeSignal)",
+    "tool": "get_trade_call (+ get_trade_signal alias \u2014 same producer getTradeSignal)",
     "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio",
     "captured_at": "2026-06-20",
-    "purpose": "Public-response-shape SoT after the ADDITIVE `_receipts` inline-proof block. Supersedes get-trade-call-shape-snapshot-2026-06-04.json. ADDITIVE-ONLY: top level gains `_receipts` (sibling of `_algovault`); content gains a 2nd text item (the human receipt) — content[0] is byte-unchanged (still the JSON envelope). NO existing field removed/renamed (Data Integrity). outcome_return_pct / Phase-E outcome WR must NEVER appear anywhere in `_receipts` (allow-list, not deny-list)."
+    "purpose": "Public-response-shape SoT after the ADDITIVE `_receipts` inline-proof block. Supersedes get-trade-call-shape-snapshot-2026-06-04.json. ADDITIVE-ONLY: top level gains `_receipts` (sibling of `_algovault`); content gains a 2nd text item (the human receipt) \u2014 content[0] is byte-unchanged (still the JSON envelope). NO existing field removed/renamed (Data Integrity). outcome_return_pct / Phase-E outcome WR must NEVER appear anywhere in `_receipts` (allow-list, not deny-list)."
   },
-  "top_level_allowed_keys": ["call", "confidence", "price", "indicators", "regime", "reasoning", "timestamp", "coin", "timeframe", "_algovault", "closest_tradeable", "also_see", "_receipts"],
+  "top_level_allowed_keys": [
+    "call",
+    "confidence",
+    "price",
+    "indicators",
+    "regime",
+    "reasoning",
+    "timestamp",
+    "coin",
+    "timeframe",
+    "_algovault",
+    "closest_tradeable",
+    "also_see",
+    "_receipts"
+  ],
   "indicators_allowed_keys": [
     "funding_rate",
     "funding_24h_avg",
@@ -18,25 +32,66 @@
     "underlying_session",
     "funding_note"
   ],
-  "receipts_allowed_keys": ["verdict", "conviction_pct", "regime", "factors", "track_record", "verification_uri", "disclaimer"],
-  "receipts_factor_allowed_keys": ["factor", "direction", "value"],
-  "receipts_track_record_allowed_keys": ["pfe_win_rate", "n", "window", "as_of"],
+  "receipts_allowed_keys": [
+    "verdict",
+    "conviction_pct",
+    "regime",
+    "factors",
+    "track_record",
+    "verification_uri",
+    "disclaimer"
+  ],
+  "receipts_factor_allowed_keys": [
+    "factor",
+    "direction",
+    "value"
+  ],
+  "receipts_track_record_allowed_keys": [
+    "pfe_win_rate",
+    "n",
+    "window",
+    "as_of"
+  ],
   "new_in_this_wave": {
     "_receipts": "ADDITIVE top-level block. Present on every external (non-internal) perp call incl. HOLD; OMITTED on internal grid-refresh cells and on the equity engine (perp-only scope). Projected once via formatReceipts() (single-derivation with the verdict).",
     "_receipts.conviction_pct": "the live 0-100 engine confidence (integer), shown on EVERY call incl. HOLD (Mr.1 2026-06-20). NOT a probability of profit.",
     "_receipts.factors": "top 2-3 salient drivers; each {factor, direction: bullish|bearish|neutral, value}. trend_persistence + funding_state always present; 3rd = IMMINENT breakout else a >=0.5% OI move.",
-    "_receipts.track_record": "LIVE {pfe_win_rate (fraction 0-1), n (EVALUATED count), window 'YYYY-MM-DD..YYYY-MM-DD', as_of ISO} from the in-process performance source behind performance://signal-performance (cached warmer, NOT an HTTP self-call). OMITTED entirely fail-open when the source is unavailable — never a stale hardcoded number.",
-    "_receipts.verification_uri": "ALWAYS https://algovault.com/track-record (aggregate proof page). NEVER a per-call /verify/<id> — ad-hoc live calls are not individually Merkle-anchored (that is OPS-PERCALL-VERIFY-ANCHOR-W1).",
+    "_receipts.track_record": "LIVE {pfe_win_rate (fraction 0-1), n (EVALUATED count), window 'YYYY-MM-DD..YYYY-MM-DD', as_of ISO} from the in-process performance source behind performance://signal-performance (cached warmer, NOT an HTTP self-call). OMITTED entirely fail-open when the source is unavailable \u2014 never a stale hardcoded number.",
+    "_receipts.verification_uri": "ALWAYS https://algovault.com/track-record (aggregate proof page). NEVER a per-call /verify/<id> \u2014 ad-hoc live calls are not individually Merkle-anchored (that is OPS-PERCALL-VERIFY-ANCHOR-W1).",
     "_receipts.disclaimer": "Compliance anchor in the STRUCTURED block only; NOT printed in the per-call human text.",
     "content[1]": "ADDITIVE 2nd MCP text item = the human-readable receipt (verdict / Why / Proof lines), projected from the same _receipts. content[0] remains the JSON envelope unchanged."
   },
   "enums": {
-    "receipts.verdict": ["BUY", "SELL", "HOLD"],
-    "receipts.factor.direction": ["bullish", "bearish", "neutral"],
-    "funding_state": ["NORMAL", "ELEVATED", "EXTREME", "FIXED_PREIPO"],
-    "trend_persistence": ["LOW", "MEDIUM", "HIGH"],
-    "breakout_pending": ["INACTIVE", "IMMINENT"],
-    "call": ["BUY", "SELL", "HOLD"]
+    "receipts.verdict": [
+      "BUY",
+      "SELL",
+      "HOLD"
+    ],
+    "receipts.factor.direction": [
+      "bullish",
+      "bearish",
+      "neutral"
+    ],
+    "funding_state": [
+      "NORMAL",
+      "ELEVATED",
+      "EXTREME",
+      "FIXED_PREIPO"
+    ],
+    "trend_persistence": [
+      "LOW",
+      "MEDIUM",
+      "HIGH"
+    ],
+    "breakout_pending": [
+      "INACTIVE",
+      "IMMINENT"
+    ],
+    "call": [
+      "BUY",
+      "SELL",
+      "HOLD"
+    ]
   },
   "forbidden_keys": [
     "outcome_return_pct",
@@ -54,26 +109,31 @@
     "try_next"
   ],
   "human_text_contract": {
-    "line_1_verdict": "${verdict} · ${conviction_pct}% conviction — ${humanized regime}   e.g. 'BUY · 55% conviction — Trending up'",
+    "line_1_verdict": "${verdict} \u00b7 ${conviction_pct}% conviction \u2014 ${humanized regime}   e.g. 'BUY \u00b7 55% conviction \u2014 Trending up'",
     "line_2_why": "Why: ${reasoning}   (reuses the existing reasoning verbatim)",
-    "line_3_proof": "Proof: ${pfe%}% PFE win rate · ${humanized n} calls · Merkle-anchored on Base · Verify → https://algovault.com/track-record   (ONLY when track_record present)",
+    "line_3_proof": "Proof: ${pfe%}% PFE win rate \u00b7 ${humanized n} calls \u00b7 Merkle-anchored on Base \u00b7 Verify \u2192 https://algovault.com/track-record   (ONLY when track_record present)",
     "no_disclaimer_line": "the per-call human text NEVER prints the disclaimer (Mr.1: redundant per call)."
   },
   "error_contract": {
-    "INSUFFICIENT_CANDLES": "{error:'INSUFFICIENT_CANDLES', error_code, message, candles_available, candles_required, suggested_timeframes:[], suggested_action} — isError:true",
-    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "{error_code, message, coin, requested_exchange, suggested_venues:[], probed_at} — isError:true",
-    "UPSTREAM_RATE_LIMIT": "{error_code, exchange, retry_after_seconds, suggestion} — isError:true",
-    "TIER_LIMIT_REACHED": "{code, error_code, message, current_usage, monthly_limit, tier, suggested_upgrade_url, retry_after_days} — isError:true",
+    "INSUFFICIENT_CANDLES": "{error:'INSUFFICIENT_CANDLES', error_code, message, candles_available, candles_required, suggested_timeframes:[], suggested_action} \u2014 isError:true",
+    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "{error_code, message, coin, requested_exchange, suggested_venues:[], probed_at} \u2014 isError:true",
+    "UPSTREAM_RATE_LIMIT": "{error_code, exchange, retry_after_seconds, suggestion} \u2014 isError:true",
+    "TIER_LIMIT_REACHED": "{code, error_code, message, current_usage, monthly_limit, tier, suggested_upgrade_url, retry_after_days} \u2014 isError:true",
     "note": "Error envelopes carry NO _receipts (only successful verdicts do)."
   },
-  "cache_contract": "no server-side response cache; verdict computed per-call from live adapter candles + funding. _receipts.track_record is read from a process-cached in-process snapshot refreshed every 15m by startReceiptTrackRecordWarmer() (fail-open to omitted).",
+  "cache_contract": {
+    "description": "no server-side response cache; verdict computed per-call from live adapter candles + funding. _receipts.track_record is read from a process-cached in-process snapshot refreshed every 15m by startReceiptTrackRecordWarmer() (fail-open to omitted)."
+  },
   "consumers": [
-    "MCP agent callers (Claude/Cursor/ChatGPT/etc.) via tools/call — read _receipts (structured) + the human receipt text item",
-    "algovault-bot (Telegram) — parses content[0] JSON (unaffected; content[0] byte-position preserved)",
-    "future P2 landing verdict card — consumes the same _receipts shape + the RECEIPTS_*_TOOLTIP copy",
-    "src/lib/cross-asset-grid.ts (internal grid refresh; receives NO _receipts — internal calls skip it)"
+    "MCP agent callers (Claude/Cursor/ChatGPT/etc.) via tools/call \u2014 read _receipts (structured) + the human receipt text item",
+    "algovault-bot (Telegram) \u2014 parses content[0] JSON (unaffected; content[0] byte-position preserved)",
+    "future P2 landing verdict card \u2014 consumes the same _receipts shape + the RECEIPTS_*_TOOLTIP copy",
+    "src/lib/cross-asset-grid.ts (internal grid refresh; receives NO _receipts \u2014 internal calls skip it)"
   ],
-  "additive_only_rule": "top level may GAIN `_receipts` but never LOSE/RENAME any of the 12 pre-existing keys; content[0] stays the JSON envelope (position + parseability preserved). A removed/renamed key, a forbidden_key under _receipts, or a per-call /verify/<id> verification_uri = Data Integrity / Factuality violation → HALT.",
+  "additive_only_rule": "top level may GAIN `_receipts` but never LOSE/RENAME any of the 12 pre-existing keys; content[0] stays the JSON envelope (position + parseability preserved). A removed/renamed key, a forbidden_key under _receipts, or a per-call /verify/<id> verification_uri = Data Integrity / Factuality violation \u2192 HALT.",
   "drift_check_command": "cd /Users/tank/code/crypto-quant-signal-mcp && npx vitest run tests/unit/receipts.test.ts   # allow-list canary (no outcome_*), single-derivation property (human verdict === _receipts.verdict), verification_uri === track-record URL",
-  "live_probe_command": "SID=$(curl -s -D- -o/dev/null -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"drift\",\"version\":\"1\"}}}' | tr -d '\\r' | awk -F': ' '/^mcp-session-id/{print $2}'); curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}' >/dev/null; curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_trade_call\",\"arguments\":{\"coin\":\"BTC\",\"timeframe\":\"15m\"}}}' | grep -o '_receipts[^}]*conviction_pct[^,]*'   # expect _receipts present with conviction_pct + verification_uri == https://algovault.com/track-record; assert NO outcome_return_pct"
+  "live_probe_command": "SID=$(curl -s -D- -o/dev/null -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"drift\",\"version\":\"1\"}}}' | tr -d '\\r' | awk -F': ' '/^mcp-session-id/{print $2}'); curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}' >/dev/null; curl -s -X POST https://api.algovault.com/mcp -H \"Mcp-Session-Id: $SID\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_trade_call\",\"arguments\":{\"coin\":\"BTC\",\"timeframe\":\"15m\"}}}' | grep -o '_receipts[^}]*conviction_pct[^,]*'   # expect _receipts present with conviction_pct + verification_uri == https://algovault.com/track-record; assert NO outcome_return_pct",
+  "snapshot_date": "2026-06-20",
+  "superseded_by": "get-trade-call-shape-snapshot-2026-06-27.json",
+  "superseded_reason": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: a LATER snapshot for the same subject carries the canonical declaration. This row published an EMPTY allowed_keys under its FILENAME as the endpoint \u2014 a contract asserting nothing \u2014 and only avoided a duplicate-doc-id collision because the filename fallback hid that it describes the same surface. Kept on disk as history; the builder skips a superseded row rather than projecting it."
 }

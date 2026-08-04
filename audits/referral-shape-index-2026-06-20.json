@@ -8,16 +8,32 @@
       "endpoint": "POST /api/signup-email",
       "shape": "json",
       "baseline_snapshot": "audits/signup-email-shape-snapshot-2026-05-28.json",
-      "allowed_keys": ["ok", "optin_at", "inserted", "error", "referral_applied", "bonus_calls", "key"],
+      "allowed_keys": [
+        "ok",
+        "optin_at",
+        "inserted",
+        "error",
+        "referral_applied",
+        "bonus_calls",
+        "key"
+      ],
       "additive_keys": {
-        "referral_applied": "boolean — present ONLY when a valid, non-self ref applied on a fresh opt-in",
-        "bonus_calls": "number — the referee bonus granted (REFERRAL_TERMS.BONUS_CALLS) when referral_applied",
-        "key": "string — the caller's own newly-minted av_free_ key, returned over their own request; never logged"
+        "referral_applied": "boolean \u2014 present ONLY when a valid, non-self ref applied on a fresh opt-in",
+        "bonus_calls": "number \u2014 the referee bonus granted (REFERRAL_TERMS.BONUS_CALLS) when referral_applied",
+        "key": "string \u2014 the caller's own newly-minted av_free_ key, returned over their own request; never logged"
       },
       "additive_policy": "the three referral fields are ADDITIVE and conditional (spread only when referral.applied); the pre-W1 shape {ok, optin_at, inserted} is byte-stable for non-referral opt-ins",
-      "forbidden_keys": ["outcome_return_pct", "outcome_price", "price_at_signal"],
-      "error_contract": "400 {ok:false,error:'invalid_email'|'consent_required'} · 429 (per-IP limiter) · 500 {ok:false,error:'internal_error'}",
-      "consumers": ["future landing /referral page", "TG-REFERRAL-W1", "the AC2 live free-path probe"],
+      "forbidden_keys": [
+        "outcome_return_pct",
+        "outcome_price",
+        "price_at_signal"
+      ],
+      "error_contract": "400 {ok:false,error:'invalid_email'|'consent_required'} \u00b7 429 (per-IP limiter) \u00b7 500 {ok:false,error:'internal_error'}",
+      "consumers": [
+        "future landing /referral page",
+        "TG-REFERRAL-W1",
+        "the AC2 live free-path probe"
+      ],
       "drift_check_command": "curl -s -XPOST https://api.algovault.com/api/signup-email -H 'content-type: application/json' -d '{\"email\":\"delivered@resend.dev\",\"optin_consent\":true,\"ref\":\"<code>\"}' | jq 'keys'"
     },
     {
@@ -25,28 +41,58 @@
       "shape": "html",
       "content_type": "text/html; charset=utf-8",
       "cache_contract": "Cache-Control: no-store",
-      "must_contain": ["the referrer code", "https://api.algovault.com/signup?ref=<code>", "/referral-terms", "Clicks", "Signups", "Conversions"],
-      "forbidden_substrings": ["outcome_return_pct", "outcome_price", "an UNMASKED full referrer email (renderAdminPayoutsPage masks via maskEmail; the self-stats page shows only the caller's own code)"],
-      "error_contract": "400 (invalid key format) / 500 → getAccountErrorPageHtml",
-      "consumers": ["/account portal Referrals tab"],
+      "must_contain": [
+        "the referrer code",
+        "https://api.algovault.com/signup?ref=<code>",
+        "/referral-terms",
+        "Clicks",
+        "Signups",
+        "Conversions"
+      ],
+      "forbidden_substrings": [
+        "outcome_return_pct",
+        "outcome_price",
+        "an UNMASKED full referrer email (renderAdminPayoutsPage masks via maskEmail; the self-stats page shows only the caller's own code)"
+      ],
+      "error_contract": "400 (invalid key format) / 500 \u2192 getAccountErrorPageHtml",
+      "consumers": [
+        "/account portal Referrals tab"
+      ],
       "drift_check_command": "curl -s -XPOST https://api.algovault.com/account/referrals -d 'api_key=av_free_<24hex>' | grep -c 'signup?ref='"
     },
     {
       "endpoint": "GET /referral-terms",
       "shape": "html",
       "content_type": "text/html; charset=utf-8",
-      "must_contain": ["16 CFR Part 255", "disclose", "self-referral", "clawed back", "30%", "500", "12 months", "$50"],
+      "must_contain": [
+        "16 CFR Part 255",
+        "disclose",
+        "self-referral",
+        "clawed back",
+        "30%",
+        "500",
+        "12 months",
+        "$50"
+      ],
       "note": "the 30%/500/12 months/$50 strings are RENDERED output (interpolated from REFERRAL_TERMS); the source renderer holds no hardcoded literals (chapter gate)",
-      "consumers": ["welcome email terms link", "referral stats page terms link", "FTC compliance"],
+      "consumers": [
+        "welcome email terms link",
+        "referral stats page terms link",
+        "FTC compliance"
+      ],
       "drift_check_command": "curl -s https://api.algovault.com/referral-terms | grep -c '16 CFR Part 255'"
     },
     {
-      "endpoint": "GET /admin/referrals · GET /admin/referrals/payouts · POST /admin/referrals/payouts/:id/paid · POST /admin/referrals/mint",
+      "endpoint": "GET /admin/referrals \u00b7 GET /admin/referrals/payouts \u00b7 POST /admin/referrals/payouts/:id/paid \u00b7 POST /admin/referrals/mint",
       "shape": "html (GET) / json (POST)",
-      "auth": "isAdminAuthorized (Bearer / ?key=ADMIN_API_KEY / admin cookie); 401 otherwise — same gate as /admin/chat-analytics, /admin/geo-dashboard, /admin/subscribers",
+      "auth": "isAdminAuthorized (Bearer / ?key=ADMIN_API_KEY / admin cookie); 401 otherwise \u2014 same gate as /admin/chat-analytics, /admin/geo-dashboard, /admin/subscribers",
       "pii": "payout queue masks the owner email via maskEmail; no outcome_* anywhere",
-      "consumers": ["operator USDC payout workflow", "partner-code minting"],
+      "consumers": [
+        "operator USDC payout workflow",
+        "partner-code minting"
+      ],
       "drift_check_command": "curl -s -o /dev/null -w '%{http_code}' https://api.algovault.com/admin/referrals  # expect 401 without key"
     }
-  ]
+  ],
+  "_renamed_note": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: renamed from referral-shape-snapshotS-2026-06-20.json. The plural filename matched NEITHER the builder selector /-shape-snapshot-.*\\.json$/ nor any gate, so it had NEVER appeared in the public knowledge bundle \u2014 a typo silently excluding a declared contract. It is also not a response-shape snapshot at all: it is an INDEX of several surfaces, each of which has its own per-surface snapshot (referral-api, referral-page, signup-email, join). Renamed OUT of the snapshot namespace so it stops being a near-miss, rather than forced into a schema it does not fit."
 }

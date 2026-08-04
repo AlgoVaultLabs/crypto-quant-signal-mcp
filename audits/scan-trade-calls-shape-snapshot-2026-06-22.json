@@ -6,32 +6,80 @@
     "captured_at": "2026-06-22",
     "purpose": "Public-response-shape SoT after the ADDITIVE referral arm. Supersedes scan-trade-calls-shape-snapshot-2026-06-20.json. ADDITIVE-ONLY: success `_algovault` MAY gain `upgrade_hint` (the trigger-(b) multi-hit-scan referral line, KEYED) + `referral_hint` (structured, allow-listed); the quota_exhausted envelope gains a top-level `referral_hint` (from:'limit') and its `message` is referral-prominent. NO existing field removed/renamed. outcome_* must NEVER appear."
   },
-  "top_level_allowed_keys": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault", "_receipts"],
-  "calls_item_allowed_keys": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
+  "top_level_allowed_keys": [
+    "scanned",
+    "eligible_non_hold",
+    "holds",
+    "errors",
+    "partial",
+    "calls",
+    "_algovault",
+    "_receipts"
+  ],
+  "calls_item_allowed_keys": [
+    "coin",
+    "timeframe",
+    "exchange",
+    "call",
+    "confidence",
+    "regime"
+  ],
   "algovault_referral_additive_keys": {
-    "_algovault.upgrade_hint": "NEW optional string — the trigger-(b) multi-hit-scan referral line for a KEYED user when eligible_non_hold >= 3 (SCAN_REFERRAL_MIN_HITS). ≤1 aha referral/session, shared with get_trade_call (shouldShowAhaReferral). Absent otherwise.",
-    "_algovault.referral_hint": "NEW additive, allow-listed structured object {cta, link_or_path, bonus_calls, from:'aha_scan'} — present only when trigger (b) fired."
+    "_algovault.upgrade_hint": "NEW optional string \u2014 the trigger-(b) multi-hit-scan referral line for a KEYED user when eligible_non_hold >= 3 (SCAN_REFERRAL_MIN_HITS). \u22641 aha referral/session, shared with get_trade_call (shouldShowAhaReferral). Absent otherwise.",
+    "_algovault.referral_hint": "NEW additive, allow-listed structured object {cta, link_or_path, bonus_calls, from:'aha_scan'} \u2014 present only when trigger (b) fired."
   },
-  "referral_hint_allowed_keys": ["cta", "link_or_path", "bonus_calls", "from"],
+  "referral_hint_allowed_keys": [
+    "cta",
+    "link_or_path",
+    "bonus_calls",
+    "from"
+  ],
   "enums": {
-    "calls.call": ["BUY", "SELL", "HOLD"],
-    "calls.regime": ["TRENDING_UP", "TRENDING_DOWN", "RANGING", "VOLATILE"],
-    "referral_hint.from": ["limit", "aha_scan"]
+    "calls.call": [
+      "BUY",
+      "SELL",
+      "HOLD"
+    ],
+    "calls.regime": [
+      "TRENDING_UP",
+      "TRENDING_DOWN",
+      "RANGING",
+      "VOLATILE"
+    ],
+    "referral_hint.from": [
+      "limit",
+      "aha_scan"
+    ]
   },
   "new_in_this_wave": {
-    "trigger_b": "REFERRAL-INPRODUCT-NUDGE-W1 (b): a multi-hit scan (eligible_non_hold >= 3) by a KEYED user attaches the aha_scan referral line to _algovault.upgrade_hint + the structured _algovault.referral_hint. Capped to ≤1 aha referral/session via the single-source aha store (shared with get_trade_call).",
-    "limit_moment": "The quota_exhausted envelope is now the scan WALL: message is referral-prominent + upgrade-retained (state-adaptive keyed/keyless) and carries a top-level referral_hint {…, from:'limit'}.",
+    "trigger_b": "REFERRAL-INPRODUCT-NUDGE-W1 (b): a multi-hit scan (eligible_non_hold >= 3) by a KEYED user attaches the aha_scan referral line to _algovault.upgrade_hint + the structured _algovault.referral_hint. Capped to \u22641 aha referral/session via the single-source aha store (shared with get_trade_call).",
+    "limit_moment": "The quota_exhausted envelope is now the scan WALL: message is referral-prominent + upgrade-retained (state-adaptive keyed/keyless) and carries a top-level referral_hint {\u2026, from:'limit'}.",
     "referral_hint.bonus_calls": "INTEGER from REFERRAL_TERMS SoT (BONUS_CALLS = 500). Never hardcoded.",
     "message_only": "No quota/gating change (charge stays max(1, eligible_non_hold)). tools/list=9 byte-unchanged."
   },
-  "forbidden_keys": ["outcome_return_pct", "outcome_price", "phase_e_wr", "outcome_win_rate", "realized_return", "pnl", "rsi", "ema_9", "ema_21", "funding_z_score", "squeeze_active"],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "outcome_win_rate",
+    "realized_return",
+    "pnl",
+    "rsi",
+    "ema_9",
+    "ema_21",
+    "funding_z_score",
+    "squeeze_active"
+  ],
   "error_contract": {
-    "quota_exhausted": "{error:'quota_exhausted', code:'tier_limit_reached', message, quota:{used,total,remaining}, suggested_action, referral_hint:{cta,link_or_path,bonus_calls,from:'limit'}, _algovault:{tool,version,session_id}} — referral_hint is NEW additive; message is referral-prominent. NO _receipts on this envelope."
+    "quota_exhausted": "{error:'quota_exhausted', code:'tier_limit_reached', message, quota:{used,total,remaining}, suggested_action, referral_hint:{cta,link_or_path,bonus_calls,from:'limit'}, _algovault:{tool,version,session_id}} \u2014 referral_hint is NEW additive; message is referral-prominent. NO _receipts on this envelope."
   },
-  "additive_only_rule": "top level (error) + _algovault (success) may GAIN referral_hint/upgrade_hint but never LOSE/RENAME any pre-existing key; calls[] item shape unchanged; content[0] stays the JSON envelope. A forbidden_key under referral_hint, >4 referral_hint keys, or a hardcoded bonus number = Data Integrity/Factuality violation → HALT.",
-  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run scan-trade-calls nudge-copy   # trigger-(b) fires at >=3 non-HOLD (keyed+session), ≤1/session cap, limit-moment referral_hint, allow-listed 4 keys, no outcome_*",
+  "additive_only_rule": "top level (error) + _algovault (success) may GAIN referral_hint/upgrade_hint but never LOSE/RENAME any pre-existing key; calls[] item shape unchanged; content[0] stays the JSON envelope. A forbidden_key under referral_hint, >4 referral_hint keys, or a hardcoded bonus number = Data Integrity/Factuality violation \u2192 HALT.",
+  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run scan-trade-calls nudge-copy   # trigger-(b) fires at >=3 non-HOLD (keyed+session), \u22641/session cap, limit-moment referral_hint, allow-listed 4 keys, no outcome_*",
   "consumers": [
-    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call — read the upgrade_hint string + structured referral_hint",
-    "future P2 landing scanner card — consumes the same envelope shape"
-  ]
+    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call \u2014 read the upgrade_hint string + structured referral_hint",
+    "future P2 landing scanner card \u2014 consumes the same envelope shape"
+  ],
+  "snapshot_date": "2026-06-22",
+  "superseded_by": "scan-trade-calls-shape-snapshot-2026-06-04.json",
+  "superseded_reason": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: a LATER snapshot for the same subject carries the canonical declaration. This row published an EMPTY allowed_keys under its FILENAME as the endpoint \u2014 a contract asserting nothing \u2014 and only avoided a duplicate-doc-id collision because the filename fallback hid that it describes the same surface. Kept on disk as history; the builder skips a superseded row rather than projecting it."
 }

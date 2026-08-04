@@ -9,26 +9,72 @@
       "endpoint": "GET /api/referral/code?tg=<chat_id>",
       "shape": "json",
       "auth": "internal-bypass key (checkInternalBypass: BOT_INTERNAL_BYPASS_ENABLED=true + X-AlgoVault-Internal-Key == ALGOVAULT_INTERNAL_BYPASS_KEY); 401 otherwise. Bot-only (loopback).",
-      "allowed_keys": ["ok", "code", "share_url", "deep_link", "terms", "stats", "error"],
-      "terms_keys": ["bonus_calls", "commission_pct", "commission_months", "usdc_min_payout_usd"],
-      "stats_keys": ["signups", "conversions", "accrued_usd_e2", "credited_usd_e2", "usdc_pending_usd_e2", "usdc_paid_usd_e2"],
-      "forbidden_keys": ["outcome_return_pct", "outcome_price", "owner_key", "referee_email", "raw chat_id"],
-      "error_contract": "401 {ok:false,error:'unauthorized'} · 400 {ok:false,error:'invalid_tg'} · 500 {ok:false,error:'internal_error'}",
+      "allowed_keys": [
+        "ok",
+        "code",
+        "share_url",
+        "deep_link",
+        "terms",
+        "stats",
+        "error"
+      ],
+      "terms_keys": [
+        "bonus_calls",
+        "commission_pct",
+        "commission_months",
+        "usdc_min_payout_usd"
+      ],
+      "stats_keys": [
+        "signups",
+        "conversions",
+        "accrued_usd_e2",
+        "credited_usd_e2",
+        "usdc_pending_usd_e2",
+        "usdc_paid_usd_e2"
+      ],
+      "forbidden_keys": [
+        "outcome_return_pct",
+        "outcome_price",
+        "owner_key",
+        "referee_email",
+        "raw chat_id"
+      ],
+      "error_contract": "401 {ok:false,error:'unauthorized'} \u00b7 400 {ok:false,error:'invalid_tg'} \u00b7 500 {ok:false,error:'internal_error'}",
       "cache_contract": "Cache-Control: no-store",
-      "consumers": ["algovault-bot /referral command (earnings parity, C2)", "algovault-bot ref-join greet + compounding prompt"],
+      "consumers": [
+        "algovault-bot /referral command (earnings parity, C2)",
+        "algovault-bot ref-join greet + compounding prompt"
+      ],
       "drift_check_command": "curl -s 'http://127.0.0.1:3000/api/referral/code?tg=1793689937' -H \"X-AlgoVault-Internal-Key: $KEY\" | jq '.terms, .stats | keys'"
     },
     {
       "endpoint": "POST /api/referral/attribute {ref_code, tg_chat_id}",
       "shape": "json",
       "auth": "internal-bypass key; 401 otherwise. Bot-only (loopback).",
-      "allowed_keys": ["ok", "recorded", "bonus_calls", "reason", "error"],
-      "reason_enum": ["invalid_code", "unknown_code", "self_referral", "already_attributed"],
-      "idempotency": "one grant per TG referee (referee_email = tgIdentity(chat_id), UNIQUE) → duplicate returns {recorded:false, reason:'already_attributed', bonus_calls:0}",
-      "self_referral": "code owner_key == tgIdentity(referee chat_id) → {recorded:false, reason:'self_referral'}",
-      "forbidden_keys": ["outcome_return_pct", "outcome_price"],
-      "error_contract": "401 unauthorized · 400 ref_code_and_tg_chat_id_required · 500 internal_error",
-      "consumers": ["algovault-bot /start ref_<CODE> capture", "REFERRAL-PARITY-NOTIFS-W1: also fires friend_joined notification (C1)"],
+      "allowed_keys": [
+        "ok",
+        "recorded",
+        "bonus_calls",
+        "reason",
+        "error"
+      ],
+      "reason_enum": [
+        "invalid_code",
+        "unknown_code",
+        "self_referral",
+        "already_attributed"
+      ],
+      "idempotency": "one grant per TG referee (referee_email = tgIdentity(chat_id), UNIQUE) \u2192 duplicate returns {recorded:false, reason:'already_attributed', bonus_calls:0}",
+      "self_referral": "code owner_key == tgIdentity(referee chat_id) \u2192 {recorded:false, reason:'self_referral'}",
+      "forbidden_keys": [
+        "outcome_return_pct",
+        "outcome_price"
+      ],
+      "error_contract": "401 unauthorized \u00b7 400 ref_code_and_tg_chat_id_required \u00b7 500 internal_error",
+      "consumers": [
+        "algovault-bot /start ref_<CODE> capture",
+        "REFERRAL-PARITY-NOTIFS-W1: also fires friend_joined notification (C1)"
+      ],
       "drift_check_command": "curl -s -XPOST http://127.0.0.1:3000/api/referral/attribute -H \"X-AlgoVault-Internal-Key: $KEY\" -H 'content-type: application/json' -d '{\"ref_code\":\"<code>\",\"tg_chat_id\":\"999000111\"}' | jq 'keys'"
     },
     {
@@ -36,44 +82,89 @@
       "wave": "REFERRAL-PARITY-NOTIFS-W1 / C1",
       "shape": "json",
       "auth": "internal-bypass key; 401 otherwise. Bot-only (the bot drains the tg channel).",
-      "allowed_keys": ["ok", "notifications", "error"],
-      "notification_keys": ["id", "code", "event", "payload"],
-      "event_enum": ["friend_joined", "commission_earned"],
-      "payload_keys": ["amount_usd_e2", "pending_usd_e2", "commission_pct", "commission_months", "usdc_min_payout_usd"],
-      "forbidden_keys": ["outcome_return_pct", "outcome_price", "referee_email", "raw chat_id", "owner_key", "tg:<hash> (returns CODE not the identity hash → bot maps code→chat_id locally)"],
-      "error_contract": "401 unauthorized · 500 internal_error",
+      "allowed_keys": [
+        "ok",
+        "notifications",
+        "error"
+      ],
+      "notification_keys": [
+        "id",
+        "code",
+        "event",
+        "payload"
+      ],
+      "event_enum": [
+        "friend_joined",
+        "commission_earned"
+      ],
+      "payload_keys": [
+        "amount_usd_e2",
+        "pending_usd_e2",
+        "commission_pct",
+        "commission_months",
+        "usdc_min_payout_usd"
+      ],
+      "forbidden_keys": [
+        "outcome_return_pct",
+        "outcome_price",
+        "referee_email",
+        "raw chat_id",
+        "owner_key",
+        "tg:<hash> (returns CODE not the identity hash \u2192 bot maps code\u2192chat_id locally)"
+      ],
+      "error_contract": "401 unauthorized \u00b7 500 internal_error",
       "cache_contract": "Cache-Control: no-store",
-      "consumers": ["algovault-bot notification drain cron (C2)"]
+      "consumers": [
+        "algovault-bot notification drain cron (C2)"
+      ]
     },
     {
       "endpoint": "POST /api/referral/notifications/:id/delivered",
       "wave": "REFERRAL-PARITY-NOTIFS-W1 / C1",
       "shape": "json",
       "auth": "internal-bypass key; 401 otherwise.",
-      "allowed_keys": ["ok", "id", "status", "error"],
-      "error_contract": "401 unauthorized · 400 invalid_id · 404 not_found · 500 internal_error",
-      "consumers": ["algovault-bot notification drain cron (C2) — marks a row delivered after a successful Bot-API send"]
+      "allowed_keys": [
+        "ok",
+        "id",
+        "status",
+        "error"
+      ],
+      "error_contract": "401 unauthorized \u00b7 400 invalid_id \u00b7 404 not_found \u00b7 500 internal_error",
+      "consumers": [
+        "algovault-bot notification drain cron (C2) \u2014 marks a row delivered after a successful Bot-API send"
+      ]
     },
     {
       "endpoint": "POST /api/referral/notify-pref {tg:<chat_id>, opt_out}",
       "wave": "REFERRAL-PARITY-NOTIFS-W1 / C1",
       "shape": "json",
       "auth": "internal-bypass key; 401 otherwise.",
-      "allowed_keys": ["ok", "opt_out", "error"],
-      "note": "engine hashes chat_id → tgIdentity → ensureUserCode → sets notify_opt_out on that code (single-derivation: same column as the email unsubscribe link)",
-      "error_contract": "401 unauthorized · 400 invalid_tg · 500 internal_error",
-      "consumers": ["algovault-bot /notifications toggle (C2)"]
+      "allowed_keys": [
+        "ok",
+        "opt_out",
+        "error"
+      ],
+      "note": "engine hashes chat_id \u2192 tgIdentity \u2192 ensureUserCode \u2192 sets notify_opt_out on that code (single-derivation: same column as the email unsubscribe link)",
+      "error_contract": "401 unauthorized \u00b7 400 invalid_tg \u00b7 500 internal_error",
+      "consumers": [
+        "algovault-bot /notifications toggle (C2)"
+      ]
     },
     {
       "endpoint": "GET /referral/notify/unsubscribe?c=<code>&t=<sig>",
       "wave": "REFERRAL-PARITY-NOTIFS-W1 / C1",
       "shape": "html",
-      "auth": "PUBLIC, signed (t == HMAC(notify-unsub-salt, code)[:16]); low-stakes one-click email unsubscribe → setNotifyOptOut(code, true)",
-      "error_contract": "400 invalid/expired link (bad sig or unknown code) · 200 confirmation page",
-      "consumers": ["the email manage/unsubscribe link in sendReferralFriendJoined / sendReferralEarned"]
+      "auth": "PUBLIC, signed (t == HMAC(notify-unsub-salt, code)[:16]); low-stakes one-click email unsubscribe \u2192 setNotifyOptOut(code, true)",
+      "error_contract": "400 invalid/expired link (bad sig or unknown code) \u00b7 200 confirmation page",
+      "consumers": [
+        "the email manage/unsubscribe link in sendReferralFriendJoined / sendReferralEarned"
+      ]
     }
   ],
   "migrations": "016_referral_channel_tg.sql (channel enum) + 018_referral_notifications.sql (REFERRAL-PARITY-NOTIFS-W1: NEW referral_notifications queue table + notify_opt_out column on referral_codes; pre-applied to prod PG via SSH; in-code dual-backend mirrors for fresh/test DBs)",
   "data_integrity": "no outcome_* exposed anywhere; raw chat_ids never persisted (opaque tg:<hash> identity lane); notifications return the referrer CODE not the hash (bot maps locally via cached referral_code); friend identity never leaked to the referrer; payload + stats are allow-listed",
-  "tools_list_impact": "NONE — HTTP routes only; no MCP tool added (tools/list stays 9, byte-identical)"
+  "tools_list_impact": "NONE \u2014 HTTP routes only; no MCP tool added (tools/list stays 9, byte-identical)",
+  "endpoint": "POST https://api.algovault.com/account/referrals",
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys DEFERRED, not invented: this is an MCP tool / JSON surface whose public response is CONDITIONAL (verdict, tier and flag state change which fields are present), so a single live probe cannot settle a COMPLETE allow-list, and an incomplete one published to crawlers is worse than an empty one because it looks authoritative. Deriving it correctly means enumerating the exported PUBLIC formatter's full output surface \u2014 never an internal type. Owner: OPS-SHAPE-ALLOWLIST-FROM-FORMATTER-W{NEXT}."
 }

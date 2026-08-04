@@ -1,14 +1,32 @@
 {
-  "endpoint": "MCP tool scan_trade_calls + Streamable-HTTP /mcp + POST /x402 (not listed — free tool)",
+  "endpoint": "MCP tool scan_trade_calls + Streamable-HTTP /mcp + POST /x402 (not listed \u2014 free tool)",
   "wave": "SCAN-TRADE-CALLS-W1 C3",
   "snapshot_date": "2026-06-04",
   "naming_law": "Public fields use `call` / `confidence`, never `signal`. No `price_at_signal`.",
-  "allowed_keys": {
-    "top_level": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault"],
-    "calls_item": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
-    "_algovault": ["tool", "version", "quota", "compatible_with", "signal_performance", "session_id"],
-    "_algovault.quota": ["used", "total", "remaining"]
-  },
+  "allowed_keys": [
+    "_algovault",
+    "call",
+    "calls",
+    "coin",
+    "compatible_with",
+    "confidence",
+    "eligible_non_hold",
+    "errors",
+    "exchange",
+    "holds",
+    "partial",
+    "quota",
+    "regime",
+    "remaining",
+    "scanned",
+    "session_id",
+    "signal_performance",
+    "timeframe",
+    "tool",
+    "total",
+    "used",
+    "version"
+  ],
   "forbidden_keys": [
     "outcome_return_pct",
     "outcome_price",
@@ -17,13 +35,20 @@
     "indicators",
     "price"
   ],
-  "forbidden_keys_note": "outcome_return_pct / outcome_price are INTERNAL-only (Data Integrity LAW). Scan items carry no price/indicators/reasoning v1 — agents deep-dive via get_trade_call.",
+  "forbidden_keys_note": "outcome_return_pct / outcome_price are INTERNAL-only (Data Integrity LAW). Scan items carry no price/indicators/reasoning v1 \u2014 agents deep-dive via get_trade_call.",
   "error_contract": {
     "quota_exhausted": {
-      "shape": ["error", "code", "message", "quota", "suggested_action", "_algovault"],
+      "shape": [
+        "error",
+        "code",
+        "message",
+        "quota",
+        "suggested_action",
+        "_algovault"
+      ],
       "error": "quota_exhausted",
       "code": "tier_limit_reached",
-      "note": "Free tier over monthly quota → blocked at entry, no scan, no charge. x402/internal tiers never exhaust (Infinity)."
+      "note": "Free tier over monthly quota \u2192 blocked at entry, no scan, no charge. x402/internal tiers never exhaust (Infinity)."
     },
     "tool_error": "Unhandled errors surface via toolErrorContent (isError:true, structured text)."
   },
@@ -38,7 +63,7 @@
     "SCAN_CONCURRENCY": 6,
     "SCAN_DEADLINE_MS": 30000,
     "partial_semantics": "partial:true when the deadline elapses before every cell scores; calls[] holds whatever completed. Per-coin promise coalescing; smaller topN sliced from the snapshot, larger topN tops up only missing coins. Stale universe served on fetch error.",
-    "scan_cells_internal": "Cells score via getTradeSignal({internal:true}) — never touch the per-coin quota counter or the performance-db track record (preserves the on-chain ↔ dashboard equality canary)."
+    "scan_cells_internal": "Cells score via getTradeSignal({internal:true}) \u2014 never touch the per-coin quota counter or the performance-db track record (preserves the on-chain \u2194 dashboard equality canary)."
   },
   "consumers": [
     "MCP clients (Claude Desktop / Code / Cursor / Cline via tools/list)",
@@ -47,5 +72,38 @@
     "future x402 scan listing (X402-SCAN-LISTING-W1)",
     "future landing screener"
   ],
-  "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"timeframe\":\"15m\"}}}' | jq -r '.result.content[0].text' | jq 'keys, (.calls[0]|keys), (._algovault|keys)' && echo '--- forbidden-key scan (expect empty) ---' && curl -s ... | grep -oE '\"(outcome_return_pct|outcome_price|price_at_signal)\"\\s*:' || echo 'OK: no forbidden keys'"
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"timeframe\":\"15m\"}}}' | jq -r '.result.content[0].text' | jq 'keys, (.calls[0]|keys), (._algovault|keys)' && echo '--- forbidden-key scan (expect empty) ---' && curl -s ... | grep -oE '\"(outcome_return_pct|outcome_price|price_at_signal)\"\\s*:' || echo 'OK: no forbidden keys'",
+  "allowed_keys_nested": {
+    "top_level": [
+      "scanned",
+      "eligible_non_hold",
+      "holds",
+      "errors",
+      "partial",
+      "calls",
+      "_algovault"
+    ],
+    "calls_item": [
+      "coin",
+      "timeframe",
+      "exchange",
+      "call",
+      "confidence",
+      "regime"
+    ],
+    "_algovault": [
+      "tool",
+      "version",
+      "quota",
+      "compatible_with",
+      "signal_performance",
+      "session_id"
+    ],
+    "_algovault.quota": [
+      "used",
+      "total",
+      "remaining"
+    ]
+  },
+  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 this file declared allowed_keys as a nested OBJECT (per-mode / per-response-state sections). The builder only projects an ARRAY, so Array.isArray() failed and it published an EMPTY allow-list while the file looked fully populated. Flattened to the union of every section; the nested original is retained verbatim as allowed_keys_nested. Derived from this snapshot's own declaration \u2014 no new disclosure."
 }
