@@ -11,7 +11,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.bybit.com';
@@ -118,14 +118,20 @@ export class BybitAdapter implements ExchangeAdapter {
     // CRITICAL: Bybit returns candles in DESCENDING order (newest first). Reverse.
     const reversed = (data.list || []).slice().reverse();
 
-    return reversed.map(c => ({
-      time: parseInt(c[0]),
-      open: parseFloat(c[1]),
-      high: parseFloat(c[2]),
-      low: parseFloat(c[3]),
-      close: parseFloat(c[4]),
-      volume: parseFloat(c[5]),
-    }));
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
+    return reversed.flatMap(c => {
+      const open = safeUpstreamNum(c[1]);
+      const high = safeUpstreamNum(c[2]);
+      const low = safeUpstreamNum(c[3]);
+      const close = safeUpstreamNum(c[4]);
+      if (open === null || high === null || low === null || close === null) return [];
+      return [{
+        time: parseInt(c[0]),
+        open, high, low, close,
+        volume: parseFloat(c[5]),
+      }];
+    });
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
@@ -155,16 +161,21 @@ export class BybitAdapter implements ExchangeAdapter {
     const oi = oiData.list[0];
 
     // R2: Bybit funding is per-8h period → annualized = raw × 1095 (8h periods/year)
-    const fundingRaw = parseFloat(ticker.fundingRate || '0');
+    // SV-04: default-deny — an invalid markPrice throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(ticker.fundingRate) ?? 0;
+    const markPx = safeUpstreamNum(ticker.markPrice);
+    if (markPx === null) throw new Error('Bybit getAssetContext: invalid markPrice');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(oi.openInterest || '0'),
-      prevDayPx: parseFloat(ticker.prevPrice24h || '0'),
+      openInterest: safeUpstreamNum(oi.openInterest) ?? 0,
+      prevDayPx: safeUpstreamNum(ticker.prevPrice24h) ?? 0,
       volume24h: parseFloat(ticker.turnover24h || '0'),
-      oraclePx: parseFloat(ticker.markPrice || '0'),
-      markPx: parseFloat(ticker.markPrice || '0'),
+      oraclePx: markPx,
+      markPx,
     };
   }
 
@@ -180,7 +191,7 @@ export class BybitAdapter implements ExchangeAdapter {
         coin: fromBybitSymbol(entry.symbol),
         venues: [{
           venue: 'BybitPerp',
-          fundingRate: parseFloat(entry.fundingRate || '0'),
+          fundingRate: safeUpstreamNum(entry.fundingRate) ?? 0,
           nextFundingTime: parseInt(entry.nextFundingTime || '0'),
         }],
       }));
@@ -196,10 +207,9 @@ export class BybitAdapter implements ExchangeAdapter {
         limit: 200,
       });
 
-      return (data.list || []).map(r => ({
-        time: parseInt(r.fundingRateTimestamp),
-        fundingRate: parseFloat(r.fundingRate),
-      }));
+      return (data.list || [])
+        .map(r => ({ time: parseInt(r.fundingRateTimestamp), fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
     } catch {
       return [];
     }
@@ -218,7 +228,7 @@ export class BybitAdapter implements ExchangeAdapter {
       if (!ticker || ticker.symbol !== symbol) {
         throw new Error(`BYBIT_TICKER_SYMBOL_MISMATCH: requested ${symbol}, got ${ticker?.symbol ?? 'none'} from /v5/market/tickers`);
       }
-      return parseFloat(ticker.markPrice);
+      return safeUpstreamNum(ticker.markPrice);
     } catch {
       return null;
     }

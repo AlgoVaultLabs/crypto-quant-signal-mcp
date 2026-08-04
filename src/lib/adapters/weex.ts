@@ -22,7 +22,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
@@ -94,16 +94,22 @@ export class WeexAdapter implements ExchangeAdapter {
     if (!Array.isArray(rows)) {
       throw new Error(`WEEX: kline returned non-array shape for ${coin} (symbol=${symbol})`);
     }
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
     return rows
       .filter(r => parseInt(r[0], 10) >= startTime)
-      .map(r => ({
-        time: parseInt(r[0], 10),
-        open: parseFloat(r[1]),
-        high: parseFloat(r[2]),
-        low: parseFloat(r[3]),
-        close: parseFloat(r[4]),
-        volume: parseFloat(r[5]),
-      }))
+      .flatMap(r => {
+        const open = safeUpstreamNum(r[1]);
+        const high = safeUpstreamNum(r[2]);
+        const low = safeUpstreamNum(r[3]);
+        const close = safeUpstreamNum(r[4]);
+        if (open === null || high === null || low === null || close === null) return [];
+        return [{
+          time: parseInt(r[0], 10),
+          open, high, low, close,
+          volume: parseFloat(r[5]),
+        }];
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -116,14 +122,19 @@ export class WeexAdapter implements ExchangeAdapter {
     // WEEX 4h funding cadence × 2190 annualization (first non-8h venue).
     // Funding rate NOT exposed publicly — adapter returns 0 per W3B Q-3 fail-soft.
     const fundingRaw = 0;
-    const last = parseFloat(t.last || '0');
+    // SV-04: default-deny — an invalid markPrice throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const last = safeUpstreamNum(t.last) ?? 0;
+    const markPx = safeUpstreamNum(t.markPrice);
+    if (markPx === null) throw new Error('WEEX getAssetContext: invalid markPrice');
     // WEEX priceChangePercent is a 24h change FRACTION (0.0055 = 0.55%; verified
     // live 2026-06-11) — NOT a percent-number, so do NOT divide by 100.
     const prevDayPx = reconstructPrevDayOpen(
       last,
-      parseFloat(t.priceChangePercent || ''),
-      parseFloat(t.high_24h || ''),
-      parseFloat(t.low_24h || ''),
+      safeUpstreamNum(t.priceChangePercent) ?? NaN,
+      safeUpstreamNum(t.high_24h) ?? undefined,
+      safeUpstreamNum(t.low_24h) ?? undefined,
     );
     return {
       coin,
@@ -132,8 +143,8 @@ export class WeexAdapter implements ExchangeAdapter {
       openInterest: 0,
       prevDayPx,
       volume24h: parseFloat(t.volume_24h || '0'),
-      oraclePx: parseFloat(t.indexPrice || t.markPrice || '0'),
-      markPx: parseFloat(t.markPrice || '0'),
+      oraclePx: safeUpstreamNum(t.indexPrice) ?? markPx,
+      markPx,
     };
   }
 
@@ -150,8 +161,7 @@ export class WeexAdapter implements ExchangeAdapter {
       const symbol = toWeexSymbol(coin);
       const t = await weexGet<WeexTicker>('/capi/v2/market/ticker', { symbol });
       if (!t || !t.markPrice) return null;
-      const px = parseFloat(t.markPrice);
-      return Number.isFinite(px) ? px : null;
+      return safeUpstreamNum(t.markPrice);
     } catch {
       return null;
     }

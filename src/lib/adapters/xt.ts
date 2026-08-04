@@ -33,7 +33,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://fapi.xt.com';
@@ -144,16 +144,22 @@ export class XtAdapter implements ExchangeAdapter {
       throw new Error(`XT: kline returned non-OK envelope (returnCode=${env?.returnCode} msg=${env?.msgInfo})`);
     }
 
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
     return env.result
       .filter(r => r.t >= startTime)
-      .map(r => ({
-        time: r.t,   // already ms
-        open: parseFloat(r.o),
-        high: parseFloat(r.h),
-        low: parseFloat(r.l),
-        close: parseFloat(r.c),
-        volume: parseFloat(r.a),   // base volume
-      }))
+      .flatMap(r => {
+        const open = safeUpstreamNum(r.o);
+        const high = safeUpstreamNum(r.h);
+        const low = safeUpstreamNum(r.l);
+        const close = safeUpstreamNum(r.c);
+        if (open === null || high === null || low === null || close === null) return [];
+        return [{
+          time: r.t,   // already ms
+          open, high, low, close,
+          volume: parseFloat(r.a),   // base volume
+        }];
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -175,15 +181,20 @@ export class XtAdapter implements ExchangeAdapter {
     const f = fundingEnv.result;
     // XT funding cadence 8h × 1095 (collectionInternal=8 verified).
     const fundingRaw = Number(f.fundingRate) || 0;
+    // SV-04: default-deny — an invalid mark price throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const markPx = safeUpstreamNum(t.m);
+    if (markPx === null) throw new Error('XT getAssetContext: invalid mark price');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
       openInterest: 0,    // XT OI endpoint not surfaced — adapter fail-soft per W3B Q-3 pattern
-      prevDayPx: parseFloat(t.o || '0'),    // 24h open
+      prevDayPx: safeUpstreamNum(t.o) ?? 0,    // 24h open
       volume24h: parseFloat(t.v || '0'),
-      oraclePx: parseFloat(t.i || t.m || '0'),
-      markPx: parseFloat(t.m || '0'),
+      oraclePx: safeUpstreamNum(t.i) ?? markPx,
+      markPx,
     };
   }
 
@@ -210,8 +221,8 @@ export class XtAdapter implements ExchangeAdapter {
       const symbol = toXtSymbol(coin);
       const env = await xtGet<XtEnvelope<XtAggTicker>>('/future/market/v1/public/q/agg-ticker', { symbol });
       if (!env?.result?.m) return null;
-      const px = parseFloat(env.result.m);
-      return Number.isFinite(px) && px > 0 ? px : null;
+      const px = safeUpstreamNum(env.result.m);
+      return px !== null && px > 0 ? px : null;
     } catch {
       return null;
     }

@@ -253,7 +253,7 @@ export class EdgeXAdapter implements ExchangeAdapter {
             coin,
             venues: [{
               venue: 'edgeXPerp',
-              fundingRate: parseFloat(t.fundingRate || '0'),
+              fundingRate: safeUpstreamNum(t.fundingRate) ?? 0,
               nextFundingTime: parseInt(t.nextFundingTime || '0', 10),
             }],
           });
@@ -274,11 +274,8 @@ export class EdgeXAdapter implements ExchangeAdapter {
       if (!contractId) return [];
       const raw = await edgexGet<EdgeXEnvelope<EdgeXFundingHistEntry[]>>('/api/v1/public/funding/getLatestFundingRate', { contractId });
       const records = (raw.data || [])
-        .filter(r => r.fundingRate != null && !isNaN(parseFloat(r.fundingRate)))
-        .map(r => ({
-          time: parseInt(r.fundingTime, 10),
-          fundingRate: parseFloat(r.fundingRate),
-        }));
+        .map(r => ({ time: parseInt(r.fundingTime, 10), fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
       // Filter to >= startTime since the endpoint returns latest only
       return records.filter(r => r.time >= startTime);
     } catch {
@@ -293,7 +290,7 @@ export class EdgeXAdapter implements ExchangeAdapter {
       const raw = await edgexGet<EdgeXEnvelope<EdgeXTicker[]>>('/api/v1/public/quote/getTicker', { contractId });
       const t = raw.data?.[0];
       if (!t) return null;
-      return parseFloat(t.markPrice);
+      return safeUpstreamNum(t.markPrice);
     } catch {
       return null;
     }

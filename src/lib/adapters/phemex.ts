@@ -47,7 +47,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.phemex.com';
@@ -186,16 +186,22 @@ export class PhemexAdapter implements ExchangeAdapter {
     // Phemex returns rows newest-first. Filter to >= startTime, sort oldest-first
     // (canonical Candle[] ordering across the adapter fleet).
     const startSec = Math.floor(startTime / 1000);
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
     return env.data.rows
       .filter(r => r[0] >= startSec)
-      .map(r => ({
-        time:   r[0] * 1000,    // seconds → ms
-        open:   parseFloat(r[3]),
-        high:   parseFloat(r[4]),
-        low:    parseFloat(r[5]),
-        close:  parseFloat(r[6]),
-        volume: parseFloat(r[7]),
-      }))
+      .flatMap(r => {
+        const open = safeUpstreamNum(r[3]);
+        const high = safeUpstreamNum(r[4]);
+        const low = safeUpstreamNum(r[5]);
+        const close = safeUpstreamNum(r[6]);
+        if (open === null || high === null || low === null || close === null) return [];
+        return [{
+          time: r[0] * 1000,    // seconds → ms
+          open, high, low, close,
+          volume: parseFloat(r[7]),
+        }];
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -211,16 +217,21 @@ export class PhemexAdapter implements ExchangeAdapter {
 
     // Phemex funding is per-8h period (fundingInterval=28800s); annualize ×1095
     // (8h periods per year). Same as Binance/Bybit/Bitget/Gate/MEXC/KuCoin.
-    const fundingRaw = parseFloat(r.fundingRateRr || '0');
+    // SV-04: default-deny — an invalid markPriceRp throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(r.fundingRateRr) ?? 0;
+    const markPx = safeUpstreamNum(r.markPriceRp);
+    if (markPx === null) throw new Error('Phemex getAssetContext: invalid markPriceRp');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(r.openInterestRv || '0'),
-      prevDayPx: parseFloat(r.openRp || r.closeRp || '0'),
+      openInterest: safeUpstreamNum(r.openInterestRv) ?? 0,
+      prevDayPx: safeUpstreamNum(r.openRp) ?? safeUpstreamNum(r.closeRp) ?? 0,
       volume24h: parseFloat(r.turnoverRv || '0'),    // turnover is in USDT; canonical volume24h is quote-asset volume
-      oraclePx: parseFloat(r.indexPriceRp || r.markPriceRp || '0'),
-      markPx: parseFloat(r.markPriceRp || '0'),
+      oraclePx: safeUpstreamNum(r.indexPriceRp) ?? markPx,
+      markPx,
     };
   }
 
@@ -247,8 +258,7 @@ export class PhemexAdapter implements ExchangeAdapter {
       const env = await phemexGet<PhemexTickerEnvelope>('/md/v2/ticker/24hr', { symbol });
       const r = env?.result;
       if (!r || env?.error) return null;
-      const px = parseFloat(r.markPriceRp);
-      return Number.isFinite(px) ? px : null;
+      return safeUpstreamNum(r.markPriceRp);
     } catch {
       return null;
     }

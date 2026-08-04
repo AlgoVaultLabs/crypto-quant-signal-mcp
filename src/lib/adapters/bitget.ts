@@ -11,7 +11,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.bitget.com';
@@ -59,13 +59,17 @@ const BAR_MS: Record<string, number> = {
   '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
 };
 
-function mapBitgetCandle(c: string[]): Candle {
+// SV-04: returns null for a candle whose OHLC does not parse strictly, so callers
+// drop it rather than emit a NaN/wrong-but-finite price into the signal engine.
+function mapBitgetCandle(c: string[]): Candle | null {
+  const open = safeUpstreamNum(c[1]);
+  const high = safeUpstreamNum(c[2]);
+  const low = safeUpstreamNum(c[3]);
+  const close = safeUpstreamNum(c[4]);
+  if (open === null || high === null || low === null || close === null) return null;
   return {
     time: parseInt(c[0]),
-    open: parseFloat(c[1]),
-    high: parseFloat(c[2]),
-    low: parseFloat(c[3]),
-    close: parseFloat(c[4]),
+    open, high, low, close,
     volume: parseFloat(c[5]),
   };
 }
@@ -147,7 +151,7 @@ export class BitgetAdapter implements ExchangeAdapter {
       startTime,
       limit: 200,
     });
-    const candles = (data || []).map(mapBitgetCandle);
+    const candles = (data || []).flatMap(c => mapBitgetCandle(c) ?? []);
 
     // `/market/candles` only holds the recent window, so a HISTORICAL startTime yields the newest
     // bars instead of bars AT startTime (the labeler then filters them all → noKlines). Detect the
@@ -167,7 +171,7 @@ export class BitgetAdapter implements ExchangeAdapter {
       endTime,
       limit: 200,
     });
-    const histAsc = (hist || []).map(mapBitgetCandle).filter(c => c.time >= startTime);
+    const histAsc = (hist || []).flatMap(c => mapBitgetCandle(c) ?? []).filter(c => c.time >= startTime);
     return histAsc.length > 0 ? histAsc : candles;
   }
 
@@ -205,16 +209,21 @@ export class BitgetAdapter implements ExchangeAdapter {
     const oiEntry = oiData.openInterestList?.[0];
 
     // R2: Bitget funding is per-8h period → annualized = raw × 1095 (8h periods/year)
-    const fundingRaw = parseFloat(fundingRate);
+    // SV-04: default-deny — an invalid markPrice throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(fundingRate) ?? 0;
+    const markPx = safeUpstreamNum(ticker.markPrice);
+    if (markPx === null) throw new Error('Bitget getAssetContext: invalid markPrice');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(oiEntry?.size || '0'),
-      prevDayPx: parseFloat(ticker.open24h || '0'),
+      openInterest: safeUpstreamNum(oiEntry?.size) ?? 0,
+      prevDayPx: safeUpstreamNum(ticker.open24h) ?? 0,
       volume24h: parseFloat(ticker.quoteVolume || '0'),
-      oraclePx: parseFloat(ticker.markPrice || '0'),
-      markPx: parseFloat(ticker.markPrice || '0'),
+      oraclePx: markPx,
+      markPx,
     };
   }
 
@@ -230,7 +239,7 @@ export class BitgetAdapter implements ExchangeAdapter {
         coin: fromBitgetSymbol(entry.symbol),
         venues: [{
           venue: 'BitgetPerp',
-          fundingRate: parseFloat(entry.fundingRate || '0'),
+          fundingRate: safeUpstreamNum(entry.fundingRate) ?? 0,
           nextFundingTime: parseInt(entry.nextFundingTime || '0'),
         }],
       }));
@@ -245,10 +254,9 @@ export class BitgetAdapter implements ExchangeAdapter {
         pageSize: 100,
       });
 
-      return (data || []).map(r => ({
-        time: parseInt(r.fundingTime),
-        fundingRate: parseFloat(r.fundingRate),
-      }));
+      return (data || [])
+        .map(r => ({ time: parseInt(r.fundingTime), fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
     } catch {
       return [];
     }
@@ -267,7 +275,7 @@ export class BitgetAdapter implements ExchangeAdapter {
       if (!ticker || ticker.symbol !== symbol) {
         throw new Error(`BITGET_TICKER_SYMBOL_MISMATCH: requested ${symbol}, got ${ticker?.symbol ?? 'none'}`);
       }
-      return parseFloat(ticker.markPrice);
+      return safeUpstreamNum(ticker.markPrice);
     } catch {
       return null;
     }

@@ -11,7 +11,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://fapi.binance.com';
@@ -268,14 +268,20 @@ export class BinanceAdapter implements ExchangeAdapter {
       limit: 200,
     });
 
-    return raw.map(c => ({
-      open: parseFloat(String(c[1])),
-      high: parseFloat(String(c[2])),
-      low: parseFloat(String(c[3])),
-      close: parseFloat(String(c[4])),
-      volume: parseFloat(String(c[5])),
-      time: c[0] as number,
-    }));
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine (`parseFloat('12abc')` → 12).
+    return raw.flatMap(c => {
+      const open = safeUpstreamNum(c[1]);
+      const high = safeUpstreamNum(c[2]);
+      const low = safeUpstreamNum(c[3]);
+      const close = safeUpstreamNum(c[4]);
+      if (open === null || high === null || low === null || close === null) return [];
+      return [{
+        open, high, low, close,
+        volume: parseFloat(String(c[5])),
+        time: c[0] as number,
+      }];
+    });
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
@@ -304,12 +310,17 @@ export class BinanceAdapter implements ExchangeAdapter {
     }
 
     // R2: Binance funding is per-8h period → annualized = raw × 1095 (8h periods/year)
-    const fundingRaw = parseFloat(premiumIndex.lastFundingRate || '0');
+    // SV-04: default-deny — an invalid markPrice throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(premiumIndex.lastFundingRate) ?? 0;
+    const markPx = safeUpstreamNum(premiumIndex.markPrice);
+    if (markPx === null) throw new Error('Binance getAssetContext: invalid markPrice');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(oi.openInterest || '0'),
+      openInterest: safeUpstreamNum(oi.openInterest) ?? 0,
       // OPS-TRADE-CALL-CLUSTER-W1 CH3 (OPS-BOT-NO-TRADE-CALLS-AUDIT-W1 surfaced
       // indicators.oi_change_pct: 0 on every BINANCE probe; Plan-Mode #1 root-cause
       // = Path (a)): Binance Futures `prevClosePrice` field is undefined on
@@ -318,10 +329,10 @@ export class BinanceAdapter implements ExchangeAdapter {
       // non-zero priceChange / oi_change_pct matching the API's priceChangePercent
       // field exactly. BYBIT/OKX/BITGET adapters use their own per-venue 24h-prev
       // fields that already work correctly (BYBIT uses prevPrice24h).
-      prevDayPx: parseFloat(ticker.openPrice || ticker.prevClosePrice || '0'),
+      prevDayPx: safeUpstreamNum(ticker.openPrice) ?? safeUpstreamNum(ticker.prevClosePrice) ?? 0,
       volume24h: parseFloat(ticker.quoteVolume || '0'),
-      oraclePx: parseFloat(premiumIndex.markPrice || '0'),
-      markPx: parseFloat(premiumIndex.markPrice || '0'),
+      oraclePx: markPx,
+      markPx,
     };
   }
 
@@ -338,7 +349,7 @@ export class BinanceAdapter implements ExchangeAdapter {
         coin: fromBinanceSymbol(entry.symbol),
         venues: [{
           venue: 'BinPerp',
-          fundingRate: parseFloat(entry.lastFundingRate || '0'),
+          fundingRate: safeUpstreamNum(entry.lastFundingRate) ?? 0,
           nextFundingTime: entry.nextFundingTime || 0,
         }],
       }));
@@ -357,11 +368,8 @@ export class BinanceAdapter implements ExchangeAdapter {
         limit: 1000,
       });
       return (raw || [])
-        .filter(r => r.fundingRate != null && !isNaN(parseFloat(r.fundingRate)))
-        .map(r => ({
-          time: r.fundingTime,
-          fundingRate: parseFloat(r.fundingRate),
-        }));
+        .map(r => ({ time: r.fundingTime, fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
     } catch {
       return [];
     }
@@ -371,7 +379,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     try {
       const symbol = toBinanceSymbol(coin);
       const data = await binGet<BinancePremiumIndex>('/fapi/v1/premiumIndex', { symbol });
-      return parseFloat(data.markPrice);
+      return safeUpstreamNum(data.markPrice);
     } catch {
       return null;
     }

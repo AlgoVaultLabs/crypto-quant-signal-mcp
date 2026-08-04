@@ -11,7 +11,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://www.okx.com';
@@ -63,13 +63,17 @@ const BAR_MS: Record<string, number> = {
   '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000,
 };
 
-function mapOkxCandle(c: string[]): Candle {
+// SV-04: returns null for a candle whose OHLC does not parse strictly, so callers
+// drop it rather than emit a NaN/wrong-but-finite price into the signal engine.
+function mapOkxCandle(c: string[]): Candle | null {
+  const open = safeUpstreamNum(c[1]);
+  const high = safeUpstreamNum(c[2]);
+  const low = safeUpstreamNum(c[3]);
+  const close = safeUpstreamNum(c[4]);
+  if (open === null || high === null || low === null || close === null) return null;
   return {
     time: parseInt(c[0], 10),
-    open: parseFloat(c[1]),
-    high: parseFloat(c[2]),
-    low: parseFloat(c[3]),
-    close: parseFloat(c[4]),
+    open, high, low, close,
     volume: parseFloat(c[5]),
   };
 }
@@ -185,7 +189,7 @@ export class OKXAdapter implements ExchangeAdapter {
       before: startTime,
       limit: 100,
     });
-    const candles = (resp.data || []).reverse().map(mapOkxCandle);
+    const candles = (resp.data || []).reverse().flatMap(c => mapOkxCandle(c) ?? []);
 
     // `/market/candles` only holds the recent window (~1440 bars), so a HISTORICAL startTime
     // yields the newest bars instead of bars AT startTime (the labeler then filters them all out
@@ -205,7 +209,7 @@ export class OKXAdapter implements ExchangeAdapter {
       after,
       limit: 100,
     });
-    const histAsc = (hist.data || []).reverse().map(mapOkxCandle).filter(c => c.time >= startTime);
+    const histAsc = (hist.data || []).reverse().flatMap(c => mapOkxCandle(c) ?? []).filter(c => c.time >= startTime);
     return histAsc.length > 0 ? histAsc : candles;
   }
 
@@ -250,16 +254,21 @@ export class OKXAdapter implements ExchangeAdapter {
     const mark = assertOkxRow(markResp.data[0], instId, 'mark-price');
 
     // R2: OKX funding is per-8h period → annualized = raw × 1095 (8h periods/year)
-    const fundingRaw = parseFloat(funding?.fundingRate || '0');
+    // SV-04: default-deny — an invalid markPx throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(funding?.fundingRate) ?? 0;
+    const markPx = safeUpstreamNum(mark?.markPx);
+    if (markPx === null) throw new Error('OKX getAssetContext: invalid markPx');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(oi?.oi || '0'),
-      prevDayPx: parseFloat(ticker?.open24h || '0'),
+      openInterest: safeUpstreamNum(oi?.oi) ?? 0,
+      prevDayPx: safeUpstreamNum(ticker?.open24h) ?? 0,
       volume24h: parseFloat(ticker?.volCcy24h || '0'),
-      oraclePx: parseFloat(mark?.markPx || '0'),
-      markPx: parseFloat(mark?.markPx || '0'),
+      oraclePx: markPx,
+      markPx,
     };
   }
 
@@ -287,8 +296,8 @@ export class OKXAdapter implements ExchangeAdapter {
         const fr = fundingResp.data[0];
         if (!fr) continue;
 
-        const rate = parseFloat(fr.fundingRate);
-        if (isNaN(rate)) continue;
+        const rate = safeUpstreamNum(fr.fundingRate);
+        if (rate === null) continue;
 
         results.push({
           coin: fromOKXInstId(ticker.instId),
@@ -324,11 +333,8 @@ export class OKXAdapter implements ExchangeAdapter {
       const records = (resp.data || []).reverse();
 
       return records
-        .filter(r => r.fundingRate != null && !isNaN(parseFloat(r.fundingRate)))
-        .map(r => ({
-          time: parseInt(r.fundingTime, 10),
-          fundingRate: parseFloat(r.fundingRate),
-        }));
+        .map(r => ({ time: parseInt(r.fundingTime, 10), fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
     } catch {
       return [];
     }
@@ -342,7 +348,7 @@ export class OKXAdapter implements ExchangeAdapter {
         instId,
       });
       const mark = resp.data[0];
-      return mark ? parseFloat(mark.markPx) : null;
+      return mark ? safeUpstreamNum(mark.markPx) : null;
     } catch {
       return null;
     }

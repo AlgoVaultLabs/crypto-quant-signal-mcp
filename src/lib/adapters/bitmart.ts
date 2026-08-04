@@ -31,7 +31,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
@@ -160,15 +160,21 @@ export class BitmartAdapter implements ExchangeAdapter {
       throw new Error(`Bitmart: kline returned non-OK envelope (code=${env?.code} msg=${env?.message})`);
     }
 
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
     return env.data
-      .map(r => ({
-        time: r.timestamp * 1000,   // sec → ms
-        open: parseFloat(r.open_price),
-        high: parseFloat(r.high_price),
-        low: parseFloat(r.low_price),
-        close: parseFloat(r.close_price),
-        volume: parseFloat(r.volume),
-      }))
+      .flatMap(r => {
+        const open = safeUpstreamNum(r.open_price);
+        const high = safeUpstreamNum(r.high_price);
+        const low = safeUpstreamNum(r.low_price);
+        const close = safeUpstreamNum(r.close_price);
+        if (open === null || high === null || low === null || close === null) return [];
+        return [{
+          time: r.timestamp * 1000,   // sec → ms
+          open, high, low, close,
+          volume: parseFloat(r.volume),
+        }];
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -184,8 +190,13 @@ export class BitmartAdapter implements ExchangeAdapter {
       throw new Error(`Bitmart: symbol ${symbol} not found in /contract/public/details (coin=${coin})`);
     }
 
-    const fundingRaw = parseFloat(row.funding_rate || '0');
-    const last = parseFloat(row.last_price || row.index_price || '0');
+    // SV-04: default-deny — an unparseable mark/index/last chain throws (the 3-tier
+    // fallback fires) rather than scoring a wrong-but-finite price; non-price fields
+    // fall back to a safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(row.funding_rate) ?? 0;
+    const last = safeUpstreamNum(row.last_price) ?? safeUpstreamNum(row.index_price) ?? 0;
+    const markPx = safeUpstreamNum(row.mark_price) ?? safeUpstreamNum(row.index_price) ?? safeUpstreamNum(row.last_price);
+    if (markPx === null) throw new Error('Bitmart getAssetContext: invalid mark/index/last price');
     // /contract/public/details exposes no 24h-open or change field (verified live
     // 2026-06-11) — derive the 24h-prior price from the hourly kline (open of the
     // earliest candle in a trailing-24h window); fall back to the hi/lo midpoint,
@@ -198,18 +209,23 @@ export class BitmartAdapter implements ExchangeAdapter {
       prevDayPx = NaN;
     }
     if (!Number.isFinite(prevDayPx) || prevDayPx <= 0) {
-      prevDayPx = reconstructPrevDayOpen(last, NaN, parseFloat(row.high_24h || ''), parseFloat(row.low_24h || ''));
+      prevDayPx = reconstructPrevDayOpen(
+        last,
+        NaN,
+        safeUpstreamNum(row.high_24h) ?? undefined,
+        safeUpstreamNum(row.low_24h) ?? undefined,
+      );
     }
     // Bitmart funding cadence 8h × 1095 annualization (standard).
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(row.open_interest || '0'),
+      openInterest: safeUpstreamNum(row.open_interest) ?? 0,
       prevDayPx,
       volume24h: parseFloat(row.vol_24h || '0'),
-      oraclePx: parseFloat(row.index_price || row.mark_price || row.last_price || '0'),
-      markPx: parseFloat(row.mark_price || row.index_price || row.last_price || '0'),
+      oraclePx: safeUpstreamNum(row.index_price) ?? safeUpstreamNum(row.mark_price) ?? safeUpstreamNum(row.last_price) ?? markPx,
+      markPx,
     };
   }
 
@@ -224,7 +240,8 @@ export class BitmartAdapter implements ExchangeAdapter {
       const env = await bitmartGet<BitmartFundingRateEnvelope>('/contract/public/funding-rate', { symbol });
       if (!env || env.code !== 1000 || !env.data) return [];
       const time = env.data.funding_time || Date.now();
-      const rate = parseFloat(env.data.rate_value || '0');
+      const rate = safeUpstreamNum(env.data.rate_value);
+      if (rate === null) return [];
       return [{ time, fundingRate: rate }];
     } catch {
       return [];
@@ -237,8 +254,8 @@ export class BitmartAdapter implements ExchangeAdapter {
       const env = await bitmartGet<BitmartDetailsEnvelope>('/contract/public/details');
       const row = env?.data?.symbols?.find(s => s.symbol === symbol);
       if (!row) return null;
-      const px = parseFloat(row.mark_price || row.index_price || row.last_price || '0');
-      return Number.isFinite(px) && px > 0 ? px : null;
+      const px = safeUpstreamNum(row.mark_price) ?? safeUpstreamNum(row.index_price) ?? safeUpstreamNum(row.last_price);
+      return px !== null && px > 0 ? px : null;
     } catch {
       return null;
     }

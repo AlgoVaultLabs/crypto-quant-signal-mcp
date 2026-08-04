@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const calls: string[] = [];
-vi.mock('../../src/lib/adapters/_upstream-fetch.js', () => ({
+// `safeUpstreamNum` is a PURE strict-parse helper the candle mapper depends on — pull the
+// real one through rather than stubbing it, or the mapper silently sees `undefined`.
+vi.mock('../../src/lib/adapters/_upstream-fetch.js', async (orig) => ({
+  ...(await orig<typeof import('../../src/lib/adapters/_upstream-fetch.js')>()),
   VENUE_FETCH_CONFIGS: { BITGET: {} },
   upstreamFetch: vi.fn(async (_cfg: unknown, req: { url: string }) => {
     calls.push(req.url);

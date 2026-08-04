@@ -42,7 +42,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.hbdm.com';
@@ -252,17 +252,24 @@ export class HTXAdapter implements ExchangeAdapter {
 
     // HTX funding cadence is 8h (settlement_period verified live); annualized
     // = rate × 1095 (8h periods per year). Same as all other CEXes.
-    const fundingRaw = parseFloat(funding.data.funding_rate || '0');
+    // SV-04: default-deny — an invalid close throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(funding.data.funding_rate) ?? 0;
     const oiUsdt = oi?.data?.[0]?.value ?? 0;
+    // HTX `close` is the last trade price; treated as mark for this shadow venue, and
+    // the merged endpoint exposes no explicit index price so it doubles as oraclePx.
+    const markPx = safeUpstreamNum(merged.tick.close);
+    if (markPx === null) throw new Error('HTX getAssetContext: invalid tick.close');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
       openInterest: oiUsdt,
-      prevDayPx: parseFloat(merged.tick.open || '0'),    // 24h open
+      prevDayPx: safeUpstreamNum(merged.tick.open) ?? 0,    // 24h open
       volume24h: parseFloat(merged.tick.trade_turnover || '0'),    // USDT 24h vol
-      oraclePx: parseFloat(merged.tick.close || '0'),    // HTX merged endpoint doesn't expose explicit index price; use close as proxy
-      markPx: parseFloat(merged.tick.close || '0'),      // HTX `close` is last trade price; treated as mark for shadow venue
+      oraclePx: markPx,
+      markPx,
     };
   }
 
@@ -287,8 +294,7 @@ export class HTXAdapter implements ExchangeAdapter {
       const contractCode = toHtxSymbol(coin);
       const env = await htxGet<HtxMergedTickerEnvelope>('/linear-swap-ex/market/detail/merged', { contract_code: contractCode });
       if (!env?.tick) return null;
-      const px = parseFloat(env.tick.close);
-      return Number.isFinite(px) ? px : null;
+      return safeUpstreamNum(env.tick.close);
     } catch {
       return null;
     }

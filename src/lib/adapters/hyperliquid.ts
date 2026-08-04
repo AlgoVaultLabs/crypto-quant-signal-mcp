@@ -15,7 +15,7 @@ import type {
 } from '../../types.js';
 import { UpstreamRateLimitError } from '../errors.js';
 import { type WeightClass } from '../upstream-weight-budget.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { coalescedCache } from '../coalesced-cache.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
@@ -188,14 +188,20 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       { type: 'candleSnapshot', req },
       { weightHint: expectedCandleItems(interval, startTime, endTime) },
     );
-    return (raw || []).map(c => ({
-      open: parseFloat(c.o),
-      high: parseFloat(c.h),
-      low: parseFloat(c.l),
-      close: parseFloat(c.c),
-      volume: parseFloat(c.v),
-      time: c.t,
-    }));
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
+    return (raw || []).flatMap(c => {
+      const open = safeUpstreamNum(c.o);
+      const high = safeUpstreamNum(c.h);
+      const low = safeUpstreamNum(c.l);
+      const close = safeUpstreamNum(c.c);
+      if (open === null || high === null || low === null || close === null) return [];
+      return [{
+        open, high, low, close,
+        volume: parseFloat(c.v),
+        time: c.t,
+      }];
+    });
   }
 
   async getAssetContext(coin: string, dex: DexType = 'standard'): Promise<AssetContext> {
@@ -214,16 +220,21 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }
     const ctx = ctxs[idx];
     // R2: HL funding is per-1h period → annualized = raw × 8760 (1h periods/year)
-    const fundingRaw = parseFloat(ctx.funding || '0');
+    // SV-04: default-deny — an invalid markPx throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(ctx.funding) ?? 0;
+    const markPx = safeUpstreamNum(ctx.markPx);
+    if (markPx === null) throw new Error('Hyperliquid getAssetContext: invalid markPx');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 8760,
-      openInterest: parseFloat(ctx.openInterest || '0'),
-      prevDayPx: parseFloat(ctx.prevDayPx || '0'),
+      openInterest: safeUpstreamNum(ctx.openInterest) ?? 0,
+      prevDayPx: safeUpstreamNum(ctx.prevDayPx) ?? 0,
       volume24h: parseFloat(ctx.dayNtlVlm || '0'),
-      oraclePx: parseFloat(ctx.oraclePx || '0'),
-      markPx: parseFloat(ctx.markPx || '0'),
+      oraclePx: safeUpstreamNum(ctx.oraclePx) ?? markPx,
+      markPx,
     };
   }
 
@@ -233,15 +244,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       coin: entry[0],
       venues: (entry[1] || [])
         .filter(([, data]) => data != null && data.fundingRate != null)
-        .filter(([, data]) => {
-          const rate = parseFloat(data.fundingRate);
-          return !isNaN(rate); // Item 5: reject NaN instead of silently converting to 0
-        })
+        // Item 5: reject an unparseable rate instead of silently converting to 0.
         .map(([venue, data]) => ({
           venue,
-          fundingRate: parseFloat(data.fundingRate),
+          fundingRate: safeUpstreamNum(data.fundingRate),
           nextFundingTime: data.nextFundingTime ?? 0,
-        })),
+        }))
+        .filter((v): v is { venue: string; fundingRate: number; nextFundingTime: number } => v.fundingRate !== null),
     }));
   }
 
@@ -257,11 +266,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         { weightHint: Math.max(1, Math.ceil((Date.now() - startTime) / 3_600_000)) },
       );
       return (raw || [])
-        .filter(r => r.fundingRate != null && !isNaN(parseFloat(r.fundingRate)))
-        .map(r => ({
-          time: r.time,
-          fundingRate: parseFloat(r.fundingRate),
-        }));
+        .map(r => ({ time: r.time, fundingRate: safeUpstreamNum(r.fundingRate) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null);
     } catch {
       return []; // Best-effort: return empty on failure
     }

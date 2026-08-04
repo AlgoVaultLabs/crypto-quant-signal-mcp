@@ -27,7 +27,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://api.gateio.ws';
@@ -133,14 +133,20 @@ export class GateAdapter implements ExchangeAdapter {
       limit: 200,
     });
 
-    return (raw || []).map(c => ({
-      time: c.t * 1000,    // Gate returns seconds; AlgoVault canonical is ms
-      open: parseFloat(c.o),
-      high: parseFloat(c.h),
-      low: parseFloat(c.l),
-      close: parseFloat(c.c),
-      volume: typeof c.v === 'number' ? c.v : parseFloat(String(c.v)),
-    }));
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
+    return (raw || []).flatMap(c => {
+      const open = safeUpstreamNum(c.o);
+      const high = safeUpstreamNum(c.h);
+      const low = safeUpstreamNum(c.l);
+      const close = safeUpstreamNum(c.c);
+      if (open === null || high === null || low === null || close === null) return [];
+      return [{
+        time: c.t * 1000,    // Gate returns seconds; AlgoVault canonical is ms
+        open, high, low, close,
+        volume: typeof c.v === 'number' ? c.v : parseFloat(String(c.v)),
+      }];
+    });
   }
 
   async getAssetContext(coin: string, _dex?: DexType): Promise<AssetContext> {
@@ -159,16 +165,25 @@ export class GateAdapter implements ExchangeAdapter {
 
     // Gate funding is per-8h period (verified via Plan-Mode probe: funding_interval=28800s);
     // annualized = rate × 1095 (8h periods per year). Same as Binance/Bybit/Bitget.
-    const fundingRaw = parseFloat(t.funding_rate || '0');
+    // SV-04: default-deny — an invalid mark_price throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(t.funding_rate) ?? 0;
+    const markPx = safeUpstreamNum(t.mark_price);
+    if (markPx === null) throw new Error('Gate getAssetContext: invalid mark_price');
+    // Gate's `change_percentage` is a percent-NUMBER (e.g. "5.2"), not a fraction.
+    // Formula preserved exactly: prevDay = last − last × (pct / 100).
+    const last = safeUpstreamNum(t.last) ?? 0;
+    const changePct = safeUpstreamNum(t.change_percentage) ?? 0;
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(t.total_size || '0'),
-      prevDayPx: parseFloat(t.last || '0') - parseFloat(t.last || '0') * (parseFloat(t.change_percentage || '0') / 100),
+      openInterest: safeUpstreamNum(t.total_size) ?? 0,
+      prevDayPx: last - last * (changePct / 100),
       volume24h: parseFloat(t.volume_24h_quote || '0'),
-      oraclePx: parseFloat(t.index_price || t.mark_price || '0'),
-      markPx: parseFloat(t.mark_price || '0'),
+      oraclePx: safeUpstreamNum(t.index_price) ?? markPx,
+      markPx,
     };
   }
 
@@ -182,7 +197,7 @@ export class GateAdapter implements ExchangeAdapter {
           coin: fromGateSymbol(c.name),
           venues: [{
             venue: 'GatePerp',
-            fundingRate: parseFloat(c.funding_rate || '0'),
+            fundingRate: safeUpstreamNum(c.funding_rate) ?? 0,
             nextFundingTime: (c.funding_next_apply || 0) * 1000, // seconds → ms
             // SEC-06: per-CONTRACT funding period. Gate publishes funding_interval in SECONDS
             // and genuinely mixes cadences (live 2026-07-29: 520x 8h, 336x 4h, 4x 1h of 860).
@@ -202,11 +217,8 @@ export class GateAdapter implements ExchangeAdapter {
         limit: 1000,
       });
       return (raw || [])
-        .filter(r => r.r != null && !isNaN(parseFloat(r.r)))
-        .map(r => ({
-          time: r.t * 1000,
-          fundingRate: parseFloat(r.r),
-        }))
+        .map(r => ({ time: r.t * 1000, fundingRate: safeUpstreamNum(r.r) }))
+        .filter((r): r is { time: number; fundingRate: number } => r.fundingRate !== null)
         .filter(r => r.time >= startTime);
     } catch {
       return [];
@@ -223,7 +235,7 @@ export class GateAdapter implements ExchangeAdapter {
       if (!t || t.contract !== contract) {
         throw new Error(`GATE_TICKER_CONTRACT_MISMATCH: requested ${contract}, got ${t?.contract ?? 'none'} from /api/v4/futures/usdt/tickers`);
       }
-      return parseFloat(t.mark_price);
+      return safeUpstreamNum(t.mark_price);
     } catch {
       return null;
     }
