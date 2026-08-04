@@ -36,6 +36,35 @@ export function operatorExclusionSql(column = 'payer_wallet'): { clause: string;
   return { clause: ` AND lower(${column}) NOT IN (${placeholders})`, params: [...OPERATOR_X402_WALLETS] };
 }
 
+/**
+ * The ONE predicate for "this row has a real, external, attributable payer wallet".
+ *
+ * Every distinct-paying-wallet / repeat-payer / census query MUST use this and nothing else. The
+ * question is asked in three places; asked three different ways it produced three different answers
+ * (single-derivation rule — a second hand-written predicate is a second thing to forget).
+ *
+ * It excludes two disjoint things, and the FIRST is the defect this helper exists to close:
+ *
+ * 1. **Unattributable rows.** `payer_wallet` is `TEXT NOT NULL DEFAULT ''` and the write path stores
+ *    `payerWallet ?? ''` (`x402-idempotency-store.ts:113`). That is CORRECT and deliberate per
+ *    **SEC-49**: under the composite PK `(payer_wallet, nonce)` a NULL would make every
+ *    unattributable row DISTINCT in Postgres (`NULL != NULL`), so an unattributable replay would
+ *    bypass the claim and re-serve for free. `''` dedupes; NULL does not. **Never normalise `''` to
+ *    NULL — that re-opens a closed replay hole.** But `''` is not a wallet, and the `IS NOT NULL`
+ *    test these queries used passes it happily, as does `lower('') NOT IN (<operator>)`. Measured
+ *    2026-08-04: 4 pre-instrumentation rows survived both filters and counted as a paying wallet.
+ * 2. **Operator self-settle wallets** (`operatorExclusionSql`) — the `instrumentation_artifact`
+ *    pattern; composed here rather than re-derived, so there is exactly one operator list.
+ *
+ * `trim()` and `lower()` are both supported on Postgres and SQLite, so this stays dual-backend.
+ * Pair it with `COUNT(DISTINCT lower(trim(<column>)))` so the count projects the same normalisation
+ * the filter applies.
+ */
+export function externalPayerSql(column = 'payer_wallet'): { clause: string; params: string[] } {
+  const { clause: opClause, params } = operatorExclusionSql(`trim(${column})`);
+  return { clause: ` AND ${column} IS NOT NULL AND trim(${column}) <> ''${opClause}`, params };
+}
+
 /** Truncate an address for operator-only display: `0x76de…c755`. NEVER publish the full address. */
 export function truncateWallet(w: string): string {
   return w.length >= 10 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w;

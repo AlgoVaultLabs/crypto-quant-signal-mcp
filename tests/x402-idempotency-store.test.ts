@@ -124,7 +124,7 @@ describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-
   });
 
   it('distinct-wallet aggregation EXCLUDES operator self-settle (Q2/R4 — the exact conversion)', async () => {
-    const { operatorExclusionSql } = await import('../src/lib/x402-operator-wallets.js');
+    const { externalPayerSql } = await import('../src/lib/x402-operator-wallets.js');
     const { dbQuery } = await import('../src/lib/performance-db.js');
     const OP = '0x76de895fdd3f7b5814eb59ccd244b06b47d8c755'; // the operator harness buyer (excluded)
     const REAL1 = '0xAAAA000000000000000000000000000000000001'; // mixed-case → lower() normalizes
@@ -137,9 +137,13 @@ describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-
     await store.tryClaimPayment(n('0xe1'), 'get_trade_signal', '20000', REAL1);
     await store.tryClaimPayment(n('0xe2'), 'get_trade_signal', '20000', REAL2);
 
-    const { clause, params } = operatorExclusionSql();
+    // REVENUE-METER-TRUTH-W1 CH1: use the ONE shared predicate. This assertion previously ran the
+    // hand-written `payer_wallet IS NOT NULL${clause}` form, which passed the empty string — so the
+    // test documented the defect as correct behaviour. Fixing the predicate without fixing the test
+    // that encodes it leaves the guard half-disabled (CLAUDE.md: exemption + its test are a pair).
+    const { clause, params } = externalPayerSql();
     const excluded = await dbQuery<{ c: number | string }>(
-      `SELECT COUNT(DISTINCT lower(payer_wallet)) AS c FROM processed_x402_payments WHERE payer_wallet IS NOT NULL${clause}`,
+      `SELECT COUNT(DISTINCT lower(trim(payer_wallet))) AS c FROM processed_x402_payments WHERE 1=1${clause}`,
       params,
     );
     expect(Number(excluded[0].c)).toBe(2); // 2 real wallets; operator (3 payments → 1 wallet) EXCLUDED

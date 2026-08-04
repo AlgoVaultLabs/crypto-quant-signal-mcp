@@ -338,7 +338,10 @@ async function bindAndClaimX402(
   const amount = typeof amtRaw === 'string' ? amtRaw : amtRaw != null ? String(amtRaw) : '';
   const nonce = extractPaymentNonce(pendingSettlement?.paymentPayload);
   // OPS-X402-WALLET-ATTRIBUTION-W1: capture the ERC-3009 payer wallet additively (fail-open —
-  // undefined → NULL column, never affects the claim decision). Base/USDC rail (MCP x-payment).
+  // undefined → the EMPTY STRING, never affects the claim decision). Base/USDC rail (MCP x-payment).
+  // _(Corrected 2026-08-04 REVENUE-METER-TRUTH-W1 CH1 — this said "NULL column"; see the identical
+  // note at x402-http-routes.ts. The column is `NOT NULL DEFAULT ''` per SEC-49 and the store writes
+  // `payerWallet ?? ''`, so no NULL is reachable from either writer.)_
   const payerWallet = extractPayerWallet(pendingSettlement?.paymentPayload);
   const claimed = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet);
   if (!claimed) {
