@@ -31,23 +31,72 @@
  */
 import { dbExec, dbQuery } from './performance-db.js';
 
+/**
+ * REVENUE-METER-TRUTH-W2 CH3 — the settlement vocabulary, imported rather than re-declared.
+ *
+ * `SettlementClass` is owned by the on-chain classifier (`src/scripts/backfill-x402-payer-wallet.ts`),
+ * which is the only thing that can actually decide these values. This is a **type-only** import, so
+ * it is erased at compile time: no runtime dependency, no import cycle, and no lib→scripts coupling
+ * at execution. What it buys is that `tsc` rejects a typo or a private fork of the vocabulary here —
+ * which is the single-derivation property that matters, since a second copy of these strings is
+ * exactly how two meters start disagreeing about what "paid" means.
+ *
+ * If a THIRD consumer appears, extract the union to a pure leaf (the `okx-a2mcp-config.ts` pattern)
+ * rather than adding another type-only reach across the layer boundary — 3-example threshold.
+ */
+import type { SettlementClass } from '../scripts/backfill-x402-payer-wallet.js';
+
+/**
+ * A new claim is UNVERIFIED by construction. `tryClaimPayment` runs when a buyer PRESENTS an
+ * authorization; nothing at that moment has checked the chain, so the honest initial state is
+ * "claimed, not settled". Promotion to SETTLED/OPERATOR is the scan's job
+ * (`backfill-x402-payer-wallet.ts --classify --execute`).
+ *
+ * Consequence worth stating rather than discovering: any consumer that counts only SETTLED rows
+ * reads ZERO until a scan runs. That is the truthful reading, not a regression — W1 CH2 measured
+ * SETTLED=0 across all 18 historical rows.
+ */
+const CLAIM_INITIAL_SETTLEMENT_STATE: SettlementClass = 'CLAIMED_UNSETTLED';
+
+/** Rail written when a caller does not declare one — never guessed on their behalf. */
+const RAIL_UNKNOWN = 'unknown';
+
+/**
+ * The Base/USDC rail. Both writers of this table settle on Base, so this is structural today.
+ * `rail` describes ROWS THAT EXIST, never all x402 revenue: OKX `/a2mcp/*` (X-Layer/USDT0) does not
+ * write here at all, so a SUM over this table is a Base-only figure and must be labelled as one.
+ * Making OKX record here is `OPS-A2MCP-SETTLEMENT-RECORDING-W{NEXT}` — filed, not fixed.
+ */
+export const RAIL_BASE_USDC = 'base-usdc';
+
 const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   CREATE TABLE IF NOT EXISTS processed_x402_payments (
     nonce TEXT NOT NULL,
     tool TEXT,
     amount TEXT,
     payer_wallet TEXT NOT NULL DEFAULT '',
+    settlement_state TEXT NOT NULL DEFAULT '${CLAIM_INITIAL_SETTLEMENT_STATE}',
+    rail TEXT NOT NULL DEFAULT '${RAIL_UNKNOWN}',
     created_at ${process.env.DATABASE_URL ? 'TIMESTAMPTZ' : 'TIMESTAMP'} DEFAULT ${process.env.DATABASE_URL ? 'now()' : "(datetime('now'))"},
     PRIMARY KEY (payer_wallet, nonce)
   );
   CREATE INDEX IF NOT EXISTS idx_processed_x402_payments_nonce ON processed_x402_payments (nonce);
   CREATE INDEX IF NOT EXISTS idx_processed_x402_payments_created_at ON processed_x402_payments (created_at);
+  CREATE INDEX IF NOT EXISTS idx_processed_x402_payments_settlement ON processed_x402_payments (settlement_state, created_at);
   ${process.env.DATABASE_URL ? 'ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS payer_wallet TEXT;' : ''}
+  ${process.env.DATABASE_URL ? `ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS settlement_state TEXT NOT NULL DEFAULT '${CLAIM_INITIAL_SETTLEMENT_STATE}';` : ''}
+  ${process.env.DATABASE_URL ? `ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS rail TEXT NOT NULL DEFAULT '${RAIL_UNKNOWN}';` : ''}
 `;
 // OPS-X402-WALLET-ATTRIBUTION-W1: `payer_wallet` is additive + nullable (nonce stays the PK /
 // idempotency key). Fresh DBs (SQLite tests + fresh PG) get it via CREATE TABLE; an EXISTING PG
 // table self-heals via the PG-only `ADD COLUMN IF NOT EXISTS` (SQLite has no such clause, but its
 // tables are fresh in tests). Prod was pre-applied via SSH → all three paths are no-ops there.
+//
+// REVENUE-METER-TRUTH-W2 CH3: `settlement_state` + `rail` follow the identical three-path shape
+// (migration 026 pre-applied on prod; fresh DBs via CREATE TABLE; existing PG self-heals). No CHECK
+// constraint on either — see 026's header: `tryClaimPayment` fails safe, so a constraint violation
+// would REFUSE PAYMENTS, which is the exact shape of the outage this arc already closed. The
+// vocabulary is enforced by the `SettlementClass` union and its tests, where a violation is cheap.
 
 let _initialized = false;
 
@@ -87,6 +136,10 @@ export async function tryClaimPayment(
   // Additive TRAILING optional param → every existing caller stays valid. NULL when absent
   // (fail-open) — it is metadata on the winning insert, it NEVER gates the claim.
   payerWallet?: string,
+  // REVENUE-METER-TRUTH-W2 CH3: the settlement rail. Additive TRAILING optional param, same
+  // contract as payerWallet above — metadata on the winning insert, NEVER a gate on the claim.
+  // Absent ⇒ RAIL_UNKNOWN: a caller that does not declare its rail does not get one guessed.
+  rail?: string,
 ): Promise<boolean> {
   if (!nonce) {
     // No usable idempotency key — fail safe (do not serve). Should not happen
@@ -98,19 +151,24 @@ export async function tryClaimPayment(
     ensureProcessedX402PaymentsSchema();
     const isPg = !!process.env.DATABASE_URL;
     const sql = isPg
-      ? `INSERT INTO processed_x402_payments (nonce, tool, amount, payer_wallet)
-         VALUES (?, ?, ?, ?)
+      ? `INSERT INTO processed_x402_payments (nonce, tool, amount, payer_wallet, settlement_state, rail)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (payer_wallet, nonce) DO NOTHING
          RETURNING nonce`
-      : `INSERT OR IGNORE INTO processed_x402_payments (nonce, tool, amount, payer_wallet)
-         VALUES (?, ?, ?, ?)
+      : `INSERT OR IGNORE INTO processed_x402_payments (nonce, tool, amount, payer_wallet, settlement_state, rail)
+         VALUES (?, ?, ?, ?, ?, ?)
          RETURNING nonce`;
     // Conflict is STILL arbitrated on the nonce PK (DO NOTHING / OR IGNORE) → dedup byte-identical;
     // payer_wallet rides only on the winning insert, and a replay's DO-NOTHING never overwrites it.
     // SEC-49: '' (not NULL) for an unextractable payer. Under the composite key a NULL would
     // make every such row DISTINCT in Postgres — NULL != NULL — so an unattributable replay
     // would bypass the claim entirely and re-serve for free. '' dedupes; NULL does not.
-    const inserted = await dbQuery<{ nonce: string }>(sql, [nonce, tool, amount, payerWallet ?? '']);
+    // CH3: settlement_state is NOT a parameter — a claim is unverified by construction, so the
+    // constant is the whole point. Passing it explicitly rather than leaning on the column DEFAULT
+    // keeps the two backends' behaviour identical and makes the value greppable from the call site.
+    const inserted = await dbQuery<{ nonce: string }>(sql, [
+      nonce, tool, amount, payerWallet ?? '', CLAIM_INITIAL_SETTLEMENT_STATE, rail ?? RAIL_UNKNOWN,
+    ]);
     // Row returned ⇒ this call won the insert ⇒ first use. Empty ⇒ replay.
     return inserted.length > 0;
   } catch (err) {

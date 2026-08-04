@@ -190,3 +190,77 @@ describe('extractPaymentNonce — x402 v2 payload shapes', () => {
     expect(store.extractPaymentNonce({ payload: { authorization: {} } })).toBeUndefined();
   });
 });
+
+/**
+ * REVENUE-METER-TRUTH-W2 CH3 — settlement state + rail are recorded AT INSERT.
+ *
+ * The file-level beforeEach/afterEach above give every describe a fresh temp-HOME SQLite DB, so
+ * these run against the real store and the real CREATE_PROCESSED_X402_PAYMENTS_SQL.
+ */
+describe('tryClaimPayment — settlement_state + rail at insert (CH3)', () => {
+  const n = (h: string) => (h + '0'.repeat(66)).slice(0, 66);
+
+  it('a new claim is CLAIMED_UNSETTLED — a claim is not a payment', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const { RAIL_BASE_USDC } = await import('../src/lib/x402-idempotency-store.js');
+    expect(await store.tryClaimPayment(n('0xa1'), 'get_trade_signal', '20000', '0xabc0000000000000000000000000000000000abc', RAIL_BASE_USDC)).toBe(true);
+    const rows = await dbQuery<{ settlement_state: string; rail: string }>(
+      'SELECT settlement_state, rail FROM processed_x402_payments WHERE nonce = ?', [n('0xa1')],
+    );
+    // Nothing at insert time has checked the chain, so the honest state is "claimed, unsettled".
+    // If this ever reads SETTLED at insert, the meter is lying again in the original direction.
+    expect(rows[0].settlement_state).toBe('CLAIMED_UNSETTLED');
+    expect(rows[0].rail).toBe('base-usdc');
+  });
+
+  it('a caller that declares no rail gets `unknown`, never a guessed default', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    await store.tryClaimPayment(n('0xa2'), 'get_market_regime', '20000', '0xdef0000000000000000000000000000000000def');
+    const rows = await dbQuery<{ rail: string }>('SELECT rail FROM processed_x402_payments WHERE nonce = ?', [n('0xa2')]);
+    expect(rows[0].rail).toBe('unknown');
+  });
+
+  it('the unattributed row still records both columns (SEC-49 empty-string payer)', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    await store.tryClaimPayment(n('0xa3'), 'get_trade_signal', '20000'); // no payer → ''
+    const rows = await dbQuery<{ payer_wallet: string; settlement_state: string; rail: string }>(
+      'SELECT payer_wallet, settlement_state, rail FROM processed_x402_payments WHERE nonce = ?', [n('0xa3')],
+    );
+    expect(rows[0].payer_wallet).toBe('');            // '' not NULL — SEC-49, still dedupes
+    expect(rows[0].settlement_state).toBe('CLAIMED_UNSETTLED');
+  });
+});
+
+/**
+ * AC 3.7 — the selector that decides which rows the classifier can SEE.
+ *
+ * This is the defect class of F7, executed as a test rather than trusted: `migrations/024` turned
+ * every NULL payer into '', which silently reduced a `WHERE payer_wallet IS NULL` selector to
+ * matching NOTHING, and no test could see it because the selector was an inline literal. The
+ * assertion below runs the EXPORTED selector against a real database containing exactly the prod
+ * shape, so it fails the moment the selector stops matching.
+ */
+describe('UNATTRIBUTED_SQL selects the rows it must (CH3, AC 3.7)', () => {
+  const n = (h: string) => (h + '0'.repeat(66)).slice(0, 66);
+
+  it('matches empty-string payers — the post-024 prod shape — and not real ones', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const { UNATTRIBUTED_SQL } = await import('../src/scripts/backfill-x402-payer-wallet.js');
+    await store.tryClaimPayment(n('0xb1'), 'get_trade_signal', '20000');            // '' unattributed
+    await store.tryClaimPayment(n('0xb2'), 'get_trade_signal', '20000', '   ');     // whitespace-only
+    await store.tryClaimPayment(n('0xb3'), 'get_trade_signal', '20000', '0xaaa0000000000000000000000000000000000aaa');
+
+    const hit = await dbQuery<{ c: number | string }>(
+      `SELECT COUNT(*) AS c FROM processed_x402_payments WHERE ${UNATTRIBUTED_SQL}`, [],
+    );
+    expect(Number(hit[0].c)).toBe(2); // the '' row and the whitespace row; the real payer excluded
+
+    // And the PRE-WIDENING selector, verbatim, on the same rows — it matches nothing, which is
+    // exactly how this job went dark for days without a single failing test.
+    const old = await dbQuery<{ c: number | string }>(
+      'SELECT COUNT(*) AS c FROM processed_x402_payments WHERE payer_wallet IS NULL', [],
+    );
+    expect(Number(old[0].c)).toBe(0);
+    expect(Number(hit[0].c)).toBeGreaterThan(Number(old[0].c));
+  });
+});

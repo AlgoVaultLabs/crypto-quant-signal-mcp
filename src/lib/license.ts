@@ -8,7 +8,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { verifyX402Payment, isX402Configured, paymentMatchesToolRoute, classifyToolRouteMismatch } from './x402.js';
-import { extractPaymentNonce, extractPayerWallet, tryClaimPayment } from './x402-idempotency-store.js';
+import { extractPaymentNonce, extractPayerWallet, tryClaimPayment, RAIL_BASE_USDC } from './x402-idempotency-store.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import { dbExec, dbRun, dbQuery, recordFunnelEvent } from './performance-db.js';
 import type { LicenseInfo, LicenseTier, SuggestedX402 } from '../types.js';
@@ -344,7 +344,9 @@ async function bindAndClaimX402(
   // note at x402-http-routes.ts. The column is `NOT NULL DEFAULT ''` per SEC-49 and the store writes
   // `payerWallet ?? ''`, so no NULL is reachable from either writer.)_
   const payerWallet = extractPayerWallet(pendingSettlement?.paymentPayload);
-  const claimed = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet);
+  // REVENUE-METER-TRUTH-W2 CH3: declare the rail — the MCP x-payment path is Base/USDC, the same
+  // rail as the HTTP /x402 route. Both writers declare it explicitly so `rail` is never inferred.
+  const claimed = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet, RAIL_BASE_USDC);
   if (!claimed) {
     return { reason: 'replayed' };
   }

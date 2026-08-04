@@ -34,7 +34,7 @@ import { clientIp } from './client-ip.js';
 // including paid x402/a2mcp, via the ONE canonical classifier — no second isbot impl.
 import { classifyTraffic } from './traffic-classifier.js';
 import { generate402Response, settleX402Async, paymentMatchesToolRoute } from './x402.js';
-import { tryClaimPayment, extractPaymentNonce, extractPayerWallet } from './x402-idempotency-store.js';
+import { tryClaimPayment, extractPaymentNonce, extractPayerWallet, RAIL_BASE_USDC } from './x402-idempotency-store.js';
 import { BAZAAR_ROUTES, bazaarResourceUrl, bazaarRouteDescription } from './x402-bazaar.js';
 import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
@@ -438,7 +438,10 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // per SEC-49, so the NULL described here has never existed. Read-side filters written against
       // that phantom NULL let 4 unattributable rows count as a paying wallet.)_
       const payerWallet = extractPayerWallet(pendingSettlement.paymentPayload);
-      const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet);
+      // REVENUE-METER-TRUTH-W2 CH3: declare the rail. This route settles Base/USDC; OKX /a2mcp/*
+      // does not write this table at all, so the column records what THIS writer knows, never a
+      // total across rails.
+      const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet, RAIL_BASE_USDC);
       if (!claimed) {
         console.warn(`[x402-route] payment-replay REJECT for ${routePath} (nonce already claimed or unclaimable)`);
         res.status(402).json({

@@ -136,7 +136,22 @@ async function main(): Promise<void> {
       const klass = classifySettlement(wallet, scanOk, isOperatorWallet);
       tally[klass]++;
       const stored = (row.payer_wallet ?? '').trim() || '<unattributed>';
-      console.log(`  ${row.nonce.slice(0, 14)}… ${String(row.created_at).slice(0, 19)} ${String(row.tool ?? '-').padEnd(18)} ${String(row.amount ?? '-').padStart(7)} stored=${stored} onchain=${wallet ?? '<none>'} → ${klass}`);
+      console.log(`  ${row.nonce.slice(0, 14)}… ${String(row.created_at).slice(0, 19)} ${String(row.tool ?? '-').padEnd(18)} ${String(row.amount ?? '-').padStart(7)} stored=${stored} onchain=${wallet ?? '<none>'} → ${klass}${execute ? ' [PERSISTED]' : ''}`);
+      if (execute) {
+        // REVENUE-METER-TRUTH-W2 CH3: promote the row to its measured state. This is the ONLY
+        // forward path from CLAIMED_UNSETTLED — `tryClaimPayment` cannot know at insert time
+        // whether the chain accepted the authorization, so nothing but this scan may write
+        // SETTLED/OPERATOR. Keyed on the FULL primary key `(payer_wallet, nonce)`: a bare
+        // `WHERE nonce = ?` would be ambiguous under the composite key migration 024 installed.
+        // UNRESOLVABLE is deliberately NOT written — a scan we could not run must leave the
+        // existing state alone rather than overwrite a known verdict with an unknown one.
+        if (klass !== 'UNRESOLVABLE') {
+          await dbQuery(
+            'UPDATE processed_x402_payments SET settlement_state = ? WHERE nonce = ? AND payer_wallet = ?',
+            [klass, row.nonce, row.payer_wallet ?? ''],
+          );
+        }
+      }
       continue;
     }
 
