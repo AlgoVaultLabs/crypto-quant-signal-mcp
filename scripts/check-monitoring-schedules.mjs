@@ -537,7 +537,14 @@ for (const b of r.blocking) {
   console.log(`      fix: move to a canonical minute — ${rule.canonical_minutes.join(', ')}`);
 }
 
-// Echoed on EVERY run so the debt cannot quietly become permanent.
-console.log(`  baselined violations: ${r.baselined.length} (retirement: OPS-MONITORING-SCHEDULE-SWEEP-W{NEXT})`);
+// Echoed on EVERY run so the debt cannot quietly become permanent — and, once it is
+// zero, so the retired state is a REPORTED fact rather than the mere absence of a line.
+// Naming a retirement wave at 0 would imply debt that no longer exists, which is the
+// same "reads as coverage it does not have" failure in the opposite direction.
+console.log(
+  r.baselined.length === 0
+    ? '  baselined violations: 0 — baseline RETIRED (OPS-RATCHET-BASELINE-RETIRE-W1); this gate is fully blocking'
+    : `  baselined violations: ${r.baselined.length} (retirement: OPS-MONITORING-SCHEDULE-SWEEP-W{NEXT})`,
+);
 
 verdictAndExit(/** @type {'PASS'|'FAIL'|'INDETERMINATE'} */ (r.verdict));
