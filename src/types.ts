@@ -625,6 +625,14 @@ export type LicenseTier = 'free' | 'starter' | 'pro' | 'enterprise' | 'x402' | '
 export interface LicenseInfo {
   tier: LicenseTier;
   key: string | null;
+  /**
+   * OPS-ZERO-VS-UNKNOWN-W1 (ADDITIVE, optional — every existing construction stays valid).
+   * True when the tier could NOT be determined (e.g. Stripe unreachable), as opposed to being
+   * determined as free. Previously the two were the same value, so a transient upstream fault
+   * silently demoted a paying customer into the anonymous free bucket and then refused them.
+   * A consumer MUST NOT treat this as a tier decision; it means "ask again".
+   */
+  indeterminate?: true;
 }
 
 // ── x402 Types ──

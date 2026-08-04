@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import DefaultStripe from 'stripe';
 import { sendWelcomeEmail, maskEmail } from './email.js';
 import { sendAlert } from './telegram.js';
+import { recordIndeterminate } from './indeterminate-counter.js';
 
 // Stripe v22 exports the class as both named and default.
 // Node16 moduleResolution resolves the default export reliably.
@@ -35,6 +36,17 @@ export interface StripeValidation {
   valid: boolean;
   tier?: 'starter' | 'pro' | 'enterprise';
   customerId?: string;
+  /**
+   * OPS-ZERO-VS-UNKNOWN-W1: `valid:false` meant BOTH "Stripe says this key is not valid" and
+   * "we could not reach Stripe to ask". The caller (license.ts) turns `valid:false` into
+   * `{tier:'free', key:null}`, so a transient Stripe fault SILENTLY DEMOTED A PAYING CUSTOMER:
+   * a $49/mo Pro caller was metered into `free:<ipHash>`, burned a 100-call ceiling they do not
+   * have, and was then refused — having paid. That is customer harm, not a metrics defect.
+   *
+   * `indeterminate: true` means "could not determine", never "determined invalid". A caller MUST
+   * NOT treat it as a tier decision.
+   */
+  indeterminate?: true;
 }
 
 // ── API Key Generation ──
@@ -72,7 +84,8 @@ export function invalidateCacheForCustomer(customerId: string): void {
 // ── Validation ──
 
 export async function validateApiKey(apiKey: string): Promise<StripeValidation> {
-  if (!stripe) return { valid: false };
+  // Not configured is "cannot determine", NOT "invalid" — the distinction the caller needs.
+  if (!stripe) return { valid: false, indeterminate: true };
 
   // Validate key format to prevent query injection
   if (!/^[a-zA-Z0-9_]+$/.test(apiKey)) return { valid: false };
@@ -131,8 +144,10 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
     cache.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
     return result;
   } catch (err) {
+    // OPS-ZERO-VS-UNKNOWN-W1: an unreachable Stripe is INDETERMINATE, never "invalid".
     console.error('Stripe validateApiKey error:', err instanceof Error ? err.message : err);
-    return { valid: false };
+    recordIndeterminate('stripe_validate_api_key');
+    return { valid: false, indeterminate: true };
   }
 }
 
