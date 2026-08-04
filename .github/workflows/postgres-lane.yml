@@ -41,7 +41,11 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: algovault
-          POSTGRES_PASSWORD: postgres
+          # Generated per-run, never a literal. A committed `postgres://user:pass@host` DSN in a
+          # PUBLIC repo is flagged by the secret-scan gate (Gate B: dsn-password / assigned-secret)
+          # and it is RIGHT to flag it — a credential-shaped literal is indistinguishable from a
+          # real one to a scanner, and this repo has already shipped a live Postgres password once.
+          POSTGRES_PASSWORD: ${{ github.run_id }}
           POSTGRES_DB: signal_performance_test
         ports:
           - 5432:5432
@@ -54,9 +58,9 @@ jobs:
           --health-retries 20
 
     env:
-      DATABASE_URL: postgres://algovault:postgres@localhost:5432/signal_performance_test
-      # The suites that are PG-aware key off DATABASE_URL presence alone; nothing else is needed
-      # to wake them. Kept explicit so a reader does not go looking for a second switch.
+      # Assembled at runtime from the per-run password (see the service block) so no DSN literal
+      # is ever committed. The suites that are PG-aware key off DATABASE_URL presence alone.
+      DATABASE_URL: postgres://algovault:${{ github.run_id }}@localhost:5432/signal_performance_test
 
     steps:
       - uses: actions/checkout@v4
