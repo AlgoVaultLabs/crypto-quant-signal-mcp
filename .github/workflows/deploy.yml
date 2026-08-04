@@ -668,6 +668,23 @@ jobs:
       # could regress the transport. Fail-open by the script's own contract (exit 0 on an
       # unreachable endpoint), so a transient network blip never fails a good deploy; exit 1 means
       # a real stateful regression.
+      # OPS-ZERO-VS-UNKNOWN-W2 Ch1 — the SECOND of the prober's two schedules. The hourly cron
+      # catches drift, infra faults and permission changes BETWEEN deploys; this catches a bad
+      # ship immediately, which is the window the 25-hour outage actually opened in (it began at
+      # a deploy). Same artifact, so there is one implementation and one inventory row.
+      # ALGOVAULT_TG_TEST_INERT is deliberately NOT set: a real post-deploy failure SHOULD page.
+      - name: Post-deploy x402 claim-liveness prober (fail-closed)
+        # SHA-pinned, matching the Deploy step above. SEC-04 was exactly this: a third-party
+        # action on a MUTABLE tag receiving the production root SSH key. A new step must not
+        # reintroduce the hazard an earlier wave closed.
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            /opt/algovault-monitoring/x402-claim-liveness-prober.py
+
       - name: Post-deploy MCP stateless canary (fail-open)
         run: |
           # Wait for the recreated container to answer before probing. Without this the canary
