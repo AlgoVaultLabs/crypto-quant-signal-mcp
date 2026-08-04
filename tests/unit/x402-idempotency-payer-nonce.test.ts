@@ -10,6 +10,7 @@
  * settle. That case is the entire point of the change, so it is forced explicitly here.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 const SKIP = !!process.env.DATABASE_URL; // these run against the SQLite test backend
 
@@ -86,5 +87,40 @@ describe('SEC-49 — the migration and the store agree on the key', () => {
     );
     expect(down).toMatch(/REFUSING REVERT/);
     expect(down, 'the guard must actually check for the collision').toMatch(/HAVING count\(\*\) > 1/);
+  });
+});
+
+/**
+ * OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 · Ch3 probe fallout — a LIVE PRODUCTION OUTAGE I caused.
+ *
+ * OPS-AUDIT-REMEDIATION-LOW-W2 changed the PK to (payer_wallet, nonce) but the edit that was meant
+ * to move the ON CONFLICT target used a replace-FIRST-occurrence, and the first occurrence was in
+ * the DOCSTRING. The docstring was updated; the SQL at the call site was not. Postgres then
+ * answered every claim with "there is no unique or exclusion constraint matching the ON CONFLICT
+ * specification" — and tryClaimPayment FAILS SAFE on a DB error, so it returned false and every
+ * paid x402 call was refused. Verified against prod before fixing.
+ *
+ * It shipped green because every test runs the SQLite branch (`INSERT OR IGNORE`, which has no
+ * ON CONFLICT clause at all), so the PG SQL string was never exercised by anything. These
+ * assertions read the emitted SQL directly — the one thing that is backend-independent.
+ */
+describe('SEC-49 regression — the PG ON CONFLICT target must equal the PRIMARY KEY', () => {
+  const src = readFileSync(new URL('../../src/lib/x402-idempotency-store.ts', import.meta.url), 'utf8');
+
+  it('every ON CONFLICT in executable SQL targets the FULL composite key', () => {
+    // strip block comments so the docstring cannot satisfy this — that is the exact defect.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
+    const targets = [...code.matchAll(/ON CONFLICT \(([^)]*)\)/g)].map((m) => m[1].replace(/\s+/g, ''));
+    expect(targets.length, 'no ON CONFLICT found in executable SQL — the parser or the file moved').toBeGreaterThan(0);
+    for (const t of targets) {
+      expect(t, `ON CONFLICT (${t}) does not match PRIMARY KEY (payer_wallet, nonce) — Postgres will ERROR and the claim fails safe, refusing every payment`).toBe('payer_wallet,nonce');
+    }
+  });
+
+  it('the DDL primary key and the ON CONFLICT target are the same tuple', () => {
+    const pk = /PRIMARY KEY \(([^)]*)\)/.exec(src)?.[1].replace(/\s+/g, '');
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
+    const oc = /ON CONFLICT \(([^)]*)\)/.exec(code)?.[1].replace(/\s+/g, '');
+    expect(oc).toBe(pk);
   });
 });
