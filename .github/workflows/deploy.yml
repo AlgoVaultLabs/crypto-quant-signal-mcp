@@ -216,6 +216,18 @@ jobs:
           node scripts/check-canaries-wired.mjs --self-test
           node scripts/check-canaries-wired.mjs
 
+      # OPS-SUPPLY-CHAIN-RESOLVABILITY-W1 R4 — can this repo still be built from scratch? `npm ci`
+      # installs from pinned `resolved` URLs, so it keeps working while a tarball is served even
+      # after that version leaves the registry LISTING; only a fresh `npm install` notices, at the
+      # moment a rebuild is needed. OFFLINE mode here on purpose: it asserts provenance (every pin
+      # was live-verified, and nothing unverified has been added) with zero network, so the deploy
+      # never depends on npmjs.com being reachable. The live sweep is the daily scheduled canary,
+      # ops/cron/lockfile-resolvability-canary.sh.
+      - name: Lockfile resolvability gate — provenance (fail-closed, offline)
+        run: |
+          node scripts/check-lockfile-resolvable.mjs --self-test
+          node scripts/check-lockfile-resolvable.mjs --offline
+
       # OPS-MONITORING-SCHEDULE-SOT-W1 — CLAUDE.md's off-:00 cron law, enforced instead of
       # remembered. SEC-48 was one monitoring row scheduled on :00; a human fixed that one row
       # and the next such row was free to land. Runs here for commits that touch src/; the

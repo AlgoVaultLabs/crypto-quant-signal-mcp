@@ -647,6 +647,30 @@
       "repo_resident": true
     },
     {
+      "id": "lockfile-resolvability-canary",
+      "artifact": "ops/cron/lockfile-resolvability-canary.sh",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/lockfile-resolvability-canary.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/lockfile-resolvability-canary.sh"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "53 4 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "32c79177b7091e4c0f215bd3e5777fedb0ef23436aa8ffd33776c91924a865cd",
+      "alert_ids": [
+        "LOCKFILE_PIN_UNRESOLVABLE"
+      ],
+      "owner_wave": "OPS-SUPPLY-CHAIN-RESOLVABILITY-W1",
+      "repo_resident": true,
+      "notes": "Asserts the ONE supply-chain property no push gate can: is every version pinned in package-lock.json STILL listed on the npm registry today. `npm ci` installs from pinned `resolved` URLs, so it keeps working while a tarball is served even after that version leaves the LISTING -- only a fresh `npm install` notices, at the moment a rebuild is needed. Runs the SAME script the deploy gate runs (scripts/check-lockfile-resolvable.mjs); the deploy runs it --offline (provenance, zero network) so npmjs.com is never on the deploy critical path, and this row is where the live property is checked. Repo-resident, so there is no host copy to drift. INDETERMINATE (registry unreachable) is logged and deliberately NOT alerted -- a brief npm outage is not operator-actionable, and paging on it is how a canary earns a mute; a persistently dark run is caught by this reconciler's own DARK check instead."
+    },
+    {
       "id": "snapshot-landing-daily",
       "artifact": "ops/cron/snapshot-landing-daily.sh",
       "kind": "executable",
