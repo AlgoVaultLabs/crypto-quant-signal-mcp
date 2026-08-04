@@ -1,0 +1,8 @@
+# OPS-POSTGRES-TEST-LANE-W1 — Postgres-lane quarantine baseline.
+#
+# One test-FILE per line. A row here is a DEBT, not an exemption: it MUST carry
+#   # owner: <WAVE-ID> — <reason>
+# and check-postgres-lane.mjs FAILS if it does not. The ratchet only SHRINKS — a file that starts
+# passing must be deleted from this list in the same change, or it would hide the next regression.
+#
+# Populated from the lane first live run; see the wave status entry for the triage.
