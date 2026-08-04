@@ -2,7 +2,7 @@
   "endpoint": "scan_trade_calls",
   "wave": "SCAN-RANKBY-W1 + W2 (volatility) + W3 (oi_change)",
   "date": "2026-06-27",
-  "summary": "Additive rankBy lens + per-call rank echo. W2 added `volatility` (echo `atrp`); W3 added `oi_change` (alias `oid`) — REAL OI delta over the oi_snapshots store (echo `oi_change_pct`+`oi_change_window`). rankBy omitted/'oi' ⇒ byte-identical to the pre-wave shape (no rank_* keys). tools/list unchanged (9); rankBy is a param.",
+  "summary": "Additive rankBy lens + per-call rank echo. W2 added `volatility` (echo `atrp`); W3 added `oi_change` (alias `oid`) \u2014 REAL OI delta over the oi_snapshots store (echo `oi_change_pct`+`oi_change_window`). rankBy omitted/'oi' \u21d2 byte-identical to the pre-wave shape (no rank_* keys). tools/list unchanged (9); rankBy is a param.",
   "calls_item": {
     "allowed_keys": [
       "coin",
@@ -20,51 +20,107 @@
       "oi_change_pct",
       "oi_change_window"
     ],
-    "always_present": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
-    "present_only_for_non_oi_lens": ["rank_value"],
+    "always_present": [
+      "coin",
+      "timeframe",
+      "exchange",
+      "call",
+      "confidence",
+      "regime"
+    ],
+    "present_only_for_non_oi_lens": [
+      "rank_value"
+    ],
     "lens_typed_fields": {
-      "volume": ["volume_24h"],
-      "gainers": ["change_24h_pct"],
-      "losers": ["change_24h_pct"],
-      "movers": ["change_24h_pct"],
-      "funding_positive": ["funding_rate", "funding_apr"],
-      "funding_negative": ["funding_rate", "funding_apr"],
-      "volatility": ["atrp"],
-      "oi_change": ["oi_change_pct", "oi_change_window"],
+      "volume": [
+        "volume_24h"
+      ],
+      "gainers": [
+        "change_24h_pct"
+      ],
+      "losers": [
+        "change_24h_pct"
+      ],
+      "movers": [
+        "change_24h_pct"
+      ],
+      "funding_positive": [
+        "funding_rate",
+        "funding_apr"
+      ],
+      "funding_negative": [
+        "funding_rate",
+        "funding_apr"
+      ],
+      "volatility": [
+        "atrp"
+      ],
+      "oi_change": [
+        "oi_change_pct",
+        "oi_change_window"
+      ],
       "oi": []
     },
-    "forbidden_keys": ["outcome_return_pct", "outcome_price", "price", "indicators", "reasoning"],
-    "notes": "funding_apr is number|null (null when the venue's funding interval is unknown — never guessed). oi_change ranks only coins with ≥2 OI snapshots spanning the window; warming coins are omitted from the ranking entirely. Echo attached at OUTPUT assembly, never cached into the rank-independent verdict cell."
+    "forbidden_keys": [
+      "outcome_return_pct",
+      "outcome_price",
+      "price",
+      "indicators",
+      "reasoning"
+    ],
+    "notes": "funding_apr is number|null (null when the venue's funding interval is unknown \u2014 never guessed). oi_change ranks only coins with \u22652 OI snapshots spanning the window; warming coins are omitted from the ranking entirely. Echo attached at OUTPUT assembly, never cached into the rank-independent verdict cell."
   },
-  "envelope_keys": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault", "_receipts"],
+  "envelope_keys": [
+    "scanned",
+    "eligible_non_hold",
+    "holds",
+    "errors",
+    "partial",
+    "calls",
+    "_algovault",
+    "_receipts"
+  ],
   "input_schema_additive": {
     "rankBy": "string, optional, default 'oi'. Canonical: oi|volume|gainers|losers|movers|funding_positive|funding_negative|volatility|oi_change. Aliases (resolved by the MCP, the bot forwards raw): vol|gain|lose|move|pfr|nfr|atr|oid. Raw string (not a Zod enum) so the bot can forward an alias verbatim; resolveRankBy validates."
   },
   "error_contract": {
-    "quota_exhausted": { "error": "quota_exhausted", "code": "tier_limit_reached" },
+    "quota_exhausted": {
+      "error": "quota_exhausted",
+      "code": "tier_limit_reached"
+    },
     "invalid_rank_by": {
       "error": "invalid_rank_by",
       "code": "invalid_parameter",
-      "keys": ["error", "code", "message", "valid_lenses", "suggested_action", "_algovault"],
-      "note": "Returned BEFORE quota/scan/charge for a NON-EMPTY unknown token. Omitted/empty ⇒ default 'oi' (no error)."
+      "keys": [
+        "error",
+        "code",
+        "message",
+        "valid_lenses",
+        "suggested_action",
+        "_algovault"
+      ],
+      "note": "Returned BEFORE quota/scan/charge for a NON-EMPTY unknown token. Omitted/empty \u21d2 default 'oi' (no error)."
     }
   },
   "cache_contract": {
     "okx_funding": "OKX has no bulk funding endpoint (50014). funding_* on OKX ranks the top-RANK_FUNDING_POOL_SIZE-by-OI pool (default 150) via per-instId fetches in a coalesced cache: ttl 3min, loadTimeout 900ms (cold serves empty fallback, load self-warms), negativeTtl 30s, lazy background warmer (long-lived server only). Request path never fans out (<1s).",
     "binance_funding": "joined from the 60s-coalesced bulk premiumIndex (getPremiumIndexBulkCoalesced).",
-    "same_call_funding": "BYBIT/BITGET/HL carry funding (+ Bybit fundingIntervalHour) on the bulk ticker — no extra call.",
-    "atrp_volatility": "volatility ranks the top-RANK_ATRP_POOL_SIZE-by-OI pool (default 50) by ATRP = ATR(14 Wilder)÷price×100, via getAdapter(ex).getCandles per pool coin (no new kline mapping). Coalesced cache keyed exchange:timeframe: ttl 2min, loadTimeout 900ms (cold serves empty fallback <1s, self-warms), no background warmer (key space exchange×timeframe). atrp echoed at OUTPUT (never cached into the verdict cell).",
-    "oi_change_store": "oi_change reads the self-maintained oi_snapshots postgres store (NOT a live venue fetch) — computeOiDeltaForPool returns current vs nearest snapshot ≥window-ago (24h). The hourly oi-snapshot-sampler is the warmer; a 60s coalescedCache (keyed exchange) memoizes the per-venue delta read (loadTimeout 900ms cold-serves empty, processGate skips in script context). Store empty/warming ⇒ empty result (never blocks). oi_change_pct+oi_change_window echoed at OUTPUT (never cached into the verdict cell)."
+    "same_call_funding": "BYBIT/BITGET/HL carry funding (+ Bybit fundingIntervalHour) on the bulk ticker \u2014 no extra call.",
+    "atrp_volatility": "volatility ranks the top-RANK_ATRP_POOL_SIZE-by-OI pool (default 50) by ATRP = ATR(14 Wilder)\u00f7price\u00d7100, via getAdapter(ex).getCandles per pool coin (no new kline mapping). Coalesced cache keyed exchange:timeframe: ttl 2min, loadTimeout 900ms (cold serves empty fallback <1s, self-warms), no background warmer (key space exchange\u00d7timeframe). atrp echoed at OUTPUT (never cached into the verdict cell).",
+    "oi_change_store": "oi_change reads the self-maintained oi_snapshots postgres store (NOT a live venue fetch) \u2014 computeOiDeltaForPool returns current vs nearest snapshot \u2265window-ago (24h). The hourly oi-snapshot-sampler is the warmer; a 60s coalescedCache (keyed exchange) memoizes the per-venue delta read (loadTimeout 900ms cold-serves empty, processGate skips in script context). Store empty/warming \u21d2 empty result (never blocks). oi_change_pct+oi_change_window echoed at OUTPUT (never cached into the verdict cell)."
   },
   "consumers": [
     "src/index.ts (MCP server.tool scan_trade_calls handler)",
-    "src/lib/x402-http-routes.ts (x402 paid scan route — forwards rankBy)",
+    "src/lib/x402-http-routes.ts (x402 paid scan route \u2014 forwards rankBy)",
     "src/lib/trade-call-scanner.ts (scanTradeCalls engine)",
     "src/lib/rank-metrics.ts (getRankedUniverse) + src/lib/exchange-universe.ts (FETCHERS)",
-    "src/lib/oi-snapshots.ts (computeOiDelta over oi_snapshots) — the SAME source the get_trade_call OI factor reads (single-derivation; W3)",
+    "src/lib/oi-snapshots.ts (computeOiDelta over oi_snapshots) \u2014 the SAME source the get_trade_call OI factor reads (single-derivation; W3)",
     "src/scripts/oi-snapshot-sampler.ts (hourly producer) + oi-snapshot-backfill.ts (one-time)",
     "algovault-bot /scan + /scanwatch (forwards raw token)",
-    "webhook scan_digest (getTopCoinSet oi path — unchanged)"
+    "webhook scan_digest (getTopCoinSet oi path \u2014 unchanged)"
   ],
-  "drift_check_command": "node -e \"const{getRankedUniverse}=require('./dist/lib/rank-metrics.js');getRankedUniverse('BYBIT','funding_negative',5).then(r=>{const ok=r.every(x=>!('outcome_return_pct'in x)&&!('outcome_price'in x)&&typeof x.funding_rate==='number');console.log(ok?'OK':'DRIFT');process.exit(ok?0:1)})\""
+  "drift_check_command": "node -e \"const{getRankedUniverse}=require('./dist/lib/rank-metrics.js');getRankedUniverse('BYBIT','funding_negative',5).then(r=>{const ok=r.every(x=>!('outcome_return_pct'in x)&&!('outcome_price'in x)&&typeof x.funding_rate==='number');console.log(ok?'OK':'DRIFT');process.exit(ok?0:1)})\"",
+  "snapshot_date": "2026-06-27",
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys DEFERRED, not invented: this is an MCP tool / JSON surface whose public response is CONDITIONAL (verdict, tier and flag state change which fields are present), so a single live probe cannot settle a COMPLETE allow-list, and an incomplete one published to crawlers is worse than an empty one because it looks authoritative. Deriving it correctly means enumerating the exported PUBLIC formatter's full output surface \u2014 never an internal type. Owner: OPS-SHAPE-ALLOWLIST-FROM-FORMATTER-W{NEXT}."
 }

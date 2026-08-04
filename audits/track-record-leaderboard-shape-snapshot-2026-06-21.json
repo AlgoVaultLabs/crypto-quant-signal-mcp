@@ -3,27 +3,101 @@
   "snapshot_date": "2026-06-21",
   "surface": "https://algovault.com/track-record (#leaderboard-section)",
   "render": "function-rendered server HTML (getPerformanceDashboardHtml in src/index.ts) + client controller; rows rendered client-side from the already-fetched /api/performance-public payload (no 2nd fetch)",
-  "replaces": ["Performance by Asset Tier (tier-stat-grid)", "Performance by Exchange (exchange-stat-grid)", "Performance by Timeframe (tf-bar-chart)"],
+  "replaces": [
+    "Performance by Asset Tier (tier-stat-grid)",
+    "Performance by Exchange (exchange-stat-grid)",
+    "Performance by Timeframe (tf-bar-chart)"
+  ],
   "controls": {
-    "dimension": { "values": ["exchange (Venue, default)", "asset", "timeframe", "tier"], "order": "Venue · Asset · Timeframe · Tier" },
-    "sort": { "keys": ["wr (default)", "n"], "direction": ["desc (default)", "asc"], "note": "worst-first reachable in one direction tap" },
-    "min_sample_filter": { "pills": [0, 30, 100, 500], "default": 30, "behavior": "FILTER — hides rows with count < floor; n>=0 restores everything (Q-P1-4)", "small_sample_tag_below": 30 }
+    "dimension": {
+      "values": [
+        "exchange (Venue, default)",
+        "asset",
+        "timeframe",
+        "tier"
+      ],
+      "order": "Venue \u00b7 Asset \u00b7 Timeframe \u00b7 Tier"
+    },
+    "sort": {
+      "keys": [
+        "wr (default)",
+        "n"
+      ],
+      "direction": [
+        "desc (default)",
+        "asc"
+      ],
+      "note": "worst-first reachable in one direction tap"
+    },
+    "min_sample_filter": {
+      "pills": [
+        0,
+        30,
+        100,
+        500
+      ],
+      "default": 30,
+      "behavior": "FILTER \u2014 hides rows with count < floor; n>=0 restores everything (Q-P1-4)",
+      "small_sample_tag_below": 30
+    }
   },
-  "columns": ["Rank (#)", "Segment", "PFE Win Rate (+bar)", "Calls (n)"],
+  "columns": [
+    "Rank (#)",
+    "Segment",
+    "PFE Win Rate (+bar)",
+    "Calls (n)"
+  ],
   "row_fields_read": {
     "exchange": "byExchange[ex].{pfeWinRate,count}",
     "tier": "byTier[tierK].{pfeWinRate,count,label,name,color}",
     "timeframe": "byTimeframe[tf].{pfeWinRate,count} filtered through HIDE_TFS (Q-P1-8 single source; 1d/1m excluded)",
     "asset": "byAsset[sym].{pfeWinRate,count,tier}"
   },
-  "allowed_rendered_values": ["pfeWinRate (as PFE WR %)", "count (as n)", "segment label", "tier badge (asset dim)", "venue dot color"],
-  "forbidden_keys": ["outcome_return_pct", "outcome_price", "outcome_won", "pnl", "roi", "profit", "Phase E"],
+  "allowed_rendered_values": [
+    "pfeWinRate (as PFE WR %)",
+    "count (as n)",
+    "segment label",
+    "tier badge (asset dim)",
+    "venue dot color"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "pnl",
+    "roi",
+    "profit",
+    "Phase E"
+  ],
   "error_contract": "fail-open to existing snapshot fallback; empty floor -> 'No segments at n >= X. Lower the min-sample filter.'",
   "refresh_contract": "re-rendered by renderAll() on the existing 30s load() loop; NO new setInterval (baseline 7 preserved)",
   "asset_caption": "live-rendered '<shown> of <total> assets with evaluated calls shown' from byAsset row count (Q-P1-7: never hardcoded; distinct denominator from landing asset_count)",
-  "geo": { "kicker": "track record · leaderboard", "h2": "Ranked by verified <mint>win rate</mint>.", "jsonld": "1x schema.org Dataset, variableMeasured = [PFE Win Rate, Sample Size], no aggregateRating (baseline was 0)" },
-  "new_css_classes": [".lb-scroll", ".lb-rank", ".lb-small-sample"],
-  "reused_primitives": [".recent-table", ".tab", ".tf-bar-track", ".tf-bar-fill", ".tier-badge", "text-mint-400"],
-  "consumers": ["human visitors to /track-record", "GEO crawlers (Dataset JSON-LD)", "tests/unit/p1_track_record_leaderboard.test.mjs", "tests/unit/design_w3/w4/w5/w8/w11_consistency.test.mjs"],
-  "drift_check_command": "node --test tests/unit/p1_track_record_leaderboard.test.mjs && grep -c 'id=\"leaderboard-section\"' src/index.ts && grep -c 'application/ld+json' src/index.ts"
+  "geo": {
+    "kicker": "track record \u00b7 leaderboard",
+    "h2": "Ranked by verified <mint>win rate</mint>.",
+    "jsonld": "1x schema.org Dataset, variableMeasured = [PFE Win Rate, Sample Size], no aggregateRating (baseline was 0)"
+  },
+  "new_css_classes": [
+    ".lb-scroll",
+    ".lb-rank",
+    ".lb-small-sample"
+  ],
+  "reused_primitives": [
+    ".recent-table",
+    ".tab",
+    ".tf-bar-track",
+    ".tf-bar-fill",
+    ".tier-badge",
+    "text-mint-400"
+  ],
+  "consumers": [
+    "human visitors to /track-record",
+    "GEO crawlers (Dataset JSON-LD)",
+    "tests/unit/p1_track_record_leaderboard.test.mjs",
+    "tests/unit/design_w3/w4/w5/w8/w11_consistency.test.mjs"
+  ],
+  "drift_check_command": "node --test tests/unit/p1_track_record_leaderboard.test.mjs && grep -c 'id=\"leaderboard-section\"' src/index.ts && grep -c 'application/ld+json' src/index.ts",
+  "endpoint": "GET https://algovault.com/ \u2014 track-record leaderboard section (rendered)",
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys is NOT APPLICABLE: this snapshot documents a rendered HTML PAGE, not a JSON response. There are no response keys to allow-list. The page's contract is asserted by its drift command instead."
 }

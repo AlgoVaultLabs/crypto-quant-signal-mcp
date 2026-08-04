@@ -6,24 +6,24 @@
     {
       "endpoint": "GET /join",
       "renderer": "src/lib/referral-pages.ts renderJoinPage({refValid, code})",
-      "route": "src/index.ts app.get('/join') — validates ?ref= via resolveCode (mirror of /track-record)",
+      "route": "src/index.ts app.get('/join') \u2014 validates ?ref= via resolveCode (mirror of /track-record)",
       "shape": "html",
       "content_type": "text/html; charset=utf-8",
       "served_on": [
-        "https://algovault.com/join?ref=CODE — apex brand domain, via Caddyfile `handle /join { reverse_proxy localhost:3000 }` (the branded referee landing every web share link points to)",
-        "https://api.algovault.com/join — api origin, direct (same bytes)"
+        "https://algovault.com/join?ref=CODE \u2014 apex brand domain, via Caddyfile `handle /join { reverse_proxy localhost:3000 }` (the branded referee landing every web share link points to)",
+        "https://api.algovault.com/join \u2014 api origin, direct (same bytes)"
       ],
-      "purpose": "REFERRAL-WEB-FIX-W1 fixes the #1 bug: the old shared link api.algovault.com/signup?ref= 400'd a free friend. /join is a 200 give-get landing whose start-free form carries ref → POST /api/signup-email?ref= → processFreeReferralSignup actually grants the one-time bonus.",
+      "purpose": "REFERRAL-WEB-FIX-W1 fixes the #1 bug: the old shared link api.algovault.com/signup?ref= 400'd a free friend. /join is a 200 give-get landing whose start-free form carries ref \u2192 POST /api/signup-email?ref= \u2192 processFreeReferralSignup actually grants the one-time bonus.",
       "indexable": false,
-      "index_contract": "<meta name=\"robots\" content=\"noindex\"> — per-ref transactional landing (don't index ?ref= variants); the indexable referral SEO surface is /referral.",
+      "index_contract": "<meta name=\"robots\" content=\"noindex\"> \u2014 per-ref transactional landing (don't index ?ref= variants); the indexable referral SEO surface is /referral.",
       "must_contain_valid_ref": [
         "A friend gave you 500 bonus calls (SoT-interpolated bonusCallsLabel)",
         "500 one-time bonus calls (kills the recurring misread)",
         "on top of the 100 free calls",
         "<form id=\"av-ref-form\" with data-source=\"join-page\" + data-ref=\"<code>\"",
-        "fetch(\"/api/signup-email\" (same-origin, apex-proxied) → real 500 grant",
-        "class=\"plans\" with href=\"https://api.algovault.com/signup?plan=…\" (ABSOLUTE — /signup is api-canonical)",
-        "C2 share affordance: Copy link + navigator.share + data-sharetext-prefix (referee re-shares — closes the web loop)"
+        "fetch(\"/api/signup-email\" (same-origin, apex-proxied) \u2192 real 500 grant",
+        "class=\"plans\" with href=\"https://api.algovault.com/signup?plan=\u2026\" (ABSOLUTE \u2014 /signup is api-canonical)",
+        "C2 share affordance: Copy link + navigator.share + data-sharetext-prefix (referee re-shares \u2014 closes the web loop)"
       ],
       "must_contain_invalid_ref": [
         "Start free with AlgoVault (graceful general landing)",
@@ -37,14 +37,17 @@
         "content=\"index,follow\" (per-ref landing must stay noindex)",
         "href=\"/signup?plan= (apex-relative would 404; must be absolute api)"
       ],
-      "redirect_compat": "/signup?ref=CODE (no plan) → 302 https://algovault.com/join?ref=CODE (old shared links keep working); paid /signup?plan=…&ref= checkout UNCHANGED",
+      "redirect_compat": "/signup?ref=CODE (no plan) \u2192 302 https://algovault.com/join?ref=CODE (old shared links keep working); paid /signup?plan=\u2026&ref= checkout UNCHANGED",
       "sot_interpolation": "bonus number from bonusCallsLabel() (referral-constants SoT); zero hardcoded program-number literals",
       "consumers": [
-        "shareLink() — every web referral link (signup-email response, welcome email, /account stats, TG-API share_url) now points here",
+        "shareLink() \u2014 every web referral link (signup-email response, welcome email, /account stats, TG-API share_url) now points here",
         "the /signup?ref= 302 redirect (old-link compat)"
       ],
-      "error_contract": "renderJoinPage is a pure HTML renderer; an invalid ref → graceful general landing (still 200); ref resolve failure is caught → general landing",
+      "error_contract": "renderJoinPage is a pure HTML renderer; an invalid ref \u2192 graceful general landing (still 200); ref resolve failure is caught \u2192 general landing",
       "drift_check_command": "curl -s 'https://algovault.com/join?ref=<valid>' | grep -q 'gave you' && curl -s 'https://algovault.com/join?ref=<valid>' | grep -q 'api.algovault.com/signup?plan=starter' && ! curl -s 'https://algovault.com/join?ref=<valid>' | grep -qE 'outcome_(return_pct|price)|content=\"index,follow\"'"
     }
-  ]
+  ],
+  "endpoint": "GET https://algovault.com/join (rendered page)",
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys is NOT APPLICABLE: this snapshot documents a rendered HTML PAGE, not a JSON response. There are no response keys to allow-list. The page's contract is asserted by its drift command instead."
 }

@@ -8,20 +8,19 @@
     "comment": "v2 adds pages[] (4-source-type long-form content from dev.to + Medium + YouTube + GitHub Discussions). algovault_blog source_type was DROPPED before C1 ship per Mr.1 Q-5 ratification 2026-05-19 (/var/www/algovault/blog absent + sitemap.xml /blog/ = 0 hits; dev.to IS canonical blog surface)."
   },
   "allowed_keys": [
-    "version",
-    "generated_at",
-    "package_name",
+    "_algovault",
     "description",
-    "keywords",
-    "whats_new",
-    "tools",
-    "response_shapes",
-    "integrations",
-    "examples",
     "discussions",
+    "examples",
+    "generated_at",
+    "integrations",
+    "keywords",
+    "package_name",
     "pages",
-    "pages_refreshed_at",
-    "_algovault"
+    "response_shapes",
+    "tools",
+    "version",
+    "whats_new"
   ],
   "pages_element_allowed_keys": [
     "source_type",
@@ -65,9 +64,12 @@
   },
   "consumers": [
     "src/lib/knowledge-index.ts::KnowledgeIndex (file-watcher; fs.watchFile 30s poll; reads bundle.pages and indexes each via wink-bm25 with source_type prefix `page_${source_type}`)",
-    "src/lib/search-engine.ts::SearchEngine (BM25 query → top-N results; surfaces page_devto / page_medium / page_youtube / page_github_discussion via _source_type field)",
+    "src/lib/search-engine.ts::SearchEngine (BM25 query \u2192 top-N results; surfaces page_devto / page_medium / page_youtube / page_github_discussion via _source_type field)",
     "src/lib/chat-engine.ts::ChatEngine (uses SearchEngine output as Anthropic context-injection snippets; cites page URLs in chat_knowledge responses)",
     "scripts/refresh-knowledge-pages.mjs (writes bundle.pages + bundle.pages_refreshed_at atomically; Sun 06:00 UTC cron entry point)"
   ],
-  "drift_check_command": "curl -fsS https://api.algovault.com/knowledge/latest.json | jq -e '._algovault.bundle_version == 2 and (.pages | type) == \"array\"' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL"
+  "drift_check_command": "curl -fsS https://api.algovault.com/knowledge/latest.json | jq -e '._algovault.bundle_version == 2 and (.pages | type) == \"array\"' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL",
+  "snapshot_date": "2026-05-21",
+  "endpoint": "GET https://api.algovault.com/knowledge/latest.json",
+  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 derived from the PUBLIC surface, never an internal type/DB row/pre-formatter object: live public response, GET /knowledge/latest.json (2026-08-03). Cross-checked both directions against that response."
 }

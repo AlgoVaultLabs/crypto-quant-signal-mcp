@@ -1,17 +1,17 @@
 {
   "wave": "LANDING-REFERRAL-PAGE-W1",
   "snapshot_date": "2026-06-20",
-  "naming_law": "public copy says 'calls'; every referral program fact interpolates from src/lib/referral-constants.ts REFERRAL_TERMS label fns — zero hardcoded literals (renderer source grep-gated by tests/unit/referral-pages.test.ts)",
+  "naming_law": "public copy says 'calls'; every referral program fact interpolates from src/lib/referral-constants.ts REFERRAL_TERMS label fns \u2014 zero hardcoded literals (renderer source grep-gated by tests/unit/referral-pages.test.ts)",
   "surfaces": [
     {
       "endpoint": "GET /referral",
       "renderer": "src/lib/referral-pages.ts renderReferralLandingPage()",
-      "route": "src/index.ts app.get('/referral', …) — mirrors /referral-terms",
+      "route": "src/index.ts app.get('/referral', \u2026) \u2014 mirrors /referral-terms",
       "shape": "html",
       "content_type": "text/html; charset=utf-8",
       "served_on": [
-        "https://algovault.com/referral — apex, via Caddyfile `handle /referral { reverse_proxy localhost:3000 }` (same mechanism as /track-record); the canonical, on-brand, indexable surface the footer + other channels link to",
-        "https://api.algovault.com/referral — api origin, direct (Express); same bytes"
+        "https://algovault.com/referral \u2014 apex, via Caddyfile `handle /referral { reverse_proxy localhost:3000 }` (same mechanism as /track-record); the canonical, on-brand, indexable surface the footer + other channels link to",
+        "https://api.algovault.com/referral \u2014 api origin, direct (Express); same bytes"
       ],
       "indexable": true,
       "index_contract": "<meta name=\"robots\" content=\"index,follow\"> (a discovery/share surface, UNLIKE the noindex /referral-terms page); apex robots.txt is `Allow: /` (only /dashboard + /.well-known disallowed) so the apex URL is crawlable",
@@ -31,11 +31,11 @@
         "content=\"index,follow\"",
         "<meta name=\"description\" content=\""
       ],
-      "wave_update": "REFERRAL-FREE-KEY-SIGNUP-W1 (2026-06-21): the inline free-account email form is now the PRIMARY entry (POSTs same-origin /api/signup-email, apex-proxied) → instant referral link + emailed key; the absolute-api /account link is now the 'already have a key' fallback.",
+      "wave_update": "REFERRAL-FREE-KEY-SIGNUP-W1 (2026-06-21): the inline free-account email form is now the PRIMARY entry (POSTs same-origin /api/signup-email, apex-proxied) \u2192 instant referral link + emailed key; the absolute-api /account link is now the 'already have a key' fallback.",
       "link_origin_contract": "served on the APEX (algovault.com/referral) so relative hrefs resolve to the apex: /account is api-canonical (Stripe success_url from request host; NOT apex-served) -> ABSOLUTE https://api.algovault.com/account; /referral-terms is proxied onto the apex (Caddy handle /referral-terms) -> relative OK; start-free -> absolute apex #quickstart. Regression guard: NO bare href=\"/account\" (would 404 on the apex).",
-      "forbidden_substrings_extra": "href=\"/account\" (apex-relative app link would 404 — must be absolute api)",
+      "forbidden_substrings_extra": "href=\"/account\" (apex-relative app link would 404 \u2014 must be absolute api)",
       "must_contain_sot_interpolated": {
-        "note": "present-but-DRIFT-TOLERANT — these render from referral-constants label fns; value correctness is asserted in the unit test, NOT pinned here, so a legitimate SoT change (e.g. commission 30%→35%) does not false-fail this snapshot",
+        "note": "present-but-DRIFT-TOLERANT \u2014 these render from referral-constants label fns; value correctness is asserted in the unit test, NOT pinned here, so a legitimate SoT change (e.g. commission 30%\u219235%) does not false-fail this snapshot",
         "bonusCallsLabel()": "500",
         "commissionPct()": "30%",
         "commissionMonthsLabel()": "12 months",
@@ -47,15 +47,18 @@
         "price_at_signal",
         "content=\"noindex\" (this page MUST stay indexable)"
       ],
-      "error_contract": "renderReferralLandingPage() is a pure HTML-string renderer with no DB/Stripe/HTTP — the route effectively always returns 200 text/html; an unexpected throw falls through to Express' default 500",
+      "error_contract": "renderReferralLandingPage() is a pure HTML-string renderer with no DB/Stripe/HTTP \u2014 the route effectively always returns 200 text/html; an unexpected throw falls through to Express' default 500",
       "cache_contract": "no explicit Cache-Control on the Express route (apex /referral is proxied, so it does NOT inherit the static catch-all's max-age=60); content is static per deploy",
       "consumers": [
-        "landing/index.html footer link 'Refer & Earn' → /referral (apex, relative)",
+        "landing/index.html footer link 'Refer & Earn' \u2192 /referral (apex, relative)",
         "TG-REFERRAL-W1 bot share target",
         "the future REFERRAL-INPRODUCT-NUDGE-W1 value-moment nudge",
         "the welcome / referred-free emails"
       ],
       "drift_check_command": "curl -s https://algovault.com/referral | grep -qE 'Refer a friend' && curl -s https://algovault.com/referral | grep -q 'content=\"index,follow\"' && curl -s https://algovault.com/referral | grep -q '<form id=\"av-ref-form\"' && ! curl -s https://algovault.com/referral | grep -qE 'outcome_(return_pct|price)|content=\"noindex\"'"
     }
-  ]
+  ],
+  "endpoint": "GET https://algovault.com/referral (rendered page)",
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys is NOT APPLICABLE: this snapshot documents a rendered HTML PAGE, not a JSON response. There are no response keys to allow-list. The page's contract is asserted by its drift command instead."
 }

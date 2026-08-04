@@ -67,7 +67,7 @@ export function ensureProcessedX402PaymentsSchema(): void {
  * nonce, exactly one gets `true` (the DB PRIMARY KEY arbitrates the
  * `INSERT ... ON CONFLICT DO NOTHING RETURNING` race).
  *
- * The ON CONFLICT/OR IGNORE clause is keyed on `nonce` (the PRIMARY KEY); the
+ * The ON CONFLICT/OR IGNORE clause is keyed on the FULL PRIMARY KEY (payer_wallet, nonce); the
  * RETURNING clause yields the row only when the insert actually happened, which
  * is the signal we read. PG: `ON CONFLICT (payer_wallet, nonce) DO NOTHING RETURNING nonce`.
  * SQLite: `INSERT OR IGNORE ... RETURNING nonce`.
@@ -100,7 +100,7 @@ export async function tryClaimPayment(
     const sql = isPg
       ? `INSERT INTO processed_x402_payments (nonce, tool, amount, payer_wallet)
          VALUES (?, ?, ?, ?)
-         ON CONFLICT (nonce) DO NOTHING
+         ON CONFLICT (payer_wallet, nonce) DO NOTHING
          RETURNING nonce`
       : `INSERT OR IGNORE INTO processed_x402_payments (nonce, tool, amount, payer_wallet)
          VALUES (?, ?, ?, ?)

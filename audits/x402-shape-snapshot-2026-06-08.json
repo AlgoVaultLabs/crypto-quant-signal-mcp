@@ -44,5 +44,8 @@
     "get_market_regime",
     "get_trade_call",
     "scan_funding_arb"
-  ]
+  ],
+  "snapshot_date": "2026-06-08",
+  "superseded_by": "x402-shape-snapshot-2026-06-09.json",
+  "superseded_reason": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: a LATER snapshot for the same subject carries the canonical declaration. This row published an EMPTY allowed_keys under its FILENAME as the endpoint \u2014 a contract asserting nothing \u2014 and only avoided a duplicate-doc-id collision because the filename fallback hid that it describes the same surface. Kept on disk as history; the builder skips a superseded row rather than projecting it."
 }

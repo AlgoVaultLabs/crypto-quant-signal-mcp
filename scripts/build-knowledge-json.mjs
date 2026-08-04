@@ -283,7 +283,17 @@ async function build() {
   // 5. Response shapes — read every audits/*-shape-snapshot-*.json and project
   //    into the typed KnowledgeBundleResponseShape interface.
   const snapshotFiles = listAuditSnapshots();
-  const responseShapes = snapshotFiles.map((file) => {
+  // OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: a SUPERSEDED snapshot is kept on disk as history but is NOT
+  // projected. Before this, an older snapshot for the same subject published an EMPTY allowed_keys
+  // under its FILENAME as the endpoint — a contract asserting nothing — and only avoided a
+  // duplicate-doc-id collision (which winkBM25S rejects outright) because that filename fallback
+  // hid that it described the same surface.
+  const responseShapes = snapshotFiles
+    .filter((file) => {
+      const data = readJson(path.join(AUDITS_DIR, file));
+      return !(typeof data.superseded_by === 'string' && data.superseded_by.length > 0);
+    })
+    .map((file) => {
     const full = path.join(AUDITS_DIR, file);
     const data = readJson(full);
     return {

@@ -1,43 +1,86 @@
 {
   "_meta": {
     "wave": "REFERRAL-INPRODUCT-NUDGE-W1 (C1)",
-    "tool": "get_trade_call (+ get_trade_signal alias — same producer getTradeSignal)",
+    "tool": "get_trade_call (+ get_trade_signal alias \u2014 same producer getTradeSignal)",
     "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio",
     "captured_at": "2026-06-22",
     "purpose": "Public-response-shape SoT after the ADDITIVE referral arm. Supersedes get-trade-call-shape-snapshot-2026-06-20.json. ADDITIVE-ONLY: the success `_algovault` block MAY gain `upgrade_hint` (now also the keyed high-conviction/milestone aha referral line) + `referral_hint` (structured, allow-listed); the TIER_LIMIT_REACHED error envelope gains `referral_hint`. content[0] byte-position preserved (the referral string rides the existing human content item + the additive field). NO existing field removed/renamed (Data Integrity). outcome_return_pct / Phase-E outcome WR must NEVER appear in `referral_hint` (allow-list)."
   },
-  "top_level_allowed_keys": ["call", "confidence", "price", "indicators", "regime", "reasoning", "timestamp", "coin", "timeframe", "_algovault", "closest_tradeable", "also_see", "_receipts"],
+  "top_level_allowed_keys": [
+    "call",
+    "confidence",
+    "price",
+    "indicators",
+    "regime",
+    "reasoning",
+    "timestamp",
+    "coin",
+    "timeframe",
+    "_algovault",
+    "closest_tradeable",
+    "also_see",
+    "_receipts"
+  ],
   "algovault_referral_additive_keys": {
-    "_algovault.upgrade_hint": "EXISTING optional string. On the aha value moment for a KEYED user it now carries the high-conviction-call or usage-milestone REFERRAL line (was upgrade-only). Keyless aha keeps the upgrade hint verbatim. ≤1 aha referral/session (shouldShowAhaReferral).",
-    "_algovault.referral_hint": "NEW additive, allow-listed structured object — present only when the aha referral fired (KEYED + session slot). Exactly {cta, link_or_path, bonus_calls, from}. Agent-relayable."
+    "_algovault.upgrade_hint": "EXISTING optional string. On the aha value moment for a KEYED user it now carries the high-conviction-call or usage-milestone REFERRAL line (was upgrade-only). Keyless aha keeps the upgrade hint verbatim. \u22641 aha referral/session (shouldShowAhaReferral).",
+    "_algovault.referral_hint": "NEW additive, allow-listed structured object \u2014 present only when the aha referral fired (KEYED + session slot). Exactly {cta, link_or_path, bonus_calls, from}. Agent-relayable."
   },
-  "referral_hint_allowed_keys": ["cta", "link_or_path", "bonus_calls", "from"],
+  "referral_hint_allowed_keys": [
+    "cta",
+    "link_or_path",
+    "bonus_calls",
+    "from"
+  ],
   "enums": {
-    "referral_hint.from": ["limit", "aha_call", "aha_scan", "aha_milestone", "aha_verify"],
-    "call": ["BUY", "SELL", "HOLD"]
+    "referral_hint.from": [
+      "limit",
+      "aha_call",
+      "aha_scan",
+      "aha_milestone",
+      "aha_verify"
+    ],
+    "call": [
+      "BUY",
+      "SELL",
+      "HOLD"
+    ]
   },
   "new_in_this_wave": {
-    "referral_arm": "REFERRAL-INPRODUCT-NUDGE-W1: the LIVE nudge generator gains a referral arm at the value moments. Limit wall = referral-prominent + upgrade-retained (state-adaptive: keyed → own algovault.com/join?ref=<code>; keyless → free-account get-your-link path). Aha = a light referral hint for KEYED users, ≤1/session across triggers (a) high-conviction first non-HOLD (confidence >= 70) + (c) usage milestone [25,50] (lifetime-deduped via quota_usage.milestone_referral_shown). Trigger (d) aha_verify ships its copy + enum value but is UNWIRED (resource reads carry no per-user attribution — deferred to OPS-REFERRAL-VERIFY-NUDGE-W{NEXT}).",
+    "referral_arm": "REFERRAL-INPRODUCT-NUDGE-W1: the LIVE nudge generator gains a referral arm at the value moments. Limit wall = referral-prominent + upgrade-retained (state-adaptive: keyed \u2192 own algovault.com/join?ref=<code>; keyless \u2192 free-account get-your-link path). Aha = a light referral hint for KEYED users, \u22641/session across triggers (a) high-conviction first non-HOLD (confidence >= 70) + (c) usage milestone [25,50] (lifetime-deduped via quota_usage.milestone_referral_shown). Trigger (d) aha_verify ships its copy + enum value but is UNWIRED (resource reads carry no per-user attribution \u2014 deferred to OPS-REFERRAL-VERIFY-NUDGE-W{NEXT}).",
     "referral_hint.bonus_calls": "INTEGER from the REFERRAL_TERMS SoT (BONUS_CALLS = 500). Never hardcoded in copy.",
-    "referral_hint.link_or_path": "KEYED → full https give-get link (shareLink); KEYLESS → free-account signup URL (api.algovault.com/signup?upgrade_from=<from>_referral). Never a fake link.",
+    "referral_hint.link_or_path": "KEYED \u2192 full https give-get link (shareLink); KEYLESS \u2192 free-account signup URL (api.algovault.com/signup?upgrade_from=<from>_referral). Never a fake link.",
     "message_only": "No free-tier gating change (message-only). tools/list=9 byte-unchanged. Keyless tier byte-identical except the limit/aha message string."
   },
   "forbidden_keys": [
-    "outcome_return_pct", "outcome_price", "phase_e_wr", "outcome_win_rate", "realized_return", "pnl",
-    "signal", "rsi", "ema_9", "ema_21", "funding_z_score", "squeeze_active", "try_next"
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "outcome_win_rate",
+    "realized_return",
+    "pnl",
+    "signal",
+    "rsi",
+    "ema_9",
+    "ema_21",
+    "funding_z_score",
+    "squeeze_active",
+    "try_next"
   ],
   "error_contract": {
-    "TIER_LIMIT_REACHED": "{code, error_code, message, current_usage, monthly_limit, tier, suggested_upgrade_url, retry_after_days, referral_hint} — isError:true. message is referral-prominent + upgrade-retained; referral_hint {cta, link_or_path, bonus_calls, from:'limit'} is the additive structured field (NEW this wave).",
-    "INSUFFICIENT_CANDLES": "{error:'INSUFFICIENT_CANDLES', error_code, message, candles_available, candles_required, suggested_timeframes:[], suggested_action} — isError:true",
-    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "{error_code, message, coin, requested_exchange, suggested_venues:[], probed_at} — isError:true",
-    "UPSTREAM_RATE_LIMIT": "{error_code, exchange, retry_after_seconds, suggestion} — isError:true",
-    "note": "Success envelopes carry NO referral_hint at top level — it rides inside _algovault. Only the limit ERROR envelope carries a top-level referral_hint."
+    "TIER_LIMIT_REACHED": "{code, error_code, message, current_usage, monthly_limit, tier, suggested_upgrade_url, retry_after_days, referral_hint} \u2014 isError:true. message is referral-prominent + upgrade-retained; referral_hint {cta, link_or_path, bonus_calls, from:'limit'} is the additive structured field (NEW this wave).",
+    "INSUFFICIENT_CANDLES": "{error:'INSUFFICIENT_CANDLES', error_code, message, candles_available, candles_required, suggested_timeframes:[], suggested_action} \u2014 isError:true",
+    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "{error_code, message, coin, requested_exchange, suggested_venues:[], probed_at} \u2014 isError:true",
+    "UPSTREAM_RATE_LIMIT": "{error_code, exchange, retry_after_seconds, suggestion} \u2014 isError:true",
+    "note": "Success envelopes carry NO referral_hint at top level \u2014 it rides inside _algovault. Only the limit ERROR envelope carries a top-level referral_hint."
   },
-  "additive_only_rule": "top level + _algovault may GAIN referral_hint/upgrade_hint but never LOSE/RENAME any pre-existing key; content[0] stays the JSON envelope. A forbidden_key under referral_hint, a referral_hint with keys other than the 4 allow-listed, or a hardcoded bonus number = Factuality/Data-Integrity violation → HALT.",
-  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run nudge-copy tier-limit-reached aha-event scan-trade-calls aha-referral-milestone   # referral arm copy (SoT numbers, no outcome_*), allow-listed referral_hint (4 keys), ≤1/session cap, milestone lifetime-dedup",
+  "additive_only_rule": "top level + _algovault may GAIN referral_hint/upgrade_hint but never LOSE/RENAME any pre-existing key; content[0] stays the JSON envelope. A forbidden_key under referral_hint, a referral_hint with keys other than the 4 allow-listed, or a hardcoded bonus number = Factuality/Data-Integrity violation \u2192 HALT.",
+  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run nudge-copy tier-limit-reached aha-event scan-trade-calls aha-referral-milestone   # referral arm copy (SoT numbers, no outcome_*), allow-listed referral_hint (4 keys), \u22641/session cap, milestone lifetime-dedup",
   "consumers": [
-    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call — read the human upgrade_hint string + the structured referral_hint (relay to the human principal)",
-    "algovault-bot (Telegram) — parses content[0] JSON (unaffected; content[0] byte-position preserved)",
-    "src/lib/cross-asset-grid.ts (internal grid refresh; receives NO referral arm — internal calls skip nudges)"
-  ]
+    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call \u2014 read the human upgrade_hint string + the structured referral_hint (relay to the human principal)",
+    "algovault-bot (Telegram) \u2014 parses content[0] JSON (unaffected; content[0] byte-position preserved)",
+    "src/lib/cross-asset-grid.ts (internal grid refresh; receives NO referral arm \u2014 internal calls skip nudges)"
+  ],
+  "snapshot_date": "2026-06-22",
+  "superseded_by": "get-trade-call-shape-snapshot-2026-06-27.json",
+  "superseded_reason": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1: a LATER snapshot for the same subject carries the canonical declaration. This row published an EMPTY allowed_keys under its FILENAME as the endpoint \u2014 a contract asserting nothing \u2014 and only avoided a duplicate-doc-id collision because the filename fallback hid that it describes the same surface. Kept on disk as history; the builder skips a superseded row rather than projecting it."
 }

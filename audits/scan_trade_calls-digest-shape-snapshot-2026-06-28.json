@@ -1,22 +1,46 @@
 {
-  "endpoint": "MCP tool scan_trade_calls — ENRICHED mode (includeReasoning:true) + Streamable-HTTP /mcp",
+  "endpoint": "MCP tool scan_trade_calls \u2014 ENRICHED mode (includeReasoning:true) + Streamable-HTTP /mcp",
   "wave": "SCAN-DIGEST-MCP-PARITY-W1 CH1",
   "snapshot_date": "2026-06-28",
   "supersedes_note": "Complements (does NOT replace) scan-trade-calls-shape-snapshot-2026-06-04.json, which documents the DEFAULT (bare) shape. This snapshot documents the opt-in enriched shape returned ONLY when includeReasoning:true. Bare/default output stays byte-identical to the 2026-06-04 snapshot (+ the SCAN-RANKBY rank echo).",
   "naming_law": "Public fields use `call` / `confidence`, never `signal`. `outcome_*` is INTERNAL-only (Data Integrity LAW).",
   "param": {
-    "includeReasoning": "boolean, default false. true ⇒ each NON-HOLD call is enriched at OUTPUT via enrichScanCall (HOLDs stay bare + free). Orthogonal to rankBy — composes.",
+    "includeReasoning": "boolean, default false. true \u21d2 each NON-HOLD call is enriched at OUTPUT via enrichScanCall (HOLDs stay bare + free). Orthogonal to rankBy \u2014 composes.",
     "default_false_rationale": "Bare back-compat is the firewall; enrichment is opt-in on the breadth tool. (NB: get_trade_call.includeReasoning defaults TRUE; scan defaults FALSE.)"
   },
-  "allowed_keys": {
-    "top_level": ["scanned", "eligible_non_hold", "holds", "errors", "partial", "calls", "_algovault", "_receipts"],
-    "calls_item_bare_or_HOLD": ["coin", "timeframe", "exchange", "call", "confidence", "regime"],
-    "calls_item_enriched_non_hold": ["coin", "timeframe", "exchange", "call", "confidence", "regime", "price", "factors", "reasoning", "oi_change_window"],
-    "calls_item_rank_echo_when_rankBy_set": ["rank_value", "change_24h_pct", "volume_24h", "funding_rate", "funding_apr", "atrp", "oi_change_pct", "oi_change_window"],
-    "factors_item": ["factor", "direction", "value"],
-    "factors_item_note": "direction ∈ {bullish, bearish, neutral}. Byte-identical to the formatReceipts factors get_trade_call emits (single-derivation).",
-    "_receipts": ["track_record", "verification_uri", "disclaimer"]
-  },
+  "allowed_keys": [
+    "_algovault",
+    "_receipts",
+    "atrp",
+    "call",
+    "calls",
+    "change_24h_pct",
+    "coin",
+    "confidence",
+    "direction",
+    "disclaimer",
+    "eligible_non_hold",
+    "errors",
+    "exchange",
+    "factor",
+    "factors",
+    "funding_apr",
+    "funding_rate",
+    "holds",
+    "oi_change_pct",
+    "oi_change_window",
+    "partial",
+    "price",
+    "rank_value",
+    "reasoning",
+    "regime",
+    "scanned",
+    "timeframe",
+    "track_record",
+    "value",
+    "verification_uri",
+    "volume_24h"
+  ],
   "forbidden_keys": [
     "outcome_return_pct",
     "outcome_price",
@@ -26,31 +50,85 @@
     "underlying_session",
     "funding_note"
   ],
-  "forbidden_keys_note": "outcome_* are INTERNAL-only. The RAW engine `indicators` object is NEVER exposed — enrichScanCall projects ONLY the allow-listed `factors` + `price` + `reasoning` + `oi_change_window` (explicit copy, never a spread). Raw indicator fields (funding_24h_avg / underlying_session / funding_note) stay internal.",
+  "forbidden_keys_note": "outcome_* are INTERNAL-only. The RAW engine `indicators` object is NEVER exposed \u2014 enrichScanCall projects ONLY the allow-listed `factors` + `price` + `reasoning` + `oi_change_window` (explicit copy, never a spread). Raw indicator fields (funding_24h_avg / underlying_session / funding_note) stay internal.",
   "content_envelope": {
-    "content[0]": "the JSON envelope (structured _receipts block retained — same as bare mode).",
-    "content[1]_bare_mode": "the `Proof:` receipts footer (renderScanReceiptText) — UNCHANGED in default/bare mode.",
-    "content[1]_enriched_mode": "the digest TEXT (renderScanDigest): a 🚀 header + one renderScanDigestLine per actionable call — NO Proof footer (parity with OPS-SCANWATCH-ROCKET-NO-PROOF). The structured _receipts JSON still rides in content[0]."
+    "content[0]": "the JSON envelope (structured _receipts block retained \u2014 same as bare mode).",
+    "content[1]_bare_mode": "the `Proof:` receipts footer (renderScanReceiptText) \u2014 UNCHANGED in default/bare mode.",
+    "content[1]_enriched_mode": "the digest TEXT (renderScanDigest): a \ud83d\ude80 header + one renderScanDigestLine per actionable call \u2014 NO Proof footer (parity with OPS-SCANWATCH-ROCKET-NO-PROOF). The structured _receipts JSON still rides in content[0]."
   },
   "digest_line_format": {
-    "line1": "🟢|🔴 {coin} — {call} @ ${price} · {confidence}% conviction · {regime}",
-    "line2_optional": "   📊 {≤3 drivers joined by ' · '}  (OI driver carries its (window); arrows: bullish ↑ / bearish ↓ / neutral none)",
-    "line3_optional": "   💡 {first sentence of reasoning}",
-    "sot": "src/lib/scan-digest.ts::renderScanDigestLine — MIRRORED by the bot's Python rendering (CH3); CH4 canary pins byte-identical."
+    "line1": "\ud83d\udfe2|\ud83d\udd34 {coin} \u2014 {call} @ ${price} \u00b7 {confidence}% conviction \u00b7 {regime}",
+    "line2_optional": "   \ud83d\udcca {\u22643 drivers joined by ' \u00b7 '}  (OI driver carries its (window); arrows: bullish \u2191 / bearish \u2193 / neutral none)",
+    "line3_optional": "   \ud83d\udca1 {first sentence of reasoning}",
+    "sot": "src/lib/scan-digest.ts::renderScanDigestLine \u2014 MIRRORED by the bot's Python rendering (CH3); CH4 canary pins byte-identical."
   },
   "cache_contract": {
     "option_A_ratified": "2026-06-28 architect ratification: the scanner's internal scorer ALWAYS computes the canonical per-coin detail (getTradeSignal includeReasoning:true, internal:true) and caches it on the (coin,exchange,timeframe) cell. Bare mode projects toScanCallItem (drops enrichment); enriched mode projects enrichScanCall. NO recompute.",
-    "w1_law_scope": "The 'never cache' law binds ONLY the lens-VARYING rank echo (rank_value + the typed rank field) — attached at OUTPUT via attachRank, never cached. The cache-key-DETERMINED enrichment (price/factors/reasoning) is correctly cached (identical for a coin regardless of rankBy/includeReasoning).",
-    "property": "An enriched scan THEN a bare scan of the same coin/tf leaves NO stale enrichment (bare projects bare) — pinned by tests/unit/scan-digest-mode.test.ts."
+    "w1_law_scope": "The 'never cache' law binds ONLY the lens-VARYING rank echo (rank_value + the typed rank field) \u2014 attached at OUTPUT via attachRank, never cached. The cache-key-DETERMINED enrichment (price/factors/reasoning) is correctly cached (identical for a coin regardless of rankBy/includeReasoning).",
+    "property": "An enriched scan THEN a bare scan of the same coin/tf leaves NO stale enrichment (bare projects bare) \u2014 pinned by tests/unit/scan-digest-mode.test.ts."
   },
   "quota_contract": {
-    "units_charged": "max(1, non-HOLD calls in returned calls[]) — UNCHANGED. Enriching the same set adds ZERO billable units (HOLDs stay free)."
+    "units_charged": "max(1, non-HOLD calls in returned calls[]) \u2014 UNCHANGED. Enriching the same set adds ZERO billable units (HOLDs stay free)."
   },
   "consumers": [
-    "MCP clients (Claude Desktop / Code / Cursor / Cline via tools/list) — includeReasoning:true",
+    "MCP clients (Claude Desktop / Code / Cursor / Cline via tools/list) \u2014 includeReasoning:true",
     "Streamable-HTTP /mcp",
-    "webhook scan_digest calls[] (CH2 — projects from enrichScanCall)",
-    "algovault-bot /scan + /scanwatch (CH3 — renders from the enriched scan, retires the Python re-derivation)"
+    "webhook scan_digest calls[] (CH2 \u2014 projects from enrichScanCall)",
+    "algovault-bot /scan + /scanwatch (CH3 \u2014 renders from the enriched scan, retires the Python re-derivation)"
   ],
-  "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"timeframe\":\"15m\",\"includeReasoning\":true}}}' | jq -r '.result.content[0].text' | jq '(.calls[0]|keys)' && echo '--- forbidden-key scan (expect empty) ---' && curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"includeReasoning\":true,\"includeHolds\":true}}}' | grep -oE '\"(outcome_return_pct|outcome_price|price_at_signal|indicators)\"\\s*:' || echo 'OK: no forbidden keys'"
+  "drift_check_command": "curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"timeframe\":\"15m\",\"includeReasoning\":true}}}' | jq -r '.result.content[0].text' | jq '(.calls[0]|keys)' && echo '--- forbidden-key scan (expect empty) ---' && curl -s -X POST https://api.algovault.com/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"scan_trade_calls\",\"arguments\":{\"topN\":10,\"exchange\":\"BINANCE\",\"includeReasoning\":true,\"includeHolds\":true}}}' | grep -oE '\"(outcome_return_pct|outcome_price|price_at_signal|indicators)\"\\s*:' || echo 'OK: no forbidden keys'",
+  "allowed_keys_nested": {
+    "top_level": [
+      "scanned",
+      "eligible_non_hold",
+      "holds",
+      "errors",
+      "partial",
+      "calls",
+      "_algovault",
+      "_receipts"
+    ],
+    "calls_item_bare_or_HOLD": [
+      "coin",
+      "timeframe",
+      "exchange",
+      "call",
+      "confidence",
+      "regime"
+    ],
+    "calls_item_enriched_non_hold": [
+      "coin",
+      "timeframe",
+      "exchange",
+      "call",
+      "confidence",
+      "regime",
+      "price",
+      "factors",
+      "reasoning",
+      "oi_change_window"
+    ],
+    "calls_item_rank_echo_when_rankBy_set": [
+      "rank_value",
+      "change_24h_pct",
+      "volume_24h",
+      "funding_rate",
+      "funding_apr",
+      "atrp",
+      "oi_change_pct",
+      "oi_change_window"
+    ],
+    "factors_item": [
+      "factor",
+      "direction",
+      "value"
+    ],
+    "factors_item_note": "direction \u2208 {bullish, bearish, neutral}. Byte-identical to the formatReceipts factors get_trade_call emits (single-derivation).",
+    "_receipts": [
+      "track_record",
+      "verification_uri",
+      "disclaimer"
+    ]
+  },
+  "allowed_keys_source": "OPS-SHAPE-SNAPSHOT-INTEGRITY-W1 \u2014 this file declared allowed_keys as a nested OBJECT (per-mode / per-response-state sections). The builder only projects an ARRAY, so Array.isArray() failed and it published an EMPTY allow-list while the file looked fully populated. Flattened to the union of every section; the nested original is retained verbatim as allowed_keys_nested. Derived from this snapshot's own declaration \u2014 no new disclosure."
 }

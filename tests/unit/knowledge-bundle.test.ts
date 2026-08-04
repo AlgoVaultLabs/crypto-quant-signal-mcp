@@ -94,12 +94,27 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
     }
   });
 
-  it('bundle.response_shapes covers every audits/*-shape-snapshot-*.json on disk', () => {
+  // AMENDED by OPS-SHAPE-SNAPSHOT-INTEGRITY-W1. This asserted the bundle covers EVERY snapshot on
+  // disk, which is now deliberately false: a snapshot carrying `superseded_by` is kept as history
+  // and NOT projected. Before that, 12 of 46 rows were superseded duplicates publishing an EMPTY
+  // allowed_keys under their FILENAME as the endpoint — and the filename fallback is the only
+  // reason they did not collide, since real endpoints would produce duplicate doc ids that
+  // winkBM25S rejects outright. The invariant is coverage of the LIVE set, not of the directory.
+  it('bundle.response_shapes covers every NON-SUPERSEDED audits/*-shape-snapshot-*.json on disk', () => {
     const snapshotFiles = readdirSync(join(REPO_ROOT, 'audits')).filter((n) =>
       /-shape-snapshot-.*\.json$/.test(n)
     );
-    expect(bundle.response_shapes.length).toBe(snapshotFiles.length);
-    expect(snapshotFiles.length).toBeGreaterThanOrEqual(2);
+    const live = snapshotFiles.filter((n) => {
+      const d = JSON.parse(readFileSync(join(REPO_ROOT, 'audits', n), 'utf-8'));
+      return !(typeof d.superseded_by === 'string' && d.superseded_by.length > 0);
+    });
+    expect(bundle.response_shapes.length).toBe(live.length);
+    expect(live.length).toBeGreaterThanOrEqual(2);
+    // every superseded row must say WHY — an exemption in prose gets "fixed" by a future wave
+    for (const n of snapshotFiles.filter((x) => !live.includes(x))) {
+      const d = JSON.parse(readFileSync(join(REPO_ROOT, 'audits', n), 'utf-8'));
+      expect(d.superseded_reason, `${n} is superseded without a reason`).toBeTruthy();
+    }
   });
 
   it('bundle.integrations covers every landing/integrations/*.html on disk', () => {
