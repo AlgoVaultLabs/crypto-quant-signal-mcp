@@ -52,6 +52,10 @@ vi.mock('../src/lib/x402.js', () => ({
 }));
 
 vi.mock('../src/lib/x402-idempotency-store.js', () => ({
+  // REVENUE-METER-TRUTH-W2 CH3: a `vi.mock` FACTORY must enumerate every export the module
+  // under test imports — adding one to the real module breaks every such mock with
+  // "No X export is defined on the mock". Keep this list in step with the store's exports.
+  RAIL_BASE_USDC: 'base-usdc',
   extractPaymentNonce: (payload: unknown) =>
     (payload as { payload?: { authorization?: { nonce?: string } } })?.payload?.authorization?.nonce,
   // OPS-X402-WALLET-ATTRIBUTION-W1: license.ts now also extracts the payer wallet (additive).
