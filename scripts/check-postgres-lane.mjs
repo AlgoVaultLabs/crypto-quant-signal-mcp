@@ -39,16 +39,39 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE = join(ROOT, 'audits', 'postgres-lane-baseline.txt');
 const argv = process.argv.slice(2);
 
+/**
+ * Strip ANSI SGR sequences. REAL vitest output is colourised, so ` FAIL ` arrives wrapped in
+ * escape codes. The first version of this file matched on clean text only — its self-test used
+ * synthetic strings and passed, while against the actual log it found ZERO failures and the
+ * ratchet reported PASS over 5 genuinely failing files. Strip first, always.
+ */
+export function stripAnsi(s) {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\u001b\[[0-9;]*m/g, '');
+}
+
 /** Every ` FAIL  <file>` line vitest prints, deduped to test-FILE granularity. */
 export function failingFiles(log) {
   const out = new Set();
-  for (const m of log.matchAll(/^\s*FAIL\s+(\S+?\.(?:test|spec)\.[cm]?[jt]s)/gm)) out.add(m[1]);
+  for (const m of stripAnsi(log).matchAll(/^\s*FAIL\s+(\S+?\.(?:test|spec)\.[cm]?[jt]s)/gm)) out.add(m[1]);
   return [...out].sort();
+}
+
+/**
+ * The count vitest itself reports in its summary: `Test Files  5 failed | 371 passed (384)`.
+ * Cross-checking the PARSED failures against this is the guard that would have caught the ANSI
+ * bug on its first run instead of after it laundered 5 failures into a PASS.
+ */
+export function summaryFailedCount(log) {
+  const m = /Test Files\s+(?:(\d+)\s+failed)?/.exec(stripAnsi(log));
+  if (!m) return null;
+  return m[1] ? Number(m[1]) : 0;
 }
 
 /** Did vitest actually report a run? A log without this never executed anything. */
 export function hasSummary(log) {
-  return /Test Files\s+.*\(\d+\)/.test(log) || /Tests\s+\d+\s+passed/.test(log);
+  const s = stripAnsi(log);
+  return /Test Files\s+.*\(\d+\)/.test(s) || /Tests\s+\d+\s+passed/.test(s);
 }
 
 /** Baseline rows: `path  # owner: X — reason`. The comment is MANDATORY. */
@@ -65,7 +88,9 @@ export function parseBaseline(text) {
 
 export function selfTest() {
   const f = [];
-  const log = ' FAIL  tests/unit/a.test.ts > x\n FAIL  tests/b.test.ts > y\n Test Files  2 failed | 3 passed (5)\n';
+  const ESC = String.fromCharCode(27);
+  // REAL vitest output is colourised — this is the shape that broke the first version.
+  const log = ` ${ESC}[31mFAIL${ESC}[39m  tests/unit/a.test.ts > x\n ${ESC}[31mFAIL${ESC}[39m  tests/b.test.ts > y\n ${ESC}[2m Test Files ${ESC}[22m ${ESC}[31m2 failed${ESC}[39m | 3 passed (5)\n`;
   const ff = failingFiles(log);
   if (ff.length !== 2) f.push(`failingFiles found ${ff.length}, expected 2`);
   if (!ff.includes('tests/unit/a.test.ts')) f.push('failingFiles missed a path');
@@ -75,6 +100,10 @@ export function selfTest() {
   const b = parseBaseline('# c\n\ntests/x.test.ts  # owner: OPS-Y — because\n');
   if (b.length !== 1 || !b[0].note) f.push('parseBaseline dropped the mandatory note');
   if (parseBaseline('tests/x.test.ts\n')[0].note !== '') f.push('parseBaseline invented a note');
+  // THE REGRESSION: the parsed failure count must agree with vitest's own summary.
+  if (summaryFailedCount(log) !== 2) f.push(`summaryFailedCount read ${summaryFailedCount(log)}, expected 2`);
+  if (summaryFailedCount(' Test Files  5 passed (5)\n') !== 0) f.push('summaryFailedCount misread a clean summary');
+  if (failingFiles(log).length !== summaryFailedCount(log)) f.push('parsed failures disagree with the summary on a known-good log');
   return f;
 }
 
@@ -110,6 +139,16 @@ if (IS_MAIN) {
 
   const known = new Set(baseline.map((r) => r.path));
   const failing = failingFiles(log);
+
+  // FAIL-CLOSED on a parser/summary disagreement. Without this, a log format change silently
+  // turns every failure into a PASS — which is exactly what happened on this lane's first run.
+  const reported = summaryFailedCount(log);
+  if (reported !== null && reported !== failing.length) {
+    emit('INDETERMINATE',
+      `vitest reported ${reported} failing FILE(s) but this parser recognised ${failing.length}. ` +
+      `The log format changed and the ratchet can no longer read it — refusing to report a pass ` +
+      `over failures it cannot see.`);
+  }
   const fresh = failing.filter((f) => !known.has(f));
   const fixed = [...known].filter((k) => !failing.includes(k));
 
