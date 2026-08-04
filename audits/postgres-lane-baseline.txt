@@ -1,0 +1,21 @@
+# OPS-POSTGRES-TEST-LANE-W1 — Postgres-lane quarantine baseline.
+#
+# One test-FILE per line. A row here is a DEBT, not an exemption: it MUST carry
+#   # owner: <WAVE-ID> — <reason>
+# and check-postgres-lane.mjs FAILS the lane if it does not. The ratchet only SHRINKS — a file
+# that starts passing must be deleted from this list in the same change, or it would hide the
+# next regression in that file.
+#
+# These five are the delta from the lane's FIRST live run: 371 passed / 5 failed / 8 skipped of
+# 384 files. Every one is code that had never been executed against Postgres. They are quarantined
+# with owners, NOT silenced with a skip — a skip that hides a real defect is how the x402 outage
+# stayed hidden for ~25 hours.
+#
+# ── GENUINE PG-path findings (the reason this lane exists) ───────────────────
+tests/unit/perf-stats-cache.test.ts        # owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — 5 tests fail on PG incl. a DATA-INTEGRITY assertion ("signals older than 20 days are included"). Cache-bucket and column-projection behaviour diverges from the SQLite path. Highest-value row here: a data-integrity assertion that has never run against the production engine.
+tests/unit/funding-zscore-cache.test.ts    # flaky: owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — NON-DETERMINISTIC on PG: failed the lane first run ("stdDev === 0 returns 0 and caches"), passed the second with an identical tree. A flaky row in a shrink-only ratchet oscillates and would turn the lane red on ~half of all pushes, so it is marked flaky (reported, never blocking) until someone makes it deterministic. Flakiness on a cache path against the real engine is itself the finding.
+tests/unit/funding-bulk-warm.test.ts       # owner: OPS-PG-LANE-TRIAGE-CACHE-W{NEXT} — bulk-warm math-equivalence + the n_matview/n_fallback log format fail on PG. This path reads a MATERIALIZED VIEW, which SQLite cannot have, so the SQLite lane was asserting a fallback that production never takes.
+#
+# ── NOT PG defects: the test encodes an environment assumption ───────────────
+tests/unit/session-drift.test.ts           # owner: OPS-PG-LANE-ENV-ASSUMPTIONS-W{NEXT} — fails on the git TOPOLOGY of a CI checkout (no sibling worktrees, different origin/main distance), not on anything Postgres. It passes locally and in the SQLite lane. Needs the git state stubbed rather than the lane changed.
+tests/unit/venue-review-deadline.test.ts   # owner: OPS-PG-LANE-ENV-ASSUMPTIONS-W{NEXT} — asserts "omits IF NOT EXISTS on the SQLite branch", so setting DATABASE_URL correctly takes the PG branch and inverts the assertion. The test needs an explicit backend guard; the code is right.

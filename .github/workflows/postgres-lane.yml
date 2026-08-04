@@ -1,0 +1,119 @@
+# OPS-POSTGRES-TEST-LANE-W1 — run the suite against the engine production actually uses.
+#
+# WHY THIS EXISTS. Production is Postgres; the ~4,940-test suite is SQLite. Every Postgres-only
+# SQL string — ON CONFLICT targets, `::` casts, `interval '…'`, percentile_cont, RETURNING,
+# ADD COLUMN IF NOT EXISTS, matview refreshes — was validated by nothing.
+#
+# The instance that got caught: `tryClaimPayment`'s PG branch kept `ON CONFLICT (nonce)` after the
+# primary key became (payer_wallet, nonce). Postgres answered every claim with "there is no unique
+# or exclusion constraint matching the ON CONFLICT specification", the fail-safe returned false,
+# and the paid x402 rail served nothing for ~25 hours — through a fully green suite, because every
+# test takes the SQLite branch (`INSERT OR IGNORE`, which has no ON CONFLICT clause at all). It was
+# found by an unrelated read-only probe, not by any gate.
+#
+# CLAUDE.md already prescribed the remedy ("gate the suite on DATABASE_URL presence —
+# describe.skipIf when unset"), and the tests are ALREADY authored in that shape. They had never
+# run, because CI had no database. The law existed; the lane did not.
+#
+# ── Why this is a SEPARATE workflow and not a step in deploy.yml ──────────────
+# deploy.yml runs only on push-to-main and gates the deploy. Adding a never-before-executed lane
+# straight into that path would either block every deploy on first contact, or be quietly softened
+# until it stopped meaning anything. This runs on EVERY branch so the lane can be measured and
+# triaged before it is allowed to gate anything, and it is `continue-on-error` for exactly as long
+# as its own baseline says it must be — see POSTGRES_LANE_ENFORCING below.
+name: Postgres test lane
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  postgres-lane:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Pinned to the version production runs — READ FROM THE LIVE HOST, not assumed:
+        # `docker inspect crypto-quant-signal-mcp-postgres-1 --format '{{.Config.Image}}'`
+        # → postgres:16-alpine (server_version 16.13), probed 2026-08-04.
+        # A lane on a different major would validate SQL production never executes.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: algovault
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: signal_performance_test
+        ports:
+          - 5432:5432
+        # Without a health check the suite races the server's first-boot initdb and fails on
+        # connection refused, which reads exactly like a test failure and would be triaged as one.
+        options: >-
+          --health-cmd "pg_isready -U algovault -d signal_performance_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://algovault:postgres@localhost:5432/signal_performance_test
+      # The suites that are PG-aware key off DATABASE_URL presence alone; nothing else is needed
+      # to wake them. Kept explicit so a reader does not go looking for a second switch.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Compile TS
+        run: npm run build
+
+      - name: Confirm the database is actually reachable
+        # An unreachable database must be INDETERMINATE, never a silent pass. If this step fails
+        # the job fails loudly here rather than downstream, where "0 PG tests ran" would look
+        # indistinguishable from "the PG lane is green".
+        run: |
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.DATABASE_URL });
+              await c.connect();
+              const r = await c.query('SELECT version()');
+              console.log('connected:', r.rows[0].version.split(',')[0]);
+              await c.end();
+            })().catch((e) => { console.error('POSTGRES_LANE_VERDICT=INDETERMINATE — database unreachable:', e.message); process.exit(3); });
+          "
+
+      - name: Apply migrations
+        # The application self-heals its own schema (each store calls its ensure*Schema() on first
+        # use), so this applies the migrations that are NOT expressible that way. Ordinal order.
+        # `ON_ERROR_STOP` is deliberately OFF: several migrations are idempotent re-statements of
+        # DDL the app also creates, and a duplicate-object notice is not a lane failure. A genuine
+        # schema problem surfaces as a TEST failure, which is the signal we want.
+        run: |
+          sudo apt-get install -y --no-install-recommends postgresql-client >/dev/null 2>&1 || true
+          for f in $(ls migrations/*.sql | grep -v '\.down\.sql$' | sort); do
+            echo "── $f"
+            psql "$DATABASE_URL" -q -f "$f" 2>&1 | grep -viE 'already exists|NOTICE' || true
+          done
+
+      - name: Suite — POSTGRES lane
+        id: pg
+        # continue-on-error while the lane is being triaged. This is NOT a soft gate forever: the
+        # next step compares the result against a COMMITTED baseline, so a NEW failure fails the
+        # job even today, and the baseline may only shrink.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx vitest run --reporter=default 2>&1 | tee /tmp/pg-lane.log
+          echo "exit=${PIPESTATUS[0]}"
+
+      - name: Compare against the committed lane baseline
+        # The ratchet. A newly-failing PG test blocks; a known-failing one reports until its owner
+        # fixes it. Baseline lives at audits/postgres-lane-baseline.txt, one test-FILE per line,
+        # each with an owner + reason in the ledger beside it.
+        run: node scripts/check-postgres-lane.mjs /tmp/pg-lane.log
