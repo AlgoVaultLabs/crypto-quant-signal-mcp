@@ -34,7 +34,7 @@ import { getUsageStats } from './analytics.js';
 import { classifySource, mediumForSource, type AttributionSource } from './attribution-sources.js';
 // OPS-X402-WALLET-ATTRIBUTION-W1: operator self-settle wallets are excluded from the distinct-
 // paying-wallet CONVERSION metric (instrumentation_artifact); operator display is truncated.
-import { operatorExclusionSql, truncateWallet } from './x402-operator-wallets.js';
+import { externalPayerSql, truncateWallet } from './x402-operator-wallets.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WINDOWS_DAYS = [7, 14, 30, 90] as const;
@@ -495,15 +495,21 @@ export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   const allTimePqls = await scalar(deps, 'agent_pql_alltime', `SELECT COUNT(*) AS c FROM quota_usage WHERE call_count >= 100`, [], warnings);
   // OPS-X402-WALLET-ATTRIBUTION-W1: quota→paid counts DISTINCT paying WALLETS (the ERC-3009 payer),
   // operator self-settle EXCLUDED (instrumentation_artifact) → the rate is EXACT, not payment events.
-  // Payment COUNT is a secondary; NULL-wallet (pre-instrumentation) rows are excluded by COUNT(DISTINCT).
+  // Payment COUNT is a secondary. Unattributable (pre-instrumentation) rows carry the EMPTY STRING,
+  // not NULL (SEC-49 — see externalPayerSql), so `IS NOT NULL` did NOT exclude them and neither did
+  // COUNT(DISTINCT); `externalPayerSql` is the one predicate that does. _(Corrected 2026-08-04
+  // REVENUE-METER-TRUTH-W1 CH1 — the prior comment claimed COUNT(DISTINCT) excluded "NULL-wallet"
+  // rows. There are ZERO NULLs in the table and never were on this path, so that sentence described
+  // a filter that could not fire, which is exactly why three separate reviewers read three separate
+  // copies of this predicate as correct.)_
   // Base/USDC rail only (okx a2mcp settlements are not in processed_x402_payments — OPS-X402-OKX-METRICS-W1).
-  const { clause: opClause, params: opParams } = operatorExclusionSql();
+  const { clause: extClause, params: extParams } = externalPayerSql();
   const paidWalletsX402 = await scalar(deps, 'agent_x402_wallets',
-    `SELECT COUNT(DISTINCT lower(payer_wallet)) AS c FROM processed_x402_payments WHERE created_at >= ? AND payer_wallet IS NOT NULL${opClause}`,
-    [iso, ...opParams], warnings);
+    `SELECT COUNT(DISTINCT lower(trim(payer_wallet))) AS c FROM processed_x402_payments WHERE created_at >= ?${extClause}`,
+    [iso, ...extParams], warnings);
   const paidPaymentsX402 = await scalar(deps, 'agent_x402_payments',
     `SELECT COUNT(*) AS c FROM processed_x402_payments WHERE created_at >= ?`, [iso], warnings);
-  const repeatPayers = await topX402Payers(deps, iso, opClause, opParams, warnings);
+  const repeatPayers = await topX402Payers(deps, iso, extClause, extParams, warnings);
   const stages: FunnelStage[] = [
     { key: 'connections', label: 'Connections', sublabel: 'Reach · MCP / API', count: connections },
     { key: 'activated', label: 'Activated', sublabel: 'Value · made ≥1 call', count: activated },
@@ -516,7 +522,7 @@ export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps 
     window, stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches),
     quota_detail: { windowed_hard_block: quotaCross, soft_approaching: quotaSoft, all_time_pqls: allTimePqls },
     paid_detail: { distinct_wallets: paidWalletsX402, payments: paidPaymentsX402, repeat_payers: repeatPayers },
-    paid_note: 'Distinct paying WALLETS (COUNT DISTINCT payer_wallet), operator self-settle EXCLUDED (instrumentation_artifact) — the EXACT quota→paid conversion, not payment events. Secondary payment count in paid_detail.payments; pre-instrumentation (NULL-wallet) rows not counted. Base/USDC rail only — okx a2mcp settlements are not yet in this count (OPS-X402-OKX-METRICS-W1).',
+    paid_note: 'Distinct paying WALLETS (COUNT DISTINCT payer_wallet), operator self-settle EXCLUDED (instrumentation_artifact) — the EXACT quota→paid conversion, not payment events. Secondary payment count in paid_detail.payments; unattributable pre-instrumentation rows (empty-string wallet, SEC-49) not counted. Base/USDC rail only — okx a2mcp settlements are not yet in this count (OPS-X402-OKX-METRICS-W1).',
   };
 }
 
@@ -526,14 +532,14 @@ export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps 
 async function topX402Payers(
   deps: ScoreboardDeps,
   iso: string,
-  opClause: string,
-  opParams: string[],
+  extClause: string,
+  extParams: string[],
   warnings: string[],
 ): Promise<Array<{ wallet: string; calls: number }>> {
   try {
     const rows = await deps.query<{ payer_wallet: string; c: number | string }>(
-      `SELECT payer_wallet, COUNT(*) AS c FROM processed_x402_payments WHERE created_at >= ? AND payer_wallet IS NOT NULL${opClause} GROUP BY payer_wallet ORDER BY c DESC LIMIT 5`,
-      [iso, ...opParams],
+      `SELECT payer_wallet, COUNT(*) AS c FROM processed_x402_payments WHERE created_at >= ?${extClause} GROUP BY payer_wallet ORDER BY c DESC LIMIT 5`,
+      [iso, ...extParams],
     );
     return rows.map((r) => ({ wallet: truncateWallet(r.payer_wallet), calls: safeCount(r.c) ?? 0 }));
   } catch (err) {
@@ -718,12 +724,13 @@ export async function getFunnelScoreboard(
     [fromIso], warnings,
   );
   // OPS-X402-WALLET-ATTRIBUTION-W1 (Q5): distinct paying wallets alongside the payment count,
-  // operator self-settle excluded — consistent with the agent-funnel conversion metric.
-  const { clause: opClauseCensus, params: opParamsCensus } = operatorExclusionSql();
+  // operator self-settle AND unattributable empty-string rows excluded via the one shared predicate
+  // — byte-consistent with the agent-funnel conversion metric above (single-derivation rule).
+  const { clause: extClauseCensus, params: extParamsCensus } = externalPayerSql();
   const x402Wallets = await scalar(
     deps, 'x402_wallets',
-    `SELECT COUNT(DISTINCT lower(payer_wallet)) AS c FROM processed_x402_payments WHERE created_at >= ? AND payer_wallet IS NOT NULL${opClauseCensus}`,
-    [fromIso, ...opParamsCensus], warnings,
+    `SELECT COUNT(DISTINCT lower(trim(payer_wallet))) AS c FROM processed_x402_payments WHERE created_at >= ?${extClauseCensus}`,
+    [fromIso, ...extParamsCensus], warnings,
   );
 
   const paying_subscribers: FunnelScoreboard['paying_subscribers'] = {
@@ -735,7 +742,7 @@ export async function getFunnelScoreboard(
     x402_separate: {
       payments_in_window: x402Payments,
       distinct_wallets_in_window: x402Wallets,
-      note: 'x402 micro-payments are a SEPARATE rail (per-call USDC, not subscriptions) — never folded into the subscriber headline. distinct_wallets excludes operator self-settle (instrumentation_artifact); Base rail only (okx a2mcp not yet counted — OPS-X402-OKX-METRICS-W1).',
+      note: 'x402 micro-payments are a SEPARATE rail (per-call USDC, not subscriptions) — never folded into the subscriber headline. distinct_wallets excludes operator self-settle (instrumentation_artifact) AND unattributable empty-string wallets (SEC-49); Base rail only (okx a2mcp not yet counted — OPS-X402-OKX-METRICS-W1).',
     },
     enrichment: { profiles_total: profAgg.total, by_channel: profAgg.byChannel },
     reconciliation,

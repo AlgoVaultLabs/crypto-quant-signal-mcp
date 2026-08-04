@@ -280,7 +280,12 @@ describe('getAgentFunnel', () => {
     if (sql.includes("'quota_hit_soft'")) return [{ c: 20 }];
     if (sql.includes('FROM quota_usage')) return [{ c: 10 }];
     // OPS-X402-WALLET-ATTRIBUTION-W1: distinct wallets (exact conversion) vs payment count vs repeat-payers.
-    if (sql.includes('COUNT(DISTINCT lower(payer_wallet))')) return [{ c: 3 }];
+    // Keyed on the AGGREGATE, not on the normalisation expression. REVENUE-METER-TRUTH-W1 CH1 changed
+    // it to `lower(trim(payer_wallet))`; the old exact-literal matcher then MISSED and fell through to
+    // the `FROM processed_x402_payments` payment-count branch below, returning 7 as if it were the
+    // wallet count. A substring matcher that can fall through to a sibling branch yields a wrong
+    // answer rather than an error — `COUNT(DISTINCT` cannot collide with the `COUNT(*)` payment query.
+    if (sql.includes('COUNT(DISTINCT')) return [{ c: 3 }];
     if (sql.includes('GROUP BY payer_wallet')) return [
       { payer_wallet: '0xrealpayer0000000000000000000000000000aa', c: 4 },
       { payer_wallet: '0xrealpayer0000000000000000000000000000bb', c: 1 },

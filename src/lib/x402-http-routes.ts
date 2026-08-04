@@ -432,7 +432,11 @@ export function mountX402HttpRoutes(app: Express): string[] {
         : settlementReq.amount != null ? String(settlementReq.amount) : '';
       const nonce = extractPaymentNonce(pendingSettlement.paymentPayload);
       // OPS-X402-WALLET-ATTRIBUTION-W1: capture the ERC-3009 payer wallet additively (fail-open —
-      // undefined → NULL column, never affects the claim decision). Base/USDC rail (HTTP /x402).
+      // undefined → the EMPTY STRING, never affects the claim decision). Base/USDC rail (HTTP /x402).
+      // _(Corrected 2026-08-04 REVENUE-METER-TRUTH-W1 CH1 — this said "NULL column". The store writes
+      // `payerWallet ?? ''` (x402-idempotency-store.ts:113) and the column is `NOT NULL DEFAULT ''`
+      // per SEC-49, so the NULL described here has never existed. Read-side filters written against
+      // that phantom NULL let 4 unattributable rows count as a paying wallet.)_
       const payerWallet = extractPayerWallet(pendingSettlement.paymentPayload);
       const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet);
       if (!claimed) {
