@@ -36,7 +36,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
@@ -146,17 +146,23 @@ export class WhitebitAdapter implements ExchangeAdapter {
     }
 
     const startSec = Math.floor(startTime / 1000);
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
+    // WhiteBIT row order: [ts, open, close, high, low, base_vol, quote_vol]
     return env.result
       .filter(r => r[0] >= startSec)
-      .map(r => ({
-        time: r[0] * 1000,    // sec → ms
-        open: parseFloat(r[1]),
-        // WhiteBIT row order: [ts, open, close, high, low, base_vol, quote_vol]
-        close: parseFloat(r[2]),
-        high: parseFloat(r[3]),
-        low: parseFloat(r[4]),
-        volume: parseFloat(r[5]),    // base volume
-      }))
+      .flatMap(r => {
+        const open = safeUpstreamNum(r[1]);
+        const close = safeUpstreamNum(r[2]);
+        const high = safeUpstreamNum(r[3]);
+        const low = safeUpstreamNum(r[4]);
+        if (open === null || close === null || high === null || low === null) return [];
+        return [{
+          time: r[0] * 1000,    // sec → ms
+          open, close, high, low,
+          volume: parseFloat(r[5]),    // base volume
+        }];
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -174,8 +180,14 @@ export class WhitebitAdapter implements ExchangeAdapter {
       throw new Error(`WhiteBIT: market ${market} not found in /api/v4/public/futures (coin=${coin})`);
     }
 
-    const fundingRaw = parseFloat(row.funding_rate || '0');
-    const last = parseFloat(row.last_price || '0');
+    // SV-04: default-deny — an unparseable last/index chain throws (the 3-tier fallback
+    // fires) rather than scoring a wrong-but-finite price; non-price fields fall back to
+    // a safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(row.funding_rate) ?? 0;
+    const last = safeUpstreamNum(row.last_price) ?? 0;
+    // WhiteBIT doesn't expose explicit mark_price — use last_price, index_price as fallback.
+    const markPx = safeUpstreamNum(row.last_price) ?? safeUpstreamNum(row.index_price);
+    if (markPx === null) throw new Error('WhiteBIT getAssetContext: invalid last/index price');
     // /api/v4/public/futures exposes no 24h-open or change field (verified live
     // 2026-06-11) — derive the 24h-prior price from the v1 kline (open of the
     // earliest candle in a trailing-24h window); fall back to the hi/lo midpoint,
@@ -188,18 +200,23 @@ export class WhitebitAdapter implements ExchangeAdapter {
       prevDayPx = NaN;
     }
     if (!Number.isFinite(prevDayPx) || prevDayPx <= 0) {
-      prevDayPx = reconstructPrevDayOpen(last, NaN, parseFloat(row.high || ''), parseFloat(row.low || ''));
+      prevDayPx = reconstructPrevDayOpen(
+        last,
+        NaN,
+        safeUpstreamNum(row.high) ?? undefined,
+        safeUpstreamNum(row.low) ?? undefined,
+      );
     }
     // WhiteBIT funding cadence 8h × 1095 annualization (standard).
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(row.open_interest || '0'),
+      openInterest: safeUpstreamNum(row.open_interest) ?? 0,
       prevDayPx,
       volume24h: parseFloat(row.money_volume || '0'),
-      oraclePx: parseFloat(row.index_price || row.last_price || '0'),
-      markPx: parseFloat(row.last_price || row.index_price || '0'),    // WhiteBIT doesn't expose explicit mark_price — use last_price
+      oraclePx: safeUpstreamNum(row.index_price) ?? markPx,
+      markPx,
     };
   }
 
@@ -220,8 +237,8 @@ export class WhitebitAdapter implements ExchangeAdapter {
       const env = await whitebitGet<WhitebitFuturesEnvelope>('/api/v4/public/futures');
       const row = env?.result?.find(m => m.ticker_id === market && m.money_currency === 'USDT');
       if (!row) return null;
-      const px = parseFloat(row.last_price || row.index_price || '0');
-      return Number.isFinite(px) && px > 0 ? px : null;
+      const px = safeUpstreamNum(row.last_price) ?? safeUpstreamNum(row.index_price);
+      return px !== null && px > 0 ? px : null;
     } catch {
       return null;
     }

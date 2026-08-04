@@ -1,36 +1,40 @@
 {
-  "_comment": "RATCHET baseline for scripts/check-monitoring-schedules.mjs. These rows violated CLAUDE.md's off-:00 boundary law at the moment the gate landed (OPS-MONITORING-SCHEDULE-SOT-W1, 2026-08-03). They REPORT; they do not block. A NEW violation blocks. A row here that moves to a DIFFERENT violating minute blocks. This file only ever SHRINKS — deleting an entry is always allowed, adding one is a deliberate edit a reviewer sees.",
+  "_comment": "RATCHET baseline for scripts/check-monitoring-schedules.mjs. Rows listed here violated CLAUDE.md's off-:00 boundary law at the moment the gate landed (OPS-MONITORING-SCHEDULE-SOT-W1, 2026-08-03): they REPORT, a NEW violation BLOCKS, and a baselined row moving to a DIFFERENT violating minute BLOCKS. This file only ever SHRINKS — deleting an entry is always allowed, adding one is a deliberate edit a reviewer sees.",
 
-  "_why_a_baseline": "A fail-closed gate + known pre-existing violations + an explicit instruction not to fix them in this wave are mutually unsatisfiable: wired as a hard block, this gate would have failed every deploy from the commit that introduced it. Same resolution the repo already runs for scripts/check_test_baseline.sh vs audits/test-baseline-known-failures.txt.",
+  "_why_a_baseline": "A fail-closed gate + known pre-existing violations + an explicit instruction not to fix them in that wave are mutually unsatisfiable: wired as a hard block, this gate would have failed every deploy from the commit that introduced it. Same resolution the repo already runs for scripts/check_test_baseline.sh vs audits/test-baseline-known-failures.txt.",
 
-  "retirement_wave": "OPS-MONITORING-SCHEDULE-SWEEP-W{NEXT}",
+  "_status": "EMPTY — RETIRED. `entries` is zero-length, so this gate is now FULLY BLOCKING: any :00-boundary violation, pre-existing or new, fails. Kept as a file rather than deleted because an ABSENT baseline and an EMPTY one must stay distinguishable — the gate reads an unreadable/malformed baseline as INDETERMINATE, and deleting this would make 'nobody ever baselined anything' look identical to 'the debt was paid'.",
+
   "baselined_at": "2026-08-03",
   "baselined_by": "OPS-MONITORING-SCHEDULE-SOT-W1",
+  "retired_at": "2026-08-04",
+  "retired_by": "OPS-RATCHET-BASELINE-RETIRE-W1",
 
-  "entries": [
+  "retirement_record": [
     {
       "id": "recommendation-drift-canary",
-      "source": "row",
-      "schedule": "0 12 * * 2",
-      "min_offset_minutes": 0,
-      "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1",
-      "note": "Fires exactly ON the :00 boundary — the same defect SEC-48 raised against venue-slo-tiers-drift-canary, on a load-bearing row. Moving it is a live crontab mutation plus an inventory re-stamp, which is the sweep wave's job, not this one's. Suggested target: 27 12 * * 2 (already occupied Mondays by venue-slo; Tuesday is free)."
+      "host": "signal-1",
+      "from": "0 12 * * 2",
+      "to": "27 12 * * 2",
+      "why": "Fired exactly ON the :00 boundary — the SEC-48 defect, on a load-bearing row. Tuesday 12:27 verified free against the LIVE crontab before the move: venue-slo-tiers-drift-canary holds 27 12 on MONDAY only, and the sole other Tuesday-noon job is daily-digest at 12:03."
     },
     {
       "id": "webhook-delivery-canary",
-      "source": "row",
-      "schedule": "13,28,43,58 * * * *",
-      "min_offset_minutes": 2,
-      "owner_wave": "WEBHOOK-HARDENING-W1",
-      "note": "A deliberate 15-minute grid whose LAST member, :58, sits 2 minutes before the next hour's :00. Three of its four minutes are fine; only :58 breaches. Cheapest fix is a grid shifted to 13,28,43,57 or 12,27,42,57 — but it is a live crontab change on a load-bearing canary and belongs to the sweep."
+      "host": "signal-1",
+      "from": "13,28,43,58 * * * *",
+      "to": "13,28,43,57 * * * *",
+      "why": "A deliberate 15-minute grid whose trailing :58 sat 2 minutes before the next hour. ONLY the breaching member moved — :13/:28/:43 are already legal (offset 13/28/17) and were left alone rather than churned onto the canonical set for cosmetics, which is why this row still reports ADVISORY (:28 is off-set) rather than LEGAL. :57 was picked from a live minute census as the least-contended canonical minute on this host: no other HOURLY cron holds it, only two daily jobs (00:57 website-drift, 06:57 inventory-reconcile)."
     },
     {
       "id": "aoe-shadow-writer-stall-canary",
-      "source": "row",
-      "schedule": "13,18,23,28,33,38,43,48,53,58 * * * *",
-      "min_offset_minutes": 2,
-      "owner_wave": "OPS-AOE-MONITORING-PARITY-W1",
-      "note": "Same shape as webhook-delivery-canary: a 5-minute grid running 13..58, where only the trailing :58 breaches. Also an aoe-1 artifact, so the sweep must touch the AOE host's crontab as well as the inventory row."
+      "host": "aoe-1",
+      "from": "13,18,23,28,33,38,43,48,53,58 * * * *",
+      "to": "13,18,23,28,33,38,43,48,53,57 * * * *",
+      "why": "Same shape as webhook-delivery-canary — a 5-minute grid where only the trailing :58 breached; only that member moved. aoe-1 runs no other minute-grid cron, so there was nothing to collide with."
     }
-  ]
+  ],
+
+  "_safe_window_note": "CLAUDE.md's cron safe-window rule ('next safe window >= 4h continuous; HALT if <=30min before a fire or <=2h after') is UNSATISFIABLE for a sub-hourly grid — a 5-minute cron never has a 4-hour gap — and it is written for a DESTRUCTIVE touch, which a crontab line edit is not: cron re-reads the file and an already-running job is unaffected. The real hazard when moving a minute is narrow: installing between the NEW (earlier) minute and the OLD one skips one fire. Both :58 -> :57 moves were installed at :33, 23 minutes clear of the :56-:58 danger window, with the box's own `date -u` read immediately before each install rather than inferred from session wall-clock.",
+
+  "entries": []
 }

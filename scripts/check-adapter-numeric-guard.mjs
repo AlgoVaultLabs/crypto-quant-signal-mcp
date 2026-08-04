@@ -22,12 +22,16 @@
  *   - converting sites to safeUpstreamNum lowers the count, and the gate then tells you to
  *     re-baseline downward, so the ratchet only ever tightens.
  *
- * WHAT THIS GATE DOES NOT DO — stated plainly so nobody reads it as coverage it does not have.
- * It does NOT convert the 176 existing sites. SEC-40 is therefore PARTIALLY closed by this
- * wave: the bleeding stops, the backlog is declared and counted, and the mechanical sweep is
- * owned by OPS-ADAPTER-SAFENUM-SWEEP-W{NEXT}. A gate that silently tolerated 176 violations
- * while reporting PASS would be the "reads as coverage while protecting nothing" failure this
- * repo has retired four times.
+ * WHAT THIS GATE DID NOT DO, AND WHO CLOSED IT. As shipped it did NOT convert the existing
+ * sites — the bleeding stopped, the backlog was declared and counted, and the sweep was owed.
+ * OPS-RATCHET-BASELINE-RETIRE-W1 (2026-08-04) paid it down 195 -> 43 by routing every
+ * SIGNAL-PATH field (price, funding, open interest, kline OHLC) in all 15 unconverted adapters
+ * through safeUpstreamNum. What is left is the DECLARED carve-out — candle `volume`,
+ * `volume24h`, parseInt timestamps, one cosmetic volume sort — none of which reach a verdict.
+ * The distinction is the point: a baseline is debt, a declared carve-out is a decision. Keep
+ * stating it plainly, because a gate that silently tolerated 195 violations while reporting
+ * PASS would be the "reads as coverage while protecting nothing" failure this repo has
+ * retired four times.
  *
  * Verdict: exactly one terminal `ADAPTER_NUMERIC_GUARD_VERDICT=PASS|FAIL|INDETERMINATE`.
  * Exit: 0 = PASS · 1 = FAIL · 3 = INDETERMINATE (token-law default for a NEW gate).

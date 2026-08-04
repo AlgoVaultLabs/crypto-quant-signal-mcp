@@ -36,7 +36,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
 const BASE_URL = 'https://open-api.bingx.com';
@@ -182,16 +182,22 @@ export class BingxAdapter implements ExchangeAdapter {
 
     // BingX returns newest-first; filter by startTime (ms-ms compare) + sort
     // oldest-first (canonical Candle[] ordering).
+    // SV-04: drop a candle whose OHLC does not parse strictly rather than emit a
+    // NaN/wrong-but-finite price into the signal engine.
     return env.data
       .filter(r => r.time >= startTime)
-      .map(r => ({
-        time: r.time,    // already ms
-        open: parseFloat(r.open),
-        high: parseFloat(r.high),
-        low: parseFloat(r.low),
-        close: parseFloat(r.close),
-        volume: parseFloat(r.volume),
-      }))
+      .flatMap(r => {
+        const open = safeUpstreamNum(r.open);
+        const high = safeUpstreamNum(r.high);
+        const low = safeUpstreamNum(r.low);
+        const close = safeUpstreamNum(r.close);
+        if (open === null || high === null || low === null || close === null) return [];
+        return [{
+          time: r.time,    // already ms
+          open, high, low, close,
+          volume: parseFloat(r.volume),
+        }];
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -213,16 +219,21 @@ export class BingxAdapter implements ExchangeAdapter {
     // BingX funding cadence is 8h (fundingIntervalHours=8 verified live);
     // annualized = rate × 1095 (8h periods per year). Same as Binance/Bybit/
     // Bitget/Gate/MEXC/KuCoin/Phemex.
-    const fundingRaw = parseFloat(pi.data.lastFundingRate || '0');
+    // SV-04: default-deny — an invalid markPrice throws (the 3-tier fallback fires)
+    // rather than scoring a wrong-but-finite price; non-price fields fall back to a
+    // safe neutral 0. Same contract as the aster adapter.
+    const fundingRaw = safeUpstreamNum(pi.data.lastFundingRate) ?? 0;
+    const markPx = safeUpstreamNum(pi.data.markPrice);
+    if (markPx === null) throw new Error('BingX getAssetContext: invalid markPrice');
     return {
       coin,
       funding: fundingRaw,
       fundingAnnualized: fundingRaw * 1095,
-      openInterest: parseFloat(oi?.data?.openInterest || '0'),
-      prevDayPx: parseFloat(tk.data.openPrice || '0'),    // 24h-ago open
+      openInterest: safeUpstreamNum(oi?.data?.openInterest) ?? 0,
+      prevDayPx: safeUpstreamNum(tk.data.openPrice) ?? 0,    // 24h-ago open
       volume24h: parseFloat(tk.data.quoteVolume || '0'),
-      oraclePx: parseFloat(pi.data.indexPrice || pi.data.markPrice || '0'),
-      markPx: parseFloat(pi.data.markPrice || '0'),
+      oraclePx: safeUpstreamNum(pi.data.indexPrice) ?? markPx,
+      markPx,
     };
   }
 
@@ -247,8 +258,7 @@ export class BingxAdapter implements ExchangeAdapter {
       const symbol = toBingxSymbol(coin);
       const env = await bingxGet<BingxPremiumIndexEnvelope>('/openApi/swap/v2/quote/premiumIndex', { symbol });
       if (!env?.data) return null;
-      const px = parseFloat(env.data.markPrice);
-      return Number.isFinite(px) ? px : null;
+      return safeUpstreamNum(env.data.markPrice);
     } catch {
       return null;
     }

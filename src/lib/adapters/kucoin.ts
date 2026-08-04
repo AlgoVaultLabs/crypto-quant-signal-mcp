@@ -29,7 +29,7 @@ import type {
   FundingData,
   DexType,
 } from '../../types.js';
-import { upstreamFetch, VENUE_FETCH_CONFIGS } from './_upstream-fetch.js';
+import { upstreamFetch, VENUE_FETCH_CONFIGS, safeUpstreamNum } from './_upstream-fetch.js';
 import { reconstructPrevDayOpen } from './_prev-day-open.js';
 import { makeServedIntervalMs } from '../served-interval.js';
 
@@ -191,7 +191,7 @@ export class KuCoinAdapter implements ExchangeAdapter {
     // KuCoin funding cadence: 8h per Plan-Mode probe (granularity:28800000ms);
     // annualized = rate × 1095. openInterest in contracts × multiplier = base-asset OI.
     const fundingRaw = Number(c.fundingFeeRate) || 0;
-    const oiContracts = parseFloat(c.openInterest || '0');
+    const oiContracts = safeUpstreamNum(c.openInterest) ?? 0;    // SV-04
     const oiBase = oiContracts * (c.multiplier || 1);
 
     // KuCoin's live /contracts/{symbol} payload includes priceChgPct (24h change as
