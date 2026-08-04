@@ -58,13 +58,30 @@ describe('check-monitoring-schedules — verdict contract', () => {
 
   it('echoes the baselined count on every run so the debt cannot go quiet', () => {
     const r = node(GATE);
-    expect(r.out).toMatch(/baselined violations: \d+ \(retirement: OPS-MONITORING-SCHEDULE-SWEEP-W\{NEXT\}\)/);
+    // OPS-RATCHET-BASELINE-RETIRE-W1 emptied the baseline, so the line now takes its
+    // RETIRED form. The intent is unchanged and is what this asserts: the count is
+    // echoed on EVERY run, in one of exactly two shapes, and zero says so explicitly
+    // rather than going silent. Naming a retirement wave at 0 would imply live debt.
+    expect(r.out).toMatch(
+      /baselined violations: (?:0 — baseline RETIRED \(OPS-RATCHET-BASELINE-RETIRE-W1\); this gate is fully blocking|[1-9]\d* \(retirement: OPS-MONITORING-SCHEDULE-SWEEP-W\{NEXT\}\))/,
+    );
   });
 
-  it('emits POSITIVE per-row output, never mere absence-of-violation', () => {
+  it('emits POSITIVE per-row output for EVERY scanned row, never mere absence-of-violation', () => {
     const out = node(GATE).out;
     expect(out).toMatch(/scanned \d+ schedule\(s\) across \d+ inventory row\(s\)/);
-    // Each baselined row is named individually, by id.
+
+    // This used to probe the three BASELINED ids, which were named only because they were
+    // in violation. Retiring the baseline made `recommendation-drift-canary` compliant and
+    // it vanished from the output entirely — proving the property was being satisfied by
+    // accident. A compliant row now prints a LEGAL line, so assert the real invariant:
+    // every scanned row is named, with its verdict and its measured offset.
+    const scanned = Number(/scanned (\d+) schedule\(s\)/.exec(out)![1]);
+    const named = out
+      .split('\n')
+      .filter(l => /^\s+[·⚠✗] (LEGAL|ADVISORY|EXEMPT|BASELINED|INDETERMINATE|VIOLATION)\s/.test(l));
+    expect(named.length, 'every scanned schedule must produce its own output line').toBe(scanned);
+
     for (const id of ['recommendation-drift-canary', 'webhook-delivery-canary', 'aoe-shadow-writer-stall-canary']) {
       expect(out, `${id} must be named in the output`).toContain(id);
     }
@@ -188,10 +205,35 @@ describe('exemptions live on the row, with a mandatory reason', () => {
 });
 
 describe('the ratchet', () => {
-  it('baseline entries each carry an id, a schedule, an owner and a note', () => {
-    const b = JSON.parse(readFileSync(join(ROOT, BASELINE), 'utf8'));
+  const baseline = () => JSON.parse(readFileSync(join(ROOT, BASELINE), 'utf8'));
+  /**
+   * OPS-RATCHET-BASELINE-RETIRE-W1 emptied `entries`. The three tests below used to
+   * iterate it, so an empty baseline would make every one of them pass VACUOUSLY —
+   * green forever while asserting nothing. Each therefore branches explicitly: the
+   * RETIRED state is asserted positively, and the entry-shape rules stay armed for
+   * the day someone adds an entry back.
+   */
+  const isRetired = (b: { entries: unknown[] }) => b.entries.length === 0;
+
+  it('is either RETIRED with a full record, or carries well-formed entries — never silently between', () => {
+    const b = baseline();
     expect(Array.isArray(b.entries)).toBe(true);
-    expect(b.entries.length).toBeGreaterThan(0);
+
+    if (isRetired(b)) {
+      // An empty `entries` is a CLAIM — that the gate is now fully blocking — so it must
+      // be owned and evidenced, not just an array someone deleted rows from.
+      expect(b.retired_by, 'an emptied baseline must name the wave that retired it').toBeTruthy();
+      expect(Array.isArray(b.retirement_record)).toBe(true);
+      expect(b.retirement_record.length, 'retirement must record what moved where').toBeGreaterThan(0);
+      for (const r of b.retirement_record) {
+        expect(r.id, 'retirement row needs an id').toBeTruthy();
+        expect(r.from, `${r.id} needs the schedule it moved FROM`).toBeTruthy();
+        expect(r.to, `${r.id} needs the schedule it moved TO`).toBeTruthy();
+        expect(String(r.why ?? '').length, `${r.id} needs a why`).toBeGreaterThan(20);
+      }
+      return;
+    }
+
     expect(b.retirement_wave).toBe('OPS-MONITORING-SCHEDULE-SWEEP-W{NEXT}');
     for (const e of b.entries) {
       expect(e.id, 'entry needs an id').toBeTruthy();
@@ -201,19 +243,43 @@ describe('the ratchet', () => {
     }
   });
 
-  it('every baselined row genuinely violates — no entry may be dead weight', () => {
-    const b = JSON.parse(readFileSync(join(ROOT, BASELINE), 'utf8'));
+  it('every baselined row genuinely violates — and every RETIRED row genuinely stopped violating', () => {
+    const b = baseline();
+    const classify = (s: string) => node(GATE, '--classify', s).out.trim();
+
+    if (isRetired(b)) {
+      // The retirement record is a claim about cron minutes; check it against the gate's
+      // own classifier rather than trusting the prose. This is strictly stronger than the
+      // assertion it replaces — it pins BOTH ends of every move.
+      for (const r of b.retirement_record) {
+        expect(classify(r.from), `${r.id}: the 'from' schedule must be why it was baselined`).toMatch(/^VIOLATION /);
+        expect(classify(r.to), `${r.id}: the 'to' schedule must no longer violate`).toMatch(/^(LEGAL|ADVISORY) /);
+      }
+      return;
+    }
     for (const e of b.entries) {
-      expect(node(GATE, '--classify', e.schedule).out.trim(), `${e.id} must actually violate`)
-        .toMatch(/^VIOLATION /);
+      expect(classify(e.schedule), `${e.id} must actually violate`).toMatch(/^VIOLATION /);
     }
   });
 
-  it('every baselined row still exists in the inventory with that exact schedule', () => {
+  it('baseline and retirement rows both still match the live inventory', () => {
     const inv = JSON.parse(readFileSync(join(ROOT, 'ops/monitoring/monitoring-inventory.json'), 'utf8'));
-    const b = JSON.parse(readFileSync(join(ROOT, BASELINE), 'utf8'));
+    const b = baseline();
+    const rowFor = (id: string) => inv.artifacts.find((r: { id: string }) => r.id === id);
+
+    if (isRetired(b)) {
+      // The inventory is what the reconciler compares the live crontab against, so a
+      // retirement row whose `to` never landed in the inventory would be a lie the
+      // reconciler would then report as SCHEDULE_DRIFT on the host.
+      for (const r of b.retirement_record) {
+        const row = rowFor(r.id);
+        expect(row, `${r.id} was retired but is absent from the inventory`).toBeTruthy();
+        expect(row.schedule, `${r.id}: inventory must carry the moved-TO schedule`).toBe(r.to);
+      }
+      return;
+    }
     for (const e of b.entries) {
-      const row = inv.artifacts.find((r: { id: string }) => r.id === e.id);
+      const row = rowFor(e.id);
       expect(row, `${e.id} is baselined but absent from the inventory — the entry is stale`).toBeTruthy();
       expect(row.schedule).toBe(e.schedule);
     }

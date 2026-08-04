@@ -223,7 +223,8 @@ export function collectSchedules(inventory) {
 /**
  * Evaluate a corpus against rule + baseline.
  * @returns {{verdict:'PASS'|'FAIL'|'INDETERMINATE', blocking:any[], baselined:any[],
- *            advisory:any[], exempt:any[], indeterminate:any[], staleBaseline:any[], total:number}}
+ *            advisory:any[], exempt:any[], indeterminate:any[], staleBaseline:any[],
+ *            legal:any[], total:number}}
  */
 export function evaluate(corpus, rule, baselineEntries) {
   const blocking = [];
@@ -231,6 +232,11 @@ export function evaluate(corpus, rule, baselineEntries) {
   const advisory = [];
   const exempt = [];
   const indeterminate = [];
+  // A fully-compliant row used to fall through every bucket — counted in `total`, never
+  // collected, therefore impossible to NAME in the output. That is the absence-of-evidence
+  // shape this gate's own header comment forbids: a clean row silently dropped from the
+  // inventory looked identical to a clean row that passed. Collect them.
+  const legal = [];
   const seenViolationKeys = new Set();
 
   const baseIndex = new Map();
@@ -271,6 +277,7 @@ export function evaluate(corpus, rule, baselineEntries) {
       continue;
     }
     if (c.status === 'ADVISORY') advisory.push({ ...item, offset: c.offset });
+    else legal.push({ ...item, offset: c.offset });
   }
 
   // A baselined row that no longer violates is debt PAID. Report so the baseline can
@@ -288,6 +295,7 @@ export function evaluate(corpus, rule, baselineEntries) {
     exempt,
     indeterminate,
     staleBaseline,
+    legal,
     total: corpus.length,
   };
 }
@@ -514,9 +522,13 @@ const r = evaluate(corpus, rule, baselineEntries);
 // identical to a row that passed.
 console.log(`monitoring schedule boundary — rule: offset >= ${rule.min_offset_minutes} min from :00 (nearest, both directions)`);
 console.log(`  scanned ${r.total} schedule(s) across ${(inventory.artifacts ?? []).length} inventory row(s)`);
-const clean = r.total - r.blocking.length - r.baselined.length - r.advisory.length - r.exempt.length - r.indeterminate.length;
-console.log(`  ✓ ${clean} on the canonical set · ${r.advisory.length} legal but off-set · ${r.exempt.length} exempt`);
+// Read the count off the collected rows rather than re-deriving it by subtraction — two
+// derivations of one number drift, and the subtraction could disagree with what is printed.
+console.log(`  ✓ ${r.legal.length} on the canonical set · ${r.advisory.length} legal but off-set · ${r.exempt.length} exempt`);
 
+for (const l of r.legal) {
+  console.log(`  · LEGAL    ${l.id} [${l.source}] "${l.schedule}" — offset ${l.offset} min, on the canonical set`);
+}
 for (const a of r.advisory) {
   console.log(`  · ADVISORY ${a.id} [${a.source}] "${a.schedule}" — offset ${a.offset} min, legal but not in the canonical set`);
 }
