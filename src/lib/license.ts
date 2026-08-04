@@ -24,6 +24,7 @@ import { PLANS, FREE_MONTHLY_CALLS } from './plans.js';
 // REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
+import { recordIndeterminate } from './indeterminate-counter.js';
 
 // v1.10.3 FREE-UNLOCK-W1: free tier now grants ALL coins + ALL timeframes —
 // the 100-calls/month cap is the primary upsell trigger; funding-arb top-5
@@ -390,6 +391,7 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
     return { tier: stripeResult.tier, key };
   }
 
+
   // SECURITY-FIX-TIER-ESCALATION-W1 — DEFAULT-DENY: a Stripe-invalid key resolves to
   // least privilege (free), never an escalated prefix tier. The prefix shortcut is an
   // explicit dev-only opt-in (ALLOW_DEV_KEY_PREFIX, default OFF; mirrors the
@@ -401,6 +403,29 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
       console.warn('[SECURITY] ALLOW_DEV_KEY_PREFIX=true — Stripe-invalid API keys resolve to prefix-based tiers (dev-only). Unset in production.');
     }
     return resolveFromApiKey(authHeader);
+  }
+  // OPS-ZERO-VS-UNKNOWN-W1 — "could not determine" is NOT "invalid".
+  //
+  // Until now a Stripe outage returned `valid:false`, which fell through to the default-deny
+  // below and resolved a PAYING customer to `{tier:'free', key:null}`. That is not a graceful
+  // degradation: the caller is then metered against `free:<ipHash>`, burns a 100-call ceiling
+  // they never bought, and is refused — having paid. A transient upstream fault became a
+  // permanent-looking customer-facing failure.
+  //
+  // POLICY, stated rather than inherited: on INDETERMINATE we keep the caller's KEY IDENTITY
+  // (so they are never metered into the anonymous free bucket) and resolve to their last known
+  // tier if the cache still holds one; otherwise we return the key WITHOUT a tier grant, and the
+  // route surfaces a RETRYABLE error rather than a silent downgrade. We do NOT fail the process
+  // and we do NOT escalate — a guard on a live serving path refuses the operation, it does not
+  // take the server down, and it never grants more than it can prove.
+  if (stripeResult.indeterminate) {
+    recordIndeterminate('stripe_validate_api_key', 'license resolution could not determine tier');
+    // KEY IDENTITY IS PRESERVED. That is the load-bearing half: with `key` retained the caller
+    // is metered on their own bucket, not `free:<ipHash>`, so an upstream blip can no longer burn
+    // an anonymous ceiling they never bought. The tier is not escalated — we never grant what we
+    // cannot prove — and `indeterminate` tells the route to surface a RETRYABLE error instead of
+    // presenting a downgrade as settled fact.
+    return { tier: 'free', key, indeterminate: true };
   }
   return { tier: 'free', key: null };
 }
