@@ -104,8 +104,7 @@
         "docs-src/partials/pricing.html",
         "landing/docs.html",
         "landing/faq.html",
-        "landing/glossary.html",
-        "landing/index.html"
+        "landing/glossary.html"
       ],
       "replace_all": true
     },
