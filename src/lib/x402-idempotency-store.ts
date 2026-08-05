@@ -111,11 +111,15 @@ export function ensureProcessedX402PaymentsSchema(): void {
 /**
  * Atomically claim a payment nonce for single use.
  *
- * Returns `true` if THIS call inserted the row (the caller MAY serve + settle),
- * `false` if the nonce was already claimed (replay → caller MUST 402 without
- * serving/settling). Concurrency-safe: of N concurrent calls with the same
- * nonce, exactly one gets `true` (the DB PRIMARY KEY arbitrates the
- * `INSERT ... ON CONFLICT DO NOTHING RETURNING` race).
+ * Returns a `ClaimOutcome` (see the union below), NOT a boolean:
+ *   - `'CLAIMED'`          — THIS call inserted the row; the caller MAY serve + settle.
+ *   - `'ALREADY_CLAIMED'`  — a settled fact: the nonce was spent (replay), or no usable nonce
+ *                            was supplied at all. The caller MUST 402 without serving/settling.
+ *   - `'INDETERMINATE'`    — we do not know, because the database errored. Still default-deny on
+ *                            the paid path, but a DISTINCT outcome, because it is a fault on our
+ *                            side rather than a fact about the buyer's nonce.
+ * Concurrency-safe: of N concurrent calls with the same nonce, exactly one gets `'CLAIMED'`
+ * (the DB PRIMARY KEY arbitrates the `INSERT ... ON CONFLICT DO NOTHING RETURNING` race).
  *
  * The ON CONFLICT/OR IGNORE clause is keyed on the FULL PRIMARY KEY (payer_wallet, nonce); the
  * RETURNING clause yields the row only when the insert actually happened, which
@@ -124,10 +128,22 @@ export function ensureProcessedX402PaymentsSchema(): void {
  *
  * DB-unreachable / error path: FAIL SAFE (default-deny on the paid path, per
  * CLAUDE.md "default-deny + load-bearing logging"). We do NOT grant a free
- * re-serve on a DB error — we log loudly and return `false` so the route 402s.
+ * re-serve on a DB error — we log loudly and return `'INDETERMINATE'` so the route 402s.
  * A reject on a transient DB blip costs the buyer one retry (their nonce is
  * still unspent on-chain); a grant on a DB blip would re-open the very replay
  * hole this store closes.
+ *
+ * ⚠️ It must NOT return `'ALREADY_CLAIMED'` there, and that distinction is the entire point of
+ * the union: collapsing "the DB errored" into "the nonce was spent" reported one of OUR faults
+ * to the buyer as an ordinary replay, and the paid rail served nothing for ~25 hours while every
+ * gate stayed green. `'ALREADY_CLAIMED'` is a claim about the nonce; `'INDETERMINATE'` is a
+ * confession about us.
+ *
+ * ⚠️ This block is the human-facing contract for `tryClaimPayment`, but it is NOT the docblock
+ * TypeScript binds to it — the one below binds to `ClaimOutcome`. That is why it drifted:
+ * `OPS-ZERO-VS-UNKNOWN-W3` retired the boolean in the signature and in the callers, and this
+ * prose kept asserting it for months with nothing able to notice. (Corrected
+ * REVENUE-METER-TRUTH-W6 CH7.)
  */
 /**
  * The three states a claim attempt can be in. A boolean cannot carry three, which is the whole
@@ -170,8 +186,13 @@ export async function tryClaimPayment(
       : `INSERT OR IGNORE INTO processed_x402_payments (nonce, tool, amount, payer_wallet, settlement_state, rail)
          VALUES (?, ?, ?, ?, ?, ?)
          RETURNING nonce`;
-    // Conflict is STILL arbitrated on the nonce PK (DO NOTHING / OR IGNORE) → dedup byte-identical;
-    // payer_wallet rides only on the winning insert, and a replay's DO-NOTHING never overwrites it.
+    // Conflict is arbitrated on the COMPOSITE PRIMARY KEY (payer_wallet, nonce) — see the
+    // `ON CONFLICT` clause two lines above and `migrations/024_…sql`, which swapped the PK from
+    // the bare nonce. Dedup is byte-identical to the pre-swap behaviour for every attributable
+    // payer; payer_wallet rides only on the winning insert, and a replay's DO-NOTHING never
+    // overwrites it. (This line said "STILL arbitrated on the nonce PK" until
+    // REVENUE-METER-TRUTH-W6 CH7 — a pre-SEC-49 survivor contradicted by the SQL two lines above
+    // it AND by its own next sentence.)
     // SEC-49: '' (not NULL) for an unextractable payer. Under the composite key a NULL would
     // make every such row DISTINCT in Postgres — NULL != NULL — so an unattributable replay
     // would bypass the claim entirely and re-serve for free. '' dedupes; NULL does not.

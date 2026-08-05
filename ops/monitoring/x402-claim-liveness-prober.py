@@ -40,8 +40,10 @@ Usage:
   x402-claim-liveness-prober.py            # probe, alert on failure
   x402-claim-liveness-prober.py --self-test  # offline: prove the guards, no DB, no alert
 """
+import ast
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -58,6 +60,19 @@ TABLE = os.environ.get("X402_PROBE_TABLE", "processed_x402_payments")
 # Changing this string is a safety-critical edit: it is the ONLY thing separating the prober's
 # cleanup from production payment rows.
 SENTINEL_PAYER = "probe:claim-liveness"
+
+# CH7(d) — the census contract, as DATA rather than as literals buried in the guard.
+#
+# Whitespace-tolerant and case-insensitive on purpose: Postgres does not care how a statement is
+# spaced or cased, so a guard that does is a guard an author evades by accident. `DELETE\s+FROM`
+# with `re.I` catches `delete from`, `DELETE  FROM` and `DELETE\nFROM` alike, and including the
+# other destructive verbs is what makes an UPDATE or a TRUNCATE against the production payments
+# table a self-test FAILURE instead of something nobody was looking for.
+DESTRUCTIVE_VERB_RE = re.compile(r"\b(DELETE\s+FROM|UPDATE|TRUNCATE(?:\s+TABLE)?|DROP\s+TABLE)\b", re.IGNORECASE)
+
+# The ONLY predicate a cleanup DELETE in this prober may carry, compared with `==` after whitespace
+# normalisation. `in` let anything appended after the match ride along.
+EXPECTED_CLEANUP_PREDICATE = "payer_wallet = '%s'"
 
 
 def _pg_role():
@@ -153,9 +168,40 @@ def alert(body):
         return -1
 
 
+# REVENUE-METER-TRUTH-W6 CH7(d) — the SELF-GUARD, rebuilt as a DESTRUCTIVE-VERB CENSUS.
+#
+# The two properties this guard asserts were always the right ones — the sentinel sits outside the
+# real payer space, and every cleanup DELETE is keyed on it. The METHOD was the hole. It read its
+# own source, split on the literal "DELETE FROM", and inspected the first 160 characters after each
+# fragment. Measured at 885c90d, that had three genuine false-NEGATIVE classes and one
+# false-POSITIVE hazard:
+#
+#   (a) `in`, not `==`. Nothing AFTER the matched substring was inspected, so
+#       `WHERE payer_wallet = '%s' OR 1=1` PASSED and deletes every row in the table.
+#   (b) A str.split corpus is lexical. `delete from`, `DELETE  FROM`, `DELETE\n FROM`,
+#       `"DELETE " + "FROM "`, or an f-string yield ZERO fragments — INVISIBLE, not merely
+#       unchecked. Postgres is case- and whitespace-indifferent; this guard was not.
+#   (c) Only DELETE was in the corpus at all. `UPDATE`, `TRUNCATE`, `DROP TABLE` and `INSERT`
+#       were never inspected — a TRUNCATE would have destroyed the whole production payments
+#       table with the self-test still green.
+#
+#   (+) And the 160-char window fails CLOSED, not open: a correctly-keyed DELETE whose predicate is
+#       pushed past offset 160 FAILS the guard (measured: fragment length 243, pattern at 173).
+#       So the window was never the evasion route the spec described — it was a false-alarm hazard
+#       on a safe long statement. Slicing to the statement terminator retires both readings.
+#
+# The corpus also self-polluted: `src.split("DELETE FROM")` yielded THREE fragments, and the third
+# was this function's OWN split literal, which passed only because the comparison literal on the
+# next line happened to land at offset 47 inside the window. Two behaviour-PRESERVING refactors —
+# hoisting the pattern to a constant, or inserting a three-line comment — each flipped it to a
+# FALSE FAILURE pointing at the guard's own body, where the obvious "fix" is to weaken the check.
+# Scanning only the region ABOVE this function removes that trap by construction.
 def self_test():
     fails = []
-    if sentinel_guard("probe:claim-liveness") is not None:
+    # (5) The LIVE sentinel, not a frozen literal. This line read
+    # `sentinel_guard("probe:claim-liveness")` — so changing SENTINEL_PAYER left the guard happily
+    # asserting the OLD value, i.e. the one assertion that must track the constant did not.
+    if sentinel_guard(SENTINEL_PAYER) is not None:
         fails.append("the real sentinel was rejected by its own guard")
     for bad, why in [("", "empty"), ("0xabc", "0x-prefixed"), ("0x" + "a" * 40, "42-char address")]:
         if sentinel_guard(bad) is None:
@@ -163,25 +209,122 @@ def self_test():
     # the sentinel must be outside the real payer space, checked against the MEASURED shapes
     if SENTINEL_PAYER.startswith("0x") or len(SENTINEL_PAYER) == 42 or SENTINEL_PAYER == "":
         fails.append("SENTINEL_PAYER is inside the real payer space")
-    # cleanup must be keyed on the sentinel alone
-    src = open(__file__).read()
-    for stmt in [s for s in src.split("DELETE FROM")[1:]]:
-        head = stmt[:160]
-        if "payer_wallet = '%s'" not in head:
-            fails.append("a DELETE is not keyed on the sentinel payer: %r" % head[:60])
-    return fails
+
+    # Read our own source. Unreadable OR unparseable ⇒ INDETERMINATE, never a FAIL: "could not
+    # verify" is not "verified and broken", and conflating them is the class this arc exists to
+    # retire.
+    try:
+        src = open(__file__).read()
+        tree = ast.parse(src)
+    except (OSError, SyntaxError) as exc:
+        return None, ["could not read/parse own source for the DML census: %s" % exc]
+
+    # ── THE CORPUS IS WHAT IS EXECUTED, NOT WHAT IS WRITTEN. ──────────────────────────────────
+    # Every statement this prober sends to Postgres goes through `_psql()`. So the corpus is the
+    # SQL argument of each `_psql` call site — nothing else in the file is SQL, whatever it says.
+    #
+    # This took three attempts and the failures are the lesson. Scanning raw source text put the
+    # guard's own PROSE in its corpus, every time:
+    #   1. the ORIGINAL `src.split("DELETE FROM")` matched its own split literal, and passed only
+    #      because a comparison literal happened to land inside a 160-char window;
+    #   2. rewriting it as a text census matched the comment above, which documents `OR 1=1`,
+    #      `TRUNCATE` and `DROP TABLE` as hazards — demanding the deletion of the most useful
+    #      paragraph in the file;
+    #   3. narrowing to string literals STILL matched `main()`'s own success message, which says
+    #      "all DELETE FROM keyed EXACTLY on the sentinel".
+    # A guard whose corpus includes its own description can always be silenced by rewording, and
+    # will always punish the author for explaining the hazard. CLAUDE.md records the weak form of
+    # this ("strip comments before grepping source for a banned construct"); binding the corpus to
+    # the CALL SITE is the strong form, because prose cannot reach a database.
+    #
+    # It also closes evasion class (b) properly rather than incidentally: a statement assembled
+    # dynamically — an f-string, a `+` concat, a variable — is not a literal, so it cannot be
+    # censused, and THAT is reported as a finding instead of silently yielding zero matches.
+    def _sql_literal(node):
+        """The statement text of a `_psql` first argument, or None if it is not a literal."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        # The `"... %s ..." % (...)` form every call site here uses.
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+            return _sql_literal(node.left)
+        return None
+
+    call_sites = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_psql" and n.args
+    ]
+
+    # (4) VACUITY FLOOR. Here the corpus is OURS to construct, so an empty one is a defect in the
+    # TEST, not a fact about the world — REFUSE. (Contrast the runtime path below, where an empty
+    # result set is a FACT and PASS is the honest verdict. Empty-input is only vacuity when you
+    # were the one supposed to fill it.)
+    if not call_sites:
+        fails.append("VACUITY: found ZERO _psql call sites to census — the guard is scanning "
+                     "nothing, which is indistinguishable from scanning something clean")
+
+    destructive = 0
+    for call in call_sites:
+        stmt_raw = _sql_literal(call.args[0])
+        if stmt_raw is None:
+            fails.append("a _psql statement at line %d is not a literal — it cannot be censused, "
+                         "so a destructive statement could be assembled past this guard" % call.lineno)
+            continue
+        stmt = " ".join(stmt_raw.split())
+        for m in DESTRUCTIVE_VERB_RE.finditer(stmt):
+            destructive += 1
+            verb = " ".join(m.group(1).upper().split())
+            if verb != "DELETE FROM":
+                # (c) A verb outside the cleanup contract. This prober only ever removes its own
+                # sentinel rows; anything else against a production payments table is unaccounted
+                # for — and a TRUNCATE here would have destroyed the whole table, green.
+                fails.append("non-DELETE destructive verb %s at line %d — outside the cleanup "
+                             "contract" % (verb, call.lineno))
+                continue
+            # (2) Slice to the statement TERMINATOR, not a magic character count. The old 160-char
+            # window failed CLOSED on a safe long statement while catching none of the real classes.
+            tail = stmt[m.end():]
+            cut = tail.find(";")
+            body = tail[:cut] if cut != -1 else tail
+            mw = re.search(r"(?is)\bWHERE\b(.*?)(?:\bRETURNING\b|$)", body)
+            pred = " ".join((mw.group(1) if mw else "").split())
+            # (3) EQUALS, not `in`: an appended `OR 1=1` no longer rides along behind a match.
+            if pred != EXPECTED_CLEANUP_PREDICATE:
+                fails.append("a DELETE predicate at line %d is not EXACTLY the sentinel key "
+                             "(got %r)" % (call.lineno, pred[:80]))
+
+    if call_sites and destructive == 0:
+        fails.append("VACUITY: %d _psql call site(s) censused but ZERO destructive statements "
+                     "found — this prober deletes its own rows, so finding none means the census "
+                     "is not reading them" % len(call_sites))
+    return destructive, fails
 
 
 def main():
     if "--self-test" in sys.argv:
-        f = self_test()
+        # CH7(d): this path printed NO verdict token, contradicting the docstring above, which has
+        # promised "exactly one terminal X402_CLAIM_LIVENESS_VERDICT=" since the file was written.
+        # Under the token law a caller must gate on the TOKEN, never on an exit code — which was
+        # impossible here. `census` is None only when the source could not be read.
+        census, f = self_test()
+        if census is None:
+            print("? self-test INDETERMINATE — could not verify:")
+            for x in f:
+                print("   - " + x)
+            print("X402_CLAIM_LIVENESS_VERDICT=INDETERMINATE")
+            return 3
         if f:
             print("x self-test FAILED:")
             for x in f:
                 print("   - " + x)
+            print("X402_CLAIM_LIVENESS_VERDICT=FAIL")
             return 1
-        print("+ x402-claim-liveness self-test passed (sentinel is outside the real payer space; "
-              "every DELETE is keyed on it; the guard rejects address-shaped sentinels)")
+        # POSITIVE, COUNTED output. "every DELETE is keyed on it" is only meaningful alongside how
+        # many statements were actually inspected — the old message asserted the property over a
+        # corpus it never reported, so a census of zero read exactly like a clean bill of health.
+        print("+ x402-claim-liveness self-test passed: %d destructive statement(s) censused, all "
+              "DELETE FROM keyed EXACTLY on the sentinel; sentinel is outside the real payer space; "
+              "the guard rejects address-shaped sentinels" % census)
+        print("X402_CLAIM_LIVENESS_VERDICT=PASS")
         return 0
 
     now_iso = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
