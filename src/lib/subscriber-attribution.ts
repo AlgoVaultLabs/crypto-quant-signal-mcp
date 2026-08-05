@@ -884,8 +884,8 @@ export async function backfillMissingSubscriberProfiles(
   deps: ProfileDeps = defaultProfileDeps,
 ): Promise<number> {
   deps.ensure();
-  const rows = await deps.query<{ session_id: string; event_id: string }>(
-    `SELECT session_id, event_id FROM processed_stripe_events
+  const rows = await deps.query<{ session_id: string; event_id: string; processed_at: unknown }>(
+    `SELECT session_id, event_id, processed_at FROM processed_stripe_events
       WHERE event_type = 'checkout.session.completed' AND session_id IS NOT NULL
       ORDER BY processed_at`,
     [],
@@ -896,7 +896,14 @@ export async function backfillMissingSubscriberProfiles(
     try {
       const session = await opts.retrieveSession(row.session_id);
       if (!session) { console.warn(`  ${row.event_id} — session ${row.session_id} not retrievable, skipping`); continue; }
-      await buildSubscriberProfile(session, deps);
+      // Replay the HISTORICAL conversion moment, not "now". `buildSubscriberProfile` defaults
+      // `convertedAt` to `Date.now()`, which on a recovery run would stamp every recovered customer
+      // with today's date and compute `latency_seconds` as (today - signup) — measured on the first
+      // run as 1,579,888s (~18 days) for a conversion that actually took minutes. The webhook
+      // ledger's `processed_at` IS the conversion instant, so inject it.
+      const at = toIsoTimestamp(row.processed_at);
+      const atEpoch = at ? Math.floor(new Date(at).getTime() / 1000) : undefined;
+      await buildSubscriberProfile(session, atEpoch ? { ...deps, nowEpoch: atEpoch } : deps);
       replayed++;
       console.log(`  ${row.event_id} — replayed ${row.session_id}`);
     } catch (err) {
@@ -905,5 +912,12 @@ export async function backfillMissingSubscriberProfiles(
     }
   }
   console.log(`[backfillMissingSubscriberProfiles] replayed=${replayed}/${rows.length}`);
+  // 🛑 The caller MUST drain before exiting. `deps.run` is `dbRun`, which is FIRE-AND-FORGET on the
+  // PG backend — it returns void and the actual write is a floating promise. Measured on the first
+  // run of this very function: 3 sessions logged "profiled", `process.exit(0)` fired immediately,
+  // and the LAST write was killed in flight — 2 of 3 landed, with no error anywhere. That is the
+  // same fail-open-and-report-success class this whole arc exists to retire, reproduced here.
+  // `closeDbAsync()` (performance-db.ts:994) resolves only once in-flight writes have drained;
+  // `runScript` does it for you. Never `process.exit` straight after calling this.
   return replayed;
 }
