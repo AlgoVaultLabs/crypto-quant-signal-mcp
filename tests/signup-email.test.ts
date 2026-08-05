@@ -88,7 +88,7 @@ describe('signup-email opt-in path', () => {
       json: async () => ({ overall: { pfeWinRate: 0.913, totalCalls: 115000 } }),
     }) as unknown as typeof fetch;
 
-    const { sendOptinConfirmationEmail } = await import('../src/lib/email.js');
+    const { sendOptinConfirmationEmail, REPLY_TO_ADDRESS } = await import('../src/lib/email.js');
     await sendOptinConfirmationEmail('alice@example.com');
     const args = mockSend.mock.calls[0][0];
 
@@ -103,7 +103,10 @@ describe('signup-email opt-in path', () => {
     // Canonical CTAs / addresses preserved.
     expect(args.text).toContain('https://algovault.com/verify');
     expect(args.text).toContain('https://algovault.com/#quickstart');
-    expect(args.text).toContain('support@algovault.com');
+    // CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1: the body address follows the replyTo to the
+    // mailbox the operator actually holds. Asserted against the exported constant so the body
+    // and the header can never point at different mailboxes.
+    expect(args.text).toContain(REPLY_TO_ADDRESS);
   });
 
   it('confirmation email body falls back to neutral stats when /api/performance-public unreachable', async () => {

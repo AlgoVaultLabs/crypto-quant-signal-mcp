@@ -798,8 +798,7 @@ tailwind.config = {
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
-    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
-    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "100,000 calls/month, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" }
   ],
   "aggregateRating": {
     "@type": "AggregateRating",
@@ -836,8 +835,7 @@ tailwind.config = {
     "itemListElement": [
       { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
       { "@type": "Offer", "name": "Starter", "price": "9.99", "priceCurrency": "USD" },
-      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" },
-      { "@type": "Offer", "name": "Enterprise", "price": "299", "priceCurrency": "USD" }
+      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" }
     ]
   }
 }
@@ -854,8 +852,7 @@ tailwind.config = {
   "offers": [
     { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
-    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
-    { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" }
   ],
   "author": { "@type": "Organization", "name": "AlgoVault Labs", "url": "https://algovault.com" },
   "aggregateRating": {
@@ -2120,7 +2117,7 @@ async function main() {
         [
           'AlgoVaultLandingRest', 'TryIn30', 'ClientCard', 'TradFiCallout', 'ThreeTools', 'UseCases', 'LiveVerdict',
           'LiveTrackRecord', 'TamperProof', 'TrustBand', 'SimplePricing', 'ForDevelopers', 'FAQ', 'LandingFooter',
-          'LRBlock', 'LREyebrow', 'LRH2', 'LRLead', 'Pill', 'Check', 'Bullet', 'FAQItem',
+          'LRBlock', 'LREyebrow', 'LRH2', 'LRLead', 'Pill', 'Check', 'Bullet', 'FAQItem'
         ]
       );
       // LANDING-SECTION-REORDER-W1: render the 2 moved belowfold sections (WhenToUse + VsRawAPIs) from

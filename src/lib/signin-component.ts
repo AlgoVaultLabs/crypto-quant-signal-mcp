@@ -175,7 +175,7 @@ export function renderSigninComponent(opts: SigninComponentOptions): string {
         fetch('/api/signup-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
           .then(function(r){return r.json().catch(function(){return{ok:false,error:'parse_error'};});})
           .then(function(d){if(d&&d.ok===true){msg.className='avsi-email-msg ok';msg.textContent='✓ Check your email — we sent your API key + referral link.';btn.textContent='Sent ✓';}
-            else{var c=(d&&d.error)||'send_failed';msg.textContent=c==='invalid_email'?'Please enter a valid email.':c==='disposable_email'?'Please use a non-disposable email.':'Could not send — try again or email support@algovault.com.';btn.disabled=false;btn.textContent='Continue with email';}})
+            else{var c=(d&&d.error)||'send_failed';msg.textContent=c==='invalid_email'?'Please enter a valid email.':c==='disposable_email'?'Please use a non-disposable email.':'Could not send — try again or email admin@algovault.com.';btn.disabled=false;btn.textContent='Continue with email';}})
           .catch(function(){msg.textContent='Network error. Try again.';btn.disabled=false;btn.textContent='Continue with email';});
       });}
     // Get started free → /api/start-free (instant ephemeral key, no email).

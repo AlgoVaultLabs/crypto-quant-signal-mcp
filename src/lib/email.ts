@@ -20,7 +20,7 @@ const FROM_DEFAULT = 'noreply@algovault.com';
 /**
  * Where a customer's REPLY actually lands — CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1.
  *
- * This was `support@algovault.com`, hand-typed at ELEVEN separate `emails.send()` call sites.
+ * This was `admin@algovault.com`, hand-typed at ELEVEN separate `emails.send()` call sites.
  * `support@` could not be verified as a receiving mailbox (port 25 is blocked outbound from both
  * the operator Mac and the Hetzner host, so an SMTP RCPT probe is impossible), and the operator
  * holds `admin@` only. A `replyTo` is not decoration: it is where every reply to a welcome email,
@@ -192,7 +192,7 @@ For context: ${stats.pfeWr}% PFE win rate across ${stats.totalSignals}+ verified
 
 Free tier: 100 free calls/month. Start in 30 seconds: https://algovault.com/#quickstart
 
-Reply to support@algovault.com to unsubscribe or with questions.
+Reply to admin@algovault.com to unsubscribe or with questions.
 
 AlgoVault Labs
 https://algovault.com
@@ -238,7 +238,7 @@ export async function sendReferredFreeKeyEmail(to: string, freeKey: string, refC
   </div>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Add it as <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">Authorization: Bearer ${freeKey}</code> against <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">https://api.algovault.com/mcp</code>.</p>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Manage your key + see your own referral stats at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
 </td></tr>
 <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
 </table></td></tr></table></body></html>`;
@@ -253,7 +253,7 @@ Add it as: Authorization: Bearer ${freeKey}
 Against: https://api.algovault.com/mcp
 
 Manage your key + referral stats: ${ACCOUNT_URL}
-Questions? support@algovault.com
+Questions? admin@algovault.com
 
 — AlgoVault Labs`;
   const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
@@ -294,7 +294,7 @@ export async function sendFreeKeyEmail(to: string, freeKey: string, referralLink
   ${refBlockHtml}
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Add it as <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">Authorization: Bearer ${freeKey}</code> against <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">https://api.algovault.com/mcp</code>.</p>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Manage your key + referral stats at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
 </td></tr>
 <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
 </table></td></tr></table></body></html>`;
@@ -309,7 +309,7 @@ Add it as: Authorization: Bearer ${freeKey}
 Against: https://api.algovault.com/mcp
 
 Manage your key + referral stats: ${ACCOUNT_URL}
-Questions? support@algovault.com
+Questions? admin@algovault.com
 
 — AlgoVault Labs`;
   const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
@@ -345,7 +345,7 @@ export async function sendPayoutPaidEmail(to: string, amountUsdE2: number, txRef
     <div style="font-size:13px">${txHtml}</div>
   </div>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">See your full referral history at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
 </td></tr>
 <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
 </table></td></tr></table></body></html>`;
@@ -357,7 +357,7 @@ Amount: ${amount} USDC
 Transaction: ${txRef}${basescan ? `\nView on Basescan: ${basescan}` : ''}
 
 See your full referral history: ${ACCOUNT_URL}
-Questions? support@algovault.com
+Questions? admin@algovault.com
 
 — AlgoVault Labs`;
   const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
@@ -440,7 +440,7 @@ function renderOptinHtml({ pfeWr, totalSignals }: { pfeWr: string; totalSignals:
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">You've opted in to AlgoVault product updates. Roughly one email per month — new venue launches, signal-mcp features, track-record milestones.</p>
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">For context: <strong>${pfeWr}% PFE win rate</strong> across <strong>${totalSignals}+ verified calls</strong>. Merkle-verified on Base L2. Don't trust &mdash; <a href="https://algovault.com/verify" style="color:#0969da;text-decoration:none">verify</a>.</p>
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">Free tier: 100 free calls/month. <a href="https://algovault.com/#quickstart" style="color:#0969da;text-decoration:none">Start in 30 seconds</a>.</p>
-        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:24px 0 0">Reply to <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a> to unsubscribe or with questions.</p>
+        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:24px 0 0">Reply to <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a> to unsubscribe or with questions.</p>
       </td></tr>
       <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">
         AlgoVault Labs &mdash; composable signal interpretation tools for AI agents.
@@ -503,7 +503,7 @@ function renderEmailHtml({ heading, intro, apiKey, tier, referral }: RenderArgs)
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Then ask Claude: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Want to test with raw HTTP/curl instead? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#0969da;text-decoration:none">3-step handshake guide</a> in our docs.</p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Need to find your key later, switch plans, update your card, or cancel? Visit <a href="https://api.algovault.com/account" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
       </td></tr>
       <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">
         AlgoVault Labs — composable signal interpretation tools for AI agents.
@@ -550,7 +550,7 @@ https://algovault.com/docs.html#testing-with-curl
 Need to find your key later, switch plans, update your card, or cancel?
 Visit https://api.algovault.com/account
 
-Questions? Reply to this email or write to support@algovault.com
+Questions? Reply to this email or write to admin@algovault.com
 
 — AlgoVault Labs
 `;

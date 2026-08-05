@@ -1718,7 +1718,7 @@ async function startHttp() {
       res.send(getWelcomePageHtml(apiKey, tier, email, { utmSource, utmCampaign, newSignupEnabled, oauthProviders, unifiedSignin, src }));
     } catch (err) {
       console.error('Welcome page error:', err instanceof Error ? err.message : err);
-      res.status(500).send('Failed to retrieve your API key. Please contact support@algovault.com');
+      res.status(500).send('Failed to retrieve your API key. Please contact admin@algovault.com');
     }
   });
 
@@ -1906,7 +1906,7 @@ async function startHttp() {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       if (!isValidCodeFormat(code) || sig !== notifyUnsubSig(code) || !(await resolveCode(code))) {
-        return res.status(400).send('<!DOCTYPE html><meta charset="utf-8"><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;text-align:center;color:#1f2328"><h2>Invalid link</h2><p>This unsubscribe link is invalid or expired. Manage notifications from the Telegram bot (/notifications) or contact support@algovault.com.</p></body>');
+        return res.status(400).send('<!DOCTYPE html><meta charset="utf-8"><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;text-align:center;color:#1f2328"><h2>Invalid link</h2><p>This unsubscribe link is invalid or expired. Manage notifications from the Telegram bot (/notifications) or contact admin@algovault.com.</p></body>');
       }
       await setNotifyOptOut(code, true);
       return res.send('<!DOCTYPE html><meta charset="utf-8"><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;text-align:center;color:#1f2328"><h2>Notifications off</h2><p>You won&#39;t receive referral join/earnings notifications anymore. Changed your mind? Re-enable from the Telegram bot (<code>/notifications</code>).</p></body>');

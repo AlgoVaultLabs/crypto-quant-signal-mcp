@@ -134,10 +134,9 @@ export function renderPlanCards(signupBase = ''): string {
       ${starterPrice}
       <ul>
         <li>${planCallsLabel('starter')} calls/month</li>
-        <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
+        <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
-        <li>Email support</li>
       </ul>
       ${starterCta}
     </div>
@@ -147,10 +146,9 @@ export function renderPlanCards(signupBase = ''): string {
       ${proPrice}
       <ul>
         <li>${planCallsLabel('pro')} calls/month</li>
-        <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
+        <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
-        <li>Priority support</li>
       </ul>
       ${proCta}
     </div>
