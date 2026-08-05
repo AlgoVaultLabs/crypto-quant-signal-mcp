@@ -36,6 +36,10 @@ vi.mock('../src/lib/x402.js', () => ({
 }));
 
 vi.mock('../src/lib/x402-idempotency-store.js', () => ({
+  // REVENUE-METER-TRUTH-W4 Step 0B: a `vi.mock` FACTORY must enumerate EVERY export the module
+  // under test imports — adding one to the real module breaks every such mock with
+  // "No X export is defined on the mock". Keep this in step with the store's exports.
+  RAIL_BASE_USDC: 'base-usdc',
   extractPaymentNonce: (payload: unknown) => {
     const n = (payload as { payload?: { authorization?: { nonce?: string } } })?.payload?.authorization?.nonce;
     mockState.nonceSeen = n;

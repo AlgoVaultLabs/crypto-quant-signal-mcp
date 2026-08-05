@@ -8,7 +8,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { verifyX402Payment, isX402Configured, paymentMatchesToolRoute, classifyToolRouteMismatch } from './x402.js';
-import { extractPaymentNonce, extractPayerWallet, tryClaimPayment } from './x402-idempotency-store.js';
+import { extractPaymentNonce, extractPayerWallet, tryClaimPayment, RAIL_BASE_USDC } from './x402-idempotency-store.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
 import { dbExec, dbRun, dbQuery, recordFunnelEvent } from './performance-db.js';
 import type { LicenseInfo, LicenseTier, SuggestedX402 } from '../types.js';
@@ -346,7 +346,7 @@ async function bindAndClaimX402(
   const payerWallet = extractPayerWallet(pendingSettlement?.paymentPayload);
   // OPS-ZERO-VS-UNKNOWN-W3: matched by NAME, never truthiness — a `!claimed` test would
   // re-collapse three states into two and report a database fault as a settled replay.
-  const outcome = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet);
+  const outcome = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet, RAIL_BASE_USDC);
   if (outcome === 'INDETERMINATE') return { reason: 'unavailable' };
   if (outcome === 'ALREADY_CLAIMED') return { reason: 'replayed' };
 
