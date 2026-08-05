@@ -229,7 +229,7 @@ export function getWelcomePageHtml(
             var msg = code === 'invalid_email' ? 'Please enter a valid email.'
                     : code === 'disposable_email' ? 'Please use a non-disposable email address.'
                     : code === 'no_mx' ? 'That email domain cannot receive mail — please check it.'
-                    : 'Could not create your account. Try again or email support@algovault.com.';
+                    : 'Could not create your account. Try again or email admin@algovault.com.';
             errEl.textContent = msg;
             btn.disabled = false;
             btn.textContent = 'Get my free key';

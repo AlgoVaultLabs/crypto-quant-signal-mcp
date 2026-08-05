@@ -14,8 +14,7 @@
     "itemListElement": [
       { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
       { "@type": "Offer", "name": "Starter", "price": "9.99", "priceCurrency": "USD" },
-      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" },
-      { "@type": "Offer", "name": "Enterprise", "price": "299", "priceCurrency": "USD" }
+      { "@type": "Offer", "name": "Pro", "price": "49", "priceCurrency": "USD" }
     ]
   }
 }

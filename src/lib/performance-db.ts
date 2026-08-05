@@ -662,6 +662,58 @@ const CREATE_SIGNUP_EMAILS_OPTIN_AT_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_signup_emails_optin_at ON signup_emails (optin_at);
 `;
 
+// CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1 — the first lead-capture surface AlgoVault has.
+//
+// Replaces a `mailto:` CTA that was dead in two independent ways: Cloudflare rewrites every
+// `mailto:` on every page into `/cdn-cgi/l/email-protection#…` (measured — ZERO plain mailto
+// survives to a browser), and even fully decoded it needs an OS mail handler the visitor may
+// not have. The highest-value CTA on the pricing surface depended on desktop configuration.
+//
+// `intent` is NOT `enterprise`-only by construction (operator decision, 2026-08-05): a public
+// form catches non-enterprise enquiries on day one, so the column exists from the start and the
+// enterprise subset stays queryable. A rename later would be worse than a correct name now.
+//
+// `email_sent_at` / `email_error` record the NOTIFY outcome separately from the CAPTURE, which
+// is the whole point of the ordering: persist first, send second. A Resend outage becomes a
+// recorded retry candidate instead of a lost lead.
+const CREATE_CONTACT_LEADS_SQL = process.env.DATABASE_URL
+  ? `CREATE TABLE IF NOT EXISTS contact_leads (
+      id BIGSERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      company TEXT NULL,
+      monthly_volume TEXT NULL,
+      message TEXT NOT NULL,
+      intent TEXT NOT NULL DEFAULT 'enterprise',
+      src TEXT NULL,
+      ip_hash TEXT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      email_sent_at TIMESTAMPTZ NULL,
+      email_error TEXT NULL
+    );`
+  : `CREATE TABLE IF NOT EXISTS contact_leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      company TEXT NULL,
+      monthly_volume TEXT NULL,
+      message TEXT NOT NULL,
+      intent TEXT NOT NULL DEFAULT 'enterprise',
+      src TEXT NULL,
+      ip_hash TEXT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      email_sent_at TEXT NULL,
+      email_error TEXT NULL
+    );`;
+
+const CREATE_CONTACT_LEADS_CREATED_AT_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_contact_leads_created_at ON contact_leads (created_at);
+`;
+
+const CREATE_CONTACT_LEADS_INTENT_INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_contact_leads_intent ON contact_leads (intent);
+`;
+
 const CREATE_SIGNUP_EMAILS_SOURCE_INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_signup_emails_source ON signup_emails (source);
 `;
@@ -914,6 +966,9 @@ function getBackend(): DbBackend {
   backend.exec(CREATE_SIGNUP_EMAILS_SQL);
   backend.exec(CREATE_SIGNUP_EMAILS_OPTIN_AT_INDEX_SQL);
   backend.exec(CREATE_SIGNUP_EMAILS_SOURCE_INDEX_SQL);
+  backend.exec(CREATE_CONTACT_LEADS_SQL);
+  backend.exec(CREATE_CONTACT_LEADS_CREATED_AT_INDEX_SQL);
+  backend.exec(CREATE_CONTACT_LEADS_INTENT_INDEX_SQL);
   backend.exec(CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_SQL);
   backend.exec(CREATE_PROCESSED_SIGNUP_EMAIL_EVENTS_INDEX_SQL);
   // ACTIVATION-FUNNEL-AUDIT-W1 (2026-05-28): narrow funnel_events table for the

@@ -206,7 +206,7 @@ export function renderReferralTermsPage(): string {
       <h2>Not financial advice</h2>
       <p>AlgoVault signals and this program are informational only and are not financial advice. Past performance does not guarantee future results.</p>
     </div>
-    <p class="muted">Questions? <a href="mailto:support@algovault.com">support@algovault.com</a></p>
+    <p class="muted">Questions? <a href="/contact">Contact us</a></p>
   `;
   return shell('AlgoVault — Referral terms', body);
 }

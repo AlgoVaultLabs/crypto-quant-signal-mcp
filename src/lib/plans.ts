@@ -135,3 +135,81 @@ export function subscriptionBreakEvenCalls(
   if (typeof perCallUsd !== 'number' || !Number.isFinite(perCallUsd) || perCallUsd <= 0) return null;
   return Math.round(PLANS[plan].priceUsdMonthly / perCallUsd);
 }
+
+// ── Tier-claim evidence registry (CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1) ──
+//
+// THE GENERATOR FIX, mandated by CLAUDE.md after the THIRD instance of one bug class in a day:
+// "public copy asserts a deliverable that does not exist".
+//   1. "HOLD calls always free"  — false; equity HOLDs are charged (removed earlier today)
+//   2. "Email support" / "Priority support" — neither exists
+//   3. "$0.015/call overage"     — no overage billing exists; the wall REFUSES, it does not bill
+//
+// Deleting three bullets fixes today. What retires the class is requiring every public tier
+// claim to name the thing that makes it true, and failing the build when one cannot.
+//
+// A claim is bound to EVIDENCE of one of three kinds:
+//   `sot`         — projected from a source-of-truth symbol, so it cannot go stale by hand
+//   `code`        — implemented by a named code path
+//   `contractual` — a genuine human commitment, which needs a named approver and a note.
+//                   Deliberately awkward: if a bullet needs this kind, someone has to own it.
+//
+// `match` is checked against the RENDERED bullet text on BOTH pricing surfaces — the
+// function-rendered cards AND the baked landing artboards — because this wave exists precisely
+// because a single-surface assumption missed 28 of 29 occurrences.
+export type ClaimEvidence =
+  | { readonly kind: 'sot'; readonly ref: string }
+  | { readonly kind: 'code'; readonly ref: string }
+  | { readonly kind: 'contractual'; readonly approvedBy: string; readonly note: string };
+
+export interface TierClaim {
+  readonly id: string;
+  /** Matched against rendered bullet text. */
+  readonly match: RegExp;
+  readonly evidence: ClaimEvidence;
+}
+
+export const TIER_CLAIMS: readonly TierClaim[] = [
+  {
+    id: 'monthly-call-allowance',
+    match: /^[\d,]+ (?:free )?calls\/month$/,
+    evidence: { kind: 'sot', ref: 'src/lib/plans.ts#PLANS' },
+  },
+  {
+    id: 'venue-count',
+    match: /^\d+ exchanges$/,
+    evidence: { kind: 'sot', ref: 'src/lib/capabilities.ts#EXCHANGE_COUNT' },
+  },
+  {
+    id: 'asset-coverage',
+    match: /^All (?:crypto \+ TradFi assets|assets \(crypto \+ TradFi\))$/,
+    // NOT a count claim — a COVERAGE claim, so the evidence is the module that actually
+    // routes both classes. `capabilities.ts#ASSET_COUNT` was the intuitive reference and does
+    // NOT EXIST; the gate below caught that before this registry was even finished.
+    evidence: { kind: 'code', ref: 'src/lib/asset-class-detection.ts#getTradFiClass' },
+  },
+  {
+    id: 'timeframe-coverage',
+    match: /^All (?:\d+ )?timeframes(?: \(1m\s*(?:to|[–—-])\s*1d\))?$/,
+    evidence: { kind: 'sot', ref: 'src/lib/capabilities.ts#TIMEFRAME_COUNT' },
+  },
+  {
+    id: 'funding-arb-top5',
+    match: /^Top 5 funding arbs$/,
+    evidence: { kind: 'code', ref: 'src/tools/scan-funding-arb.ts' },
+  },
+  {
+    id: 'x402-per-call-price',
+    match: /^(?:scan_funding_arb|get_trade_call|get_market_regime) — \$0\.0[12]\/call$/,
+    evidence: { kind: 'code', ref: 'src/lib/feature-registry.ts' },
+  },
+  {
+    id: 'x402-free-then-paid',
+    match: /^100 free calls\/mo first, then pay-per-call$/,
+    evidence: { kind: 'sot', ref: 'src/lib/plans.ts#FREE_MONTHLY_CALLS' },
+  },
+];
+
+/** The claim covering a rendered bullet, or null when nothing vouches for it. */
+export function claimFor(bullet: string): TierClaim | null {
+  return TIER_CLAIMS.find((c) => c.match.test(bullet.trim())) ?? null;
+}

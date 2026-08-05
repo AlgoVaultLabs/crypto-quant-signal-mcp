@@ -16,6 +16,23 @@ import { deriveUserCode } from './referral-store.js';
 import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2, usdcMinPayoutLabel } from './referral-constants.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
+
+/**
+ * Where a customer's REPLY actually lands — CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1.
+ *
+ * This was `admin@algovault.com`, hand-typed at ELEVEN separate `emails.send()` call sites.
+ * `support@` could not be verified as a receiving mailbox (port 25 is blocked outbound from both
+ * the operator Mac and the Hetzner host, so an SMTP RCPT probe is impossible), and the operator
+ * holds `admin@` only. A `replyTo` is not decoration: it is where every reply to a welcome email,
+ * a key-recovery email or a webhook notice is delivered. Pointing it at an unverified mailbox
+ * means those replies may have been going nowhere.
+ *
+ * ONE constant, not eleven literals — the reason this repoint was an eleven-site edit at all.
+ * `OPS-SUPPORT-MAILBOX-VERIFY-W{NEXT}` stays OPEN: repointing is a fix, not a verification that
+ * `support@` is dead.
+ */
+export const REPLY_TO_ADDRESS = 'admin@algovault.com';
+
 const ACCOUNT_URL = 'https://api.algovault.com/account';
 // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4: upgrade CTA target for the quota-paused notice.
 const SIGNUP_URL = 'https://api.algovault.com/signup';
@@ -81,7 +98,7 @@ export async function sendWelcomeEmail({ to, apiKey, tier }: EmailArgs): Promise
   await client.emails.send({
     from: getFromAddress(),
     to,
-    replyTo: 'support@algovault.com',
+    replyTo: REPLY_TO_ADDRESS,
     subject,
     html,
     text,
@@ -110,7 +127,7 @@ export async function sendKeyRecoveryEmail({ to, apiKey, tier }: EmailArgs): Pro
   await client.emails.send({
     from: getFromAddress(),
     to,
-    replyTo: 'support@algovault.com',
+    replyTo: REPLY_TO_ADDRESS,
     subject,
     html,
     text,
@@ -175,7 +192,7 @@ For context: ${stats.pfeWr}% PFE win rate across ${stats.totalSignals}+ verified
 
 Free tier: 100 free calls/month. Start in 30 seconds: https://algovault.com/#quickstart
 
-Reply to support@algovault.com to unsubscribe or with questions.
+Reply to admin@algovault.com to unsubscribe or with questions.
 
 AlgoVault Labs
 https://algovault.com
@@ -186,7 +203,7 @@ https://algovault.com
   const sent = await client.emails.send({
     from: getFromAddress(),
     to,
-    replyTo: 'support@algovault.com',
+    replyTo: REPLY_TO_ADDRESS,
     subject,
     html,
     text,
@@ -221,7 +238,7 @@ export async function sendReferredFreeKeyEmail(to: string, freeKey: string, refC
   </div>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Add it as <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">Authorization: Bearer ${freeKey}</code> against <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">https://api.algovault.com/mcp</code>.</p>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Manage your key + see your own referral stats at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
 </td></tr>
 <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
 </table></td></tr></table></body></html>`;
@@ -236,10 +253,10 @@ Add it as: Authorization: Bearer ${freeKey}
 Against: https://api.algovault.com/mcp
 
 Manage your key + referral stats: ${ACCOUNT_URL}
-Questions? support@algovault.com
+Questions? admin@algovault.com
 
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -277,7 +294,7 @@ export async function sendFreeKeyEmail(to: string, freeKey: string, referralLink
   ${refBlockHtml}
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Add it as <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">Authorization: Bearer ${freeKey}</code> against <code style="background:#f6f8fa;padding:1px 4px;border-radius:3px">https://api.algovault.com/mcp</code>.</p>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">Manage your key + referral stats at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
 </td></tr>
 <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
 </table></td></tr></table></body></html>`;
@@ -292,10 +309,10 @@ Add it as: Authorization: Bearer ${freeKey}
 Against: https://api.algovault.com/mcp
 
 Manage your key + referral stats: ${ACCOUNT_URL}
-Questions? support@algovault.com
+Questions? admin@algovault.com
 
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -328,7 +345,7 @@ export async function sendPayoutPaidEmail(to: string, amountUsdE2: number, txRef
     <div style="font-size:13px">${txHtml}</div>
   </div>
   <p style="font-size:13px;line-height:1.5;margin:0 0 12px">See your full referral history at <a href="${ACCOUNT_URL}" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+  <p style="font-size:13px;color:#656d76;margin:0">Questions? <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
 </td></tr>
 <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">AlgoVault Labs — composable signal interpretation tools for AI agents.</td></tr>
 </table></td></tr></table></body></html>`;
@@ -340,10 +357,10 @@ Amount: ${amount} USDC
 Transaction: ${txRef}${basescan ? `\nView on Basescan: ${basescan}` : ''}
 
 See your full referral history: ${ACCOUNT_URL}
-Questions? support@algovault.com
+Questions? admin@algovault.com
 
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -379,7 +396,7 @@ If they subscribe, you earn ${commissionPct()} of their plan for ${commissionMon
 
 Manage notifications (turn off): ${manageLink}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -401,7 +418,7 @@ A friend you referred subscribed (${commissionPct()} for ${commissionMonthsLabel
 
 Manage notifications (turn off): ${manageLink}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -423,7 +440,7 @@ function renderOptinHtml({ pfeWr, totalSignals }: { pfeWr: string; totalSignals:
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">You've opted in to AlgoVault product updates. Roughly one email per month — new venue launches, signal-mcp features, track-record milestones.</p>
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">For context: <strong>${pfeWr}% PFE win rate</strong> across <strong>${totalSignals}+ verified calls</strong>. Merkle-verified on Base L2. Don't trust &mdash; <a href="https://algovault.com/verify" style="color:#0969da;text-decoration:none">verify</a>.</p>
         <p style="font-size:14px;line-height:1.5;color:#1f2328;margin:0 0 16px">Free tier: 100 free calls/month. <a href="https://algovault.com/#quickstart" style="color:#0969da;text-decoration:none">Start in 30 seconds</a>.</p>
-        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:24px 0 0">Reply to <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a> to unsubscribe or with questions.</p>
+        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:24px 0 0">Reply to <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a> to unsubscribe or with questions.</p>
       </td></tr>
       <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">
         AlgoVault Labs &mdash; composable signal interpretation tools for AI agents.
@@ -486,7 +503,7 @@ function renderEmailHtml({ heading, intro, apiKey, tier, referral }: RenderArgs)
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Then ask Claude: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Want to test with raw HTTP/curl instead? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#0969da;text-decoration:none">3-step handshake guide</a> in our docs.</p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Need to find your key later, switch plans, update your card, or cancel? Visit <a href="https://api.algovault.com/account" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
-        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:support@algovault.com" style="color:#0969da;text-decoration:none">support@algovault.com</a>.</p>
+        <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
       </td></tr>
       <tr><td style="padding:18px 28px;background:#f6f8fa;border-top:1px solid #d0d7de;font-size:11px;color:#656d76">
         AlgoVault Labs — composable signal interpretation tools for AI agents.
@@ -533,7 +550,7 @@ https://algovault.com/docs.html#testing-with-curl
 Need to find your key later, switch plans, update your card, or cancel?
 Visit https://api.algovault.com/account
 
-Questions? Reply to this email or write to support@algovault.com
+Questions? Reply to this email or write to admin@algovault.com
 
 — AlgoVault Labs
 `;
@@ -619,7 +636,7 @@ Your endpoint must return a 2xx status. Fix it and we resume on the next retry.
 
 Review your webhooks: ${ACCOUNT_URL}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -653,7 +670,7 @@ We retried automatically for ${dayLabel} without a single successful delivery.
 
 Fix your endpoint so it returns a 2xx status, then register the webhook again to resume delivery: ${ACCOUNT_URL}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -686,7 +703,97 @@ Deliveries resume automatically when your quota resets next month.
 
 Upgrade your plan to resume them today: ${SIGNUP_URL}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}
+
+// ── Enterprise / contact-form lead (CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1) ──
+
+export interface ContactLeadEmailArgs {
+  leadId: number;
+  name: string;
+  email: string;
+  company: string | null;
+  monthlyVolume: string | null;
+  message: string;
+  intent: string;
+  src: string | null;
+}
+
+/**
+ * Strip everything that can terminate or forge an email header.
+ *
+ * CR and LF are the header-injection primitive: a `\r\n` inside a value that reaches a header
+ * lets a submitter append `Bcc:` or a second `Subject:`. NUL is stripped too — it is the byte
+ * that makes a tracked file invisible to the repo's own grep tooling, and it has no business in
+ * a lead field either. This runs on EVERY field even though none of them reach a header today,
+ * because "none of them reach a header" is a property of the current code, not of the data.
+ */
+function stripHeaderUnsafe(value: string): string {
+  return value.replace(/[\r\n\0]/g, ' ').trim();
+}
+
+/** HTML-escape — the lead body is operator-facing, but it is still attacker-authored text. */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * Notify the operator of a new lead.
+ *
+ * NO USER INPUT REACHES ANY HEADER. `subject` is a fixed literal, `from` is our configured
+ * sender and `replyTo` is our own constant — the submitter's address travels in the BODY only.
+ * Putting it in `Reply-To` would be the convenient choice and is the one this deliberately
+ * refuses: it is the single field most likely to be interpolated later "just for convenience",
+ * and a header is exactly where an injected CRLF does damage.
+ *
+ * Returns the Resend id, or throws — the caller records the failure against an already-durable
+ * lead row and still returns success to the user.
+ */
+export async function sendContactLeadEmail(args: ContactLeadEmailArgs): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+
+  const name = stripHeaderUnsafe(args.name);
+  const email = stripHeaderUnsafe(args.email);
+  const company = args.company ? stripHeaderUnsafe(args.company) : '—';
+  const volume = args.monthlyVolume ? stripHeaderUnsafe(args.monthlyVolume) : '—';
+  const intent = stripHeaderUnsafe(args.intent);
+  const src = args.src ? stripHeaderUnsafe(args.src) : 'direct';
+  // The message keeps its newlines — it never reaches a header, and stripping them would
+  // mangle the one field the operator most needs to read as written.
+  const message = args.message.replace(/\0/g, '');
+
+  // FIXED LITERAL — no interpolation at all. `intent` is a server-set constant today, so
+  // interpolating it would be safe *by accident of the current caller*; the adversarial test
+  // for this function proved attacker text reaches the subject the moment that changes.
+  // CRLF-stripping stops header INJECTION; it does not stop attacker-controlled text sitting
+  // in a header, which is what the wave's rule actually forbids. `intent` moves to the body.
+  const subject = 'New enquiry — AlgoVault';
+  const rows: Array<[string, string]> = [
+    ['Name', name], ['Email', email], ['Company', company],
+    ['Expected volume', volume], ['Intent', intent], ['Channel', src], ['Lead ID', String(args.leadId)],
+  ];
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px">
+  <h1 style="font-size:20px;margin:0 0 16px">New ${esc(intent)} enquiry</h1>
+  <table style="border-collapse:collapse;font-size:14px;margin-bottom:16px">
+    ${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#656d76">${esc(k)}</td><td style="padding:4px 0"><strong>${esc(v)}</strong></td></tr>`).join('\n    ')}
+  </table>
+  <div style="font-size:14px;line-height:1.5;white-space:pre-wrap;border-left:3px solid #d0d7de;padding-left:12px">${esc(message)}</div>
+</div>`;
+  const text = `New ${intent} enquiry\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n---\n${message}\n`;
+
+  const sent = await client.emails.send({
+    to: REPLY_TO_ADDRESS,
+    from: getFromAddress(),
+    replyTo: REPLY_TO_ADDRESS,
+    subject,
+    html,
+    text,
+  });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }

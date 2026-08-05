@@ -119,7 +119,7 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-C
 | Free | $0 | All assets, all 11 timeframes (1m–1d), top-5 funding-arb | 100 |
 | Starter | $9.99/mo | All crypto + TradFi assets, all 11 timeframes | 3,000 |
 | Pro | $49/mo | All crypto + TradFi assets, all 11 timeframes | 15,000 |
-| Enterprise | $299/mo | Unlimited calls + SLA + priority support | Unlimited |
+| Enterprise | Contact us | Custom volume — https://api.algovault.com/contact | Custom |
 | x402 pay-per-call | $0.01–$0.02/call | All assets, all 11 timeframes, no signup/key | Unlimited (pay per call) |
 
 **Track-record coverage:** the public dashboard shows 10 of 11 timeframes (3m + 5m–1d). The 3m row joined the public track record on 2026-05-19 after clearing the shadow-mode decision gates (PFE Win Rate 92.42% across 3,959 evaluated samples; gates ≥85% and ≥3,000). The 1m timeframe stays API-on-demand while its sample density accrues. Calls for 1m work fine; they just don't yet appear in the rolling-window PFE breakdown.

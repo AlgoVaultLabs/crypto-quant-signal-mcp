@@ -100,10 +100,20 @@ describe('purchase-path reachability — an advertised plan must be buyable', ()
     // `"url": "https://api.algovault.com/signup?plan=enterprise"` in its Offer blocks while
     // rendering NO enterprise anchor; if `clickableHrefs` ever started matching those, this gate
     // would go quietly back to being the thing that passed while monthly was dead.
+    // SYNTHETIC fixture, deliberately. The original keyed on the Enterprise Offer url being
+    // present in landing/index.html — true at the time, and then CONTACT-FORM-AND-SUPPORT-CLAIM-
+    // SWEEP-W1 stripped that Offer entirely. It failed LOUDLY, which is what a fixture assumption
+    // should do; the fix is to stop depending on live markup for a property about the EXTRACTOR.
+    const synthetic = `
+      <script type="application/ld+json">
+      { "offers": [{ "@type": "Offer", "name": "Ghost", "url": "https://api.algovault.com/signup?plan=ghost" }] }
+      </script>
+      <a href="https://api.algovault.com/signup?plan=real">Buy</a>`;
+    const hrefs = clickableHrefs(synthetic);
+    expect(hrefs).toEqual(['https://api.algovault.com/signup?plan=real']);
+    expect(hrefs.some((h) => h.includes('plan=ghost')), 'a JSON-LD url must never count').toBe(false);
+    // ...and on the live page, Enterprise has no clickable purchase path either.
     const html = readFileSync(join(ROOT, 'landing/index.html'), 'utf8');
-    expect(html, 'fixture assumption: the JSON-LD Offer url is present').toContain(
-      '"url": "https://api.algovault.com/signup?plan=enterprise"',
-    );
     expect(clickableHrefs(html).some((h) => h.includes('plan=enterprise'))).toBe(false);
   });
 

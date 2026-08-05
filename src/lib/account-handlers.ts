@@ -168,7 +168,7 @@ ${accountArtboardOpen()}
           <button type="submit">View my referrals &rarr;</button>
           <div class="hint" style="margin-top:12px">No API key yet? <a href="https://algovault.com/referral" style="color:var(--mint);text-decoration:none">Get a free account + referral link &rarr;</a></div>
         </form>
-        <div class="help-line">Need help? <a href="mailto:support@algovault.com">support@algovault.com</a></div>
+        <div class="help-line">Need help? <a href="/contact">Contact us</a></div>
       </div>
 ${accountArtboardClose()}
 ${renderBrandFooter('desktop')}
@@ -202,7 +202,7 @@ ${accountArtboardOpen()}
           <h2>Error</h2>
           <p>${safe}</p>
         </div>
-        <div class="help-line"><a href="/account">&larr; Back to /account</a> · <a href="mailto:support@algovault.com">support@algovault.com</a></div>
+        <div class="help-line"><a href="/account">&larr; Back to /account</a> · <a href="/contact">Contact us</a></div>
       </div>
 ${accountArtboardClose()}
 ${renderBrandFooter('desktop')}
@@ -228,7 +228,7 @@ ${accountArtboardOpen()}
           <p>If an active subscription exists for that email, we've sent the API key. Check spam if it doesn't arrive in 2 minutes (sender: <code>noreply@algovault.com</code>).</p>
           <p>For privacy, we return the same response whether or not the email is on file.</p>
         </div>
-        <div class="help-line"><a href="/account">&larr; Back to /account</a> · <a href="mailto:support@algovault.com">support@algovault.com</a></div>
+        <div class="help-line"><a href="/account">&larr; Back to /account</a> · <a href="/contact">Contact us</a></div>
       </div>
 ${accountArtboardClose()}
 ${renderBrandFooter('desktop')}
@@ -267,13 +267,13 @@ export async function accountPortalHandler(req: Request, res: Response): Promise
       returnUrl: `${req.protocol}://${req.get('host')}/account`,
     });
     if (!portalUrl) {
-      res.status(503).send(getAccountErrorPageHtml('Billing portal is temporarily unavailable. Please try again in a few minutes or contact support@algovault.com.'));
+      res.status(503).send(getAccountErrorPageHtml('Billing portal is temporarily unavailable. Please try again in a few minutes or contact admin@algovault.com.'));
       return;
     }
     res.redirect(303, portalUrl);
   } catch (err) {
     console.error('/account/portal error:', err instanceof Error ? err.message : err);
-    res.status(500).send(getAccountErrorPageHtml('Something went wrong. Please contact support@algovault.com.'));
+    res.status(500).send(getAccountErrorPageHtml('Something went wrong. Please contact admin@algovault.com.'));
   }
 }
 
@@ -382,7 +382,7 @@ export async function accountReferralsHandler(req: Request, res: Response): Prom
     res.send(renderReferralStatsPage(view));
   } catch (err) {
     console.error('/account/referrals error:', err instanceof Error ? err.message : err);
-    res.status(500).send(getAccountErrorPageHtml('Could not load your referral stats. Please try again or contact support@algovault.com.'));
+    res.status(500).send(getAccountErrorPageHtml('Could not load your referral stats. Please try again or contact admin@algovault.com.'));
   }
 }
 
@@ -439,6 +439,6 @@ export async function accountPayoutAddressHandler(req: Request, res: Response): 
     res.status(addressError ? 400 : 200).send(renderReferralStatsPage(view));
   } catch (err) {
     console.error('/account/referrals/payout-address error:', err instanceof Error ? err.message : err);
-    res.status(500).send(getAccountErrorPageHtml('Could not save your payout address. Please try again or contact support@algovault.com.'));
+    res.status(500).send(getAccountErrorPageHtml('Could not save your payout address. Please try again or contact admin@algovault.com.'));
   }
 }

@@ -46,13 +46,18 @@ describe('email module', () => {
   it('sendWelcomeEmail invokes Resend with tier-titled subject + API key in body', async () => {
     process.env.RESEND_API_KEY = 'test_key';
     process.env.RESEND_FROM_EMAIL = 'noreply@algovault.com';
-    const { sendWelcomeEmail } = await import('../src/lib/email.js');
+    const { sendWelcomeEmail, REPLY_TO_ADDRESS } = await import('../src/lib/email.js');
     await sendWelcomeEmail({ to: 'alice@example.com', apiKey: 'av_live_xyz123', tier: 'pro' });
     expect(mockSend).toHaveBeenCalledOnce();
     const args = mockSend.mock.calls[0][0];
     expect(args.from).toBe('noreply@algovault.com');
     expect(args.to).toBe('alice@example.com');
-    expect(args.replyTo).toBe('support@algovault.com');
+    // CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1: a replyTo must be a RECEIVING mailbox.
+    // `support@` is unverified (port 25 blocked outbound from both hosts, so an SMTP RCPT
+    // probe is impossible) and the operator holds `admin@` only — replies were going nowhere.
+    // Asserted against the exported constant so the 11 call sites can never drift apart again.
+    expect(args.replyTo).toBe(REPLY_TO_ADDRESS);
+    expect(REPLY_TO_ADDRESS).toBe('admin@algovault.com');
     expect(args.subject).toBe('Your AlgoVault Pro API key');
     expect(args.html).toContain('av_live_xyz123');
     expect(args.html).toContain('Pro plan');
