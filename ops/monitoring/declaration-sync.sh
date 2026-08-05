@@ -226,11 +226,18 @@ for d in "${DECLARATIONS[@]}"; do
     unchanged=$((unchanged+1)); continue
   fi
 
-  # Backup before replacing, per the NO_BACKUP check the reconciler asserts on load-bearing rows.
-  # Only claim one when one was actually taken — a first install has nothing to back up, and an
-  # alert body that asserts a file exists when it does not is its own small lie.
-  backup_note="no prior file — nothing to back up"
+  # Backup per the NO_BACKUP check the reconciler asserts on EVERY load-bearing row.
+  #
+  # A first install has no prior revision to preserve — but skipping the backup entirely leaves
+  # the new row tripping NO_BACKUP until the file happens to change, which is a false alarm the
+  # sync itself manufactures. Measured: adding sot-parity-config.json produced exactly that on
+  # signal-1 within minutes. So a prior file is backed up (a real rollback point), and a first
+  # install is stamped AFTER the swap (establishes the convention plus a restore point for the
+  # first unintended change). Only ever claim the one that actually happened.
+  first_install=1
+  backup_note="first install — .bak stamped after the swap"
   if [ -f "$dest" ]; then
+    first_install=0
     cp -p "$dest" "$dest.bak.$BACKUP_REASON-$STAMP"
     backup_note="backup .bak.$BACKUP_REASON-$STAMP"
   fi
@@ -245,6 +252,7 @@ for d in "${DECLARATIONS[@]}"; do
     echo "  ✗ FAILED   $name — post-swap hash mismatch"
     fail_detail="${fail_detail}${name}: post-swap hash mismatch"$'\n'; failed=$((failed+1)); continue
   fi
+  [ "$first_install" -eq 1 ] && cp -p "$dest" "$dest.bak.$BACKUP_REASON-$STAMP"
   echo "  ✓ SYNCED   $name — ${old_h:0:16} -> ${new_h:0:16} (${new_b}B), $backup_note"
   changed=$((changed+1))
 done

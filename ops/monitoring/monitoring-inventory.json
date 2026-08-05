@@ -36,7 +36,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "eddd292c11d05f553882057d3c717101976e588fc4d0ca69398f9c819175d1bd",
+      "sha256": "01a2f7c633fd8f572058e2f7458a665a14d79ec150818e72bd2c36a0bf07bb43",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
@@ -65,7 +65,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "10a8a3601031c9648de75b49ad113fcf8d2a498c0760e24c3a3bd12c111e0bad",
+      "sha256": "ffa721e068f8ca5d4393750c4aae91cf5939e0675994ad08e5925340df503b74",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
