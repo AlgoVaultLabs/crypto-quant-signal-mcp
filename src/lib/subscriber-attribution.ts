@@ -856,3 +856,54 @@ export function renderSubscribersAdminHtml(): string {
     + '</tr></thead><tbody></tbody></table>'
     + '<script>' + js + '</script></body></html>';
 }
+
+/**
+ * REVENUE-METER-TRUTH-W5 CH4 — recover the customers the broken producer lost.
+ *
+ * `buildSubscriberProfile` silently dropped every write carrying an attribution row from 2026-06-08
+ * until the 22007 bind fix (see `toIsoTimestamp`). Those conversions are not recoverable from the
+ * profile table — it never held them — but they ARE recoverable from `processed_stripe_events`,
+ * which recorded each `checkout.session.completed` faithfully, including its `session_id`.
+ *
+ * This re-runs the REPAIRED producer over each recorded session, so the backfill is a genuine replay
+ * of the real path rather than a second, divergent write. `buildSubscriberProfile`'s upsert is
+ * `ON CONFLICT (customer_id) DO UPDATE`, so it is idempotent and safe to re-run.
+ *
+ * ⚠️ **`backfillSubscriberBridges` cannot serve this.** It only `UPDATE`s rows
+ * `WHERE bridge_confidence IS NULL` — it can enrich a row that exists, never create one that never
+ * landed. Hence a sibling rather than a reuse.
+ *
+ * The Stripe fetch is INJECTED so this module keeps zero dependency on `stripe.ts` (no import cycle,
+ * and the whole thing stays unit-testable). Fail-open per session: one unretrievable session must not
+ * abort the rest of the recovery.
+ *
+ * @returns the number of sessions successfully replayed.
+ */
+export async function backfillMissingSubscriberProfiles(
+  opts: { retrieveSession: (sessionId: string) => Promise<unknown> },
+  deps: ProfileDeps = defaultProfileDeps,
+): Promise<number> {
+  deps.ensure();
+  const rows = await deps.query<{ session_id: string; event_id: string }>(
+    `SELECT session_id, event_id FROM processed_stripe_events
+      WHERE event_type = 'checkout.session.completed' AND session_id IS NOT NULL
+      ORDER BY processed_at`,
+    [],
+  );
+  console.log(`[backfillMissingSubscriberProfiles] ${rows.length} recorded checkout session(s) to replay`);
+  let replayed = 0;
+  for (const row of rows) {
+    try {
+      const session = await opts.retrieveSession(row.session_id);
+      if (!session) { console.warn(`  ${row.event_id} — session ${row.session_id} not retrievable, skipping`); continue; }
+      await buildSubscriberProfile(session, deps);
+      replayed++;
+      console.log(`  ${row.event_id} — replayed ${row.session_id}`);
+    } catch (err) {
+      // Fail-open per session: a single unretrievable session must not abort the recovery.
+      console.error(`  ${row.event_id} — replay failed (continuing):`, err instanceof Error ? err.message : err);
+    }
+  }
+  console.log(`[backfillMissingSubscriberProfiles] replayed=${replayed}/${rows.length}`);
+  return replayed;
+}
