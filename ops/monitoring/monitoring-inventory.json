@@ -44,6 +44,35 @@
       "notes": "Row 1 of its own inventory. As of OPS-AOE-MONITORING-PARITY-W1 it is ALSO a vendored shared primitive under the same canonical + committed-.sha256 + parity contract as the wrapper \u2014 one artifact installed twice, not two artifacts to maintain. Each instance evaluates only the rows it owns (MONITORING_HOST_LABELS). DOC_PATH_CLAIM added by OPS-CLAIM-VERIFIER-COVERAGE-W1: the prescriptive docs' host-path claims are verified LOCALLY on the owning host, because CI has no prod SSH and must never get any."
     },
     {
+      "id": "declaration-sync",
+      "artifact": "ops/monitoring/declaration-sync.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/declaration-sync.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/declaration-sync.sh",
+          "schedule": "33 * * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/declaration-sync.sh",
+          "schedule": "27 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "33 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "2c31fefd788c6d75c04a7a7ff830b04ec23d35e26a2997d9a7f4e3bd80c1f2a1",
+      "alert_ids": [
+        "MONITORING_DECLARATION_SYNC_FAILED"
+      ],
+      "owner_wave": "OPS-MONITORING-INVENTORY-HOST-SYNC-W1",
+      "notes": "Flows the committed DECLARATIONS to the hosts that read them. It exists because monitoring-inventory-reconcile.py resolves its checklist to a HOST-LOCAL sibling copy, while `ops/monitoring/**` is in deploy.yml's paths-ignore by design — so no deploy ever synced the file the reconciler actually reads, every edit needed a manual two-host push, and nothing detected a skipped one (measured 2026-08-05: repo 52 rows, both hosts 50, surfacing as a false ORPHAN on a healthy artifact). PULL, not a CI push: `gh secret list` has no aoe-1 credential and the AOE repo's deploy.yml is a stub, so a push would need a newly minted key AND would hand the prod root SSH key to a second workflow (SEC-04). The raw URL was verified byte-identical to `git show origin/main:<path>` from BOTH hosts. Syncs a DECLARED SET (inventory + doc-host-path-claims + network-posture + schedule-boundary-rule) because all four are the same shape — the other three had simply not drifted yet, and fixing one lane is the lane-fix-wearing-a-generator's-clothes class. DECLARATIONS ONLY: it moves .json and never an executable, which is why it does not weaken CLAUDE.md's no-auto-install rule. Fail-closed — a non-200, an unparseable body, a missing required key or a >50% size collapse REFUSES the write and keeps the working file, because a truncated declaration breaks every check at once. Emits one DECLARATION_SYNC_VERDICT= token; 0=SYNCED/UNCHANGED, 1=FAILED, 3=INDETERMINATE. Per-host schedules differ so each lands ≥24min before that host's reconciler (signal-1 :33, the measured least-contended canonical minute; aoe-1 :27, fully clear of its 5-min grid)."
+    },
+    {
       "id": "doc-host-path-claims",
       "artifact": "ops/monitoring/doc-host-path-claims.json",
       "kind": "config",
