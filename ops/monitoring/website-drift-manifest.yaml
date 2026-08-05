@@ -191,17 +191,13 @@ rows:
     tg_fires: true
     recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
 
-  - alert_id: HOMEPAGE_HOLD_RATE_DTRF_BAND
-    page_url: https://algovault.com/
-    claim_pattern: 'data-tr-field="hold_rate"[^>]*>([0-9.]+)%'
-    extract_method: regex_first_match
-    transform: float(match)
-    sot_endpoint: https://api.algovault.com/api/performance-public
-    sot_jq: .hold_rate
-    tolerance_type: BAND
-    tolerance_value: 3
-    tg_fires: true
-    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+  # HOMEPAGE_HOLD_RATE_DTRF_BAND — RETIRED 2026-08-05 by PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1.
+  # The homepage HOLD box was removed on architect direction, so `data-tr-field="hold_rate"` no
+  # longer appears on https://algovault.com/ at all. Left in place this row would NOT have failed:
+  # a non-matching claim_pattern logs EXTRACT_NONE, increments extract_failures and `continue`s —
+  # extract_failures only ever reaches a summary log line, never an alert. It would have become a
+  # silently dark guard, indistinguishable from a healthy one. Deleted rather than left to rot.
+  # /docs still carries a hold-rate claim; DOCS_HOLD_RATE_DTRF_BAND below is unaffected.
 
   # ============================ /docs ============================
   # Added by OPS-DOCS-HOLDRATE-LIVE-W1 (SEC-12). /docs carried NO drift row at all while publicly

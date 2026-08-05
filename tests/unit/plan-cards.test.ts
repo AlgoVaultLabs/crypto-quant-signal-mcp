@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderPlanCards, ENTERPRISE_CONTACT_EMAIL } from '../../src/lib/signup-flow.js';
 import {
+  PLANS,
   planPriceLabel,
   planAnnualPriceLabel,
   planAnnualMonthlyEquivalent,
@@ -35,11 +36,13 @@ describe('renderPlanCards — REFERRAL-WEB-FIX-W1 link-base contract', () => {
     expect(c).toContain('href="https://api.algovault.com/signup?plan=starter&amp;interval=year"');
   });
 
-  it('renders all 3 plans + the SoT exchange count (no card drift between surfaces)', () => {
+  it('renders the 2 self-serve plans + the SoT exchange count (no card drift between surfaces)', () => {
+    // PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1: Enterprise no longer renders a CARD on either
+    // pricing surface — it is contact-us, carried by the line beneath the row.
     const c = renderPlanCards();
     expect(c).toContain('<h2>Starter</h2>');
     expect(c).toContain('<h2>Pro</h2>');
-    expect(c).toContain('<h2>Enterprise</h2>');
+    expect(c).not.toContain('<h2>Enterprise</h2>');
     expect(c).toMatch(/data-tr-field="exchange_count">\d+</);
   });
 });
@@ -114,10 +117,24 @@ describe('renderPlanCards — Enterprise is contact-us (R4)', () => {
     expect(ENTERPRISE_CONTACT_EMAIL).toBe('admin@algovault.com');
   });
 
-  it('keeps the Enterprise feature list intact', () => {
+  it('renders NO Enterprise card at all — the contact line carries it', () => {
+    // PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1 replaced the prior wave's "Custom" card. The
+    // feature list went with it: a card advertising 100,000 calls with no price and no CTA was
+    // the half-measure the architect removed.
     const c = renderPlanCards();
-    expect(c).toContain('100,000 calls/month');
-    expect(c).toContain('SLA guarantee');
-    expect(c).toContain('Dedicated support');
+    expect(c).not.toContain('100,000 calls/month');
+    expect(c).not.toContain('SLA guarantee');
+    expect(c).not.toContain('Dedicated support');
+    expect(c).not.toContain('price-contact');
+    // ...but the plan itself is NOT retired: this is a display removal, so `plans.ts` and the
+    // /signup?plan=enterprise route still resolve for any existing or in-flight subscription.
+    expect(PLANS.enterprise.monthlyCalls).toBe(100_000);
+  });
+
+  it('renders exactly 2 plan cards', () => {
+    // `class="plan"` (Starter) and `class="plan popular"` (Pro) — and NOT the `plans` grid or the
+    // `plans-contact` line, both of which share the prefix.
+    const c = renderPlanCards();
+    expect((c.match(/class="plan(?:"| popular")/g) ?? []).length).toBe(2);
   });
 });

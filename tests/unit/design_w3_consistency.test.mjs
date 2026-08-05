@@ -162,7 +162,10 @@ test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → sig
   const html = renderPlanCards();
   assert.match(html, /<h2>Starter<\/h2>/, 'Starter tier preserved');
   assert.match(html, /<h2>Pro<\/h2>/, 'Pro tier preserved');
-  assert.match(html, /<h2>Enterprise<\/h2>/, 'Enterprise tier preserved');
+  // PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1: Enterprise renders NO card on either pricing
+  // surface — it is contact-us, carried by the line beneath the tier row. Display removal only:
+  // plans.ts and the /signup?plan=enterprise route still resolve.
+  assert.doesNotMatch(html, /<h2>Enterprise<\/h2>/, 'Enterprise card removed (contact-us)');
   // The rendered prices + allowances are what a visitor actually sees — pin them here so a
   // bad SoT edit fails loudly instead of silently repricing three public pages.
   //
@@ -179,7 +182,7 @@ test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → sig
   assert.match(html, /mailto:admin@algovault\.com/, 'Enterprise contact line rendered');
   assert.match(html, /<li>3,000 calls\/month<\/li>/, 'Starter allowance rendered');
   assert.match(html, /<li>15,000 calls\/month<\/li>/, 'Pro allowance rendered');
-  assert.match(html, /<li>100,000 calls\/month<\/li>/, 'Enterprise allowance rendered');
+  assert.doesNotMatch(html, /<li>100,000 calls\/month<\/li>/, 'Enterprise allowance card removed');
   // index.ts must call the helper (byte-identical render):
   const idx = await read('src/index.ts');
   assert.match(idx, /\$\{renderPlanCards\(\)\}/, 'getSignupPageHtml renders via renderPlanCards()');

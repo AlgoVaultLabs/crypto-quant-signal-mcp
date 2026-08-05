@@ -141,13 +141,18 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     ]) {
       expect(html, promise).not.toContain(promise);
     }
-    expect(count('HOLD rate — we only fire when we mean it.')).toBe(2);
-    expect(count('That selectivity is why we have')).toBe(2);
-    // The deploy-time injection hooks the proof sentence depends on must survive intact — a
-    // deleted span silently zero-matches the snapshot injector at every deploy.
-    expect(count('data-tr-field="hold_rate"')).toBe(4);
-    expect(count('data-tr-field="pfe_wr"')).toBe(10);
-    expect(count('data-tr-field="call_count"')).toBe(8);
+    // PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1 then removed the whole HOLD box on architect
+    // direction — with it gone, 99.2% leaves the pricing surface and orphans nothing.
+    expect(count('HOLD rate — we only fire when we mean it.')).toBe(0);
+    expect(count('That selectivity is why we have')).toBe(0);
+    expect(count('data-tr-field="hold_rate"')).toBe(0);
+    // The TRUST BAND is not the HOLD box and must survive: it is what keeps 91.7% from becoming a
+    // bare number. It shares a border colour with the box, which is exactly how a removal anchored
+    // on that colour swallows it — measured during this wave, caught by the span inventory.
+    expect(count('Don’t trust — verify.')).toBe(2);
+    expect(count('data-tr-field="erc8004_agent_id"')).toBe(2);
+    expect(count('data-tr-field="pfe_wr"')).toBe(8);
+    expect(count('data-tr-field="call_count"')).toBe(6);
   });
 
   it('the primary nav "Signup" CTA leads to the unified sign-in /welcome on the absolute api host', () => {

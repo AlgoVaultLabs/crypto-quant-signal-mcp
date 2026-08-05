@@ -134,8 +134,13 @@ test('Q-W11+Q-W14: data-tr-field proxy spans for live-bound counters', async () 
   assert.match(html, /data-tr-field="pfe_wr">[\d.]+%</, 'pfe_wr live-bound (LiveTrackRecord LIVE; % inside span)');
   assert.match(html, /data-tr-field="call_count">[\d,]+</, 'call_count live-bound (LiveTrackRecord LIVE)');
   assert.match(html, /data-tr-field="merkle_batch_count">\d+</, 'merkle_batch_count live-bound (LiveTrackRecord LIVE)');
-  // Q-W14 SimplePricing tagline live-bind
-  assert.match(html, /data-tr-field="hold_rate">[\d.]+%</, 'hold_rate live-bound (SimplePricing tagline; % inside span)');
+  // Q-W14 SimplePricing tagline live-bind — RETIRED 2026-08-05 by
+  // PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1: the HOLD box that carried that tagline was removed
+  // from the pricing surface on architect direction, so `hold_rate` no longer appears on this
+  // page at all and `landing/index.html` was dropped from the dtrf-hold-rate manifest row in the
+  // same commit. Inverted rather than deleted: a STRANDED span (hook with no copy around it)
+  // would zero-match the injector at every deploy without ever failing a build.
+  assert.doesNotMatch(html, /data-tr-field="hold_rate"/, 'no stranded hold_rate hook after the HOLD box removal');
 });
 
 test('Q-W13: UseCases meta dates STRIPPED', async () => {
@@ -171,8 +176,11 @@ test('LANDING-SECTION-REORDER-W1: CoreCapabilities section REMOVED (SUPERSEDES W
 
 test('Q-W18: pricing tier names Title Case (override JSX UPPERCASE)', async () => {
   const html = await read('landing/index.html');
-  // Title Case tier names present
-  for (const tier of ['Free', 'Starter', 'Pro', 'Enterprise']) {
+  // Title Case tier names present.
+  // PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1: 'Enterprise' left this list — it no longer renders
+  // a tier card on the pricing surface (contact-us). The Title-Case RULE is unchanged and still
+  // enforced for every tier that DOES render, plus the UPPERCASE-override check below.
+  for (const tier of ['Free', 'Starter', 'Pro']) {
     const re = new RegExp(`>${tier}<`);
     assert.match(html, re, `>${tier}< Title Case present`);
   }

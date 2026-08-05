@@ -154,17 +154,6 @@ export function renderPlanCards(signupBase = ''): string {
       </ul>
       ${proCta}
     </div>
-    <div class="plan">
-      <h2>${PLANS.enterprise.label}</h2>
-      <div class="price-contact">Custom</div>
-      <ul>
-        <li>${planCallsLabel('enterprise')} calls/month</li>
-        <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
-        <li>All assets &amp; timeframes</li>
-        <li>SLA guarantee</li>
-        <li>Dedicated support</li>
-      </ul>
-    </div>
   </div>
   <div class="plans-contact">Need ${PLANS.enterprise.label}? <a href="mailto:${ENTERPRISE_CONTACT_EMAIL}">Contact us</a> for pricing.</div>`;
 }
@@ -182,7 +171,9 @@ export function renderPlanCards(signupBase = ''): string {
  * The CARD MARKUP was already single-sourced (renderPlanCards); this is presentational only.
  */
 export const PLAN_CARDS_CSS = `
-  .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  /* PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1: 3 -> 2 columns. Enterprise is contact-us and no
+     longer renders a card, here or on the landing page; the contact line below the row carries it. */
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media (max-width: 768px) { .plans { grid-template-columns: 1fr; } }
   .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; position: relative; display: flex; flex-direction: column; }
   .plan.popular { border-color: #34D199; }
@@ -192,15 +183,12 @@ export const PLAN_CARDS_CSS = `
   .plan .price-sub { font-size: 14px; color: #c9d1d9; margin-bottom: 2px; }
   .plan .price-sub .save { display: inline-block; background: rgba(52,209,153,0.15); color: #34D199; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 600; margin-left: 4px; }
   .plan .price-alt { font-size: 13px; color: #8b949e; margin-bottom: 4px; }
-  .plan .price-contact { font-size: 36px; font-weight: 700; color: #8b949e; margin: 12px 0 2px; }
   .plan ul { list-style: none; margin: 16px 0 24px; padding: 0; }
   .plan ul li { padding: 4px 0; color: #c9d1d9; font-size: 14px; }
   .plan ul li::before { content: '\\2713'; color: #3fb950; margin-right: 8px; }
   .plan .btn { margin-top: auto; }
   .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; transition: background 0.15s; text-align: center; }
   .btn:hover { background: #2ea043; }
-  .btn.ent { background: #8957e5; }
-  .btn.ent:hover { background: #a371f7; }
   .btn-alt { display: inline-block; margin-top: 10px; color: #8b949e; text-decoration: none; font-size: 13px; text-align: center; border-bottom: 1px solid #30363d; padding-bottom: 1px; align-self: center; }
   .btn-alt:hover { color: #c9d1d9; }
   .plans-contact { margin-top: 20px; text-align: center; color: #8b949e; font-size: 14px; }
