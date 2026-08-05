@@ -192,8 +192,17 @@ verdict() {  # $1 = PASS|FAIL|INDETERMINATE
 # ── pure decision helpers (driven directly by --self-test) ─────────────────────
 # Side-effect-free so the self-test exercises the REAL logic rather than a copy —
 # a self-test against a copy proves nothing about the shipped path.
+# A report is usable only if it carries AT LEAST ONE result. `jq -e` is falsy for
+# `null` and `false` ONLY, so an EMPTY ARRAY is truthy — and a vitest run that
+# collected zero test files writes exactly `{"testResults":[]}` while exiting 1,
+# an exit code the `|| true` on the runner line discards. So the plain
+# `jq -e '.testResults'` accepted that report, CURRENT_FAILS came back empty, and
+# the gate printed PASS having verified NOTHING — the same dark-guard shape as the
+# 2026-07-29 mktemp incident this branch was hardened for, one layer in.
+# (REVENUE-METER-TRUTH-W6 Step 0B. "Verified nothing" is not "verified clean": an
+# empty report is INDETERMINATE, which `hard_fail` below renders as exit 2.)
 report_usable() {  # $1 = report path
-  [ -n "${1:-}" ] && [ -f "$1" ] && jq -e '.testResults' "$1" >/dev/null 2>&1
+  [ -n "${1:-}" ] && [ -f "$1" ] && jq -e '(.testResults // []) | length > 0' "$1" >/dev/null 2>&1
 }
 compute_new_fails() {  # $1 = baseline set, $2 = current failing set
   comm -13 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | grep -vE '^[[:space:]]*$' || true
@@ -486,6 +495,9 @@ if [ "${1:-}" = "--self-test" ]; then
   trap 'rm -rf "$st_dir"' EXIT
   printf '{"testResults":[{"name":"/r/tests/a.test.ts","status":"passed"}]}' > "$st_dir/good.json"
   printf 'not json at all'                                                   > "$st_dir/garbage.json"
+  # What vitest writes when it collected ZERO test files: well-formed, parseable,
+  # and empty. Truthy to a bare `jq -e`, which is how a gate over nothing read green.
+  printf '{"testResults":[]}'                                                > "$st_dir/empty.json"
 
   st_fails=(); st_fire=0; st_nofire=0; st_map=0
 
@@ -519,6 +531,7 @@ if [ "${1:-}" = "--self-test" ]; then
   chk_fire   "empty report path (mktemp failure)"   INDETERMINATE "$(tok_for_report "")"
   chk_fire   "unparseable report"                   INDETERMINATE "$(tok_for_report "$st_dir/garbage.json")"
   chk_fire   "absent report file"                   INDETERMINATE "$(tok_for_report "$st_dir/nope.json")"
+  chk_fire   "empty report (vitest ran ZERO files)" INDETERMINATE "$(tok_for_report "$st_dir/empty.json")"
   chk_fire   "new failure absent from the baseline" FAIL \
              "$(decide_verdict "$(compute_new_fails "tests/known.test.ts" "tests/known.test.ts
 tests/brand-new.test.ts")" "")"
@@ -526,6 +539,12 @@ tests/brand-new.test.ts")" "")"
              "$(decide_verdict "$(compute_new_fails "tests/known.test.ts" "")" "")"
   chk_nofire "the only failure IS allow-listed"     PASS \
              "$(decide_verdict "$(compute_new_fails "tests/known.test.ts" "tests/known.test.ts")" "")"
+  # The POSITIVE side of report_usable, and it is not optional. Every other case
+  # driving this predicate is a must-FIRE expecting INDETERMINATE, so before this
+  # line `report_usable() { return 1; }` passed the whole self-test green — the
+  # predicate could be stubbed dead and nothing here would notice. `good.json` was
+  # written at the top of this block and read by nothing until now.
+  chk_nofire "populated report IS usable"           PASS "$(tok_for_report "$st_dir/good.json")"
 
   chk_map "PASS in block mode"          0 PASS          block
   chk_map "FAIL in block mode"          1 FAIL          block
