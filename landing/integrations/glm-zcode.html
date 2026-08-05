@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlgoVault × Cursor — Build Verifiable AI Trading Agents</title>
-<meta name="description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Cursor&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
-<link rel="canonical" href="https://algovault.com/integrations/cursor">
+<title>AlgoVault × ZCode (GLM) — Build Verifiable AI Trading Agents</title>
+<meta name="description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with ZCode (GLM)&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
+<link rel="canonical" href="https://algovault.com/integrations/glm-zcode">
 <link rel="icon" type="image/png" href="/logo.png">
-<meta property="og:title" content="AlgoVault × Cursor — Build Verifiable AI Trading Agents">
-<meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with Cursor&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
+<meta property="og:title" content="AlgoVault × ZCode (GLM) — Build Verifiable AI Trading Agents">
+<meta property="og:description" content="Pair AlgoVault MCP&#39;s verifiable, Merkle-anchored composite verdict across our supported exchanges with ZCode (GLM)&#39;s agent execution kit. Free testnet demo — zero real-money risk in any code path.">
 <meta property="og:type" content="article">
-<meta property="og:url" content="https://algovault.com/integrations/cursor">
+<meta property="og:url" content="https://algovault.com/integrations/glm-zcode">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
 <meta name="last-updated" content="2026-08-05">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -28,8 +28,8 @@
 {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "AlgoVault × Cursor - Build Verifiable AI Trading Agents",
-  "url": "https://algovault.com/integrations/cursor",
+  "headline": "AlgoVault × ZCode (GLM) - Build Verifiable AI Trading Agents",
+  "url": "https://algovault.com/integrations/glm-zcode",
   "datePublished": "2026-04-25T00:00:00+00:00",
   "dateModified": "2026-08-05T15:00:00+00:00",
   "author": {
@@ -54,11 +54,11 @@
     "width": 512,
     "height": 512
   },
-  "description": "Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with Cursor's execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.",
+  "description": "Pair AlgoVault MCP's composite verdict (verifiable, Merkle-anchored on Base L2 across our supported exchanges) with ZCode (GLM)'s execution kit to ship a complete trading agent. Demo runs testnet/demo only — zero real-money risk in any code path.",
   "proficiencyLevel": "Intermediate|Advanced",
   "about": {
     "@type": "Thing",
-    "name": "Cursor integration with AlgoVault MCP composite verdict"
+    "name": "ZCode (GLM) integration with AlgoVault MCP composite verdict"
   }
 }
 </script>
@@ -276,7 +276,7 @@ tailwind.config = {
     <div class="bg-radial-accent"></div>
     <div class="bg-noise"></div>
     <div style="position:relative;z-index:1">
-      <div class="placeholder-cap" style="margin-bottom:14px">· cursor integration</div>
+      <div class="placeholder-cap" style="margin-bottom:14px">· glm-zcode integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
         <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">445,110</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
@@ -288,47 +288,60 @@ tailwind.config = {
            wraps each h2 section + intro in a card; stripTLDRSection() removes the
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
-<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Cursor</h1>
-<p>Drop AlgoVault into Cursor’s IDE agent. Live trade calls inside your editor while you write strategy code.</p>
+<div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to ZCode (GLM)</h1>
+<p>Add AlgoVault to <a href="http://Z.ai">Z.ai</a>’s GLM harness in four clicks. No file editing required.</p>
 <blockquote>
-<p><em>Snapshot 2026-05-19 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
+<p><em>Config verified 2026-08-05 against <a href="https://zcode.z.ai/en/docs/mcp-services">https://zcode.z.ai/en/docs/mcp-services</a>. Live numbers refresh in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
 </blockquote></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
-<p>Edit <code>~/.cursor/mcp.json</code> (global, all projects) OR <code>.cursor/mcp.json</code> in the project root (per-project, commit-friendly):</p>
+<p>Open <strong>Settings</strong> → <strong>MCP Servers</strong>, then click <strong>New MCP Server</strong> at the top right.</p>
+<ol>
+<li>Set the type to <strong>HTTP</strong>.</li>
+<li>Paste the service URL:</li>
+</ol>
+<pre><code>https://api.algovault.com/mcp?src=docs
+</code></pre>
+<ol start="3">
+<li>Expand <strong>Headers (optional)</strong> and add the tracking header:</li>
+</ol>
+<pre><code>X-AlgoVault-Track-Token: int-glm-zcode
+</code></pre>
+<ol start="4">
+<li>On paid tier, add one more header: <code>Authorization: Bearer av_live_…</code>. Free tier needs no key.</li>
+</ol>
+<h3>Paste a config block instead</h3>
+<p>Switch to <strong>Full configuration</strong> and paste it directly. ZCode accepts both shapes:</p>
 <pre><code class="language-json">{
   &quot;mcpServers&quot;: {
     &quot;algovault&quot;: {
       &quot;url&quot;: &quot;https://api.algovault.com/mcp?src=docs&quot;,
       &quot;headers&quot;: {
-        &quot;Authorization&quot;: &quot;Bearer ${env:AV_API_KEY}&quot;,
-        &quot;X-AlgoVault-Track-Token&quot;: &quot;int-cursor&quot;
+        &quot;X-AlgoVault-Track-Token&quot;: &quot;int-glm-zcode&quot;
       }
     }
   }
 }
-</code></pre>
-<p>Set <code>AV_API_KEY</code> in your shell. Restart Cursor. Cursor’s agent now has the 4 AlgoVault tools available in any prompt.</p></div>
+</code></pre></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
-<p>Open Cursor’s agent panel. Ask: <em>“Use AlgoVault to check BTC at 4h.”</em> The agent invokes <code>get_trade_call</code> and returns the verdict (call, confidence, regime, indicators) inline.</p>
+<p>Ask ZCode: <em>“Use AlgoVault to check BTC at 4h.”</em> It invokes <code>get_trade_call</code> and returns call, confidence, regime and the drivers behind them.</p>
 <blockquote>
-<p><em>Screenshot placeholder — Cursor IDE with agent panel showing AlgoVault tool call and the returned trade verdict.</em></p>
-</blockquote>
-<p>Cursor’s coding agent can also chain AlgoVault calls into strategy-code edits — ask <em>“If BTC 4h is BUY, add a long entry at the current bar in <code>strategy.py</code>.”</em></p></div>
+<p><em>Screenshot placeholder — ZCode MCP Servers panel with AlgoVault added, plus the returned verdict.</em></p>
+</blockquote></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
-<li><strong>AlgoVault tool not showing in agent menu</strong> — restart Cursor. The <code>mcp.json</code> is read at app launch.</li>
-<li><strong><code>${env:AV_API_KEY}</code> not interpolated</strong> — Cursor reads env vars from the shell that launched it (macOS Launchpad vs terminal differ). Set the key in <code>/etc/launchd.conf</code> or use <code>launchctl setenv</code> on macOS.</li>
-<li><strong>Network timeout</strong> — AlgoVault MCP is hosted at <code>api.algovault.com</code>. Check VPN/firewall.</li>
-<li><strong><code>401 unauthorized</code></strong> — confirm the Bearer key shape: <code>av_live_…</code> for paid; free tier needs NO header (delete the <code>headers</code> block entirely).</li>
-<li><strong>Tools appear once then disappear</strong> — your <code>mcp.json</code> may have invalid JSON (trailing comma, unquoted key). Cursor silently drops servers it can’t parse. Validate via <code>jq . ~/.cursor/mcp.json</code> (or use Cursor’s Validate JSON command). Fix the parse error and restart.</li>
+<li><strong>Server shows as disconnected</strong> — confirm the type is <code>HTTP</code>, not <code>SSE</code> or <code>stdio</code>.</li>
+<li><strong>Headers not applied</strong> — the Headers section is collapsed by default. Expand it before saving.</li>
+<li><strong><code>401 unauthorized</code></strong> — check the key shape (<code>av_live_…</code>). Free tier needs no <code>Authorization</code> header.</li>
+<li><strong>Pasted config rejected</strong> — both the <code>mcpServers</code> wrapper and a bare server-name object are valid. Check for a trailing comma.</li>
+<li><strong>Network timeout</strong> — AlgoVault is hosted at <code>api.algovault.com</code>. Check VPN or firewall rules.</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
-<p><strong>Free tier OK?</strong> Yes. Remove the <code>headers</code> block from <code>mcp.json</code>. 100 calls/month, every coin + timeframe.</p>
-<p><strong>Per-project vs global?</strong> Per-project (<code>.cursor/mcp.json</code>) is commit-friendly — teammates inherit. Global is private.</p>
-<p><strong>Cursor’s agent vs chat?</strong> Both have access to MCP tools. The agent can chain calls + edit code; chat is single-turn.</p>
-<p><strong>Does Cursor Composer use these tools?</strong> Yes. Composer has the same MCP access as the agent and chat panels.</p></div>
+<p><strong>Free tier OK?</strong> Yes. Skip the <code>Authorization</code> header. 100 calls/month, every coin and timeframe.</p>
+<p><strong>Is this the same as the <a href="http://Z.ai">Z.ai</a> API route?</strong> No. ZCode is the app; the API route dials AlgoVault server-side with no client.</p>
+<p><strong>HTTP or SSE?</strong> Choose HTTP. AlgoVault speaks Streamable HTTP, which is the current transport.</p>
+<p><strong>Which tools appear?</strong> The same set every client gets, including <code>get_trade_call</code>, <code>scan_funding_arb</code> and <code>get_market_regime</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
-<p>Pull live signals into your strategy code, mid-edit. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'cursor',campaign:'track-record'}})">verify the track record on-chain</a>.</p></div>
+<p>Ask ZCode for a verdict before your next entry. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'glm-zcode',campaign:'track-record'}})">verify the track record on-chain</a>.</p></div>
       </article>
     </div>
   </div>

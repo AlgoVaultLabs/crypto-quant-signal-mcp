@@ -58,7 +58,9 @@ const FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'];
 // from THIS repo at `docs/integrations/mcp-clients/<slug>.md` (NOT the
 // algovault-skills repo). Same htmlShell template; getSrcPath() routes
 // per-slug.
-const MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery'];
+const MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery',
+  // +3, each verified 2026-08-05 against that vendor's own MCP documentation.
+  'codex', 'kimi', 'glm-zcode'];
 const ALL_TARGETS = [...EXCHANGES, ...FRAMEWORKS, ...MCP_CLIENTS];
 
 const args = process.argv.slice(2);
@@ -114,6 +116,11 @@ const DISPLAY_NAMES = {
   cursor: 'Cursor',
   cline: 'Cline (VSCode)',
   smithery: 'Smithery',
+  // Labels VERBATIM from src/lib/integrations-data/mcp-clients.ts displayName.
+  // Needed here because the title-cased fallback renders "Kimi" and "Glm-zcode".
+  codex: 'Codex',
+  kimi: 'Kimi Code',
+  'glm-zcode': 'ZCode (GLM)',
 };
 
 // NAV-PLATFORM-GENERATOR-W1 (A1): canonicalNavHtml() RETIRED. The per-page integration nav is

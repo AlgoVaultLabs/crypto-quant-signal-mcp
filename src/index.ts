@@ -1292,7 +1292,11 @@ async function startHttp() {
   const INTEGRATION_FRAMEWORKS = ['langchain', 'llamaindex', 'maf', 'crewai'] as const;
   // INTEGRATIONS-FULL-STACK-W1 C4 (2026-05-19): 5 MCP-client landing pages
   // (Plain HTTP/curl stays inline-only per Q-PLAIN-HTTP=NO; not in allow-list).
-  const INTEGRATION_MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery'] as const;
+  // LANDING-MCP-CLIENT-REGISTRY-W1 (2026-08-05): +3 MCP-client pages. The other
+  // 3 registry rows (plain-http, zai-api, deepseek) are hasDedicatedPage:false —
+  // a transport, a server-side API and a model, none of which have a page.
+  const INTEGRATION_MCP_CLIENTS = ['claude-desktop', 'claude-code', 'cursor', 'cline', 'smithery',
+    'codex', 'kimi', 'glm-zcode'] as const;
   const ALL_INTEGRATION_SLUGS = [...INTEGRATION_EXCHANGES, ...INTEGRATION_FRAMEWORKS, ...INTEGRATION_MCP_CLIENTS];
   const INTEGRATION_HTML = new Map<string, string>();
   {
