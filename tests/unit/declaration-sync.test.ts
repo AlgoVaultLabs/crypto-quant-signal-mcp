@@ -116,6 +116,31 @@ describe('registration', () => {
   });
 });
 
+describe('SOT_PARITY config — REPORT-first must be a property, not a claim', () => {
+  // These assertions started life inside monitoring-inventory-reconcile.py's --self-test, where
+  // they read the file via REPO_ROOT. That is correct in a checkout and resolves to `/ops/...`
+  // on a host, so the self-test crashed with FileNotFoundError on BOTH production boxes — the
+  // exact REPO_ROOT defect that file's own docstring records. They belong here: a committed file
+  // is a repo-side corpus, and that self-test's contract is hermetic.
+  const cfg = JSON.parse(
+    readFileSync(path.join(ROOT, 'ops/monitoring/sot-parity-config.json'), 'utf8'),
+  );
+
+  it('ships enforcement=report — a checker on a transport with known lag must not block', () => {
+    expect(cfg.enforcement).toBe('report');
+  });
+
+  it('records a NUMERIC promotion criterion, so report→block is countable not a vibe', () => {
+    expect(cfg._promotion_criterion, 'no promotion criterion recorded').toBeTruthy();
+    expect(/\d+/.test(cfg._promotion_criterion), 'the criterion states no number').toBe(true);
+  });
+
+  it('names the SoT it compares against over https', () => {
+    expect(String(cfg.sot_url)).toMatch(/^https:\/\//);
+    expect(String(cfg.sot_url)).toContain('ops/monitoring/monitoring-inventory.json');
+  });
+});
+
 describe('the auto-install prohibition is structurally respected', () => {
   it('every declared file is a .json DECLARATION — never an executable artifact', () => {
     // This is the boundary the whole wave rests on: declarations flow automatically, artifacts

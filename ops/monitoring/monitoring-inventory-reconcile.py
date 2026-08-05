@@ -1411,13 +1411,22 @@ def self_test():
     ck("unreadable LOCAL declaration -> COULD_NOT_COMPARE",
        [f["verdict"] for f in unread["findings"]], ["COULD_NOT_COMPARE"])
 
-    # The committed config must actually ship `report`, or "REPORT-first" is a claim the code
-    # does not honour — and the promotion criterion must be a stated number, not a vibe.
-    _sot_committed = json.loads(
-        (REPO_ROOT / "ops/monitoring/sot-parity-config.json").read_text())
-    ck("SOT_PARITY ships REPORT-first", _sot_committed.get("enforcement"), "report")
-    ck("...with a NUMERIC promotion criterion recorded in the config",
-       bool(re.search(r"\d+", _sot_committed.get("_promotion_criterion", ""))), True)
+    # The "committed config actually ships `report`" assertion deliberately does NOT live here.
+    # It reads a real file, and THIS SUITE'S CONTRACT IS HERMETIC — no host access (see the
+    # module docstring's Modes section). The first draft read it via REPO_ROOT, which is correct
+    # in a checkout and resolves to `/ops/...` on a host, so `--self-test` crashed with
+    # FileNotFoundError on BOTH boxes — the exact REPO_ROOT defect _resolve_inventory_path's own
+    # docstring records, reproduced by the wave that cited it. It surfaced only because the
+    # self-test was run WHERE IT LIVES instead of on a laptop. The assertion now lives repo-side
+    # in tests/unit/declaration-sync.test.ts, where a committed file is the natural corpus.
+    #
+    # What CAN be asserted hermetically is the mode-selection logic itself: `block` is the only
+    # value that promotes SOT_PARITY into the drift set, so a typo'd or absent mode stays REPORT.
+    promotes = lambda cfg: (cfg or {}).get("enforcement") == "block"   # noqa: E731 — mirrors main()
+    ck("only an explicit 'block' promotes SOT_PARITY into the drift set", promotes({"enforcement": "block"}), True)
+    ck("'report' does not promote", promotes({"enforcement": "report"}), False)
+    ck("a typo'd mode fails SAFE (stays report-only)", promotes({"enforcement": "blocking"}), False)
+    ck("an absent config fails SAFE (stays report-only)", promotes(None), False)
 
     # ── 11. off-:00 boundary predicate + the SCHEDULE_DRIFT BODY (OPS-MONITORING-SCHEDULE-SOT-W1)
     #
