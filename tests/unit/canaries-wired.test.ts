@@ -1,8 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect , vi} from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * OPS-ZERO-VS-UNKNOWN-W3 (unblock): this test SPAWNS the meta-canary, which walks EVERY tracked
+ * file looking for invocations of every committed gate. That cost grows with the repo — 40+ gates
+ * and ~5,015 tests now — and it crossed vitest's 5s default, failing as a TIMEOUT rather than a
+ * logic error and blocking every push to main. The assertion is right; the budget was stale.
+ */
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const run = (args: string[]) => {

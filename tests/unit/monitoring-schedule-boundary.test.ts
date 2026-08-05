@@ -15,10 +15,24 @@
  *     byte-identical output. Without it the two would drift to contradiction, which
  *     is the bug class the wave exists to retire.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+
+/**
+ * OPS-ZERO-VS-UNKNOWN-W3 (unblock): this file SPAWNS A PROCESS PER ASSERTION — the cross-language
+ * parity cases run the Node gate and the Python reconciler once per corpus entry (17 entries), so
+ * it is slow BY CONSTRUCTION, not by defect. Under a loaded machine it exceeded vitest's 5s default
+ * and failed as a TIMEOUT ("Test timed out in 5000ms" at 5233ms) — which reads exactly like a logic
+ * failure and blocked every push to main.
+ *
+ * File-level, deliberately: a per-`it` third argument is easy to get wrong (an earlier attempt
+ * placed it after the closing paren, where it parses as a no-op comma expression and silently does
+ * nothing), and every test here pays the same process-spawn cost.
+ */
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 
 const ROOT = resolve(__dirname, '../..');
 const GATE = 'scripts/check-monitoring-schedules.mjs';
