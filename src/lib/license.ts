@@ -20,7 +20,7 @@ import { getTrackRecord } from './track-record-snapshot.js';
 import { buildSoftNudge } from './nudge-copy.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message moved to the one notice contract.
 import { buildQuotaNoticeMessage } from './quota-notice.js';
-import { PLANS, FREE_MONTHLY_CALLS } from './plans.js';
+import { PLANS, FREE_MONTHLY_CALLS, DEFAULT_UPGRADE_PLAN, planPriceLabel } from './plans.js';
 // REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
@@ -922,7 +922,9 @@ export function getUpgradeHint(
 
   // Capped results hint (funding arb)
   if (context?.cappedResults && context?.totalResults && context.totalResults > context.cappedResults) {
-    return `Showing top ${context.cappedResults} of ${context.totalResults} opportunities. Unlock all results with Starter at $9.99/mo → ${UPGRADE_URL}`;
+    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: name + price project from the plan SoT (was `Starter at
+    // $9.99/mo` hand-typed, which a price move would have left stale on a live upsell surface).
+    return `Showing top ${context.cappedResults} of ${context.totalResults} opportunities. Unlock all results with ${PLANS[DEFAULT_UPGRADE_PLAN].label} at ${planPriceLabel(DEFAULT_UPGRADE_PLAN)}/mo → ${UPGRADE_URL}`;
   }
 
   // Quota usage hint: free-tier soft nudge at/above SOFT_THRESHOLD (the single

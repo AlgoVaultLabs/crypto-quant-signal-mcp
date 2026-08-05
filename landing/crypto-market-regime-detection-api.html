@@ -79,7 +79,7 @@ tailwind.config = { theme: { extend: { colors: {
     { "@type": "Question", "name": "What regimes does get_market_regime return?", "acceptedAnswer": { "@type": "Answer", "text": "One of four labels: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE. Each comes with a confidence score and a short suggestion, such as favoring trend-following or avoiding mean-reversion entries." } },
     { "@type": "Question", "name": "How should an agent use the regime label?", "acceptedAnswer": { "@type": "Answer", "text": "Condition the next step on it: favor trend-following in a trending regime, stand down or scalp in a ranging one, and reduce size when volatility is high. The label gates strategy selection." } },
     { "@type": "Question", "name": "Is the regime read cross-venue?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The classifier blends trend, volatility, and cross-venue funding sentiment across perpetual-futures venues, so the regime reflects more than one exchange." } },
-    { "@type": "Question", "name": "Is there a free tier?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported." } }
+    { "@type": "Question", "name": "Is there a free tier?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported." } }
   ]
 }
 </script>
@@ -139,7 +139,7 @@ get_market_regime(coin="BTC", timeframe="4h")
     <h3>Is the regime read cross-venue?</h3>
     <p>Yes. The classifier blends trend, volatility, and cross-venue funding sentiment across venues, so the regime reflects more than one exchange.</p>
     <h3>Is there a free tier?</h3>
-    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+    <p>Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

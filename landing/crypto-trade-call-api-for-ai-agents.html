@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Crypto trade-call API for AI agents | AlgoVault Labs</title>
-<meta name="description" content="A crypto trade-call API built for AI agents. One MCP call returns a composite verdict: direction, confidence, regime. HOLD-free metering and an on-chain-verifiable track record.">
+<meta name="description" content="A crypto trade-call API built for AI agents. One MCP call returns a composite verdict: direction, confidence, regime. Plus an on-chain-verifiable track record.">
 <meta name="last-updated" content="2026-06-15">
 <link rel="canonical" href="https://algovault.com/crypto-trade-call-api-for-ai-agents">
 <link rel="icon" type="image/png" href="/logo.png">
 <meta property="og:title" content="Crypto trade-call API for AI agents">
-<meta property="og:description" content="One MCP call returns a composite verdict for an agent to act on, with HOLD-free metering and on-chain proof.">
+<meta property="og:description" content="One MCP call returns a composite verdict for an agent to act on, with on-chain proof.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/crypto-trade-call-api-for-ai-agents">
 <meta property="og:image" content="https://algovault.com/logo.png">
@@ -17,7 +17,7 @@
 <meta name="twitter:card" content="summary">
 <meta name="twitter:site" content="@AlgoVaultLabs">
 <meta name="twitter:title" content="Crypto trade-call API for AI agents">
-<meta name="twitter:description" content="MCP-native crypto trade calls: one composite verdict per call, HOLD-free metering, on-chain-verifiable.">
+<meta name="twitter:description" content="MCP-native crypto trade calls: one composite verdict per call, on-chain-verifiable.">
 <meta name="twitter:image" content="https://algovault.com/logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -65,7 +65,7 @@ tailwind.config = { theme: { extend: { colors: {
   "author": { "@id": "https://algovault.com/#organization" },
   "publisher": { "@id": "https://algovault.com/#organization" },
   "image": { "@type": "ImageObject", "url": "https://algovault.com/logo.png", "width": 512, "height": 512 },
-  "description": "A crypto trade-call API built for AI agents: MCP-native, one composite verdict per call, HOLD-free metering, and an on-chain-verifiable track record.",
+  "description": "A crypto trade-call API built for AI agents: MCP-native, one composite verdict per call, and an on-chain-verifiable track record.",
   "proficiencyLevel": "Beginner|Intermediate",
   "about": { "@type": "Thing", "name": "Crypto trade-call API for AI agents" }
 }
@@ -75,11 +75,11 @@ tailwind.config = { theme: { extend: { colors: {
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    { "@type": "Question", "name": "What makes a trade-call API built for agents?", "acceptedAnswer": { "@type": "Answer", "text": "MCP-native access, a structured verdict instead of a chart, and HOLD-free metering. An agent calls one tool and gets a directional read it can act on, across multiple perpetual-futures venues." } },
+    { "@type": "Question", "name": "What makes a trade-call API built for agents?", "acceptedAnswer": { "@type": "Answer", "text": "MCP-native access and a structured verdict instead of a chart. An agent calls one tool and gets a directional read it can act on, across multiple perpetual-futures venues." } },
     { "@type": "Question", "name": "Is this a crypto signal API?", "acceptedAnswer": { "@type": "Answer", "text": "Buyers often use that phrase. AlgoVault returns trade calls: one composite verdict per call, MCP-native, with an on-chain-verifiable record. The output is a call your agent acts on, not a raw indicator." } },
     { "@type": "Question", "name": "What does one call return?", "acceptedAnswer": { "@type": "Answer", "text": "One composite verdict: a direction (BUY, SELL, or HOLD), a confidence score, the market regime, and the factors behind it. Your agent decides whether to act." } },
     { "@type": "Question", "name": "How is the track record verified?", "acceptedAnswer": { "@type": "Answer", "text": "Every call is hashed and anchored to a Merkle root on Base L2 before the market answers. Check any call at algovault.com/verify; the live win rate is at algovault.com/track-record." } },
-    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported." } }
+    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported." } }
   ]
 }
 </script>
@@ -117,14 +117,13 @@ tailwind.config = { theme: { extend: { colors: {
     <ul>
       <li><strong>MCP-native.</strong> Connect over Streamable HTTP, a local stdio process, or an MCP registry. No scraping a web UI.</li>
       <li><strong>One verdict per call.</strong> Direction, confidence, regime, and factors, ready to act on.</li>
-      <li><strong>HOLD-free metering.</strong> HOLD calls never cost quota, so an agent can check often.</li>
     </ul>
 
     <h2>What does one call return?</h2>
     <p>A single composite verdict. The agent receives a direction (BUY, SELL, or HOLD), a confidence score, the market regime, and the factors behind the read. Interpretation is done before the agent sees it.</p>
 
     <h2>How is it metered?</h2>
-    <p>The free tier includes a monthly call allowance, and HOLD calls are always free. For higher volume, per-call micropayments are supported over x402, so an agent pays for what it uses without a subscription.</p>
+    <p>The free tier includes a monthly call allowance. For higher volume, per-call micropayments are supported over x402, so an agent pays for what it uses without a subscription.</p>
 
     <h2>What you call</h2>
     <p>One MCP call returns the verdict:</p>
@@ -135,7 +134,7 @@ get_trade_call(coin="BTC", timeframe="1h", exchange="BINANCE")
 
     <h2>FAQ</h2>
     <h3>What makes a trade-call API built for agents?</h3>
-    <p>MCP-native access, a structured verdict instead of a chart, and HOLD-free metering. An agent calls one tool and gets a directional read it can act on.</p>
+    <p>MCP-native access and a structured verdict instead of a chart. An agent calls one tool and gets a directional read it can act on.</p>
     <h3>Is this a crypto signal API?</h3>
     <p>Buyers often use that phrase. AlgoVault returns trade calls: one composite verdict per call, MCP-native, with an on-chain-verifiable record. The output is a call your agent acts on, not a raw indicator.</p>
     <h3>What does one call return?</h3>
@@ -143,7 +142,7 @@ get_trade_call(coin="BTC", timeframe="1h", exchange="BINANCE")
     <h3>How is the track record verified?</h3>
     <p>Every call is hashed and anchored to a Merkle root on Base L2 before the market answers. Check any call at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>.</p>
     <h3>Is it free to try?</h3>
-    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+    <p>Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

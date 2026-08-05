@@ -78,7 +78,7 @@ tailwind.config = { theme: { extend: { colors: {
     { "@type": "Question", "name": "What does each call return?", "acceptedAnswer": { "@type": "Answer", "text": "One composite verdict: direction (BUY, SELL, or HOLD), a confidence score, the current market regime, and the underlying factors (funding, open interest, trend persistence, breakout state). Interpretation is done; your agent decides whether to act." } },
     { "@type": "Question", "name": "How is the track record verified on-chain?", "acceptedAnswer": { "@type": "Answer", "text": "Every call is hashed and published to a Merkle root on Base L2 before its outcome is known. Recompute any call's hash and check it against the on-chain root at algovault.com/verify. The history cannot be edited after the market answers. The live win rate is at algovault.com/track-record." } },
     { "@type": "Question", "name": "Which venues and assets are covered?", "acceptedAnswer": { "@type": "Answer", "text": "Cryptocurrency perpetual-futures venues including Hyperliquid, Binance, Bybit, OKX, and Bitget, across a broad set of assets and timeframes. The current coverage counts are shown live on algovault.com/track-record." } },
-    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported. Connect over remote HTTPS, a local stdio process, or an MCP registry." } }
+    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported. Connect over remote HTTPS, a local stdio process, or an MCP registry." } }
   ]
 }
 </script>
@@ -146,7 +146,7 @@ tailwind.config = { theme: { extend: { colors: {
     <h3>Which venues and assets are covered?</h3>
     <p>Perpetual-futures venues including Hyperliquid, Binance, Bybit, OKX, and Bitget, across a broad asset set and all supported timeframes. Live counts are on the <a href="https://algovault.com/track-record">track record</a>.</p>
     <h3>Is it free to try?</h3>
-    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+    <p>Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

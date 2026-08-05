@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>100 free calls/month. HOLDs never cost. Start in 30 seconds.</strong>
+  <strong>100 free calls/month. Start in 30 seconds.</strong>
 </p>
 
 <p align="center">
@@ -229,7 +229,7 @@ Single-prompt wrappers over 1–3 tool calls — regime gating, multi-timeframe 
 
 ## Pricing
 
-Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you pay for call volume, nothing else. HOLD verdicts are always free.
+Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you pay for call volume, nothing else.
 
 | Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
@@ -242,9 +242,7 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 | Monthly calls | 100/mo | 3,000/mo | 15,000/mo | 100,000/mo | Unlimited |
 | Support | Community | Email | Priority | Dedicated | — |
 | Price | $0 | $9.99/mo | $49/mo | $299/mo | $0.01–0.05/call |
-| HOLD calls | Free | Free | Free | Free | Free |
 
-\* HOLD verdicts (engine says "don't trade") are always free across all tiers — no x402 charge, no quota deduction. We only get paid when we see a tradeable opportunity.
 
 **Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). Starter ($9.99/mo) unlocks 3,000 calls/mo. API key delivered instantly after checkout.
 

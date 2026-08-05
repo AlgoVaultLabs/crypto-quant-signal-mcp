@@ -79,7 +79,7 @@ tailwind.config = { theme: { extend: { colors: {
     { "@type": "Question", "name": "What does scan_funding_arb return?", "acceptedAnswer": { "@type": "Answer", "text": "The top cross-venue funding-rate spreads, each naming the long venue, the short venue, and the spread. The free tier returns the top five. There is no exchange argument; the scan is cross-venue by design." } },
     { "@type": "Question", "name": "Which venues are compared?", "acceptedAnswer": { "@type": "Answer", "text": "Perpetual-futures venues including Hyperliquid, Binance, Bybit, OKX, and Bitget. The scan covers the active perp universe across them." } },
     { "@type": "Question", "name": "Does AlgoVault place the trade?", "acceptedAnswer": { "@type": "Answer", "text": "No. AlgoVault surfaces the spread; the agent decides and executes elsewhere. AlgoVault places no orders and holds no custody." } },
-    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported." } }
+    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported." } }
   ]
 }
 </script>
@@ -139,7 +139,7 @@ scan_funding_arb(minSpreadBps=5)
     <h3>Does AlgoVault place the trade?</h3>
     <p>No. AlgoVault surfaces the spread; the agent decides and executes elsewhere. AlgoVault places no orders and holds no custody.</p>
     <h3>Is it free to try?</h3>
-    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+    <p>Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

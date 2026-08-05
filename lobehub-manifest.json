@@ -271,7 +271,7 @@
           "includeHolds": {
             "type": "boolean",
             "default": false,
-            "description": "Include HOLD calls after non-HOLD (default false). HOLDs never cost quota."
+            "description": "Include HOLD calls after non-HOLD (default false)."
           },
           "limit": {
             "type": "integer",

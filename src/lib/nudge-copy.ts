@@ -23,6 +23,18 @@
 // REFERRAL-INPRODUCT-NUDGE-W1 (2026-06-22): the referral arm pulls the bonus
 // number + the keyed give-get link from the referral SoT (pure module — no cycle).
 import { shareLink, bonusCallsLabel, REFERRAL_TERMS } from './referral-constants.js';
+// PRICING-ANNUAL-AND-HOLD-PROMISE-W1: the upgrade nudges hand-typed `Starter, 3,000 calls/mo,
+// $9.99` — the plan name, the allowance, the multiple AND the price, four facts that a price move
+// would silently rot. They project from the plan SoT now.
+import { PLANS, DEFAULT_UPGRADE_PLAN, FREE_MONTHLY_CALLS, planCallsLabel, planPriceLabel } from './plans.js';
+
+/** `Starter, 3,000 calls/mo, $9.99` — the upgrade offer as one derived phrase. */
+function upgradeOfferPhrase(opts: { withMultiple?: boolean } = {}): string {
+  const id = DEFAULT_UPGRADE_PLAN;
+  const multiple = Math.round(PLANS[id].monthlyCalls / FREE_MONTHLY_CALLS);
+  const mult = opts.withMultiple ? ` (${multiple}× the free tier)` : '';
+  return `${PLANS[id].label}, ${planCallsLabel(id)} calls/mo${mult}, ${planPriceLabel(id)}`;
+}
 
 /** Canonical signup base. `{signup_url}` in the approved copy resolves to this. */
 export const SIGNUP_BASE = 'https://api.algovault.com/signup';
@@ -58,7 +70,7 @@ export function buildSoftNudge(ctx: { used: number; total: number } & NudgeStats
   return (
     `You've used ${ctx.used} of your ${ctx.total} free calls this month. ` +
     `Verify the proof first: ${ctx.pfeWr}% PFE win rate across ${ctx.callCount}+ on-chain calls at ${TRACK_RECORD_URL}. ` +
-    `Upgrade to keep scanning → Starter, 3,000 calls/mo (30× the free tier), $9.99: ${nudgeSignupUrl('soft')}`
+    `Upgrade to keep scanning → ${upgradeOfferPhrase({ withMultiple: true })}: ${nudgeSignupUrl('soft')}`
   );
 }
 
@@ -70,7 +82,7 @@ export function buildAhaHint(stats: NudgeStats): string {
   return (
     `That's a live BUY/SELL call — one of ${stats.callCount}+ on AlgoVault's on-chain-verified track record (${stats.pfeWr}% PFE win rate). ` +
     `See every call before you commit: ${TRACK_RECORD_URL}. ` +
-    `Keep scanning all month → Starter, 3,000 calls/mo, $9.99: ${nudgeSignupUrl('aha')}`
+    `Keep scanning all month → ${upgradeOfferPhrase()}: ${nudgeSignupUrl('aha')}`
   );
 }
 

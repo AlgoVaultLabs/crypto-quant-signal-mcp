@@ -12,6 +12,7 @@ import DefaultStripe from 'stripe';
 import { sendWelcomeEmail, maskEmail } from './email.js';
 import { sendAlert } from './telegram.js';
 import { recordIndeterminate } from './indeterminate-counter.js';
+import type { PaidPlanId } from './plans.js';
 
 // Stripe v22 exports the class as both named and default.
 // Node16 moduleResolution resolves the default export reliably.
@@ -20,14 +21,158 @@ const StripeClient = DefaultStripe as unknown as typeof DefaultStripe & { new(ke
 // ── Configuration ──
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
-const STARTER_PRICE_ID = process.env.STRIPE_STARTER_PRICE_ID || '';
-const PRO_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || '';
-const ENTERPRISE_PRICE_ID = process.env.STRIPE_ENTERPRISE_PRICE_ID || '';
+// PRICING-ANNUAL-AND-HOLD-PROMISE-W1: the five STRIPE_*_PRICE_ID vars (three monthly + two
+// annual) are no longer read into module constants — they are declared as rows in
+// `currentPriceBindings()` below, which is the ONE place that knows a price id at all.
 
 let stripe: InstanceType<typeof DefaultStripe> | null = null;
 
 if (STRIPE_SECRET_KEY) {
   stripe = new StripeClient(STRIPE_SECRET_KEY);
+}
+
+// ── Price → tier registry (PRICING-ANNUAL-AND-HOLD-PROMISE-W1) ──
+//
+// WHY THIS EXISTS. Before this wave, four sites re-derived "which tier is this subscription?"
+// from a chain of `priceId === X_PRICE_ID` comparisons: validateApiKey, getCustomerApiKey,
+// handleSubscriptionCreated and subscriptionTier. Two consequences, both live:
+//
+//   1. Adding ANY new price id — which is exactly what annual prepay is — silently resolved to
+//      NO tier at validateApiKey, so a customer who had just prepaid a year would get
+//      `{valid:false}` and an API key that does not work. handleSubscriptionCreated would
+//      meanwhile mint them a 'starter' key regardless of what they bought.
+//   2. The four copies had already DRIFTED: handleSubscriptionCreated never compared
+//      STARTER_PRICE_ID at all and defaulted to 'starter', a different rule from its siblings.
+//
+// Per CLAUDE.md (`≥3 parallel hardcoded dispatch blocks keyed by an enum/ID → exhaustive
+// registry iterated from the SoT`): the mapping is declared ONCE here and every consumer
+// projects from it. Adding an interval or a tier is a row, not a code change.
+//
+// The tier vocabulary is imported from `plans.ts` (the plan SoT) rather than re-declared, so a
+// tier cannot exist in billing that the plan ladder does not know about.
+
+export type BillingInterval = 'month' | 'year';
+
+/** One configured Stripe Price and what entitlement it confers. */
+export interface PriceBinding {
+  readonly priceId: string;
+  readonly tier: PaidPlanId;
+  readonly interval: BillingInterval;
+  /** Env var this came from — named in operator-facing logs so a misconfig is actionable. */
+  readonly envVar: string;
+}
+
+/**
+ * Precedence when ONE subscription carries several priced items. Higher rank wins.
+ *
+ * This is a RANK, not an ordered scan: `highestTier` takes the max, so the result is a function
+ * of this table and never of the order Stripe happens to return `sub.items.data` in. The old
+ * code's `for … if (x) break` shape rented that guarantee from upstream iteration order — the
+ * exact pattern CLAUDE.md forbids. Pinned by the order-independence test.
+ */
+const TIER_RANK: Readonly<Record<PaidPlanId, number>> = { starter: 1, pro: 2, enterprise: 3 };
+
+/**
+ * The declared bindings, in env-var order. Order here is presentational only — `buildPriceTierMap`
+ * resolves collisions by TIER_RANK, so shuffling this array cannot change any resolution.
+ *
+ * Read from `process.env` on each call rather than closed over module-load constants, so the
+ * `_rebuildPriceTierMapForTest` seam below can re-derive the map after a test mutates the env
+ * (CLAUDE.md: a module-level cache needs a reset seam and a read-only inspector).
+ */
+export function currentPriceBindings(): readonly PriceBinding[] {
+  return [
+    { priceId: process.env.STRIPE_STARTER_PRICE_ID || '', tier: 'starter', interval: 'month', envVar: 'STRIPE_STARTER_PRICE_ID' },
+    { priceId: process.env.STRIPE_PRO_PRICE_ID || '', tier: 'pro', interval: 'month', envVar: 'STRIPE_PRO_PRICE_ID' },
+    { priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || '', tier: 'enterprise', interval: 'month', envVar: 'STRIPE_ENTERPRISE_PRICE_ID' },
+    { priceId: process.env.STRIPE_STARTER_ANNUAL_PRICE_ID || '', tier: 'starter', interval: 'year', envVar: 'STRIPE_STARTER_ANNUAL_PRICE_ID' },
+    { priceId: process.env.STRIPE_PRO_ANNUAL_PRICE_ID || '', tier: 'pro', interval: 'year', envVar: 'STRIPE_PRO_ANNUAL_PRICE_ID' },
+  ];
+}
+
+/**
+ * Index the bindings by price id.
+ *
+ * Two rules that make the result independent of input order:
+ *   - An EMPTY price id is skipped. Unconfigured env vars all collapse to `''`, and an `''` key
+ *     would be a landmine: the pre-registry code compared `item.price.id === ENTERPRISE_PRICE_ID`
+ *     with both sides `''` when that var was unset.
+ *   - A DUPLICATE price id (the same Stripe Price wired to two env vars — a real misconfiguration)
+ *     resolves to the HIGHEST-ranked tier and logs loudly, rather than letting whichever row came
+ *     last silently win.
+ */
+export function buildPriceTierMap(bindings: readonly PriceBinding[] = currentPriceBindings()): ReadonlyMap<string, PriceBinding> {
+  const map = new Map<string, PriceBinding>();
+  for (const b of bindings) {
+    if (!b.priceId) continue; // unconfigured — not offered
+    const existing = map.get(b.priceId);
+    if (!existing) {
+      map.set(b.priceId, b);
+      continue;
+    }
+    if (existing.tier === b.tier && existing.interval === b.interval) continue; // harmless exact dupe
+    const winner = TIER_RANK[b.tier] > TIER_RANK[existing.tier] ? b : existing;
+    console.error(
+      `[stripe] CRITICAL price-id collision: ${b.priceId} is bound by both ${existing.envVar} ` +
+      `(${existing.tier}/${existing.interval}) and ${b.envVar} (${b.tier}/${b.interval}). ` +
+      `Resolving to the higher tier '${winner.tier}' by TIER_RANK. Fix the env configuration.`,
+    );
+    map.set(b.priceId, winner);
+  }
+  return map;
+}
+
+let priceTierMap: ReadonlyMap<string, PriceBinding> = buildPriceTierMap();
+
+/**
+ * Test seam — re-derive the map from the CURRENT env. Production never calls this; the map is
+ * built once at module load because the env cannot change under a running process.
+ */
+export function _rebuildPriceTierMapForTest(): void {
+  priceTierMap = buildPriceTierMap();
+}
+
+/** Read-only inspector — the configured (priceId → binding) pairs, for tests and diagnostics. */
+export function _inspectPriceTierMap(): ReadonlyMap<string, PriceBinding> {
+  return priceTierMap;
+}
+
+/** The binding for a Stripe Price id, or null when it is not one of ours. */
+export function bindingForPriceId(priceId: string): PriceBinding | null {
+  return priceTierMap.get(priceId) ?? null;
+}
+
+/** The tier a Stripe Price id confers, or null when unrecognised. */
+export function tierForPriceId(priceId: string): PaidPlanId | null {
+  return priceTierMap.get(priceId)?.tier ?? null;
+}
+
+/**
+ * The highest tier a subscription confers, or null when none of its items is a Price we know.
+ *
+ * THE single implementation of the enterprise > pro > starter precedence. Returning null (rather
+ * than a default) is deliberate: "we do not recognise what this customer bought" is a distinct
+ * fact from "this customer is on starter", and each caller needs to handle it differently — the
+ * validation path must refuse, while the mint path falls back least-privilege and shouts.
+ */
+export function highestTier(sub: { items: { data: Array<{ price: { id: string } }> } }): PaidPlanId | null {
+  let best: PaidPlanId | null = null;
+  for (const item of sub.items?.data ?? []) {
+    const tier = tierForPriceId(item?.price?.id ?? '');
+    if (tier && (best === null || TIER_RANK[tier] > TIER_RANK[best])) best = tier;
+  }
+  return best;
+}
+
+/**
+ * Resolve the Price id to bill for a (plan, interval) pair. Returns null when that combination is
+ * not configured — e.g. Enterprise has no annual price, and annual is absent until the env is set.
+ */
+export function priceIdFor(plan: PaidPlanId, interval: BillingInterval = 'month'): string | null {
+  for (const [priceId, b] of priceTierMap) {
+    if (b.tier === plan && b.interval === interval) return priceId;
+  }
+  return null;
 }
 
 // ── Types ──
@@ -118,23 +263,14 @@ export async function validateApiKey(apiKey: string): Promise<StripeValidation> 
       limit: 10,
     });
 
-    let tier: 'starter' | 'pro' | 'enterprise' | undefined;
-
+    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: projects from the ONE price→tier registry, so a newly
+    // added Price (annual, or any future interval) entitles its buyer the moment its env var is
+    // set. The prior inline comparison chain knew only the three monthly ids, so an annual
+    // subscriber resolved to no tier at all and was handed `{valid:false}` — having paid.
+    let tier: PaidPlanId | undefined;
     for (const sub of subscriptions.data) {
-      for (const item of sub.items.data) {
-        const priceId = item.price.id;
-        if (priceId === ENTERPRISE_PRICE_ID) {
-          tier = 'enterprise';
-          break;
-        }
-        if (priceId === PRO_PRICE_ID) {
-          tier = 'pro';
-        }
-        if (priceId === STARTER_PRICE_ID && !tier) {
-          tier = 'starter';
-        }
-      }
-      if (tier === 'enterprise') break; // enterprise wins
+      const subTier = highestTier(sub);
+      if (subTier && (tier === undefined || TIER_RANK[subTier] > TIER_RANK[tier])) tier = subTier;
     }
 
     const result: StripeValidation = tier
@@ -166,22 +302,33 @@ export interface CheckoutSessionOptions {
    * the same event it mints the api key (no cross-event race).
    */
   refCode?: string;
+  /**
+   * PRICING-ANNUAL-AND-HOLD-PROMISE-W1: billing interval. Added as an OPTIONAL FIELD on the
+   * existing options object rather than a new positional param, so every current call site is
+   * untouched and no caller can pass it in the wrong slot. Defaults to 'month'.
+   */
+  interval?: BillingInterval;
 }
 
 export async function createCheckoutSession(
-  plan: 'starter' | 'pro' | 'enterprise',
+  plan: PaidPlanId,
   baseUrl: string,
   opts: CheckoutSessionOptions = {},
 ): Promise<string | null> {
   if (!stripe) return null;
+  const interval: BillingInterval = opts.interval === 'year' ? 'year' : 'month';
 
-  const priceId = plan === 'enterprise' ? ENTERPRISE_PRICE_ID : plan === 'starter' ? STARTER_PRICE_ID : PRO_PRICE_ID;
+  // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: `interval` is an OPTIONAL TRAILING param defaulting to
+  // 'month', so every existing call site keeps its exact behaviour (CLAUDE.md enum-widening rule —
+  // never insert a required/mid-signature param). null = that (plan, interval) is not configured,
+  // e.g. Enterprise annual, which we deliberately do not sell.
+  const priceId = priceIdFor(plan, interval);
   if (!priceId) return null;
 
   // ACTIVATION-PAYWALL-W1: optional UTM round-trip — Stripe persists metadata
   // on the Checkout Session, retrievable in checkout.session.completed event
   // for attribution-aware request_log write.
-  const metadata: Record<string, string> = { tier: plan };
+  const metadata: Record<string, string> = { tier: plan, billing_interval: interval };
   if (opts.utmSource) metadata.utm_source = opts.utmSource.slice(0, 64);
   if (opts.utmCampaign) metadata.utm_campaign = opts.utmCampaign.slice(0, 64);
   // REFERRAL-LIGHT-W1 (C3): ref_code on the session (read in checkout.session.completed).
@@ -222,17 +369,10 @@ export async function getCustomerApiKey(sessionId: string): Promise<{ apiKey: st
   const apiKey = customer.metadata?.api_key || null;
   const email = customer.email || null;
 
-  // Determine tier from subscription
+  // Determine tier from subscription — PRICING-ANNUAL-AND-HOLD-PROMISE-W1: via the shared registry.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sub = session.subscription as any;
-  let tier: string | null = null;
-  if (sub && sub.items?.data) {
-    for (const item of sub.items.data) {
-      if (item.price.id === ENTERPRISE_PRICE_ID) { tier = 'enterprise'; break; }
-      if (item.price.id === PRO_PRICE_ID) { tier = 'pro'; }
-      if (item.price.id === STARTER_PRICE_ID && !tier) { tier = 'starter'; }
-    }
-  }
+  const tier: string | null = sub?.items?.data ? highestTier(sub) : null;
 
   return { apiKey, tier, email };
 }
@@ -259,11 +399,27 @@ export async function handleSubscriptionCreated(
     ? subscription.customer
     : subscription.customer.id;
 
-  // Determine tier
-  let tier = 'starter';
-  for (const item of subscription.items.data) {
-    if (item.price.id === ENTERPRISE_PRICE_ID) { tier = 'enterprise'; break; }
-    if (item.price.id === PRO_PRICE_ID) { tier = 'pro'; }
+  // Determine tier — PRICING-ANNUAL-AND-HOLD-PROMISE-W1.
+  //
+  // This site had DRIFTED from its three siblings: it never compared STARTER_PRICE_ID and fell
+  // through to a bare `tier = 'starter'`, so an unrecognised price silently minted a Starter key.
+  // Now it projects from the shared registry, and the unrecognised case is LOUD rather than mute.
+  //
+  // The fallback stays least-privilege ('starter', the cheapest paid tier) rather than throwing:
+  // this runs inside the webhook that mints the customer's API key, and refusing here would leave
+  // someone who has already been charged with no key at all. But an operator MUST see it — an
+  // unrecognised price id here means a Price exists in Stripe that no env var binds, which is
+  // exactly the misconfiguration that would under-entitle a paying customer.
+  const resolvedTier = highestTier(subscription);
+  const tier: string = resolvedTier ?? 'starter';
+  if (!resolvedTier) {
+    const seen = (subscription.items?.data ?? [])
+      .map((i: { price?: { id?: string } }) => i?.price?.id ?? '?').join(', ');
+    console.error(
+      `[stripe] CRITICAL unrecognised price id(s) on subscription for customer ${customerId}: ` +
+      `[${seen}]. No env var binds them, so the tier could not be derived; minting least-privilege ` +
+      `'starter'. Bind the price in STRIPE_*_PRICE_ID and re-check this customer's entitlement.`,
+    );
   }
 
   // Generate API key and store on customer metadata.
@@ -404,17 +560,14 @@ export interface ActiveSubscriberTierCensus {
 
 let tierCensusCache: { value: ActiveSubscriberTierCensus; expiresAt: number } | null = null;
 
-/** Map ONE subscription to its highest tier via the price-id map (enterprise > pro > starter). */
-function subscriptionTier(sub: { items: { data: Array<{ price: { id: string } }> } }): 'starter' | 'pro' | 'enterprise' | null {
-  let tier: 'starter' | 'pro' | 'enterprise' | null = null;
-  for (const item of sub.items.data) {
-    const priceId = item.price.id;
-    if (priceId === ENTERPRISE_PRICE_ID) return 'enterprise'; // enterprise wins outright
-    if (priceId === PRO_PRICE_ID) tier = 'pro';
-    else if (priceId === STARTER_PRICE_ID && tier !== 'pro') tier = 'starter';
-  }
-  return tier;
-}
+/**
+ * Map ONE subscription to its highest tier (enterprise > pro > starter).
+ *
+ * PRICING-ANNUAL-AND-HOLD-PROMISE-W1: this was the 4th independent copy of that precedence. It is
+ * now a thin alias of `highestTier`, so the census counts annual subscribers instead of skipping
+ * them — the drift that made a tier census silently under-report the moment a new Price existed.
+ */
+const subscriptionTier = highestTier;
 
 /**
  * Count active Stripe subscriptions by tier. null when Stripe is unconfigured.

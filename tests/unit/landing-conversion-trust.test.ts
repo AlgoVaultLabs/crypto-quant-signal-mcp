@@ -95,28 +95,59 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
   });
 
   it('pricing buy buttons wired to /signup (plan= kept; upgrade_from stripped — attribution via Plausible event)', () => {
-    for (const plan of ['starter', 'pro', 'enterprise']) {
-      // SEO-STRIP-TRACKING-PARAMS-W1: upgrade_from=landing_pricing removed (redundant with the
-      // 'Signup Click' Plausible event's source:'pricing-section' prop). plan= kept — it is
-      // functional (selects the plan). href is now the clean canonical signup URL.
-      expect(count(`href="https://api.algovault.com/signup?plan=${plan}"`)).toBe(2);
+    // SEO-STRIP-TRACKING-PARAMS-W1: upgrade_from=landing_pricing removed (redundant with the
+    // 'Signup Click' Plausible event's source:'pricing-section' prop). plan= kept — it is
+    // functional (selects the plan). href is now the clean canonical signup URL.
+    //
+    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: Starter and Pro carry `&amp;interval=year` because annual
+    // leads on those cards. Enterprise has NO checkout href at all — it is contact-us now.
+    for (const plan of ['starter', 'pro']) {
+      expect(count(`href="https://api.algovault.com/signup?plan=${plan}&amp;interval=year"`)).toBe(2);
       expect(count(`plausible('Signup Click',{props:{plan:'${plan}',source:'pricing-section'}})`)).toBe(2);
       expect(html).not.toContain(`href="#${plan}"`);
     }
+    expect(count('href="https://api.algovault.com/signup?plan=enterprise"')).toBe(0);
     // /signup is routed ONLY on api.algovault.com (algovault.com/signup 404s) — no relative /signup CTAs.
     expect(html).not.toContain('href="/signup?plan=');
     expect(html).not.toContain('upgrade_from=landing_pricing');
   });
 
-  it('LAW: Brain-Layer hero + 4 Stripe card copy + x402 card are byte-unchanged (only hrefs wired)', () => {
+  it('LAW: Brain-Layer hero + tier card copy + x402 card (annual-first; Enterprise is contact-us)', () => {
     expect(html).toContain('The Brain Layer');
-    expect(count('Subscribe to Starter')).toBe(2);
-    expect(count('Subscribe to Pro')).toBe(2);
-    expect(count('Subscribe to Enterprise')).toBe(2);
     expect(count('>Start Free<')).toBe(2);
+    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: annual leads on Starter and Pro, in BOTH artboards, and
+    // the effective monthly rate is always shown next to the annual total.
+    expect(count('$6.58/mo effective')).toBe(2);
+    expect(count('$24.92/mo effective')).toBe(2);
+    expect(count('Save 34%')).toBe(2);
+    expect(count('Save 49%')).toBe(2);
+    expect(count('or $9.99/mo billed monthly')).toBe(2);
+    expect(count('or $49/mo billed monthly')).toBe(2);
+    // Enterprise: no self-serve price, no CTA, ONE contact line per artboard.
+    expect(count('Subscribe to Enterprise')).toBe(0);
+    expect(count('Need Enterprise?')).toBe(2);
+    expect(count('mailto:admin@algovault.com')).toBe(2);
     // 2 = x402 pricing card (untouched, desktop+mobile) + 2 = Connect-section x402 card
     // (added by LANDING-HERO-DEDENSIFY-W1; links to x402 docs, does not duplicate pricing).
     expect(count('/docs.html#x402')).toBe(4);
+  });
+
+  it('the free-HOLD PRICING PROMISE is gone from both artboards; the SELECTIVITY PROOF stays', () => {
+    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1 R5. The proof is the only thing on this page that makes
+    // the accuracy figure credible — deleting the whole block would have thrown it away.
+    for (const promise of [
+      'HOLD calls always free', 'HOLDs are always free', 'HOLD trade calls — free',
+      'HOLD calls are always free', 'HOLDs are free',
+    ]) {
+      expect(html, promise).not.toContain(promise);
+    }
+    expect(count('HOLD rate — we only fire when we mean it.')).toBe(2);
+    expect(count('That selectivity is why we have')).toBe(2);
+    // The deploy-time injection hooks the proof sentence depends on must survive intact — a
+    // deleted span silently zero-matches the snapshot injector at every deploy.
+    expect(count('data-tr-field="hold_rate"')).toBe(4);
+    expect(count('data-tr-field="pfe_wr"')).toBe(10);
+    expect(count('data-tr-field="call_count"')).toBe(8);
   });
 
   it('the primary nav "Signup" CTA leads to the unified sign-in /welcome on the absolute api host', () => {

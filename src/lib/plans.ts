@@ -30,12 +30,28 @@ export interface PlanSpec {
   readonly monthlyCalls: number;
   /** Monthly subscription price in USD. */
   readonly priceUsdMonthly: number;
+  /**
+   * Annual prepay price in USD, or `undefined` when the plan is not sold annually
+   * (PRICING-ANNUAL-AND-HOLD-PROMISE-W1). Enterprise is deliberately absent — it is a
+   * contact-us tier with no self-serve price at all.
+   *
+   * The allowance does NOT change with interval: an annual Starter still gets
+   * `monthlyCalls` per month. Interval is a billing cadence, never an entitlement.
+   */
+  readonly priceUsdAnnual?: number;
 }
 
-/** The paid ladder. Free (100/mo) is not a plan — it is the absence of one. */
+/**
+ * The paid ladder. Free (100/mo) is not a plan — it is the absence of one.
+ *
+ * Annual prices are architect-set (Mr.1, 2026-08-05), NOT derived from a discount rate: the
+ * two discounts differ (Starter 34%, Pro 49%) because they were chosen per-tier. Every
+ * *displayed* discount is computed back off these two numbers by `planAnnualSavingsPct`, so
+ * the page can never claim a percentage the price does not support.
+ */
 export const PLANS: Readonly<Record<PaidPlanId, PlanSpec>> = {
-  starter: { label: 'Starter', monthlyCalls: 3_000, priceUsdMonthly: 9.99 },
-  pro: { label: 'Pro', monthlyCalls: 15_000, priceUsdMonthly: 49 },
+  starter: { label: 'Starter', monthlyCalls: 3_000, priceUsdMonthly: 9.99, priceUsdAnnual: 79 },
+  pro: { label: 'Pro', monthlyCalls: 15_000, priceUsdMonthly: 49, priceUsdAnnual: 299 },
   enterprise: { label: 'Enterprise', monthlyCalls: 100_000, priceUsdMonthly: 299 },
 };
 
@@ -54,6 +70,50 @@ export function planCallsLabel(id: PaidPlanId): string {
 export function planPriceLabel(id: PaidPlanId): string {
   const p = PLANS[id].priceUsdMonthly;
   return `$${Number.isInteger(p) ? p : p.toFixed(2)}`;
+}
+
+// ── Annual prepay (PRICING-ANNUAL-AND-HOLD-PROMISE-W1) ──
+//
+// Every annual figure on every surface is COMPUTED from `priceUsdAnnual` + `priceUsdMonthly`.
+// Nothing downstream may hand-type "$79", "$6.58/mo" or "Save 34%": the whole point of the
+// single-derivation rule here is that moving a price moves the badge, the effective rate and
+// the copy together, so the page cannot advertise a discount the price does not support.
+
+/** True when the plan is sold annually. Enterprise is not — it is contact-us. */
+export function planHasAnnual(id: PaidPlanId): boolean {
+  return typeof PLANS[id].priceUsdAnnual === 'number';
+}
+
+/** Annual price as it renders in copy (`$79`, `$299`), or null when not sold annually. */
+export function planAnnualPriceLabel(id: PaidPlanId): string | null {
+  const p = PLANS[id].priceUsdAnnual;
+  if (typeof p !== 'number') return null;
+  return `$${Number.isInteger(p) ? p : p.toFixed(2)}`;
+}
+
+/**
+ * What the annual price works out to per month (`$6.58`, `$24.92`), or null.
+ *
+ * This is the number a buyer actually compares against the monthly price, so it is always
+ * shown alongside the annual total rather than instead of it — quoting only "$6.58/mo" for a
+ * plan that bills $79 once a year would be the misleading framing the public-copy LAW forbids.
+ */
+export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
+  const p = PLANS[id].priceUsdAnnual;
+  if (typeof p !== 'number') return null;
+  return `$${(p / 12).toFixed(2)}`;
+}
+
+/**
+ * Whole-percent saving of annual prepay vs paying monthly for a year, or null.
+ *
+ * Rounded to the nearest percent for copy. Starter → 34 (79 vs 119.88), Pro → 49 (299 vs 588).
+ */
+export function planAnnualSavingsPct(id: PaidPlanId): number | null {
+  const spec = PLANS[id];
+  const annual = spec.priceUsdAnnual;
+  if (typeof annual !== 'number' || spec.priceUsdMonthly <= 0) return null;
+  return Math.round((1 - annual / (spec.priceUsdMonthly * 12)) * 100);
 }
 
 /**

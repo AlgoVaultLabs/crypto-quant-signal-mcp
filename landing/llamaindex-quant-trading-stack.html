@@ -79,7 +79,7 @@ tailwind.config = { theme: { extend: { colors: {
     { "@type": "Question", "name": "Do I need to train my own trading model?", "acceptedAnswer": { "@type": "Answer", "text": "No. AlgoVault is the maintained call layer your stack queries. You get a composite verdict per call without building, training, or maintaining a trading model yourself." } },
     { "@type": "Question", "name": "What does AlgoVault add to a LlamaIndex stack?", "acceptedAnswer": { "@type": "Answer", "text": "One verified trade call per query: direction, confidence, the market regime, and the factors. Your stack handles retrieval, reasoning, and orchestration; AlgoVault returns the call it reasons over." } },
     { "@type": "Question", "name": "Is the track record on-chain verifiable?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every call is hashed and anchored to a Merkle root on Base L2 before its outcome is known. Check any call at algovault.com/verify; the live win rate is at algovault.com/track-record." } },
-    { "@type": "Question", "name": "Is there a free tier?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported." } }
+    { "@type": "Question", "name": "Is there a free tier?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported." } }
   ]
 }
 </script>
@@ -147,7 +147,7 @@ trade_call_tool = FunctionTool.from_defaults(fn=crypto_trade_call)
     <h3>Is the track record on-chain verifiable?</h3>
     <p>Yes. Every call is hashed and anchored to a Merkle root on Base L2 before its outcome is known. Check any call at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>.</p>
     <h3>Is there a free tier?</h3>
-    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+    <p>Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

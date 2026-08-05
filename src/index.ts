@@ -211,7 +211,7 @@ function toolErrorContent(err: unknown): { content: { type: 'text'; text: string
   const message = err instanceof Error ? err.message : String(err);
   return { content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }], isError: true };
 }
-import { renderSignupFlowDark, renderPlanCards } from './lib/signup-flow.js';
+import { renderSignupFlowDark, renderPlanCards, PLAN_CARDS_CSS } from './lib/signup-flow.js';
 import {
   accountPageHandler,
   accountPortalHandler,
@@ -1569,12 +1569,20 @@ async function startHttp() {
 
     try {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
+      // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: `?interval=year` selects annual prepay. Anything
+      // else — absent, misspelt, hostile — resolves to 'month', so a malformed query can only
+      // ever bill the SMALLER amount. Never infer annual from a partial match.
+      const interval = req.query.interval === 'year' ? 'year' : 'month';
       const url = await createCheckoutSession(plan, baseUrl, {
         utmSource,
         utmCampaign,
         clientReferenceId,
         refCode,
+        interval,
       });
+      // A configured plan with an unconfigured interval lands here too (e.g. annual requested
+      // before the Price exists in Stripe) — same operator-actionable failure, not a silent
+      // downgrade to a price the caller did not choose.
       if (!url) return res.status(500).send('Stripe not configured or missing price IDs');
       // SUBSCRIBER-ATTRIBUTION-SPINE-W1 (C1): persist the click attribution so
       // the conversion webhook (C2) can JOIN to it by client_reference_id —
@@ -4708,21 +4716,11 @@ function getSignupPageHtml(): string {
   .container { max-width: 960px; width: 100%; }
   h1 { font-size: 28px; margin-bottom: 8px; }
   .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
-  .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-  @media (max-width: 768px) { .plans { grid-template-columns: 1fr; } }
-  .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; position: relative; }
-  .plan.popular { border-color: #34D199; }
-  .plan h2 { font-size: 20px; margin-bottom: 4px; }
-  .plan .price { font-size: 36px; font-weight: 700; color: #58a6ff; margin: 12px 0; }
-  .plan .price span { font-size: 16px; font-weight: 400; color: #8b949e; }
-  .plan ul { list-style: none; margin: 16px 0 24px; }
-  .plan ul li { padding: 4px 0; color: #c9d1d9; font-size: 14px; }
-  .plan ul li::before { content: '\\2713'; color: #3fb950; margin-right: 8px; }
-  .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; transition: background 0.15s; }
-  .btn:hover { background: #2ea043; }
-  .btn.ent { background: #8957e5; }
-  .btn.ent:hover { background: #a371f7; }
-  .pop-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #34D199; color: #0f1117; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; letter-spacing: 0.5px; }
+  /* PRICING-ANNUAL-AND-HOLD-PROMISE-W1: this block used to RESTATE the plan-card rules that
+     signup-flow.ts also exports, with a comment on each side telling the next author to keep the
+     two in sync by hand. Interpolating the constant is the generator-level fix — the annual price
+     block and the Enterprise contact line could not otherwise render correctly on /signup. */
+  ${PLAN_CARDS_CSS}
 </style>
 </head>
 <body>
@@ -4737,7 +4735,7 @@ function getSignupPageHtml(): string {
   <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px 28px;margin-top:20px;display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between">
     <div style="flex:1;min-width:260px">
       <h2 style="font-size:18px;margin-bottom:6px;color:#e1e4e8">No subscription? Pay-per-call with x402</h2>
-      <div style="color:#8b949e;font-size:14px;line-height:1.5">Agents can skip signup entirely &mdash; pay per call in USDC on Base. From $0.01/call &middot; $0.02 standard. No Stripe, no API key. HOLD trade calls free.</div>
+      <div style="color:#8b949e;font-size:14px;line-height:1.5">Agents can skip signup entirely &mdash; pay per call in USDC on Base. From $0.01/call &middot; $0.02 standard. No Stripe, no API key.</div>
     </div>
     <a class="btn" href="https://algovault.com/docs.html#x402" style="background:#1f6feb;white-space:nowrap">Pay per call with x402 &rarr;</a>
   </div>
