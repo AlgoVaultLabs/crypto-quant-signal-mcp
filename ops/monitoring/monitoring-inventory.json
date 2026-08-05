@@ -1054,7 +1054,7 @@
       "schedule": "21 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "bec8747bbbffa0cb95f1d589aeb165bff84c795779b39009da2331024c087031",
+      "sha256": "a919cac3b3d60ffe579924a533ddcdf26bd46182968d38662ae895cefdc52b30",
       "alert_ids": [
         "X402_CLAIM_PATH_BROKEN"
       ],
