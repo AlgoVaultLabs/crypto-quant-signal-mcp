@@ -263,8 +263,14 @@ jobs:
       # verdict source for every Bulk-Spec chapter gate, and during SIGNAL-CLOSEDBAR-SHADOW-W1
       # CH2 it printed a pass having run ZERO tests (a BSD mktemp bug emptied the report path;
       # the script then took a fail-open exit 0). This asserts the gate's own verdict logic in
-      # CI so it cannot rot back into an always-pass: 4 must-fire + 2 must-not-fire + 6 must-map
+      # CI so it cannot rot back into an always-pass: 5 must-fire + 3 must-not-fire + 6 must-map
       # cases, and it refuses to report a pass if any corpus is empty.
+      #
+      # REVENUE-METER-TRUTH-W6 Step 0B raised 4/2 → 5/3: `report_usable` accepted an EMPTY
+      # `testResults` array (`jq -e` is falsy only for null/false), so a zero-file vitest run
+      # still read as a usable report and the gate printed PASS over nothing. The new must-fire
+      # covers that report; the new must-not-fire is the predicate's FIRST positive-side
+      # assertion — before it, `report_usable() { return 1; }` passed this self-test green.
       #
       # Deliberately the --self-test and NOT a second full-suite run: the suite already runs
       # fail-closed at "Vitest suite (pre-deploy gate)" above, so invoking the whole gate here

@@ -342,6 +342,24 @@ describe('check_test_baseline.sh — report-path contract', () => {
   // "could not verify" meaning, so OPS-TEST-GATE-RECONCILE-W1 settled on 2 and retired
   // 3. One meaning, one code.
 
+  // REVENUE-METER-TRUTH-W6 Step 0B. The third member of that family, and the one that
+  // survived both prior hardening waves: vitest RAN, wrote a well-formed report, and
+  // collected ZERO test files. Measured against real vitest 3.2.4 — it emits
+  // `{"numTotalTests":0,…,"testResults":[]}` and exits 1, and the runner line ends in
+  // `|| true`, so the report is the gate's only signal. `jq -e` is falsy for `null` and
+  // `false` ONLY, so the empty array was truthy: the report read as usable, the failing
+  // set came back empty, and the gate printed GREEN having verified nothing.
+  it('reports INDETERMINATE (exit 2), not a pass, when vitest collected ZERO test files', () => {
+    stubNpx(fx, report([]));
+
+    const r = runGate(fx);
+
+    expect(r.exitCode, `output:\n${r.all}`).toBe(2);
+    expect(r.stdout).toMatch(/^TEST_GATE_VERDICT=INDETERMINATE$/m);
+    // Must not describe an empty run as a pass in the prose either.
+    expect(r.all).not.toMatch(/GREEN/);
+  });
+
   it('reports INDETERMINATE (exit 2), not a pass, when node_modules/vitest is missing', () => {
     rmSync(join(fx.dir, 'node_modules'), { recursive: true, force: true });
 
