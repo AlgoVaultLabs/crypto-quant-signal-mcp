@@ -71,6 +71,10 @@ DECLARATIONS=(
   "doc-host-path-claims.json|claims|1"
   "network-posture.json|hosts|1"
   "schedule-boundary-rule.json|canonical_minutes|5"
+  # Ch3's SOT_PARITY config. In the set on purpose: the check that audits whether the hosts read
+  # the committed declaration must not itself be configured by a copy nobody keeps current.
+  # `enforcement` is a string, so presence-only (0) — there is nothing to count.
+  "sot-parity-config.json|enforcement|0"
 )
 
 verdict() { echo "DECLARATION_SYNC_VERDICT=$1"; exit "$2"; }
