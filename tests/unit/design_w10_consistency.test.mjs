@@ -149,8 +149,15 @@ test('/account preservation-LAW: Stripe portal POST + key recovery POST + switch
   assert.strictEqual(countOcc(src, 'action="/account/portal"'), 1, 'Stripe portal action preserved');
   assert.strictEqual(countOcc(src, 'action="/account/recover-key"'), 1, 'key recovery action preserved');
   assert.strictEqual(countOcc(src, 'function switchTab'), 1, 'switchTab JS preserved');
-  assert.ok(countOcc(src, 'mailto:support@algovault.com') >= 3,
-    'support@algovault.com mailto preserved on all 3 page renders');
+  // CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1: the three help lines point at /contact, not a
+  // mailto. Cloudflare rewrites EVERY mailto into /cdn-cgi/l/email-protection#… (measured: zero
+  // plain mailto survives to a browser on any page), so the preserved-LAW was preserving a link
+  // that no longer worked. The LAW itself is unchanged — all 3 renders must still carry a way to
+  // reach us — only the mechanism moved to one that cannot be obfuscated away.
+  assert.ok(countOcc(src, 'href="/contact"') >= 3,
+    'a reachable contact path preserved on all 3 page renders');
+  assert.strictEqual(countOcc(src, 'mailto:support@algovault.com'), 0,
+    'the unverified support@ mailbox is no longer offered to users');
   // ACCOUNT_PAGE_STYLES class skeleton preserved (.tabs/.tab/.panel/.subtitle).
   assert.ok(src.includes('.tabs {'), '.tabs CSS class preserved');
   assert.ok(src.includes('.tab '), '.tab CSS class preserved');
