@@ -16,6 +16,23 @@ import { deriveUserCode } from './referral-store.js';
 import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2, usdcMinPayoutLabel } from './referral-constants.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
+
+/**
+ * Where a customer's REPLY actually lands — CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1.
+ *
+ * This was `support@algovault.com`, hand-typed at ELEVEN separate `emails.send()` call sites.
+ * `support@` could not be verified as a receiving mailbox (port 25 is blocked outbound from both
+ * the operator Mac and the Hetzner host, so an SMTP RCPT probe is impossible), and the operator
+ * holds `admin@` only. A `replyTo` is not decoration: it is where every reply to a welcome email,
+ * a key-recovery email or a webhook notice is delivered. Pointing it at an unverified mailbox
+ * means those replies may have been going nowhere.
+ *
+ * ONE constant, not eleven literals — the reason this repoint was an eleven-site edit at all.
+ * `OPS-SUPPORT-MAILBOX-VERIFY-W{NEXT}` stays OPEN: repointing is a fix, not a verification that
+ * `support@` is dead.
+ */
+export const REPLY_TO_ADDRESS = 'admin@algovault.com';
+
 const ACCOUNT_URL = 'https://api.algovault.com/account';
 // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4: upgrade CTA target for the quota-paused notice.
 const SIGNUP_URL = 'https://api.algovault.com/signup';
@@ -81,7 +98,7 @@ export async function sendWelcomeEmail({ to, apiKey, tier }: EmailArgs): Promise
   await client.emails.send({
     from: getFromAddress(),
     to,
-    replyTo: 'support@algovault.com',
+    replyTo: REPLY_TO_ADDRESS,
     subject,
     html,
     text,
@@ -110,7 +127,7 @@ export async function sendKeyRecoveryEmail({ to, apiKey, tier }: EmailArgs): Pro
   await client.emails.send({
     from: getFromAddress(),
     to,
-    replyTo: 'support@algovault.com',
+    replyTo: REPLY_TO_ADDRESS,
     subject,
     html,
     text,
@@ -186,7 +203,7 @@ https://algovault.com
   const sent = await client.emails.send({
     from: getFromAddress(),
     to,
-    replyTo: 'support@algovault.com',
+    replyTo: REPLY_TO_ADDRESS,
     subject,
     html,
     text,
@@ -239,7 +256,7 @@ Manage your key + referral stats: ${ACCOUNT_URL}
 Questions? support@algovault.com
 
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -295,7 +312,7 @@ Manage your key + referral stats: ${ACCOUNT_URL}
 Questions? support@algovault.com
 
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -343,7 +360,7 @@ See your full referral history: ${ACCOUNT_URL}
 Questions? support@algovault.com
 
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -379,7 +396,7 @@ If they subscribe, you earn ${commissionPct()} of their plan for ${commissionMon
 
 Manage notifications (turn off): ${manageLink}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -401,7 +418,7 @@ A friend you referred subscribed (${commissionPct()} for ${commissionMonthsLabel
 
 Manage notifications (turn off): ${manageLink}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -619,7 +636,7 @@ Your endpoint must return a 2xx status. Fix it and we resume on the next retry.
 
 Review your webhooks: ${ACCOUNT_URL}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -653,7 +670,7 @@ We retried automatically for ${dayLabel} without a single successful delivery.
 
 Fix your endpoint so it returns a 2xx status, then register the webhook again to resume delivery: ${ACCOUNT_URL}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
@@ -686,7 +703,7 @@ Deliveries resume automatically when your quota resets next month.
 
 Upgrade your plan to resume them today: ${SIGNUP_URL}
 — AlgoVault Labs`;
-  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: 'support@algovault.com', subject, html, text });
+  const sent = await client.emails.send({ from: getFromAddress(), to, replyTo: REPLY_TO_ADDRESS, subject, html, text });
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }

@@ -63,14 +63,19 @@ describe('signup-email opt-in path', () => {
       json: async () => ({ overall: { pfeWinRate: 0.913, totalCalls: 115000 } }),
     }) as unknown as typeof fetch;
 
-    const { sendOptinConfirmationEmail } = await import('../src/lib/email.js');
+    const { sendOptinConfirmationEmail, REPLY_TO_ADDRESS } = await import('../src/lib/email.js');
     const result = await sendOptinConfirmationEmail('alice@example.com');
 
     expect(mockSend).toHaveBeenCalledOnce();
     const args = mockSend.mock.calls[0][0];
     expect(args.from).toBe('noreply@algovault.com');
     expect(args.to).toBe('alice@example.com');
-    expect(args.replyTo).toBe('support@algovault.com');
+    // CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1: a replyTo must be a RECEIVING mailbox.
+    // `support@` is unverified (port 25 blocked outbound from both hosts, so an SMTP RCPT
+    // probe is impossible) and the operator holds `admin@` only — replies were going nowhere.
+    // Asserted against the exported constant so the 11 call sites can never drift apart again.
+    expect(args.replyTo).toBe(REPLY_TO_ADDRESS);
+    expect(REPLY_TO_ADDRESS).toBe('admin@algovault.com');
     expect(args.subject).toBe('Welcome to AlgoVault product updates');
     expect(result).toEqual({ id: 'mock-confirm-id' });
   });
