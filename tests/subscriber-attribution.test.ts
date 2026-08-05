@@ -13,6 +13,7 @@ import {
   recordSignupAttribution,
   assembleProfile,
   buildSubscriberProfile,
+  toIsoTimestamp,
   aggregateProfiles,
   renderSubscribersAdminHtml,
 } from '../src/lib/subscriber-attribution.js';
@@ -219,5 +220,95 @@ describe('renderSubscribersAdminHtml (C3 shell — NO PII pre-auth)', () => {
     expect(html).not.toContain('cus_UepU');
     // key must never be appended to a URL
     expect(html).not.toMatch(/\?key=/);
+  });
+});
+
+/**
+ * REVENUE-METER-TRUTH-W5 CH4 — the 58-day silent outage.
+ *
+ * `signup_at` is `timestamptz`. Its value is read out of `signup_attribution.created_at` and bound
+ * straight back in. **node-pg returns a `timestamptz` column as a JS `Date`**, and the old code did
+ * `String(rows[0].created_at)` → `"Sun Jul 26 2026 11:46:33 GMT+0000 (Coordinated Universal Time)"`,
+ * which Postgres rejects with SQLSTATE 22007. The PG write path is fire-and-forget, so the rejection
+ * reached no `catch` and the caller logged SUCCESS for a row that was never written.
+ *
+ * 🛑 **The defect lived exactly in this file's seam.** Every existing test hand-feeds
+ * `.toISOString()` — the one form production never produces — and the `buildSubscriberProfile` tests
+ * stub `query: async () => []`, so the attribution branch never ran at all. 100% of production
+ * writes were lost with every assertion green. These tests drive a real `Date` through that seam.
+ */
+describe('toIsoTimestamp — the 22007 guard (CH4)', () => {
+  it('converts a node-pg Date to ISO — never String(Date)', () => {
+    const d = new Date('2026-07-26T11:46:33.000Z');
+    expect(toIsoTimestamp(d)).toBe('2026-07-26T11:46:33.000Z');
+    // The exact production poison, asserted as an inequality so the intent is unmissable.
+    expect(toIsoTimestamp(d)).not.toBe(String(d));
+    // Why PG rejects String(Date): the trailing `GMT±HHMM (Zone Name)` is unparseable as timestamptz.
+    // Asserted STRUCTURALLY rather than by the zone's words — String(Date) renders in the HOST's
+    // timezone, so the prod container (UTC) yields "(Coordinated Universal Time)" while a dev box on
+    // GMT+0800 yields "(Malaysia Time)". A literal-text assertion passes on prod and fails on a laptop.
+    expect(String(d)).toMatch(/GMT[+-]\d{4} \(.+\)$/);
+    expect(toIsoTimestamp(d)).not.toMatch(/GMT/);
+  });
+
+  it('passes a SQLite TEXT timestamp through UNCHANGED — re-serialising would shift it', () => {
+    // better-sqlite3 returns what datetime('now') stored: UTC, no zone marker. Node parses that as
+    // LOCAL time, so a "helpful" new Date(s).toISOString() here would silently shift every SQLite
+    // timestamp by the host's UTC offset. A Date is the only broken case; strings are already fine.
+    expect(toIsoTimestamp('2026-07-26 11:46:33')).toBe('2026-07-26 11:46:33');
+    expect(toIsoTimestamp('2026-07-26T11:46:33.000Z')).toBe('2026-07-26T11:46:33.000Z');
+  });
+
+  it('degrades an absent or invalid timestamp to null rather than to a bad bind', () => {
+    expect(toIsoTimestamp(null)).toBeNull();
+    expect(toIsoTimestamp(undefined)).toBeNull();
+    expect(toIsoTimestamp('')).toBeNull();
+    expect(toIsoTimestamp(new Date('nonsense'))).toBeNull(); // Invalid Date, not "Invalid Date"
+  });
+});
+
+describe('buildSubscriberProfile — binds a PG Date safely (CH4)', () => {
+  const SIGNUP = new Date('2026-07-26T11:46:33.000Z');
+
+  /** A seam that returns what node-pg actually returns: a Date, not a string. */
+  function pgLikeDeps(runs: Array<{ sql: string; params: unknown[] }>) {
+    return {
+      ensure: () => {},
+      query: async (sql: string) => (
+        sql.includes('FROM signup_attribution')
+          ? [{ channel: 'tg_bot', created_at: SIGNUP }] as never[]   // <- a real Date
+          : [] as never[]
+      ),
+      run: (sql: string, ...params: unknown[]) => { runs.push({ sql, params }); },
+      nowEpoch: Math.floor(SIGNUP.getTime() / 1000) + 128,
+    };
+  }
+
+  it('binds signup_at as an ISO string Postgres can parse, not String(Date)', async () => {
+    const runs: Array<{ sql: string; params: unknown[] }> = [];
+    await buildSubscriberProfile(
+      { customer: 'cus_ch4', client_reference_id: 'tg_bot:1:abc', metadata: { tier: 'starter' }, created: 1 },
+      pgLikeDeps(runs) as never,
+    );
+    expect(runs).toHaveLength(1);
+    const signupAt = runs[0].params[12]; // param #13 — the signup_at column
+    expect(typeof signupAt).toBe('string');
+    // THE assertion. The old code produced the Date's toString(), which PG answers with 22007.
+    expect(signupAt).toBe('2026-07-26T11:46:33.000Z');
+    expect(String(signupAt)).not.toContain('Coordinated Universal Time');
+    expect(String(signupAt)).not.toContain('GMT');
+    // A bind Postgres accepts must round-trip through Date without losing the instant.
+    expect(new Date(signupAt as string).getTime()).toBe(SIGNUP.getTime());
+  });
+
+  it('still records the attribution channel and a sane latency from that Date', async () => {
+    const runs: Array<{ sql: string; params: unknown[] }> = [];
+    await buildSubscriberProfile(
+      { customer: 'cus_ch4b', client_reference_id: 'tg_bot:1:abc', metadata: { tier: 'starter' }, created: 1 },
+      pgLikeDeps(runs) as never,
+    );
+    expect(runs[0].params[8]).toBe('tg_bot');   // channel
+    expect(runs[0].params[14]).toBe(128);       // latency_seconds = convertedAt - signupAt
+    expect(runs[0].params[16]).toBe(true);      // attribution_captured
   });
 });
