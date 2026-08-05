@@ -28,6 +28,7 @@
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { dbQuery } from './performance-db.js';
+import { externalPayerSql } from './x402-operator-wallets.js';
 
 // ── Types ──
 
@@ -88,12 +89,32 @@ export interface FunnelSnapshot {
     quota_hit_hard: number | null;          // stage 5: COUNT from funnel_events WHERE event_type='quota_hit_hard'
     quota_hit_block: number | null;         // stage 6: COUNT from funnel_events WHERE event_type='quota_hit_block'
     upgrade_cta_clicked: number | null;     // stage 7: COUNT from funnel_events WHERE event_type='upgrade_cta_clicked'
-    stripe_checkout_started: number | null; // stage 8: COUNT from processed_stripe_events WHERE event_type='checkout.session.created'
+    stripe_checkout_started: number | null; // stage 8: COUNT(DISTINCT client_reference_id) from signup_attribution, PAID tiers only (see getCheckoutStartedCount)
     tg_bot_start: number | null;            // stage 10: COUNT from bot SQLite subscribers WHERE created_at BETWEEN ? AND ?
     tg_bot_first_command: number | null;    // stage 11: alerts.log grep "event": "tg_bot_first_command"
     tg_bot_watchlist_add: number | null;    // stage 12: COUNT(DISTINCT chat_id) from bot SQLite watchlists WHERE created_at BETWEEN ? AND ?
     tg_bot_quota_hit: number | null;        // stage 13: alerts.log grep "event": "tg_bot_quota_hit"
     tg_bot_upgrade_clicked: number | null;  // stage 14: NULL until OPS-FUNNEL-STRIPE-PIXEL-W1 (Q-D Option β defer)
+  };
+  /**
+   * REVENUE-METER-TRUTH-W6 CH5 — the two populations behind `funnel.paid_upgrade`,
+   * surfaced separately because THEY DO NOT SHARE A UNIT and summing them into one
+   * scalar is what hid an unsettlement-blind meter for a month.
+   *
+   * - `stripe_tier_sessions` counts SESSIONS (`agent_sessions.tiers_seen` naming a
+   *   Stripe tier), windowed on `first_seen` (BIGINT epoch-ms).
+   * - `x402_settled_wallets` counts DISTINCT EXTERNAL PAYER WALLETS whose payment
+   *   actually SETTLED, windowed on `processed_x402_payments.created_at` (TIMESTAMPTZ).
+   *
+   * There is NO join key between `agent_sessions` and `processed_x402_payments`
+   * (verified twice across this arc), so a per-session settlement gate is impossible
+   * and the two arms are counted independently and added. `paid_upgrade` remains
+   * their sum for backward compatibility with snapshot history.
+   */
+  paid_upgrade_detail: {
+    stripe_tier_sessions: number | null;
+    x402_settled_wallets: number | null;
+    unit_note: string;
   };
   conversion: {
     install_to_first_call: number | null; // null when install is null
@@ -107,8 +128,34 @@ export interface FunnelSnapshot {
    * `weakest_stage_transition` field below identifies the largest drop).
    * Keys are stage names in canonical order. Value is null when prior_stage
    * count is null/zero.
+   *
+   * REVENUE-METER-TRUTH-W6 CH5: a retention is a NARROWING, so a value > 1 is not a
+   * retention at all — it is evidence the pair is not sequential. Such a pair is null
+   * here and reported in full under `stage_ratio_anomalies`. Nothing is lost: the raw
+   * ratio and BOTH counts move to a truthfully-named field.
    */
   stage_retentions: Record<string, number | null>;
+  /**
+   * Adjacent stage pairs whose ratio EXCEEDS 1 — i.e. the later stage has more
+   * sessions than the one it supposedly narrows from, which means they are siblings
+   * rather than a sequence.
+   *
+   * Measured instance (2026-08-05, window 2026-07-20→08-03): `quota_hit_hard` = 14,
+   * `quota_hit_block` = 17, ratio 1.214. Both are `COUNT(DISTINCT session_id)` over
+   * `funnel_events`, so this is NOT an events-vs-attempts unit error — the populations
+   * genuinely differ: 13 sessions emitted both, 4 emitted `block` with NO `hard`, and 1
+   * the reverse. They come from two different emitters (`tier-warning.ts` raises the
+   * hard WARNING; `license.ts` fires the BLOCK), and a session can be blocked without
+   * ever being warned.
+   */
+  stage_ratio_anomalies: Array<{
+    from: string;
+    to: string;
+    from_count: number;
+    to_count: number;
+    ratio: number;
+    reason: string;
+  }>;
   /**
    * The single stage-to-stage transition with the lowest retention ratio
    * across the 14-stage funnel. Identifies the leak step. `null` when no
@@ -246,7 +293,11 @@ const CANONICAL_STAGE_ORDER: readonly string[] = Object.freeze([
   'quota_hit_block',          // 6
   'upgrade_cta_clicked',      // 7
   'stripe_checkout_started',  // 8
-  'paid_upgrade',             // 9: stripe_payment_succeeded alias
+  // 9: NOT a `stripe_payment_succeeded` alias — that label was wrong from the day it
+  // was written and never matched the query. No Stripe payment event has ever fed this
+  // stage. It is `agent_sessions.tiers_seen` naming a paid tier, PLUS distinct settled
+  // external x402 payer wallets. See `paid_upgrade_detail` for the split and its units.
+  'paid_upgrade',
   'tg_bot_start',             // 10
   'tg_bot_first_command',     // 11
   'tg_bot_watchlist_add',     // 12
@@ -303,6 +354,82 @@ async function getStripeEventCount(
       WHERE event_type = ?
         AND processed_at >= ? AND processed_at <= ?`,
     [stripeEventType, windowFromIso, windowToIso],
+  );
+  return safeInt(rows[0]?.c) ?? 0;
+}
+
+/**
+ * Stage 8 (`stripe_checkout_started`) — distinct Stripe Checkout Sessions CREATED for
+ * a PAID tier within the window.
+ *
+ * REVENUE-METER-TRUTH-W6 CH5 re-sourced this. It previously counted
+ * `processed_stripe_events` rows of type `checkout.session.created`, and that stage was
+ * STRUCTURALLY INCAPABLE of ever emitting a non-zero value: the webhook switch in
+ * `src/index.ts` has no such case, and — measured against the live endpoint on
+ * 2026-08-05 — `checkout.session.created` is not in its `enabled_events` either, so
+ * Stripe never sends it and nothing would handle it if it did. A permanent 0 rendered
+ * as a funnel stage is a lie by omission; this counts a signal that exists.
+ *
+ * `signup_attribution` is written at `src/index.ts` ONLY after `createCheckoutSession()`
+ * has returned a real Stripe Checkout URL and BEFORE the 303 redirect — semantically
+ * exactly "a Checkout Session was created".
+ *
+ * ⚠️ The `tier_requested` filter is load-bearing, not cosmetic: a second producer
+ * (`src/lib/deferred-signup.ts`) writes `free` rows into the same table, and those are
+ * not checkout starts at all.
+ *
+ * ⚠️ Reading this against stage 9: measured 364 paid-tier starts all-time against 3
+ * completed checkouts. That ~0.8% is NOT a clean conversion base — this endpoint is
+ * reachable by crawlers and the funnel's own `identity_coverage` puts ~79% of traffic
+ * in the automated bucket.
+ */
+async function getCheckoutStartedCount(
+  windowFromIso: string,
+  windowToIso: string,
+): Promise<number | null> {
+  const rows = await dbQuery<{ c: number | string }>(
+    `SELECT COUNT(DISTINCT client_reference_id) AS c
+       FROM signup_attribution
+      WHERE tier_requested IN ('starter', 'pro', 'enterprise')
+        AND created_at >= ? AND created_at <= ?`,
+    [windowFromIso, windowToIso],
+  );
+  return safeInt(rows[0]?.c) ?? 0;
+}
+
+/**
+ * The x402 arm of stage 9 — DISTINCT EXTERNAL PAYER WALLETS whose payment actually
+ * SETTLED within the window.
+ *
+ * Three gates, each of which has already been the cause of a wrong number:
+ *
+ *  1. `settlement_state = 'SETTLED'` — a CLAIM is not a payment. The ledger claims the
+ *     ERC-3009 nonce BEFORE settlement to close the replay window, so a claimed-but-
+ *     never-settled row is money that provably never moved. 15 of 18 lifetime rows are
+ *     exactly that. This gate is also what keeps the hourly liveness prober's sentinel
+ *     row out of the count — the prober's INSERT omits `settlement_state`, so its rows
+ *     default to CLAIMED_UNSETTLED and can never satisfy this predicate.
+ *  2. `externalPayerSql()` — the ONE shared predicate that excludes operator
+ *     self-settlement AND the unattributable empty-string wallets (SEC-49 made
+ *     `payer_wallet` NOT NULL DEFAULT '', so `IS NOT NULL` does not exclude them).
+ *     Never re-implement it inline; that is how three copies drifted.
+ *  3. COUNT DISTINCT on the normalized wallet — the unit is PAYING PARTIES, not
+ *     payment events, so a repeat buyer is one paid upgrade, not five.
+ *
+ * Base/USDC rail only: OKX a2mcp settlements are not recorded in this table at all
+ * (OPS-A2MCP-SETTLEMENT-RECORDING-W{NEXT}).
+ */
+async function getSettledX402PayerCount(
+  windowFromIso: string,
+  windowToIso: string,
+): Promise<number | null> {
+  const { clause: extClause, params: extParams } = externalPayerSql();
+  const rows = await dbQuery<{ c: number | string }>(
+    `SELECT COUNT(DISTINCT lower(trim(payer_wallet))) AS c
+       FROM processed_x402_payments
+      WHERE settlement_state = 'SETTLED'
+        AND created_at >= ? AND created_at <= ?${extClause}`,
+    [windowFromIso, windowToIso, ...extParams],
   );
   return safeInt(rows[0]?.c) ?? 0;
 }
@@ -818,6 +945,8 @@ export async function generateFunnelSnapshot(
   let secondCall: number | null = null;
   let fifthPlusCall: number | null = null;
   let paidUpgrade: number | null = null;
+  let paidUpgradeStripeSessions: number | null = null;
+  let paidUpgradeX402Wallets: number | null = null;
   try {
     const rows = await dbQuery<{
       first_call: number | string;
@@ -865,6 +994,18 @@ export async function generateFunnelSnapshot(
     }
   }
 
+  // REVENUE-METER-TRUTH-W6 CH5 — the STRIPE arm only. `OR tiers_seen LIKE '%x402%'`
+  // used to be a fourth predicate here and was removed: a claim SETS the session tier,
+  // so an x402 claim counted as a paid upgrade BY CONSTRUCTION, with no settlement gate
+  // anywhere in the path. Fifteen of eighteen lifetime claims never settled.
+  //
+  // ⚠️ Measured before removing it, so the change is not oversold: the delta TODAY is
+  // ZERO. `tiers_seen LIKE '%x402%'` matches 0 of 28,643 sessions all-time — the only
+  // values the column has ever held are `internal`, `free`, `starter`, `pro` and their
+  // combinations. So this is a LATENT defect being closed, not an active over-count
+  // being corrected: the arm would have started inflating the stage the first time a
+  // single x402 session appeared. The settled x402 population is now counted by
+  // `getSettledX402PayerCount` instead, where the settlement gate can actually apply.
   try {
     const rows = await dbQuery<{ c: number | string }>(
       `SELECT COUNT(*) AS c
@@ -874,16 +1015,35 @@ export async function generateFunnelSnapshot(
             tiers_seen LIKE '%starter%'
             OR tiers_seen LIKE '%pro%'
             OR tiers_seen LIKE '%enterprise%'
-            OR tiers_seen LIKE '%x402%'
           )`,
       [windowFromMs, windowToMs],
     );
-    paidUpgrade = safeInt(rows[0]?.c) ?? 0;
+    paidUpgradeStripeSessions = safeInt(rows[0]?.c) ?? 0;
   } catch (err) {
     warnings.push(
       `agent_sessions paid_upgrade query failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+
+  // The x402 arm, counted independently because there is no join key to gate it
+  // per-session. Its own try/catch: an unavailable payments table must not null out
+  // the Stripe arm, which is the one carrying every paid upgrade this business has
+  // actually had.
+  try {
+    paidUpgradeX402Wallets = await getSettledX402PayerCount(windowFromIso, windowToIso);
+  } catch (err) {
+    warnings.push(
+      `processed_x402_payments settled-payer query failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // `paid_upgrade` stays the SUM for backward compatibility with snapshot history;
+  // `paid_upgrade_detail` carries the split and its units. Null-preserving: if either
+  // arm failed we must not silently report the other as the whole truth.
+  paidUpgrade =
+    paidUpgradeStripeSessions === null || paidUpgradeX402Wallets === null
+      ? null
+      : paidUpgradeStripeSessions + paidUpgradeX402Wallets;
 
   // ── Stick rate ──
   // Compute in JS from two integer counts so we don't have to worry about
@@ -1058,9 +1218,9 @@ export async function generateFunnelSnapshot(
 
   let stripeCheckoutStarted: number | null = null;
   try {
-    stripeCheckoutStarted = await getStripeEventCount('checkout.session.created', windowFromIso, windowToIso);
+    stripeCheckoutStarted = await getCheckoutStartedCount(windowFromIso, windowToIso);
   } catch (err) {
-    warnings.push(`processed_stripe_events checkout query failed: ${err instanceof Error ? err.message : String(err)}`);
+    warnings.push(`signup_attribution checkout-started query failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Bot-side stages (Q-C Option α: alerts.log + bot SQLite).
@@ -1091,6 +1251,7 @@ export async function generateFunnelSnapshot(
   };
 
   const stageRetentions: Record<string, number | null> = {};
+  const stageRatioAnomalies: FunnelSnapshot['stage_ratio_anomalies'] = [];
   let weakestTransition: { from: string; to: string; retention: number | null } | null = null;
   for (let i = 1; i < CANONICAL_STAGE_ORDER.length; i++) {
     const fromKey = CANONICAL_STAGE_ORDER[i - 1];
@@ -1099,6 +1260,30 @@ export async function generateFunnelSnapshot(
     const toCount = funnelCounts[toKey];
     const r = ratio(toCount, fromCount);
     const key = `${fromKey}_to_${toKey}`;
+    // REVENUE-METER-TRUTH-W6 CH5 — a retention is a NARROWING. A ratio above 1 says
+    // the later stage has MORE sessions than the one it supposedly narrows from, which
+    // is not a weak retention, it is not a retention at all: the two stages are
+    // siblings fed by different emitters rather than a sequence. Rendering it as
+    // "retention: 1.21" invites reading a leak metric backwards.
+    //
+    // Reported in full rather than clamped or dropped — clamping would fabricate a
+    // number and dropping would lose one, so both counts and the raw ratio move to a
+    // truthfully-named field. It is also generic: any future non-sequential pair
+    // surfaces here instead of quietly rendering above 1.
+    if (r !== null && r > 1 && typeof fromCount === 'number' && typeof toCount === 'number') {
+      stageRetentions[key] = null;
+      stageRatioAnomalies.push({
+        from: fromKey,
+        to: toKey,
+        from_count: fromCount,
+        to_count: toCount,
+        ratio: r,
+        reason:
+          `${toKey} exceeds ${fromKey}, so these stages are not sequential — a session can reach ` +
+          `${toKey} without ever emitting ${fromKey}. Not a retention; reported here instead.`,
+      });
+      continue;
+    }
     stageRetentions[key] = r;
     // Track minimum non-null retention as the weakest transition.
     if (r !== null && (weakestTransition === null || (weakestTransition.retention !== null && r < weakestTransition.retention))) {
@@ -1169,8 +1354,19 @@ export async function generateFunnelSnapshot(
       tg_bot_quota_hit: tgBotQuotaHit,
       tg_bot_upgrade_clicked: tgBotUpgradeClicked,
     },
+    paid_upgrade_detail: {
+      stripe_tier_sessions: paidUpgradeStripeSessions,
+      x402_settled_wallets: paidUpgradeX402Wallets,
+      unit_note:
+        'stripe_tier_sessions counts SESSIONS (agent_sessions.tiers_seen, windowed on first_seen epoch-ms); ' +
+        'x402_settled_wallets counts DISTINCT EXTERNAL PAYER WALLETS whose payment SETTLED ' +
+        '(processed_x402_payments, windowed on created_at, operator self-settlement excluded). ' +
+        'The two share no join key, so paid_upgrade is their sum, not a single population. ' +
+        'Base/USDC rail only — OKX a2mcp settlements are not in this ledger.',
+    },
     conversion,
     stage_retentions: stageRetentions,
+    stage_ratio_anomalies: stageRatioAnomalies,
     weakest_stage_transition: weakestTransition,
     stick_rate: stickRate,
     time_to_first_call_ms: { p50, p90 },

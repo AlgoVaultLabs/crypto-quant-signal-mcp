@@ -24,6 +24,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateFunnelSnapshot } from '../src/lib/funnel-snapshot.js';
 import { closeDb, dbQuery, dbRun, recordFunnelEvent } from '../src/lib/performance-db.js';
 import { initAnalytics } from '../src/lib/analytics.js';
+import { ensureProcessedX402PaymentsSchema } from '../src/lib/x402-idempotency-store.js';
+import { ensureSignupAttributionSchema } from '../src/lib/subscriber-attribution.js';
 
 const SKIP_REASON = process.env.DATABASE_URL ? 'DATABASE_URL set — skipping local SQLite tests' : '';
 const describeOrSkip = SKIP_REASON ? describe.skip : describe;
@@ -54,6 +56,12 @@ async function deleteSentinels() {
   await dbRun(`DELETE FROM funnel_events WHERE session_id LIKE ?`, `${SENTINEL_PREFIX}%`);
   await dbRun(`DELETE FROM request_log WHERE session_id LIKE ?`, `${SENTINEL_PREFIX}%`);
   await dbRun(`DELETE FROM agent_sessions WHERE session_id LIKE ?`, `${SENTINEL_PREFIX}%`);
+  // REVENUE-METER-TRUTH-W6 CH5. These two tables have no session_id, so they need
+  // their own sentinel shapes: the payments PK is COMPOSITE (payer_wallet, nonce), so
+  // keying cleanup on the nonce prefix alone would leave rows behind when a test
+  // varies the wallet — which is exactly what the paid_upgrade tests do.
+  await dbRun(`DELETE FROM processed_x402_payments WHERE nonce LIKE ?`, `${SENTINEL_PREFIX}%`);
+  await dbRun(`DELETE FROM signup_attribution WHERE client_reference_id LIKE ?`, `${SENTINEL_PREFIX}%`);
 }
 
 describeOrSkip('funnel-snapshot — 14-stage extension', () => {
@@ -80,6 +88,13 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
     // request_log writers (analytics-external-only, pql, subscriber-bridge) are.
     // Idempotent: CREATE TABLE IF NOT EXISTS + best-effort ALTERs.
     initAnalytics();
+    // REVENUE-METER-TRUTH-W6 CH5: same self-sufficiency rule as request_log above —
+    // paid_upgrade now reads processed_x402_payments and stripe_checkout_started reads
+    // signup_attribution, and neither table is owned by performance-db's getBackend().
+    // Without these the queries would throw into `warnings` and every assertion below
+    // would pass VACUOUSLY against a null.
+    ensureProcessedX402PaymentsSchema();
+    ensureSignupAttributionSchema();
   });
 
   beforeEach(async () => {
@@ -361,6 +376,162 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
       [`${SENTINEL_PREFIX}%`, from, to],
     );
     expect(Number(remaining[0].c)).toBe(4);
+  });
+
+  // ── REVENUE-METER-TRUTH-W6 CH5 — paid_upgrade tells the truth about settlement ──
+
+  /** Seed one x402 ledger row. `state` is the whole point of these tests. */
+  async function seedPayment(nonce: string, wallet: string, state: string, atIso: string) {
+    await dbRun(
+      `INSERT INTO processed_x402_payments (nonce, tool, amount, payer_wallet, settlement_state, rail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `${SENTINEL_PREFIX}${nonce}`, 'get_trade_call', '0.02', wallet, state, 'base-usdc', atIso,
+    );
+  }
+
+  const EXTERNAL_A = '0xaaaa000000000000000000000000000000000001';
+  const EXTERNAL_B = '0xbbbb000000000000000000000000000000000002';
+
+  it('CH5: an UNSETTLED in-window x402 payment contributes ZERO to paid_upgrade', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+    const midIso = new Date(to.getTime() - 86_400_000).toISOString();
+
+    // A claim is not a payment. The ledger claims the ERC-3009 nonce BEFORE settling to
+    // close the replay window, so this row is money that provably never moved — 15 of
+    // 18 lifetime prod rows are exactly this.
+    await seedPayment('unsettled-1', EXTERNAL_A, 'CLAIMED_UNSETTLED', midIso);
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+    expect(snap.paid_upgrade_detail.x402_settled_wallets).toBe(0);
+    // And it must not sneak in through the SESSION arm either — that is the predicate
+    // this chapter removed.
+    expect(snap.paid_upgrade_detail.stripe_tier_sessions).toBe(0);
+    expect(snap.funnel.paid_upgrade).toBe(0);
+    // The query must have RUN. Without this, a thrown query would land in `warnings`,
+    // leave the field at its initial value and pass this test having measured nothing.
+    expect(snap.warnings.join(' ')).not.toMatch(/processed_x402_payments/);
+  });
+
+  it('CH5: an x402 SESSION tier is not a paid upgrade — the removed predicate stays removed', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+    const tsMs = to.getTime() - 86_400_000;
+
+    // The exact row the deleted `OR tiers_seen LIKE '%x402%'` used to count. A claim
+    // SETS the session tier, so before this chapter the session below was a "paid
+    // upgrade" by construction, with no settlement gate anywhere in the path.
+    //
+    // No such row exists in production — `tiers_seen LIKE '%x402%'` matches 0 of 28,643
+    // sessions all-time — which is WHY this fixture has to be synthesised: the defect is
+    // latent, and a test that only asserted against live-shaped data would pass with the
+    // predicate still in place and prove nothing.
+    await dbRun(
+      `INSERT INTO agent_sessions (session_id, first_seen, last_seen, call_count, tiers_seen) VALUES (?, ?, ?, ?, ?)`,
+      `${SENTINEL_PREFIX}x402sess`, tsMs, tsMs, 4, 'free,x402',
+    );
+    // A real Stripe-tier session alongside it, so the assertion below distinguishes
+    // "correctly excluded x402" from "the query returned nothing at all".
+    await dbRun(
+      `INSERT INTO agent_sessions (session_id, first_seen, last_seen, call_count, tiers_seen) VALUES (?, ?, ?, ?, ?)`,
+      `${SENTINEL_PREFIX}starter1`, tsMs, tsMs, 4, 'free,starter',
+    );
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+    expect(snap.paid_upgrade_detail.stripe_tier_sessions).toBe(1);
+    expect(snap.funnel.paid_upgrade).toBe(1);
+  });
+
+  it('CH5: a SETTLED external payer counts once, however many times they paid', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+    const midIso = new Date(to.getTime() - 86_400_000).toISOString();
+
+    await seedPayment('settled-1', EXTERNAL_A, 'SETTLED', midIso);
+    await seedPayment('settled-2', EXTERNAL_A, 'SETTLED', midIso); // same wallet, 2nd payment
+    await seedPayment('settled-3', EXTERNAL_B, 'SETTLED', midIso);
+    await seedPayment('unsettled-2', EXTERNAL_B, 'CLAIMED_UNSETTLED', midIso);
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+    // TWO distinct paying parties, not four payment events: the unit is wallets.
+    expect(snap.paid_upgrade_detail.x402_settled_wallets).toBe(2);
+    expect(snap.funnel.paid_upgrade).toBe(2);
+  });
+
+  it('CH5: operator self-settlement and unattributable rows are excluded (externalPayerSql)', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+    const midIso = new Date(to.getTime() - 86_400_000).toISOString();
+
+    // SEC-49 made payer_wallet NOT NULL DEFAULT '', so the empty string is a REAL value
+    // that `IS NOT NULL` does not exclude — it is the pre-instrumentation unattributable
+    // row, and counting it would invent a paying customer out of a missing field.
+    await seedPayment('empty-wallet', '', 'SETTLED', midIso);
+    await seedPayment('external-1', EXTERNAL_A, 'SETTLED', midIso);
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+    expect(snap.paid_upgrade_detail.x402_settled_wallets).toBe(1);
+  });
+
+  it('CH5: a SETTLED payment OUTSIDE the window does not count (the arm is window-scoped)', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+    const longAgoIso = new Date(to.getTime() - 30 * 86_400_000).toISOString();
+
+    await seedPayment('old-settled', EXTERNAL_A, 'SETTLED', longAgoIso);
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+    expect(snap.paid_upgrade_detail.x402_settled_wallets).toBe(0);
+  });
+
+  it('CH5: stripe_checkout_started counts PAID-tier signup_attribution rows, never `free`', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+    const midIso = new Date(to.getTime() - 86_400_000).toISOString();
+
+    for (const [suffix, tier] of [['s1', 'starter'], ['s2', 'pro'], ['s3', 'enterprise'], ['s4', 'free']]) {
+      await dbRun(
+        `INSERT INTO signup_attribution (client_reference_id, created_at, tier_requested) VALUES (?, ?, ?)`,
+        `${SENTINEL_PREFIX}${suffix}`, midIso, tier,
+      );
+    }
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+    // 3 paid, not 4: the `free` row comes from a DIFFERENT producer (deferred-signup)
+    // and is not a checkout start at all.
+    expect(snap.funnel.stripe_checkout_started).toBe(3);
+    expect(snap.warnings.join(' ')).not.toMatch(/signup_attribution/);
+  });
+
+  it('CH5: no ratio rendered as a "retention" may exceed 1', async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 86_400_000);
+
+    // quota_hit_hard on ONE session, quota_hit_block on THREE — the live shape (14 vs
+    // 17), where sessions reach the block without ever being warned. Ratio 3.0.
+    recordFunnelEvent({ eventType: 'quota_hit_hard', sessionId: `${SENTINEL_PREFIX}h1`, licenseTier: 'free' });
+    for (const i of [1, 2, 3]) {
+      recordFunnelEvent({ eventType: 'quota_hit_block', sessionId: `${SENTINEL_PREFIX}b${i}`, licenseTier: 'free' });
+    }
+    await new Promise((r) => setTimeout(r, 60));
+
+    const snap = await generateFunnelSnapshot({ since: from.toISOString(), until: to.toISOString() });
+
+    // The standing invariant, checked over EVERY transition rather than the one pair
+    // that motivated it — a future non-sequential pair must not quietly render above 1.
+    for (const [key, v] of Object.entries(snap.stage_retentions)) {
+      if (v !== null) expect(v, `stage_retentions.${key} = ${v}`).toBeLessThanOrEqual(1);
+    }
+
+    // Nothing is LOST — the pair and its raw ratio are reported, just not as a retention.
+    const anomaly = snap.stage_ratio_anomalies.find(
+      (a) => a.from === 'quota_hit_hard' && a.to === 'quota_hit_block',
+    );
+    expect(anomaly, `anomalies: ${JSON.stringify(snap.stage_ratio_anomalies)}`).toBeTruthy();
+    expect(anomaly!.from_count).toBe(1);
+    expect(anomaly!.to_count).toBe(3);
+    expect(anomaly!.ratio).toBeCloseTo(3, 6);
+    expect(snap.stage_retentions.quota_hit_hard_to_quota_hit_block).toBeNull();
   });
 });
 
