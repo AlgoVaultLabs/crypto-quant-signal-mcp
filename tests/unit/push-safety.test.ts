@@ -15,7 +15,21 @@
  * mentions), not by grepping the script for the absence of a string — a word-grep is fooled by
  * the remediation prose, which must name the branch to be useful.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2 — a budget that survives concurrency.
+ *
+ * Ten tests; `fixture()` spawns 8 git processes and is used by 8 of them, plus the bash guard
+ * itself (which runs more git internally). Worst case ~10 processes against a 5 s budget.
+ *
+ * Measured: under 3-5 concurrent gates (89 checkouts share one pre-push hook) every failure
+ * in this class was a TIMEOUT, never an assertion — durations of 5.4-19.9 s against 5 s
+ * budgets, including a pure-JSON-read test that took 7.15 s. The assertions are right; the
+ * budgets were stale. File-level, per 136954a: the per-`it` third argument silently no-ops
+ * when placed after the closing paren, and every test here pays the same cost anyway.
+ */
+vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';

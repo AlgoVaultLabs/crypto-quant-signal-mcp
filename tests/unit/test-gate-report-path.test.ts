@@ -115,6 +115,10 @@ function stubNpx(fx: Fixture, report: unknown | null): void {
           // Record the path the gate handed us, so a test can assert the template
           // was actually expanded rather than passed through literally.
           `printf '%s' "$out" >"${join(fx.dir, 'handed-report-path.txt')}"`,
+          // OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch1: record the worker cap the gate
+          // exported. It is an ENV var rather than a CLI flag deliberately, so an
+          // argv-only stub would be blind to it.
+          `printf '%s' "\${VITEST_MAX_FORKS:-}" >"${join(fx.dir, 'seen-max-forks.txt')}"`,
           '[ -n "$out" ] || { echo "CACError: option `--outputFile` value is missing" >&2; exit 1; }',
           `cat >"$out" <<'JSON'\n${JSON.stringify(report)}\nJSON`,
           'exit 0',
@@ -223,18 +227,76 @@ describe('check_test_baseline.sh — report-path contract', () => {
     expect(handed, `mktemp template was not expanded: ${handed}`).not.toMatch(/XXXXXX/);
   });
 
-  it('cleans up its transient report dir but KEEPS the operator-facing log', () => {
+  it('cleans up its transient report dir', () => {
     stubNpx(fx, report(['tests/unit/a.test.ts']));
 
     const r = runGate(fx);
 
     expect(r.exitCode, `expected GREEN; output:\n${r.all}`).toBe(0);
-    const entries = readdirSync(fx.tmp);
-    // The `.log` files are deliberate — hard_fail() tells the operator to read
-    // test-gate-vitest.log, so cleaning them up would break the diagnostic.
-    const transient = entries.filter((f) => f.startsWith('test-gate-vitest.') && !f.endsWith('.log'));
+    const transient = readdirSync(fx.tmp).filter(
+      (f) => f.startsWith('test-gate-vitest.') && !f.endsWith('.log'),
+    );
     expect(transient, `transient report dir not cleaned up: ${transient.join(', ')}`).toEqual([]);
-    expect(entries, 'the operator-facing vitest log must survive').toContain('test-gate-vitest.log');
+  });
+
+  // ── OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch1 — per-run log dir ──
+  //
+  // The five logs used to be FIXED names directly under $TMPDIR, so two concurrent
+  // gates (89 checkouts share one pre-push hook) overwrote each other's diagnostics
+  // last-writer-wins. They now live in a per-run `test-gate-run.XXXXXX` directory.
+  //
+  // Its LIFETIME is a function of the VERDICT, not of the process exiting — which is
+  // why there is deliberately no blanket `trap ... EXIT` cleanup: that would delete
+  // the very file hard_fail() has just told the operator to go read.
+
+  it('keeps the per-run log dir, with the operator-facing log inside it, when the gate FAILS', () => {
+    stubNpx(fx, report(['tests/unit/a.test.ts'], ['tests/unit/brand-new.test.ts']));
+
+    const r = runGate(fx);
+
+    expect(r.exitCode, `expected a FAIL verdict; output:\n${r.all}`).not.toBe(0);
+    const runDirs = readdirSync(fx.tmp).filter((f) => f.startsWith('test-gate-run.'));
+    expect(runDirs, 'the per-run log dir must survive a failure').toHaveLength(1);
+    expect(runDirs[0], 'mktemp template was not expanded').not.toMatch(/XXXXXX/);
+    expect(
+      readdirSync(join(fx.tmp, runDirs[0])),
+      'the operator-facing vitest log must survive inside the run dir',
+    ).toContain('test-gate-vitest.log');
+    // The failure output must NAME the directory, or a per-run path is worse than a
+    // fixed one — the operator would have no way to find it.
+    expect(r.all).toContain(runDirs[0]);
+  });
+
+  it('removes the per-run log dir on PASS (nothing to diagnose, and residue is unbounded)', () => {
+    stubNpx(fx, report(['tests/unit/a.test.ts']));
+
+    const r = runGate(fx);
+
+    expect(r.exitCode, `expected GREEN; output:\n${r.all}`).toBe(0);
+    expect(
+      readdirSync(fx.tmp).filter((f) => f.startsWith('test-gate-run.')),
+      'a GREEN run must not leave a log dir behind',
+    ).toEqual([]);
+  });
+
+  it('caps the vitest worker pool via VITEST_MAX_FORKS, and refuses a value that would hang', () => {
+    stubNpx(fx, report(['tests/unit/a.test.ts']));
+
+    // The cap reaches vitest as an ENV var (not a CLI flag): an unknown env var is
+    // ignored by a future vitest, whereas an unknown flag throws CACError before any
+    // report is written — which would block `git push` in every checkout at once.
+    const ok = runGate(fx);
+    expect(ok.exitCode, `expected GREEN; output:\n${ok.all}`).toBe(0);
+    expect(
+      readFileSync(join(fx.dir, 'seen-max-forks.txt'), 'utf8').trim(),
+      'the gate did not export VITEST_MAX_FORKS to vitest',
+    ).toBe('6');
+
+    // 0 workers makes vitest hang FOREVER and this invocation has no timeout, so an
+    // unusable cap must be INDETERMINATE rather than a wedge.
+    const bad = runGate(fx, { ALGOVAULT_GATE_MAX_WORKERS: '0' });
+    expect(bad.stdout).toMatch(/^TEST_GATE_VERDICT=INDETERMINATE$/m);
+    expect(bad.all).toMatch(/hang vitest forever/i);
   });
 
   it('still runs the suite when a stale literal-XXXXXX file is already present (the production collision)', () => {

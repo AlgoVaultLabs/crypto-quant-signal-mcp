@@ -76,11 +76,15 @@ jobs:
           # Pre-create the shared local SQLite DB by running ONE DB-touching suite in a
           # single worker first, so the parallel run never races the first fresh-DB open
           # (funnel-snapshot et al. otherwise flake on a cold DB). Best-effort (|| true).
-          # NB: analytics-external-only.test.ts can NO LONGER pre-warm — OPS-ANALYTICS-EXT-
-          # PARALLEL-FLAKE-W1 points it at its OWN temp DB (PERFORMANCE_DB_PATH) so its
-          # whole-table-COUNT deltas don't race concurrent request_log writers, so it never
-          # touches the shared DB. funnel-snapshot writes the shared DB and passes alone.
-          npx vitest run tests/funnel-snapshot.test.ts >/dev/null 2>&1 || true
+          # NB: the pre-warm target MUST be a suite that still writes the SHARED DB.
+          # analytics-external-only stopped qualifying at OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1,
+          # and funnel-snapshot stopped at OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3 — both now
+          # point at their OWN temp DB via PERFORMANCE_DB_PATH, so running either here would
+          # warm a temp dir and warm NOTHING, silently reopening the cold-open race for every
+          # remaining suite. agent-session-source-stamp writes the shared DB and passes alone.
+          # If it is ever isolated too, re-point again; the check is a `grep -L
+          # PERFORMANCE_DB_PATH` over the suites importing performance-db.
+          npx vitest run tests/agent-session-source-stamp.test.ts >/dev/null 2>&1 || true
           npx vitest run
 
       # DOCS-GENERATOR-FROM-NAV-SOT-W1 CH5: docs.html structural drift canary. Fails the push if the

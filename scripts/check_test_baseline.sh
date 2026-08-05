@@ -74,9 +74,42 @@
 #
 # IDEMPOTENT — read-only against the repo (only writes /tmp logs + the gitignored
 # dist/). Safe to run repeatedly; accepts a no-op `--check` flag.
+#
+# CONCURRENCY  [OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch1]
+#   This gate runs in EVERY checkout — 89 worktrees share one pre-push hook — so N
+#   sessions pushing at once means N simultaneous full suites. Two consequences are
+#   handled here; per-test budgets are Ch2's and the shared-SQLite races Ch3's.
+#
+#   1. WORKER CAP. vitest's default is `availableParallelism()-1` = 11 forks on this
+#      12-core box: every gate assumes it owns the machine. MEASURED, n=3 clean runs
+#      per arm with contaminated runs rejected — 11 workers: 32 s / 12 procs /
+#      1.52 GB · 6: 32 s / 7 procs / 0.90 GB · 5: 36.5 s (+14 %) · 4: 44 s (+38 %) ·
+#      3: 56 s (+75 %). 6 is the largest-for-free point: zero wall cost, -42 %
+#      processes, -41 % RSS. Not a taste — total per-slot work is ~176 s against a
+#      ~32 s floor set by the single slowest FILE (session-drift.test.ts is 34 s
+#      ALONE), so the crossover sits at 176/32 ~= 5.5 and any cap below 6 trades
+#      wall-clock for memory.
+#      Set via VITEST_MAX_FORKS rather than --maxWorkers: it wins the same
+#      precedence slot (poolOptions.forks.maxForks), and a future vitest that drops
+#      the name silently ignores an unknown ENV VAR whereas an unknown CLI FLAG
+#      throws CACError before any report is written — which would hard-block
+#      `git push` in all 89 checkouts at once. Same cap, softer failure.
+#      CI is deliberately NOT capped (deploy.yml's bare `npx vitest run`): it runs
+#      on a 2-4 vCPU runner and has never had 11 workers to begin with.
+#   2. PER-RUN LOG DIR. The five log paths were FIXED names directly under $TMPDIR,
+#      so two concurrent gates overwrote each other's diagnostics last-writer-wins —
+#      which is why three simultaneous failures naming three different file sets were
+#      so hard to read. They now live in a per-run directory, KEPT on
+#      FAIL/INDETERMINATE (hard_fail points the operator at it) and REMOVED on PASS
+#      (nothing to diagnose, and unbounded per-run residue is what Ch3 is cleaning).
 set -uo pipefail
 
 BASELINE_FILE="audits/test-baseline-known-failures.txt"
+
+# The measured free cap. Overridable for experiments, but VALIDATED below: `0` means
+# zero workers and vitest then HANGS FOREVER (tinypool), and this invocation carries
+# no timeout inside a hook shared by every checkout.
+GATE_MAX_WORKERS="${ALGOVAULT_GATE_MAX_WORKERS:-6}"
 # Resolved BEFORE the first possible verdict() call, so warn-mode is honoured even on
 # the earliest failure path (the `cd` below).
 MODE="${ALGOVAULT_TEST_GATE:-block}"
@@ -87,6 +120,21 @@ TMP="${TMP%/}"
 
 info() { echo "[test-gate] $*"; }
 warn() { echo "[test-gate] WARNING: $*" >&2; }
+
+# ── per-run log directory  [OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch1] ────────────
+#
+# `XXXXXX` MUST be TERMINAL: BSD/macOS mktemp does not substitute it when a suffix
+# follows, so `foo.XXXXXX.log` yields a file named LITERALLY that — and once such a
+# leftover exists the NEXT mktemp exits 1 with empty stdout. This repo has been bitten
+# by that twice; the report-dir path below carries the same rule for the same reason.
+#
+# Falls back to $TMP (the old shared location) rather than dying: a gate that cannot
+# make a temp dir should still run the suite, just without collision-isolated logs.
+LOGDIR="$(mktemp -d "$TMP/test-gate-run.XXXXXX" 2>/dev/null)" || LOGDIR=""
+if [ -z "$LOGDIR" ] || [ ! -d "$LOGDIR" ]; then
+  LOGDIR="$TMP"
+  warn "could not create a per-run log dir under $TMP — falling back to shared log names."
+fi
 
 # ── the ONE place a verdict is emitted  [OPS-TEST-GATE-RECONCILE-W1] ───────────
 #
@@ -111,6 +159,18 @@ map_code() {  # $1 = token, $2 = mode → echoes the exit code
   echo "$c"
 }
 
+# Logs are a DIAGNOSTIC, so their lifetime is a function of the verdict, not of the
+# process exiting: dropped on PASS (nothing to read, and per-run residue would
+# accumulate forever), kept on FAIL/INDETERMINATE where hard_fail/fail_open have just
+# told the operator to go read them. A blanket `trap ... EXIT` cleanup would delete
+# the file the failure message points at — which is why it is deliberately not one.
+# Never touches $TMP itself, so the fallback path above cannot wipe the shared dir.
+cleanup_logdir_on_pass() {  # $1 = token
+  [ "$1" = "PASS" ] || return 0
+  [ -n "${LOGDIR:-}" ] && [ "$LOGDIR" != "$TMP" ] && [ -d "$LOGDIR" ] || return 0
+  rm -rf "$LOGDIR"
+}
+
 verdict() {  # $1 = PASS|FAIL|INDETERMINATE
   local token="$1" code
   case "$token" in
@@ -121,6 +181,10 @@ verdict() {  # $1 = PASS|FAIL|INDETERMINATE
   if [ "$token" != "PASS" ] && [ "$MODE" = "warn" ]; then
     warn "ALGOVAULT_TEST_GATE=warn → $token downgraded to exit 0. Nothing is blocked."
   fi
+  if [ "$token" != "PASS" ] && [ -n "${LOGDIR:-}" ] && [ "$LOGDIR" != "$TMP" ]; then
+    echo "[test-gate] diagnostics for THIS run: $LOGDIR" >&2
+  fi
+  cleanup_logdir_on_pass "$token"
   echo "TEST_GATE_VERDICT=$token"
   exit "$code"
 }
@@ -539,10 +603,10 @@ if [ ! -d node_modules ] || [ ! -x node_modules/.bin/vitest ]; then
   autoinstall_allowed || fail_open "node_modules / vitest missing and auto-recovery is off — run 'npm ci'."
   info "node_modules / vitest missing → recovering with 'npm ci' (once)."
   info "This can take a few minutes; the push is NOT hung."
-  npm ci >"$TMP/test-gate-npmci.log" 2>&1 \
-    || fail_open "node_modules missing and 'npm ci' recovery FAILED — see $TMP/test-gate-npmci.log. Run 'npm ci' manually."
+  npm ci >"$LOGDIR/test-gate-npmci.log" 2>&1 \
+    || fail_open "node_modules missing and 'npm ci' recovery FAILED — see $LOGDIR/test-gate-npmci.log. Run 'npm ci' manually."
   [ -x node_modules/.bin/vitest ] \
-    || fail_open "'npm ci' completed but node_modules/.bin/vitest is still absent — see $TMP/test-gate-npmci.log."
+    || fail_open "'npm ci' completed but node_modules/.bin/vitest is still absent — see $LOGDIR/test-gate-npmci.log."
   info "recovered — dependencies installed."
 fi
 
@@ -557,28 +621,28 @@ fi
 #    not a code defect at all — so the gate silently skipped every test instead of
 #    spending two minutes making itself meaningful again. Classify first, recover
 #    the recoverable class, and keep the documented policy for the rest.
-run_build() { npm run build >"$TMP/test-gate-build.log" 2>&1; }
+run_build() { npm run build >"$LOGDIR/test-gate-build.log" 2>&1; }
 
 if ! run_build; then
-  case "$(classify_build_log "$TMP/test-gate-build.log")" in
+  case "$(classify_build_log "$LOGDIR/test-gate-build.log")" in
     RECOVERABLE)
       autoinstall_allowed || fail_open \
         "build failed only on declared-but-uninstalled packages (stale node_modules) and auto-recovery is off — run 'npm ci'."
       info "build failed ONLY on declared-but-uninstalled packages → stale node_modules, not a compile error."
       info "recovering with 'npm ci' (once). This can take a few minutes; the push is NOT hung."
-      npm ci >"$TMP/test-gate-npmci.log" 2>&1 \
-        || fail_open "stale node_modules and 'npm ci' recovery FAILED — see $TMP/test-gate-npmci.log. node_modules may now be incomplete; run 'npm ci' manually."
+      npm ci >"$LOGDIR/test-gate-npmci.log" 2>&1 \
+        || fail_open "stale node_modules and 'npm ci' recovery FAILED — see $LOGDIR/test-gate-npmci.log. node_modules may now be incomplete; run 'npm ci' manually."
       run_build \
-        || fail_open "'npm ci' succeeded but the build STILL fails — see $TMP/test-gate-build.log. Treating as a genuine compile error."
+        || fail_open "'npm ci' succeeded but the build STILL fails — see $LOGDIR/test-gate-build.log. Treating as a genuine compile error."
       info "recovered — node_modules resynced and the build is clean. Running the suite (the gate is meaningful again)."
       ;;
     *)
-      fail_open "npm run build failed with genuine compile error(s) — see $TMP/test-gate-build.log. (Policy unchanged: compile errors surface via build/deploy, not this gate.)"
+      fail_open "npm run build failed with genuine compile error(s) — see $LOGDIR/test-gate-build.log. (Policy unchanged: compile errors surface via build/deploy, not this gate.)"
       ;;
   esac
 fi
-npm run build:knowledge >"$TMP/test-gate-knowledge.log" 2>&1 \
-  || warn "npm run build:knowledge failed — knowledge-flow may not validate (see $TMP/test-gate-knowledge.log)."
+npm run build:knowledge >"$LOGDIR/test-gate-knowledge.log" 2>&1 \
+  || warn "npm run build:knowledge failed — knowledge-flow may not validate (see $LOGDIR/test-gate-knowledge.log)."
 
 # ── run vitest, capture the failing-file set ──
 #
@@ -604,12 +668,26 @@ if [ -z "$VITEST_DIR" ] || [ ! -d "$VITEST_DIR" ]; then
   hard_fail "could not create a temp report dir under $TMP (mktemp -d failed) — vitest was never invoked."
 fi
 VITEST_JSON="$VITEST_DIR/report.json"
-npx vitest run --reporter=json --outputFile="$VITEST_JSON" >"$TMP/test-gate-vitest.log" 2>&1 || true
+# Cap the fork pool so a gate stops assuming it owns the machine (see CONCURRENCY §1).
+# Validate the literal FIRST: `0` yields zero workers and vitest hangs FOREVER with no
+# timeout, inside a hook shared by every checkout — a silent machine-wide wedge is a
+# far worse failure than refusing to run, so an unusable value is INDETERMINATE.
+case "$GATE_MAX_WORKERS" in
+  ''|*[!0-9]*|0) hard_fail "ALGOVAULT_GATE_MAX_WORKERS='$GATE_MAX_WORKERS' is not a positive integer — refusing to run (0 would hang vitest forever)." ;;
+esac
+# VITEST_MIN_FORKS/VITEST_MIN_THREADS are the only inputs that can make min > max, which
+# throws RangeError out of tinypool before a single test runs. Neither is set by this
+# repo; if the environment carries one, say so rather than dying with a stack trace.
+if [ -n "${VITEST_MIN_FORKS:-}${VITEST_MIN_THREADS:-}" ]; then
+  warn "VITEST_MIN_FORKS/VITEST_MIN_THREADS set in the environment — they override the gate's cap and can exceed it."
+fi
+VITEST_MAX_FORKS="$GATE_MAX_WORKERS" \
+  npx vitest run --reporter=json --outputFile="$VITEST_JSON" >"$LOGDIR/test-gate-vitest.log" 2>&1 || true
 if ! report_usable "$VITEST_JSON"; then
   # Deliberately hard_fail, NOT fail_open: this is the exact branch that let the
   # gate exit 0 having run nothing on 2026-07-29. Cleanup is handled by the trap.
-  hard_fail "vitest wrote no parseable report to $VITEST_JSON — see $TMP/test-gate-vitest.log (tail below).
-[test-gate]   $(tail -3 "$TMP/test-gate-vitest.log" 2>/dev/null | tr '\n' ' ')"
+  hard_fail "vitest wrote no parseable report to $VITEST_JSON — see $LOGDIR/test-gate-vitest.log (tail below).
+[test-gate]   $(tail -3 "$LOGDIR/test-gate-vitest.log" 2>/dev/null | tr '\n' ' ')"
 fi
 CURRENT_FAILS="$(jq -r '.testResults[] | select(.status=="failed") | .name' "$VITEST_JSON" \
                  | sed "s#.*/tests/#tests/#" | sort -u)"
@@ -624,8 +702,12 @@ while IFS= read -r f; do
 done < <(find tests -name '*.test.mjs' 2>/dev/null | sort)
 NODE_FAILS=""
 if [ "${#NODE_TEST_FILES[@]}" -gt 0 ]; then
-  if ! node --test "${NODE_TEST_FILES[@]}" >"$TMP/test-gate-nodetest.log" 2>&1; then
-    NODE_FAILS="node:test canaries (see $TMP/test-gate-nodetest.log)"
+  # SECOND fan-out, same cap. node:test defaults to availableParallelism()-1 (= 11 here)
+  # and spawns one PROCESS PER FILE under --test-isolation=process, so these ~23 files
+  # are a second 11-wide burst per push. It runs strictly AFTER vitest — sequential, so
+  # it never raises the peak — but at N sessions it is N more bursts on the run queue.
+  if ! node --test --test-concurrency="$GATE_MAX_WORKERS" "${NODE_TEST_FILES[@]}" >"$LOGDIR/test-gate-nodetest.log" 2>&1; then
+    NODE_FAILS="node:test canaries (see $LOGDIR/test-gate-nodetest.log)"
   fi
 fi
 

@@ -17,15 +17,35 @@
  * sentinel rows so tests are idempotent against the operator's accumulated
  * local DB.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateFunnelSnapshot } from '../src/lib/funnel-snapshot.js';
-import { dbQuery, dbRun, recordFunnelEvent } from '../src/lib/performance-db.js';
+import { closeDb, dbQuery, dbRun, recordFunnelEvent } from '../src/lib/performance-db.js';
 import { initAnalytics } from '../src/lib/analytics.js';
 
 const SKIP_REASON = process.env.DATABASE_URL ? 'DATABASE_URL set — skipping local SQLite tests' : '';
 const describeOrSkip = SKIP_REASON ? describe.skip : describe;
 
 const SENTINEL_PREFIX = 'funnel-test-';
+
+// ── OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch3: private per-file SQLite DB ──
+//
+// A sentinel PREFIX only isolates rows this file knows the name of, and most
+// assertions here are prefix-BLIND absolute aggregates (quota_hit_soft/hard/block =
+// 3/2/1, identity_coverage 2/1/1/0.5, mcp_tools_list = 3 & first_call = 2). ANY
+// foreign row in the window breaks them — and worktrees do NOT isolate
+// ~/.crypto-quant-signal/performance.db, so N concurrent sessions means N suites
+// mutating one file. MEASURED: 3 concurrent processes against the shared DB failed
+// 1-8 tests each in every round; with this isolation, 0.
+//
+// mkdtempSync is per-PROCESS unique. Do NOT key it on VITEST_POOL_ID — a small integer
+// restarting at 1 in every run, so two concurrent runs collide on the same path, which
+// is precisely the bug being fixed.
+const ISOLATED_DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-funnel-snapshot-'));
+const ISOLATED_DB_PATH = path.join(ISOLATED_DB_DIR, 'performance.db');
+let ORIGINAL_PERF_DB_PATH: string | undefined;
 
 async function deleteSentinels() {
   // Remove any sentinel test rows from prior runs across every table the CH2/CH3
@@ -38,6 +58,12 @@ async function deleteSentinels() {
 
 describeOrSkip('funnel-snapshot — 14-stage extension', () => {
   beforeAll(async () => {
+    // Redirect to this file's private DB BEFORE the first backend open:
+    // resolveSqliteDbPath() is read per open, so the redirect only lands while no
+    // handle exists. closeDb() drops any handle a prior import already opened.
+    ORIGINAL_PERF_DB_PATH = process.env.PERFORMANCE_DB_PATH;
+    process.env.PERFORMANCE_DB_PATH = ISOLATED_DB_PATH;
+    closeDb();
     // Touch the DB to trigger getBackend() → ensures funnel_events table exists.
     await dbQuery('SELECT 1');
     // OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 follow-up: deleteSentinels() below also
@@ -62,6 +88,16 @@ describeOrSkip('funnel-snapshot — 14-stage extension', () => {
 
   afterAll(async () => {
     await deleteSentinels();
+    // process.env is process-global: leaving PERFORMANCE_DB_PATH set would redirect
+    // the next file scheduled on this same vitest worker to our deleted temp DB.
+    closeDb();
+    try {
+      fs.rmSync(ISOLATED_DB_DIR, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+    if (ORIGINAL_PERF_DB_PATH === undefined) delete process.env.PERFORMANCE_DB_PATH;
+    else process.env.PERFORMANCE_DB_PATH = ORIGINAL_PERF_DB_PATH;
   });
 
   it('produces snapshot with all 14 funnel stages + 13 stage_retentions + canonical key set', async () => {
