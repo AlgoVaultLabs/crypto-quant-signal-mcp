@@ -195,3 +195,95 @@ describe('extractPaymentNonce — x402 v2 payload shapes', () => {
     expect(store.extractPaymentNonce({ payload: { authorization: {} } })).toBeUndefined();
   });
 });
+
+/**
+ * REVENUE-METER-TRUTH-W4 Step 0B — the three-outcome × row-write matrix.
+ *
+ * Two waves evolved this function in parallel from a common `Promise<boolean>` ancestor:
+ * OPS-ZERO-VS-UNKNOWN-W3 made it return three states, and REVENUE-METER-TRUTH-W2 CH3 added
+ * `settlement_state` + `rail` to the row it writes. This block pins their INTERSECTION, because the
+ * failure mode is silent: a refactor that wrote a row on INDETERMINATE would create a claim record
+ * for a payment the system just REFUSED — a phantom of exactly the class this arc exists to retire.
+ */
+describe('tryClaimPayment — three outcomes × row writes (W4 Step 0B)', () => {
+  const n = (h: string) => (h + '0'.repeat(66)).slice(0, 66);
+  const WALLET = '0xaaa0000000000000000000000000000000000aaa';
+
+  it('CLAIMED writes exactly one row, CLAIMED_UNSETTLED, with the declared rail', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    const { RAIL_BASE_USDC } = await import('../src/lib/x402-idempotency-store.js');
+    expect(await store.tryClaimPayment(n('0xc1'), 'get_trade_signal', '20000', WALLET, RAIL_BASE_USDC)).toBe('CLAIMED');
+    const rows = await dbQuery<{ settlement_state: string; rail: string }>(
+      'SELECT settlement_state, rail FROM processed_x402_payments WHERE nonce = ?', [n('0xc1')],
+    );
+    expect(rows).toHaveLength(1);
+    // A claim is unverified at insert. If this ever reads SETTLED here, the meter is lying again
+    // in the original direction — booking revenue nothing has checked.
+    expect(rows[0].settlement_state).toBe('CLAIMED_UNSETTLED');
+    expect(rows[0].rail).toBe('base-usdc');
+  });
+
+  it('a caller that declares no rail gets `unknown`, never a guessed default', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    expect(await store.tryClaimPayment(n('0xc2'), 'get_market_regime', '20000', WALLET)).toBe('CLAIMED');
+    const rows = await dbQuery<{ rail: string }>('SELECT rail FROM processed_x402_payments WHERE nonce = ?', [n('0xc2')]);
+    expect(rows[0].rail).toBe('unknown');
+  });
+
+  it('ALREADY_CLAIMED (replay) writes no new row AND must not un-settle the existing one', async () => {
+    const { dbQuery, dbRun } = await import('../src/lib/performance-db.js');
+    const { RAIL_BASE_USDC } = await import('../src/lib/x402-idempotency-store.js');
+    expect(await store.tryClaimPayment(n('0xc3'), 'get_trade_signal', '20000', WALLET, RAIL_BASE_USDC)).toBe('CLAIMED');
+
+    // Simulate the on-chain scan promoting this row — the ONLY forward path out of CLAIMED_UNSETTLED.
+    // `dbRun` (variadic params), NOT `dbQuery`: dbQuery goes through better-sqlite3's `.all()`, which
+    // rejects a non-returning statement with "This statement does not return data. Use run() instead".
+    dbRun('UPDATE processed_x402_payments SET settlement_state = ? WHERE nonce = ? AND payer_wallet = ?',
+      'SETTLED', n('0xc3'), WALLET);
+
+    expect(await store.tryClaimPayment(n('0xc3'), 'get_trade_signal', '20000', WALLET, RAIL_BASE_USDC)).toBe('ALREADY_CLAIMED');
+
+    const rows = await dbQuery<{ settlement_state: string }>(
+      'SELECT settlement_state FROM processed_x402_payments WHERE nonce = ?', [n('0xc3')],
+    );
+    expect(rows).toHaveLength(1);                       // no duplicate row
+    // THE LOAD-BEARING ASSERTION. The clause is ON CONFLICT DO NOTHING. Were it ever DO UPDATE,
+    // every replay would silently reset settled revenue back to CLAIMED_UNSETTLED — un-settling
+    // money that genuinely moved, and doing it invisibly. This is what makes promotion durable.
+    expect(rows[0].settlement_state).toBe('SETTLED');
+    expect(await store.getClaimedPaymentCount()).toBe(1);
+  });
+
+  it('ALREADY_CLAIMED (empty nonce) touches the DB at all — no row, no table access', async () => {
+    const { dbQuery } = await import('../src/lib/performance-db.js');
+    expect(await store.tryClaimPayment('', 'get_trade_signal', '20000', WALLET)).toBe('ALREADY_CLAIMED');
+    // The empty-nonce guard returns BEFORE ensureProcessedX402PaymentsSchema(), so nothing was written.
+    await store.tryClaimPayment(n('0xc4'), 'get_trade_signal', '20000', WALLET); // force schema init to query
+    const rows = await dbQuery<{ c: number | string }>('SELECT COUNT(*) AS c FROM processed_x402_payments', []);
+    expect(Number(rows[0].c)).toBe(1); // only the 0xc4 row — the empty-nonce call wrote nothing
+  });
+
+  it('INDETERMINATE writes NO row — a refused payment must leave no claim record', async () => {
+    const { dbExec, dbQuery } = await import('../src/lib/performance-db.js');
+    // Initialise the schema, then remove the table underneath the store. `_initialized` is latched,
+    // so ensureProcessedX402PaymentsSchema() is a no-op and the INSERT itself throws — which is the
+    // real production shape (the store reachable, the table/DB not).
+    expect(await store.tryClaimPayment(n('0xd1'), 'get_trade_signal', '20000', WALLET)).toBe('CLAIMED');
+    dbExec('DROP TABLE processed_x402_payments');
+
+    expect(await store.tryClaimPayment(n('0xd2'), 'get_trade_signal', '20000', WALLET)).toBe('INDETERMINATE');
+
+    // Recreate an empty table and prove the refused claim left nothing behind.
+    dbExec(`CREATE TABLE processed_x402_payments (
+      nonce TEXT NOT NULL, tool TEXT, amount TEXT,
+      payer_wallet TEXT NOT NULL DEFAULT '',
+      settlement_state TEXT NOT NULL DEFAULT 'CLAIMED_UNSETTLED',
+      rail TEXT NOT NULL DEFAULT 'unknown',
+      created_at TIMESTAMP DEFAULT (datetime('now')),
+      PRIMARY KEY (payer_wallet, nonce));`);
+    const rows = await dbQuery<{ c: number | string }>(
+      'SELECT COUNT(*) AS c FROM processed_x402_payments WHERE nonce = ?', [n('0xd2')],
+    );
+    expect(Number(rows[0].c)).toBe(0);
+  });
+});
