@@ -24,6 +24,22 @@
  * count was stale — live tools/list returns 7 — and several tools are conditionally exposed,
  * so a number would rot again on the next flag flip. Verified before regenerating that the
  * word-level diff against the old fixture was EXACTLY that edit and nothing else.
+ *
+ * FIXTURE MAINTENANCE — LANDING-MCP-CLIENT-REGISTRY-W1 (2026-08-05): regenerated to absorb
+ * 5 net-new mcp-clients rows (codex, kimi, glm-zcode, zai-api, deepseek). renderSurfaceSection()
+ * renders EVERY entry, so this fixture gates the whole surface, not just the original six —
+ * left frozen it would have blocked every future client, which is default-deny-forever.
+ * Reviewed line-by-line before regenerating; the diff REMOVES exactly 3 lines and every one
+ * is a consequence of the change rather than content loss:
+ *   1. `<tr>` -> `<tr class="border-b border-white/10">` — renderTableRow() omits the border on
+ *      the LAST row; plain-http was last, deepseek is now. Same markup, new position.
+ *   2. footer preamble "verified 2026-04-30" -> "verified per client". Each row now carries its
+ *      own `verifiedAt`, so one surface-wide date became a false claim the moment a single row
+ *      was re-checked (5 were, on 2026-08-05).
+ *   3. the @smithery/cli footer link's trailing "." -> " &middot;" — it is no longer the last
+ *      link in the list. Positional only.
+ * Every other line of the original six rows is present verbatim in the new fixture (verified by
+ * exhaustive old-line containment, not by eyeballing the diff).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -70,13 +86,21 @@ describe('mcp-usage-docs byte-equivalence (C1 refactor contract)', () => {
     expect(renderedWithoutExchangeKits).not.toContain('Connect Your Exchange Kit');
   });
 
-  it('preserves the 6 MCP-client table rows (5 dedicated + Plain HTTP)', () => {
+  it('preserves the original 6 MCP-client table rows', () => {
     expect(renderedWithoutExchangeKits).toContain('Claude Desktop');
     expect(renderedWithoutExchangeKits).toContain('Cursor');
     expect(renderedWithoutExchangeKits).toContain('Cline (VSCode)');
     expect(renderedWithoutExchangeKits).toContain('Claude Code');
     expect(renderedWithoutExchangeKits).toContain('Smithery');
     expect(renderedWithoutExchangeKits).toContain('Plain HTTP / curl');
+  });
+
+  it('renders the 5 MCP-client rows added 2026-08-05', () => {
+    expect(renderedWithoutExchangeKits).toContain('Codex');
+    expect(renderedWithoutExchangeKits).toContain('Kimi Code');
+    expect(renderedWithoutExchangeKits).toContain('ZCode (GLM)');
+    expect(renderedWithoutExchangeKits).toContain('Z.ai API');
+    expect(renderedWithoutExchangeKits).toContain('DeepSeek');
   });
 
   it('preserves the 4 AI-agent framework table rows', () => {
