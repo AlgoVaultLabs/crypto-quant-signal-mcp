@@ -36,12 +36,68 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "069723308bbd45b5c3f4fbd87ff00d5ab00b6f3bcfdbe2ff964b31a07292461f",
+      "sha256": "eddd292c11d05f553882057d3c717101976e588fc4d0ca69398f9c819175d1bd",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
       "owner_wave": "OPS-MONITORING-INVENTORY-PARITY-W1",
-      "notes": "Row 1 of its own inventory. As of OPS-AOE-MONITORING-PARITY-W1 it is ALSO a vendored shared primitive under the same canonical + committed-.sha256 + parity contract as the wrapper \u2014 one artifact installed twice, not two artifacts to maintain. Each instance evaluates only the rows it owns (MONITORING_HOST_LABELS). DOC_PATH_CLAIM added by OPS-CLAIM-VERIFIER-COVERAGE-W1: the prescriptive docs' host-path claims are verified LOCALLY on the owning host, because CI has no prod SSH and must never get any."
+      "notes": "SOT_PARITY check added by OPS-MONITORING-INVENTORY-HOST-SYNC-W1 (2026-08-05): every OTHER check here reads the inventory and assumes it is true, and for this file's whole life that assumption was false with nothing saying so — it resolves its checklist to a HOST-LOCAL sibling copy that no deploy ever fed. SOT_PARITY audits the assumption (IN_SYNC / DRIFTED / COULD_NOT_COMPARE; the third is not a pass), ships REPORT-first per ops/monitoring/sot-parity-config.json, and joins the drift set only when that config says `block`. Row 1 of its own inventory. As of OPS-AOE-MONITORING-PARITY-W1 it is ALSO a vendored shared primitive under the same canonical + committed-.sha256 + parity contract as the wrapper \u2014 one artifact installed twice, not two artifacts to maintain. Each instance evaluates only the rows it owns (MONITORING_HOST_LABELS). DOC_PATH_CLAIM added by OPS-CLAIM-VERIFIER-COVERAGE-W1: the prescriptive docs' host-path claims are verified LOCALLY on the owning host, because CI has no prod SSH and must never get any."
+    },
+    {
+      "id": "declaration-sync",
+      "artifact": "ops/monitoring/declaration-sync.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/declaration-sync.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/declaration-sync.sh",
+          "schedule": "33 * * * *"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/declaration-sync.sh",
+          "schedule": "27 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "33 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "10a8a3601031c9648de75b49ad113fcf8d2a498c0760e24c3a3bd12c111e0bad",
+      "alert_ids": [
+        "MONITORING_DECLARATION_SYNC_FAILED"
+      ],
+      "owner_wave": "OPS-MONITORING-INVENTORY-HOST-SYNC-W1",
+      "notes": "Flows the committed DECLARATIONS to the hosts that read them. It exists because monitoring-inventory-reconcile.py resolves its checklist to a HOST-LOCAL sibling copy, while `ops/monitoring/**` is in deploy.yml's paths-ignore by design — so no deploy ever synced the file the reconciler actually reads, every edit needed a manual two-host push, and nothing detected a skipped one (measured 2026-08-05: repo 52 rows, both hosts 50, surfacing as a false ORPHAN on a healthy artifact). PULL, not a CI push: `gh secret list` has no aoe-1 credential and the AOE repo's deploy.yml is a stub, so a push would need a newly minted key AND would hand the prod root SSH key to a second workflow (SEC-04). The raw URL was verified byte-identical to `git show origin/main:<path>` from BOTH hosts. Syncs a DECLARED SET (inventory + doc-host-path-claims + network-posture + schedule-boundary-rule) because all four are the same shape — the other three had simply not drifted yet, and fixing one lane is the lane-fix-wearing-a-generator's-clothes class. DECLARATIONS ONLY: it moves .json and never an executable, which is why it does not weaken CLAUDE.md's no-auto-install rule. Fail-closed — a non-200, an unparseable body, a missing required key or a >50% size collapse REFUSES the write and keeps the working file, because a truncated declaration breaks every check at once. Emits one DECLARATION_SYNC_VERDICT= token; 0=SYNCED/UNCHANGED, 1=FAILED, 3=INDETERMINATE. Per-host schedules differ so each lands ≥24min before that host's reconciler (signal-1 :33, the measured least-contended canonical minute; aoe-1 :27, fully clear of its 5-min grid)."
+    },
+    {
+      "id": "sot-parity-config",
+      "artifact": "ops/monitoring/sot-parity-config.json",
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/sot-parity-config.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/sot-parity-config.json"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/sot-parity-config.json"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "install_state": "installed",
+      "sha256": "86e793d829907e963d8602b6c81615c3636d6cb67bd2e27f879f9e1efdedffc0",
+      "alert_ids": [
+        "MONITORING_INVENTORY_DRIFT"
+      ],
+      "owner_wave": "OPS-MONITORING-INVENTORY-HOST-SYNC-W1",
+      "notes": "Configures the reconciler's SOT_PARITY check — the one check that audits whether the DECLARATION each host reads is still the committed one, rather than reading it and assuming. Carries the SoT url, the enforcement mode (`report`) and a NUMERIC promotion criterion, so the report->block decision is a countable threshold rather than a judgement call held in someone's head. Missing or unparseable => the check reports COULD_NOT_COMPARE, never a pass. It is itself in declaration-sync.sh's synced set on purpose: the config for the check that detects stale declarations must not be a copy nobody keeps current. Deliberately covers ONLY monitoring-inventory.json — listing the other synced files here would duplicate a set already owned by that script's DECLARATIONS array, and a duplicated fact drifts."
     },
     {
       "id": "doc-host-path-claims",

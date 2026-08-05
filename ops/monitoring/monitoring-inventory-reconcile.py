@@ -437,6 +437,109 @@ def load_doc_path_claims(path=None):
         return []
 
 
+# ── SOT_PARITY (OPS-MONITORING-INVENTORY-HOST-SYNC-W1 Ch3) ───────────────────
+# Every other check in this file READS the inventory and assumes it is true. This one audits
+# that assumption, because for its whole life the assumption was false and nothing said so:
+# the reconciler resolves its checklist to a HOST-LOCAL sibling copy, `ops/monitoring/**` is
+# paths-ignored so no deploy ever fed it, and per-host row ownership means a row owned by the
+# OTHER host can rot with both instances reporting green. Measured 2026-08-05: repo 52 rows,
+# both hosts 50, two rows missing for ~12h and ~1 day.
+#
+# Ch2's declaration-sync.sh removes the manual step. This exists because any sync can fail, and
+# a failed sync must not reproduce the same silence one layer up.
+
+def load_sot_parity_config(path=None):
+    """Sibling-first, exactly like the inventory and the doc claims — same measured reason.
+
+    Returns None when absent or unparseable. The caller renders that as COULD_NOT_COMPARE, never
+    as a pass: a config this process cannot read means the audit did not happen.
+    """
+    p = Path(path) if path else Path(os.environ.get("SOT_PARITY_CONFIG_PATH", "")) if os.environ.get(
+        "SOT_PARITY_CONFIG_PATH") else None
+    if p is None:
+        sibling = Path(__file__).resolve().parent / "sot-parity-config.json"
+        p = sibling if sibling.exists() else REPO_ROOT / "ops/monitoring/sot-parity-config.json"
+    try:
+        return json.loads(p.read_text())
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        log(f"SOT_PARITY_CONFIG_LOAD_FAILED: {exc} (path {p}) — reported as COULD_NOT_COMPARE")
+        return None
+
+
+def fetch_sot_bytes(url, timeout):
+    """Fetch the committed SoT. Returns bytes, or None on ANY failure.
+
+    Deliberately narrow: no redirects followed beyond urllib's default, no auth, no retries. A
+    transient failure is COULD_NOT_COMPARE, which under `report` enforcement is information — the
+    right answer for a check whose whole point is that it must not become a new way to page.
+    """
+    try:
+        from urllib.request import urlopen           # local import: keeps CI/import cost at zero
+        with urlopen(url, timeout=timeout) as resp:  # noqa: S310 - fixed https URL from config
+            if getattr(resp, "status", 200) != 200:
+                return None
+            return resp.read()
+    except Exception:
+        return None
+
+
+def check_sot_parity(inventory_path, config, labels=None, fetch=None, read_local=None):
+    """Does the declaration this instance READS match the one that is COMMITTED?
+
+    Three outcomes, deliberately distinct — the verdict-token principle at per-check granularity:
+      IN_SYNC            local sha256 == SoT sha256
+      DRIFTED            both readable and they differ            -> finding
+      COULD_NOT_COMPARE  SoT unreachable, or no config, or the
+                         local file unreadable                    -> finding, and NOT a pass
+
+    Returns {"findings": [...], "probed": [...]} so the caller emits POSITIVE per-host output.
+    Read-only by construction: it compares and reports. Repairing the copy is Ch2's job, and a
+    checker that silently rewrote its own inputs would be the auto-mutation this repo forbids.
+    """
+    labels = labels if labels is not None else HOST_LABELS
+    host = sorted(labels)[-1] if labels else "unknown"
+    fetch = fetch if fetch is not None else fetch_sot_bytes
+    read_local = read_local if read_local is not None else (lambda p: Path(p).read_bytes())
+
+    def row(verdict, detail, local=None, sot=None):
+        r = {"host": host, "path": str(inventory_path), "verdict": verdict, "detail": detail}
+        if local:
+            r["local_sha256"] = local
+        if sot:
+            r["sot_sha256"] = sot
+        return r
+
+    if not config:
+        r = row("COULD_NOT_COMPARE", "no sot-parity config on this host")
+        return {"findings": [r], "probed": [r]}
+    url = config.get("sot_url")
+    if not url:
+        r = row("COULD_NOT_COMPARE", "config carries no sot_url")
+        return {"findings": [r], "probed": [r]}
+
+    try:
+        local_sha = hashlib.sha256(read_local(inventory_path)).hexdigest()
+    except Exception as exc:
+        r = row("COULD_NOT_COMPARE", f"local declaration unreadable: {exc}")
+        return {"findings": [r], "probed": [r]}
+
+    body = fetch(url, config.get("fetch_timeout_seconds", 20))
+    if not body:
+        r = row("COULD_NOT_COMPARE", f"SoT unreachable at {url}", local=local_sha)
+        return {"findings": [r], "probed": [r]}
+
+    sot_sha = hashlib.sha256(body).hexdigest()
+    if sot_sha == local_sha:
+        r = row("IN_SYNC", "the declaration this host reads is the committed one",
+                local=local_sha, sot=sot_sha)
+        return {"findings": [], "probed": [r]}
+    r = row("DRIFTED", "this host is reading a declaration that is NOT the committed one",
+            local=local_sha, sot=sot_sha)
+    return {"findings": [r], "probed": [r]}
+
+
 def check_doc_path_claims(claims, labels=None, exists=None):
     """docs -> host. Every host-path a prescriptive doc asserts is verified LOCALLY, on the host
     that owns it, by the daily run that is already there.
@@ -826,7 +929,7 @@ def check_posture_drift(labels=None, posture=None, probe=None, resolve=None):
 # ─────────── main ───────────
 
 def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
-             doc_claims_result=None):
+             doc_claims_result=None, sot_parity_result=None):
     """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known.
 
     `posture_result` and `doc_claims_result` are passed in rather than computed here so each probe
@@ -844,6 +947,7 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
         "NO_BACKUP": check_no_backup(rows, backups, labels),
         "POSTURE_DRIFT": (posture_result or {}).get("findings", []),
         "DOC_PATH_CLAIM": (doc_claims_result or {}).get("findings", []),
+        "SOT_PARITY": (sot_parity_result or {}).get("findings", []),
         "DIVERGENT_COPY": divergent_copy_findings(rows),
     }
 
@@ -893,18 +997,31 @@ def main(check_mode=False):
     posture_result = check_posture_drift(HOST_LABELS)
     doc_claims = load_doc_path_claims()
     doc_claims_result = check_doc_path_claims(doc_claims, HOST_LABELS)
+    sot_cfg = load_sot_parity_config()
+    sot_parity_result = check_sot_parity(INVENTORY_PATH, sot_cfg, HOST_LABELS)
 
     f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result,
-                 doc_claims_result)
+                 doc_claims_result, sot_parity_result)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
     drift_keys = ("HASH_DRIFT", "ORPHAN", "DARK", "SCHEDULE_DRIFT", "PENDING_STALE",
                   "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT", "DOC_PATH_CLAIM")
+    # SOT_PARITY ships REPORT-FIRST (ops/monitoring/sot-parity-config.json `enforcement`). A sync
+    # a few minutes behind a just-merged commit is not an incident, and a check that pages on
+    # transient lag is muted or deleted within a week — the severity-ladder lesson. It joins the
+    # drift set only when the config says `block`, and the promotion criterion is numeric and
+    # lives in that file, not in anyone's head.
+    if (sot_cfg or {}).get("enforcement") == "block":
+        drift_keys = drift_keys + ("SOT_PARITY",)
     drifted = any(f[k] for k in drift_keys)
 
     if not check_mode:
         # POSITIVE per-check output — never absence-of-alert. A check silently skipped by a load
         # error must not read identically to a check that passed.
-        for k in drift_keys + ("DIVERGENT_COPY",):
+        # SOT_PARITY is appended only when it is not already a drift key, so it is ALWAYS logged
+        # exactly once whichever enforcement mode is configured — a report-mode check that stopped
+        # printing would be the dark-guard class this very check exists to detect.
+        report_only = tuple(k for k in ("SOT_PARITY", "DIVERGENT_COPY") if k not in drift_keys)
+        for k in drift_keys + report_only:
             v = f[k]
             log(f"CHECK {k}: {'BREACH ' + json.dumps(v) if v else 'OK (empty set)'}")
         # Positive accounting for what this instance did NOT evaluate — a registry entry owned by
@@ -928,6 +1045,14 @@ def main(check_mode=False):
         for row in doc_claims_result.get("probed", []):
             log(f"DOC_PATH_CLAIM {row['path']} expected={row['expected']} "
                 f"observed={row['observed']} -> {row['verdict']}")
+        # POSITIVE per-host accounting for the SoT audit: the verdict, both hashes and the
+        # enforcement mode, on EVERY run. Absence-of-a-DRIFTED-line must never be the only
+        # evidence that the declaration is current — that is precisely the shape of silence
+        # this check was added to break.
+        for row in sot_parity_result.get("probed", []):
+            log(f"SOT_PARITY {row['host']} {row['verdict']} "
+                f"local={row.get('local_sha256', '-')[:16]} sot={row.get('sot_sha256', '-')[:16]} "
+                f"mode={(sot_cfg or {}).get('enforcement', 'report')} — {row['detail']}")
         deferred_claims = doc_claims_result.get("deferred", [])
         if deferred_claims:
             log(f"DOC_PATH_CLAIM_DEFERRED to other instances: "
@@ -1238,6 +1363,61 @@ def self_test():
     # vacuity — an absent manifest yields nothing to check, and the caller must say so
     ck("no claims -> no probed rows (caller logs SKIPPED, not a pass)",
        check_doc_path_claims([], SIG, exists=here(set()))["probed"], [])
+
+    # ── SOT_PARITY (OPS-MONITORING-INVENTORY-HOST-SYNC-W1 Ch3) ──
+    # Every other check READS the inventory and assumes it is true. This one audits that
+    # assumption — false for its whole life, silently, because the reconciler reads a host-local
+    # sibling copy that no deploy ever fed. THREE outcomes, and the third is not a pass.
+    SOT_CFG = {"sot_url": "https://example.invalid/inv.json", "fetch_timeout_seconds": 1}
+    LOCAL = b'{"artifacts":[{"id":"a"}]}'
+    same = lambda _u, _t: LOCAL          # noqa: E731 — fixture seam, mirrors fetch=
+    other = lambda _u, _t: b'{"artifacts":[{"id":"b"}]}'   # noqa: E731
+    dead = lambda _u, _t: None           # noqa: E731 — unreachable SoT
+    rd = lambda _p: LOCAL                # noqa: E731 — fixture seam, mirrors read_local=
+
+    insync = check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=same, read_local=rd)
+    ck("identical bytes -> IN_SYNC, zero findings", insync["findings"], [])
+    ck("...and IN_SYNC still emits a POSITIVE row (never absence-of-alert)",
+       [r["verdict"] for r in insync["probed"]], ["IN_SYNC"])
+    ck("...carrying BOTH hashes so the operator can act without re-deriving them",
+       all({"local_sha256", "sot_sha256"} <= set(r) for r in insync["probed"]), True)
+
+    drifted_r = check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=other, read_local=rd)
+    ck("differing bytes -> DRIFTED, and it IS a finding",
+       [f["verdict"] for f in drifted_r["findings"]], ["DRIFTED"])
+
+    # The load-bearing distinction: "could not look" must never render as "looked and agreed".
+    unreach = check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=dead, read_local=rd)
+    ck("unreachable SoT -> COULD_NOT_COMPARE, NOT a pass",
+       [f["verdict"] for f in unreach["findings"]], ["COULD_NOT_COMPARE"])
+    # Index-safe on purpose. When this regresses the findings list goes EMPTY (the unreachable
+    # case silently reported as agreement), and indexing [0] would bury that diagnosis under an
+    # IndexError traceback instead of naming it.
+    ck("...and it is distinguishable from DRIFTED, not collapsed into it",
+       [f["verdict"] for f in unreach["findings"] if f["verdict"] != "DRIFTED"],
+       ["COULD_NOT_COMPARE"])
+
+    nocfg = check_sot_parity("/x/inv.json", None, SIG, fetch=same, read_local=rd)
+    ck("absent config -> COULD_NOT_COMPARE (an unread audit is not agreement)",
+       [f["verdict"] for f in nocfg["findings"]], ["COULD_NOT_COMPARE"])
+    nourl = check_sot_parity("/x/inv.json", {"fetch_timeout_seconds": 1}, SIG,
+                             fetch=same, read_local=rd)
+    ck("config without sot_url -> COULD_NOT_COMPARE",
+       [f["verdict"] for f in nourl["findings"]], ["COULD_NOT_COMPARE"])
+
+    def boom(_p):
+        raise OSError("unreadable")
+    unread = check_sot_parity("/x/inv.json", SOT_CFG, SIG, fetch=same, read_local=boom)
+    ck("unreadable LOCAL declaration -> COULD_NOT_COMPARE",
+       [f["verdict"] for f in unread["findings"]], ["COULD_NOT_COMPARE"])
+
+    # The committed config must actually ship `report`, or "REPORT-first" is a claim the code
+    # does not honour — and the promotion criterion must be a stated number, not a vibe.
+    _sot_committed = json.loads(
+        (REPO_ROOT / "ops/monitoring/sot-parity-config.json").read_text())
+    ck("SOT_PARITY ships REPORT-first", _sot_committed.get("enforcement"), "report")
+    ck("...with a NUMERIC promotion criterion recorded in the config",
+       bool(re.search(r"\d+", _sot_committed.get("_promotion_criterion", ""))), True)
 
     # ── 11. off-:00 boundary predicate + the SCHEDULE_DRIFT BODY (OPS-MONITORING-SCHEDULE-SOT-W1)
     #
