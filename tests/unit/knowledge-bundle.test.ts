@@ -14,7 +14,22 @@
  *         in the right place, never as a leaked value).
  *   - formatKnowledgeBundle({}) throws (rejects empty input).
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+/**
+ * OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2 — a budget that survives concurrency.
+ *
+ * The `beforeAll` builds the entire knowledge bundle (~264 audits files in, ~240 KB out)
+ * against vitest's 10 s HOOK default — the tighter of the two budgets, and the one that fires
+ * first here. hookTimeout matters more than testTimeout in this file.
+ *
+ * Measured: under 3-5 concurrent gates (89 checkouts share one pre-push hook) every failure
+ * in this class was a TIMEOUT, never an assertion — durations of 5.4-19.9 s against 5 s
+ * budgets, including a pure-JSON-read test that took 7.15 s. The assertions are right; the
+ * budgets were stale. File-level, per 136954a: the per-`it` third argument silently no-ops
+ * when placed after the closing paren, and every test here pays the same cost anyway.
+ */
+vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';

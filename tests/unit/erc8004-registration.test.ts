@@ -8,7 +8,25 @@
  * with ERC8004_AGENT_ID pre-set — must exit 0 with no RPC calls.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2 — a budget that survives concurrency.
+ *
+ * Each test `npx tsx`-spawns the registration script: npx bin resolution plus a cold TS
+ * transform, ~3.3 s solo. The file LOOKED budgeted — its `timeout: 30_000` is `spawnSync`'s
+ * CHILD-KILL option, not a vitest budget — so it silently inherited the 5 s default and was
+ * the first file to die under 3 concurrent gates. 60 s also keeps the vitest budget strictly
+ * ABOVE the 30 s child kill, so a child that burns its full timeout reports a real assertion
+ * failure instead of a vitest timeout.
+ *
+ * Measured: under 3-5 concurrent gates (89 checkouts share one pre-push hook) every failure
+ * in this class was a TIMEOUT, never an assertion — durations of 5.4-19.9 s against 5 s
+ * budgets, including a pure-JSON-read test that took 7.15 s. The assertions are right; the
+ * budgets were stale. File-level, per 136954a: the per-`it` third argument silently no-ops
+ * when placed after the closing paren, and every test here pays the same cost anyway.
+ */
+vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

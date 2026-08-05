@@ -6,7 +6,22 @@
 // verified nothing. A gate whose logic has rotted into an always-pass is the exact
 // dark-guard failure mode this repo has now hit five times.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2 — a budget that survives concurrency.
+ *
+ * Ten tests, each spawning a gate that `git ls-files -z` then reads and UTF-8-validates every
+ * tracked file (~1,457 files / ~21.7 MB). Cost grows with the repo — the same argument as
+ * 136954a, on a file it never reached.
+ *
+ * Measured: under 3-5 concurrent gates (89 checkouts share one pre-push hook) every failure
+ * in this class was a TIMEOUT, never an assertion — durations of 5.4-19.9 s against 5 s
+ * budgets, including a pure-JSON-read test that took 7.15 s. The assertions are right; the
+ * budgets were stale. File-level, per 136954a: the per-`it` third argument silently no-ops
+ * when placed after the closing paren, and every test here pays the same cost anyway.
+ */
+vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';

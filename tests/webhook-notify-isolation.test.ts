@@ -11,6 +11,20 @@
  * and its state transitions are byte-identical to a run where notify succeeds.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+/**
+ * OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2 — a budget that survives concurrency.
+ *
+ * Measured dying at N=5: `defaults (legacy/false) -> routes NOT mounted` took 5,014-5,166 ms
+ * against the 5,000 ms default — a margin of single-digit milliseconds, i.e. scheduler noise.
+ *
+ * Measured: under 3-5 concurrent gates (89 checkouts share one pre-push hook) every failure
+ * in this class was a TIMEOUT, never an assertion — durations of 5.4-19.9 s against 5 s
+ * budgets, including a pure-JSON-read test that took 7.15 s. The assertions are right; the
+ * budgets were stale. File-level, per 136954a: the per-`it` third argument silently no-ops
+ * when placed after the closing paren, and every test here pays the same cost anyway.
+ */
+vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';

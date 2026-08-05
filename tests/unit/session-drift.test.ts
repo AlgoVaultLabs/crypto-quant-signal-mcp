@@ -7,6 +7,24 @@
  *
  * Strategy mirrors tests/unit/test-gate-report-path.test.ts: drive the REAL file via
  * spawnSync so what is asserted is what ships, not a re-implementation.
+ *
+ * BUDGETS — 120 s, raised from 30 s by OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch2.
+ *
+ * This file IS the pre-push gate's floor, and the cost is not its own: three of its tests
+ * run the drift script for REAL against this repo (`cwd` = the toplevel), and that script
+ * probes EVERY live worktree — 3 git subprocesses x 89 checkouts. Measured 34 s for this
+ * file ALONE versus 32 s for the whole 390-file suite, i.e. no worker cap can make the gate
+ * faster than this one file. The script's own docblock recorded 5.0 s per full run at 59
+ * worktrees and predicted this: "if the worktree count grows much further, parallelising
+ * the per-worktree probes is the next lever".
+ *
+ * So the budget scales with a number nobody edits deliberately. At 15.9 s for the slowest
+ * test today, 30 s survived 5 concurrent gates with no headroom and would not survive 10.
+ * 120 s is sized for the fleet growing, not for today.
+ *
+ * Reclaiming stale worktrees (Ch4) is the only lever that lowers this floor; making the
+ * probes concurrent is the generator-level fix and is deliberately out of scope here —
+ * OPS-DRIFT-PROBE-PARALLELISE-W{NEXT}.
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -50,7 +68,7 @@ describe('check-session-drift.mjs — verdict contract', () => {
   // 30s: these spawn the REAL gate, which probes 59 worktrees + 43 refs (~5s measured).
   // Asserting against the real thing is the point, so the timeout accommodates it rather
   // than the test being weakened into a mock.
-  it('prints EXACTLY ONE terminal verdict line on every path', { timeout: 30_000 }, () => {
+  it('prints EXACTLY ONE terminal verdict line on every path', { timeout: 120_000 }, () => {
     for (const [label, r] of [
       ['real run', run()],
       ['self-test', run(['--self-test'])],
@@ -60,7 +78,7 @@ describe('check-session-drift.mjs — verdict contract', () => {
     }
   });
 
-  it('emits POSITIVE per-check output for all three modes, carrying measured values', { timeout: 30_000 }, () => {
+  it('emits POSITIVE per-check output for all three modes, carrying measured values', { timeout: 120_000 }, () => {
     const r = run();
     // Absence-of-alert is never the assertion — each check must speak up with its numbers.
     expect(r.stdout).toMatch(/stale_base\s+base=\w+ head=\w+ origin\/main=\w+ behind=\d+ landed_files=\d+ my_files=\d+ overlap=\d+/);
@@ -74,7 +92,7 @@ describe('check-session-drift.mjs — verdict contract', () => {
   // hook invocation: colliding_worktrees=59 of 59 (100% false positives) while a standalone
   // run of the same commit reported 0. No standalone run, unit test or --self-test could see
   // it, because none of them have git's hook env set. So the test sets it explicitly.
-  it('is immune to git hook env leakage (GIT_DIR overrides even `git -C`)', { timeout: 30_000 }, () => {
+  it('is immune to git hook env leakage (GIT_DIR overrides even `git -C`)', { timeout: 120_000 }, () => {
     const gitDir = resolve(__dirname, '..', '..', '.git');
     const clean = run();
     const hooked = run([], { GIT_DIR: gitDir, GIT_WORK_TREE: resolve(__dirname, '..', '..') });
@@ -90,7 +108,7 @@ describe('check-session-drift.mjs — verdict contract', () => {
     expect(tokenOf(hooked.stdout)).toBe(tokenOf(clean.stdout));
   });
 
-  it('fails CLOSED on an unparseable config: INDETERMINATE + exit 3', { timeout: 30_000 }, () => {
+  it('fails CLOSED on an unparseable config: INDETERMINATE + exit 3', { timeout: 120_000 }, () => {
     const backup = readFileSync(CONFIG, 'utf8');
     try {
       writeFileSync(CONFIG, 'not json at all');
@@ -102,7 +120,7 @@ describe('check-session-drift.mjs — verdict contract', () => {
     }
   });
 
-  it('fails CLOSED when a union_safe_paths row lacks a `reason`', { timeout: 30_000 }, () => {
+  it('fails CLOSED when a union_safe_paths row lacks a `reason`', { timeout: 120_000 }, () => {
     const backup = readFileSync(CONFIG, 'utf8');
     try {
       writeFileSync(CONFIG, JSON.stringify({ union_safe_paths: [{ path: 'status.md' }] }));
@@ -115,7 +133,7 @@ describe('check-session-drift.mjs — verdict contract', () => {
     }
   });
 
-  it('ALGOVAULT_SESSION_DRIFT=warn downgrades the CODE but never the TOKEN', { timeout: 30_000 }, () => {
+  it('ALGOVAULT_SESSION_DRIFT=warn downgrades the CODE but never the TOKEN', { timeout: 120_000 }, () => {
     const backup = readFileSync(CONFIG, 'utf8');
     try {
       writeFileSync(CONFIG, 'not json at all');
