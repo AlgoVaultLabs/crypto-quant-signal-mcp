@@ -52,12 +52,20 @@ const DEAD_HOOKS: Array<[string, string]> = [
 
 describe('landing/integrations/*.html — stale-number drift guard', () => {
   it('finds the expected page set (guards against a silent glob miss)', () => {
-    expect(PAGES.length).toBe(21);
+    // 21 → 24 (LANDING-MCP-CLIENT-REGISTRY-W1, 2026-08-05): +codex, +kimi,
+    // +glm-zcode. The count stays HARDCODED on purpose — deriving it from the
+    // same readdir() the suite iterates would make this assertion tautological,
+    // and its whole job is to catch a glob that silently stops matching.
+    expect(PAGES.length).toBe(24);
     // Execution-kit tutorials for non-signal venues are intentional — kept, not
     // deleted, per Mr.1 2026-07-20. Their presence is asserted so a future
     // cleanup wave can't quietly drop them.
     for (const keep of ['gemini.html', 'kraken.html', 'alpaca.html']) {
       expect(PAGES).toContain(keep);
+    }
+    // The 3 MCP-client pages added with the registry extension.
+    for (const added of ['codex.html', 'kimi.html', 'glm-zcode.html']) {
+      expect(PAGES).toContain(added);
     }
   });
 
