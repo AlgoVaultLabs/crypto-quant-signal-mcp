@@ -149,7 +149,7 @@ tailwind.config = {
       "name": "How do I integrate AlgoVault with my AI agent?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Add https://api.algovault.com/mcp as a custom MCP integration. Claude Desktop: Settings → Integrations → custom integration → paste the URL. /docs covers Streamable HTTP and stdio transports; /integrations links per-exchange tutorials. Free tier needs no API key."
+        "text": "AlgoVault speaks Streamable HTTP at https://api.algovault.com/mcp, so any MCP client connects. Claude Desktop: Settings → Connectors → Add custom connector → paste the URL. Claude Code, Codex, Cursor, Cline, Kimi Code and ZCode take the same URL. Z.ai dials it server-side; for DeepSeek, point Claude Code at DeepSeek. /docs covers Streamable HTTP and stdio transports; /integrations links per-client and per-exchange tutorials. Free tier needs no API key."
       }
     },
     {
@@ -511,7 +511,7 @@ tailwind.config = {
     <article id="integration" class="border-t border-white/5 pt-6">
       <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">How do I integrate AlgoVault with my AI agent?</h3>
       <p class="text-gray-300 text-sm sm:text-base leading-relaxed">
-        Add <code class="text-mint-400">https://api.algovault.com/mcp</code> as a custom MCP integration. Claude Desktop: Settings &rarr; Integrations &rarr; custom integration &rarr; paste the URL. <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a> covers Streamable HTTP and stdio transports; <a href="/integrations" class="text-mint-400 hover:underline">/integrations</a> links per-exchange tutorials.
+        AlgoVault speaks Streamable HTTP at <code class="text-mint-400">https://api.algovault.com/mcp</code>, so any MCP client connects. Claude Desktop: Settings &rarr; Connectors &rarr; Add custom connector &rarr; paste the URL. Claude Code, Codex, Cursor, Cline, Kimi Code and ZCode take the same URL. Z.ai dials it server-side; for DeepSeek, point Claude Code at DeepSeek. <a href="/docs.html" class="text-mint-400 hover:underline">/docs</a> covers Streamable HTTP and stdio transports; <a href="/integrations" class="text-mint-400 hover:underline">/integrations</a> links per-client and per-exchange tutorials.
       </p>
     </article>
 

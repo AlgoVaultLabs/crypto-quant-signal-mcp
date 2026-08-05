@@ -117,19 +117,20 @@ describe('integrations-data: forbidden-phrase canary', () => {
 });
 
 describe('integrations-data: cross-surface invariants', () => {
-  it('all 16 hasDedicatedPage:true slugs are unique across the union', () => {
+  it('every hasDedicatedPage:true slug is unique across the union', () => {
     const dedicated = ALL_SURFACES.flatMap(({ mod }) =>
       mod.entries.filter((e) => e.hasDedicatedPage).map((e) => e.slug),
     );
     expect(new Set(dedicated).size).toBe(dedicated.length);
   });
 
-  it('MCP_CLIENTS contains exactly 5 dedicated + 1 inline (plain-http)', () => {
+  it('MCP_CLIENTS contains exactly 8 dedicated + 3 inline', () => {
     const dedicated = MCP_CLIENTS.entries.filter((e) => e.hasDedicatedPage);
     const inline = MCP_CLIENTS.entries.filter((e) => !e.hasDedicatedPage);
-    expect(dedicated).toHaveLength(5);
-    expect(inline).toHaveLength(1);
-    expect(inline[0].slug).toBe('plain-http');
+    expect(dedicated).toHaveLength(8);
+    // plain-http (a transport), zai-api (server-side, nothing to install) and
+    // deepseek (a model, not a client) each have no /integrations/<slug> page.
+    expect(inline.map((e) => e.slug).sort()).toEqual(['deepseek', 'plain-http', 'zai-api']);
   });
 
   it('AI_AGENTS contains exactly 4 entries all with hasDedicatedPage:true', () => {
@@ -143,6 +144,135 @@ describe('integrations-data: cross-surface invariants', () => {
     expect(EXCHANGE_KITS.entries).toHaveLength(12);
     for (const e of EXCHANGE_KITS.entries) {
       expect(e.hasDedicatedPage, `${e.slug}`).toBe(true);
+    }
+  });
+});
+
+/**
+ * LANDING-MCP-CLIENT-REGISTRY-W1 — provenance + factuality locks on the
+ * mcp-clients surface.
+ *
+ * Scoped to mcp-clients deliberately: `kind`/`source`/`verifiedAt` are optional
+ * trailing fields on the shared IntegrationEntry, adopted by this surface only.
+ * Asserting them across all three surfaces would fail ai-agents/exchange-kits
+ * for not having opted in, which is not a defect.
+ */
+const MCP_ENDPOINT = 'https://api.algovault.com/mcp';
+
+/** Rendered text of a row, as a reader would see it: tags out, entities in. */
+function renderedText(e: IntegrationEntry): string {
+  return [e.setupSummary, e.whatYouGet, e.walkthroughSummary ?? '', e.walkthroughHtml]
+    .join('\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&rarr;/g, '→')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&(?:#39|rsquo|apos);/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+function wordCount(html: string): number {
+  const text = html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&rarr;/g, '→')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+describe('mcp-clients: provenance (source + verifiedAt)', () => {
+  it('is not empty — vacuity guard', () => {
+    expect(MCP_CLIENTS.entries.length).toBeGreaterThan(0);
+  });
+
+  for (const e of MCP_CLIENTS.entries) {
+    it(`${e.slug} carries an https source and a parseable verifiedAt`, () => {
+      expect(e.source, `${e.slug} source`).toBeTruthy();
+      expect(e.source!.startsWith('https://'), `${e.slug} source is https`).toBe(true);
+      expect(e.verifiedAt, `${e.slug} verifiedAt`).toBeTruthy();
+      expect(Number.isNaN(Date.parse(e.verifiedAt!)), `${e.slug} verifiedAt parseable`).toBe(false);
+    });
+
+    it(`${e.slug} setupSummary is <=20 words`, () => {
+      expect(wordCount(e.setupSummary), `${e.slug} setupSummary word count`).toBeLessThanOrEqual(20);
+    });
+  }
+});
+
+describe('mcp-clients: retired Claude Desktop UI path', () => {
+  // Claude Desktop moved custom MCP servers from Settings → Integrations to
+  // Settings → Connectors. Both the literal arrow and the &rarr; entity forms
+  // appear in this repo's HTML, so both are banned here.
+  const RETIRED = [/Settings\s*→\s*Integrations/i, /Settings\s*&rarr;\s*Integrations/i];
+
+  for (const e of MCP_CLIENTS.entries) {
+    it(`${e.slug} names no retired UI path`, () => {
+      const content = renderedText(e);
+      for (const pattern of RETIRED) {
+        expect(pattern.test(content), `${e.slug} matches ${pattern}`).toBe(false);
+      }
+    });
+  }
+});
+
+describe('mcp-clients: ClientKind factuality', () => {
+  it('every entry declares a kind, and each kind has at least one row', () => {
+    // Vacuity guard: an empty bucket must not read as a pass.
+    const kinds = MCP_CLIENTS.entries.map((e) => e.kind);
+    for (const [i, k] of kinds.entries()) {
+      expect(k, `${MCP_CLIENTS.entries[i].slug} kind`).toBeTruthy();
+    }
+    for (const want of ['native', 'api-level', 'byo-model'] as const) {
+      expect(kinds.filter((k) => k === want).length, `rows with kind=${want}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('deepseek is byo-model, not a native client', () => {
+    // DeepSeek ships no MCP application and its API exposes no MCP parameter.
+    // It is a MODEL you point an existing harness at. A later wave must not
+    // quietly promote it to a peer of the native clients — hence this lock.
+    const deepseek = MCP_CLIENTS.entries.find((e) => e.slug === 'deepseek');
+    expect(deepseek, 'deepseek row present').toBeDefined();
+    expect(deepseek!.kind).toBe('byo-model');
+  });
+
+  it('no byo-model row describes itself as an MCP client', () => {
+    const byoModel = MCP_CLIENTS.entries.filter((e) => e.kind === 'byo-model');
+    expect(byoModel.length, 'byo-model rows exist (vacuity guard)').toBeGreaterThan(0);
+    for (const e of byoModel) {
+      expect(/MCP client/i.test(renderedText(e)), `${e.slug} calls itself an MCP client`).toBe(
+        false,
+      );
+    }
+  });
+});
+
+describe('mcp-clients: endpoint literal', () => {
+  // Not "every row shows the endpoint" — plain-http legitimately demonstrates
+  // /health, and the byo-model row's first URL is the vendor's. The invariant
+  // is narrower and it is the one that actually matters: wherever a row prints
+  // an AlgoVault MCP URL, it is the canonical one. A row inventing
+  // algovault.com/mcp on a different host or scheme is the failure.
+  const MCP_URL_RE = /https?:\/\/[^\s"'<)]*algovault[^\s"'<)]*\/mcp\b/gi;
+
+  it('every AlgoVault MCP URL across the surface is the canonical endpoint', () => {
+    const found: Array<{ slug: string; url: string }> = [];
+    for (const e of MCP_CLIENTS.entries) {
+      for (const url of renderedText(e).match(MCP_URL_RE) ?? []) {
+        found.push({ slug: e.slug, url });
+      }
+    }
+    expect(found.length, 'MCP URLs found across the surface (vacuity guard)').toBeGreaterThan(0);
+    for (const { slug, url } of found) {
+      expect(url.startsWith(MCP_ENDPOINT), `${slug} prints non-canonical MCP URL: ${url}`).toBe(
+        true,
+      );
     }
   });
 });

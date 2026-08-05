@@ -945,10 +945,35 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
           <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;name&gt;</code></td>
           <td class="text-gray-400 text-sm px-4 py-3">Auto-managed connection via Smithery registry. Easiest install across clients.</td>
         </tr>
-        <tr>
+        <tr class="border-b border-white/10">
           <td class="text-white text-sm px-4 py-3 font-medium">Plain HTTP / curl</td>
           <td class="text-gray-300 text-sm px-4 py-3"><code class="text-xs bg-navy-800 px-1 rounded">curl -X POST https://api.algovault.com/mcp &hellip;</code></td>
           <td class="text-gray-400 text-sm px-4 py-3">Raw JSON-RPC. For developers integrating into bots, scripts, or non-MCP services.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Codex</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Add <code class="text-xs bg-navy-800 px-1 rounded">[mcp_servers.algovault]</code> to <code class="text-xs bg-navy-800 px-1 rounded">~/.codex/config.toml</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">Coding agent for terminal and IDE. AlgoVault tools available in every Codex session.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Kimi Code</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Add a <code class="text-xs bg-navy-800 px-1 rounded">url</code> entry to <code class="text-xs bg-navy-800 px-1 rounded">~/.kimi-code/mcp.json</code>, or run <code class="text-xs">/mcp-config</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">Moonshot’s coding agent. Pulls AlgoVault verdicts while you edit strategy code.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">ZCode (GLM)</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Settings &rarr; MCP Servers &rarr; <em>New MCP Server</em> &rarr; <code class="text-xs bg-navy-800 px-1 rounded">HTTP</code>, then paste the URL</td>
+          <td class="text-gray-400 text-sm px-4 py-3">Z.ai’s GLM harness. AlgoVault verdicts alongside the GLM model family.</td>
+        </tr>
+        <tr class="border-b border-white/10">
+          <td class="text-white text-sm px-4 py-3 font-medium">Z.ai API</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Pass <code class="text-xs bg-navy-800 px-1 rounded">type: "mcp"</code> in the <code class="text-xs">tools</code> array on <code class="text-xs">chat/completions</code></td>
+          <td class="text-gray-400 text-sm px-4 py-3">No app to install. Z.ai reaches AlgoVault server-side while it answers.</td>
+        </tr>
+        <tr>
+          <td class="text-white text-sm px-4 py-3 font-medium">DeepSeek</td>
+          <td class="text-gray-300 text-sm px-4 py-3">Point Claude Code at <code class="text-xs bg-navy-800 px-1 rounded">https://api.deepseek.com/anthropic</code>, then add AlgoVault as usual</td>
+          <td class="text-gray-400 text-sm px-4 py-3">Bring your own model. DeepSeek does the thinking; your existing harness carries the AlgoVault tools.</td>
         </tr>
       </tbody>
     </table>
@@ -1073,13 +1098,110 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
     </div>
   </details>
 
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Codex &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Codex reads MCP servers from <code class="text-xs bg-navy-800 px-1 rounded">~/.codex/config.toml</code>. Add a table for AlgoVault:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">[mcp_servers.algovault]
+url = "https://api.algovault.com/mcp?src=docs"
+bearer_token_env_var = "AV_API_KEY"
+
+[mcp_servers.algovault.http_headers]
+"X-AlgoVault-Track-Token" = "chan-docs"</code></pre>
+      </div>
+      <p>Set <code class="text-xs bg-navy-800 px-1 rounded">AV_API_KEY</code> in your shell for paid tier; drop <code class="text-xs">bearer_token_env_var</code> for free tier. Note that <code class="text-xs bg-navy-800 px-1 rounded">codex mcp add</code> covers local stdio servers only, so remote HTTP servers are configured in the file.</p>
+      <p><strong>IDE extension:</strong> open settings, choose <em>MCP servers</em>, add a server, pick <em>Streamable HTTP</em> and paste the same URL.</p>
+      <p><strong>Verify:</strong> ask Codex <em>"Get me a trade call for BTC on the 1h timeframe"</em>.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Kimi Code &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Edit <code class="text-xs bg-navy-800 px-1 rounded">~/.kimi-code/mcp.json</code> (user level) or <code class="text-xs bg-navy-800 px-1 rounded">.kimi-code/mcp.json</code> (project level). An entry carrying a <code class="text-xs">url</code> and no <code class="text-xs">transport</code> is an HTTP server:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">{
+  "mcpServers": {
+    "algovault": {
+      "url": "https://api.algovault.com/mcp?src=docs",
+      "bearerTokenEnvVar": "AV_API_KEY",
+      "headers": {
+        "X-AlgoVault-Track-Token": "chan-docs"
+      }
+    }
+  }
+}</code></pre>
+      </div>
+      <p>Prefer the guided path? Run <code class="text-xs bg-navy-800 px-1 rounded">/mcp-config</code> in the TUI to add, edit or delete servers without touching the JSON.</p>
+      <p><strong>Verify:</strong> ask Kimi <em>"Get me a trade call for BTC on the 1h timeframe"</em>.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">ZCode (GLM) &mdash; setup walkthrough</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Open <em>Settings</em> &rarr; <em>MCP Servers</em>, then click <em>New MCP Server</em> at the top right. Choose <code class="text-xs bg-navy-800 px-1 rounded">HTTP</code> as the type and enter:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">https://api.algovault.com/mcp?src=docs</code></pre>
+      </div>
+      <p>For paid tier, expand <em>Headers (optional)</em> and add <code class="text-xs bg-navy-800 px-1 rounded">Authorization: Bearer av_live_&hellip;</code>. Free tier needs no header.</p>
+      <p>ZCode also accepts a pasted config block under <em>Full configuration</em>, in either the <code class="text-xs">{"mcpServers": {&hellip;}}</code> or the bare <code class="text-xs">{"server-name": {&hellip;}}</code> shape.</p>
+      <p><strong>Verify:</strong> ask ZCode <em>"Get me a trade call for BTC on the 1h timeframe"</em>.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Z.ai API &mdash; server-side, no client needed</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>Z.ai dials the MCP server itself, so there is nothing to install locally. Declare AlgoVault as a tool on the request:</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">{
+  "model": "glm-4.6",
+  "messages": [{"role": "user", "content": "Trade call for BTC on the 1h timeframe"}],
+  "tools": [{
+    "type": "mcp",
+    "mcp": {
+      "server_label": "algovault",
+      "server_url": "https://api.algovault.com/mcp?src=docs",
+      "headers": {"X-AlgoVault-Track-Token": "chan-docs"}
+    }
+  }]
+}</code></pre>
+      </div>
+      <p><code class="text-xs bg-navy-800 px-1 rounded">server_label</code> is required. <code class="text-xs">transport_type</code> is optional and already defaults to <code class="text-xs">streamable-http</code>, so it is omitted above. Add <code class="text-xs">allowed_tools</code> to narrow the tool set.</p>
+    </div>
+  </details>
+
+  <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
+    <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">DeepSeek &mdash; bring your own model</summary>
+    <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
+      <p>DeepSeek ships no MCP application of its own, and its API exposes no MCP parameter. What it does offer is an Anthropic-compatible endpoint, so you run a harness that already speaks MCP and swap the model behind it.</p>
+      <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
+        <pre><code class="text-xs text-gray-300">export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
+export ANTHROPIC_AUTH_TOKEN="${DEEPSEEK_API_KEY}"
+
+claude mcp add --transport http --scope project algovault \
+  https://api.algovault.com/mcp?src=docs \
+  --header "X-AlgoVault-Track-Token:chan-docs"</code></pre>
+      </div>
+      <p>Claude Code then runs against DeepSeek while AlgoVault stays connected exactly as it would otherwise. Verdicts are unchanged: they are computed on our side and handed back as JSON.</p>
+      <p>Harnesses that speak the OpenAI protocol instead use the plain <code class="text-xs bg-navy-800 px-1 rounded">https://api.deepseek.com</code> base, not the <code class="text-xs">/anthropic</code> one shown here.</p>
+    </div>
+  </details>
+
   <p class="text-gray-500 text-xs mt-6">
-    <strong>Config formats verified 2026-04-30 against:</strong>
+    <strong>Config formats verified per client against:</strong>
     <a class="text-mint-400 hover:underline" href="https://modelcontextprotocol.io/quickstart/user">MCP quickstart</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://cursor.com/docs/context/mcp">Cursor MCP docs</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://docs.cline.bot/mcp/connecting-to-a-remote-server">Cline remote-server docs</a> &middot;
     <a class="text-mint-400 hover:underline" href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a> &middot;
-    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a>.
+    <a class="text-mint-400 hover:underline" href="https://www.npmjs.com/package/@smithery/cli">@smithery/cli on npm</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://learn.chatgpt.com/docs/extend/mcp">Codex MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://moonshotai.github.io/kimi-code/en/customization/mcp.html">Kimi Code MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://zcode.z.ai/en/docs/mcp-services">ZCode MCP docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://docs.z.ai/guides/capabilities/mcp-call">Z.ai MCP-call docs</a> &middot;
+    <a class="text-mint-400 hover:underline" href="https://api-docs.deepseek.com/guides/anthropic_api">DeepSeek Anthropic API</a>.
     Config formats can drift &mdash; if a snippet here doesn't work, please refer to the upstream doc and report it at <a class="text-mint-400 hover:underline" href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues">GitHub issues</a>.
   </p>
       <!-- BUILD:connect-mcp-client:end -->

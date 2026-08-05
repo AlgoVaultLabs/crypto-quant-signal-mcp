@@ -478,6 +478,45 @@ tailwind.config = {
           <span class="text-mint-400">View tutorial &rarr;</span>
         </div>
       </a>
+      <a href="/integrations/codex"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'codex',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">Codex</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Coding agent for terminal and IDE. AlgoVault tools available in every Codex session.</p>
+        <p class="text-gray-600 text-xs mb-3">Add <code class="text-xs bg-navy-800 px-1 rounded">[mcp_servers.algovault]</code> to <code class="text-xs bg-navy-800 px-1 rounded">~/.codex/config.toml</code></p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
+      <a href="/integrations/kimi"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'kimi',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">Kimi Code</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Moonshot’s coding agent. Pulls AlgoVault verdicts while you edit strategy code.</p>
+        <p class="text-gray-600 text-xs mb-3">Add a <code class="text-xs bg-navy-800 px-1 rounded">url</code> entry to <code class="text-xs bg-navy-800 px-1 rounded">~/.kimi-code/mcp.json</code>, or run <code class="text-xs">/mcp-config</code></p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
+      <a href="/integrations/glm-zcode"
+         onclick="if(window.plausible)plausible('Integration View',{props:{surface:'mcp-client',slug:'glm-zcode',source:'integrations_index',medium:'card'}})"
+         class="card-hover bg-navy-700 border border-white/5 rounded-xl p-5 hover:border-mint-500/40 transition block">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-mint-400 text-2xl" aria-hidden="true">&#9670;</span>
+          <h3 class="text-white font-semibold text-base">ZCode (GLM)</h3>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">Z.ai’s GLM harness. AlgoVault verdicts alongside the GLM model family.</p>
+        <p class="text-gray-600 text-xs mb-3">Settings &rarr; MCP Servers &rarr; <em>New MCP Server</em> &rarr; <code class="text-xs bg-navy-800 px-1 rounded">HTTP</code>, then paste the URL</p>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-mint-400">View tutorial &rarr;</span>
+        </div>
+      </a>
       <!-- BUILD:INTEGRATIONS_INDEX_MCP_CLIENTS:end -->
     </div>
   </div>

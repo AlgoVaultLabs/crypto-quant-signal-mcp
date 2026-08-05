@@ -146,6 +146,19 @@ jobs:
       - name: Integrations registry lockstep canary (check-integrations-registry-lockstep --check)
         run: node scripts/check-integrations-registry-lockstep.mjs --check
 
+      # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
+      # lockstep canary above proves a SLUG is wired across its six homes; this one
+      # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations
+      # to Settings → Connectors, and three public surfaces kept naming the dead menu
+      # for months with every gate green, because nothing was watching the words.
+      # Fail-closed: an unreadable corpus or an unloadable registry is INDETERMINATE
+      # (exit 3), never a pass. Deliberately NOT a 6th shared pre-push block —
+      # installing one there took every parallel session down twice in 27 hours.
+      - name: MCP-client copy drift gate (fail-closed)
+        run: |
+          node scripts/check-mcp-client-copy.mjs --self-test
+          node scripts/check-mcp-client-copy.mjs
+
       # SCAN-RANKBY-W1 CH2: cross-venue rank-field parity canary (STATIC). Fails the
       # push if a venue stops returning a rank field, the funding APR unit drifts, or
       # /capabilities stops advertising the rankBy lens set. Network-free (fixture-

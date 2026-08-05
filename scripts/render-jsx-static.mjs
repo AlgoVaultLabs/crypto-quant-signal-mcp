@@ -44,6 +44,13 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // dist/lib/footer-content.js; run `npm run build` before this generator).
 const require = Module.createRequire(import.meta.url);
 const { renderBrandFooter } = require(path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js'));
+// LANDING-MCP-CLIENT-REGISTRY-W1: the quickstart client grid is DATA-driven from
+// the one MCP-client SoT (compiled dist/lib/integrations-data/mcp-clients.js).
+// The vault JSX owns the card layout and never names a client, so adding client
+// #12 is a registry row and nothing else.
+const MCP_CLIENTS_SOT = require(
+  path.join(REPO_ROOT, 'dist', 'lib', 'integrations-data', 'mcp-clients.js')
+).default;
 const VAULT_DESIGN = '/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/Design/AlgoVault Landing Hero v1';
 // DESIGN-W9 (2026-05-11): verify.jsx canonical SoT lives in a sibling vault folder.
 const VAULT_TRACK_RECORD = '/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/Design/AlgoVault Track Record v1';
@@ -282,6 +289,50 @@ function injectUseCasesLogos(html) {
       return styledOpen + img + closeSpan;
     }
   );
+}
+
+/**
+ * Project the MCP-client registry into the shape the quickstart grid renders.
+ *
+ * Two things this deliberately does NOT do:
+ *
+ *  - It does not apply renderIndexGrid()'s `hasDedicatedPage` filter. That
+ *    filter is right for /integrations, where a card is a link to a tutorial
+ *    page; here a card is "this works today", and Z.ai's API and DeepSeek work
+ *    today while having nothing to install. Filtering them out of the landing
+ *    page would hide the exact clients this section exists to advertise.
+ *
+ *  - It does not pass `setupSummary` through as HTML. That string is authored
+ *    for /integrations and carries Tailwind classes (bg-navy-800, text-xs) that
+ *    do not exist on landing/index.html, which styles inline off CSS variables.
+ *    Injected raw it renders as unstyled markup, so tags are stripped and the
+ *    handful of entities we actually author are decoded to their characters.
+ */
+function landingClientRows(surface) {
+  const stripToText = (html) =>
+    html
+      .replace(/<[^>]*>/g, '')
+      .replace(/&rarr;/g, '→')
+      .replace(/&hellip;/g, '…')
+      .replace(/&mdash;/g, '—')
+      .replace(/&middot;/g, '·')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&rsquo;|&apos;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  return surface.entries.map((e) => ({
+    slug: e.slug,
+    label: e.displayName,
+    kind: e.kind || 'native',
+    connect: stripToText(e.setupSummary),
+    // Empty string → null so the JSX's truthiness test reads cleanly.
+    tutorial: e.fullTutorialUrl || null,
+  }));
 }
 
 function preserveQuickstartAnchor(html) {
@@ -2067,7 +2118,7 @@ async function main() {
         src,
         path.join(VAULT_DESIGN, 'v1-landing-rest.jsx'),
         [
-          'AlgoVaultLandingRest', 'TryIn30', 'TradFiCallout', 'ThreeTools', 'UseCases', 'LiveVerdict',
+          'AlgoVaultLandingRest', 'TryIn30', 'ClientCard', 'TradFiCallout', 'ThreeTools', 'UseCases', 'LiveVerdict',
           'LiveTrackRecord', 'TamperProof', 'TrustBand', 'SimplePricing', 'ForDevelopers', 'FAQ', 'LandingFooter',
           'LRBlock', 'LREyebrow', 'LRH2', 'LRLead', 'Pill', 'Check', 'Bullet', 'FAQItem',
         ]
@@ -2080,7 +2131,11 @@ async function main() {
       const wt = renderToString(React.createElement(bfExports.WhenToUse, { mobile }));
       const vs = renderToString(React.createElement(bfExports.VsRawAPIs, { mobile }));
       // Render in spec order, SKIP TradFiCallout (architect mandate Q-W10 spec rule 10).
-      const try30 = preserveQuickstartAnchor(renderToString(React.createElement(exports.TryIn30, { mobile })));
+      const try30 = preserveQuickstartAnchor(
+        renderToString(
+          React.createElement(exports.TryIn30, { mobile, clients: landingClientRows(MCP_CLIENTS_SOT) })
+        )
+      );
       // LANDING-SECTION-REORDER-W1: ThreeTools ("3 tools, One verdict.") REMOVED from the page (not rendered).
       const uc = injectUseCasesLogos(stripUseCasesDate(renderToString(React.createElement(exports.UseCases, { mobile }))));
       // P2-LANDING-VERDICT-CARD-W1: styled verdict-with-receipts example card. Uses
