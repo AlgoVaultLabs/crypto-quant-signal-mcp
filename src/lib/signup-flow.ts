@@ -10,7 +10,19 @@
  * so copy drift between surfaces is impossible.
  */
 import { EXCHANGE_COUNT } from './capabilities.js';
-import { PLANS, planCallsLabel, planPriceLabel } from './plans.js';
+import {
+  PLANS,
+  planCallsLabel,
+  planPriceLabel,
+  planAnnualPriceLabel,
+  planAnnualMonthlyEquivalent,
+  planAnnualSavingsPct,
+  planHasAnnual,
+  type PaidPlanId,
+} from './plans.js';
+
+/** Where an Enterprise enquiry goes. The operator-held mailbox (admin@), not support@. */
+export const ENTERPRISE_CONTACT_EMAIL = 'admin@algovault.com';
 
 export interface SignupFlowStep {
   title: string;
@@ -77,11 +89,49 @@ export function renderSignupFlowTailwind(): string {
 // rendered BYTES are unchanged (the SoT holds exactly these values), which the existing
 // signup/join page tests assert — the point is that a price move is now a one-line edit in
 // one file rather than a hunt across HTML, `getMonthlyQuota` and the quota-exhaustion copy.
+// PRICING-ANNUAL-AND-HOLD-PROMISE-W1: annual-first pricing.
+//
+// The ANNUAL price leads on Starter and Pro (architect decision, Mr.1 2026-08-05) because the
+// first-payment size is the acquisition constraint this wave exists to move. Three rules govern
+// how it renders, and all three are Public-copy LAW rather than taste:
+//
+//   1. The annual TOTAL is always shown next to the effective monthly rate. Leading with
+//      "$6.58/mo" for something that bills $79 once a year is the misleading framing.
+//   2. The monthly option stays visible and one click away — never buried, never a dark pattern.
+//   3. No countdown, no "limited time", no fake scarcity. The saving is a computed fact.
+//
+// Enterprise carries no self-serve price at all: its CTA is replaced by ONE contact line beneath
+// the tier row (R4), so the card keeps its feature list without implying a checkout that does not
+// exist. `ENTERPRISE_PRICE_ID` stays live and unarchived in Stripe — zero subscribers today, but
+// an in-flight subscription must never break.
+
+/** The price block for a plan sold annually: annual total, effective monthly, saving, monthly alt. */
+function annualPriceBlock(id: PaidPlanId): string {
+  return `<div class="price">${planAnnualPriceLabel(id)}<span>/yr</span></div>
+      <div class="price-sub">${planAnnualMonthlyEquivalent(id)}/mo effective <span class="save">Save ${planAnnualSavingsPct(id)}%</span></div>
+      <div class="price-alt">or ${planPriceLabel(id)}/mo billed monthly</div>`;
+}
+
+/** Both CTAs for a plan sold annually — annual primary, monthly a plain secondary link. */
+function planCtas(id: PaidPlanId, signupBase: string): string {
+  const label = PLANS[id].label;
+  return `<a class="btn" href="${signupBase}/signup?plan=${id}&amp;interval=year">Subscribe to ${label} — annual</a>
+      <a class="btn-alt" href="${signupBase}/signup?plan=${id}">or pay ${planPriceLabel(id)}/mo</a>`;
+}
+
 export function renderPlanCards(signupBase = ''): string {
+  // Guard the invariant the markup below assumes, rather than silently rendering "null/yr" if a
+  // future edit drops an annual price from the SoT.
+  const annualBacked = planHasAnnual('starter') && planHasAnnual('pro');
+  const starterPrice = annualBacked ? annualPriceBlock('starter') : `<div class="price">${planPriceLabel('starter')}<span>/mo</span></div>`;
+  const proPrice = annualBacked ? annualPriceBlock('pro') : `<div class="price">${planPriceLabel('pro')}<span>/mo</span></div>`;
+  const starterCta = annualBacked ? planCtas('starter', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=starter">Subscribe to Starter</a>`;
+  const proCta = annualBacked ? planCtas('pro', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=pro">Subscribe to Pro</a>`;
+
   return `<div class="plans">
     <div class="plan">
       <h2>${PLANS.starter.label}</h2>
-      <div class="price">${planPriceLabel('starter')}<span>/mo</span></div>
+      ${starterPrice}
       <ul>
         <li>${planCallsLabel('starter')} calls/month</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
@@ -89,12 +139,12 @@ export function renderPlanCards(signupBase = ''): string {
         <li>All timeframes (1m to 1d)</li>
         <li>Email support</li>
       </ul>
-      <a class="btn" href="${signupBase}/signup?plan=starter">Subscribe to Starter</a>
+      ${starterCta}
     </div>
     <div class="plan popular">
       <div class="pop-badge">MOST POPULAR</div>
       <h2>${PLANS.pro.label}</h2>
-      <div class="price">${planPriceLabel('pro')}<span>/mo</span></div>
+      ${proPrice}
       <ul>
         <li>${planCallsLabel('pro')} calls/month</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
@@ -102,11 +152,11 @@ export function renderPlanCards(signupBase = ''): string {
         <li>All timeframes (1m to 1d)</li>
         <li>Priority support</li>
       </ul>
-      <a class="btn" href="${signupBase}/signup?plan=pro">Subscribe to Pro</a>
+      ${proCta}
     </div>
     <div class="plan">
       <h2>${PLANS.enterprise.label}</h2>
-      <div class="price">${planPriceLabel('enterprise')}<span>/mo</span></div>
+      <div class="price-contact">Custom</div>
       <ul>
         <li>${planCallsLabel('enterprise')} calls/month</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges (HL, Binance, Bybit, OKX, Bitget)</li>
@@ -114,30 +164,46 @@ export function renderPlanCards(signupBase = ''): string {
         <li>SLA guarantee</li>
         <li>Dedicated support</li>
       </ul>
-      <a class="btn ent" href="${signupBase}/signup?plan=enterprise">Subscribe to Enterprise</a>
     </div>
-  </div>`;
+  </div>
+  <div class="plans-contact">Need ${PLANS.enterprise.label}? <a href="mailto:${ENTERPRISE_CONTACT_EMAIL}">Contact us</a> for pricing.</div>`;
 }
 
 /**
- * Plan-card CSS for surfaces that DON'T already carry it (the apex /join page uses
- * the minimal /referral shell, which has no .plans/.plan rules). getSignupPageHtml
- * keeps its OWN inline copy of these rules (byte-identity constraint — do not touch
- * it); keep these in sync if the card chrome ever changes. The CARD MARKUP is the
- * single-sourced part (renderPlanCards); this is presentational only.
+ * Plan-card CSS — the ONE copy.
+ *
+ * PRICING-ANNUAL-AND-HOLD-PROMISE-W1: this used to carry the warning "getSignupPageHtml keeps its
+ * OWN inline copy of these rules (byte-identity constraint — do not touch it); keep these in sync
+ * if the card chrome ever changes". This wave IS that change, and a rule that says "remember to
+ * edit the other copy too" is the defect, not the mitigation — so `getSignupPageHtml` now
+ * interpolates this constant instead of restating it. The byte-identity constraint it protected is
+ * deliberately retired here: the cards are supposed to look different now.
+ *
+ * The CARD MARKUP was already single-sourced (renderPlanCards); this is presentational only.
  */
 export const PLAN_CARDS_CSS = `
   .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
   @media (max-width: 768px) { .plans { grid-template-columns: 1fr; } }
-  .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; position: relative; }
+  .plan { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; position: relative; display: flex; flex-direction: column; }
   .plan.popular { border-color: #34D199; }
   .plan h2 { font-size: 20px; margin-bottom: 4px; }
-  .plan .price { font-size: 36px; font-weight: 700; color: #58a6ff; margin: 12px 0; }
+  .plan .price { font-size: 36px; font-weight: 700; color: #58a6ff; margin: 12px 0 2px; }
   .plan .price span { font-size: 16px; font-weight: 400; color: #8b949e; }
+  .plan .price-sub { font-size: 14px; color: #c9d1d9; margin-bottom: 2px; }
+  .plan .price-sub .save { display: inline-block; background: rgba(52,209,153,0.15); color: #34D199; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 600; margin-left: 4px; }
+  .plan .price-alt { font-size: 13px; color: #8b949e; margin-bottom: 4px; }
+  .plan .price-contact { font-size: 36px; font-weight: 700; color: #8b949e; margin: 12px 0 2px; }
   .plan ul { list-style: none; margin: 16px 0 24px; padding: 0; }
   .plan ul li { padding: 4px 0; color: #c9d1d9; font-size: 14px; }
   .plan ul li::before { content: '\\2713'; color: #3fb950; margin-right: 8px; }
-  .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; transition: background 0.15s; }
+  .plan .btn { margin-top: auto; }
+  .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; transition: background 0.15s; text-align: center; }
   .btn:hover { background: #2ea043; }
   .btn.ent { background: #8957e5; }
+  .btn.ent:hover { background: #a371f7; }
+  .btn-alt { display: inline-block; margin-top: 10px; color: #8b949e; text-decoration: none; font-size: 13px; text-align: center; border-bottom: 1px solid #30363d; padding-bottom: 1px; align-self: center; }
+  .btn-alt:hover { color: #c9d1d9; }
+  .plans-contact { margin-top: 20px; text-align: center; color: #8b949e; font-size: 14px; }
+  .plans-contact a { color: #58a6ff; text-decoration: none; }
+  .plans-contact a:hover { text-decoration: underline; }
   .pop-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #34D199; color: #0f1117; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; letter-spacing: 0.5px; }`;
