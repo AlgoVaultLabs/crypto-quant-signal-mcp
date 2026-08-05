@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const mockState = {
   bindOk: true,
-  claimResults: [] as boolean[], // FIFO: claim #1, #2, ...
+  claimResults: [] as ('CLAIMED' | 'ALREADY_CLAIMED' | 'INDETERMINATE')[], // FIFO: claim #1, #2, ...
   claimCalls: 0,
   nonceSeen: undefined as string | undefined,
 };
@@ -45,7 +45,7 @@ vi.mock('../src/lib/x402-idempotency-store.js', () => ({
   extractPayerWallet: (payload: unknown) =>
     (payload as { payload?: { authorization?: { from?: string } } })?.payload?.authorization?.from,
   tryClaimPayment: async () => {
-    const r = mockState.claimResults[mockState.claimCalls] ?? false;
+    const r = mockState.claimResults[mockState.claimCalls] ?? 'ALREADY_CLAIMED';
     mockState.claimCalls += 1;
     return r;
   },
@@ -71,7 +71,7 @@ const OPTS = { tool: 'get_trade_signal', timeframe: '4h' };
 
 describe('claim-before-grant ordering', () => {
   it('first use: binding passes then nonce is claimed → grant x402 + pendingSettlement', async () => {
-    mockState.claimResults = [true];
+    mockState.claimResults = ['CLAIMED'];
     const res = await license.resolveLicense(HEADERS, OPTS);
     expect(res.license.tier).toBe('x402');
     expect(res.pendingSettlement).toBeDefined();
@@ -91,7 +91,7 @@ describe('claim-before-grant ordering', () => {
 
 describe('replayed nonce → downgrade (no re-grant, no re-settle)', () => {
   it('a seen nonce (tryClaimPayment=false) → free tier, NO pendingSettlement, reason replayed', async () => {
-    mockState.claimResults = [false]; // nonce already claimed
+    mockState.claimResults = ['ALREADY_CLAIMED']; // nonce already claimed
     const res = await license.resolveLicense(HEADERS, OPTS);
     expect(res.license.tier).toBe('free');
     expect(res.pendingSettlement).toBeUndefined(); // ← settle no-ops → no double-charge
@@ -100,7 +100,7 @@ describe('replayed nonce → downgrade (no re-grant, no re-settle)', () => {
   });
 
   it('two identical proofs in sequence: first grants (claim true), replay downgrades (claim false)', async () => {
-    mockState.claimResults = [true, false];
+    mockState.claimResults = ['CLAIMED', 'ALREADY_CLAIMED'];
     const first = await license.resolveLicense(HEADERS, OPTS);
     expect(first.license.tier).toBe('x402');
     expect(first.pendingSettlement).toBeDefined();
@@ -113,14 +113,18 @@ describe('replayed nonce → downgrade (no re-grant, no re-settle)', () => {
 });
 
 describe('DB-error / empty-nonce → default-deny the upgrade (fail-safe)', () => {
-  it('tryClaimPayment returns false on DB error → downgrade (fall to free, no settle)', async () => {
-    // tryClaimPayment is fail-safe internally (returns false on DB throw / empty
-    // nonce); from resolveLicense's view that is indistinguishable from a replay →
-    // downgrade. Reason `replayed` is the safe label (no settle either way).
-    mockState.claimResults = [false];
+  it('a DB error now yields INDETERMINATE → downgrade, reason `unavailable` (NOT `replayed`)', async () => {
+    // OPS-ZERO-VS-UNKNOWN-W3: this previously asserted the DB-error path was indistinguishable
+    // from a replay. That indistinguishability IS the 25-hour outage, so the test now pins the
+    // distinction instead of the defect.
+    // The refusal is UNCHANGED — still no grant, still no settle, because never double-settling
+    // is the ratified policy. What changed is that the caller is now TOLD which it was: `replayed`
+    // is terminal and a good client stops, `unavailable` is transient and it should retry. Calling
+    // a fault `replayed` converted a transient server error into a permanent client failure.
+    mockState.claimResults = ['INDETERMINATE'];
     const res = await license.resolveLicense(HEADERS, OPTS);
     expect(res.license.tier).toBe('free');
-    expect(res.pendingSettlement).toBeUndefined();
-    expect(res.x402Downgrade?.reason).toBe('replayed');
+    expect(res.pendingSettlement, 'the proof must NOT be settled when we cannot verify it').toBeUndefined();
+    expect(res.x402Downgrade?.reason).toBe('unavailable');
   });
 });

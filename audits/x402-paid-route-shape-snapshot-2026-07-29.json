@@ -1,7 +1,7 @@
 {
-  "endpoint": "POST /x402/<tool> — the paid x402 HTTP routes' REJECTION contract",
-  "snapshot_date": "2026-07-29",
-  "wave": "OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1",
+  "endpoint": "POST /x402/<tool> \u2014 the paid x402 HTTP routes' REJECTION contract",
+  "snapshot_date": "2026-08-05",
+  "wave": "OPS-CIRCLE-GATEWAY-PAY-REGRESSION-W1 + OPS-ZERO-VS-UNKNOWN-W3",
   "why": "This wave ADDED one error variant (invalid_content_type) to an existing public endpoint. Per CLAUDE.md, a new or modified public endpoint ships a shape snapshot with a drift check. No success-shape key changed; no existing error was removed or renamed.",
   "routes": [
     "/x402/get_trade_signal",
@@ -20,9 +20,10 @@
     "details",
     "suggested_fix",
     "resource",
-    "accepts"
+    "accepts",
+    "retryable"
   ],
-  "allowed_keys_note": "The union of keys across the three REJECTION shapes below — this snapshot governs the error contract. A 200 returns the core tool handler's existing public output verbatim (byte-parity with the MCP tool), which varies per tool and is snapshotted per tool elsewhere.",
+  "allowed_keys_note": "The union of keys across the three REJECTION shapes below \u2014 this snapshot governs the error contract. A 200 returns the core tool handler's existing public output verbatim (byte-parity with the MCP tool), which varies per tool and is snapshotted per tool elsewhere.",
   "forbidden_keys": [
     "outcome_return_pct",
     "outcome_price"
@@ -30,27 +31,73 @@
   "error_contract": {
     "402": {
       "when": "unpaid, cross-tool/underpaid proof, or a replayed nonce",
-      "allowed_keys": ["x402Version", "error", "code", "message", "resource", "accepts"],
-      "codes": ["X402_PAYMENT_REPLAY"],
-      "unchanged_by_this_wave": true
+      "allowed_keys": [
+        "x402Version",
+        "error",
+        "code",
+        "message",
+        "resource",
+        "accepts"
+      ],
+      "codes": [
+        "X402_CLAIM_UNAVAILABLE",
+        "X402_PAYMENT_REPLAY"
+      ],
+      "unchanged_by_this_wave": false,
+      "note_w3": "X402_CLAIM_UNAVAILABLE now shares the 402 status with X402_PAYMENT_REPLAY. A caller MUST branch on `code`, not on the status, to decide whether to retry: REPLAY is terminal, CLAIM_UNAVAILABLE is retryable and consumed nothing."
     },
     "400 invalid_input": {
       "when": "body parsed but failed the published JSON Schema for the tool",
-      "allowed_keys": ["error", "code", "details", "suggested_fix"],
+      "allowed_keys": [
+        "error",
+        "code",
+        "details",
+        "suggested_fix"
+      ],
       "code": "X402_HTTP_INVALID_INPUT",
       "unchanged_by_this_wave": true
     },
     "400 invalid_content_type": {
-      "when": "The caller DECLARED a body (content-length > 0) but it arrived empty because express.json() declined to parse it — a duplicated/comma-joined content-type, a missing content-type, or a non-JSON media type. Distinguishes a dropped body from a genuinely invalid one, which previously surfaced as a misleading JSON-Schema error AFTER the payment had already verified.",
-      "allowed_keys": ["error", "code", "message", "suggested_fix"],
+      "when": "The caller DECLARED a body (content-length > 0) but it arrived empty because express.json() declined to parse it \u2014 a duplicated/comma-joined content-type, a missing content-type, or a non-JSON media type. Distinguishes a dropped body from a genuinely invalid one, which previously surfaced as a misleading JSON-Schema error AFTER the payment had already verified.",
+      "allowed_keys": [
+        "error",
+        "code",
+        "message",
+        "suggested_fix"
+      ],
       "code": "X402_HTTP_INVALID_CONTENT_TYPE",
-      "amended_by": "OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 (2026-07-29) — this check now runs BEFORE, and INDEPENDENTLY OF, schema validation. It was previously nested inside the validation-failure branch, so it only fired on routes whose schema has a REQUIRED field. On scan_funding_arb, scan_trade_calls and get_equity_regime every field is optional, so an unparsed body validated clean as {} and the route served a DEFAULTS-ONLY result and CHARGED for it, silently discarding the caller's parameters. All 7 payable routes now behave identically.",
+      "amended_by": "OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 (2026-07-29) \u2014 this check now runs BEFORE, and INDEPENDENTLY OF, schema validation. It was previously nested inside the validation-failure branch, so it only fired on routes whose schema has a REQUIRED field. On scan_funding_arb, scan_trade_calls and get_equity_regime every field is optional, so an unparsed body validated clean as {} and the route served a DEFAULTS-ONLY result and CHARGED for it, silently discarding the caller's parameters. All 7 payable routes now behave identically.",
       "guarantees": [
         "Emitted ONLY on the paid path (tier==='x402' with a pendingSettlement); an unpaid request still 402s before validation, so the CDP Bazaar crawler contract is untouched (verified live: unpaid POST with a duplicated content-type returns 402, not 400).",
         "No settlement is attempted: this branch precedes tryClaimPayment() and settleX402Async(), so the caller is not charged and no nonce is claimed.",
-        "Never fires when the content-type is a clean JSON media type — a genuinely empty body still returns invalid_input.",
-        "Uniform across ALL payable routes regardless of whether their JSON Schema has required fields — a paid request can never be served a defaults-only result built from a body that never parsed."
+        "Never fires when the content-type is a clean JSON media type \u2014 a genuinely empty body still returns invalid_input.",
+        "Uniform across ALL payable routes regardless of whether their JSON Schema has required fields \u2014 a paid request can never be served a defaults-only result built from a body that never parsed."
       ]
+    },
+    "402 claim_unavailable": {
+      "when": "The claim store could not be reached or errored, so the server could NOT DETERMINE whether this payment proof had already been used. Distinct from a replay: a replay is a settled fact, this is an absence of knowledge.",
+      "allowed_keys": [
+        "x402Version",
+        "error",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "code": "X402_CLAIM_UNAVAILABLE",
+      "guarantees": "The payment proof was NOT consumed and NOT settled \u2014 the nonce remains spendable, so a retry costs the buyer nothing. The server refuses rather than serving, because a double-settle is an irreversible on-chain USDC charge plus a manual refund, whereas a refused call is a foregone sale.",
+      "why_402_not_5xx": "Evaluated and DECIDED to keep 402 (OPS-ZERO-VS-UNKNOWN-W3). The consumers recorded on this snapshot do not branch on status: Circle Gateway's GatewayClient.pay() surfaces the body's `error` field verbatim, and the CDP buyers treat any 402 as the paywall. Changing the status is a strictly larger wire change than adding a code, and would move this response out of the branch those clients already handle. The retry signal is therefore carried by `code` + `retryable`, which is what a client must read anyway to distinguish this from X402_PAYMENT_REPLAY.",
+      "added_by": "OPS-ZERO-VS-UNKNOWN-W3"
+    },
+    "500 handler_error": {
+      "when": "An unhandled exception inside the x402 route handler.",
+      "allowed_keys": [
+        "error",
+        "code",
+        "message"
+      ],
+      "code": "X402_HTTP_HANDLER_ERROR",
+      "guarantees": "Static message only \u2014 SEC-50 removed the raw err.message from this body; the real error is logged server-side. Says nothing about payment state.",
+      "added_by": "OPS-AUDIT-REMEDIATION-LOW-W1 shipped this code but never declared it here. Found 2026-08-05 by OPS-ZERO-VS-UNKNOWN-W3's new assertion that every code the route can emit is snapshot-declared \u2014 a pre-existing undeclared wire code, not a regression of this wave."
     }
   },
   "cache_contract": {
@@ -66,7 +113,7 @@
   ],
   "drift_check_command": "curl -s -o /dev/null -w '%{http_code}\\n' -X POST https://api.algovault.com/x402/get_market_regime -H 'content-type: application/json' -d '{}'   # expect 402 (unpaid short-circuits before validation; a 400 here would mean the paywall stopped preceding the body check)",
   "regression_tests": [
-    "tests/x402-paid-path.test.ts — 'paid request whose content-type prevents body parsing' (drives the real mounted route over real fetch with a combined content-type)",
-    "tests/x402-rejection-diagnostics.test.ts — explainDroppedBody() predicate + its false-positive guards"
+    "tests/x402-paid-path.test.ts \u2014 'paid request whose content-type prevents body parsing' (drives the real mounted route over real fetch with a combined content-type)",
+    "tests/x402-rejection-diagnostics.test.ts \u2014 explainDroppedBody() predicate + its false-positive guards"
   ]
 }

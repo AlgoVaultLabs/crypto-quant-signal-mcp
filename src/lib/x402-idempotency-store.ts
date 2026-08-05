@@ -30,6 +30,7 @@
  * support" ADD COLUMN IF NOT EXISTS).
  */
 import { dbExec, dbQuery } from './performance-db.js';
+import { recordIndeterminate } from './indeterminate-counter.js';
 
 const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   CREATE TABLE IF NOT EXISTS processed_x402_payments (
@@ -79,6 +80,14 @@ export function ensureProcessedX402PaymentsSchema(): void {
  * still unspent on-chain); a grant on a DB blip would re-open the very replay
  * hole this store closes.
  */
+/**
+ * The three states a claim attempt can be in. A boolean cannot carry three, which is the whole
+ * defect: `false` meant BOTH "this nonce was already claimed" (a settled fact) and "the database
+ * errored" (we have no idea), so a fault was reported to the caller as an ordinary replay and the
+ * paid rail served nothing for ~25 hours while every gate stayed green.
+ */
+export type ClaimOutcome = 'CLAIMED' | 'ALREADY_CLAIMED' | 'INDETERMINATE';
+
 export async function tryClaimPayment(
   nonce: string,
   tool: string,
@@ -87,12 +96,14 @@ export async function tryClaimPayment(
   // Additive TRAILING optional param → every existing caller stays valid. NULL when absent
   // (fail-open) — it is metadata on the winning insert, it NEVER gates the claim.
   payerWallet?: string,
-): Promise<boolean> {
+): Promise<ClaimOutcome> {
   if (!nonce) {
     // No usable idempotency key — fail safe (do not serve). Should not happen
     // for a verified EIP-3009 payment (nonce is a required authorization field).
     console.error('[x402-idempotency] tryClaimPayment called with empty nonce — failing safe (reject)');
-    return false;
+    // A missing nonce is a DETERMINED refusal, not an unknown: a verified EIP-3009 payment always
+    // carries one, so its absence tells us the proof is unusable. Not INDETERMINATE.
+    return 'ALREADY_CLAIMED';
   }
   try {
     ensureProcessedX402PaymentsSchema();
@@ -111,15 +122,24 @@ export async function tryClaimPayment(
     // make every such row DISTINCT in Postgres — NULL != NULL — so an unattributable replay
     // would bypass the claim entirely and re-serve for free. '' dedupes; NULL does not.
     const inserted = await dbQuery<{ nonce: string }>(sql, [nonce, tool, amount, payerWallet ?? '']);
-    // Row returned ⇒ this call won the insert ⇒ first use. Empty ⇒ replay.
-    return inserted.length > 0;
+    // Row returned ⇒ this call won the insert ⇒ first use. Empty ⇒ a genuine replay.
+    return inserted.length > 0 ? 'CLAIMED' : 'ALREADY_CLAIMED';
   } catch (err) {
-    // Fail safe: reject (do not serve) on any DB error. Loud per default-deny.
+    // OPS-ZERO-VS-UNKNOWN-W3: still REFUSE (architect-ratified — a lost sale is a foregone gain,
+    // a double-settle is an irreversible on-chain USDC charge plus a manual refund), but no longer
+    // LIE about why. Returning `false` here made a database fault indistinguishable from a settled
+    // replay, so the caller answered "already used" and a well-built client — correctly treating
+    // that as terminal — never retried. A transient server fault became a permanent client failure.
+    //
+    // The refusal is now LOUD: counted where a canary can read it, not merely logged. The log line
+    // below already existed during the 25-hour outage and was invisible precisely because nothing
+    // counted it.
     console.error(
-      `[x402-idempotency] tryClaimPayment DB error for nonce=${nonce} tool=${tool} — failing safe (reject):`,
+      `[x402-idempotency] tryClaimPayment DB error for nonce=${nonce} tool=${tool} — INDETERMINATE (refusing):`,
       err instanceof Error ? err.message : err,
     );
-    return false;
+    recordIndeterminate('x402_claim', 'claim store unreachable — refusing rather than mislabelling as a replay');
+    return 'INDETERMINATE';
   }
 }
 

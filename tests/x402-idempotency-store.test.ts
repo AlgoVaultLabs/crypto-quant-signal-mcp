@@ -10,6 +10,11 @@
  * fail-safe-on-empty-nonce path. Also unit-tests `extractPaymentNonce` over the
  * x402 v2 EIP-3009 / Permit2 payload shapes.
  */
+// FLIPPED by OPS-ZERO-VS-UNKNOWN-W3: tryClaimPayment returns a three-state ClaimOutcome, not a
+// boolean. A boolean could not distinguish "already claimed" (settled fact) from a DB fault
+// (no knowledge), which is what reported the 25-hour outage as an ordinary replay. The
+// exemption and its test are a pair: leaving these asserting booleans would keep the suite
+// pinning the defect.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -47,11 +52,11 @@ afterEach(async () => {
 describe('tryClaimPayment — first-use accepts, replay rejects', () => {
   it('first claim of a nonce → true; immediate replay of the same nonce → false', async () => {
     const nonce = '0xdeadbeefcafef00d000000000000000000000000000000000000000000000001';
-    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000')).toBe(true);
-    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000')).toBe(false);
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000')).toBe('CLAIMED');
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000')).toBe('ALREADY_CLAIMED');
     // A different nonce is independent.
     const other = '0xfeedface00000000000000000000000000000000000000000000000000000002';
-    expect(await store.tryClaimPayment(other, 'scan_funding_arb', '10000')).toBe(true);
+    expect(await store.tryClaimPayment(other, 'scan_funding_arb', '10000')).toBe('CLAIMED');
     expect(await store.getClaimedPaymentCount()).toBe(2);
   });
 
@@ -63,13 +68,13 @@ describe('tryClaimPayment — first-use accepts, replay rejects', () => {
     const results = await Promise.all(
       Array.from({ length: 20 }, () => store.tryClaimPayment(nonce, 'get_trade_signal', '20000')),
     );
-    const winners = results.filter(Boolean).length;
+    const winners = results.filter((r) => r === 'CLAIMED').length;
     expect(winners).toBe(1);
     expect(await store.getClaimedPaymentCount()).toBe(1);
   });
 
   it('empty nonce → false (fail-safe, never serve without an idempotency key)', async () => {
-    expect(await store.tryClaimPayment('', 'get_trade_signal', '20000')).toBe(false);
+    expect(await store.tryClaimPayment('', 'get_trade_signal', '20000')).toBe('ALREADY_CLAIMED');
     expect(await store.getClaimedPaymentCount()).toBe(0);
   });
 });
@@ -92,13 +97,13 @@ describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-
   it('stores payer_wallet on the winning claim; a SAME-payer replay is rejected and never overwrites it', async () => {
     const nonce = '0xaa11000000000000000000000000000000000000000000000000000000000001';
     const wallet = '0x76de895f0000000000000000000000000000c755';
-    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe(true);
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe('CLAIMED');
     expect(await payerWalletOf(nonce)).toBe(wallet);
     // Same payer, same nonce → still rejected, and the DO-NOTHING conflict does not overwrite.
-    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe(false);
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', wallet)).toBe('ALREADY_CLAIMED');
     expect(await payerWalletOf(nonce)).toBe(wallet);
     // DIFFERENT payer, same nonce → now settles, which is the whole point of the key change.
-    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xdeadbeef00000000000000000000000000000000')).toBe(true);
+    expect(await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xdeadbeef00000000000000000000000000000000')).toBe('CLAIMED');
   });
 
   // FLIPPED by OPS-AUDIT-REMEDIATION-LOW-W2 (SEC-49): an omitted payer now stores '' , NOT null.
@@ -107,11 +112,11 @@ describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-
   // for free. '' dedupes; null does not. The claim still succeeds, so it stays fail-OPEN.
   it("fail-open: omitted payer_wallet → '' column (not null), and the claim still succeeds", async () => {
     const nonce = '0xbb22000000000000000000000000000000000000000000000000000000000002';
-    expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe(true); // no wallet arg
+    expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe('CLAIMED'); // no wallet arg
     expect(await payerWalletOf(nonce)).toBe('');
     expect(await store.getClaimedPaymentCount()).toBe(1);
     // and it must still DEDUPE despite being unattributable
-    expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe(false);
+    expect(await store.tryClaimPayment(nonce, 'scan_funding_arb', '10000')).toBe('ALREADY_CLAIMED');
   });
 
   it('idempotency unchanged: N concurrent claims WITH a wallet → exactly one winner', async () => {
@@ -119,7 +124,7 @@ describe('tryClaimPayment — payer_wallet capture (OPS-X402-WALLET-ATTRIBUTION-
     const results = await Promise.all(
       Array.from({ length: 10 }, () => store.tryClaimPayment(nonce, 'get_trade_signal', '20000', '0xabc0000000000000000000000000000000000abc')),
     );
-    expect(results.filter(Boolean).length).toBe(1);
+    expect(results.filter((r) => r === 'CLAIMED').length).toBe(1);
     expect(await store.getClaimedPaymentCount()).toBe(1);
   });
 

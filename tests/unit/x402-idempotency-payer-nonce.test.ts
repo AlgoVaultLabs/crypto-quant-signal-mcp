@@ -9,6 +9,11 @@
  * The decisive assertion is the SECOND one: two different payers sharing a nonce must BOTH
  * settle. That case is the entire point of the change, so it is forced explicitly here.
  */
+// FLIPPED by OPS-ZERO-VS-UNKNOWN-W3: tryClaimPayment returns a three-state ClaimOutcome, not a
+// boolean. A boolean could not distinguish "already claimed" (settled fact) from a DB fault
+// (no knowledge), which is what reported the 25-hour outage as an ordinary replay. The
+// exemption and its test are a pair: leaving these asserting booleans would keep the suite
+// pinning the defect.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -27,37 +32,37 @@ describe.skipIf(SKIP)('SEC-49 — idempotency is keyed on (payer_wallet, nonce)'
   it('a genuine replay — same payer, same nonce — is still REFUSED', async () => {
     const nonce = '0x' + 'a'.repeat(64);
     const payer = '0xPAYER_ONE';
-    expect(await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', payer)).toBe(true);
+    expect(await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', payer)).toBe('CLAIMED');
     expect(
       await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', payer),
       'the replay hole this store exists to close must stay closed',
-    ).toBe(false);
+    ).toBe('ALREADY_CLAIMED');
   });
 
   it('THE FIX: two DIFFERENT payers sharing a nonce BOTH settle', async () => {
     const nonce = '0x' + 'b'.repeat(64);
     const first = await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', '0xPAYER_ONE');
     const second = await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', '0xPAYER_TWO');
-    expect(first).toBe(true);
+    expect(first).toBe('CLAIMED');
     expect(
       second,
       'under the old bare-nonce key this returned false: payer two paid on-chain and was served nothing',
-    ).toBe(true);
+    ).toBe('CLAIMED');
   });
 
   it('an unextractable payer still DEDUPES — it must not bypass the claim', async () => {
     // '' not NULL: under a composite key Postgres treats NULL != NULL, so a NULL payer would make
     // every unattributable row DISTINCT and re-serve for free on every replay.
     const nonce = '0x' + 'c'.repeat(64);
-    expect(await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', undefined)).toBe(true);
+    expect(await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', undefined)).toBe('CLAIMED');
     expect(
       await store.tryClaimPayment(nonce, 'get_trade_call', '0.01', undefined),
       'an absent payer must still dedupe, or the claim is bypassable by simply not being attributable',
-    ).toBe(false);
+    ).toBe('ALREADY_CLAIMED');
   });
 
   it('an empty nonce still fails safe', async () => {
-    expect(await store.tryClaimPayment('', 'get_trade_call', '0.01', '0xPAYER_ONE')).toBe(false);
+    expect(await store.tryClaimPayment('', 'get_trade_call', '0.01', '0xPAYER_ONE')).toBe('ALREADY_CLAIMED');
   });
 });
 
