@@ -165,9 +165,18 @@ test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → sig
   assert.match(html, /<h2>Enterprise<\/h2>/, 'Enterprise tier preserved');
   // The rendered prices + allowances are what a visitor actually sees — pin them here so a
   // bad SoT edit fails loudly instead of silently repricing three public pages.
-  assert.match(html, /\$9\.99<span>\/mo<\/span>/, 'Starter price rendered');
-  assert.match(html, /\$49<span>\/mo<\/span>/, 'Pro price rendered');
-  assert.match(html, /\$299<span>\/mo<\/span>/, 'Enterprise price rendered');
+  //
+  // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: Starter and Pro lead with the ANNUAL price; the monthly
+  // figure is still rendered, as the secondary "or $X/mo billed monthly" line. Enterprise has no
+  // self-serve price at all — it is contact-us — so its former $299/mo assertion is inverted.
+  assert.match(html, /\$79<span>\/yr<\/span>/, 'Starter annual price rendered');
+  assert.match(html, /\$299<span>\/yr<\/span>/, 'Pro annual price rendered');
+  assert.match(html, /or \$9\.99\/mo billed monthly/, 'Starter monthly alternative still offered');
+  assert.match(html, /or \$49\/mo billed monthly/, 'Pro monthly alternative still offered');
+  assert.match(html, /\$6\.58\/mo effective/, 'Starter effective monthly rate shown beside the annual total');
+  assert.match(html, /\$24\.92\/mo effective/, 'Pro effective monthly rate shown beside the annual total');
+  assert.doesNotMatch(html, /\$299<span>\/mo<\/span>/, 'Enterprise self-serve price removed (contact-us)');
+  assert.match(html, /mailto:admin@algovault\.com/, 'Enterprise contact line rendered');
   assert.match(html, /<li>3,000 calls\/month<\/li>/, 'Starter allowance rendered');
   assert.match(html, /<li>15,000 calls\/month<\/li>/, 'Pro allowance rendered');
   assert.match(html, /<li>100,000 calls\/month<\/li>/, 'Enterprise allowance rendered');
