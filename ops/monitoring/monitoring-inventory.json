@@ -92,7 +92,7 @@
       "schedule": null,
       "invoked_by": "ops/monitoring/monitoring-inventory-reconcile.py",
       "install_state": "installed",
-      "sha256": "4c276fc2d3639aafcbdb7816eea59b89806864703dd09a5a8c268217acd3a0aa",
+      "sha256": "4ea91fa17d42dc54f9a77cdee169bb229bca672cc3bd2d3397e1cef4158b18d8",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
