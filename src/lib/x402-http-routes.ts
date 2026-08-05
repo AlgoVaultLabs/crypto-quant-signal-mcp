@@ -424,8 +424,16 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // replay window (verify is stateless + settle is fire-and-forget, so the same
       // proof replayed concurrently within the ~2s settle window would unlock N
       // resources for ONE on-chain charge). Claim the ERC-3009 nonce; a replay
-      // (already-claimed nonce) → 402 without serving/settling. Fail-safe on DB error
-      // (tryClaimPayment returns false → reject) per default-deny on the paid path.
+      // (already-claimed nonce) → 402 without serving/settling. Fail-safe on DB error too, per
+      // default-deny on the paid path — but the two refusals are DIFFERENT ON THE WIRE, which is
+      // the whole reason the outcome is a union and not a boolean:
+      //   `'ALREADY_CLAIMED'` → 402 `X402_PAYMENT_REPLAY`     — terminal; do NOT retry (:460-468)
+      //   `'INDETERMINATE'`   → 402 `X402_CLAIM_UNAVAILABLE`
+      //                              + `retryable: true`      — transient; DO retry (:444-458)
+      // A client that cannot tell them apart converts our database blip into their permanent
+      // failure. _(Corrected REVENUE-METER-TRUTH-W6 CH7 — this said "tryClaimPayment returns
+      // false → reject", a boolean retired by OPS-ZERO-VS-UNKNOWN-W3, sitting 13 lines above the
+      // comment at :441-442 that explicitly forbids the two-state reading.)_
       const settlementReq = (pendingSettlement.requirements ?? {}) as { amount?: unknown };
       const paidAmount = typeof settlementReq.amount === 'string'
         ? settlementReq.amount

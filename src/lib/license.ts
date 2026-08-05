@@ -187,7 +187,14 @@ export interface PendingSettlement {
  *                    premium 1m=$0.05 call). (Surfaced as the default reason for any
  *                    binding failure that isn't provably cross-tool.)
  *  - `replayed`    — the proof's ERC-3009 nonce was already claimed (pre-settle
- *                    replay) → `tryClaimPayment` returned false.
+ *                    replay) → `tryClaimPayment` returned `'ALREADY_CLAIMED'`.
+ *  - `unavailable` — the claim could not be evaluated at all (database fault) →
+ *                    `tryClaimPayment` returned `'INDETERMINATE'`. Distinct from
+ *                    `replayed` ON PURPOSE: one is a fact about the buyer's nonce,
+ *                    the other is a confession about ours. This member exists ONLY
+ *                    because that boolean was retired (OPS-ZERO-VS-UNKNOWN-W3) —
+ *                    which is why this docblock claiming a boolean was doubly wrong.
+ *                    _(Corrected REVENUE-METER-TRUTH-W6 CH7.)_
  */
 export interface X402Downgrade {
   reason: 'cross_tool' | 'insufficient' | 'replayed' | 'unavailable';
@@ -331,8 +338,21 @@ async function bindAndClaimX402(
   }
 
   // (2) Single-use claim BEFORE the grant — close the pre-settle replay window.
-  // Fail-safe: empty nonce or DB error → tryClaimPayment returns false → downgrade
-  // (default-deny the upgrade; the buyer's on-chain nonce is unspent, costs a retry).
+  //
+  // Fail-safe in BOTH directions, but they are NOT the same outcome and must not be described
+  // as one (see :350-351, fifteen lines below):
+  //   empty nonce → `'ALREADY_CLAIMED'` → reason `'replayed'`    (a determined refusal: a verified
+  //                                                               EIP-3009 payment always carries a
+  //                                                               nonce, so its absence is a fact)
+  //   DB error    → `'INDETERMINATE'`   → reason `'unavailable'` (we could not evaluate the claim)
+  // Either way the upgrade is default-denied and the buyer's on-chain nonce is still unspent, so
+  // the cost is one retry.
+  //
+  // _(Corrected REVENUE-METER-TRUTH-W6 CH7. This line read "empty nonce or DB error →
+  // tryClaimPayment returns false → downgrade" — wrong twice: the function has not returned a
+  // boolean since OPS-ZERO-VS-UNKNOWN-W3, and lumping the two causes into ONE outcome re-asserted
+  // in prose the exact three-into-two collapse that :347-348 forbids in code. Rewriting it as
+  // "returns 'ALREADY_CLAIMED'" would have fixed the first error and kept the worse one.)_
   const requirements = (pendingSettlement?.requirements ?? {}) as { amount?: unknown };
   const matchedReq = Array.isArray(requirements) ? requirements[0] : requirements;
   const amtRaw = (matchedReq as { amount?: unknown })?.amount;
