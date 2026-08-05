@@ -276,7 +276,7 @@ bearer_token_env_var = "AV_API_KEY"
       <p>DeepSeek ships no MCP application of its own, and its API exposes no MCP parameter. What it does offer is an Anthropic-compatible endpoint, so you run a harness that already speaks MCP and swap the model behind it.</p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
-export ANTHROPIC_AUTH_TOKEN="${DEEPSEEK_API_KEY}"
+export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_API_KEY"
 
 claude mcp add --transport http --scope project algovault \
   https://api.algovault.com/mcp?src=docs \
