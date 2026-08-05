@@ -32,7 +32,7 @@ AlgoVault is an MCP (Model Context Protocol) server and API that returns a singl
 
 AlgoVault is built for autonomous software clients rather than human chart-readers. Agents connect over remote HTTPS using Streamable HTTP, as a local stdio process, or through MCP registries, and call a small set of tools that each return a structured response. The published track record is verifiable: every trade call is recorded on-chain, Merkle-anchored on the Base network, so results can be checked independently rather than taken on trust.
 
-The product is aimed at developers building AI trading agents, algorithmic-trading systems, and MCP-compatible clients. Coverage spans multiple cryptocurrency derivatives venues and a broad set of assets and timeframes. A free tier provides a monthly call allowance with HOLD calls always free; usage-based paid plans serve higher volumes, and per-call micropayments are also supported.
+The product is aimed at developers building AI trading agents, algorithmic-trading systems, and MCP-compatible clients. Coverage spans multiple cryptocurrency derivatives venues and a broad set of assets and timeframes. A free tier provides a monthly call allowance; usage-based paid plans serve higher volumes, and per-call micropayments are also supported.
 
 Typical uses include adding a directional view and confidence score to an agent's decision loop, classifying the current market regime before sizing a position, and scanning cross-venue funding-rate differences. Documentation and integration examples are maintained for common MCP clients and agent frameworks.
 ```

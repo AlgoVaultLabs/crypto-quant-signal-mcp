@@ -107,7 +107,7 @@ export const PARAM_DESC_SCAN_MIN_LIQUIDITY_USD =
   'Optional USD liquidity floor applied to the scan universe: notional open interest, ' +
   'or 24h volume on venues that expose no bulk OI. Omitted means no floor.';
 export const PARAM_DESC_SCAN_INCLUDE_HOLDS =
-  'Include HOLD calls after non-HOLD (default false). HOLDs never cost quota.';
+  'Include HOLD calls after non-HOLD (default false).';
 export const PARAM_DESC_SCAN_LIMIT =
   'Max ranked calls to return, 1 to 100 (default 10). Non-HOLD ranked first.';
 // SCAN-RANKBY-W1: universe-selection lens (default oi). funding_* rank among the

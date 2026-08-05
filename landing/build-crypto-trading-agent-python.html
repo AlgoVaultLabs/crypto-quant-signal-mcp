@@ -79,7 +79,7 @@ tailwind.config = { theme: { extend: { colors: {
     { "@type": "Question", "name": "How do I call AlgoVault from Python?", "acceptedAnswer": { "@type": "Answer", "text": "Use an MCP client. Connect to the Streamable HTTP endpoint, initialize a session, then call the get_trade_call tool with a coin, timeframe, and venue. The free tier needs no API key." } },
     { "@type": "Question", "name": "Does AlgoVault execute trades or only return calls?", "acceptedAnswer": { "@type": "Answer", "text": "It only returns calls. AlgoVault is the call layer your agent queries, not the agent framework or the executor. It does not place orders, hold custody, or size positions. Your code does that." } },
     { "@type": "Question", "name": "What do I still build?", "acceptedAnswer": { "@type": "Answer", "text": "Execution against your exchange or broker, position sizing, risk limits, and the agent loop that decides when to call and when to act. AlgoVault supplies the interpreted verdict; you supply the rest." } },
-    { "@type": "Question", "name": "Is there a free dev tier?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, HOLD calls are always free, and per-call micropayments are supported for higher volume. No API key needed to start." } }
+    { "@type": "Question", "name": "Is there a free dev tier?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and per-call micropayments are supported for higher volume. No API key needed to start." } }
   ]
 }
 </script>
@@ -148,7 +148,7 @@ async with streamablehttp_client("https://api.algovault.com/mcp") as (r, w, _):
     <h3>What do I still build?</h3>
     <p>Execution, sizing, risk limits, and the agent loop. AlgoVault supplies the verdict.</p>
     <h3>Is there a free dev tier?</h3>
-    <p>Yes — a monthly call allowance, HOLD calls always free, per-call micropayments for higher volume.</p>
+    <p>Yes — a monthly call allowance, per-call micropayments for higher volume.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

@@ -45,12 +45,6 @@ tailwind.config = {
   .param-row td:first-child { font-family: 'SF Mono', monospace; color: #d4b255; font-size: 12px; }
 </style>
 <!-- ANALYTICS:START -->
-<!-- Privacy-friendly analytics by Plausible -->
-<script async src="/js/insights.js"></script>
-<script>
-  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init({endpoint:"/pa/event"})
-</script>
 <!-- ANALYTICS:END -->
 <script type="application/ld+json">
 {
@@ -79,7 +73,7 @@ tailwind.config = {
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
   "category": "Software / API / FinanceApplication",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes, HOLDs always free" },
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "100,000 calls/month, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
@@ -128,7 +122,7 @@ tailwind.config = {
   "description": "Composite trade calls for AI trading agents across major crypto perpetual-futures venues, 850+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
@@ -567,7 +561,7 @@ tailwind.config = {
 // &rarr; the 10 highest-ranked assets, each a get_trade_call verdict
 //    (call, confidence, regime, price, indicators, _algovault)</code></pre>
       </div>
-      <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan. HOLD verdicts are free.</p>
+      <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan.</p>
     </section>
 
     <section id="chat-knowledge" class="mb-16"><span id="knowledge-tools-chat" aria-hidden="true"></span>
@@ -799,7 +793,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
           <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
         </tbody>
       </table>
-      <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>. <span class="text-emerald-400">HOLD verdicts are free</span> &mdash; when the engine says &ldquo;don&rsquo;t trade&rdquo;, there&rsquo;s no charge and no settlement (see the Free HOLD Policy above).</p>
+      <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>.</p>
       <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
             <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
       <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
@@ -1979,17 +1973,7 @@ cfg = gate_api.Configuration(
         </tbody>
       </table>
 
-      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Free HOLD Policy</h3>
-      <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 mb-8">
-        <p class="text-gray-300 text-sm mb-3">When the engine evaluates an asset and determines "don't trade" (HOLD), the call is free:</p>
-        <ul class="space-y-1.5 text-sm text-gray-400">
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No x402 charge</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> No deduction from subscription quota</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Rate limiting still applies (prevents abuse)</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">&#10003;</span> Only BUY and SELL verdicts are charged</li>
-        </ul>
-        <p class="text-gray-500 text-xs mt-3">This aligns incentives: you only pay when we see a tradeable opportunity. The engine returns HOLD on <span data-tr-field="hold_rate">99.2%</span> of scans &mdash; every one of them free.</p>
-      </div>
+      <p class="text-gray-400 text-sm mb-8">The engine returns HOLD on <span data-tr-field="hold_rate">99.2%</span> of scans &mdash; it calls only when multiple indicators align.</p>
 
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What happens after you subscribe</h3>
@@ -2099,7 +2083,7 @@ cfg = gate_api.Configuration(
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. At <span data-tr-field="hold_rate">99.2%</span>, the engine is highly selective &mdash; it calls only when multiple indicators align. HOLD calls are always free across all tiers.
+            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. At <span data-tr-field="hold_rate">99.2%</span>, the engine is highly selective &mdash; it calls only when multiple indicators align.
           </div>
         </details>
 

@@ -128,7 +128,7 @@ tailwind.config = { theme: { extend: { colors: {
       <li><strong>regime</strong> — TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</li>
       <li><strong>factors</strong> — funding state, open-interest momentum, trend persistence, breakout state.</li>
     </ul>
-    <p>HOLD calls are always free, so an agent can poll continuously across <span data-tr-field="exchange_count">5</span> venues without burning quota on no-trade reads.</p>
+    <p>An agent can poll continuously across <span data-tr-field="exchange_count">5</span> venues.</p>
 
     <h2>How fresh are the calls?</h2>
     <p>An agent requests a fresh verdict on demand at any supported timeframe. The track record is built on a five-minute-or-slower decision cadence; faster execution is the agent's downstream job. Coverage spans a broad asset set; the live counts are on the <a href="https://algovault.com/track-record">track record</a>.</p>

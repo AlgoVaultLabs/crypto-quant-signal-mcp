@@ -79,7 +79,7 @@ tailwind.config = { theme: { extend: { colors: {
     { "@type": "Question", "name": "Which AlgoVault tools does a LangChain agent bind?", "acceptedAnswer": { "@type": "Answer", "text": "get_trade_call returns the composite verdict (direction, confidence, regime, factors); get_market_regime returns the regime label on its own. Both are MCP tools your agent calls." } },
     { "@type": "Question", "name": "Does AlgoVault run the agent or place orders?", "acceptedAnswer": { "@type": "Answer", "text": "No. LangChain runs the agent and the chain; AlgoVault is the call and market-data layer the agent calls. AlgoVault places no orders and holds no custody." } },
     { "@type": "Question", "name": "How is the win rate verified?", "acceptedAnswer": { "@type": "Answer", "text": "Every call is hashed and anchored to a Merkle root on Base L2 before its outcome is known. Recompute any call's hash and check it at algovault.com/verify; the live win rate is at algovault.com/track-record." } },
-    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported." } }
+    { "@type": "Question", "name": "Is it free to try?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported." } }
   ]
 }
 </script>
@@ -150,7 +150,7 @@ def crypto_market_regime(coin: str) -> dict:
     <h3>How is the win rate verified?</h3>
     <p>Every call is hashed and anchored to a Merkle root on Base L2 before its outcome is known. Check any call at <a href="https://algovault.com/verify">/verify</a>; the live win rate is at <a href="https://algovault.com/track-record">/track-record</a>.</p>
     <h3>Is it free to try?</h3>
-    <p>Yes. The free tier includes a monthly call allowance, and HOLD calls are always free. Per-call micropayments are also supported.</p>
+    <p>Yes. The free tier includes a monthly call allowance. Per-call micropayments are also supported.</p>
 
     <div class="card" style="margin:32px 0 28px">
       <div style="font-weight:600;color:#eef2f7;margin-bottom:8px">Verify it yourself</div>

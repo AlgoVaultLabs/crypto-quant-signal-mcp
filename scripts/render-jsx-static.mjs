@@ -745,7 +745,7 @@ tailwind.config = {
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
   "category": "Software / API / FinanceApplication",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes, HOLDs always free" },
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "100,000 calls/month, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
@@ -801,7 +801,7 @@ tailwind.config = {
   "description": "Composite trade calls for AI trading agents. 15 crypto perp venues, 730+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every signal Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month, HOLD calls always free" },
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month" },
     { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
     { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" },
     { "@type": "Offer", "price": "299", "priceCurrency": "USD", "name": "Enterprise", "description": "Unlimited calls, SLA, priority support", "url": "https://api.algovault.com/signup?plan=enterprise" }
