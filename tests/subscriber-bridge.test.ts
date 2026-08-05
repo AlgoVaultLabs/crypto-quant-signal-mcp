@@ -6,6 +6,9 @@
  * ensureSubscriberBridgeColumns idempotency + backfillSubscriberBridges end-to-
  * end (seed signup_attribution + request_log + quota_usage → backfill → assert).
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   resolvePreConversionBridge,
@@ -16,7 +19,7 @@ import {
   _resetBridgeColumnsInitForTest,
   type BridgeDeps,
 } from '../src/lib/subscriber-attribution.js';
-import { dbQuery, dbRun } from '../src/lib/performance-db.js';
+import { closeDb, dbQuery, dbRun } from '../src/lib/performance-db.js';
 import { initAnalytics } from '../src/lib/analytics.js';
 import { initQuotaDb } from '../src/lib/license.js';
 
@@ -148,6 +151,20 @@ const SKIP = process.env.DATABASE_URL ? 'DATABASE_URL set — skip local SQLite'
 const describeOrSkip = SKIP ? describe.skip : describe;
 const SENT = 'bridge-test-';
 
+
+// ── OPS-PARALLEL-SESSION-CAPACITY-W2 / Ch3: private per-file SQLite DB ──
+//
+// Worktrees do NOT isolate ~/.crypto-quant-signal/performance.db, so N concurrent
+// sessions means N suites mutating one file. This suite asserts prefix-BLIND absolute
+// aggregates, which ANY foreign row breaks. MEASURED: 3 concurrent processes against
+// the shared DB failed 1-8 tests each in every round; with this isolation, 0.
+//
+// mkdtempSync is per-PROCESS unique. Do NOT key it on VITEST_POOL_ID — a small integer
+// restarting at 1 every run, so concurrent runs collide on one path: the exact bug.
+const ISOLATED_DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-subscriber-bridge-'));
+const ISOLATED_DB_PATH = path.join(ISOLATED_DB_DIR, 'performance.db');
+let ORIGINAL_PERF_DB_PATH: string | undefined;
+
 describeOrSkip('C2 SQLite integration — column ensure + backfill', () => {
   beforeEach(async () => {
     // Ensure all touched tables exist in the local SQLite test DB.
@@ -166,6 +183,16 @@ describeOrSkip('C2 SQLite integration — column ensure + backfill', () => {
     await dbRun(`DELETE FROM signup_attribution WHERE client_reference_id LIKE ?`, `${SENT}%`);
     await dbRun(`DELETE FROM request_log WHERE session_id LIKE ?`, `${SENT}%`);
     await dbRun(`DELETE FROM quota_usage WHERE tracker_key LIKE ?`, `free:${SENT}%`);
+    // process.env is process-global: leaving PERFORMANCE_DB_PATH set would redirect the
+    // next file scheduled on this same vitest worker to our deleted temp DB.
+    closeDb();
+    try {
+      fs.rmSync(ISOLATED_DB_DIR, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+    if (!ORIGINAL_PERF_DB_PATH) delete process.env.PERFORMANCE_DB_PATH;
+    else process.env.PERFORMANCE_DB_PATH = ORIGINAL_PERF_DB_PATH;
   });
 
   it('ensureSubscriberBridgeColumns adds all 5 columns and is idempotent', async () => {

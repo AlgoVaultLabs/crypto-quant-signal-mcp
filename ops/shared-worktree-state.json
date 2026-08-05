@@ -146,10 +146,26 @@
       "exempt_consumers": [
         {
           "path": "tests/analytics-external-only.test.ts",
-          "reason": "The ONLY suite that sets PERFORMANCE_DB_PATH to an isolated file today (measured: it is the sole match outside the resolver itself). It earned that isolation the hard way — OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 measured 5/5 failures with a concurrent writer versus 1/15 serial, because it asserts pre/post deltas on WHOLE-TABLE aggregates while other processes INSERT into request_log."
+          "reason": "OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 measured 5/5 failures with a concurrent writer versus 1/15 serial, because it asserts pre/post deltas on WHOLE-TABLE aggregates while other processes INSERT into request_log. It was the FIRST suite to set PERFORMANCE_DB_PATH; it is no longer the only one — see the four rows below."
+        },
+        {
+          "path": "tests/attribution-connect.test.ts",
+          "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Asserts by_source is an empty array over a WHOLE WINDOW, keyed on neither source nor session, so ANY foreign mcp_connect row breaks it — a disjoint sentinel prefix cannot help, and that window is already collided in-run by funnel-snapshot.test.ts. This is the file W1 caught failing on 2 of 5 concurrent gate runs with a genuine assertion mismatch."
+        },
+        {
+          "path": "tests/funnel-snapshot.test.ts",
+          "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Asserts prefix-BLIND absolute aggregates (quota_hit soft/hard/block = 3/2/1, identity_coverage 2/1/1/0.5, mcp_tools_list = 3). Isolating it is what forced the deploy.yml cold-DB pre-warm to be re-pointed in the same commit: a pre-warm aimed at an isolated suite warms a temp dir and warms nothing."
+        },
+        {
+          "path": "tests/pql.test.ts",
+          "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Same class: absolute candidate counts over request_log / quota_usage that any concurrent writer perturbs."
+        },
+        {
+          "path": "tests/subscriber-bridge.test.ts",
+          "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Same class: column-ensure + backfill assertions over shared tables."
         }
       ],
-      "notes": "Every other suite that touches the DB writes the developer's real file. vitest.config.ts sets no global PERFORMANCE_DB_PATH (verified). That is the declared contract, not an accident: CONCURRENT_WRITER reports it rather than blocking, because forcing isolation on every suite is a separate wave with its own blast radius."
+      "notes": "Every other suite that touches the DB writes the developer's real file. vitest.config.ts sets no global PERFORMANCE_DB_PATH (verified). That is the declared contract, not an accident: CONCURRENT_WRITER reports it rather than blocking, because forcing isolation on every suite is a separate wave with its own blast radius. OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3 isolated the four suites whose assertions are prefix-BLIND (measured: 3 concurrent processes against the shared DB failed 1-8 tests EACH in every round; with isolation, 0) and deliberately left the rest, since a suite scoped to its own uniquely-named rows is not exposed. STILL OPEN and NOT closed by isolation: the concurrent cold-open MIGRATION race at src/lib/performance-db.ts:400-411 (bare ALTER, no IF NOT EXISTS, no lock, no busy_timeout) — the Postgres twin at :430-435 already carries the defense and a comment naming the race, so the SQLite gap is a known, undefended asymmetry. Owner: OPS-SQLITE-COLD-OPEN-MIGRATION-RACE-W{NEXT}."
     },
 
     {
