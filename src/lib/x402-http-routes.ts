@@ -438,9 +438,27 @@ export function mountX402HttpRoutes(app: Express): string[] {
       // per SEC-49, so the NULL described here has never existed. Read-side filters written against
       // that phantom NULL let 4 unattributable rows count as a paying wallet.)_
       const payerWallet = extractPayerWallet(pendingSettlement.paymentPayload);
-      const claimed = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet);
-      if (!claimed) {
-        console.warn(`[x402-route] payment-replay REJECT for ${routePath} (nonce already claimed or unclaimable)`);
+      // OPS-ZERO-VS-UNKNOWN-W3: THREE outcomes. A truthy/falsy test here would silently
+      // reintroduce the exact conflation this wave removes, so the outcome is matched by name.
+      const outcome = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet);
+      if (outcome === 'INDETERMINATE') {
+        // We could not determine claim state, so we refuse — never double-settle. But we say SO,
+        // because the client's retry decision depends on it: "already used" is terminal and a
+        // well-built client will not retry, which would convert a transient fault into a
+        // permanent failure. Static message + a stable machine-readable code (SEC-50 precedent);
+        // the underlying error is logged server-side only, never on the wire.
+        console.error(`[x402-route] claim INDETERMINATE for ${routePath} — refusing (payment NOT settled, proof still spendable)`);
+        res.status(402).json({
+          x402Version: 2,
+          error: 'Payment Required',
+          code: 'X402_CLAIM_UNAVAILABLE',
+          message: 'Could not verify payment state right now. Your payment proof was NOT consumed — retry shortly.',
+          retryable: true,
+        });
+        return;
+      }
+      if (outcome === 'ALREADY_CLAIMED') {
+        console.warn(`[x402-route] payment-replay REJECT for ${routePath} (nonce already claimed)`);
         res.status(402).json({
           x402Version: 2,
           error: 'Payment Required',

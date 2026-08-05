@@ -190,7 +190,7 @@ export interface PendingSettlement {
  *                    replay) → `tryClaimPayment` returned false.
  */
 export interface X402Downgrade {
-  reason: 'cross_tool' | 'insufficient' | 'replayed';
+  reason: 'cross_tool' | 'insufficient' | 'replayed' | 'unavailable';
 }
 
 /** Optional binding context for `resolveLicense` — the priced MCP `tools/call` path
@@ -344,10 +344,11 @@ async function bindAndClaimX402(
   // note at x402-http-routes.ts. The column is `NOT NULL DEFAULT ''` per SEC-49 and the store writes
   // `payerWallet ?? ''`, so no NULL is reachable from either writer.)_
   const payerWallet = extractPayerWallet(pendingSettlement?.paymentPayload);
-  const claimed = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet);
-  if (!claimed) {
-    return { reason: 'replayed' };
-  }
+  // OPS-ZERO-VS-UNKNOWN-W3: matched by NAME, never truthiness — a `!claimed` test would
+  // re-collapse three states into two and report a database fault as a settled replay.
+  const outcome = await tryClaimPayment(nonce ?? '', tool, amount, payerWallet);
+  if (outcome === 'INDETERMINATE') return { reason: 'unavailable' };
+  if (outcome === 'ALREADY_CLAIMED') return { reason: 'replayed' };
 
   return undefined; // valid, single-use payment for this tool → grant + settle
 }

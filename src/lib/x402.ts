@@ -653,7 +653,7 @@ export function generate402Response(
  */
 export function buildX402PaymentRequiredResult(
   tool: string,
-  reason: 'cross_tool' | 'insufficient' | 'replayed',
+  reason: 'cross_tool' | 'insufficient' | 'replayed' | 'unavailable',
   id: unknown,
 ): {
   jsonrpc: '2.0';
@@ -662,7 +662,9 @@ export function buildX402PaymentRequiredResult(
 } {
   const accepts = (generate402Response(tool).body as { accepts?: unknown }).accepts ?? [];
   const suggested_action =
-    reason === 'replayed'
+    reason === 'unavailable'
+      ? 'Payment state could not be verified right now. Your payment proof was NOT consumed — retry shortly.'
+      : reason === 'replayed'
       ? 'This payment proof was already used. Submit a fresh x402 payment for this tool (see paymentRequirements).'
       : reason === 'cross_tool'
         ? `The payment proof does not match ${tool}'s price/asset/recipient. Submit an x402 payment for this tool (see paymentRequirements).`
