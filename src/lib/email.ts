@@ -707,3 +707,93 @@ Upgrade your plan to resume them today: ${SIGNUP_URL}
   const id = (sent as { data?: { id?: string } | null }).data?.id;
   return id ? { id } : null;
 }
+
+// ── Enterprise / contact-form lead (CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1) ──
+
+export interface ContactLeadEmailArgs {
+  leadId: number;
+  name: string;
+  email: string;
+  company: string | null;
+  monthlyVolume: string | null;
+  message: string;
+  intent: string;
+  src: string | null;
+}
+
+/**
+ * Strip everything that can terminate or forge an email header.
+ *
+ * CR and LF are the header-injection primitive: a `\r\n` inside a value that reaches a header
+ * lets a submitter append `Bcc:` or a second `Subject:`. NUL is stripped too — it is the byte
+ * that makes a tracked file invisible to the repo's own grep tooling, and it has no business in
+ * a lead field either. This runs on EVERY field even though none of them reach a header today,
+ * because "none of them reach a header" is a property of the current code, not of the data.
+ */
+function stripHeaderUnsafe(value: string): string {
+  return value.replace(/[\r\n\0]/g, ' ').trim();
+}
+
+/** HTML-escape — the lead body is operator-facing, but it is still attacker-authored text. */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * Notify the operator of a new lead.
+ *
+ * NO USER INPUT REACHES ANY HEADER. `subject` is a fixed literal, `from` is our configured
+ * sender and `replyTo` is our own constant — the submitter's address travels in the BODY only.
+ * Putting it in `Reply-To` would be the convenient choice and is the one this deliberately
+ * refuses: it is the single field most likely to be interpolated later "just for convenience",
+ * and a header is exactly where an injected CRLF does damage.
+ *
+ * Returns the Resend id, or throws — the caller records the failure against an already-durable
+ * lead row and still returns success to the user.
+ */
+export async function sendContactLeadEmail(args: ContactLeadEmailArgs): Promise<{ id: string } | null> {
+  const client = getResendClient();
+  if (!client) return null;
+
+  const name = stripHeaderUnsafe(args.name);
+  const email = stripHeaderUnsafe(args.email);
+  const company = args.company ? stripHeaderUnsafe(args.company) : '—';
+  const volume = args.monthlyVolume ? stripHeaderUnsafe(args.monthlyVolume) : '—';
+  const intent = stripHeaderUnsafe(args.intent);
+  const src = args.src ? stripHeaderUnsafe(args.src) : 'direct';
+  // The message keeps its newlines — it never reaches a header, and stripping them would
+  // mangle the one field the operator most needs to read as written.
+  const message = args.message.replace(/\0/g, '');
+
+  // FIXED LITERAL — no interpolation at all. `intent` is a server-set constant today, so
+  // interpolating it would be safe *by accident of the current caller*; the adversarial test
+  // for this function proved attacker text reaches the subject the moment that changes.
+  // CRLF-stripping stops header INJECTION; it does not stop attacker-controlled text sitting
+  // in a header, which is what the wave's rule actually forbids. `intent` moves to the body.
+  const subject = 'New enquiry — AlgoVault';
+  const rows: Array<[string, string]> = [
+    ['Name', name], ['Email', email], ['Company', company],
+    ['Expected volume', volume], ['Intent', intent], ['Channel', src], ['Lead ID', String(args.leadId)],
+  ];
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px">
+  <h1 style="font-size:20px;margin:0 0 16px">New ${esc(intent)} enquiry</h1>
+  <table style="border-collapse:collapse;font-size:14px;margin-bottom:16px">
+    ${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#656d76">${esc(k)}</td><td style="padding:4px 0"><strong>${esc(v)}</strong></td></tr>`).join('\n    ')}
+  </table>
+  <div style="font-size:14px;line-height:1.5;white-space:pre-wrap;border-left:3px solid #d0d7de;padding-left:12px">${esc(message)}</div>
+</div>`;
+  const text = `New ${intent} enquiry\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n---\n${message}\n`;
+
+  const sent = await client.emails.send({
+    to: REPLY_TO_ADDRESS,
+    from: getFromAddress(),
+    replyTo: REPLY_TO_ADDRESS,
+    subject,
+    html,
+    text,
+  });
+  const id = (sent as { data?: { id?: string } | null }).data?.id;
+  return id ? { id } : null;
+}

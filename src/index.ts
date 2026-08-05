@@ -212,6 +212,7 @@ function toolErrorContent(err: unknown): { content: { type: 'text'; text: string
   return { content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }], isError: true };
 }
 import { renderSignupFlowDark, renderPlanCards, PLAN_CARDS_CSS } from './lib/signup-flow.js';
+import { renderContactPage, renderContactConfirmation, HONEYPOT_FIELD } from './lib/contact-page.js';
 import {
   accountPageHandler,
   accountPortalHandler,
@@ -1499,6 +1500,69 @@ async function startHttp() {
     } catch (err) {
       console.error('Stripe webhook error:', err instanceof Error ? err.message : err);
       res.status(400).json({ error: 'Webhook verification failed' });
+    }
+  });
+
+  // ── Contact form (CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1) ──
+  //
+  // Replaces a `mailto:` Enterprise CTA that was dead in two independent ways: Cloudflare
+  // rewrites every `mailto:` into `/cdn-cgi/l/email-protection#…` (measured — ZERO plain mailto
+  // survives to a browser on any page), and even fully decoded it needs an OS mail handler the
+  // visitor may not have. This is the first lead-capture surface the product has.
+  const contactLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many messages. Try again in an hour, or email admin@algovault.com.',
+  });
+
+  app.get('/contact', (req, res) => {
+    const src = typeof req.query.src === 'string' ? req.query.src : null;
+    const error = typeof req.query.error === 'string' ? req.query.error : null;
+    res.type('html').send(renderContactPage({ error, src }));
+  });
+
+  // ORDER IS THE CONTRACT: validate → PERSIST → notify → record the notify outcome. A lead is
+  // the scarcest thing this product captures and an email send is a network call that fails, so
+  // a Resend outage must degrade to "stored, not yet notified" — never to a lost lead behind a
+  // success page.
+  // Thin shell: wires real dependencies into `handleContactSubmission`, which owns the ordering
+  // contract and is unit-testable (CLAUDE.md — a handler closure in index.ts is not).
+  app.post('/contact', contactLimiter, express.urlencoded({ extended: false, limit: '8kb' }), async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const [{ handleContactSubmission }, store, emailMod, tg] = await Promise.all([
+      import('./lib/contact-submit.js'),
+      import('./lib/contact-leads-store.js'),
+      import('./lib/email.js'),
+      import('./lib/telegram.js'),
+    ]);
+    // Channel re-derived server-side; the form's hidden field is a hint, never trusted as sent.
+    const classified = classifySource({
+      srcParam: typeof body.src === 'string' ? body.src : undefined,
+      userAgent: req.headers['user-agent'],
+      referer: req.headers.referer,
+      origin: req.headers.origin,
+    });
+    const result = await handleContactSubmission(
+      body,
+      { src: classified.source ?? null, ipHash: hashIp(clientIp(req) || 'unknown') },
+      {
+        validateEmail: validateSignupEmail,
+        insertLead: store.insertContactLead,
+        markNotified: store.markContactLeadNotified,
+        sendEmail: emailMod.sendContactLeadEmail,
+        sendAlert: tg.sendAlert,
+      },
+    );
+    switch (result.kind) {
+      case 'ok':
+      case 'honeypot':
+        return res.type('html').send(renderContactConfirmation());
+      case 'invalid':
+        return res.status(400).type('html').send(renderContactPage({ error: result.error }));
+      default:
+        return res.status(500).type('html').send(renderContactPage({ error: 'server_error' }));
     }
   });
 
