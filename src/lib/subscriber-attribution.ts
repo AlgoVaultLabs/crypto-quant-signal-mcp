@@ -192,6 +192,32 @@ function asString(v: unknown): string | null {
 }
 
 /**
+ * Normalise a timestamp read back OUT of the database into a form Postgres will accept when it is
+ * bound straight back IN. Exported for test.
+ *
+ * 🛑 THIS IS THE 58-DAY OUTAGE. `signup_at` is `timestamptz`, and the value bound into it comes from
+ * `SELECT created_at FROM signup_attribution`. **node-pg returns a `timestamptz` column as a JS
+ * `Date`**, and the old code did `String(rows[0].created_at)` — which yields
+ * `"Sun Jul 26 2026 11:46:33 GMT+0000 (Coordinated Universal Time)"`. Postgres rejects that with
+ * **SQLSTATE 22007** (`invalid input syntax for type timestamp with time zone`) — the trailing
+ * `(Coordinated Universal Time)` parenthetical is not parseable. Every profile INSERT carrying an
+ * attribution row was therefore rejected, and because the PG write path is fire-and-forget the
+ * rejection reached no `catch` and the caller logged SUCCESS. Measured: the profiler was 0-for-3 on
+ * every conversion that HAD an attribution row, while the one conversion WITHOUT one (so
+ * `signup_at = NULL`, a valid bind) is the single row the table contains.
+ *
+ * ⚠️ **A `Date` is the ONLY broken case, and widening this is how you break SQLite.** better-sqlite3
+ * returns `created_at` as the raw TEXT it stored — `datetime('now')` format, `'2026-07-26 11:46:33'`,
+ * UTC with no zone marker. `new Date('2026-07-26 11:46:33')` parses that as **LOCAL** time in Node,
+ * so "helpfully" re-serialising strings here would silently shift every SQLite timestamp by the host's
+ * UTC offset. Strings are already accepted by both backends and are passed through untouched.
+ */
+export function toIsoTimestamp(v: unknown): string | null {
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.toISOString() : null;
+  return asString(v);
+}
+
+/**
  * Pure assembly of a subscriber profile from the Stripe checkout session +
  * resolved first-party signals. No I/O, no Date.now (convertedAtEpoch injected)
  * — so channel-resolution order / geo source / cold logic / latency are unit-
@@ -519,7 +545,12 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
         'SELECT channel, created_at FROM signup_attribution WHERE client_reference_id = ?',
         [clientReferenceId],
       );
-      if (rows.length > 0) attribution = { channel: String(rows[0].channel), created_at: String(rows[0].created_at) };
+      // `created_at` is read from a `timestamptz` column and bound straight back into `signup_at`.
+      // `String(aDate)` produces a form Postgres cannot parse (22007) — see toIsoTimestamp.
+      // `?? ''` preserves the previous shape for the `string` type while a null/invalid timestamp
+      // degrades to the empty string, which `asString` in assembleProfile maps back to `signupAt: null`
+      // (the same outcome as before) rather than to a bind Postgres would reject.
+      if (rows.length > 0) attribution = { channel: String(rows[0].channel), created_at: toIsoTimestamp(rows[0].created_at) ?? '' };
     }
     // (2) cold-subscribe signals: free-tier opt-in + upgrade-CTA bridge
     let hasOptin = false;
@@ -598,7 +629,18 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
  * rows); fail-open per row. Returns the count of rows updated.
  *
  * Host post-deploy:
- *   docker exec <ctr> node dist/scripts/backfill-subscriber-bridges.js
+ *   docker exec <ctr> node -e "import('./dist/lib/subscriber-attribution.js') \
+ *     .then(m => m.backfillSubscriberBridges()) \
+ *     .then(n => { console.log('backfilled', n); process.exit(0); }) \
+ *     .catch(e => { console.error(e); process.exit(1); })"
+ *
+ * _(Corrected 2026-08-05 REVENUE-METER-TRUTH-W5 CH4 — this prescribed
+ * `node dist/scripts/backfill-subscriber-bridges.js`, a path that CANNOT exist: `tsconfig.json` is
+ * `rootDir: "src"` / `include: ["src/**​/*"]`, so the repo-root `scripts/` wrapper is never compiled,
+ * and the container holds zero such file (probed live). The wrapper's OWN header already carried the
+ * correct form above — it says "scripts/ is outside tsc rootDir" and "the container prunes tsx" — so
+ * this docblock has contradicted its own sibling since CONVERSION-MEASUREMENT-W1. The backfill itself
+ * was always runnable; only this instruction was dead.)_
  */
 export async function backfillSubscriberBridges(deps: ProfileDeps = defaultProfileDeps): Promise<number> {
   if (deps.ensureBridge) await deps.ensureBridge();
