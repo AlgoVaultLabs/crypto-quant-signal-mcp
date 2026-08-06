@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· aster integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,115</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,171</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -348,7 +348,7 @@ if (verdict.call === 'BUY' &amp;&amp; verdict.confidence &gt; 70) {
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers up to 20 calls/day per IP — plenty for development.</p>
+<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers 100 calls/month — plenty for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> When the verdict satisfies a pre-configured policy (e.g. <em>the agent’s policy fires when <code>confidence &gt; 70</code> AND <code>call === 'BUY'</code></em>), the script proceeds to the request-building branch. The policy lives entirely in your code — AlgoVault returns the analytics; the agent decides.</p>
@@ -383,7 +383,7 @@ if (verdict.call === 'BUY' &amp;&amp; verdict.confidence &gt; 70) {
 <!-- snapshot: 2026-07-21 — live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.8%</span> PFE Win Rate · <span data-tr-field="call_count">447,115</span>+ calls · <span data-tr-field="batch_count">118</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'aster',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.8%</span> PFE Win Rate · <span data-tr-field="call_count">447,171</span>+ calls · <span data-tr-field="batch_count">118</span>+ on-chain batches</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'aster',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
 <pre><code class="language-bash">claude plugin install AlgoVaultLabs/algovault-skills
 </code></pre>

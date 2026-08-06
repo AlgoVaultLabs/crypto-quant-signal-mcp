@@ -30,6 +30,34 @@ everything else resolves under `--source` (default `~/git/algovault-skills`).
 `algovault-skills/docs/integrations/_template.md`. A defect copied from it reaches every future
 page of that kind, so fix the template in the same change.
 
+### The producer repo has its own gate — and its own trap
+
+`algovault-skills` now carries `scripts/check-brand-copy.mjs` plus a **vendored copy**
+of this repo's `ops/brand-forbidden-phrases.json` and a copy of its `.sha256`. Both
+repos enforce the same blocklist.
+
+- **Re-vendor BOTH files together**, never hand-edit the copy. `ops/brand-forbidden-phrases.json.sha256`
+  here is the ONE canonical hash; the skills copy records none of its own, because a
+  second recorded hash is a second thing that can drift.
+- After changing the canonical file: re-stamp
+  (`shasum -a 256 ops/brand-forbidden-phrases.json | awk '{print $1}' > ops/brand-forbidden-phrases.json.sha256`),
+  copy both files across, and run the parity test in each repo.
+- The blocklist stores a **pattern**, not a literal list. Add a phrase *class*, not
+  today's bad string.
+- **Nothing auto-renders.** `dispatch-landing-rebuild.yml` in the skills repo fires only
+  on `skills/manifest.json` and `integrations/manifest.json` — a `docs/integrations/**`
+  edit triggers no rebuild at all. Push skills first, then re-render here, so the
+  committed HTML traces to a published commit rather than to a local working tree.
+
+### Two skills checkouts exist — use the one the renderer reads
+
+`render-integrations.mjs` defaults to `~/git/algovault-skills`. A second checkout at
+`~/code/algovault-skills` also exists and has been observed divergent and dirty.
+Rendering with `--source` pointed at the wrong one produces materially different HTML.
+Confirm with `git -C <path> rev-parse --short HEAD` before rendering — and use
+`git -c safe.directory='*'`, because a bare `rev-parse` refuses a repo it does not own
+and reports "not a repo", which has mis-classified real checkouts before.
+
 ## 2. Run the whole generator chain, in order
 
 ```bash

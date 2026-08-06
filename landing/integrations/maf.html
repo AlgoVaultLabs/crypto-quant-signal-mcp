@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· maf integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,115</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,171</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -289,14 +289,6 @@ tailwind.config = {
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>AlgoVault x Microsoft Agent Framework - Build Verifiable AI Trading Agents</h1>
-<blockquote>
-<!-- snapshot: 2026-07-21 - live source of truth: /api/performance-public + /api/merkle-batches -->
-</blockquote>
-<p><strong><span data-tr-field="pfe_wr">91.8%</span> PFE Win Rate · <span data-tr-field="call_count">447,115</span>+ calls · <span data-tr-field="merkle_batch_count">118</span>+ Merkle-verified on-chain batches · <span data-tr-field="asset_count">1530</span> assets.</strong></p>
-<blockquote>
-<p>Don’t trust - <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'maf',campaign:'track-record'}})">verify the track record →</a>
-<em>Snapshot taken 2026-05-18 - live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a></em></p>
-</blockquote>
 <p>Composite BUY/SELL/HOLD trade calls across major crypto perpetual-futures venues. Verified track record, Merkle-anchored on Base L2. Drop AlgoVault MCP into any <a href="https://github.com/microsoft/agent-framework">Microsoft Agent Framework</a> <code>ChatAgent</code> via the built-in <code>MCPStreamableHTTPTool</code> and your agent has both the analytics brain and a clean path to multi-agent orchestration across the Microsoft ecosystem.</p>
 <blockquote>
 <p><strong>Provenance:</strong> OFFICIAL <a href="https://github.com/microsoft/agent-framework">Microsoft Agent Framework</a> (<code>github.com/microsoft/agent-framework</code> · GA 1.0 April 2026 · the Microsoft-anointed successor to AutoGen, which is now in maintenance mode). The MCP class used here, <code>agent_framework.MCPStreamableHTTPTool</code>, is documented at <a href="https://learn.microsoft.com/en-us/python/api/agent-framework-core/agent_framework.mcpstreamablehttptool?view=agent-framework-python-latest">Microsoft Learn</a>. Verified 2026-05-18.</p>
@@ -439,7 +431,7 @@ async with tool:
 <ul>
 <li>Pin <code>agent-framework==1.4.0</code> (or the latest stable from PyPI at deploy time).</li>
 <li>Treat <code>MCPStreamableHTTPTool</code> connect/close in a single <code>async with</code> block per request OR keep one long-lived tool per worker - both are supported.</li>
-<li>Free tier covers 20 calls/day per IP. For higher throughput, see <a href="https://algovault.com/pricing">https://algovault.com/pricing</a>.</li>
+<li>Free tier covers 100 calls/month. For higher throughput, see <a href="https://algovault.com/pricing">https://algovault.com/pricing</a>.</li>
 <li>AlgoVault provides analytics; your agent and your risk policy decide what (if anything) to execute.</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Why AlgoVault?</h2>
@@ -451,7 +443,7 @@ async with tool:
 <!-- snapshot: 2026-07-21 - live source of truth: /api/performance-public + /api/merkle-batches -->
 </li>
 </ul>
-<p><strong><span data-tr-field="pfe_wr">91.8%</span> PFE Win Rate · <span data-tr-field="call_count">447,115</span>+ calls · <span data-tr-field="merkle_batch_count">118</span>+ on-chain batches · <span data-tr-field="asset_count">1530</span> assets</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'maf',campaign:'track-record'}})">view live track record</a></p></div>
+<p><strong><span data-tr-field="pfe_wr">91.8%</span> PFE Win Rate · <span data-tr-field="call_count">447,171</span>+ calls · <span data-tr-field="merkle_batch_count">118</span>+ on-chain batches · <span data-tr-field="asset_count">1530</span> assets</strong> → <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'maf',campaign:'track-record'}})">view live track record</a></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>CTA</h2>
 <p>Run the demo at <code>examples/maf/demo.py</code> · Pair with your MAF <code>ChatAgent</code> at <code>https://api.algovault.com/mcp</code> · Verify on <code>https://algovault.com/track-record</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Install</h2>
