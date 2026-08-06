@@ -28,10 +28,24 @@ const ENDPOINT_URL = 'https://api.algovault.com/webhooks/stripe';
 // ⚠️ KEEP IN SYNC with the webhook switch in src/index.ts (the `case '<event>':` labels).
 // Shipping a new handler case + deploy WITHOUT subscribing the event in Stripe is exactly
 // the drift this canary catches on its next run.
+//
+// 🛑 THIS ARRAY WAS VIOLATING ITS OWN CONTRACT (fixed 2026-08-06, OPS-STRIPE-SUBSCRIPTION-TRUTH-W2
+// CH3). It held THREE of the five events the switch handled, silently omitting `invoice.paid` and
+// `charge.refunded` since they were added. Because the check is a SUPERSET test
+// (live ⊇ EXPECTED), the omission never failed — it passed while proving less than it claimed,
+// which is the more dangerous shape: a declaration nobody watched fail. Unsubscribing either of
+// those two in Stripe would have gone undetected indefinitely.
+//
+// It is now the full set of SIX, enumerated against the switch and against the live endpoint.
+// If you add a `case` to that switch, add it here in the SAME commit — and remember there are
+// TWO byte-identical copies of this file (`ops/monitoring/` and `scripts/`).
 const EXPECTED = [
+  'charge.refunded',
   'checkout.session.completed',
   'customer.subscription.created',
   'customer.subscription.deleted',
+  'customer.subscription.updated',
+  'invoice.paid',
 ];
 
 const ALERT_ID = 'STRIPE_WEBHOOK_EVENT_DRIFT';
