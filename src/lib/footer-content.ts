@@ -13,10 +13,17 @@
  * exactly one place. The footer-drift CI canary asserts no inline brand-footer markup
  * (the `oklch(0.13 0.012 265)` signature) survives outside this module.
  *
- * Scope = the BRAND footer TYPE only (apex, /track-record, /account, how-it-works, the 4
- * integration tutorials). The page-nav (faq/glossary), SEO (16 pages), and copyright/MIT
- * (skills/integrations) footers are intentionally DIFFERENT types and are left as-is
- * (Mr.1 ruling Q2=A); SEO badging is the deferred FOOTER-UNIFY-SEO-BADGE-W1.
+ * Scope = EVERY public page. FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1 **reverses Mr.1 ruling
+ * Q2=A**, which had held the page-nav (faq/glossary), SEO (16 pages) and copyright/MIT
+ * (skills/integrations) footers to be intentionally DIFFERENT types, left as-is. The architect
+ * re-ruled "Unify + preserve" with those footers' measured contents in front of them: ONE footer
+ * type everywhere, and the links unique to the retired types are CARRIED INTO the set below so
+ * the replace loses nothing. A deliberate reversal, recorded so the next reader does not mistake
+ * it for drift — and it CLOSES the deferred FOOTER-UNIFY-SEO-BADGE-W1.
+ *
+ * The `NON_BRAND_SURFACES` assertion in tests/unit/footer-unify-canary.test.mjs encoded Q2=A and
+ * is flipped in the same wave: an exemption and the test that pins it are a pair, and leaving
+ * either half behind half-disables the guard or makes the test a lie.
  *
  * Lifted verbatim from the committed apex footer (PH-BADGE-COMPACT-W1, commit 386cf33),
  * with the architect-ratified normalizations:
@@ -36,14 +43,42 @@ export const BRAND_FOOTER_MARKER = 'data-av-brand-footer';
  *  page-nav / SEO / copyright footer types). The injector matches on this to strip-and-reinject. */
 export const BRAND_FOOTER_BG_SIGNATURE = 'oklch(0.13 0.012 265)';
 
-/** Superset footer link set (Q5), absolute URLs (Q4). Label is HTML-ready (entities kept). */
-const FOOTER_LINKS: ReadonlyArray<{ href: string; label: string; external: boolean }> = [
+export interface FooterLink {
+  readonly href: string;
+  readonly label: string;
+  readonly external: boolean;
+}
+
+/**
+ * Superset footer link set (Q5), absolute URLs (Q4). Label is HTML-ready (entities kept).
+ *
+ * EXPORTED so the coverage gate reads the same array this renders from — a test that hardcodes
+ * its own copy of the expected links is a second derivation, and a duplicated fact goes stale.
+ *
+ * Order is architect-confirmed (FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1): navigation leads,
+ * `Contact` sits after `Refer & Earn`, and the legal pair closes the list.
+ *
+ * `Home` / `Track Record` / `Glossary` were CARRIED IN from the page-nav footer this wave
+ * retires (landing/faq.html). They are what makes the architect's "preserve" leg true — dropping
+ * them while replacing that footer would be a user-visible content reduction, which the
+ * Data-Integrity rule forbids as a side effect. Do not "tidy" them out.
+ *
+ * Every internal href was probed 200 on the apex at wave time; `/contact` is served there by the
+ * `handle /contact` block CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1 added. `Signup` stays on the api
+ * host because the apex allowlist deliberately excludes /welcome + /signup.
+ */
+export const FOOTER_LINKS: ReadonlyArray<FooterLink> = [
+  { href: 'https://algovault.com/', label: 'Home', external: false },
+  { href: 'https://algovault.com/track-record', label: 'Track Record', external: false },
+  { href: 'https://algovault.com/glossary', label: 'Glossary', external: false },
   { href: 'https://github.com/AlgoVaultLabs', label: 'GitHub', external: true },
   { href: 'https://x.com/AlgoVaultLabs', label: 'X / Twitter', external: true },
   // FUNNEL-FIX-NAV-CTA-WELCOME-W1: the Signup CTA leads to the unified sign-in /welcome (api-canonical; the apex allowlist excludes /welcome + /signup).
   { href: 'https://api.algovault.com/welcome', label: 'Signup', external: false },
   { href: 'https://algovault.com/referral', label: 'Refer &amp; Earn', external: false },
+  { href: 'https://algovault.com/contact', label: 'Contact', external: false },
   { href: 'https://algovault.com/privacy', label: 'Privacy', external: false },
+  { href: 'https://algovault.com/terms', label: 'Terms', external: false },
 ];
 
 /**

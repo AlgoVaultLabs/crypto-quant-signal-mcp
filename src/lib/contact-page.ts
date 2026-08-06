@@ -24,6 +24,8 @@ export const CONTACT_FALLBACK_EMAIL = 'admin@algovault.com';
  */
 export { HONEYPOT_FIELD } from './contact-submit.js';
 import { HONEYPOT_FIELD, INQUIRY_TYPES, DEFAULT_INQUIRY_TYPE } from './contact-submit.js';
+// FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
+import { renderBrandFooter } from './footer-content.js';
 
 const SHELL_CSS = `
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -57,7 +59,7 @@ function shell(title: string, body: string): string {
 <title>${title}</title>
 <style>${SHELL_CSS}</style>
 </head>
-<body><div class="wrap">${body}</div></body>
+<body><div class="wrap">${body}</div>${renderBrandFooter('desktop')}</body>
 </html>`;
 }
 

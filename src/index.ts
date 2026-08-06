@@ -4830,6 +4830,7 @@ function getSignupPageHtml(): string {
     <a class="btn" href="https://algovault.com/docs.html#x402" style="background:#1f6feb;white-space:nowrap">Pay per call with x402 &rarr;</a>
   </div>
 </div>
+${renderBrandFooter('desktop')}
 </body>
 </html>`;
 }

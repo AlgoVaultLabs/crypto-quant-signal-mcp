@@ -1,0 +1,21 @@
+{
+  "_doc": [
+    "FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1 — the declared exemption set for the brand-footer",
+    "injector (scripts/inject-footer.mjs) and the coverage gate that pairs with it.",
+    "",
+    "WHY THIS FILE EXISTS: the injector used to carry a hand-maintained TARGETS array. It went",
+    "stale TWICE — OPS-INTEGRATIONS-VENUE-PAGES-W1 records the first (gemini/kraken/alpaca never",
+    "received the footer), and this wave found the second (12 of 24 integrations pages listed).",
+    "Targets are now DERIVED from a glob, so the only thing a human maintains is the far smaller",
+    "set of pages that must NOT get a footer — and each of those carries its reason in DATA.",
+    "An exemption that lives only in a code comment gets 'fixed' by a future wave enforcing the",
+    "contract; one that lives here has to be argued with."
+  ],
+  "glob": "landing/**/*.html",
+  "exempt": [
+    {
+      "path": "landing/_design/loader-snippet.html",
+      "reason": "HTML FRAGMENT — carries no <html> or </body>. It is injected INTO other pages, so a footer here would nest inside the host page's body and render a second time."
+    }
+  ]
+}

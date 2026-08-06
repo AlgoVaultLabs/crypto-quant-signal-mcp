@@ -12,6 +12,8 @@
 
 import { renderSigninComponent } from './signin-component.js';
 import { PLANS, planPriceLabel } from './plans.js';
+// FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
+import { renderBrandFooter } from './footer-content.js';
 
 /**
  * Sanitize a UTM-ish param to safe URL-injection-free chars. Anything outside
@@ -243,6 +245,7 @@ export function getWelcomePageHtml(
     });
   })();
 </script>
+${renderBrandFooter('desktop')}
 </body>
 </html>`;
 }

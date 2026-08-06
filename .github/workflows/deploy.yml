@@ -146,6 +146,21 @@ jobs:
       - name: Integrations registry lockstep canary (check-integrations-registry-lockstep --check)
         run: node scripts/check-integrations-registry-lockstep.mjs --check
 
+      # FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1 — brand-footer universal coverage.
+      # Asserts every non-exempt public page carries the footer rendered from the ONE SoT
+      # (src/lib/footer-content.ts). Fail-closed; prints FOOTER_INJECT_VERDICT=.
+      #
+      # WHY THIS STEP EXISTS AT ALL: until this wave `inject-footer.mjs --check` was invoked by
+      # NOTHING — not package.json, not a workflow, not ops/ — while its own docblock called it a
+      # CI canary and a unit test said it "paired with" it. That is why its hand-maintained target
+      # list went stale TWICE (it listed 12 of 24 integrations pages) with every gate green.
+      # The meta-canary could not catch it either: check-canaries-wired.mjs discovers gates by
+      # NAME (scripts/check-*, check_*, *canary*), and this file matches none of those patterns.
+      - name: Brand-footer universal-coverage canary (fail-closed)
+        run: |
+          node scripts/inject-footer.mjs --self-test
+          node scripts/inject-footer.mjs --check
+
       # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
       # lockstep canary above proves a SLUG is wired across its six homes; this one
       # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations

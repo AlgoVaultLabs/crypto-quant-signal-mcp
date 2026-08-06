@@ -23,6 +23,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -121,13 +122,35 @@ function blankMarkers(html, markerNames) {
   return out;
 }
 
+/**
+ * FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1 — emit the brand footer from the SoT.
+ *
+ * This generator writes landing/docs.html WHOLE-FILE from docs-src/template.html, so a footer
+ * placed by scripts/inject-footer.mjs is dropped on the very next build. Measured: it was the one
+ * page of 55 that regressed when the generators ran. Fix at the generator, not the lane.
+ *
+ * The footer is rendered from dist/lib/footer-content.js rather than pasted into the template —
+ * a hardcoded copy in the template is exactly the drift class FOOTER-UNIFY-W1 retired.
+ */
+function renderFooterFromSot() {
+  const dist = path.join(REPO_ROOT, 'dist', 'lib', 'footer-content.js');
+  if (!fs.existsSync(dist)) {
+    throw new Error(`build_docs: ${dist} not found. Run \`npm run build\` (tsc) first.`);
+  }
+  return createRequire(import.meta.url)(dist).renderBrandFooter('desktop');
+}
+
 function generate(outlineMod) {
   const flat = outlineMod.flattenOutline();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf8');
-  return template
+  const html = template
     .replace(SIDEBAR_PLACEHOLDER, renderSidebar(flat))
     .replace(BODY_PLACEHOLDER, renderBody(flat))
     .replace(TECH_ARTICLE_PLACEHOLDER, outlineMod.techArticleToolClause());
+
+  const idx = html.lastIndexOf('</body>');
+  if (idx === -1) throw new Error('build_docs: template has no </body> to anchor the brand footer');
+  return `${html.slice(0, idx)}${renderFooterFromSot()}\n${html.slice(idx)}`;
 }
 
 async function main() {

@@ -1148,8 +1148,19 @@ function wrapVerifyDualRender(desktopHtml, mobileHtml) {
 }
 
 // Assemble full HTML document.
+// FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: the brand footer is emitted HERE, from the SoT,
+// rather than left to scripts/inject-footer.mjs. This generator writes landing/verify.html
+// whole-file, so an injected footer would be silently dropped on the next render — fix at the
+// generator, not the lane. `inject-footer.mjs --check` is what proves it stayed fixed.
 function buildVerifyHtmlDocument(bodyContent, appendedJs) {
-  return VERIFY_HEAD_AND_NAV + bodyContent + (appendedJs || '') + '\n</body>\n</html>\n';
+  return (
+    VERIFY_HEAD_AND_NAV +
+    bodyContent +
+    (appendedJs || '') +
+    '\n' +
+    renderBrandFooter('desktop') +
+    '\n</body>\n</html>\n'
+  );
 }
 
 // ── DESIGN-W9 C3 — Wave overrides + 4 data-tr-field live-binds ──────────────

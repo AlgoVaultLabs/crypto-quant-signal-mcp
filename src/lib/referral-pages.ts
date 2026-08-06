@@ -18,6 +18,8 @@ import {
 } from './referral-constants.js';
 import { renderPlanCards, PLAN_CARDS_CSS } from './signup-flow.js';
 import { renderSigninComponent } from './signin-component.js';
+// FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
+import { renderBrandFooter } from './footer-content.js';
 
 const FTC_URL = 'https://www.ecfr.gov/current/title-16/chapter-I/subchapter-B/part-255';
 const TERMS_PATH = '/referral-terms';
@@ -71,7 +73,7 @@ ${robots}${desc}
   .muted{color:var(--fg-3);font-size:13px}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
 </style></head>
-<body><div class="wrap">${body}</div></body></html>`;
+<body><div class="wrap">${body}</div>${renderBrandFooter('desktop')}</body></html>`;
 }
 
 export interface ReferralStatsView {
