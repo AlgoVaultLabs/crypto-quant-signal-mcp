@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "_comment": [
+    "CANONICAL forbidden-phrase blocklist. CROSS-REPO-TUTORIAL-PRODUCER-GATE-W1.",
+    "",
+    "This file is the ONE source. crypto-quant-signal-mcp reads it directly;",
+    "algovault-skills carries a VENDORED copy plus a committed .sha256 of THIS file,",
+    "and a parity assertion in each repo. The row below is the only canonical hash",
+    "reference point — the vendored copy never records a second hash of its own,",
+    "because a second recorded hash is a second thing that can drift.",
+    "",
+    "WHY A PATTERN, NOT A LITERAL LIST: '20 calls/day', '20 free calls/day' and",
+    "'20 calls per day' are one class. A literal list lets '25 calls/day' through",
+    "tomorrow, which is exactly the defect this gate exists to make impossible.",
+    "",
+    "WHY NO BRAND-FACTS PROSE: brand-facts.md is private (vault). Only the",
+    "machine-checkable pattern and a citation travel into this public repo — same",
+    "discipline as ops/claudemd-claims.lock.json, which carries identifiers only.",
+    "",
+    "SCOPE: seeded with per-day-quota ONLY. This wave is not a brand-facts",
+    "migration; widening is OPS-BRAND-BLOCKLIST-WIDEN-W{NEXT}."
+  ],
+  "source": "brand-facts.md M-series (vault, private)",
+  "installed_at": [
+    {
+      "repo": "crypto-quant-signal-mcp",
+      "path": "ops/brand-forbidden-phrases.json",
+      "role": "canonical",
+      "consumer": "scripts/check-mcp-client-copy.mjs (C-BLOCKLIST)"
+    },
+    {
+      "repo": "algovault-skills",
+      "path": "ops/brand-forbidden-phrases.json",
+      "role": "vendored",
+      "consumer": "scripts/check-brand-copy.mjs",
+      "parity": "ops/brand-forbidden-phrases.json.sha256"
+    }
+  ],
+  "exempt_paths": [
+    {
+      "path": "docs/RUNBOOK-INTEGRATION-TUTORIAL-AUTHORING.md",
+      "phrase_id": "per-day-quota",
+      "reason": "The runbook that DOCUMENTS this ban has to quote the banned phrase to be useful ('Never write 20 calls/day'). Comment-stripping cannot help — it is markdown prose, not a comment. CLAUDE.md gate-writing bug (a): a gate that demands the deletion of the line explaining the defect is a gate that gets disabled. Exemption is declared HERE on the row, never in prose, so a future wave enforcing the contract cannot silently 'fix' it."
+    }
+  ],
+  "exempt_consumers": [
+    {
+      "what": "exchange venue rate-limit prose",
+      "example": "10/s per UID and 3/s per IP on the place-order endpoint",
+      "why": "A VENUE's API rate limit, not AlgoVault's free-tier quota. The pattern is written so these never match: it requires a digit adjacent to calls/day, so 'per IP' alone is inert. Asserted in both directions by the gate's self-test."
+    }
+  ],
+  "phrases": [
+    {
+      "id": "per-day-quota",
+      "pattern": "\\b\\d+\\s*(free\\s*)?calls?\\s*/?\\s*(per\\s*)?day\\b",
+      "correction": "100 calls/month",
+      "severity": "high",
+      "reason": "Free tier is a monthly cap. Per-day phrasing overstates it.",
+      "ratified": "brand-facts.md:95,:502"
+    }
+  ]
+}

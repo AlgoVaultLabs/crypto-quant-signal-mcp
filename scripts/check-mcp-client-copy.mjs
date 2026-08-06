@@ -180,6 +180,141 @@ export function tutorialFiles(rootDir = ROOT) {
   return files;
 }
 
+/**
+ * C-D4's corpus — WHAT REACHES A READER (architect ruling, CROSS-REPO-TUTORIAL-PRODUCER-GATE-W1).
+ *
+ * The live-numbers note exists in 17 `algovault-skills` markdown producers, but
+ * `render-integrations.mjs::stripSnapshotBlock()` removes it from 12 of them by
+ * design, so those never reach a page. Scanning producers whose output is stripped
+ * would hold this check RED forever over a defect no reader can see, and editing
+ * them to make it green would risk breaking the stripper's 3-block match.
+ *
+ * So the corpus is the rendered surfaces plus the in-repo producers: the 8
+ * MCP-client tutorial pairs, the 4 agent-framework pages whose block SURVIVES
+ * stripping, and the two hand-maintained landing pages.
+ */
+const D4_EXTRA_SURFACES = [
+  'landing/integrations/langchain.html',
+  'landing/integrations/crewai.html',
+  'landing/integrations/maf.html',
+  'landing/integrations/llamaindex.html',
+  'landing/integrations.html',
+  'landing/skills.html',
+];
+
+/** @returns {string[]|null} null = a declared surface is missing → INDETERMINATE. */
+export function d4Files(rootDir = ROOT) {
+  const base = tutorialFiles(rootDir);
+  if (!base) return null;
+  const extra = [];
+  for (const rel of D4_EXTRA_SURFACES) {
+    const p = join(rootDir, rel);
+    if (!existsSync(p)) return null;
+    extra.push(p);
+  }
+  return [...base, ...extra];
+}
+
+/**
+ * C-BLOCKLIST's corpus — every reader-facing surface in this repo.
+ *
+ * Deliberately NOT corpusFiles(), which walks only the TOP level of landing/. The
+ * per-day quota phrase lives in landing/integrations/*.html, one directory down, so
+ * a top-level walk would report a confident clean scan over the exact files that
+ * carry the defect.
+ *
+ * @returns {string[]|null} null = landing/ or README.md missing → INDETERMINATE.
+ */
+export function blocklistFiles(rootDir = ROOT) {
+  const files = [];
+  const landing = join(rootDir, 'landing');
+  if (!existsSync(landing)) return null;
+  walkExts(landing, files, (n) => n.endsWith('.html') || /^llms.*\.txt$/.test(n));
+  const readme = join(rootDir, 'README.md');
+  if (!existsSync(readme)) return null;
+  files.push(readme);
+  const docs = join(rootDir, 'docs');
+  if (existsSync(docs)) walkExts(docs, files, (n) => n.endsWith('.md'));
+  return files;
+}
+
+/** @param {string} dir @param {string[]} out @param {(name:string)=>boolean} keep */
+function walkExts(dir, out, keep) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkExts(p, out, keep);
+    else if (keep(e.name)) out.push(p);
+  }
+}
+
+/**
+ * Load the canonical forbidden-phrase blocklist. Null = cannot verify, never a pass.
+ *
+ * Returns compiled entries so a bad pattern fails HERE (INDETERMINATE) rather than
+ * silently matching nothing at scan time, which would read as a clean corpus.
+ */
+export function loadBlocklist(file = join(ROOT, 'ops', 'brand-forbidden-phrases.json')) {
+  if (!existsSync(file)) return null;
+  let j;
+  try {
+    j = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(j.phrases) || j.phrases.length === 0) return null;
+  const out = [];
+  for (const p of j.phrases) {
+    if (!p || !p.id || !p.pattern || !p.correction) return null;
+    let re;
+    try {
+      re = new RegExp(p.pattern, 'gi');
+    } catch {
+      return null;
+    }
+    out.push({ ...p, re });
+  }
+  // Every exemption must carry a REASON. An exemption with no stated reason is
+  // indistinguishable from an oversight, and the next wave enforcing the contract
+  // deletes it. Refuse to load rather than honour a bare path.
+  const exemptions = Array.isArray(j.exempt_paths) ? j.exempt_paths : [];
+  for (const e of exemptions) {
+    if (!e || !e.path || !e.phrase_id || !e.reason) return null;
+  }
+  out.exemptions = exemptions;
+  return out;
+}
+
+/** Is (file, phrase) exempt? Path is matched repo-relative, exactly — no globs. */
+function isExempt(exemptions, relPath, phraseId) {
+  return exemptions.some((e) => e.path === relPath && e.phrase_id === phraseId);
+}
+
+/**
+ * CHECK 8 (C-BLOCKLIST) — a retired brand phrase in any reader-facing surface.
+ *
+ * Reports file:line so the output is a worklist, not a verdict. Uses
+ * stripCodeCommentsOnly() so documentation explaining a ban is not punished by it,
+ * while markdown blockquotes — where several of these phrases live — stay visible.
+ */
+export function checkBlocklist(files, readFile, blocklist, rootDir = ROOT) {
+  const hits = [];
+  const exemptions = blocklist.exemptions || [];
+  for (const f of files) {
+    const relPath = f.startsWith(rootDir + '/') ? f.slice(rootDir.length + 1) : f;
+    const src = stripCodeCommentsOnly(readFile(f), f);
+    const lines = src.split('\n');
+    for (const p of blocklist) {
+      if (isExempt(exemptions, relPath, p.id)) continue;
+      for (let i = 0; i < lines.length; i++) {
+        p.re.lastIndex = 0;
+        const m = p.re.exec(lines[i]);
+        if (m) hits.push({ file: f, line: i + 1, id: p.id, match: m[0], correction: p.correction });
+      }
+    }
+  }
+  return hits;
+}
+
 /** Load the MCP-client registry from the compiled SoT. Null = cannot verify. */
 function loadRegistry() {
   const dist = join(ROOT, 'dist', 'lib', 'integrations-data', 'mcp-clients.js');
@@ -450,6 +585,43 @@ function selfTest() {
     fails.push('stripCodeCommentsOnly() strips md blockquotes — checks 4-6 would be VACUOUS');
   }
 
+  // ── CHECK 8 (C-BLOCKLIST). The must-NOT-fire cases matter more than the
+  // must-fire ones here: a quota pattern that also swallows a VENUE's API rate
+  // limit would force an editor to weaken real exchange documentation.
+  const bl = {
+    '/fx/bl-quota.md': 'Free tier covers 20 calls/day per IP — plenty for development.',
+    '/fx/bl-quota-upto.md': 'Free tier covers up to 20 calls/day per IP',
+    '/fx/bl-quota-free.md': 'Free tier covers 20 free calls/day',
+    '/fx/bl-quota-words.md': 'Free tier covers 20 calls per day',
+    '/fx/bl-quota-future.md': 'Free tier covers 25 calls/day',   // the class, not the literal
+    '/fx/bl-ok-month.md': 'Free tier: 100 calls/month, every coin and timeframe.',
+    // Real venue rate limits that MUST survive — these are exchange API facts.
+    '/fx/bl-ok-venue1.md': 'Awareness that rate limits are **per-IP, not per-key** (2,400 weight/min, 1,200 order/min)',
+    '/fx/bl-ok-venue2.md': 'Awareness of the order rate limit — 10/s per UID and 3/s per IP on the place-order endpoint.',
+    // A doc explaining the ban must not be punished by the ban.
+    '/fx/bl-ok-comment.html': '<!-- retired: 20 calls/day --><p>Free tier: 100 calls/month.</p>',
+  };
+  Object.assign(fixtures, bl);
+
+  const testBl = loadBlocklist(join(ROOT, 'ops', 'brand-forbidden-phrases.json'));
+  if (!testBl) {
+    console.error('✗ self-test could not load ops/brand-forbidden-phrases.json — cannot verify C-BLOCKLIST.');
+    return 'INDETERMINATE';
+  }
+  for (const f of ['/fx/bl-quota.md', '/fx/bl-quota-upto.md', '/fx/bl-quota-free.md',
+                   '/fx/bl-quota-words.md', '/fx/bl-quota-future.md']) {
+    mustFire++;
+    if (checkBlocklist([f], readFixture, testBl).length !== 1) fails.push(`check8 must fire on ${f}`);
+  }
+  for (const f of ['/fx/bl-ok-month.md', '/fx/bl-ok-venue1.md', '/fx/bl-ok-venue2.md', '/fx/bl-ok-comment.html']) {
+    mustNotFire++;
+    if (checkBlocklist([f], readFixture, testBl).length !== 0) fails.push(`check8 must NOT fire on ${f}`);
+  }
+  // Fail-closed: a malformed or empty blocklist must be unloadable, not "no phrases".
+  if (loadBlocklist(join(ROOT, 'ops', 'does-not-exist.json')) !== null) {
+    fails.push('loadBlocklist must return null for a missing file');
+  }
+
   // Positive-presence guard must itself be able to fail.
   mustFire++;
   if (checkTelegramCtasPresent([{ file: '/fx/tg-clean.md', needle: 'Try Free in Telegram' }], readFixture).length !== 1) {
@@ -604,7 +776,63 @@ function runTutCheck(n, label, fn, remedy) {
 
 runTutCheck(4, 'C-D2 TG-as-support', checkTgAsSupport, 'delete the support clause; keep the verify CTA');
 runTutCheck(5, 'C-D3 screenshot placeholder', checkScreenshotPlaceholders, 'delete the blockquote entirely');
-runTutCheck(6, 'C-D4 live-numbers note', checkLiveNumbersNote, 'delete it; KEEP "Config verified … against …"');
+
+// C-D4 runs over the WIDER corpus (see d4Files): the tutorial pairs plus the 4
+// agent-framework pages whose snapshot block survives stripSnapshotBlock(), plus
+// the two hand-maintained landing pages.
+const d4Corpus = d4Files();
+if (!d4Corpus) {
+  console.error('✗ a declared C-D4 surface is missing — cannot verify.');
+  verdictAndExit('INDETERMINATE');
+}
+{
+  let hitList;
+  try {
+    hitList = checkLiveNumbersNote(d4Corpus, readTut);
+  } catch (e) {
+    console.error(`✗ check 6 could not read a corpus file: ${e && e.message}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  const total = hitList.reduce((s, h) => s + h.count, 0);
+  if (hitList.length) {
+    failed = true;
+    console.error(`  ✗ check 6 (C-D4 live-numbers note): checked ${d4Corpus.length} files, ${total} violation(s) in ${hitList.length} file(s) — delete it; KEEP "Config verified … against …"`);
+    for (const h of hitList) console.error(`      ${rel(h.file)}: ${h.count}×`);
+  } else {
+    console.log(`✓ check 6 (C-D4 live-numbers note): checked ${d4Corpus.length} files, 0 violations.`);
+  }
+}
+
+// CHECK 8 — C-BLOCKLIST. Fail-closed on an unreadable or malformed blocklist: a
+// gate that cannot read its own rules has verified nothing.
+const blocklist = loadBlocklist();
+if (!blocklist) {
+  console.error('✗ ops/brand-forbidden-phrases.json missing, malformed, empty, or carries a bad pattern — cannot verify.');
+  verdictAndExit('INDETERMINATE');
+}
+const blFiles = blocklistFiles();
+if (!blFiles || blFiles.length === 0) {
+  console.error('✗ blocklist corpus unreadable or empty — cannot verify.');
+  verdictAndExit('INDETERMINATE');
+}
+{
+  let hits8;
+  try {
+    hits8 = checkBlocklist(blFiles, readTut, blocklist);
+  } catch (e) {
+    console.error(`✗ check 8 could not read a corpus file: ${e && e.message}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  if (hits8.length) {
+    failed = true;
+    console.error(`  ✗ check 8 (C-BLOCKLIST): checked ${blFiles.length} files against ${blocklist.length} phrase class(es), ${hits8.length} violation(s):`);
+    for (const h of hits8) {
+      console.error(`      ${rel(h.file)}:${h.line} [${h.id}] "${h.match}" → use "${h.correction}"`);
+    }
+  } else {
+    console.log(`✓ check 8 (C-BLOCKLIST): checked ${blFiles.length} files against ${blocklist.length} phrase class(es), 0 violations.`);
+  }
+}
 
 // Positive-presence guard: the legitimate Telegram surfaces must SURVIVE the sweep.
 // Deleting a support clause is a delete operation, and a delete that goes one grep
