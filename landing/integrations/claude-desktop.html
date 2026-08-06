@@ -12,7 +12,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/claude-desktop">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-08-05">
+<meta name="last-updated" content="2026-08-06">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   "headline": "AlgoVault × Claude Desktop - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/claude-desktop",
   "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-08-05T15:00:00+00:00",
+  "dateModified": "2026-08-06T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· claude-desktop integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">445,110</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,115</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -289,10 +289,7 @@ tailwind.config = {
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Desktop</h1>
-<p>Add AlgoVault’s MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (100 calls/month, no signup).</p>
-<blockquote>
-<p><em>Snapshot 2026-05-19 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
-</blockquote></div>
+<p>Add AlgoVault’s MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (100 calls/month, no signup).</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p>Two paths. The UI path is easiest if you already use Claude Desktop daily.</p>
 <p><strong>Path 1 — UI (recommended).</strong> Open Claude Desktop → Settings → Connectors → <em>Add custom connector</em>. Name: <code>AlgoVault</code>. URL: <code>https://api.algovault.com/mcp?src=docs</code>. Save and restart Claude Desktop. The free tier needs no header. Paid tier: add <code>Authorization: Bearer av_live_…</code> as a custom header.</p>
@@ -310,10 +307,7 @@ tailwind.config = {
 </code></pre>
 <p>Set <code>AV_API_KEY</code> in the env block or your shell. Free tier: drop the <code>Authorization</code> header, but keep the <code>X-AlgoVault-Track-Token</code> header.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
-<p>Ask Claude: <em>“Get me a trade call for BTC on the 1h timeframe.”</em> The tool indicator appears bottom-right of the input box during the call. Claude returns the parsed verdict (call, confidence, regime, indicators) without you seeing raw API JSON.</p>
-<blockquote>
-<p><em>Screenshot placeholder — Claude Desktop chat showing the AlgoVault tool indicator and a <code>get_trade_call</code> response with <code>call=HOLD</code>, <code>confidence=13</code>, <code>regime=TRENDING_DOWN</code>.</em></p>
-</blockquote></div>
+<p>Ask Claude: <em>“Get me a trade call for BTC on the 1h timeframe.”</em> The tool indicator appears bottom-right of the input box during the call. Claude returns the parsed verdict (call, confidence, regime, indicators) without you seeing raw API JSON.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
 <li><strong>Custom connector not appearing in tool list</strong> — restart Claude Desktop after saving the connector. The connector list reads at app start.</li>
@@ -327,7 +321,7 @@ tailwind.config = {
 <p><strong>Can my <a href="http://Claude.ai">Claude.ai</a> account share the connection?</strong> No — <a href="http://Claude.ai">Claude.ai</a> (web) and Claude Desktop maintain separate connector lists. Add AlgoVault on each surface.</p>
 <p><strong>How do I see my call usage?</strong> Visit <code>algovault.com/account</code> with your API key. Live counters update within seconds.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
-<p>Try it free: get a BTC trade call in Claude Desktop right now. No signup. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'claude-desktop',campaign:'track-record'}})">verify the track record on-chain</a>.</p></div>
+<p>Try it free: get a BTC trade call in Claude Desktop right now. No signup. <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'claude-desktop',campaign:'track-record'}})">Verify the track record on-chain</a>.</p></div>
       </article>
     </div>
   </div>

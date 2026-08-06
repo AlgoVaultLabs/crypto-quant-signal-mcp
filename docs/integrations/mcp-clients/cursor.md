@@ -2,8 +2,6 @@
 
 Drop AlgoVault into Cursor's IDE agent. Live trade calls inside your editor while you write strategy code.
 
-> *Snapshot 2026-05-19 — live numbers refreshed in-page from <https://algovault.com/api/performance-public>.*
-
 ## Setup
 
 Edit `~/.cursor/mcp.json` (global, all projects) OR `.cursor/mcp.json` in the project root (per-project, commit-friendly):
@@ -28,8 +26,6 @@ Set `AV_API_KEY` in your shell. Restart Cursor. Cursor's agent now has the 4 Alg
 
 Open Cursor's agent panel. Ask: *"Use AlgoVault to check BTC at 4h."* The agent invokes `get_trade_call` and returns the verdict (call, confidence, regime, indicators) inline.
 
-> *Screenshot placeholder — Cursor IDE with agent panel showing AlgoVault tool call and the returned trade verdict.*
-
 Cursor's coding agent can also chain AlgoVault calls into strategy-code edits — ask *"If BTC 4h is BUY, add a long entry at the current bar in `strategy.py`."*
 
 ## Troubleshooting
@@ -52,4 +48,4 @@ Cursor's coding agent can also chain AlgoVault calls into strategy-code edits �
 
 ## Next steps
 
-Pull live signals into your strategy code, mid-edit. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify the track record on-chain](https://algovault.com/track-record).
+Pull live signals into your strategy code, mid-edit. [Verify the track record on-chain](https://algovault.com/track-record).

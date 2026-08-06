@@ -2,8 +2,6 @@
 
 Add AlgoVault as a remote MCP server to Cline, the VSCode coding agent. Streamable-HTTP transport; setup ≤2 minutes.
 
-> *Snapshot 2026-05-19 — live numbers refreshed in-page from <https://algovault.com/api/performance-public>.*
-
 ## Setup
 
 Open the Cline panel in VSCode &rarr; MCP Servers &rarr; Remote Servers tab &rarr; Add server. OR edit `cline_mcp_settings.json` directly (Configure MCP Servers &rarr; Edit):
@@ -31,8 +29,6 @@ Open the Cline panel in VSCode &rarr; MCP Servers &rarr; Remote Servers tab &rar
 
 In a Cline thread, type *"Use AlgoVault to check ETH 1h."* Cline lists the tools available, selects `get_trade_call`, and returns the parsed verdict.
 
-> *Screenshot placeholder — VSCode with Cline panel showing AlgoVault MCP server entry and a `get_trade_call` response.*
-
 Cline can also wire AlgoVault into multi-step plans — *"If ETH 1h is BUY, write a Python script that opens a long position via ccxt."*
 
 ## Troubleshooting
@@ -55,4 +51,4 @@ Cline can also wire AlgoVault into multi-step plans — *"If ETH 1h is BUY, writ
 
 ## Next steps
 
-Test AlgoVault in your VSCode workflow today. Free tier, no signup. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [see the verified track record](https://algovault.com/track-record).
+Test AlgoVault in your VSCode workflow today. Free tier, no signup. [See the verified track record](https://algovault.com/track-record).

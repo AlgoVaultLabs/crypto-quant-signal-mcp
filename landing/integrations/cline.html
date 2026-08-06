@@ -12,7 +12,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/cline">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-08-05">
+<meta name="last-updated" content="2026-08-06">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   "headline": "AlgoVault × Cline (VSCode) - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/cline",
   "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-08-05T15:00:00+00:00",
+  "dateModified": "2026-08-06T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· cline integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">445,110</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,115</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -289,10 +289,7 @@ tailwind.config = {
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Cline (VSCode)</h1>
-<p>Add AlgoVault as a remote MCP server to Cline, the VSCode coding agent. Streamable-HTTP transport; setup ≤2 minutes.</p>
-<blockquote>
-<p><em>Snapshot 2026-05-19 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
-</blockquote></div>
+<p>Add AlgoVault as a remote MCP server to Cline, the VSCode coding agent. Streamable-HTTP transport; setup ≤2 minutes.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p>Open the Cline panel in VSCode → MCP Servers → Remote Servers tab → Add server. OR edit <code>cline_mcp_settings.json</code> directly (Configure MCP Servers → Edit):</p>
 <pre><code class="language-json">{
@@ -313,9 +310,6 @@ tailwind.config = {
 <p><code>type: &quot;streamableHttp&quot;</code> is the modern transport (recommended). The legacy <code>&quot;sse&quot;</code> type still works but is being deprecated upstream.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
 <p>In a Cline thread, type <em>“Use AlgoVault to check ETH 1h.”</em> Cline lists the tools available, selects <code>get_trade_call</code>, and returns the parsed verdict.</p>
-<blockquote>
-<p><em>Screenshot placeholder — VSCode with Cline panel showing AlgoVault MCP server entry and a <code>get_trade_call</code> response.</em></p>
-</blockquote>
 <p>Cline can also wire AlgoVault into multi-step plans — <em>“If ETH 1h is BUY, write a Python script that opens a long position via ccxt.”</em></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
@@ -331,7 +325,7 @@ tailwind.config = {
 <p><strong>SSE vs streamableHttp?</strong> <code>streamableHttp</code> is the modern transport. AlgoVault MCP supports both, but new setups should use <code>streamableHttp</code>.</p>
 <p><strong>Auto-approve safe?</strong> Auto-approve is convenient for trusted servers. AlgoVault is read-only (no order placement), so auto-approving its tools won’t trigger side effects.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
-<p>Test AlgoVault in your VSCode workflow today. Free tier, no signup. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'cline',campaign:'track-record'}})">see the verified track record</a>.</p></div>
+<p>Test AlgoVault in your VSCode workflow today. Free tier, no signup. <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'cline',campaign:'track-record'}})">See the verified track record</a>.</p></div>
       </article>
     </div>
   </div>

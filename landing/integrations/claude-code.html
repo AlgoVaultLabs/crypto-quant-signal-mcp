@@ -12,7 +12,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/claude-code">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-08-05">
+<meta name="last-updated" content="2026-08-06">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   "headline": "AlgoVault × Claude Code - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/claude-code",
   "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-08-05T15:00:00+00:00",
+  "dateModified": "2026-08-06T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· claude-code integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">445,110</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,115</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -289,10 +289,7 @@ tailwind.config = {
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Code</h1>
-<p>Wire AlgoVault into your Claude Code CLI as a project-scoped MCP server. Commit <code>.mcp.json</code> so every teammate gets the same setup.</p>
-<blockquote>
-<p><em>Snapshot 2026-05-19 — live numbers refreshed in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
-</blockquote></div>
+<p>Wire AlgoVault into your Claude Code CLI as a project-scoped MCP server. Commit <code>.mcp.json</code> so every teammate gets the same setup.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p><strong>One-liner (recommended):</strong></p>
 <pre><code class="language-bash">claude mcp add --transport http --scope project algovault \
@@ -317,10 +314,7 @@ tailwind.config = {
 </code></pre>
 <p>Set <code>AV_API_KEY</code> in your shell or <code>.envrc</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
-<p>In a Claude Code session, type <code>/mcp</code> to list connected servers. AlgoVault should appear with its tools (<code>get_trade_call</code>, <code>get_trade_signal</code>, <code>scan_funding_arb</code>, <code>get_market_regime</code>, and others). Then ask: <em>“Use AlgoVault to get a trade call for BTC 4h.”</em> Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.</p>
-<blockquote>
-<p><em>Screenshot placeholder — Claude Code terminal showing <code>/mcp</code> list with AlgoVault + its tools and a <code>get_trade_call</code> response.</em></p>
-</blockquote></div>
+<p>In a Claude Code session, type <code>/mcp</code> to list connected servers. AlgoVault should appear with its tools (<code>get_trade_call</code>, <code>get_trade_signal</code>, <code>scan_funding_arb</code>, <code>get_market_regime</code>, and others). Then ask: <em>“Use AlgoVault to get a trade call for BTC 4h.”</em> Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
 <li><strong>“Server not initialized” on first call</strong> — Claude Code expects the 3-step MCP handshake; the <code>http</code> transport handles this automatically. If you see this error, your <code>.mcp.json</code> <code>type</code> might be set to <code>sse</code> instead of <code>http</code>.</li>
@@ -334,7 +328,7 @@ tailwind.config = {
 <p><strong>Multiple MCP servers?</strong> Yes — repeat <code>claude mcp add</code> per server.</p>
 <p><strong>How does this differ from Claude Desktop?</strong> Claude Code is the CLI; Claude Desktop is the chat app. Both run on the same Claude family but use separate config files.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
-<p>Add AlgoVault to your strategy-dev repo in 30 seconds. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'claude-code',campaign:'track-record'}})">see the verified track record</a>.</p></div>
+<p>Add AlgoVault to your strategy-dev repo in 30 seconds. <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'claude-code',campaign:'track-record'}})">See the verified track record</a>.</p></div>
       </article>
     </div>
   </div>

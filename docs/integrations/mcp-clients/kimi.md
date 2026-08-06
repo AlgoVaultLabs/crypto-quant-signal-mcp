@@ -2,7 +2,7 @@
 
 Pull live trade verdicts into Moonshot's coding agent. One JSON entry, no SDK.
 
-> *Config verified 2026-08-05 against <https://moonshotai.github.io/kimi-code/en/customization/mcp.html>. Live numbers refresh in-page from <https://algovault.com/api/performance-public>.*
+> *Config verified 2026-08-05 against <https://moonshotai.github.io/kimi-code/en/customization/mcp.html>.*
 
 ## Setup
 
@@ -34,8 +34,6 @@ Run `/mcp-config` in the TUI to add, edit or delete servers without touching the
 
 Ask Kimi: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and returns call, confidence, regime and the drivers behind them.
 
-> *Screenshot placeholder — Kimi Code TUI showing the AlgoVault tool call and the returned verdict.*
-
 ## Troubleshooting
 
 - **AlgoVault not listed** — restart Kimi Code, or run `/mcp-config` and confirm the entry is enabled.
@@ -56,4 +54,4 @@ Ask Kimi: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and 
 
 ## Next steps
 
-Ask Kimi for a verdict before your next entry. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify the track record on-chain](https://algovault.com/track-record).
+Ask Kimi for a verdict before your next entry. [Verify the track record on-chain](https://algovault.com/track-record).
