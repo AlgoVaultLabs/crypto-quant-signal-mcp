@@ -231,7 +231,7 @@ Single-prompt wrappers over 1–3 tool calls — regime gating, multi-timeframe 
 
 Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you pay for call volume, nothing else.
 
-| Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise ($299/mo) | x402 (per call) |
+| Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise (contact us) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
 | Exchanges | All 15 | All 15 | All 15 | All 15 | All 15 | <!-- SNAPSHOT-LINE-TABLE -->
 | Assets | All 740+ | All 740+ | All 740+ | All 740+ | All 740+ | <!-- SNAPSHOT-LINE-TABLE -->
@@ -241,7 +241,7 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 | Track record | Full access | Full access | Full access | Full access | Full access |
 | Monthly calls | 100/mo | 3,000/mo | 15,000/mo | 100,000/mo | Unlimited |
 | Support | Community | Email | Priority | Dedicated | — |
-| Price | $0 | $9.99/mo | $49/mo | $299/mo | $0.01–0.05/call |
+| Price | $0 | $9.99/mo ($79/yr) | $49/mo ($299/yr) | Contact us | $0.01–0.05/call |
 
 
 **Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). Starter ($9.99/mo) unlocks 3,000 calls/mo. API key delivered instantly after checkout.
