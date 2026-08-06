@@ -36,7 +36,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "01a2f7c633fd8f572058e2f7458a665a14d79ec150818e72bd2c36a0bf07bb43",
+      "sha256": "4c0048b8a40253f140dfc87f385ba9f6ddb226460735935f76488a2378d1ecd5",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
@@ -857,7 +857,7 @@
       ],
       "criticality": "load-bearing",
       "install_state": "installed",
-      "sha256": "4d64057510f468131b4dc17f22d32453bf3809787d0ece626b509eeb04f7f317",
+      "sha256": "4096e92090bef197632d88423270971fd315eabac8dbd5abe598700a5625a03c",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],

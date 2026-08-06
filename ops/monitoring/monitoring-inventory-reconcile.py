@@ -926,10 +926,192 @@ def check_posture_drift(labels=None, posture=None, probe=None, resolve=None):
     return out
 
 
+def _load_posture():
+    try:
+        return json.loads(POSTURE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _resolve_a(host):
+    """A/AAAA for `host` via a pinned resolver. None on failure (fail-open, never a pass)."""
+    try:
+        r = _run(["dig", "+short", "+time=5", "+tries=2", "A", host, "@1.1.1.1"])
+        if r.returncode != 0:
+            return None
+        return [l.strip() for l in r.stdout.splitlines()
+                if l.strip() and not l.strip().endswith(".")]
+    except Exception:
+        return None
+
+
+def _fetch_cf_ranges():
+    """Cloudflare's published CIDRs from the official source. None on failure."""
+    out = []
+    for url in CF_IPS_URLS:
+        try:
+            r = _run(["curl", "-sS", "--max-time", "20", url])
+            if r.returncode != 0:
+                return None
+            out += [l.strip() for l in r.stdout.split() if l.strip()]
+        except Exception:
+            return None
+    return out or None
+
+# ─────────── CF-origin-lock checks (OPS-CF-ORIGIN-LOCK-W1) ───────────
+#
+# Three checks that all became necessary the moment :80/:443 were narrowed to Cloudflare.
+# Every one is DETECT-AND-ALERT ONLY — an unattended job must never change a network rule,
+# a DNS record, or a certificate.
+#
+# Deliberately credential-free. None of them needs a Cloudflare API token or an hcloud token
+# on the host: putting a cloud-admin credential on the box would undo the reason enforcement
+# lives OUTSIDE the VM. Each measures the same failure through a channel already available.
+
+CERT_DIR = os.environ.get(
+    "CADDY_CERT_DIR",
+    "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory",
+)
+CERT_FLOOR_DAYS = int(os.environ.get("CERT_EXPIRY_FLOOR_DAYS", "21"))
+CF_IPS_URLS = ("https://www.cloudflare.com/ips-v4", "https://www.cloudflare.com/ips-v6")
+
+
+def _origin_address():
+    """This host's own public address, from the env — never from the committed JSON."""
+    return os.environ.get("POSTURE_PEER_SIGNAL_1") or os.environ.get("POSTURE_SELF_ADDRESS")
+
+
+def cf_locked_hostnames(posture):
+    """Hostnames whose reachability now DEPENDS on being Cloudflare-proxied.
+
+    Derived from the posture declaration rather than a second hand-maintained list: if a port
+    is restricted to `cloudflare`, then every hostname served on it must stay proxied or it is
+    blackholed. Single derivation — the hostname list lives in exactly one place.
+    """
+    for cfg in (posture.get("hosts") or {}).values():
+        if any("cloudflare" in (r.get("allowed_sources") or []) for r in cfg.get("inbound", [])):
+            return cfg.get("cf_proxied_hostnames") or []
+    return []
+
+
+def check_zone_proxy_drift(posture=None, resolver=None):
+    """Every CF-locked hostname must still resolve to Cloudflare, NOT to this origin.
+
+    A grey-cloud (DNS-only) flip is two failures with one cause and, before this wave, zero
+    detectors: the hostname is blackholed IMMEDIATELY by the CF-only firewall rule, and its
+    ACME renewal fails ~60 days later because the Let's Encrypt validator is refused too.
+    That is not hypothetical — plausible.algovault.com was issued exactly that way on
+    2026-07-12, validating from LE's own AWS vantages straight against the origin.
+
+    Resolution, not the CF API: a hostname resolving to our origin address IS the failure,
+    and DNS needs no credential.
+    """
+    posture = posture if posture is not None else _load_posture()
+    resolver = resolver or _resolve_a
+    origin = _origin_address()
+    out = {"findings": [], "checked": [], "skipped": []}
+    if not origin:
+        out["skipped"].append({"reason": "ORIGIN_ADDRESS_UNSET",
+                               "hint": "set POSTURE_PEER_SIGNAL_1 or POSTURE_SELF_ADDRESS"})
+        return out
+    for host in cf_locked_hostnames(posture):
+        addrs = resolver(host)
+        if addrs is None:
+            out["skipped"].append({"reason": "RESOLVE_FAILED", "host": host})
+            continue
+        grey = origin in addrs
+        out["checked"].append({"host": host, "addrs": addrs,
+                               "verdict": "GREY_CLOUD" if grey else "OK"})
+        if grey:
+            out["findings"].append({
+                "host": host, "verdict": "GREY_CLOUD", "resolves_to_origin": True,
+                "impact": "blackholed NOW by the CF-only rule; ACME renewal fails ~60d later"})
+    return out
+
+
+def check_cf_range_drift(posture=None, fetcher=None):
+    """Cloudflare's published ranges vs the set this wave enforced.
+
+    CF adds ranges occasionally. A stale allowlist silently drops legitimate edge traffic, and
+    the symptom (a fraction of requests failing from some PoPs) looks nothing like a firewall.
+    Reports the DIFF; the operator applies it. Never mutates a rule.
+
+    Compares against the count/derivation recorded in the posture file rather than reading the
+    live firewall, because reading the firewall would require an hcloud token on the host.
+    Stated plainly so the limit is known: this detects "upstream changed", not "the firewall
+    drifted from upstream" — the latter is what a human-run apply re-establishes.
+    """
+    posture = posture if posture is not None else _load_posture()
+    fetcher = fetcher or _fetch_cf_ranges
+    alias = (posture.get("source_aliases") or {}).get("cloudflare") or {}
+    enforced = alias.get("count_at_enforcement")
+    out = {"findings": [], "checked": [], "skipped": []}
+    live = fetcher()
+    if live is None:
+        out["skipped"].append({"reason": "CF_RANGE_FETCH_FAILED", "urls": list(CF_IPS_URLS)})
+        return out
+    out["checked"].append({"live_count": len(live), "enforced_count": enforced})
+    if enforced is not None and len(live) != enforced:
+        out["findings"].append({
+            "verdict": "CF_RANGE_DRIFT", "live_count": len(live), "enforced_count": enforced,
+            "delta": len(live) - enforced,
+            "action": "re-apply the firewall source set from the official list, then bump "
+                      "source_aliases.cloudflare.count_at_enforcement"})
+    return out
+
+
+def check_cert_expiry_floor(cert_dir=None, floor_days=None, now=None):
+    """Any origin certificate under `floor_days` to expiry.
+
+    After the lock, renewal DEPENDS on the Cloudflare path, so a renewal failure is the primary
+    new risk this wave introduces — and before this check nothing alerted on it at all. It reads
+    the ORIGIN's own cert store: an external TLS handshake against a CF-proxied hostname returns
+    CLOUDFLARE's edge certificate, which is a different cert with a different expiry, so probing
+    the hostname measures the projection instead of the producer.
+
+    Especially load-bearing for plausible.algovault.com, whose renewal (~Sep 10) is the first
+    that will run under the locked rules and has never been exercised.
+    """
+    cert_dir = Path(cert_dir or CERT_DIR)
+    floor = floor_days if floor_days is not None else CERT_FLOOR_DAYS
+    now = now or datetime.now(timezone.utc)
+    out = {"findings": [], "checked": [], "skipped": []}
+    if not cert_dir.is_dir():
+        # Correct and expected on a host that runs no Caddy (aoe-1) — a skip, never a pass.
+        out["skipped"].append({"reason": "NO_CERT_DIR", "path": str(cert_dir)})
+        return out
+    certs = sorted(cert_dir.glob("*/*.crt"))
+    if not certs:
+        out["skipped"].append({"reason": "NO_CERTS_FOUND", "path": str(cert_dir)})
+        return out
+    for c in certs:
+        r = _run(["openssl", "x509", "-in", str(c), "-noout", "-enddate"])
+        if r.returncode != 0:
+            out["skipped"].append({"reason": "OPENSSL_FAILED", "cert": c.name})
+            continue
+        try:
+            end = datetime.strptime(r.stdout.strip().split("=", 1)[1].strip(),
+                                    "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+        except Exception as exc:
+            out["skipped"].append({"reason": "ENDDATE_PARSE_FAILED", "cert": c.name,
+                                   "error": str(exc)[:80]})
+            continue
+        days = (end - now).days
+        out["checked"].append({"cert": c.stem, "days_left": days,
+                               "verdict": "OK" if days >= floor else "EXPIRY_FLOOR_BREACH"})
+        if days < floor:
+            out["findings"].append({
+                "cert": c.stem, "days_left": days, "floor": floor,
+                "verdict": "EXPIRY_FLOOR_BREACH",
+                "impact": "renewal now depends on the Cloudflare path; if it is failing, the "
+                          "site loses TLS when this expires"})
+    return out
+
+
 # ─────────── main ───────────
 
 def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
-             doc_claims_result=None, sot_parity_result=None):
+             doc_claims_result=None, sot_parity_result=None, cf_results=None):
     """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known.
 
     `posture_result` and `doc_claims_result` are passed in rather than computed here so each probe
@@ -946,6 +1128,9 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
         "REGISTRY_PARITY": check_registry_parity(rows, host_hashes, labels)["breaches"],
         "NO_BACKUP": check_no_backup(rows, backups, labels),
         "POSTURE_DRIFT": (posture_result or {}).get("findings", []),
+        "ZONE_PROXY_DRIFT": (cf_results or {}).get("zone", {}).get("findings", []),
+        "CF_RANGE_DRIFT": (cf_results or {}).get("range", {}).get("findings", []),
+        "CERT_EXPIRY_FLOOR": (cf_results or {}).get("cert", {}).get("findings", []),
         "DOC_PATH_CLAIM": (doc_claims_result or {}).get("findings", []),
         "SOT_PARITY": (sot_parity_result or {}).get("findings", []),
         "DIVERGENT_COPY": divergent_copy_findings(rows),
@@ -995,13 +1180,19 @@ def main(check_mode=False):
     backups = host_backups()
 
     posture_result = check_posture_drift(HOST_LABELS)
+    _posture_doc = _load_posture()
+    cf_results = {
+        "zone": check_zone_proxy_drift(_posture_doc),
+        "range": check_cf_range_drift(_posture_doc),
+        "cert": check_cert_expiry_floor(),
+    }
     doc_claims = load_doc_path_claims()
     doc_claims_result = check_doc_path_claims(doc_claims, HOST_LABELS)
     sot_cfg = load_sot_parity_config()
     sot_parity_result = check_sot_parity(INVENTORY_PATH, sot_cfg, HOST_LABELS)
 
     f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result,
-                 doc_claims_result, sot_parity_result)
+                 doc_claims_result, sot_parity_result, cf_results)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
     drift_keys = ("HASH_DRIFT", "ORPHAN", "DARK", "SCHEDULE_DRIFT", "PENDING_STALE",
                   "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT", "DOC_PATH_CLAIM")
@@ -1060,6 +1251,15 @@ def main(check_mode=False):
         if not doc_claims:
             log("DOC_PATH_CLAIM: SKIPPED — doc-host-path-claims.json not installed here "
                 "(fail-open, NOT a pass)")
+        for row in cf_results["zone"]["checked"]:
+            log(f"ZONE_PROXY {row['host']} resolves={row['addrs']} -> {row['verdict']}")
+        for row in cf_results["range"]["checked"]:
+            log(f"CF_RANGE live={row['live_count']} enforced={row['enforced_count']}")
+        for row in cf_results["cert"]["checked"]:
+            log(f"CERT_EXPIRY {row['cert']} days_left={row['days_left']} -> {row['verdict']}")
+        for k in ("zone", "range", "cert"):
+            for sk in cf_results[k]["skipped"]:
+                log(f"CF_CHECK_SKIPPED {k}: {json.dumps(sk)} — fail-open, NOT a pass")
         if backups is None:
             log("NO_BACKUP: SKIPPED — backup listing unavailable (fail-open, not a pass)")
         streak = update_breach_streak(drifted)
@@ -1471,6 +1671,57 @@ def self_test():
     ck("build_body still carries the Action line", "Action: dispatch" in full, True)
     ck("build_body leaves non-schedule findings on the legacy path",
        "HASH_DRIFT: a, b" in build_body({"HASH_DRIFT": ["a", "b"]}, 1), True)
+
+
+    # ── 10. CF-origin-lock checks, both directions, hermetically (OPS-CF-ORIGIN-LOCK-W1) ──
+    CFP = {"source_aliases": {"cloudflare": {"count_at_enforcement": 22}},
+           "hosts": {"signal-1": {
+               "inbound": [{"port": 443, "proto": "tcp", "allowed_sources": ["cloudflare"]}],
+               "cf_proxied_hostnames": ["a.example", "b.example"]}}}
+    ORIGIN = "198.51.100.7"          # RFC-5737 documentation address
+    CFADDR = ["203.0.113.10"]
+    os.environ["POSTURE_SELF_ADDRESS"] = ORIGIN
+
+    zc = check_zone_proxy_drift(CFP, resolver=lambda h: CFADDR)
+    ck("zone: all proxied -> no findings", zc["findings"], [])
+    ck("zone: positive per-host output", sorted(r["host"] for r in zc["checked"]), ["a.example", "b.example"])
+    grey = check_zone_proxy_drift(CFP, resolver=lambda h: [ORIGIN] if h == "b.example" else CFADDR)
+    ck("zone: a grey-cloud flip FIRES", [(f["host"], f["verdict"]) for f in grey["findings"]],
+       [("b.example", "GREY_CLOUD")])
+    dead = check_zone_proxy_drift(CFP, resolver=lambda h: None)
+    ck("zone: unresolvable -> skipped, never a pass", (dead["findings"], len(dead["skipped"])), ([], 2))
+    os.environ.pop("POSTURE_SELF_ADDRESS", None)
+    noorigin = check_zone_proxy_drift(CFP, resolver=lambda h: CFADDR)
+    ck("zone: no origin address -> skip, not a silent pass",
+       [s_["reason"] for s_ in noorigin["skipped"]], ["ORIGIN_ADDRESS_UNSET"])
+
+    rc = check_cf_range_drift(CFP, fetcher=lambda: ["c"] * 22)
+    ck("range: count matches -> no findings", rc["findings"], [])
+    rd = check_cf_range_drift(CFP, fetcher=lambda: ["c"] * 25)
+    ck("range: upstream ADDED ranges -> fires with the delta",
+       [(f["verdict"], f["delta"]) for f in rd["findings"]], [("CF_RANGE_DRIFT", 3)])
+    rr = check_cf_range_drift(CFP, fetcher=lambda: ["c"] * 20)
+    ck("range: upstream REMOVED ranges -> also fires",
+       [(f["verdict"], f["delta"]) for f in rr["findings"]], [("CF_RANGE_DRIFT", -2)])
+    rs = check_cf_range_drift(CFP, fetcher=lambda: None)
+    ck("range: fetch failure -> skipped, never a pass",
+       (rs["findings"], [s_["reason"] for s_ in rs["skipped"]]), ([], ["CF_RANGE_FETCH_FAILED"]))
+
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as td:
+        ck("cert: absent dir -> SKIP (correct on a host with no Caddy), never a pass",
+           [s_["reason"] for s_ in check_cert_expiry_floor(cert_dir=td + "/nope")["skipped"]],
+           ["NO_CERT_DIR"])
+        ck("cert: dir with no certs -> SKIP, never a pass",
+           [s_["reason"] for s_ in check_cert_expiry_floor(cert_dir=td)["skipped"]],
+           ["NO_CERTS_FOUND"])
+    live = check_cert_expiry_floor()
+    if live["checked"]:
+        ck("cert: healthy live certs -> zero findings", live["findings"], [])
+        ck("cert: forced floor above every cert -> ALL breach",
+           len(check_cert_expiry_floor(floor_days=99999)["findings"]), len(live["checked"]))
+        ck("cert: positive per-cert output carries days_left",
+           all("days_left" in r for r in live["checked"]), True)
 
     for f_ in failures:
         log(f"SELF_TEST_FAIL: {f_}")

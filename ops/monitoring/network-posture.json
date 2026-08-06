@@ -155,7 +155,13 @@
         "blocker": "Caddy 2.6.2 on this host ships NO `dns.providers.*` module and has no `add-package` subcommand (2.7+). DNS-01 therefore requires REPLACING the Caddy binary on the box serving all public traffic — a production binary swap, not a config edit. Re-verified 2026-08-06: `caddy list-modules | grep -c dns.providers` = 0.",
         "why_it_would_be_nicer": "DNS-01 removes renewal's inbound dependency entirely, after which :80 could CLOSE rather than merely narrow. The existing Cloudflare token already carries exactly its requirement (Zone.DNS:Edit + Zone.Zone:Read).",
         "wave": "OPS-CADDY-DNS01-W{NEXT}"
-      }
+      },
+      "cf_proxied_hostnames": [
+        "algovault.com",
+        "api.algovault.com",
+        "plausible.algovault.com"
+      ],
+      "_cf_proxied_hostnames_semantics": "Every hostname this origin serves on a CF-locked port. Their reachability now DEPENDS on staying Cloudflare-proxied: a grey-cloud flip blackholes the hostname IMMEDIATELY (the firewall refuses the direct client) and breaks its ACME renewal ~60 days later (the firewall refuses the Let's Encrypt validator too). Not hypothetical — plausible.algovault.com was ISSUED that way on 2026-07-12, validating from LE's own AWS vantages straight against this origin. `ZONE_PROXY_DRIFT` asserts each one still resolves to Cloudflare rather than to us. Hostnames, never addresses — this list is the single derivation for that check."
     },
     "aoe-1": {
       "role": "AOE — Prefect, shadow evaluator, promotion scanner, AOE workers, agent-facing MCP",
