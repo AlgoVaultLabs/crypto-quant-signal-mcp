@@ -154,7 +154,12 @@ jobs:
       # Fail-closed: an unreadable corpus or an unloadable registry is INDETERMINATE
       # (exit 3), never a pass. Deliberately NOT a 6th shared pre-push block —
       # installing one there took every parallel session down twice in 27 hours.
-      - name: MCP-client copy drift gate (fail-closed)
+      # CROSS-REPO-TUTORIAL-PRODUCER-GATE-W1: this step now also enforces
+      # ops/brand-forbidden-phrases.json — the CANONICAL forbidden-phrase blocklist,
+      # vendored into algovault-skills with a .sha256 and gated there too. It stores a
+      # PATTERN, not a literal list, so a future "25 calls/day" is caught by the class
+      # rather than sailing through because nobody added it to an enumeration.
+      - name: MCP-client copy drift gate + brand-forbidden-phrases blocklist (fail-closed)
         run: |
           node scripts/check-mcp-client-copy.mjs --self-test
           node scripts/check-mcp-client-copy.mjs
