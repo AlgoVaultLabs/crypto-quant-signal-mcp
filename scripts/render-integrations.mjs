@@ -164,9 +164,27 @@ function stripTLDRSection(bodyHtml) {
 // already shows live PFE WR / signal count / Merkle batch count via data-tr-field
 // hydration). Upstream markdown source PRESERVED at algovault-skills/docs/
 // integrations/<x>.md for GitHub readers + Skills Hub PR consumers.
+// CROSS-REPO-TUTORIAL-PRODUCER-GATE-W1 (2026-08-06) — ANCHOR REPAIR. The pattern
+// below used to require the strong element to END exactly `…on-chain batches.</strong>`.
+// 12 exchange producers do; the 4 agent-framework producers append a clause after
+// "batches" (`… batches · <span data-tr-field="asset_count">738</span> assets covered.`),
+// so the anchor silently stopped matching and the ENTIRE block survived into
+// langchain/crewai/llamaindex/maf — which is why those 4 pages rendered the number
+// block TWICE (once from the markdown, once from the injected callout) and were the
+// only tutorials still showing the internal "live numbers refreshed in-page" note.
+//
+// Fixed by anchoring on the phrase and tolerating any tail before `</strong></p>`
+// (lazy, so it stops at the first one). Normalising the 4 producers to one exact
+// shape was considered and REJECTED: that re-asserts the brittleness this repair
+// removes — a generator must not depend on every upstream author ending a sentence
+// identically.
+//
+// Trade-off, ratified: those 4 pages lose their `asset_count` span, which the
+// injected callout does not carry. Recorded as a declared reduction; reinstating
+// asset_count for ALL 24 tutorials is OPS-TUTORIAL-ASSET-COUNT-REINSTATE-W{NEXT}.
 function stripSnapshotBlock(bodyHtml) {
   return bodyHtml.replace(
-    /<blockquote>\s*<!-- snapshot:[\s\S]*?-->\s*<\/blockquote>\s*<p><strong>[\s\S]*?Merkle-verified on-chain batches\.<\/strong><\/p>\s*<blockquote>\s*<p>Don['’]t trust[\s\S]*?performance-public<\/a>[\s\S]*?<\/blockquote>\s*/,
+    /<blockquote>\s*<!-- snapshot:[\s\S]*?-->\s*<\/blockquote>\s*<p><strong>[\s\S]*?Merkle-verified on-chain batches[\s\S]*?<\/strong><\/p>\s*<blockquote>\s*<p>Don['’]t trust[\s\S]*?performance-public<\/a>[\s\S]*?<\/blockquote>\s*/,
     ''
   );
 }
