@@ -94,7 +94,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.24.0",
+    "version": "1.26.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -250,7 +250,11 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 ---
 
-## What's new in v1.25.0
+## What's new in v1.26.0
+
+- **💳 Annual plans — prepay a year, save up to 49%.** Starter is **$79/yr** (~$6.58/mo) and Pro is **$299/yr** (~$24.92/mo). Monthly pricing is unchanged — pick annual at [signup](https://api.algovault.com/signup) via `?interval=year`. Enterprise remains contact-us.
+
+### v1.25.0 highlights (recap)
 
 - **🎯 Screen the scan universe by liquidity.** `scan_trade_calls` now takes an optional `minLiquidityUsd` floor — filter to names with real depth, by notional open interest or 24h volume. Omit it for no floor.
 - **💳 Charge-correctness on the paid path.** A paid request whose body was dropped could return a defaults-only result. Every payable route now rejects a dropped body, and a rejected request explains why.
@@ -268,12 +272,6 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 
 - **🔗 A dedicated page for every way to connect.** New hub pages walk through each access channel end-to-end, with copy-paste code and a quick FAQ: [MCP](https://algovault.com/mcp), [REST API](https://algovault.com/rest-api), and [webhooks](https://algovault.com/webhooks).
 - **🧭 Tools index + unified navigation.** Browse all public tools at [algovault.com/tools](https://algovault.com/tools); a new Platform menu makes the whole site easier to navigate.
-
-### v1.23.0 highlights (recap)
-
-- **📡 Cross-venue funding arbitrage now spans 7 venues.** `scan_funding_arb` expanded from 3 to 7 — Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX — with interval-correct annualization per venue and a per-leg liquidity filter, so only tradeable spreads surface.
-
-> MCP clients cache `tools/list` at session start — toggle the connector off/on (or restart the MCP connection) to pick up the updated `scan_funding_arb`.
 
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
