@@ -1142,3 +1142,134 @@ export async function backfillMissingSubscriberProfiles(
   // `runScript` does it for you. Never `process.exit` straight after calling this.
   return replayed;
 }
+
+/** One row's before/after, for the operator-facing backfill report. */
+export interface IntervalBackfillRow {
+  customerId: string;
+  before: { tier: string | null; interval: string | null; rate: number | null };
+  after: { tier: string | null; interval: StoredBillingInterval; rate: number | null };
+  changed: boolean;
+}
+
+export interface IntervalBackfillReport {
+  execute: boolean;
+  stripeSubscriptions: number;
+  profileRows: number;
+  rows: IntervalBackfillRow[];
+  written: number;
+  /** Post-write re-read. `null` in dry-run. The write is not believed until this matches. */
+  verifiedConverged: number | null;
+  mrrFromRecord: number | null;
+}
+
+/**
+ * One-shot convergence of the EXISTING `subscriber_profiles` rows against Stripe.
+ * OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 CH2.
+ *
+ * WHY A BACKFILL AT ALL. W2 fixed the FORWARD path — a tier change, interval change or
+ * cancellation now reaches the record — but it could not touch the rows already there, because
+ * `applySubscriptionRecordUpdate` is deliberately UPDATE-only and no lifecycle event was ever
+ * going to fire for a subscription that simply sits unchanged. Four rows read `starter`/`unknown`
+ * against Stripe's 3 starter + 1 pro, all monthly: **−$39.01/mo, 49.4% of MRR, invisible.**
+ *
+ * Reporting-only, as everywhere in this arc: `validateApiKey` resolves tier live from the Stripe
+ * price id, so the mis-recorded customer has always been billed $49 and given pro quota.
+ *
+ * 🛑 **DRY-RUN BY DEFAULT.** Nothing is written without `execute: true`.
+ *
+ * 🛑 **VERIFIED BY RE-READ, NOT BY A SUCCESS LOG.** `dbRun` is fire-and-forget on Postgres, and
+ * a short-lived process exits before such a write flushes — that is exactly how W5's own backfill
+ * logged `profiled` for 3 sessions and landed 2 rows. Every write goes through the AWAITED
+ * `query` seam, and the table is re-read and counted before this function returns.
+ *
+ * 🛑 **NO `Date.now()` ON HISTORICAL FIELDS.** The same W5 run defaulted `convertedAt` to now and
+ * stamped every customer with that day's date. `converted_at`, `created_at` and `amount_usd` are
+ * NOT in the UPDATE — `amount_usd` in particular records what was charged and stays true.
+ *
+ * Composes `getStripeClient` + `resolveSubscription` (already exported) rather than adding a
+ * per-customer lister to `stripe.ts`; the import is DYNAMIC because
+ * `subscriber-attribution` → `license.ts` → `stripe.ts` is a require cycle.
+ */
+export async function backfillSubscriberIntervals(
+  opts: { execute?: boolean } = {},
+  deps: ProfileDeps = defaultProfileDeps,
+): Promise<IntervalBackfillReport> {
+  const execute = opts.execute === true;
+  deps.ensure();
+  if (deps.ensureInterval) await deps.ensureInterval();
+
+  const { getStripeClient, resolveSubscription } = await import('./stripe.js');
+  const stripe = getStripeClient();
+  if (!stripe) throw new Error('Stripe is not configured — refusing to backfill against nothing');
+
+  // customerId → what Stripe says they actually bought.
+  const truth = new Map<string, { tier: string; interval: StoredBillingInterval }>();
+  for await (const sub of stripe.subscriptions.list({ status: 'active', limit: 100 })) {
+    const cid = typeof sub.customer === 'string' ? sub.customer : (sub.customer as { id?: string })?.id;
+    const r = resolveSubscription(sub as never);
+    // An unrecognised price is NOT a tier. Skipping leaves the row untouched and visible to the
+    // reconciliation, which is strictly better than writing a guess over it.
+    if (cid && r) truth.set(cid, { tier: r.tier, interval: r.interval });
+  }
+
+  const existing = await deps.query<{ customer_id: string; tier: string | null; status: string | null; billing_interval: string | null; monthly_rate_usd: number | null }>(
+    `SELECT customer_id, tier, status, billing_interval, monthly_rate_usd FROM subscriber_profiles`,
+    [],
+  );
+
+  const rows: IntervalBackfillRow[] = [];
+  for (const row of existing) {
+    const t = truth.get(row.customer_id);
+    if (!t) continue; // no active Stripe subscription — a cancelled or unknown row; leave it be.
+    const rate = deriveMonthlyRateUsd(t.tier, t.interval);
+    const changed = row.tier !== t.tier
+      || normalizeBillingInterval(row.billing_interval) !== t.interval
+      || Number(row.monthly_rate_usd ?? NaN) !== Number(rate ?? NaN);
+    rows.push({
+      customerId: row.customer_id,
+      before: { tier: row.tier, interval: row.billing_interval, rate: row.monthly_rate_usd },
+      after: { tier: t.tier, interval: t.interval, rate },
+      changed,
+    });
+  }
+
+  let written = 0;
+  if (execute) {
+    for (const r of rows) {
+      if (!r.changed) continue; // idempotent: a second run finds nothing to do.
+      await deps.query(
+        `UPDATE subscriber_profiles
+            SET tier = ?, billing_interval = ?, monthly_rate_usd = ?
+          WHERE customer_id = ?`,
+        [r.after.tier, r.after.interval, r.after.rate, r.customerId],
+      );
+      written++;
+    }
+  }
+
+  // Verify by RESULT. Re-read and count how many rows now match Stripe.
+  let verifiedConverged: number | null = null;
+  let mrrFromRecord: number | null = null;
+  if (execute) {
+    const after = await deps.query<{ customer_id: string; tier: string | null; billing_interval: string | null; monthly_rate_usd: number | null }>(
+      `SELECT customer_id, tier, billing_interval, monthly_rate_usd FROM subscriber_profiles`,
+      [],
+    );
+    verifiedConverged = after.filter((a) => {
+      const t = truth.get(a.customer_id);
+      return !!t && a.tier === t.tier && normalizeBillingInterval(a.billing_interval) === t.interval;
+    }).length;
+    mrrFromRecord = after.reduce((sum, a) => truth.has(a.customer_id) && a.monthly_rate_usd != null
+      ? sum + Number(a.monthly_rate_usd) : sum, 0);
+  }
+
+  return {
+    execute,
+    stripeSubscriptions: truth.size,
+    profileRows: existing.length,
+    rows,
+    written,
+    verifiedConverged,
+    mrrFromRecord,
+  };
+}
