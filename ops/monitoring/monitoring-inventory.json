@@ -857,12 +857,12 @@
       ],
       "criticality": "load-bearing",
       "install_state": "installed",
-      "sha256": "c85be7425e65092ad85b7bfa6972375678b8e90155f2ddc798c267662886bf3f",
+      "sha256": "4d64057510f468131b4dc17f22d32453bf3809787d0ece626b509eeb04f7f317",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
       "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1",
-      "notes": "Declared inbound network posture — the SoT the reconciler's POSTURE_DRIFT check asserts live reachability against. No `schedule`: it is DATA read by the reconciler's own cron, not itself a scheduled job, so DARK does not apply. A SHARED PRIMITIVE under the same canonical + committed-.sha256 + parity contract as send_telegram.sh: both hosts must read the SAME declaration or each would assert a different posture and the peer-vantage comparison would be meaningless. kind=baseline-data so HASH_DRIFT treats a mutation here as SEVERE — an edited posture file silently redefines what 'correct' means, which is worse than a drifted script."
+      "notes": "Declared inbound network posture — the SoT the reconciler's POSTURE_DRIFT check asserts live reachability against. No `schedule`: it is DATA read by the reconciler's own cron, not itself a scheduled job, so DARK does not apply. A SHARED PRIMITIVE under the same canonical + committed-.sha256 + parity contract as send_telegram.sh: both hosts must read the SAME declaration or each would assert a different posture and the peer-vantage comparison would be meaningless. kind=baseline-data so HASH_DRIFT treats a mutation here as SEVERE — an edited posture file silently redefines what 'correct' means, which is worse than a drifted script. OPS-CF-ORIGIN-LOCK-W1: :80 / :443/tcp / :443/udp moved from `any` to the `cloudflare` source set. Because both hosts assert this file against the ONE canonical hash, an edit here must re-record it in the same commit — the parity canary caught exactly that omission on this wave."
     },
     {
       "id": "kernel-staleness-canary",
