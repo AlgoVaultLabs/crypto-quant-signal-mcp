@@ -1086,7 +1086,7 @@
       "schedule": "53 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "978a85c65544abd0c8d4250e8267811a5b6e7830e627334305ce38c3d83bfbaf",
+      "sha256": "ff04719e3c00179a58deba79597e75bb49329577c2c87c31d09d683424037c9c",
       "alert_ids": [
         "REVENUE_METER_DIVERGENCE"
       ],

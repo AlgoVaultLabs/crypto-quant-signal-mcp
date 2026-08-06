@@ -341,11 +341,34 @@ def classify(divergent_rows, reconciliation, unsettled_growth):
                            "cross-meter agreement could not be evaluated (it would read as "
                            "`divergent: false`, which is agreement, not silence)")
     if reconciliation.get("divergent"):
+        # OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 CH1: reconcileCounts now compares COMPOSITION (tier x
+        # billing interval), not only totals, and its `divergent` flag fires on ANY disagreement
+        # rather than only on a >2x / >10-absolute gap that could never trip at n=4.
+        mismatches = reconciliation.get("composition_mismatches") or []
+        # DEDUP IDENTITY MUST INCLUDE THE COMPOSITION. The old id was totals-only
+        # ("reconcile@4-4"), and the whole point of this widening is that totals can AGREE while
+        # the composition does not — so two genuinely different mismatches would have collapsed
+        # to one id and the second would have been suppressed as already-fired.
+        shape = ";".join("%s/%s:%s-%s" % (m.get("tier"), m.get("interval"),
+                                          m.get("stripe"), m.get("profiles"))
+                         for m in mismatches)
+        if mismatches:
+            # Name the entity, never a bare number beside a count (CLAUDE.md alert-body rule).
+            detail = "; ".join(
+                "tier %s/%s: Stripe %s vs record %s" % (m.get("tier"), m.get("interval"),
+                                                        m.get("stripe"), m.get("profiles"))
+                for m in mismatches)
+            text = ("reconcileCounts() reports DIVERGENT on COMPOSITION: %s "
+                    "(totals stripe_total %s vs profiles_total %s)"
+                    % (detail, stripe_total, profiles_total))
+        else:
+            text = ("reconcileCounts() reports DIVERGENT: stripe_total %s vs profiles_total %s"
+                    % (stripe_total, profiles_total))
         findings.append({
             "meter": "cross_meter_disagreement",
-            "id": "reconcile@%s-%s" % (stripe_total, profiles_total),
-            "text": "reconcileCounts() reports DIVERGENT: stripe_total %s vs profiles_total %s"
-                    % (stripe_total, profiles_total),
+            "id": "reconcile@%s-%s%s" % (stripe_total, profiles_total,
+                                         ("|" + shape) if shape else ""),
+            "text": text,
         })
 
     # (c) GROWTH above the declared watermark.
@@ -358,10 +381,19 @@ def classify(divergent_rows, reconciliation, unsettled_growth):
                     "%d days" % (unsettled_growth, noun, UNSETTLED_GRACE_DAYS),
         })
 
+    # NOTE CORRECTED 2026-08-06 (OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 CH1). This line used to read
+    # "totals only — at this scale it cannot see a single lost customer; meter (a) is the
+    # detector". That was TRUE and is now FALSE: reconcileCounts compares composition (tier x
+    # billing interval) and its `divergent` flag fires on ANY disagreement, so meter (b) CAN now
+    # see a single lost or mis-tiered customer at n=4. Meter (a) remains the producer-liveness
+    # DETECTOR — a green (b) must still never suppress it — but (b) is no longer structurally
+    # blind. A stale note describing a guard's blindness outlives the blindness and gets read as
+    # current fact by the next wave.
     notes.append("meter (b) agreement: stripe_total=%s profiles_total=%s divergent=%s "
-                 "(NOTE: totals only — at this scale it cannot see a single lost customer; "
-                 "meter (a) is the detector)"
-                 % (stripe_total, profiles_total, reconciliation.get("divergent")))
+                 "composition_compared=%s mismatches=%d"
+                 % (stripe_total, profiles_total, reconciliation.get("divergent"),
+                    reconciliation.get("composition_compared"),
+                    len(reconciliation.get("composition_mismatches") or [])))
     return findings, notes
 
 
@@ -531,7 +563,19 @@ def self_test():
             failures.append(name)
 
     AGREE = {"stripe_total": 4, "profiles_total": 4, "divergent": False,
-             "instrumentation_artifact": False}
+             "instrumentation_artifact": False, "composition_compared": True,
+             "composition_mismatches": []}
+
+    # W3-CH1: totals AGREE (4 vs 4) while the composition does not. This is the exact live
+    # defect the arc existed to catch, and the shape the pre-W3 check reported clean.
+    COMPOSITION_DRIFT = {
+        "stripe_total": 4, "profiles_total": 4, "divergent": True,
+        "instrumentation_artifact": False, "composition_compared": True,
+        "composition_mismatches": [
+            {"tier": "pro", "interval": "month", "stripe": 1, "profiles": 0},
+            {"tier": "starter", "interval": "unknown", "stripe": 0, "profiles": 4},
+        ],
+    }
 
     # ── THE HISTORICAL CORPUS. All three events are real, with their real timestamps; the single
     #    pre-backfill profile is the one conversion that survived W5's 22007 bind failure because
@@ -592,6 +636,31 @@ def self_test():
                 "instrumentation_artifact": False}
     r = run_cycle([], diverged, 0)
     check("cross-meter disagreement → fire", r["action"] == "fire")
+
+    # G2) W3-CH1 — COMPOSITION drift with IDENTICAL totals. This is the shape the pre-W3 check
+    #     reported clean for weeks: 4 subscribers on each side, one of them on the wrong tier.
+    save_fired_set(set())
+    r = run_cycle([], COMPOSITION_DRIFT, 0)
+    check("composition drift at EQUAL totals (4 vs 4) → fire", r["action"] == "fire")
+    body = LAST_FIRE_BODY or ""
+    # Assert the rendered BODY, not just the action verdict: a canary that fires with a body an
+    # operator cannot act on is half a guard, and this repo has shipped exactly that before.
+    check("body names the disagreeing tier, not just a total",
+          "pro/month" in body and "starter/unknown" in body)
+    check("body still carries the totals for context", "4" in body)
+
+    # G3) the dedup identity must include the COMPOSITION, or two different mismatches at the
+    #     same totals collapse to one id and the second is suppressed as already-fired.
+    save_fired_set(set())
+    run_cycle([], COMPOSITION_DRIFT, 0)
+    other = dict(COMPOSITION_DRIFT)
+    other["composition_mismatches"] = [
+        {"tier": "enterprise", "interval": "month", "stripe": 1, "profiles": 0},
+        {"tier": "starter", "interval": "month", "stripe": 0, "profiles": 1},
+    ]
+    r = run_cycle([], other, 0)
+    check("a DIFFERENT composition mismatch at the same totals still fires (id is not totals-only)",
+          r["action"] == "fire")
 
     # H) a null Stripe census is INDETERMINATE, never agreement
     save_fired_set(set())

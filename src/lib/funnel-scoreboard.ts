@@ -175,30 +175,167 @@ export function safeRatio(numer: number | null | undefined, denom: number | null
   return numer / denom;
 }
 
+/**
+ * One (tier, interval) cell counted on each side. Deliberately `string`-typed rather than
+ * `PaidPlanId`/`BillingInterval`: the profiles side can carry `unknown` (a row whose cadence has
+ * not been established) and, in principle, a tier the ladder no longer sells. A reconciliation
+ * that could not REPRESENT an unexpected value could not report it either.
+ */
+export interface CompositionCell {
+  readonly tier: string;
+  readonly interval: string;
+  readonly count: number;
+}
+
+/** A (tier, interval) cell where the two sides disagree. `0` on a side means "absent there". */
+export interface CompositionMismatch {
+  readonly tier: string;
+  readonly interval: string;
+  readonly stripe: number;
+  readonly profiles: number;
+}
+
 export interface Reconciliation {
   stripe_total: number | null;
   profiles_total: number;
   divergent: boolean;
   /** CLAUDE.md: flag as instrumentation_artifact on >2× OR >10-absolute divergence. */
   instrumentation_artifact: boolean;
+  /**
+   * ADDITIVE (OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 CH1). False when either side supplied no
+   * composition — so a consumer can tell "the tiers agree" from "nobody looked", which a bare
+   * empty mismatch list cannot express.
+   */
+  composition_compared: boolean;
+  /** Every disagreeing cell. Empty when compared and in agreement, or when not compared. */
+  composition_mismatches: readonly CompositionMismatch[];
 }
 
-/** Cross-check the Stripe headline against the subscriber_profiles cache. */
-export function reconcileCounts(stripeTotal: number | null, profilesTotal: number): Reconciliation {
+/**
+ * Separator for a (tier, interval) composition key.
+ *
+ * WRITTEN AS AN ESCAPE, NEVER A RAW BYTE. A literal U+0000 in a tracked source file makes the
+ * agent shell's `grep` (ugrep, with a hardcoded `-I`) classify the whole file as binary and skip
+ * it SILENTLY AT EXIT 0 -- "no matches" becomes indistinguishable from "searched and found
+ * nothing" -- and `scripts/check-source-greppable.mjs` fails the build on it. That defect was
+ * introduced right here and caught by that gate, which is what it exists for.
+ *
+ * NUL remains the correct SEPARATOR: it cannot occur inside a tier or interval value, so no key
+ * can be forged by a value that contains the delimiter. Only its spelling was ever the problem.
+ */
+const COMPOSITION_KEY_SEP = '\u0000';
+
+/** The composition map key for a (tier, interval) pair. Pure. */
+function compositionKey(tier: string, interval: string): string {
+  return `${tier}${COMPOSITION_KEY_SEP}${interval}`;
+}
+
+/** Fold profile rows into composition cells. Pure; exported for test. */
+export function profilesComposition(
+  rows: ReadonlyArray<{ tier?: string | null; billing_interval?: string | null }>,
+): readonly CompositionCell[] {
+  const by = new Map<string, CompositionCell>();
+  for (const r of rows) {
+    const tier = r.tier ?? 'unknown';
+    const interval = r.billing_interval ?? 'unknown';
+    const k = compositionKey(tier, interval);
+    by.set(k, { tier, interval, count: (by.get(k)?.count ?? 0) + 1 });
+  }
+  return [...by.values()].sort((a, b) => a.tier.localeCompare(b.tier) || a.interval.localeCompare(b.interval));
+}
+
+/**
+ * Cross-check the Stripe headline against the `subscriber_profiles` cache — on TOTALS and, when
+ * both sides supply it, on COMPOSITION (per tier × billing interval).
+ *
+ * 🛑 WHY THE `divergent` RULE CHANGED. It used to read
+ * `absGap > 0 && (ratioDivergent || absGap > 10)`, which **could not fire at our scale**: with 4
+ * subscribers, a whole missing paying customer gives `absGap = 1` — neither `> 10` nor `4/3 > 2`.
+ * The canary's own docblock had recorded exactly that outcome and it was read as a quirk rather
+ * than a dead guard. A threshold calibrated for a large base is not a conservative guard on a
+ * small one; it is no guard at all.
+ *
+ * The root cause was that ONE flag answered TWO questions. This function now separates them, and
+ * the split is the one this file's own comment already implied:
+ *
+ *   - **`divergent`** — *do the two sides disagree?* ANY total gap, or ANY composition-cell
+ *     mismatch. Fires at n=4 and at n=4000 alike, because "they disagree" does not have a scale.
+ *   - **`instrumentation_artifact`** — *is the gap so large it must be an instrumentation bug
+ *     rather than real drift?* The original `>2× OR >10-absolute` rule, **unchanged**. This is
+ *     where a large-base intuition genuinely belongs.
+ *
+ * Noise control did not disappear, it MOVED to where the operator-action-required discipline
+ * already lives: `revenue-meter-canary.py` requires SUSTAINED breach and owns cooldown/severity
+ * via `send_telegram.sh`. A subscription mid-change is legitimately out of sync for seconds, and
+ * that is a paging decision, not a derivation one. Burying it in the arithmetic is what produced
+ * a check that reported `divergent: false` over a real missing customer.
+ *
+ * Small-n vs large-n, both intended and both tested: 3-vs-4 at n=4 is **divergent, not an
+ * artifact**; 1-of-500 is likewise **divergent, not an artifact**; 500-vs-1 is **both**.
+ *
+ * `stripeTotal === null` still returns `divergent: false` — a Stripe outage is silence, not
+ * agreement, and meter (b) of the canary refuses to evaluate rather than laundering it into a
+ * pass. That contract is unchanged.
+ *
+ * Composition params are OPTIONAL and TRAILING so every pre-existing call site compiles
+ * untouched (CLAUDE.md: extend an interface with an optional trailing param, never a
+ * mid-signature one).
+ */
+export function reconcileCounts(
+  stripeTotal: number | null,
+  profilesTotal: number,
+  stripeCells?: readonly CompositionCell[],
+  profileCells?: readonly CompositionCell[],
+): Reconciliation {
+  const compared = Array.isArray(stripeCells) && Array.isArray(profileCells);
+  const mismatches: CompositionMismatch[] = compared
+    ? diffComposition(stripeCells!, profileCells!)
+    : [];
+
   if (stripeTotal === null) {
-    return { stripe_total: null, profiles_total: profilesTotal, divergent: false, instrumentation_artifact: false };
+    // Stripe unavailable: nothing to compare against, so this is SILENCE, not agreement.
+    return {
+      stripe_total: null,
+      profiles_total: profilesTotal,
+      divergent: false,
+      instrumentation_artifact: false,
+      composition_compared: false,
+      composition_mismatches: [],
+    };
   }
   const absGap = Math.abs(stripeTotal - profilesTotal);
   const hi = Math.max(stripeTotal, profilesTotal);
   const lo = Math.min(stripeTotal, profilesTotal);
-  const ratioDivergent = lo === 0 ? hi > 0 : hi / lo > 2;
   const artifact = absGap > 10 || (lo > 0 && hi / lo > 2);
   return {
     stripe_total: stripeTotal,
     profiles_total: profilesTotal,
-    divergent: absGap > 0 && (ratioDivergent || absGap > 10),
+    divergent: absGap > 0 || mismatches.length > 0,
     instrumentation_artifact: artifact,
+    composition_compared: compared,
+    composition_mismatches: mismatches,
   };
+}
+
+/** Cell-by-cell diff over the UNION of both key sets, deterministically ordered. Pure. */
+function diffComposition(
+  stripe: readonly CompositionCell[],
+  profiles: readonly CompositionCell[],
+): CompositionMismatch[] {
+  const s = new Map(stripe.map((c) => [compositionKey(c.tier, c.interval), c.count]));
+  const p = new Map(profiles.map((c) => [compositionKey(c.tier, c.interval), c.count]));
+  // The UNION matters: a cell present on ONE side only is the single most likely shape of a real
+  // defect (a tier that never reached the record), and an intersection-only walk would miss it.
+  const out: CompositionMismatch[] = [];
+  for (const k of new Set([...s.keys(), ...p.keys()])) {
+    const a = s.get(k) ?? 0;
+    const b = p.get(k) ?? 0;
+    if (a !== b) {
+      const [tier, interval] = k.split(COMPOSITION_KEY_SEP);
+      out.push({ tier, interval, stripe: a, profiles: b });
+    }
+  }
+  return out.sort((x, y) => x.tier.localeCompare(y.tier) || x.interval.localeCompare(y.interval));
 }
 
 /** Bucket timestamped rows into daily counts (YYYY-MM-DD, UTC) over the last `days`. Pure. */
@@ -717,7 +854,15 @@ export async function getFunnelScoreboard(
   }
   const profAgg = aggregateProfiles(profiles);
   const activeProfiles = profiles.filter(p => (p.status ?? '').toLowerCase() === 'active');
-  const reconciliation = reconcileCounts(census ? census.total : null, activeProfiles.length);
+  // OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 CH1: compare COMPOSITION, not just totals. The Stripe side
+  // is the interval-aware census W1-CH2 added; the profiles side is folded from the same ACTIVE
+  // rows the total uses, so the two figures can never be computed off different populations.
+  const reconciliation = reconcileCounts(
+    census ? census.total : null,
+    activeProfiles.length,
+    census?.composition,
+    profilesComposition(activeProfiles),
+  );
   const x402Payments = await scalar(
     deps, 'x402_payments',
     `SELECT COUNT(*) AS c FROM processed_x402_payments WHERE created_at >= ?`,

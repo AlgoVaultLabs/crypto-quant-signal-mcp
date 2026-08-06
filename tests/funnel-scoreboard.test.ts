@@ -12,6 +12,7 @@ import {
   getFunnelScoreboard,
   computeRetentionCurve,
   reconcileCounts,
+  profilesComposition,
   safeRatio,
   safeCount,
   toEpochMs,
@@ -584,5 +585,120 @@ describe('active-count derivations exclude a cancelled profile (CH2)', () => {
     const sb = await getFunnelScoreboard({ days: 90 }, makeDeps({ listProfiles: mixed }));
     expect(sb.paying_subscribers.reconciliation.profiles_total).toBe(1);
     expect(sb.paying_subscribers.enrichment.profiles_total).toBe(3);
+  });
+});
+
+// ── OPS-STRIPE-SUBSCRIPTION-TRUTH-W3 · CH1 ──────────────────────────────────────────────────
+//
+// The old `divergent` rule was `absGap > 0 && (ratioDivergent || absGap > 10)`. At n=4 a WHOLE
+// MISSING PAYING CUSTOMER gives absGap=1 — neither >10 nor 4/3>2 — so the guard could not fire
+// at any discrepancy this product can currently have. A threshold calibrated for a large base is
+// not a conservative guard on a small one; it is no guard at all.
+//
+// The fix separates two questions the one flag was answering at once:
+//   divergent               = do the two sides disagree?      (any gap or cell mismatch, any n)
+//   instrumentation_artifact = is the gap absurdly large?      (the >2x / >10 rule, UNCHANGED)
+// Noise control moved to revenue-meter-canary.py, which requires SUSTAINED breach.
+
+const cell = (tier: string, interval: string, count: number) => ({ tier, interval, count });
+
+describe('reconcileCounts — composition awareness (CH1)', () => {
+  // TODAY'S LIVE DEFECT, pre-backfill: Stripe bills 3 starter + 1 pro (all monthly); the record
+  // says 4 starter with no cadence at all. Totals agree at 4-vs-4, which is precisely why a
+  // totals-only check reported clean while $39.01/mo of MRR was invisible.
+  const STRIPE_LIVE = [cell('starter', 'month', 3), cell('pro', 'month', 1)];
+  const PROFILES_PRE = [cell('starter', 'unknown', 4)];
+  const PROFILES_POST = [cell('starter', 'month', 3), cell('pro', 'month', 1)];
+
+  it('1.1 reports DIVERGENT on the live mismatch, even though the TOTALS agree', () => {
+    const r = reconcileCounts(4, 4, STRIPE_LIVE, PROFILES_PRE);
+    expect(r.divergent).toBe(true);
+    expect(r.stripe_total).toBe(4);
+    expect(r.profiles_total).toBe(4);           // totals identical — the old check saw only this
+    expect(r.composition_compared).toBe(true);
+    // Three disagreeing cells: pro/month absent from the record, starter/month absent, and a
+    // starter/unknown bucket that exists nowhere in Stripe.
+    expect(r.composition_mismatches).toEqual([
+      { tier: 'pro', interval: 'month', stripe: 1, profiles: 0 },
+      { tier: 'starter', interval: 'month', stripe: 3, profiles: 0 },
+      { tier: 'starter', interval: 'unknown', stripe: 0, profiles: 4 },
+    ]);
+  });
+
+  it('1.1b goes CLEAN once the record matches — the guard proven in BOTH directions', () => {
+    const r = reconcileCounts(4, 4, STRIPE_LIVE, PROFILES_POST);
+    expect(r.divergent).toBe(false);
+    expect(r.composition_compared).toBe(true);
+    expect(r.composition_mismatches).toEqual([]);
+  });
+
+  it('1.2 a ONE-customer gap is divergent at n=4 — the old threshold could not fire', () => {
+    // absGap=1: not >10, and 4/3 is not >2. Under the old rule this was divergent:false, which
+    // the canary's own docblock had already recorded happening over a real missing customer.
+    const r = reconcileCounts(4, 3);
+    expect(r.divergent).toBe(true);
+    expect(r.instrumentation_artifact).toBe(false); // real drift, not an instrumentation bug
+  });
+
+  it('1.3 small-n and large-n: "they disagree" has no scale; "absurd" does', () => {
+    const smallN = reconcileCounts(4, 3);
+    const largeN = reconcileCounts(500, 499);
+    const absurd = reconcileCounts(500, 1);
+    // Both report the disagreement...
+    expect(smallN.divergent).toBe(true);
+    expect(largeN.divergent).toBe(true);
+    // ...neither is an instrumentation artifact...
+    expect(smallN.instrumentation_artifact).toBe(false);
+    expect(largeN.instrumentation_artifact).toBe(false);
+    // ...while a 500-vs-1 gap is both, and that rule is UNCHANGED from before this wave.
+    expect(absurd.divergent).toBe(true);
+    expect(absurd.instrumentation_artifact).toBe(true);
+  });
+
+  it('distinguishes "the tiers agree" from "nobody compared them"', () => {
+    // An empty mismatch list alone cannot express the difference — hence composition_compared.
+    const notCompared = reconcileCounts(4, 4);
+    expect(notCompared.composition_compared).toBe(false);
+    expect(notCompared.composition_mismatches).toEqual([]);
+    expect(notCompared.divergent).toBe(false);
+
+    const compared = reconcileCounts(4, 4, STRIPE_LIVE, PROFILES_POST);
+    expect(compared.composition_compared).toBe(true);
+  });
+
+  it('walks the UNION — a cell present on only ONE side is the likeliest real defect', () => {
+    const r = reconcileCounts(2, 2, [cell('starter', 'month', 2)], [cell('pro', 'year', 2)]);
+    expect(r.divergent).toBe(true);
+    expect(r.composition_mismatches).toHaveLength(2); // an intersection-only walk would find 0
+  });
+
+  it('a Stripe outage is SILENCE, not agreement — contract unchanged', () => {
+    const r = reconcileCounts(null, 4, undefined, PROFILES_PRE);
+    expect(r.divergent).toBe(false);
+    expect(r.composition_compared).toBe(false);
+  });
+});
+
+describe('profilesComposition — folds rows the same way both sides are counted', () => {
+  it('groups by tier x billing_interval', () => {
+    expect(profilesComposition([
+      { tier: 'starter', billing_interval: 'month' },
+      { tier: 'starter', billing_interval: 'month' },
+      { tier: 'pro', billing_interval: 'year' },
+    ])).toEqual([
+      { tier: 'pro', interval: 'year', count: 1 },
+      { tier: 'starter', interval: 'month', count: 2 },
+    ]);
+  });
+
+  it('a NULL tier or cadence folds to `unknown`, never silently dropped', () => {
+    // Dropping them would make the record look like it agreed by having fewer rows to disagree.
+    expect(profilesComposition([{ tier: null, billing_interval: null }])).toEqual([
+      { tier: 'unknown', interval: 'unknown', count: 1 },
+    ]);
+  });
+
+  it('is empty for no rows — a fact, not a failure', () => {
+    expect(profilesComposition([])).toEqual([]);
   });
 });
