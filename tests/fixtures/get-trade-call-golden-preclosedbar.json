@@ -12,7 +12,7 @@
     "underlying_session": "ALWAYS_OPEN"
   },
   "regime": "TRENDING_UP",
-  "reasoning": "Trending regime, upward bias. Funding pressure mild. Compression building, breakout setup pending. Trend persistence low; mean-reverting structure. No actionable setup at this snapshot.",
+  "reasoning": "<REASONING — owned by verdict-reasoning-golden.test.ts>",
   "timestamp": 1785326760,
   "coin": "BTC",
   "timeframe": "1h",
@@ -54,6 +54,54 @@
         "value": "IMMINENT"
       }
     ],
+    "factor_ledger": [
+      {
+        "factor": "trend_persistence",
+        "direction": "neutral",
+        "value": "LOW",
+        "contributes": true,
+        "strength": "dominant"
+      },
+      {
+        "factor": "breakout_pending",
+        "direction": "neutral",
+        "value": "IMMINENT",
+        "contributes": true,
+        "strength": "supporting"
+      },
+      {
+        "factor": "regime",
+        "direction": "bullish",
+        "value": "trending up",
+        "contributes": true,
+        "strength": "supporting"
+      },
+      {
+        "factor": "price_change_24h",
+        "direction": "bearish",
+        "value": "down",
+        "contributes": true,
+        "strength": "marginal"
+      },
+      {
+        "factor": "funding_state",
+        "direction": "neutral",
+        "value": "+0.0010%",
+        "contributes": true,
+        "strength": "none"
+      },
+      {
+        "factor": "volume_24h",
+        "direction": "neutral",
+        "value": "$125.0M",
+        "contributes": false,
+        "strength": "none"
+      }
+    ],
+    "stripped_remainder": {
+      "count": 1,
+      "net": "bearish"
+    },
     "verification_uri": "https://algovault.com/track-record",
     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
   }

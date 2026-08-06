@@ -10,6 +10,10 @@ import { classifyAsset, TIER_DEFINITIONS, getTop20ByOI } from './asset-tiers.js'
 import { isShortLivedScript } from './runtime.js';
 import { isPfeEligible, SQL_PFE_ELIGIBLE } from './pfe-scoring.js';
 import { formatWriteLossLog } from './log-redact.js';
+// The funding z-score window lives in its own dependency-free leaf: `reasoning` cites
+// it in public copy, and every trade-call test mocks THIS module wholesale — so a
+// constant declared here would arrive `undefined` at the renderer. See funding-window.ts.
+import { FUNDING_Z_MIN_SAMPLES, FUNDING_Z_WINDOW_SECONDS } from './funding-window.js';
 
 /**
  * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
@@ -1663,6 +1667,7 @@ interface FundingStats {
 }
 
 const FUNDING_STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 const fundingStatsCache = new Map<string, FundingStats>();
 const fundingStatsInflight = new Map<string, Promise<FundingStats | null>>();
 
@@ -1678,7 +1683,7 @@ async function loadFundingStats(coin: string): Promise<FundingStats | null> {
   const promise = (async (): Promise<FundingStats | null> => {
     try {
       const b = getBackend();
-      const cutoff14d = Math.floor(Date.now() / 1000) - 14 * 86400;
+      const cutoff14d = Math.floor(Date.now() / 1000) - FUNDING_Z_WINDOW_SECONDS;
       const t0 = Date.now();
       let rows: { funding_rate: number }[];
       if (isPg && b instanceof PgBackend) {
@@ -1695,7 +1700,7 @@ async function loadFundingStats(coin: string): Promise<FundingStats | null> {
       const elapsedMs = Date.now() - t0;
 
       let stats: FundingStats;
-      if (rows.length < 20) {
+      if (rows.length < FUNDING_Z_MIN_SAMPLES) {
         stats = { mean: 0, stdDev: 0, sampleCount: rows.length, computedAt: Date.now() };
       } else {
         const rates = rows.map(r => r.funding_rate);
@@ -1730,14 +1735,14 @@ export async function getFundingZScore(coin: string, currentFunding: number): Pr
   const now = Date.now();
   const cached = fundingStatsCache.get(coin);
   if (cached && (now - cached.computedAt) < FUNDING_STATS_TTL_MS) {
-    if (cached.sampleCount < 20) return null;
+    if (cached.sampleCount < FUNDING_Z_MIN_SAMPLES) return null;
     if (cached.stdDev === 0) return 0;
     return (currentFunding - cached.mean) / cached.stdDev;
   }
 
   const stats = await loadFundingStats(coin);
   if (!stats) return null;
-  if (stats.sampleCount < 20) return null;
+  if (stats.sampleCount < FUNDING_Z_MIN_SAMPLES) return null;
   if (stats.stdDev === 0) return 0;
   return (currentFunding - stats.mean) / stats.stdDev;
 }
@@ -1778,7 +1783,7 @@ export async function bulkWarmFundingCache(coins: string[]): Promise<void> {
   }
 
   const b = getBackend();
-  const cutoff14d = Math.floor(now / 1000) - 14 * 86400;
+  const cutoff14d = Math.floor(now / 1000) - FUNDING_Z_WINDOW_SECONDS;
   const t0 = Date.now();
 
   try {

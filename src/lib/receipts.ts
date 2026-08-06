@@ -57,6 +57,36 @@ export interface ReceiptFactor {
   value: string;
 }
 
+/**
+ * SIGNAL-REASONING-PROJECTION-W1-V2 R2 — the full signed ledger row, as it reaches
+ * the wire.
+ *
+ * `contributes` is the field that matters. `factors[]` shipped `oi_change_pct` with a
+ * verdict `direction` while open interest enters NO verdict score, so an agent reading
+ * a direction reasonably inferred a reason — and on the XRP card that inferred reason
+ * read `bullish` while price was falling. The flag makes "this indicator has a sign but
+ * did not move the call" a statement the payload can express.
+ *
+ * Deliberately ABSENT: `rank`. It exists on the internal ledger, but rank across many
+ * observations is an ordinal projection of the weight vector, which is an INTERNAL data
+ * class. `strength` is safe by contrast because it is scaled to the largest contribution
+ * in the SAME call, so it conveys within-call ordering and no coefficient.
+ */
+export interface ReceiptLedgerRow {
+  factor: string;
+  direction: FactorDirection;
+  value: string;
+  /** True iff this indicator feeds a weight term or a verdict adjustment. */
+  contributes: boolean;
+  strength: 'dominant' | 'supporting' | 'marginal' | 'none';
+}
+
+/** The moat-1-stripped contributors — a count and a net sign, never their names. */
+export interface ReceiptStrippedRemainder {
+  count: number;
+  net: 'bullish' | 'bearish' | 'flat';
+}
+
 /** Live, cached track-record proof. All fields LIVE — never hardcoded. */
 export interface ReceiptTrackRecord {
   /** PFE win rate as a fraction in [0,1] (e.g. 0.916). */
@@ -75,8 +105,25 @@ export interface Receipts {
   /** The live 0–100 engine confidence, shown on EVERY call incl. HOLD. */
   conviction_pct: number;
   regime: RegimeType;
-  /** Top 2–3 salient drivers with direction. */
+  /**
+   * Top 2–3 salient drivers with direction.
+   *
+   * DEPRECATED — superseded by `factor_ledger`, which carries every row with its
+   * `contributes` flag. Frozen byte-identical rather than widened: both digest
+   * renderers take `factors.slice(0, 3)` and the Telegram bot mirrors that in Python,
+   * so re-ranking or lengthening it would silently rewrite every scan line the bot
+   * has ever sent. Retirement is its own release wave (cache-refresh notice):
+   * `OPS-RECEIPTS-FACTORS-RETIRE-W{NEXT}`.
+   */
   factors: ReceiptFactor[];
+  /**
+   * The full signed ledger (V2 R2). OMITTED when the caller supplies no ledger — the
+   * scan-digest enrichment path does exactly that, which is what keeps its frozen
+   * byte-equality fixtures and `receipts.test.ts` passing UNMODIFIED.
+   */
+  factor_ledger?: ReceiptLedgerRow[];
+  /** Present iff `factor_ledger` is. */
+  stripped_remainder?: ReceiptStrippedRemainder;
   /** LIVE track record; OMITTED entirely when the source is unavailable (fail-open). */
   track_record?: ReceiptTrackRecord;
   verification_uri: string;
@@ -105,6 +152,39 @@ export interface VerdictContext {
 export interface FormatReceiptsOptions {
   /** The cached track-record value, or null/undefined when the source is down. */
   trackRecord?: ReceiptTrackRecord | null;
+  /**
+   * The already-built factor ledger. Structural, so `verdict-factors.ts` stays a
+   * zero-import leaf and this module does not depend on it. Omitted ⇒ `factor_ledger`
+   * and `stripped_remainder` are absent and the emitted shape is byte-identical to
+   * pre-wave (the scan-digest enrichment path relies on exactly that).
+   */
+  ledger?: {
+    rows: Array<{
+      factor: string;
+      direction: FactorDirection;
+      value: string;
+      contributes: boolean;
+      strength: 'dominant' | 'supporting' | 'marginal' | 'none';
+    }>;
+    strippedRemainder: { count: number; net: 'bullish' | 'bearish' | 'flat' };
+  } | null;
+}
+
+/**
+ * Project the internal ledger onto the wire rows. An explicit five-field copy, never a
+ * spread: allow-list LAW, and it is what makes `rank` — present on every internal row —
+ * structurally unable to reach a public surface rather than merely omitted by habit.
+ */
+export function formatFactorLedger(
+  rows: NonNullable<FormatReceiptsOptions['ledger']>['rows'],
+): ReceiptLedgerRow[] {
+  return rows.map((r) => ({
+    factor: r.factor,
+    direction: r.direction,
+    value: r.value,
+    contributes: r.contributes,
+    strength: r.strength,
+  }));
 }
 
 /** Funding is a contrarian signal: a one-sided crowd reads against itself. */
@@ -156,11 +236,18 @@ function buildFactors(ind: VerdictContext['indicators']): ReceiptFactor[] {
  */
 export function formatReceipts(verdict: VerdictContext, opts: FormatReceiptsOptions = {}): Receipts {
   const tr = opts.trackRecord;
+  const ledger = opts.ledger;
   return {
     verdict: verdict.call,
     conviction_pct: verdict.confidence,
     regime: verdict.regime,
     factors: buildFactors(verdict.indicators),
+    ...(ledger
+      ? {
+        factor_ledger: formatFactorLedger(ledger.rows),
+        stripped_remainder: { count: ledger.strippedRemainder.count, net: ledger.strippedRemainder.net },
+      }
+      : {}),
     // Reconstruct from named fields (allow-list) so no foreign key rides along.
     ...(tr
       ? { track_record: { pfe_win_rate: tr.pfe_win_rate, n: tr.n, window: tr.window, as_of: tr.as_of } }

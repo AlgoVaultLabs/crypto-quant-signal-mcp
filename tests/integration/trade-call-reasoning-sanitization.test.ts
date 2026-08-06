@@ -9,6 +9,25 @@
  * any future regression in the call-site composition (e.g. a developer
  * accidentally re-introducing a "RSI at <num>" parts.push call) is caught
  * before deploy.
+ *
+ * ── DOCUMENTED RELAXATION (SIGNAL-REASONING-PROJECTION-W1-V2 R4) ──────────────
+ * The blanket `/\d+\.\d+/` rule is REPLACED here — and only here — by a
+ * payload-pinned allow-list: a number may appear in `reasoning` only when some value
+ * emitted in the SAME response reproduces it byte-for-byte under a closed set of
+ * projections, or when it is a code constant passed in explicitly.
+ *
+ * This is a narrowing, not a loosening, and the net effect is a stronger gate:
+ *   - The old rule allowed ANY integer. "Moderate conviction" and a fabricated
+ *     "capping conviction at 62%" both passed it. The new rule rejects any number the
+ *     payload cannot produce, integer or not.
+ *   - The old rule forbade `-0.0066%` while `funding_rate: -0.00006641` sat two fields
+ *     away in the same JSON. It was protecting a value it was simultaneously shipping.
+ *
+ * What is NOT relaxed: the RSI / Hurst / Funding-Z / points / "Regime:" tokens below
+ * stay banned outright — those are scoring internals with no public counterpart, which
+ * is the actual moat-1 property. `tests/unit/sanitized-reasoning.test.ts` also keeps
+ * its strict decimal ban, because its subject is the bucket-prose helpers, which have
+ * no response to cross-reference and must stay number-free.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -34,6 +53,8 @@ import { getTradeSignal } from '../../src/tools/get-trade-call.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { resetLicenseCache } from '../../src/lib/license.js';
 import { getFundingZScore } from '../../src/lib/performance-db.js';
+import { FUNDING_Z_WINDOW_DAYS } from '../../src/lib/funding-window.js';
+import { unbackedProseNumbers, collectPayloadNumbers, REASONING_MAX_CHARS, PRICE_CHANGE_WINDOW_HOURS } from '../../src/lib/verdict-factors.js';
 // OPS-VITEST-SUITE-REPAIR: neutralize the cross-asset grid so getTradeSignal's
 // enrichment reads an injected (empty) snapshot instead of driving the live ~7s
 // 42-cell refresh (v1.10.5 SHADOW-SEED-W1), which overruns the 5s test timeout.
@@ -41,7 +62,8 @@ import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/
 import type { ExchangeAdapter, Candle, AssetContext } from '../../src/types.js';
 
 const FORBIDDEN_REGEX: ReadonlyArray<RegExp> = [
-  /\d+\.\d+/,
+  // `/\d+\.\d+/` REMOVED — superseded by the payload-pinned check below (R4 relaxation,
+  // see the header). Every remaining entry is a scoring internal with no public field.
   /boosted\s+\d+\s+pts?/i,
   /[+\-]\d+\s+pts?/i,
   /RSI\s+at\s+/i,
@@ -110,10 +132,30 @@ describe('getTradeSignal — emitted reasoning is sanitized', () => {
     expect(result.reasoning).toBeDefined();
     expect(typeof result.reasoning).toBe('string');
     expect(result.reasoning.length).toBeGreaterThanOrEqual(30);
-    expect(result.reasoning.length).toBeLessThanOrEqual(500);
+    // 500 → 280 (R4/D8). The bound is set by the CONSUMER: algovault-bot renders
+    // `reasoning[:280]`, so anything longer reaches a real user cut mid-word.
+    expect(result.reasoning.length).toBeLessThanOrEqual(REASONING_MAX_CHARS);
     for (const re of FORBIDDEN_REGEX) {
       expect(result.reasoning, `variant=${trend}/${funding}/${zScore}: matched forbidden ${re} in: "${result.reasoning}"`).not.toMatch(re);
     }
+    // R4: every number the reader sees is reproducible from this very response.
+    const unbacked = unbackedProseNumbers(
+      result.reasoning,
+      collectPayloadNumbers(result),
+      [FUNDING_Z_WINDOW_DAYS, PRICE_CHANGE_WINDOW_HOURS],
+    );
+    expect(unbacked, `variant=${trend}/${funding}/${zScore}: prose numbers with no payload source ${JSON.stringify(unbacked)} in: "${result.reasoning}"`).toEqual([]);
+  });
+
+  it('the payload-pinned number check can FAIL — a fabricated figure is rejected', () => {
+    // Proving the R4 replacement is not vacuous. A blanket-regex ban would also have
+    // caught a decimal; only this check catches a fabricated INTEGER, which is the
+    // class that actually shipped ("capping conviction at 62%").
+    const payload = { indicators: { funding_rate: -0.00006641 } };
+    const nums = collectPayloadNumbers(payload);
+    expect(unbackedProseNumbers('Funding at -0.0066% is unusually negative.', nums)).toEqual([]);
+    expect(unbackedProseNumbers('Ranging regime caps conviction at 62%.', nums)).toEqual(['62']);
+    expect(unbackedProseNumbers('Funding at -0.0067% is unusually negative.', nums)).toEqual(['-0.0067']);
   });
 
   it('indicators key-order: funding_rate, funding_24h_avg, funding_state are adjacent (first three keys)', async () => {

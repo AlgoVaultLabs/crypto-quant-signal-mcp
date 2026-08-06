@@ -6,6 +6,8 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 import { rsi, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
+import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
+import { buildFactorLedger, renderVerdictReasoning } from '../lib/verdict-factors.js';
 import { hashSignal } from '../lib/merkle.js';
 import { getDexForCoin, classifyAsset, isMemeCoinLiquid, isKnownTradFi, getTop20ByOI } from '../lib/asset-tiers.js';
 import { getVenuesSupporting, COVERAGE_PROBED_AT } from '../lib/venue-coverage.js';
@@ -30,10 +32,11 @@ import { trimToLeaderboardCell } from '../lib/leaderboard-cell.js';
 import { formatReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
 import type { TradeCallResult, SignalVerdict, EmaCrossDirection, RegimeType, LicenseInfo, ExchangeId, Candle } from '../types.js';
-import {
-  bucketTrendPersistence, bucketFundingState, bucketBreakoutPending,
-  regimeProse, fundingProse, breakoutProse, trendProse, convictionProse,
-} from '../lib/indicator-buckets.js';
+// The five `*Prose` helpers are no longer imported: `reasoning` is now a projection of
+// the factor ledger (V2 R3). They remain EXPORTED from indicator-buckets.ts — their unit
+// test is the moat-1 forbidden-token regression guard, which is worth keeping green
+// independently of whether this file happens to call them.
+import { bucketTrendPersistence, bucketFundingState, bucketBreakoutPending } from '../lib/indicator-buckets.js';
 import { getThresholdForTF } from '../lib/pertf-thresholds.js';
 import { getR4Thresholds } from '../lib/r4-relax-flag.js';
 import { recordOiScoreShadow } from '../lib/oiscore-shadow.js';
@@ -745,33 +748,18 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // ratification). Captured logs preserved at /var/log/algovault-seed-confidence
   // /*.log.gz via logrotate weekly rotation.
 
-  // ── v1.10.0 Sanitized Reasoning ──
-  // Closes moat-1 (composite-verdict quant-weighting) leakage. The previous
-  // builder echoed raw indicators ("RSI at 34.7", "Hurst 0.612 (>0.55)",
-  // "Funding Z-Score: -1.82", "Confidence: 73%", "Regime: TRENDING_UP",
-  // "boosted 10 pts") — every one of those is now blocklisted by the C3
-  // forbidden-regex test and would let an attacker reverse-engineer the
-  // weighting function. New template: bucket-name + direction prose only.
-  // Pure deterministic given inputs; no LLM, no randomness.
-  let reasoning = '';
-  if (includeReasoning) {
-    const tp = bucketTrendPersistence(hurstVal);
-    const fs = fundingState;
-    const bp = bucketBreakoutPending(squeezeActive);
-    reasoning = [
-      regimeProse(regime),
-      fundingProse(fs),
-      breakoutProse(bp),
-      trendProse(tp),
-      convictionProse(signal, confidence),
-    ].join(' ').replace(/\s+/g, ' ').trim();
-    // R3: when the underlying cash market is closed, candles reflect a capped
-    // synthetic index — append a provisional-regime caveat (no number, so it
-    // stays clean against the forbidden-regex reasoning blocklist).
-    if (isClosedState(session.state)) {
-      reasoning += ' Underlying market closed — candles reflect capped synthetic pricing; treat directional reads as provisional until reopen.';
-    }
-  }
+  // ── Reasoning is now a PROJECTION of the factor ledger — built further down ──
+  // SIGNAL-REASONING-PROJECTION-W1-V2 R3. The v1.10.0 five-slot bucket template used to
+  // be assembled HERE, independently of the score vector that produced the verdict, and
+  // that independence was the defect: `regimeProse` + `fundingProse` + … read BUCKET
+  // LABELS, so the prose could — and in public did — contradict the call. A BUY at 62%
+  // narrated as "no clear direction"; two assets with opposite-signed open interest
+  // emitting BYTE-IDENTICAL strings.
+  //
+  // It moves DOWN this function rather than changing in place, because the ledger needs
+  // `oi_change_pct`, which is not resolved until the `computeOiDelta` call below. The
+  // `indicator-buckets.ts` helpers stay exported: their unit test is the moat-1
+  // forbidden-token regression guard and is worth keeping green on its own.
 
   // Increment quota counter only for non-HOLD (HOLDs are free).
   // Internal grid-refresh calls skip the counter entirely.
@@ -849,21 +837,44 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   }
   // Indicators key-order: funding_rate, funding_24h_avg, funding_state,
   // oi_change_pct (+ oi_change_window) [omitted while warming], volume_24h, trend_persistence, breakout_pending.
+  // Hoisted out of the `result` literal (key order preserved byte-for-byte) so the
+  // factor ledger reads the SAME object the wire carries — a second inline copy here
+  // would be a second derivation of the very thing this wave collapses to one.
+  const indicators: TradeCallResult['indicators'] = {
+    funding_rate: fundingRate,
+    funding_24h_avg: funding24hAvg,
+    funding_state: fundingState,
+    ...(oiDelta ? { oi_change_pct: oiDelta.oi_change_pct, oi_change_window: oiDelta.oi_change_window } : {}),
+    volume_24h: volume24h,
+    trend_persistence: bucketTrendPersistence(hurstVal),
+    breakout_pending: bucketBreakoutPending(squeezeActive),
+    underlying_session: session.state,
+    ...(fundingAnnotation.fundingNote ? { funding_note: fundingAnnotation.fundingNote } : {}),
+  };
+
+  // ── SIGNAL-REASONING-PROJECTION-W1-V2 R1/R3: ONE ledger, three projections ──
+  //    `WEIGHTS` is passed IN. The leaf renders public copy, so it must be structurally
+  //    unable to leak a coefficient: it cannot print what it never holds. `rawScore` is
+  //    passed rather than re-summed — reconstructing the net from the rows would be a
+  //    second derivation of the exact quantity this wave exists to unify.
+  const factorLedger = buildFactorLedger({
+    coin,
+    scores: emittedScores,
+    weights: WEIGHTS,
+    outcome: { rawScore: liveVerdict.rawScore },
+    regime,
+    indicators,
+    gates: { fundingZScore, fundingWindowDays: FUNDING_Z_WINDOW_DAYS },
+  });
+  const reasoning = includeReasoning
+    ? renderVerdictReasoning(factorLedger, signal, confidence, { marketClosed: isClosedState(session.state) })
+    : '';
+
   const result: TradeCallResult = {
     call: signal,
     confidence,
     price: currentPrice,
-    indicators: {
-      funding_rate: fundingRate,
-      funding_24h_avg: funding24hAvg,
-      funding_state: fundingState,
-      ...(oiDelta ? { oi_change_pct: oiDelta.oi_change_pct, oi_change_window: oiDelta.oi_change_window } : {}),
-      volume_24h: volume24h,
-      trend_persistence: bucketTrendPersistence(hurstVal),
-      breakout_pending: bucketBreakoutPending(squeezeActive),
-      underlying_session: session.state,
-      ...(fundingAnnotation.fundingNote ? { funding_note: fundingAnnotation.fundingNote } : {}),
-    },
+    indicators,
     regime,
     reasoning,
     timestamp: Math.floor(Date.now() / 1000),
@@ -878,7 +889,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // source is momentarily unavailable). Skipped for internal grid-refresh cells,
   // which are trimmed to leaderboard cells downstream and never user-facing.
   if (!input.internal) {
-    result._receipts = formatReceipts(result, { trackRecord: getReceiptTrackRecord() });
+    // V2 R2: the ledger rides in so `factor_ledger[]` and the frozen `factors[]` are two
+    // fidelities of ONE derivation. `factors[]` stays byte-identical — both digest
+    // renderers `slice(0,3)` it and the bot mirrors that in Python, so widening it here
+    // would silently rewrite every Telegram scan line.
+    result._receipts = formatReceipts(result, { trackRecord: getReceiptTrackRecord(), ledger: factorLedger });
   }
 
   // v1.9.0 L2 + L4: HOLD rescue + next-calls hints.
