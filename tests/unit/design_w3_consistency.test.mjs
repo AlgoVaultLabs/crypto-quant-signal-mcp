@@ -179,7 +179,12 @@ test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → sig
   assert.match(html, /\$6\.58\/mo effective/, 'Starter effective monthly rate shown beside the annual total');
   assert.match(html, /\$24\.92\/mo effective/, 'Pro effective monthly rate shown beside the annual total');
   assert.doesNotMatch(html, /\$299<span>\/mo<\/span>/, 'Enterprise self-serve price removed (contact-us)');
-  assert.match(html, /mailto:admin@algovault\.com/, 'Enterprise contact line rendered');
+  // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the contact line targets the /contact FORM, not a
+  // mailbox. Cloudflare rewrites every mailto: into /cdn-cgi/l/email-protection#, so the
+  // preserved-LAW was preserving a link that did not work in a browser. The LAW is unchanged —
+  // the cards must still carry a reachable contact path — only the mechanism moved.
+  assert.match(html, /<a href="\/contact">Contact us<\/a>/, 'Enterprise contact line rendered (form)');
+  assert.doesNotMatch(html, /mailto:/, 'no unclickable mailto CTA on the cards');
   assert.match(html, /<li>3,000 calls\/month<\/li>/, 'Starter allowance rendered');
   assert.match(html, /<li>15,000 calls\/month<\/li>/, 'Pro allowance rendered');
   assert.doesNotMatch(html, /<li>100,000 calls\/month<\/li>/, 'Enterprise allowance card removed');

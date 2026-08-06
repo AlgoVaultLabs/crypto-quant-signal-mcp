@@ -62,7 +62,9 @@ describe('AC2 — the lead is durable BEFORE any send is attempted', () => {
   it('captures the ?src channel and the ip hash on the row (AC8)', async () => {
     const h = makeDeps();
     await handleContactSubmission(VALID, CTX, h.deps);
-    expect(h.inserted[0]).toMatchObject({ src: 'landing_pricing', ipHash: 'v2:abc123', intent: 'enterprise' });
+    // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: `intent` is now the canonical inquiry type, and an
+    // absent field falls back to the default rather than the old hardcoded 'enterprise'.
+    expect(h.inserted[0]).toMatchObject({ src: 'landing_pricing', ipHash: 'v2:abc123', intent: 'Enterprise Pricing' });
   });
 
   it('when the row does NOT become durable, it returns server_error and NEVER sends', async () => {
@@ -213,7 +215,11 @@ describe('AC5 — CR/LF must never reach an email header', () => {
     // The subject is a FIXED LITERAL — zero interpolation, so no caller can ever place
     // attacker text in it. This assertion is what forced that: CRLF-stripping alone left
     // 'Bcc: attacker@evil.test' sitting in the subject line as plain text.
-    expect(args.subject).toBe('New enquiry — AlgoVault');
+    // The subject interpolates the intent again — safe ONLY because the real path reduces it to
+    // one of five constants first (canonicalInquiryType). Here it is handed a hostile value
+    // DIRECTLY, so what this proves is the sender's own CR/LF strip: no header break, ever.
+    expect(args.subject).not.toMatch(/[\r\n]/);
+    expect(args.subject).toMatch(/^New .* enquiry — AlgoVault$/);
     // ...and the intent still reaches the operator, escaped, in the BODY.
     expect(args.html).toContain('enquiry');
     vi.doUnmock('resend');

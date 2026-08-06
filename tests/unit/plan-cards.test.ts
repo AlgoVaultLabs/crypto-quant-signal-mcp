@@ -12,7 +12,8 @@
  * these tests cannot drift into re-encoding the prices they exist to check.
  */
 import { describe, it, expect } from 'vitest';
-import { renderPlanCards, ENTERPRISE_CONTACT_EMAIL } from '../../src/lib/signup-flow.js';
+import { renderPlanCards } from '../../src/lib/signup-flow.js';
+import { CONTACT_FALLBACK_EMAIL } from '../../src/lib/contact-page.js';
 import {
   PLANS,
   planPriceLabel,
@@ -113,8 +114,12 @@ describe('renderPlanCards — Enterprise is contact-us (R4)', () => {
     const c = renderPlanCards();
     const gridEnd = c.indexOf('</div>\n  <div class="plans-contact">');
     expect(gridEnd, 'contact line must follow the .plans grid, not sit inside a card').toBeGreaterThan(-1);
-    expect(c).toContain(`<a href="mailto:${ENTERPRISE_CONTACT_EMAIL}">Contact us</a>`);
-    expect(ENTERPRISE_CONTACT_EMAIL).toBe('admin@algovault.com');
+    // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the CTA is the FORM now, not a mailto — Cloudflare
+    // rewrites every mailto: into /cdn-cgi/l/email-protection#, so the old link was unclickable.
+    expect(c).toContain('<a href="/contact">Contact us</a>');
+    expect(c).not.toContain('mailto:');
+    // The address survives as the contact page's own secondary fallback, with ONE owner.
+    expect(CONTACT_FALLBACK_EMAIL).toBe('admin@algovault.com');
   });
 
   it('renders NO Enterprise card at all — the contact line carries it', () => {

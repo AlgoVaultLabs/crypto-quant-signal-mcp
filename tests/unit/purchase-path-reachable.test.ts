@@ -121,9 +121,8 @@ describe('purchase-path reachability — an advertised plan must be buyable', ()
     for (const surface of SURFACES) {
       const html = surface.html();
       expect(clickableHrefs(html).some((h) => h.includes('plan=enterprise')), surface.name).toBe(false);
-      expect(html, `${surface.name} lost the Enterprise contact line`).toContain(
-        'mailto:admin@algovault.com',
-      );
+      // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the contact line targets the form, not a mailbox.
+      expect(html, `${surface.name} lost the Enterprise contact line`).toContain('href="/contact"');
     }
   });
 });

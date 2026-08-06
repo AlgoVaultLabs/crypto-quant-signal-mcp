@@ -194,6 +194,31 @@ algovault.com {
     handle /docs.html {
         redir * /docs 301
     }
+
+    # CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1 (2026-08-06) — the brand-domain contact URL.
+    #
+    # The apex serves app routes from an explicit ALLOWLIST of `handle /<path>` blocks; everything
+    # else falls to the catch-all below, which is a static file_server. `/contact` had no static
+    # file, so `https://algovault.com/contact` was a 404 while the same form answered 200 on
+    # api. — the URL the architect asked for, and the one a human types, did not exist.
+    #
+    # WHY THIS BLOCK SETS A CLIENT-IP HEADER WHEN THE APEX DELIBERATELY DOES NOT.
+    # The apex log block records that adding trusted_proxies apex-wide would flip req.ip to the
+    # real client and move the CF-edge-based ipHash quota/attribution buckets on
+    # /api/signup-email — deliberately not done. But `POST /contact` is rate-limited 10/hour keyed
+    # on req.ip, so behind a bare apex proxy EVERY visitor arriving via the brand domain shares
+    # ONE bucket keyed on the Cloudflare PoP: ten submissions per hour in total, and a single
+    # spammer locks out everyone else. Scoping the header to THIS handle gives the contact form
+    # per-client limiting while leaving every other apex bucket exactly as documented. Same
+    # pattern and same justification as `handle /pa/event` above.
+    #
+    # Cloudflare overwrites a client-supplied CF-Connecting-IP at its edge, so it is not spoofable.
+    handle /contact {
+        reverse_proxy localhost:3000 {
+            header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+        }
+    }
+
     handle {
         root * /var/www/algovault
         try_files {path} {path}.html {path}/index.html
