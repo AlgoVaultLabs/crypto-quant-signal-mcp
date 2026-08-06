@@ -126,7 +126,11 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     // Enterprise: no self-serve price, no CTA, ONE contact line per artboard.
     expect(count('Subscribe to Enterprise')).toBe(0);
     expect(count('Need Enterprise?')).toBe(2);
-    expect(count('mailto:admin@algovault.com')).toBe(2);
+    // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the CTA is the /contact FORM now, on both artboards.
+    // Cloudflare rewrites every mailto: into /cdn-cgi/l/email-protection#, so the old link was
+    // unclickable in a browser — measured, 8 rewrites on the live apex.
+    expect(count('<a href="/contact"')).toBe(2);
+    expect(count('mailto:admin@algovault.com')).toBe(0);
     // 2 = x402 pricing card (untouched, desktop+mobile) + 2 = Connect-section x402 card
     // (added by LANDING-HERO-DEDENSIFY-W1; links to x402 docs, does not duplicate pricing).
     expect(count('/docs.html#x402')).toBe(4);

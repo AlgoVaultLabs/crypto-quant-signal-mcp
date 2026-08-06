@@ -46,7 +46,7 @@ export type ContactSubmitResult =
   /** A bot filled the honeypot. Renders the SAME confirmation — never tell it why. */
   | { kind: 'honeypot' }
   /** Re-render the form with a reason (HTTP 400). */
-  | { kind: 'invalid'; error: 'missing_fields' | 'invalid_email' | 'disposable_email' }
+  | { kind: 'invalid'; error: 'missing_fields' | 'invalid_email' | 'disposable_email' | 'invalid_intent' }
   /** The lead did NOT become durable, so we must not claim it did (HTTP 500). */
   | { kind: 'server_error' };
 
@@ -57,6 +57,46 @@ export const HONEYPOT_FIELD = 'website';
 export const FIELD_LIMITS = {
   name: 120, email: 200, company: 160, monthly_volume: 60, message: 4000,
 } as const;
+
+/**
+ * The inquiry types — CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1, architect-set order (Mr.1 2026-08-06).
+ *
+ * ONE ordered constant with FOUR consumers: the `<select>` options, the server-side validator, the
+ * notification email's subject, and the Telegram body. Independent re-derivations drift to
+ * contradiction — a value present in the dropdown but missing from the validator is a form that
+ * silently discards a whole category of enquiry — and the round-trip gate exists to make that
+ * impossible rather than merely unlikely.
+ *
+ * `contact_leads.intent` is already `TEXT` from the prior wave, so this is a value-domain change
+ * with no DDL. Rows written before this wave carry the legacy literal `enterprise`.
+ */
+export const INQUIRY_TYPES = [
+  'Enterprise Pricing',
+  'Collaboration/Co-Marketing',
+  'Feature Request',
+  'Billing Inquiry',
+  'Other Inquiry',
+] as const;
+
+export type InquiryType = (typeof INQUIRY_TYPES)[number];
+
+/** What an unspecified enquiry becomes, and what the `<select>` pre-selects. */
+export const DEFAULT_INQUIRY_TYPE: InquiryType = 'Enterprise Pricing';
+
+/**
+ * Map a submitted value onto its CANONICAL member, or null. Default-deny.
+ *
+ * It returns the CONSTANT, never the caller's string, and that distinction is load-bearing: the
+ * canonical value is what reaches the email SUBJECT. The prior wave made that subject a fixed
+ * literal precisely because interpolating user input into a header is unsafe — interpolating a
+ * validated closed-set member is a different thing, and it is only different because of this
+ * function. A crafted submission can therefore produce exactly one of five known-safe literals.
+ */
+export function canonicalInquiryType(raw: unknown): InquiryType | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim();
+  return INQUIRY_TYPES.find((t) => t === v) ?? null;
+}
 
 function str(v: unknown, max: number): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : '';
@@ -84,6 +124,15 @@ export async function handleContactSubmission(
 
   if (!name || !email || !message) return { kind: 'invalid', error: 'missing_fields' };
 
+  // Default-deny on the closed set. An ABSENT field falls back to the default (a legacy client or
+  // a curl without the field still works); a PRESENT but unrecognised one is rejected outright,
+  // because that is either a stale form or someone probing the value domain.
+  const rawIntent = raw.intent;
+  const intent = rawIntent === undefined || rawIntent === null || rawIntent === ''
+    ? DEFAULT_INQUIRY_TYPE
+    : canonicalInquiryType(rawIntent);
+  if (intent === null) return { kind: 'invalid', error: 'invalid_intent' };
+
   // 2. Reuses the SAME validator as the free-tier signup path (syntax + mailchecker disposable
   //    list + MX, fail-open on transient DNS). Not re-implemented.
   const v = await deps.validateEmail(email);
@@ -96,20 +145,20 @@ export async function handleContactSubmission(
   try {
     leadId = await deps.insertLead({
       name, email, company, monthlyVolume, message,
-      intent: 'enterprise', src: ctx.src, ipHash: ctx.ipHash,
+      intent, src: ctx.src, ipHash: ctx.ipHash,
     });
   } catch (err) {
     console.error('[contact] lead persist FAILED:', err instanceof Error ? err.message : err);
   }
   if (leadId === null) return { kind: 'server_error' };
-  log(`[contact] lead ${leadId} STORED (intent=enterprise src=${ctx.src ?? 'direct'})`);
+  log(`[contact] lead ${leadId} STORED (intent=${intent} src=${ctx.src ?? 'direct'})`);
 
   // 4. Notify. The lead is durable from here on, so NOTHING below may fail the request.
   let sendError: string | null = null;
   let emailed = false;
   try {
     const sent = await deps.sendEmail({
-      leadId, name, email, company, monthlyVolume, message, intent: 'enterprise', src: ctx.src,
+      leadId, name, email, company, monthlyVolume, message, intent, src: ctx.src,
     });
     emailed = sent !== null;
     // Success-path log — CLAUDE.md: a load-bearing side-effect inside a try needs one, or a
@@ -129,7 +178,7 @@ export async function handleContactSubmission(
   //    by `docker exec … ls`). It is fail-open by construction and no gate is re-implemented.
   try {
     await deps.sendAlert(
-      `New enterprise enquiry — lead ${leadId}\nFrom: ${name} <${email}>\nCompany: ${company ?? '—'}\n`
+      `New ${intent} enquiry — lead ${leadId}\nFrom: ${name} <${email}>\nCompany: ${company ?? '—'}\n`
       + `Volume: ${monthlyVolume ?? '—'}\nChannel: ${ctx.src ?? 'direct'}`,
       'info',
     );

@@ -13,6 +13,7 @@ import { Resend } from 'resend';
 // Program numbers interpolate from REFERRAL_TERMS renderers (never hardcoded —
 // chapter gate). deriveUserCode is the pure code derivation (no DB).
 import { deriveUserCode } from './referral-store.js';
+import { canonicalInquiryType } from './contact-submit.js';
 import { commissionPct, commissionMonthsLabel, bonusCallsLabel, shareLink, formatUsdE2, usdcMinPayoutLabel } from './referral-constants.js';
 
 const FROM_DEFAULT = 'noreply@algovault.com';
@@ -772,7 +773,17 @@ export async function sendContactLeadEmail(args: ContactLeadEmailArgs): Promise<
   // for this function proved attacker text reaches the subject the moment that changes.
   // CRLF-stripping stops header INJECTION; it does not stop attacker-controlled text sitting
   // in a header, which is what the wave's rule actually forbids. `intent` moves to the body.
-  const subject = 'New enquiry — AlgoVault';
+  // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the intent is back in the subject — but the SENDER
+  // re-canonicalises it rather than trusting the caller to have done so.
+  //
+  // The route already validates via `canonicalInquiryType`, so in the real path this is
+  // redundant. It is here because header safety must not be a property of who calls this
+  // function: the adversarial test hands it a hostile `intent` directly, and CR/LF-stripping
+  // alone would still leave `Bcc: attacker@evil.test` sitting in the subject as plain text.
+  // Re-checking against the closed set means the subject is provably one of SIX literals —
+  // the five inquiry types plus this neutral fallback — no matter what any caller passes.
+  const subjectIntent = canonicalInquiryType(intent) ?? 'General';
+  const subject = `New ${subjectIntent} enquiry — AlgoVault`;
   const rows: Array<[string, string]> = [
     ['Name', name], ['Email', email], ['Company', company],
     ['Expected volume', volume], ['Intent', intent], ['Channel', src], ['Lead ID', String(args.leadId)],

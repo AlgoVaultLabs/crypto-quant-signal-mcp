@@ -21,8 +21,11 @@ import {
   type PaidPlanId,
 } from './plans.js';
 
-/** Where an Enterprise enquiry goes. The operator-held mailbox (admin@), not support@. */
-export const ENTERPRISE_CONTACT_EMAIL = 'admin@algovault.com';
+// CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: `ENTERPRISE_CONTACT_EMAIL` retired. The cards now link
+// to the /contact FORM, not a mailbox, because Cloudflare rewrites every mailto: into
+// /cdn-cgi/l/email-protection# and even decoded it needs an OS mail handler. The address still
+// exists as the contact page's own secondary fallback — ONE owner, `contact-page.ts`
+// CONTACT_FALLBACK_EMAIL — rather than two constants that can drift apart.
 
 export interface SignupFlowStep {
   title: string;
@@ -153,7 +156,7 @@ export function renderPlanCards(signupBase = ''): string {
       ${proCta}
     </div>
   </div>
-  <div class="plans-contact">Need ${PLANS.enterprise.label}? <a href="mailto:${ENTERPRISE_CONTACT_EMAIL}">Contact us</a> for pricing.</div>`;
+  <div class="plans-contact">Need ${PLANS.enterprise.label}? <a href="/contact">Contact us</a> for pricing.</div>`;
 }
 
 /**

@@ -23,7 +23,7 @@ export const CONTACT_FALLBACK_EMAIL = 'admin@algovault.com';
  * because some bots skip display-none inputs specifically to evade this check.
  */
 export { HONEYPOT_FIELD } from './contact-submit.js';
-import { HONEYPOT_FIELD } from './contact-submit.js';
+import { HONEYPOT_FIELD, INQUIRY_TYPES, DEFAULT_INQUIRY_TYPE } from './contact-submit.js';
 
 const SHELL_CSS = `
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -65,6 +65,7 @@ function shell(title: string, body: string): string {
 export const CONTACT_ERRORS: Readonly<Record<string, string>> = {
   missing_fields: 'Please fill in your name, email and message.',
   invalid_email: 'That email address does not look valid. Please check it.',
+  invalid_intent: 'Please choose an inquiry type from the list.',
   disposable_email: 'Please use your work email address.',
   too_long: 'That message is longer than we can accept. Please shorten it.',
   server_error: 'Something went wrong on our side. Please email us directly instead.',
@@ -81,6 +82,9 @@ export function renderContactPage(opts: { error?: string | null; src?: string | 
   <div class="sub">Enterprise volume, custom venues, or anything the self-serve plans do not cover. We read every message.</div>
   <form method="POST" action="/contact">
     ${err}
+    <div class="row"><label for="inquiry_type">What is this about?</label><select id="inquiry_type" name="intent" required>
+      ${INQUIRY_TYPES.map((t) => `<option value="${t}"${t === DEFAULT_INQUIRY_TYPE ? ' selected' : ''}>${t}</option>`).join('\n      ')}
+    </select></div>
     <div class="row"><label for="name">Name</label><input id="name" name="name" required maxlength="120" autocomplete="name"></div>
     <div class="row"><label for="email">Work email</label><input id="email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
     <div class="row"><label for="company">Company <span class="opt">(optional)</span></label><input id="company" name="company" maxlength="160" autocomplete="organization"></div>
