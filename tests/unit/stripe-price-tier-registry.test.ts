@@ -43,9 +43,13 @@ import {
   tierForPriceId,
   highestTier,
   priceIdFor,
+  resolveSubscription,
+  buildCensusComposition,
+  censusTierTotal,
   _rebuildPriceTierMapForTest,
   _inspectPriceTierMap,
   type PriceBinding,
+  type ResolvedSubscription,
 } from '../../src/lib/stripe.js';
 
 /** A minimal subscription shaped like the Stripe object the four call sites receive. */
@@ -181,5 +185,109 @@ describe('priceIdFor — the checkout resolver', () => {
 
   it('returns null for Enterprise annual — deliberately not sold', () => {
     expect(priceIdFor('enterprise', 'year')).toBeNull();
+  });
+});
+
+// ── OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 · CH2 ───────────────────────────────────────────────────
+//
+// The interval was already on every PriceBinding and had NO reader. That is why
+// `countActiveSubscriptionsByTier` could not answer "how many of the 3 starters are annual" —
+// it resolved only the tier and collapsed both cadences into it — and why `subscriber_profiles`
+// had no cadence to store. `resolveSubscription` gives the existing precedence a second
+// dimension; `highestTier` is now a projection of it, so there is still exactly ONE
+// implementation of enterprise > pro > starter.
+
+describe('resolveSubscription — tier AND interval from the one registry', () => {
+  it('resolves both dimensions for every configured price', () => {
+    expect(resolveSubscription(subWith('price_starter_monthly'))).toEqual({ tier: 'starter', interval: 'month' });
+    expect(resolveSubscription(subWith('price_starter_annual'))).toEqual({ tier: 'starter', interval: 'year' });
+    expect(resolveSubscription(subWith('price_pro_annual'))).toEqual({ tier: 'pro', interval: 'year' });
+    expect(resolveSubscription(subWith('price_enterprise_monthly'))).toEqual({ tier: 'enterprise', interval: 'month' });
+  });
+
+  it('returns null on an unrecognised price — never a default cadence', () => {
+    expect(resolveSubscription(subWith('price_nobody_knows'))).toBeNull();
+  });
+
+  it('highestTier is a PROJECTION of it — the two can never disagree about tier', () => {
+    for (const id of ['price_starter_monthly', 'price_starter_annual', 'price_pro_annual', 'price_enterprise_monthly', 'price_nope']) {
+      expect(highestTier(subWith(id))).toBe(resolveSubscription(subWith(id))?.tier ?? null);
+    }
+  });
+
+  it('🛑 ORDER INDEPENDENCE: a same-tier month/year collision resolves by INTERVAL_RANK, not item order', () => {
+    // This is the property the second dimension made observable. The OLD highestTier did not
+    // need it — on a same-tier tie both branches yielded the same TIER, so iteration order was
+    // invisible. Returning an interval makes it visible, so it must be DECLARED.
+    const monthFirst = resolveSubscription(subWith('price_starter_monthly', 'price_starter_annual'));
+    const yearFirst = resolveSubscription(subWith('price_starter_annual', 'price_starter_monthly'));
+    expect(monthFirst).toEqual(yearFirst);
+    // year wins: declared, and the conservative direction for MRR (the LOWER monthly number).
+    expect(monthFirst).toEqual({ tier: 'starter', interval: 'year' });
+  });
+
+  it('tier rank still dominates interval rank — a monthly Pro beats an annual Starter', () => {
+    const a = resolveSubscription(subWith('price_starter_annual', 'price_pro_monthly'));
+    const b = resolveSubscription(subWith('price_pro_monthly', 'price_starter_annual'));
+    expect(a).toEqual(b);
+    expect(a).toEqual({ tier: 'pro', interval: 'month' });
+  });
+
+  it('tolerates a malformed subscription rather than throwing on the hot path', () => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    expect(resolveSubscription({ items: { data: [] } })).toBeNull();
+    expect(resolveSubscription({} as any)).toBeNull();
+    expect(resolveSubscription({ items: { data: [{}] } } as any)).toBeNull();
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+});
+
+describe('buildCensusComposition — the census can finally answer "how many are annual"', () => {
+  const r = (tier: 'starter' | 'pro' | 'enterprise', interval: 'month' | 'year'): ResolvedSubscription =>
+    ({ tier, interval });
+
+  it('counts each (tier, interval) cell', () => {
+    const c = buildCensusComposition([r('starter', 'month'), r('starter', 'year'), r('starter', 'month'), r('pro', 'month')]);
+    expect(c).toEqual([
+      { tier: 'starter', interval: 'month', count: 2 },
+      { tier: 'starter', interval: 'year', count: 1 },
+      { tier: 'pro', interval: 'month', count: 1 },
+    ]);
+  });
+
+  it('emits a DETERMINISTIC order from our rank tables, not the input order', () => {
+    const forward = buildCensusComposition([r('enterprise', 'month'), r('starter', 'year'), r('pro', 'month'), r('starter', 'month')]);
+    const reversed = buildCensusComposition([r('starter', 'month'), r('pro', 'month'), r('starter', 'year'), r('enterprise', 'month')]);
+    expect(forward).toEqual(reversed);
+    expect(forward.map((x) => `${x.tier}:${x.interval}`)).toEqual([
+      'starter:month', 'starter:year', 'pro:month', 'enterprise:month',
+    ]);
+  });
+
+  it('omits cells that were not observed — absent means zero, and no impossible pair is invented', () => {
+    const c = buildCensusComposition([r('enterprise', 'month')]);
+    expect(c).toHaveLength(1);
+    // There is no (enterprise, year) Price, so nothing may emit a row for it.
+    expect(c.find((x) => x.tier === 'enterprise' && x.interval === 'year')).toBeUndefined();
+  });
+
+  it('is empty for no subscriptions — a fact, not a failure', () => {
+    expect(buildCensusComposition([])).toEqual([]);
+  });
+
+  it('censusTierTotal sums a tier across intervals, so the headline PROJECTS from composition', () => {
+    const c = buildCensusComposition([r('starter', 'month'), r('starter', 'year'), r('starter', 'year'), r('pro', 'month')]);
+    expect(censusTierTotal(c, 'starter')).toBe(3);
+    expect(censusTierTotal(c, 'pro')).toBe(1);
+    expect(censusTierTotal(c, 'enterprise')).toBe(0);
+  });
+
+  it("reproduces TODAY'S live prod composition (probed 2026-08-06): 3 starter + 1 pro, all monthly", () => {
+    const c = buildCensusComposition([r('starter', 'month'), r('starter', 'month'), r('starter', 'month'), r('pro', 'month')]);
+    expect(c).toEqual([
+      { tier: 'starter', interval: 'month', count: 3 },
+      { tier: 'pro', interval: 'month', count: 1 },
+    ]);
+    expect(censusTierTotal(c, 'starter') + censusTierTotal(c, 'pro')).toBe(4);
   });
 });

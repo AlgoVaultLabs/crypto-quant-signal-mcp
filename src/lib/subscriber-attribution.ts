@@ -17,6 +17,7 @@
  */
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
 import { getMonthlyQuota } from './license.js';
+import { PLANS, planMonthlyRateUsd, type PaidPlanId, type BillingInterval } from './plans.js';
 
 const PG = !!process.env.DATABASE_URL;
 const TS = PG ? 'TIMESTAMPTZ' : 'TIMESTAMP';
@@ -155,6 +156,49 @@ export function ensureSubscriberProfilesSchema(): void {
   _subscriberProfilesInit = true;
 }
 
+/**
+ * The billing cadence AS STORED on a profile row.
+ *
+ * Widens the plan-SoT `BillingInterval` with `unknown`, which is a property of the RECORD, not
+ * of a plan: "we have not established which cadence this row was sold on". Every row that
+ * predates OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 is `unknown` until CH4 reads the truth from Stripe.
+ *
+ * 🛑 `unknown` must NEVER be defaulted to `month`. A guessed cadence makes the composition check
+ * pass on a fiction, and — because an annual Starter's monthly rate is $6.58 against a monthly
+ * Starter's $9.99 — a wrong guess is a wrong MRR that looks entirely plausible.
+ */
+export type StoredBillingInterval = BillingInterval | 'unknown';
+
+/**
+ * Coerce an untrusted cadence string to the stored vocabulary. Pure; exported for test.
+ *
+ * Default-DENY: anything not exactly `month`/`year` becomes `unknown`, never a guess. The live
+ * input is `session.metadata.billing_interval`, which `createCheckoutSession` stamps on every
+ * checkout since PRICING-ANNUAL-AND-HOLD-PROMISE-W1 — so it is present and trustworthy going
+ * forward, and simply absent on the pre-annual cohort.
+ */
+export function normalizeBillingInterval(v: unknown): StoredBillingInterval {
+  return v === 'month' || v === 'year' ? v : 'unknown';
+}
+
+/** True when `v` is a tier the plan ladder knows how to price. Pure; exported for test. */
+export function isPaidPlanId(v: unknown): v is PaidPlanId {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANS, v);
+}
+
+/**
+ * The monthly rate to materialise for a stored (tier, interval) pair, or null when it is not
+ * derivable — an `unknown` cadence, or a tier the ladder does not price.
+ *
+ * Pure; exported for test. Projects `planMonthlyRateUsd` (the ONE derivation) rather than doing
+ * arithmetic on `amount_usd`, which cannot tell a $79 annual prepayment from a $79 monthly
+ * charge. null is a refusal, never a zero — see `planMonthlyRateUsd`.
+ */
+export function deriveMonthlyRateUsd(tier: unknown, interval: StoredBillingInterval): number | null {
+  if (interval === 'unknown' || !isPaidPlanId(tier)) return null;
+  return planMonthlyRateUsd(tier, interval);
+}
+
 export interface SubscriberProfile {
   customerId: string;
   email: string | null;
@@ -163,6 +207,16 @@ export interface SubscriberProfile {
   tier: string | null;
   status: string | null;
   amountUsd: number | null;
+  /**
+   * Billing cadence (OPS-STRIPE-SUBSCRIPTION-TRUTH-W1). Without it `amountUsd` is unreadable as
+   * a rate: a $79 annual prepay and a $79 monthly charge are the same stored number.
+   */
+  billingInterval: StoredBillingInterval;
+  /**
+   * MRR contribution, derived from `PLANS` — NOT from `amountUsd`, which records what was
+   * charged and is deliberately left untouched (Data Integrity: add before you remove).
+   */
+  monthlyRateUsd: number | null;
   currency: string | null;
   channel: string;
   country: string | null;
@@ -266,6 +320,14 @@ export function assembleProfile(session: any, signals: ProfileSignals): Subscrib
 
   const amountTotal = typeof session?.amount_total === 'number' ? session.amount_total : null;
 
+  // Billing cadence + the rate it implies (OPS-STRIPE-SUBSCRIPTION-TRUTH-W1).
+  // `createCheckoutSession` stamps `metadata.billing_interval` on every checkout since
+  // PRICING-ANNUAL-AND-HOLD-PROMISE-W1, so this is the session's own declared cadence rather
+  // than anything inferred from the amount. Absent (the pre-annual cohort) ⇒ `unknown`, which
+  // CH4 resolves from Stripe — never guessed here.
+  const tier = asString(session?.metadata?.tier);
+  const billingInterval = normalizeBillingInterval(session?.metadata?.billing_interval);
+
   return {
     customerId,
     email,
@@ -273,9 +335,11 @@ export function assembleProfile(session: any, signals: ProfileSignals): Subscrib
     subscriptionId: typeof session?.subscription === 'string'
       ? session.subscription
       : asString(session?.subscription?.id),
-    tier: asString(session?.metadata?.tier),
+    tier,
     status: 'active', // checkout.session.completed ⇒ the subscription is live
     amountUsd: amountTotal != null ? Math.round(amountTotal) / 100 : null,
+    billingInterval,
+    monthlyRateUsd: deriveMonthlyRateUsd(tier, billingInterval),
     currency: asString(session?.currency),
     channel,
     country,
@@ -317,6 +381,49 @@ const SUBSCRIBER_BRIDGE_COLUMNS: { column: string; pgType: string; sqliteType: s
   { column: 'peak_quota_pct', pgType: 'NUMERIC(6,2)', sqliteType: 'REAL' },
   { column: 'bridge_confidence', pgType: 'TEXT', sqliteType: 'TEXT' },
 ];
+
+// Interval columns added to subscriber_profiles (migration 027,
+// OPS-STRIPE-SUBSCRIPTION-TRUTH-W1). Same dual-backend shape as the bridge columns above: PG
+// has ADD COLUMN IF NOT EXISTS, SQLite does not.
+//
+// `billing_interval` carries a DEFAULT of 'unknown' rather than 'month' — an existing row's
+// cadence has not been established, and the honest default is the one that says so. See
+// `StoredBillingInterval`.
+const SUBSCRIBER_INTERVAL_COLUMNS: { column: string; pgType: string; sqliteType: string }[] = [
+  { column: 'billing_interval', pgType: "TEXT NOT NULL DEFAULT 'unknown'", sqliteType: "TEXT NOT NULL DEFAULT 'unknown'" },
+  { column: 'monthly_rate_usd', pgType: 'NUMERIC(10,4)', sqliteType: 'REAL' },
+];
+
+let _intervalColumnsInit = false;
+/**
+ * Idempotently add the 2 interval columns. PROD pre-applies migration 027 via SSH BEFORE the
+ * deploy, so this is a no-op there (the PG pre-check finds them present); tests (SQLite) add
+ * them on first call. Safe to call repeatedly. Mirrors `ensureSubscriberBridgeColumns`.
+ */
+export async function ensureSubscriberIntervalColumns(): Promise<void> {
+  if (_intervalColumnsInit) return;
+  ensureSubscriberProfilesSchema();
+  if (PG) {
+    dbExec(
+      SUBSCRIBER_INTERVAL_COLUMNS
+        .map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN IF NOT EXISTS ${c.column} ${c.pgType};`)
+        .join('\n'),
+    );
+  } else {
+    const rows = await dbQuery<{ name: string }>(`PRAGMA table_info(subscriber_profiles)`, []);
+    const existing = new Set(rows.map((r) => r.name));
+    const missing = SUBSCRIBER_INTERVAL_COLUMNS.filter((c) => !existing.has(c.column));
+    if (missing.length > 0) {
+      dbExec(missing.map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN ${c.column} ${c.sqliteType};`).join('\n'));
+    }
+  }
+  _intervalColumnsInit = true;
+}
+
+/** Reset the interval-column-init latch — tests only. */
+export function _resetIntervalColumnsInitForTest(): void {
+  _intervalColumnsInit = false;
+}
 
 let _bridgeColumnsInit = false;
 /**
@@ -506,12 +613,19 @@ export interface ProfileDeps {
    * omit it (the columns are pre-applied or irrelevant to the assertion).
    */
   ensureBridge?: () => Promise<void>;
+  /**
+   * Optional async hook that idempotently ensures the migration-027 interval columns exist.
+   * Same contract as `ensureBridge`: present on the default deps (prod), omitted by tests that
+   * inject a full deps object.
+   */
+  ensureInterval?: () => Promise<void>;
 }
 const defaultProfileDeps: ProfileDeps = {
   ensure: () => { ensureSubscriberProfilesSchema(); ensureSignupAttributionSchema(); },
   query: dbQuery,
   run: dbRun,
   ensureBridge: ensureSubscriberBridgeColumns,
+  ensureInterval: ensureSubscriberIntervalColumns,
 };
 
 /**
@@ -534,6 +648,7 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
     }
     deps.ensure();
     if (deps.ensureBridge) await deps.ensureBridge();
+    if (deps.ensureInterval) await deps.ensureInterval();
 
     const clientReferenceId = asString(session?.client_reference_id);
     const email = asString(session?.customer_details?.email) ?? asString(session?.customer_email);
@@ -595,8 +710,9 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
       `INSERT INTO subscriber_profiles
         (customer_id, email, name, subscription_id, tier, status, amount_usd, currency, channel, country, country_source,
          client_reference_id, signup_at, converted_at, latency_seconds, cold_subscribe, attribution_captured, risk_level,
-         pre_conversion_calls, pre_conversion_sessions, time_to_first_call_s, peak_quota_pct, bridge_confidence)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         pre_conversion_calls, pre_conversion_sessions, time_to_first_call_s, peak_quota_pct, bridge_confidence,
+         billing_interval, monthly_rate_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (customer_id) DO UPDATE SET
          email = EXCLUDED.email, name = EXCLUDED.name, subscription_id = EXCLUDED.subscription_id,
          tier = EXCLUDED.tier, status = EXCLUDED.status, amount_usd = EXCLUDED.amount_usd, currency = EXCLUDED.currency,
@@ -609,11 +725,14 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
          pre_conversion_sessions = EXCLUDED.pre_conversion_sessions,
          time_to_first_call_s = EXCLUDED.time_to_first_call_s,
          peak_quota_pct = EXCLUDED.peak_quota_pct,
-         bridge_confidence = EXCLUDED.bridge_confidence`,
+         bridge_confidence = EXCLUDED.bridge_confidence,
+         billing_interval = EXCLUDED.billing_interval,
+         monthly_rate_usd = EXCLUDED.monthly_rate_usd`,
       p.customerId, p.email, p.name, p.subscriptionId, p.tier, p.status, p.amountUsd, p.currency, p.channel,
       p.country, p.countrySource, p.clientReferenceId, p.signupAt, p.convertedAt, p.latencySeconds,
       p.coldSubscribe, p.attributionCaptured, p.riskLevel,
       bridge.preConversionCalls, bridge.preConversionSessions, bridge.timeToFirstCallS, bridge.peakQuotaPct, bridge.bridgeConfidence,
+      p.billingInterval, p.monthlyRateUsd,
     );
     console.log(`[buildSubscriberProfile] profiled ${p.customerId} channel=${p.channel} country=${p.country ?? '?'}/${p.countrySource ?? '-'} cold=${p.coldSubscribe} captured=${p.attributionCaptured} bridge=${bridge.bridgeConfidence} calls=${bridge.preConversionCalls ?? '-'}`);
   } catch (err) {
@@ -712,6 +831,12 @@ export interface SubscriberProfileRow {
   time_to_first_call_s: number | null;
   peak_quota_pct: number | null;
   bridge_confidence: string | null;
+  // OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 migration-027 columns (additive; non-PII).
+  // `billing_interval` is NOT NULL DEFAULT 'unknown' in the schema, but is typed nullable here
+  // because a row read back through a backend that predates the column would carry undefined —
+  // and a reader must handle "no cadence recorded" identically to 'unknown' either way.
+  billing_interval: StoredBillingInterval | null;
+  monthly_rate_usd: number | null;
   created_at?: string | null;
 }
 
@@ -719,6 +844,7 @@ export interface SubscriberProfileRow {
 export async function listSubscriberProfiles(opts: { limit?: number; offset?: number } = {}): Promise<SubscriberProfileRow[]> {
   ensureSubscriberProfilesSchema();
   await ensureSubscriberBridgeColumns();
+  await ensureSubscriberIntervalColumns();
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 200), 1), 500);
   const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
   return dbQuery<SubscriberProfileRow>(
@@ -726,6 +852,7 @@ export async function listSubscriberProfiles(opts: { limit?: number; offset?: nu
             country, country_source, client_reference_id, signup_at, converted_at, latency_seconds,
             cold_subscribe, attribution_captured, risk_level,
             pre_conversion_calls, pre_conversion_sessions, time_to_first_call_s, peak_quota_pct, bridge_confidence,
+            billing_interval, monthly_rate_usd,
             created_at
      FROM subscriber_profiles
      ORDER BY converted_at DESC NULLS LAST, created_at DESC

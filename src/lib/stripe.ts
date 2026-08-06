@@ -12,7 +12,7 @@ import DefaultStripe from 'stripe';
 import { sendWelcomeEmail, maskEmail } from './email.js';
 import { sendAlert } from './telegram.js';
 import { recordIndeterminate } from './indeterminate-counter.js';
-import type { PaidPlanId } from './plans.js';
+import type { PaidPlanId, BillingInterval } from './plans.js';
 
 // Stripe v22 exports the class as both named and default.
 // Node16 moduleResolution resolves the default export reliably.
@@ -50,8 +50,12 @@ if (STRIPE_SECRET_KEY) {
 //
 // The tier vocabulary is imported from `plans.ts` (the plan SoT) rather than re-declared, so a
 // tier cannot exist in billing that the plan ladder does not know about.
-
-export type BillingInterval = 'month' | 'year';
+//
+// OPS-STRIPE-SUBSCRIPTION-TRUTH-W1: `BillingInterval` moved to `plans.ts` for the SAME reason,
+// now that the plan ladder is what prices an interval (`planMonthlyRateUsd`). Re-exported here
+// so every existing import site is untouched — it had no external importers at the time of the
+// move, so this is compatibility surface, not a second declaration.
+export type { BillingInterval };
 
 /** One configured Stripe Price and what entitlement it confers. */
 export interface PriceBinding {
@@ -71,6 +75,25 @@ export interface PriceBinding {
  * exact pattern CLAUDE.md forbids. Pinned by the order-independence test.
  */
 const TIER_RANK: Readonly<Record<PaidPlanId, number>> = { starter: 1, pro: 2, enterprise: 3 };
+
+/**
+ * Tie-break when two items resolve to the SAME highest tier on DIFFERENT intervals.
+ *
+ * 🛑 This table exists because `resolveSubscription` returns an interval, and without it the
+ * answer would be rented from the order Stripe happens to return `sub.items.data` in — the
+ * precise pattern CLAUDE.md forbids and that `TIER_RANK` above already exists to prevent. The
+ * old `highestTier` did not need it: on a same-tier tie both branches gave the same TIER, so
+ * iteration order was unobservable. Adding a second dimension made it observable.
+ *
+ * `year` wins, and the two independent reasons agree. It is DECLARED (that is the point), and
+ * it is the conservative direction for a revenue figure: an annual rate is the LOWER monthly
+ * number, so an ambiguous subscription understates MRR rather than over-claiming it — which is
+ * the whole disposition of this arc. A subscription carrying both a monthly and an annual item
+ * of one tier is a misconfiguration either way; this only fixes which way we read it.
+ *
+ * Pinned by the order-independence test beside `TIER_RANK`'s.
+ */
+const INTERVAL_RANK: Readonly<Record<BillingInterval, number>> = { month: 1, year: 2 };
 
 /**
  * The declared bindings, in env-var order. Order here is presentational only — `buildPriceTierMap`
@@ -156,12 +179,44 @@ export function tierForPriceId(priceId: string): PaidPlanId | null {
  * validation path must refuse, while the mint path falls back least-privilege and shouts.
  */
 export function highestTier(sub: { items: { data: Array<{ price: { id: string } }> } }): PaidPlanId | null {
-  let best: PaidPlanId | null = null;
+  return resolveSubscription(sub)?.tier ?? null;
+}
+
+/** What a subscription resolves to: the tier it confers and the cadence it is billed on. */
+export interface ResolvedSubscription {
+  readonly tier: PaidPlanId;
+  readonly interval: BillingInterval;
+}
+
+/**
+ * THE single implementation of "what did this customer buy" — tier AND interval, resolved from
+ * the price registry. `highestTier` is now a projection of it, so the enterprise > pro > starter
+ * precedence still has exactly one implementation and cannot drift from the interval's.
+ *
+ * OPS-STRIPE-SUBSCRIPTION-TRUTH-W1: the interval was already sitting on every `PriceBinding` and
+ * simply had no reader — which is why `countActiveSubscriptionsByTier` could not answer "how
+ * many of the 3 starters are annual", and why `subscriber_profiles` had no cadence to store.
+ *
+ * Both dimensions are resolved from OUR ranking tables, never from `sub.items.data` order.
+ * Returns null (rather than a default) on an unrecognised Price, preserving `highestTier`'s
+ * contract: "we do not recognise what this customer bought" is a distinct fact from "starter".
+ */
+export function resolveSubscription(
+  sub: { items: { data: Array<{ price: { id: string } }> } },
+): ResolvedSubscription | null {
+  let best: PriceBinding | null = null;
   for (const item of sub.items?.data ?? []) {
-    const tier = tierForPriceId(item?.price?.id ?? '');
-    if (tier && (best === null || TIER_RANK[tier] > TIER_RANK[best])) best = tier;
+    const b = bindingForPriceId(item?.price?.id ?? '');
+    if (!b) continue;
+    if (
+      best === null ||
+      TIER_RANK[b.tier] > TIER_RANK[best.tier] ||
+      (TIER_RANK[b.tier] === TIER_RANK[best.tier] && INTERVAL_RANK[b.interval] > INTERVAL_RANK[best.interval])
+    ) {
+      best = b;
+    }
   }
-  return best;
+  return best ? { tier: best.tier, interval: best.interval } : null;
 }
 
 /**
@@ -549,11 +604,34 @@ export async function getCustomerByEmail(email: string): Promise<{ apiKey: strin
 // admin dashboard reload does not re-page the Stripe API. Returns null when
 // Stripe is unconfigured → the caller falls back to the subscriber_profiles cache.
 
+/** One observed (tier, interval) cell of the active-subscription census. */
+export interface TierIntervalCount {
+  readonly tier: PaidPlanId;
+  readonly interval: BillingInterval;
+  readonly count: number;
+}
+
 export interface ActiveSubscriberTierCensus {
   starter: number;
   pro: number;
   enterprise: number;
   total: number;
+  /**
+   * ADDITIVE (OPS-STRIPE-SUBSCRIPTION-TRUTH-W1): the same census split by billing interval.
+   *
+   * The flat `starter`/`pro`/`enterprise`/`total` fields above are now PROJECTIONS of this
+   * array, not a parallel count — so the headline and the composition cannot disagree. Every
+   * pre-existing consumer keeps reading the flat fields unchanged.
+   *
+   * Only OBSERVED cells appear; an absent (tier, interval) means zero. Nothing emits a row for
+   * a pair that cannot be sold — there is no (enterprise, year) Price — so a reader must treat
+   * absent as 0 rather than expecting a full grid. Order is deterministic (tier rank, then
+   * interval rank), never Stripe's page order.
+   *
+   * This is what makes "how many of the 3 starters are annual" answerable at all. Before it,
+   * the live Stripe census collapsed both intervals into one tier and could not say.
+   */
+  composition: readonly TierIntervalCount[];
   source: 'stripe_live' | 'stripe_cache';
   as_of: number; // epoch ms the underlying Stripe read completed
 }
@@ -561,13 +639,32 @@ export interface ActiveSubscriberTierCensus {
 let tierCensusCache: { value: ActiveSubscriberTierCensus; expiresAt: number } | null = null;
 
 /**
- * Map ONE subscription to its highest tier (enterprise > pro > starter).
- *
- * PRICING-ANNUAL-AND-HOLD-PROMISE-W1: this was the 4th independent copy of that precedence. It is
- * now a thin alias of `highestTier`, so the census counts annual subscribers instead of skipping
- * them — the drift that made a tier census silently under-report the moment a new Price existed.
+ * Total active subscriptions on a tier, across every interval. Pure; exported so the
+ * reconciliation and the funnel project the same way instead of re-summing independently.
  */
-const subscriptionTier = highestTier;
+export function censusTierTotal(composition: readonly TierIntervalCount[], tier: PaidPlanId): number {
+  return composition.reduce((n, c) => (c.tier === tier ? n + c.count : n), 0);
+}
+
+/**
+ * Fold resolved subscriptions into a deterministically-ordered composition.
+ *
+ * Pure + exported for test. The sort is by OUR rank tables, so the emitted order is a function
+ * of the declared precedence and never of the order Stripe returned the subscriptions in.
+ */
+export function buildCensusComposition(
+  resolved: ReadonlyArray<ResolvedSubscription>,
+): readonly TierIntervalCount[] {
+  const counts = new Map<string, TierIntervalCount>();
+  for (const r of resolved) {
+    const key = `${r.tier}:${r.interval}`;
+    const prev = counts.get(key);
+    counts.set(key, { tier: r.tier, interval: r.interval, count: (prev?.count ?? 0) + 1 });
+  }
+  return [...counts.values()].sort(
+    (a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || INTERVAL_RANK[a.interval] - INTERVAL_RANK[b.interval],
+  );
+}
 
 /**
  * Count active Stripe subscriptions by tier. null when Stripe is unconfigured.
@@ -581,17 +678,24 @@ export async function countActiveSubscriptionsByTier(now: number = Date.now()): 
     return { ...tierCensusCache.value, source: 'stripe_cache' };
   }
   try {
-    let starter = 0, pro = 0, enterprise = 0;
+    const resolved: ResolvedSubscription[] = [];
     // Stripe SDK async iterator auto-pages through every active subscription.
     for await (const sub of stripe.subscriptions.list({ status: 'active', limit: 100 })) {
-      const tier = subscriptionTier(sub);
-      if (tier === 'enterprise') enterprise++;
-      else if (tier === 'pro') pro++;
-      else if (tier === 'starter') starter++;
-      // A sub on no recognized price is not counted (avoids inflating the headline).
+      // ONE resolver for tier AND interval (PRICING-ANNUAL-AND-HOLD-PROMISE-W1 collapsed the
+      // 4 copies of the tier precedence; OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 added the cadence to
+      // the same one). A sub on no recognized price resolves null and is not counted, which
+      // avoids inflating the headline — unchanged behaviour.
+      const r = resolveSubscription(sub);
+      if (r) resolved.push(r);
     }
+    const composition = buildCensusComposition(resolved);
+    // The flat headline fields PROJECT from the composition — never counted a second time.
+    const starter = censusTierTotal(composition, 'starter');
+    const pro = censusTierTotal(composition, 'pro');
+    const enterprise = censusTierTotal(composition, 'enterprise');
     const value: ActiveSubscriberTierCensus = {
       starter, pro, enterprise, total: starter + pro + enterprise,
+      composition,
       source: 'stripe_live', as_of: now,
     };
     tierCensusCache = { value, expiresAt: now + CACHE_TTL_MS };

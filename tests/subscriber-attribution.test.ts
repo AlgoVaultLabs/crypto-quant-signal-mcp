@@ -16,6 +16,9 @@ import {
   toIsoTimestamp,
   aggregateProfiles,
   renderSubscribersAdminHtml,
+  normalizeBillingInterval,
+  deriveMonthlyRateUsd,
+  isPaidPlanId,
 } from '../src/lib/subscriber-attribution.js';
 
 describe('deriveChannel', () => {
@@ -310,5 +313,158 @@ describe('buildSubscriberProfile — binds a PG Date safely (CH4)', () => {
     expect(runs[0].params[8]).toBe('tg_bot');   // channel
     expect(runs[0].params[14]).toBe(128);       // latency_seconds = convertedAt - signupAt
     expect(runs[0].params[16]).toBe(true);      // attribution_captured
+  });
+});
+
+// ── OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 · CH2 — the record gains a period ───────────────────────
+//
+// `amount_usd` stores the CHARGE. An annual Starter writes $79 once and nothing for eleven
+// months, so that row is byte-indistinguishable from a hypothetical $79 monthly charge —
+// **a stored amount without a period is not a rate**, and no MRR is derivable without the
+// cadence. These pin the cadence's default-deny and the rate's refusal semantics.
+
+describe('normalizeBillingInterval — default-DENY, never a guess', () => {
+  it('accepts exactly the two real cadences', () => {
+    expect(normalizeBillingInterval('month')).toBe('month');
+    expect(normalizeBillingInterval('year')).toBe('year');
+  });
+
+  it('🛑 answers unknown for anything else — an absent cadence is NEVER defaulted to month', () => {
+    // Three of the four live rows would in fact be correct as `month`, which is exactly the
+    // trap: a guessed default makes the composition check pass on a fiction, and an annual
+    // Starter's $6.58 vs a monthly Starter's $9.99 is a wrong MRR that looks plausible.
+    for (const v of [undefined, null, '', 'monthly', 'MONTH', 'yearly', 'annual', 0, 1, {}, []]) {
+      expect(normalizeBillingInterval(v)).toBe('unknown');
+    }
+  });
+});
+
+describe('deriveMonthlyRateUsd — projects the PLANS derivation, never the charge', () => {
+  it('derives the monthly price for a monthly subscription', () => {
+    expect(deriveMonthlyRateUsd('starter', 'month')).toBe(9.99);
+    expect(deriveMonthlyRateUsd('pro', 'month')).toBe(49);
+  });
+
+  it('derives the annual rate for an annual subscription', () => {
+    expect(deriveMonthlyRateUsd('starter', 'year')).toBe(79 / 12);
+    expect(deriveMonthlyRateUsd('pro', 'year')).toBe(299 / 12);
+  });
+
+  it('🛑 REFUSES on an unknown cadence — null, not a monthly guess', () => {
+    expect(deriveMonthlyRateUsd('starter', 'unknown')).toBeNull();
+    expect(deriveMonthlyRateUsd('pro', 'unknown')).toBeNull();
+  });
+
+  it('🛑 REFUSES for a tier the ladder does not price, and for Enterprise annual', () => {
+    expect(deriveMonthlyRateUsd('enterprise', 'year')).toBeNull(); // sold monthly-only
+    expect(deriveMonthlyRateUsd('platinum', 'month')).toBeNull();  // not a plan
+    expect(deriveMonthlyRateUsd(null, 'month')).toBeNull();
+    expect(deriveMonthlyRateUsd(undefined, 'year')).toBeNull();
+  });
+
+  it('null is a REFUSAL, not a zero — MRR must exclude it rather than add 0', () => {
+    expect(deriveMonthlyRateUsd('starter', 'unknown')).not.toBe(0);
+  });
+
+  it('is NOT arithmetic on the charge — a $79 annual and a $79 monthly differ by cadence alone', () => {
+    // The two cases the table could not previously tell apart now resolve to different rates
+    // from the SAME stored amount.
+    expect(deriveMonthlyRateUsd('starter', 'year')).toBeCloseTo(6.5833, 4);
+    expect(deriveMonthlyRateUsd('starter', 'month')).toBe(9.99);
+  });
+});
+
+describe('isPaidPlanId', () => {
+  it('recognises exactly the three ladder tiers', () => {
+    expect(isPaidPlanId('starter')).toBe(true);
+    expect(isPaidPlanId('pro')).toBe(true);
+    expect(isPaidPlanId('enterprise')).toBe(true);
+  });
+  it('rejects anything else, including inherited Object properties', () => {
+    for (const v of ['free', 'x402', '', null, undefined, 42, 'toString', 'constructor']) {
+      expect(isPaidPlanId(v)).toBe(false);
+    }
+  });
+});
+
+describe('assembleProfile — cadence + rate ride the session, and amount_usd is untouched', () => {
+  const base = {
+    customer: 'cus_iv',
+    amount_total: 7900,
+    currency: 'usd',
+    customer_details: { email: 'a@b.co' },
+  };
+  const signals = { convertedAtEpoch: 1_800_000_000 };
+
+  it('reads the cadence the checkout DECLARED (metadata.billing_interval)', () => {
+    const p = assembleProfile({ ...base, metadata: { tier: 'starter', billing_interval: 'year' } }, signals);
+    expect(p.billingInterval).toBe('year');
+    expect(p.monthlyRateUsd).toBe(79 / 12);
+  });
+
+  it('🛑 records the CHARGE unchanged alongside the rate — add before you remove', () => {
+    const p = assembleProfile({ ...base, metadata: { tier: 'starter', billing_interval: 'year' } }, signals);
+    // $79 changed hands on one date. That fact survives; the rate is derived BESIDE it.
+    expect(p.amountUsd).toBe(79);
+    expect(p.monthlyRateUsd).not.toBe(p.amountUsd);
+  });
+
+  it('answers unknown / null for the pre-annual cohort that carries no cadence', () => {
+    const p = assembleProfile({ ...base, metadata: { tier: 'starter' } }, signals);
+    expect(p.billingInterval).toBe('unknown');
+    expect(p.monthlyRateUsd).toBeNull();
+  });
+
+  it('a monthly checkout derives the monthly price', () => {
+    const p = assembleProfile(
+      { ...base, amount_total: 999, metadata: { tier: 'starter', billing_interval: 'month' } },
+      signals,
+    );
+    expect(p.billingInterval).toBe('month');
+    expect(p.amountUsd).toBe(9.99);
+    expect(p.monthlyRateUsd).toBe(9.99);
+  });
+});
+
+describe('buildSubscriberProfile — the upsert carries the two new columns', () => {
+  const session = {
+    customer: 'cus_iv2',
+    amount_total: 7900,
+    currency: 'usd',
+    customer_details: { email: 'a@b.co' },
+    metadata: { tier: 'starter', billing_interval: 'year' },
+  };
+
+  it('writes billing_interval + monthly_rate_usd, and updates them ON CONFLICT', async () => {
+    const runs: Array<{ sql: string; params: unknown[] }> = [];
+    await buildSubscriberProfile(session, {
+      ensure: () => {},
+      query: async () => [],
+      run: (sql: string, ...params: unknown[]) => { runs.push({ sql, params }); },
+    });
+    expect(runs).toHaveLength(1);
+    expect(runs[0].sql).toMatch(/billing_interval,\s*monthly_rate_usd/);
+    expect(runs[0].sql).toMatch(/billing_interval = EXCLUDED\.billing_interval/);
+    expect(runs[0].sql).toMatch(/monthly_rate_usd = EXCLUDED\.monthly_rate_usd/);
+    // Bound LAST, after the five bridge params — order is the contract with the column list.
+    expect(runs[0].params.at(-2)).toBe('year');
+    expect(runs[0].params.at(-1)).toBe(79 / 12);
+  });
+
+  it('binds a placeholder for every column in the list — no silent arity drift', () => {
+    // A column-list / VALUES / params mismatch is the shape that silently corrupts an upsert.
+    const runs: Array<{ sql: string; params: unknown[] }> = [];
+    return buildSubscriberProfile(session, {
+      ensure: () => {},
+      query: async () => [],
+      run: (sql: string, ...params: unknown[]) => { runs.push({ sql, params }); },
+    }).then(() => {
+      const sql = runs[0].sql;
+      const columnList = sql.slice(sql.indexOf('(') + 1, sql.indexOf(')'));
+      const columns = columnList.split(',').length;
+      const placeholders = (sql.slice(sql.indexOf('VALUES')).match(/\?/g) ?? []).length;
+      expect(columns).toBe(placeholders);
+      expect(runs[0].params).toHaveLength(columns);
+    });
   });
 });

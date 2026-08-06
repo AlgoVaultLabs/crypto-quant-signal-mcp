@@ -23,6 +23,20 @@
 
 export type PaidPlanId = 'starter' | 'pro' | 'enterprise';
 
+/**
+ * Billing cadence.
+ *
+ * Declared HERE, in the plan SoT, for exactly the reason `PaidPlanId` is: an interval must not
+ * be able to exist in billing that the plan ladder does not know how to price. `stripe.ts`
+ * re-exports it, so every existing import site is unchanged (verified: it had no external
+ * importers when this moved — OPS-STRIPE-SUBSCRIPTION-TRUTH-W1).
+ *
+ * `unknown` is deliberately NOT a member. It is a property of a stored RECORD ("we have not
+ * established which cadence this row was sold on"), never of a plan, so it lives with the
+ * record — see `StoredBillingInterval` in `subscriber-attribution.ts`.
+ */
+export type BillingInterval = 'month' | 'year';
+
 export interface PlanSpec {
   /** Display name as it appears in public copy. */
   readonly label: string;
@@ -92,16 +106,57 @@ export function planAnnualPriceLabel(id: PaidPlanId): string | null {
 }
 
 /**
+ * The MONTHLY RATE in USD that a subscription on (`plan`, `interval`) contributes to MRR, or
+ * null when that pair has no price. UNROUNDED.
+ *
+ * THE single derivation of "what is this subscription worth per month", and the reason
+ * OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 exists. `subscriber_profiles.amount_usd` stores the CHARGE:
+ * an annual Starter writes $79 on one day and nothing for eleven months, so `SUM(amount_usd)`
+ * is not MRR and never can be. Worse, a $79 annual prepayment and a hypothetical $79 monthly
+ * charge are the same number — **a stored amount without a period is not a rate**. The rate is
+ * therefore derived HERE from the two architect-set prices and materialised onto the row beside
+ * the charge; it is never arithmetic on the charge, which cannot tell those two cases apart.
+ *
+ * Rounding is the caller's presentation choice. `planAnnualMonthlyEquivalent` formats from this
+ * exact unrounded value, so the buyer-facing "$6.58/mo effective" label on the pricing page and
+ * the MRR arithmetic can never disagree about what an annual Starter is worth.
+ *
+ * 🛑 **null is a REFUSAL, not a zero.** Enterprise is sold monthly-only (`priceUsdAnnual`
+ * absent), so an Enterprise annual rate does not exist and must not be fabricated by dividing a
+ * price nobody set. Callers EXCLUDE a null from MRR rather than adding 0 — a plan we cannot
+ * price is not a plan worth nothing.
+ *
+ * _(Architect ruling 2026-08-05: this replaces the spec's AC 2.4 "no `/12` literal", which
+ * banned the mechanism where it meant to require the guard. The property is (a) derive from
+ * `PLANS`, never from the charge; (b) refuse rather than fabricate; (c) the divisor appears
+ * ONCE — here. A `MONTHS_PER_YEAR` constant was explicitly rejected: naming the divisor at one
+ * of two adjacent call sites and not the other manufactures the drift class this arc retired.)_
+ */
+export function planMonthlyRateUsd(id: PaidPlanId, interval: BillingInterval): number | null {
+  const spec = PLANS[id];
+  if (interval === 'month') return spec.priceUsdMonthly;
+  const annual = spec.priceUsdAnnual;
+  if (typeof annual !== 'number') return null;
+  return annual / 12;
+}
+
+/**
  * What the annual price works out to per month (`$6.58`, `$24.92`), or null.
  *
  * This is the number a buyer actually compares against the monthly price, so it is always
  * shown alongside the annual total rather than instead of it — quoting only "$6.58/mo" for a
  * plan that bills $79 once a year would be the misleading framing the public-copy LAW forbids.
+ *
+ * FORMATS `planMonthlyRateUsd(id, 'year')` rather than re-dividing: one derivation, two
+ * consumers (this label and the MRR materialisation). The refactor was gated on proving the
+ * rendered bytes do not move — this string is live on the pricing page — which holds because
+ * the primitive returns the quotient UNROUNDED and the `.toFixed(2)` here is unchanged. Pinned
+ * both ways by `tests/plans.test.ts` ("byte-identical to the pre-refactor expression").
  */
 export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
-  const p = PLANS[id].priceUsdAnnual;
-  if (typeof p !== 'number') return null;
-  return `$${(p / 12).toFixed(2)}`;
+  const rate = planMonthlyRateUsd(id, 'year');
+  if (rate === null) return null;
+  return `$${rate.toFixed(2)}`;
 }
 
 /**
