@@ -28,6 +28,10 @@
  */
 import type { SignalVerdict, RegimeType } from '../types.js';
 import type { FundingState, TrendPersistence, BreakoutPending } from './indicator-buckets.js';
+// The withheld block's wire names live in the zero-import leaf so they have exactly one
+// definition. Importing the leaf here does not compromise its purity — the constraint is
+// that the LEAF imports nothing, not that nothing imports it.
+import { formatFactorLedgerRemainder } from './verdict-factors.js';
 
 /** Aggregate track-record proof page. Mr.1 decision: NOT a per-call /verify/<id>. */
 export const VERIFICATION_URI = 'https://algovault.com/track-record';
@@ -78,12 +82,30 @@ export interface ReceiptLedgerRow {
   value: string;
   /** True iff this indicator feeds a weight term or a verdict adjustment. */
   contributes: boolean;
-  strength: 'dominant' | 'supporting' | 'marginal' | 'none';
+  strength: 'primary' | 'supporting' | 'marginal' | 'none';
 }
 
-/** The moat-1-stripped contributors — a count and a net sign, never their names. */
+/**
+ * The moat-1-withheld weight terms — how many, which one went unnameable today, and
+ * their net sign. Never the withheld terms' own names or values.
+ *
+ * CH4: `count` shipped as a filtered statistic over a set that was itself variable, so it
+ * moved 1,1,1,2 across four live samples under a label that reads as a fixed cardinality.
+ * `withheld_term_count` is the model's constant; `unnameable_this_response` carries the
+ * per-response fact that used to be folded into the same number.
+ */
 export interface ReceiptStrippedRemainder {
+  /** DEPRECATED — retained one cycle for compatibility. Equal to `withheld_term_count`. */
   count: number;
+  /** Constant for a given model (2 today). */
+  withheld_term_count: number;
+  /** Nameable terms that could not be named this response. `[]` is the normal case. */
+  unnameable_this_response: string[];
+  /**
+   * Withheld terms whose INPUT was missing, so no contribution exists to sign. Without
+   * this, "they cancelled out" and "we could not measure them" both read `net: 'flat'`.
+   */
+  unevaluated_terms: string[];
   net: 'bullish' | 'bearish' | 'flat';
 }
 
@@ -164,9 +186,9 @@ export interface FormatReceiptsOptions {
       direction: FactorDirection;
       value: string;
       contributes: boolean;
-      strength: 'dominant' | 'supporting' | 'marginal' | 'none';
+      strength: 'primary' | 'supporting' | 'marginal' | 'none';
     }>;
-    strippedRemainder: { count: number; net: 'bullish' | 'bearish' | 'flat' };
+    strippedRemainder: Parameters<typeof formatFactorLedgerRemainder>[0];
   } | null;
 }
 
@@ -245,7 +267,9 @@ export function formatReceipts(verdict: VerdictContext, opts: FormatReceiptsOpti
     ...(ledger
       ? {
         factor_ledger: formatFactorLedger(ledger.rows),
-        stripped_remainder: { count: ledger.strippedRemainder.count, net: ledger.strippedRemainder.net },
+        // CH4: the wire names have ONE definition, in the leaf. Writing the snake_case
+        // literal a second time here is a second derivation of the same contract.
+        stripped_remainder: formatFactorLedgerRemainder(ledger.strippedRemainder),
       }
       : {}),
     // Reconstruct from named fields (allow-list) so no foreign key rides along.
