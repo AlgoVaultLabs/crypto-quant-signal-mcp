@@ -1,0 +1,122 @@
+{
+  "_meta": {
+    "wave": "SIGNAL-LEDGER-INTEGRITY-W1 (CH1–CH6) — the ledger's own fields become structurally true",
+    "tool": "get_trade_call (+ get_trade_signal alias — same producer getTradeSignal)",
+    "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio + x402 paid route + okx a2mcp + Virtuals ACP (all via callCoreHandler)",
+    "captured_at": "2026-08-07",
+    "purpose": "Public-response-shape SoT after the factor ledger's OWN fields were repaired. Supersedes get-trade-call-shape-snapshot-2026-08-06.json and carries its findings forward. The predecessor shipped a correct `reasoning` projection over a ledger with three defective fields: `contributes` varied per response for a structural property, `strength` could contradict `direction`, and `stripped_remainder.count` was ambiguous. Three of the four were caused by an AMBIGUOUS SPEC rather than by bad code — V2's own D7 defined the withheld count without saying whether a neutral withheld row counted."
+  },
+  "endpoint": "MCP tool get_trade_call (factor ledger field semantics)",
+  "snapshot_date": "2026-08-07",
+
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys DEFERRED, not invented — carried forward in force from the 08-06 snapshot, because the reason still holds: this is an MCP tool whose public response is CONDITIONAL (verdict, tier and flag state change which fields are present), so a single live probe cannot settle a COMPLETE allow-list, and an incomplete one published to crawlers is worse than an empty one because it looks authoritative. The `_receipts` sub-surface IS enumerated below (`receipts_allowed_keys`, `factor_ledger_row_allowed_keys`, `stripped_remainder_allowed_keys`) from the exported pure formatters. Owner of the remaining top-level gap: OPS-SHAPE-ALLOWLIST-FROM-FORMATTER-W{NEXT}.",
+
+  "top_level_allowed_keys": [
+    "call", "confidence", "price", "indicators", "regime", "reasoning",
+    "timestamp", "coin", "timeframe", "_algovault", "closest_tradeable", "also_see", "_receipts"
+  ],
+
+  "field_semantics_corrected": {
+    "factor_ledger[].contributes": "NOW a pure function of the field NAME, declared once in `VERDICT_INPUT_CHANNELS` (src/lib/verdict-factors.ts). It answers 'does this indicator feed the verdict computation' — a fact about the MODEL — via a weight term OR a declared adjustment. It shipped as a per-response CONDITION at THREE sites (`ema !== 0`, the Hurst band, `squeezeActive`), so `trend_persistence` returned true on one asset and false on three others measured the same hour. A field that changes meaning between two calls to the same tool is worse for an agent than an absent one.",
+    "factor_ledger[].strength": "ENUM VALUE RENAMED `dominant` -> `primary`, same-week correction. The 0.6 BAND is retained — forcing a strict top-one onto contributions within 1% of each other asserts a hierarchy that does not exist, and exact ties would report ZERO top rows while two strong drivers are present. Only the WORD was wrong: `dominant` naming two rows is a word that has lost its meaning. Renamed one day after the field shipped, while it appears in no declared schema (there is no outputSchema on any tool) and the population branching on it is ~0; under the MCP feature-lifecycle norm this would otherwise cost a >=12-month deprecation cycle.",
+    "factor_ledger[].strength (invariant)": "`direction === 'neutral'` <=> `strength === 'none'`, a BICONDITIONAL guaranteed by construction: `classifyContribution` returns both from one input and every branch yielding a neutral direction yields 'none' with it. A live response carried `direction: neutral` + `strength: dominant`; the illegal state is now unrepresentable rather than merely tested for. Also: `contributes === false` => neutral/none, and the band's denominator is the largest |contribution| among DIRECTIONAL contributing rows only — taking it over all rows let an amplifier (25 pts) set the scale that every visible weight term (<=20) was measured against.",
+    "factor_ledger[oi_change_pct].direction": "CHANGED `bullish|bearish` -> ALWAYS `neutral`. Open interest feeds no weight term and no adjustment, so it has no verdict direction to report. Its SIGN is not lost — it is in `value` (`+2.4%`), which is where a reader should take it from. What is gone is the implication that it was a reason. NOTE the legacy `factors[]` still ships the ±0.5% direction; see `factors_ledger_divergence` below.",
+    "stripped_remainder.count": "DEPRECATED alias, retained one cycle so no consumer loses a key. Now EQUAL to `withheld_term_count`; it used to be a filtered count of non-zero contributions over a set that was itself variable, which is why it moved 1,1,1,2 across four live samples under a label that reads as a fixed cardinality.",
+    "stripped_remainder.withheld_term_count": "NEW. How many weight terms moat-1 withholds — CONSTANT for a given model (2 today: `rsi`, `volume`), derived from `WEIGHT_TERM_FIELD` so it cannot drift from the channel map. A bare count beside a noun-less label is what produced the `(new: 6)` operator misread of 2026-08-01; the name is the fix.",
+    "stripped_remainder.unnameable_this_response": "NEW `string[]`. Weight terms nameable in principle but not nameable THIS response — today only `ema`, when the regime label and the moving-average read diverge. This fact used to be folded into `count`, which is what made the count variable for a SECOND independent reason. Naming `ema` discloses nothing new: the live prose already says 'on the moving-average cross'.",
+    "stripped_remainder.unevaluated_terms": "NEW `string[]`. Withheld terms whose INPUT was missing (`rsi` with too few candles, `volume` with zero average bar volume), so no contribution exists to sign. Without it, 'they cancelled out' and 'we could not measure them' both render `net: 'flat'` — the V2-D9 defect (a silent default-deny presenting as a real measurement) applied to a second field.",
+    "verdict_unchanged": "call + confidence + price + regime + indicators are BYTE-IDENTICAL. No score, weight, threshold or scoring term was touched. The closed-bar golden fixture confirms it: its only diffs are the ledger fields listed here."
+  },
+
+  "receipts_allowed_keys": [
+    "verdict", "conviction_pct", "regime", "factors", "factor_ledger",
+    "stripped_remainder", "track_record", "verification_uri", "disclaimer"
+  ],
+  "factor_ledger_row_allowed_keys": ["factor", "direction", "value", "contributes", "strength"],
+  "stripped_remainder_allowed_keys": ["count", "withheld_term_count", "unnameable_this_response", "unevaluated_terms", "net"],
+
+  "factors_ledger_divergence": {
+    "status": "DECLARED and BOUNDED, not resolved. `factors[]` is frozen (CH1.5 measured Branch B: its `direction` VALUES are asserted in five places in receipts.test.ts, and the byte-exact digest arrows are pinned in scan-digest-enrich.test.ts:112 and check-scan-digest-parity.mjs:65 with the Python mirror in lockstep).",
+    "known_limitation": "The RIGHT channel for 'these two disagree and here is which is authoritative' is a declared outputSchema with `deprecated: true` on the legacy array. There is NONE — raw tools/list confirms zero outputSchema across all 7 tools, negotiated protocol 2025-06-18. So an agent reading both fields has no machine-readable statement of which is authoritative. This is an accepted gap, owned by the two sequential follow-ups below.",
+    "compensating_control": "tests/unit/factors-ledger-divergence.test.ts enumerates every field that may disagree and the exact condition, and fails on any NEW divergence or any existing one widening. A prose note in an audit file cannot do that; no client reads audit files.",
+    "declared_divergences": [
+      "oi_change_pct — factors[] classifies the ±0.5% move; the ledger reports neutral (contributes:false). Occurs whenever |oi_change_pct| >= 0.5.",
+      "funding_state — factors[] reads the per-asset z-BUCKET (NORMAL => neutral); the ledger reads the global annualized LADDER, which scores a negative rate contrarian-bullish regardless of bucket. Occurs when funding_state is NORMAL and funding_rate != 0."
+    ],
+    "authoritative": "factor_ledger[]. Only it carries `contributes`, which is what distinguishes a driver from context."
+  },
+
+  "indicators_allowed_keys": [
+    "funding_rate", "funding_24h_avg", "funding_state", "oi_change_pct", "oi_change_window",
+    "volume_24h", "trend_persistence", "breakout_pending", "underlying_session", "funding_note"
+  ],
+  "indicators_always_present": [
+    "funding_rate", "funding_24h_avg", "funding_state", "volume_24h",
+    "trend_persistence", "breakout_pending", "underlying_session"
+  ],
+  "indicators_conditional": {
+    "oi_change_pct": "present iff the oi_snapshots store is warm for (coin, exchange)",
+    "oi_change_window": "present iff oi_change_pct is",
+    "funding_note": "present iff the TradFi/pre-IPO funding annotation applies"
+  },
+
+  "which_indicators_drive_the_verdict": {
+    "note": "CARRIED FORWARD from 08-06 and now DECLARED IN CODE as `VERDICT_INPUT_CHANNELS`, so this table and the implementation cannot drift. Two channels: `weight` (a term in rawScore = SUM(score x weight)) and `adjustment` (a direct rawScore +/- n after that sum). BOTH are measured in rawScore points, so a cross-channel |contribution| comparison is apples-to-apples.",
+    "funding_state": "YES — weight term `funding` (25%) AND adjustment `fundingZ` (+/-20, +10). directional.",
+    "regime": "YES — weight term `ema` (10%), the public face of emaScore. directional. Measured: regime can never carry the OPPOSITE sign to emaScore, but RANGING absorbs a bullish cross at RSI>=70, a bearish cross at RSI<=30, and any null RSI; on that divergence the row keeps `contributes:true` (wiring is unchanged) and the EMA contribution moves to `unnameable_this_response`.",
+    "price_change_24h": "YES — weight term `oi` (15%). directional. Named for what it READS: the internal identifier is `oiScore`, a historical misnomer; the term is valued from 24h PRICE change and never from open interest.",
+    "trend_persistence": "YES — adjustment `hurst` (-+25 mean-reverting / +-10 trending). AMPLIFIER: it scales whatever the net already is, so it argues 'more of this' and never bullish/bearish. Permanently direction:neutral, therefore permanently strength:none.",
+    "breakout_pending": "YES — adjustment `squeeze` (+-12). AMPLIFIER, same treatment.",
+    "oi_change_pct": "NO — computeOiDelta output; enters no weight term and no adjustment.",
+    "volume_24h": "NO — 24h notional; the scored volume term reads a per-bar candle-volume ratio, a different quantity.",
+    "funding_24h_avg": "NO — a literal alias of funding_rate.",
+    "underlying_session": "NO — drives only the market-closed caveat.",
+    "withheld_by_moat_1": "`rsi` (30%) and `volume` (20%) have no public counterpart at all — 50% of the base score weight. They are accounted for in `stripped_remainder`, never named."
+  },
+
+  "enums": {
+    "call": ["BUY", "SELL", "HOLD"],
+    "factor_ledger[].direction": ["bullish", "bearish", "neutral"],
+    "factor_ledger[].strength": ["primary", "supporting", "marginal", "none"],
+    "stripped_remainder.net": ["bullish", "bearish", "flat"]
+  },
+
+  "forbidden_keys": [
+    "outcome_return_pct", "outcome_price", "phase_e_wr", "outcome_win_rate", "realized_return", "pnl",
+    "rank", "weight", "score", "raw_score", "contribution", "channel", "term",
+    "signal", "rsi", "ema_9", "ema_21", "funding_z_score", "squeeze_active", "try_next"
+  ],
+
+  "cache_contract": {
+    "response": "NOT cached. Every tools/call recomputes the verdict from live adapter reads; no HTTP cache header, no response memo.",
+    "funding_z_stats": "per-coin (mean, stdDev, sampleCount) cached 5 minutes in-process (FUNDING_STATS_TTL_MS) over a rolling 14-day window (FUNDING_Z_WINDOW_DAYS).",
+    "track_record": "the _receipts.track_record block is served from the in-process cache behind performance://signal-performance and is OMITTED entirely (fail-open) when that source is unavailable — never a stale hardcoded value.",
+    "top20_by_oi": "1 hour, used only by the asset-tier classifier.",
+    "cross_asset_grid": "TTL-cached and promise-coalesced; feeds only the additive closest_tradeable / also_see fields and never the verdict.",
+    "stateless_transport": "the remote MCP transport is stateless (sessionIdGenerator undefined) — confirmed live: no Mcp-Session-Id header is issued. Nothing in this response depends on a prior request.",
+    "tools_list": "no ttlMs/cacheScope is advertised (those arrive in MCP 2026-07-28; we negotiate 2025-06-18)."
+  },
+
+  "error_contract": {
+    "TIER_LIMIT_REACHED": "TierLimitReachedError — structured, carries currentUsage/monthlyLimit/tier/suggestedUpgradeUrl/resetAtMs/referralCode. HOLD verdicts are free and never charged.",
+    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "TradFiSymbolUnsupportedOnVenueError — carries suggested_venues so an agent can self-retry.",
+    "INSUFFICIENT_CANDLES": "InsufficientCandlesError — carries candlesAvailable/candlesRequired/suggestedTimeframes/suggestedAction.",
+    "free_tier_gate": "a plain Error carrying freeGateMessage(coin, timeframe) when the coin or timeframe is outside the caller's tier.",
+    "degradation": "an oi_snapshots failure OMITS oi_change_pct rather than emitting a stale or wrong-signed value, and never fails the verdict. A withheld term whose input is missing is reported in `unevaluated_terms` rather than silently signed as `flat`."
+  },
+
+  "consumers": [
+    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call — branch on `_receipts.factor_ledger[].contributes` and `.strength`; both are now stable per field across calls",
+    "algovault-bot (Telegram) — pass-through only; `factors[]` is frozen so no digest line and no Python mirror moved in this wave",
+    "src/lib/receipts.ts formatReceipts + formatFactorLedger + formatFactorLedgerRemainder — the allow-listed public formatters",
+    "src/lib/verdict-factors.ts — VERDICT_INPUT_CHANNELS (the ONE wiring declaration), classifyContribution (the ONE direction+strength derivation), formatFactorLedgerRemainder (the ONE place the withheld block's wire names are written)",
+    "src/lib/scan-digest.ts enrichScanCall — reuses formatReceipts WITHOUT a ledger, so its frozen byte-equality fixtures are unaffected by construction",
+    "landing/index.html — the baked 'Example output' verdict card, whose Why line is asserted byte-identical to the engine's own golden",
+    "x402 /x402/<tool>, okx.ai /a2mcp/<tool>, Virtuals ACP deliverable — inherit byte-identically via callCoreHandler"
+  ],
+
+  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run verdict-factors-contributes verdict-factors-strength verdict-factors-withheld factors-ledger-divergence verdict-reasoning-consistency receipts scan-digest-enrich   # LEDGER_CONTRIBUTES/STRENGTH/WITHHELD + FACTORS_DIVERGENCE + REASONING_CONSISTENCY tokens, plus factors[] frozen byte-identical",
+
+  "additive_and_correction_rule": "`withheld_term_count` / `unnameable_this_response` / `unevaluated_terms` are ADDITIVE; `count` is retained one cycle and now equals `withheld_term_count`. `strength: 'dominant'` -> `'primary'` is an ENUM VALUE CHANGE, taken deliberately one day after the field shipped and while no schema declares it. `factor_ledger[oi_change_pct].direction` changes to `neutral`. `factors[]` is byte-frozen. A `contributes` value that depends on a reading, a `strength` that contradicts its `direction`, a withheld count that varies between responses, or a NEW undeclared factors[]/ledger divergence = Factuality/Data-Integrity violation -> HALT."
+}
