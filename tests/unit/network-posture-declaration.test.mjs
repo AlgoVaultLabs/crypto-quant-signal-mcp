@@ -122,6 +122,53 @@ test('the empirical ufw negative cannot be silently dropped', () => {
   }
 });
 
+test('udp/443 never diverges from tcp/443 — the lock is cosmetic if it does', () => {
+  // OPS-CF-ORIGIN-LOCK-W1. Locking tcp/443 while leaving udp/443 open does not narrow the
+  // origin at all: anyone who knows the address simply speaks HTTP/3 instead. The measured
+  // traffic being on :80 and bare-IP reflects what scanners CHOSE, never what was available.
+  // The duplication is deliberate, so this guard exists to stop a future tidy-up splitting it.
+  for (const [host, cfg] of Object.entries(doc.hosts)) {
+    const tcp443 = cfg.inbound.find((r) => r.port === 443 && r.proto === 'tcp');
+    const udp443 = cfg.inbound.find((r) => r.port === 443 && r.proto === 'udp');
+    if (!tcp443 && !udp443) continue;
+    assert.ok(
+      tcp443 && udp443,
+      `${host}: 443 is declared for only one protocol — H3 and H2 must both be governed`,
+    );
+    assert.deepEqual(
+      [...udp443.allowed_sources].sort(),
+      [...tcp443.allowed_sources].sort(),
+      `${host}: udp/443 (HTTP/3) source set has diverged from tcp/443. An unlocked udp/443 ` +
+        'makes the whole origin lock cosmetic.',
+    );
+    assert.ok(
+      udp443.shares_source_set_with === '443/tcp',
+      `${host}: udp/443 must record that it shares tcp/443's source set BY DESIGN, or a future ` +
+        'wave reads the duplication as an error and "fixes" it',
+    );
+  }
+});
+
+test('a locked port records why it is restricted, and :80 records why it is NOT closed', () => {
+  const sig = doc.hosts['signal-1'];
+  for (const rule of sig.inbound.filter((r) => r.classification === 'restrict-to-source')) {
+    assert.ok(
+      rule.justification && rule.justification.length > 40,
+      `signal-1:${rule.port}/${rule.proto} is restricted with no recorded reason`,
+    );
+  }
+  const p80 = sig.inbound.find((r) => r.port === 80);
+  assert.ok(
+    p80.why_not_closed,
+    ':80 must record WHY it stays open-to-CF rather than closed — closing it was predicated on ' +
+      'DNS-01, and without that note a later wave closes it and breaks renewal ~60 days later',
+  );
+  assert.ok(
+    sig.dns01_deferred?.blocker,
+    'the DNS-01 blocker must stay recorded so it is not re-derived',
+  );
+});
+
 test('the github-actions dead end stays marked unusable', () => {
   const gha = doc.source_aliases['github-actions'];
   assert.equal(

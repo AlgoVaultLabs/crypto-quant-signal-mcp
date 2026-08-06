@@ -1,15 +1,10 @@
 {
   "_comment": "DECLARED inbound network posture, per host. The SoT the reconciler's POSTURE_DRIFT check asserts against. Retires the generator 'inbound exposure is an emergent property of whatever each service happened to bind'. Every other layer in this system has a SoT plus a canary; before OPS-HOST-EXPOSURE-POSTURE-W1 the network did not, which is why 'ufw is inactive' sat in an audit report instead of firing an alert. Changing a rule here does NOT change enforcement — enforcement is the Hetzner Cloud Firewall, mutated only by a human-dispatched wave. This file is what makes a drift DETECTABLE, not what applies it.",
-
   "schema_version": 1,
   "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1",
-
   "_host_label_semantics": "`host` keys are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses — same contract as monitoring-inventory.json. Label -> address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON: this repo is PUBLIC. Unlike the inventory, this file has NO legacy rows, so it carries zero literal addresses and must stay that way.",
-
   "_allowed_sources_semantics": "Named source ALIASES resolved at apply/probe time (see `source_aliases`), never literal CIDRs. A literal here would be a published address AND a value that silently rots when the upstream range changes. `any` is permitted but must carry a `justification` — an unexplained `any` reads as an oversight to the next reader; a justified one reads as a decision.",
-
   "_expected_from_peer_derivation": "SINGLE-DERIVATION RULE — do NOT add a second field for this. A port's expected reachability from the PEER host is derived from `allowed_sources` alone: reachable IFF (`any` is present) OR (the probing peer's own host label is present). Everything else is expected CLOSED from the peer vantage. Consequence worth stating because it is the obvious false-fire: a port restricted to `cloudflare` is correctly UNREACHABLE from the peer host, and POSTURE_DRIFT must not read that as an outage.",
-
   "_classification_semantics": {
     "must-stay-public": "genuinely needs `any`; no narrowing possible without breaking a confirmed dependency",
     "restrict-to-source": "reachable, but only from an enumerable source set",
@@ -17,9 +12,7 @@
     "already-loopback": "bound to 127.0.0.1 — needs no firewall rule at all; recorded so a future rebind to 0.0.0.0 is caught by POSTURE_DRIFT on its first cycle",
     "declared-closed": "deliberately unreachable from the internet; access is via another path (SSH tunnel, Cloudflare Tunnel)"
   },
-
   "_enforcement_semantics": "The Hetzner Cloud Firewall is the ONLY enforcement layer, deliberately. It is enforced OUTSIDE the VM, so a bad rule cannot sever console access the way a bad `ufw enable` can, and it is not bypassed by Docker's iptables chains. See `in_vm_layer` per host for why nothing runs inside the VM. NO AUTOMATED MUTATION: an unattended job must never change a network rule — POSTURE_DRIFT detects and alerts, a human-dispatched wave applies. That limit is deliberate, not a gap.",
-
   "source_aliases": {
     "any": {
       "resolves_to": "0.0.0.0/0 + ::/0",
@@ -28,7 +21,10 @@
     "cloudflare": {
       "resolves_to": "https://www.cloudflare.com/ips-v4 + https://www.cloudflare.com/ips-v6",
       "count_at_owner_wave": 22,
-      "note": "15 IPv4 + 7 IPv6 as measured 2026-07-30 — comfortably inside Hetzner's 500-effective-rules/firewall cap. Re-resolved at apply time; never pinned as literals here. Contrast `github-actions` below."
+      "note": "15 IPv4 + 7 IPv6. Counted 22 on 2026-07-30 and again on 2026-08-06 — no drift. Comfortably inside Hetzner's 500-effective-rules/firewall cap. Re-resolved from the official source at apply time and never pinned as literals here, because a pinned copy is a second thing that can go stale. `CF_RANGE_DRIFT` asserts the live firewall's source set against this list every cycle. Contrast `github-actions` below — the same idea at a scale that does not fit.",
+      "count_at_enforcement": 22,
+      "fetched_at": "2026-08-06T11:21:32Z",
+      "enforced_by_wave": "OPS-CF-ORIGIN-LOCK-W1"
     },
     "github-actions": {
       "resolves_to": "https://api.github.com/meta -> .actions",
@@ -42,7 +38,6 @@
       "note": "DYNAMIC (residential). Deliberately never pinned as a literal rule: a pinned dynamic /32 either drifts into a silent deny or becomes a rule POSTURE_DRIFT flags forever. Where operator access to a restricted port is needed, the path is an SSH tunnel over port 22, not a firewall entry."
     }
   },
-
   "hosts": {
     "signal-1": {
       "role": "public — algovault.com, api.algovault.com, plausible.algovault.com, Caddy, MCP server, Postgres, Redis, Plausible",
@@ -63,7 +58,9 @@
         {
           "port": 22,
           "proto": "tcp",
-          "allowed_sources": ["any"],
+          "allowed_sources": [
+            "any"
+          ],
           "classification": "asserted-any",
           "purpose": "SSH. Three confirmed consumers: (1) GitHub Actions auto-deploy (appleboy/ssh-action, .github/workflows/deploy.yml), (2) the aoe-1 -> signal-1 Postgres tunnel, which dials OUT from aoe-1 and therefore needs inbound 22 here, (3) operator administration and the recovery path.",
           "justification": "Ratified A2. An allowlist is mechanically impossible at the enforcement layer — see source_aliases.github-actions. Narrowing this to operator + aoe-1 requires moving deploy off inbound SSH entirely, which is OPS-DEPLOY-PULL-MODEL-W{NEXT}. Deliberately NOT bundled into a firewall wave: a broken deploy would leave us unable to deploy the fix.",
@@ -74,39 +71,44 @@
         {
           "port": 80,
           "proto": "tcp",
-          "allowed_sources": ["any"],
-          "classification": "asserted-any",
-          "purpose": "HTTP->HTTPS redirect (308 on every path, verified) and the ACME HTTP-01 challenge path.",
-          "justification": "DEFERRED, not overlooked — the CF-only narrowing hit a ratified HALT branch. The ruling was 'DNS-01 first, then restrict', precisely so renewal stops depending on any inbound path. DNS-01 turned out to be blocked by an unstated prerequisite: this host runs Caddy 2.6.2, which ships NO dns.providers module and has NO `add-package` subcommand (that arrived in 2.7). DNS-01 therefore requires replacing the Caddy binary on the host serving all public traffic — a materially larger change than configuration, five days before the Aug 4-5 renewal. Forcing it is exactly what the HALT branch exists to prevent.",
-          "narrowed_by_wave": "OPS-CF-ORIGIN-LOCK-W{NEXT}",
-          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+          "allowed_sources": [
+            "cloudflare"
+          ],
+          "classification": "restrict-to-source",
+          "purpose": "HTTP->HTTPS 308 redirect, and the ACME http-01 challenge path.",
+          "justification": "LOCKED to Cloudflare by OPS-CF-ORIGIN-LOCK-W1. The narrowing the parent wave deferred: ~153 requests/24h were reaching this origin DIRECTLY, bypassing Cloudflare — proven by raw-IP Host headers, which cannot have transited CF because CF always forwards the original hostname — with 108/24h probing /.well-known/acme-challenge/. The origin answered https with a valid publicly-trusted certificate, so CF's WAF, rate-limiting and DDoS protection were OPTIONAL for anyone who knew the address, and the address is irreversibly published. Renewal safety is MEASURED, not deduced: Caddy logs one `served key authentication` line per ACME challenge carrying the requester's address, and all 10 validations of the two hostnames that renewed under the current proxied config (2026-08-04, 2026-08-05) came from Cloudflare ranges, challenge_type=http-01, zero direct Let's Encrypt validators.",
+          "owner_wave": "OPS-CF-ORIGIN-LOCK-W1",
+          "why_not_closed": "DELIBERATELY narrowed-to-CF rather than closed. HTTP-01 arrives here VIA Cloudflare, so closing :80 would break renewal ~60 days later, silently, with no detector that existed before this wave. Closing it requires DNS-01 — see dns01_deferred."
         },
         {
           "port": 443,
           "proto": "tcp",
-          "allowed_sources": ["any"],
-          "classification": "asserted-any",
-          "purpose": "All public traffic: landing, /verify, api.algovault.com, /api/merkle-batches, Stripe webhooks, x402 + Circle Gateway settlement callbacks.",
-          "justification": "DEFERRED with the same HALT branch as :80 — see that entry. Recording the finding so the follow-up wave does not re-derive it: ~300 requests/24h reach this origin DIRECTLY, bypassing Cloudflare, proven by raw-IP Host headers (232x '<origin>:80', 68x bare origin IP) which cannot have transited CF because CF always forwards the original hostname; 68 probed /.well-known/acme-challenge/, a cert-takeover recon pattern. The origin answers https with a valid publicly-trusted certificate, so CF's WAF, rate-limiting and bot-management are OPTIONAL for anyone who knows the address — and the address is irreversibly published. This is the highest-value narrowing still outstanding.",
-          "narrowed_by_wave": "OPS-CF-ORIGIN-LOCK-W{NEXT}",
-          "narrowing_prework_already_done": "Gate 1 of the ratified order is COMPLETE and need not be repeated: all 11 A/AAAA/CNAME records on the zone were enumerated, and all three that resolve to this origin (algovault.com, api.algovault.com, plausible.algovault.com) are PROXIED. The single DNS-only record, blog.algovault.com, CNAMEs to hashnode.network and resolves into Hashnode's own hosting — it never touches this origin, so a CF-only rule blackholes nothing. Cloudflare publishes 22 source CIDRs, comfortably inside the 500-rule cap.",
-          "open_question_for_the_follow_up": "Whether DNS-01 is needed at all, or whether a CF-only rule is safe under the EXISTING HTTP-01 path. The deduction that it is safe: every hostname is CF-proxied, so Let's Encrypt cannot reach this origin directly and renewal must already transit Cloudflare today; TLS-ALPN-01 cannot traverse a CF proxy because CF terminates TLS, so HTTP-01-via-CF is necessarily the working path, and restricting to CF ranges would not change it. That is a DEDUCTION, not a measurement, and the ratified rule is 'prove issuance end-to-end, never switch-and-assume'. Proving it means forcing a real obtain, which is itself the thing the HALT branch forbids doing days before renewal. After the Aug 4-5 renewal completes there is a clean ~3-month runway in which to force one safely.",
-          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+          "allowed_sources": [
+            "cloudflare"
+          ],
+          "classification": "restrict-to-source",
+          "purpose": "All public traffic: landing, /verify, api.algovault.com, /api/merkle-batches, Stripe webhooks, x402 + Circle Gateway settlement callbacks. Every one is addressed to a CF-proxied hostname, so every one transits Cloudflare — verified, not assumed: all 386 distinct direct-to-origin request shapes over 7 days were scanners.",
+          "justification": "LOCKED to Cloudflare by OPS-CF-ORIGIN-LOCK-W1. The narrowing the parent wave deferred: ~153 requests/24h were reaching this origin DIRECTLY, bypassing Cloudflare — proven by raw-IP Host headers, which cannot have transited CF because CF always forwards the original hostname — with 108/24h probing /.well-known/acme-challenge/. The origin answered https with a valid publicly-trusted certificate, so CF's WAF, rate-limiting and DDoS protection were OPTIONAL for anyone who knew the address, and the address is irreversibly published.",
+          "owner_wave": "OPS-CF-ORIGIN-LOCK-W1"
         },
         {
           "port": 443,
           "proto": "udp",
-          "allowed_sources": ["any"],
-          "classification": "asserted-any",
-          "purpose": "HTTP/3 (QUIC). Caddy binds *:443/udp; must track the TCP rule or H3 clients silently fall back.",
-          "justification": "Tracks the :443/tcp ruling exactly — deferred under the same HALT branch. Narrowing these two apart would leave H3 clients failing over to TCP for reasons no one would connect back to a firewall change.",
-          "narrowed_by_wave": "OPS-CF-ORIGIN-LOCK-W{NEXT}",
-          "owner_wave": "OPS-HOST-EXPOSURE-POSTURE-W1"
+          "allowed_sources": [
+            "cloudflare"
+          ],
+          "classification": "restrict-to-source",
+          "purpose": "HTTP/3 (QUIC). Caddy binds *:443/udp.",
+          "justification": "SHARES the :443/tcp source set BY DESIGN — the duplication is intentional, not an error to tidy away. Leaving udp/443 open while tcp/443 is CF-only would make the entire lock COSMETIC: anyone who knows the origin address simply speaks HTTP/3 instead. The measured traffic being on :80 and bare-IP reflects what scanners CHOSE, never what was available. If CF's QUIC egress ever falls outside the published ranges, H3 clients fail over to TCP — graceful degradation; an unlocked udp/443 is not degradation, it is the hole.",
+          "owner_wave": "OPS-CF-ORIGIN-LOCK-W1",
+          "shares_source_set_with": "443/tcp"
         },
         {
           "port": null,
           "proto": "icmp",
-          "allowed_sources": ["any"],
+          "allowed_sources": [
+            "any"
+          ],
           "classification": "asserted-any",
           "purpose": "ICMP. Deliberately allowed rather than swept up in the default-deny.",
           "justification": "Availability, not convenience: blocking inbound ICMP breaks Path MTU Discovery (the `fragmentation-needed` reply), which manifests as large HTTPS responses hanging on any path with a reduced MTU — a failure mode that looks nothing like a firewall rule and would be debugged for hours. Hetzner's firewall is stateful, but its docs do not state whether related ICMP errors are exempted, so this is allowed EXPLICITLY rather than assumed. Negligible attack surface; a real availability risk if omitted.",
@@ -116,14 +118,45 @@
         }
       ],
       "loopback_only": [
-        {"port": 3000, "proto": "tcp", "owner": "crypto-quant-signal-mcp-mcp-server-1", "classification": "already-loopback"},
-        {"port": 5432, "proto": "tcp", "owner": "crypto-quant-signal-mcp-postgres-1", "classification": "already-loopback", "note": "the DB holding internal-only outcome_return_pct / outcome-WR data — this bind is the control SECURITY-AUDIT-FULL-W1 flagged as load-bearing-and-alone"},
-        {"port": 8000, "proto": "tcp", "owner": "plausible-ce-plausible-1", "classification": "already-loopback"},
-        {"port": 2019, "proto": "tcp", "owner": "caddy admin API", "classification": "already-loopback"},
-        {"port": 53, "proto": "tcp+udp", "owner": "systemd-resolved (127.0.0.53/54)", "classification": "already-loopback"}
-      ]
+        {
+          "port": 3000,
+          "proto": "tcp",
+          "owner": "crypto-quant-signal-mcp-mcp-server-1",
+          "classification": "already-loopback"
+        },
+        {
+          "port": 5432,
+          "proto": "tcp",
+          "owner": "crypto-quant-signal-mcp-postgres-1",
+          "classification": "already-loopback",
+          "note": "the DB holding internal-only outcome_return_pct / outcome-WR data — this bind is the control SECURITY-AUDIT-FULL-W1 flagged as load-bearing-and-alone"
+        },
+        {
+          "port": 8000,
+          "proto": "tcp",
+          "owner": "plausible-ce-plausible-1",
+          "classification": "already-loopback"
+        },
+        {
+          "port": 2019,
+          "proto": "tcp",
+          "owner": "caddy admin API",
+          "classification": "already-loopback"
+        },
+        {
+          "port": 53,
+          "proto": "tcp+udp",
+          "owner": "systemd-resolved (127.0.0.53/54)",
+          "classification": "already-loopback"
+        }
+      ],
+      "dns01_deferred": {
+        "status": "unavailable — blocked, not chosen against",
+        "blocker": "Caddy 2.6.2 on this host ships NO `dns.providers.*` module and has no `add-package` subcommand (2.7+). DNS-01 therefore requires REPLACING the Caddy binary on the box serving all public traffic — a production binary swap, not a config edit. Re-verified 2026-08-06: `caddy list-modules | grep -c dns.providers` = 0.",
+        "why_it_would_be_nicer": "DNS-01 removes renewal's inbound dependency entirely, after which :80 could CLOSE rather than merely narrow. The existing Cloudflare token already carries exactly its requirement (Zone.DNS:Edit + Zone.Zone:Read).",
+        "wave": "OPS-CADDY-DNS01-W{NEXT}"
+      }
     },
-
     "aoe-1": {
       "role": "AOE — Prefect, shadow evaluator, promotion scanner, AOE workers, agent-facing MCP",
       "enforcement": "hetzner-cloud-firewall",
@@ -143,7 +176,9 @@
         {
           "port": 22,
           "proto": "tcp",
-          "allowed_sources": ["any"],
+          "allowed_sources": [
+            "any"
+          ],
           "classification": "asserted-any",
           "purpose": "SSH. Consumers: operator administration + rsync-based AOE deploy (this host has no git checkout and no CI auto-deploy), and the recovery path.",
           "justification": "Ratified A2. Unlike signal-1 there is no GitHub Actions constraint here, so this port COULD narrow to the operator — but the operator address is dynamic (see source_aliases.operator) and port 22 is the recovery path with no in-band fallback. Pinning a drifting /32 to the one port you would need during a lockout trades a real availability risk for a marginal reduction. Revisit if a stable operator vantage (bastion or Cloudflare Tunnel) ever exists.",
@@ -166,7 +201,9 @@
         {
           "port": null,
           "proto": "icmp",
-          "allowed_sources": ["any"],
+          "allowed_sources": [
+            "any"
+          ],
           "classification": "asserted-any",
           "purpose": "ICMP. Same ruling as signal-1 — see that entry's justification.",
           "justification": "Availability, not convenience: blocking inbound ICMP breaks Path MTU Discovery, a failure mode that looks nothing like a firewall rule. Allowed explicitly rather than assumed, because Hetzner's docs do not state whether its stateful firewall exempts related ICMP errors. Kept identical across both hosts so the two postures do not diverge for no reason.",
@@ -176,11 +213,37 @@
         }
       ],
       "loopback_only": [
-        {"port": 8081, "proto": "tcp", "owner": "autonomous-optimizer-dashboard-internal-1", "classification": "already-loopback"},
-        {"port": 4200, "proto": "tcp", "owner": "aoe-prefect-server", "classification": "already-loopback", "note": "reachable externally ONLY via Cloudflare Tunnel + Zero Trust Access at aoe.algovault.com — the pattern 8080 should adopt"},
-        {"port": 6380, "proto": "tcp", "owner": "aoe-redis", "classification": "already-loopback"},
-        {"port": 20241, "proto": "tcp", "owner": "cloudflared metrics", "classification": "already-loopback"},
-        {"port": 5432, "proto": "tcp", "owner": "aoe-pg-tunnel.service (ssh -N -L; also binds docker bridge gateways 172.17.0.1/172.18.0.1 so containers can reach it)", "classification": "already-loopback"}
+        {
+          "port": 8081,
+          "proto": "tcp",
+          "owner": "autonomous-optimizer-dashboard-internal-1",
+          "classification": "already-loopback"
+        },
+        {
+          "port": 4200,
+          "proto": "tcp",
+          "owner": "aoe-prefect-server",
+          "classification": "already-loopback",
+          "note": "reachable externally ONLY via Cloudflare Tunnel + Zero Trust Access at aoe.algovault.com — the pattern 8080 should adopt"
+        },
+        {
+          "port": 6380,
+          "proto": "tcp",
+          "owner": "aoe-redis",
+          "classification": "already-loopback"
+        },
+        {
+          "port": 20241,
+          "proto": "tcp",
+          "owner": "cloudflared metrics",
+          "classification": "already-loopback"
+        },
+        {
+          "port": 5432,
+          "proto": "tcp",
+          "owner": "aoe-pg-tunnel.service (ssh -N -L; also binds docker bridge gateways 172.17.0.1/172.18.0.1 so containers can reach it)",
+          "classification": "already-loopback"
+        }
       ],
       "outbound_note": "cloudflared holds several high-numbered *:udp sockets (QUIC). These are OUTBOUND sockets, not inbound services, and must not be declared as inbound ports or POSTURE_DRIFT will chase ephemeral port numbers every cycle."
     }
