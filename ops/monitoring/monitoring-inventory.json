@@ -1032,9 +1032,24 @@
       "schedule": "47 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "d5e2eb933e2f677265f4e0ddf5d1f81c66a2e36a6ebce997c3206e3a7f71f7c5",
+      "sha256": "8c764916f684bdf9b78a1b93a28f8156bd2bcadf8776a21249229f45fb572b43",
       "owner_wave": "OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W1",
-      "notes": "Daily provenance assertion for the three GIT-CHECKOUT services on this host (crypto-quant-signal-mcp, algovault-editorial, algovault-blog-assets): HEAD is an ancestor of origin/main, the tree is clean modulo a DECLARED allowlist, and no file is owned by a uid that does not exist. Sibling of bot-deploy-parity.sh but a different evidence source: those services are placed by git, so git IS the lockfile, whereas the bot's tree is placed by ops/scripts/host-deploy.sh and verified against the lockfile that tool writes. Configured by ops/deploy/checkout-parity.conf, which also records the DEFER/EXEMPT set so the un-covered estate is declared rather than forgotten. Emits one CHECKOUT_PARITY_VERDICT= token; 0=PASS/1=FAIL/3=INDETERMINATE, fails closed. KNOWN LIMITATION: `git fetch` fails for algovault-blog-assets (SSH remote, no key for root), so its ancestry is judged against a CACHED origin/main \u2014 the run prints an explicit WARNING rather than passing silently. Closing that needs a deploy key: OPS-BLOG-ASSETS-FETCH-KEY-W{NEXT}."
+      "notes": "Daily provenance assertion for the three GIT-CHECKOUT services on this host (crypto-quant-signal-mcp, algovault-editorial, algovault-blog-assets): HEAD is an ancestor of origin/main, the tree is clean modulo a DECLARED allowlist, and no file is owned by a uid that does not exist. Sibling of bot-deploy-parity.sh but a different evidence source: those services are placed by git, so git IS the lockfile, whereas the bot's tree is placed by ops/scripts/host-deploy.sh and verified against the lockfile that tool writes. Configured by ops/deploy/checkout-parity.conf, which also records the DEFER/EXEMPT set so the un-covered estate is declared rather than forgotten. Since OPS-CHECKOUT-PARITY-ALLOWLIST-DERIVE-W1 the injector's own permitted-dirty set is DERIVED, not enumerated: an `allow_manifest` row in the conf names scripts/snapshot-landing-manifest.json and scripts/injector-target-set.mjs resolves it per-run against the SERVICE's own checkout, so a wave that adds a manifest claim inherits allowlist coverage with zero conf edits. Enumerating it had gone stale three times across two waves (97fc7ef, 736f257, cf84bc3), costing a daily false CHECKOUT_PARITY_SIGNAL_MCP on docs-src/template.html. Derivation fails CLOSED (unreadable/unparseable/zero targets => INDETERMINATE, never a fall-back to the static rows), and the TREE_DIRTY line reports the static-vs-derived rule-count split so an empty derivation is visible rather than reading as a healthy pass. Emits one CHECKOUT_PARITY_VERDICT= token; 0=PASS/1=FAIL/3=INDETERMINATE, fails closed. KNOWN LIMITATION: `git fetch` fails for algovault-blog-assets (SSH remote, no key for root), so its ancestry is judged against a CACHED origin/main \u2014 the run prints an explicit WARNING rather than passing silently. Closing that needs a deploy key: OPS-BLOG-ASSETS-FETCH-KEY-W{NEXT}."
+    },
+    {
+      "id": "injector-target-set",
+      "artifact": "scripts/injector-target-set.mjs",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/scripts/injector-target-set.mjs",
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "invoked_by": "ops/cron/checkout-parity.sh",
+      "install_state": "installed",
+      "sha256": "483f90fa35ba024a54a7230817263be34eec7f16e198e411749ff57689c14861",
+      "alert_ids": [],
+      "owner_wave": "OPS-CHECKOUT-PARITY-ALLOWLIST-DERIVE-W1",
+      "notes": "THE single answer to 'which paths does the deploy-time SoT injector rewrite' — the sorted union of every claims[].apply_to_files[] in scripts/snapshot-landing-manifest.json, which IS that set by construction because scripts/snapshot-landing-data.mjs builds claimsByFile exclusively from that field. DELIBERATELY has NO schedule: it is invoked by checkout-parity.sh at run time, not by cron, so check_dark() correctly does not evaluate it. Emits one INJECTOR_TARGET_SET_VERDICT= token on STDERR (stdout is the pipeable path list); 0=PASS/1=FAIL/3=INDETERMINATE, the token-law default for a NEW gate — not aligned with check_test_baseline.sh's 2, which is 2 only because it already deployed 2. INDETERMINATE = corpus unobtainable (unreadable, invalid JSON, claims absent/not an array, or ZERO targets — a corpus we author cannot be legitimately empty); FAIL = corpus parsed but violates its contract (a claim with no/non-array apply_to_files, or a non-string entry, all of which would throw in the injector too). Guarded repo-side by tests/unit/checkout-parity-allowlist.test.ts, which pins the derivation order-independent and proves the allow_manifest row does real work. Named candidate future consumers, deliberately UNWIRED by its owning wave: ops/monitoring/website-drift-manifest.yaml bake_producer rows, scripts/check-claim-coverage.mjs."
     },
     {
       "id": "x402-claim-liveness-prober",
