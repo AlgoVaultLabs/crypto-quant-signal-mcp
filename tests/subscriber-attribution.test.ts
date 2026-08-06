@@ -7,6 +7,8 @@
  * C2: the conversion-time profiler assembly (channel-resolution order, geo
  *     source, cold-subscribe signal logic, latency) + idempotent upsert shape.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   deriveChannel,
@@ -19,6 +21,7 @@ import {
   normalizeBillingInterval,
   deriveMonthlyRateUsd,
   isPaidPlanId,
+  applySubscriptionRecordUpdate,
 } from '../src/lib/subscriber-attribution.js';
 
 describe('deriveChannel', () => {
@@ -466,5 +469,137 @@ describe('buildSubscriberProfile — the upsert carries the two new columns', ()
       expect(columns).toBe(placeholders);
       expect(runs[0].params).toHaveLength(columns);
     });
+  });
+});
+
+// ── OPS-STRIPE-SUBSCRIPTION-TRUTH-W2 · CH2 — the lifecycle reaches the record ────────────────
+//
+// subscriber_profiles was written once, at checkout, and never again: an upgrade Stripe billed
+// never arrived (one customer read starter/$9.99 while paying $49) and a cancellation would have
+// left status reading 'active' forever. The first under-reports MRR, the second over-reports it.
+
+/** Minimal in-memory stand-in for the awaited `query` seam: one profile row, SELECT + UPDATE. */
+function recordDeps(row: Record<string, unknown> | null) {
+  const state = row ? { ...row } : null;
+  const seen: string[] = [];
+  const deps = {
+    ensure: () => {},
+    ensureInterval: async () => {},
+    run: () => { throw new Error('applySubscriptionRecordUpdate must not use the fire-and-forget run seam'); },
+    query: async (sql: string, params: unknown[] = []) => {
+      seen.push(sql.trim().split(/\s+/)[0].toUpperCase());
+      if (/^\s*SELECT/i.test(sql)) return state ? [{ ...state }] : [];
+      if (/^\s*UPDATE/i.test(sql)) {
+        if (state) {
+          const [tier, status, interval, rate] = params as [string, string, string, number | null];
+          Object.assign(state, { tier, status, billing_interval: interval, monthly_rate_usd: rate });
+        }
+        return [];
+      }
+      return [];
+    },
+  };
+  return { deps, state: () => state, seen };
+}
+
+describe('applySubscriptionRecordUpdate — the tier/interval/status writer', () => {
+  it('2.1 a tier change lands and is READ BACK before success is claimed', async () => {
+    const h = recordDeps({ tier: 'starter', status: 'active', billing_interval: 'month' });
+    const out = await applySubscriptionRecordUpdate(
+      { customerId: 'cus_up', tier: 'pro', billingInterval: 'month', status: 'active' },
+      h.deps as never,
+    );
+    expect(out).toBe('updated');
+    expect(h.state()).toMatchObject({ tier: 'pro', billing_interval: 'month' });
+    // The rate is re-derived from the NEW pair, not carried by the event.
+    expect(h.state()!.monthly_rate_usd).toBe(49);
+    // SELECT → UPDATE → SELECT: the trailing read-back is the verify-by-RESULT step.
+    expect(h.seen).toEqual(['SELECT', 'UPDATE', 'SELECT']);
+  });
+
+  it('2.2 an interval change month→year is DETECTED, not a no-op, and re-rates', async () => {
+    const h = recordDeps({ tier: 'starter', status: 'active', billing_interval: 'month' });
+    const out = await applySubscriptionRecordUpdate(
+      { customerId: 'cus_iv', tier: 'starter', billingInterval: 'year', status: 'active' },
+      h.deps as never,
+    );
+    expect(out).toBe('updated');
+    expect(h.state()!.billing_interval).toBe('year');
+    expect(h.state()!.monthly_rate_usd).toBe(79 / 12); // $9.99 → $6.58 effective
+  });
+
+  it('2.4 a non-tier, non-interval update does NOT churn the profile', async () => {
+    // .updated fires on trials, payment-method changes, metadata edits, cancel-at-period-end.
+    const h = recordDeps({ tier: 'pro', status: 'active', billing_interval: 'month' });
+    const out = await applySubscriptionRecordUpdate(
+      { customerId: 'cus_noise', tier: 'pro', billingInterval: 'month', status: 'active' },
+      h.deps as never,
+    );
+    expect(out).toBe('noop');
+    expect(h.seen).toEqual(['SELECT']); // no UPDATE was ever issued
+  });
+
+  it('2.5 a cancellation flips status away from active — FORWARD GUARD, no backfill', async () => {
+    const h = recordDeps({ tier: 'pro', status: 'active', billing_interval: 'month' });
+    const out = await applySubscriptionRecordUpdate(
+      { customerId: 'cus_gone', status: 'canceled' }, h.deps as never,
+    );
+    expect(out).toBe('updated');
+    expect(h.state()!.status).toBe('canceled');
+    // Tier and interval are untouched — the event says nothing about them.
+    expect(h.state()).toMatchObject({ tier: 'pro', billing_interval: 'month' });
+  });
+
+  it('🛑 NEVER inserts — an absent profile is a FACT, not a row to invent', async () => {
+    // A lifecycle event carries no channel/country/cold/latency/bridge signals, so minting a
+    // profile here would fabricate every attribution column on it.
+    const h = recordDeps(null);
+    const out = await applySubscriptionRecordUpdate(
+      { customerId: 'cus_ghost', tier: 'pro', billingInterval: 'month' }, h.deps as never,
+    );
+    expect(out).toBe('absent');
+    expect(h.seen).toEqual(['SELECT']);
+  });
+
+  it('🛑 a write that did not LAND reports noop, never a false success', async () => {
+    // The SEC-14 hazard: dbRun is fire-and-forget on PG, so a lost write once rendered as
+    // success with every assertion green. The read-back is what refuses that.
+    const h = recordDeps({ tier: 'starter', status: 'active', billing_interval: 'month' });
+    const swallow = { ...h.deps, query: async (sql: string) => (/^\s*SELECT/i.test(sql)
+      ? [{ tier: 'starter', status: 'active', billing_interval: 'month' }] : []) };
+    const out = await applySubscriptionRecordUpdate(
+      { customerId: 'cus_lost', tier: 'pro', billingInterval: 'month' }, swallow as never,
+    );
+    expect(out).toBe('noop');
+  });
+
+  it('an unknown interval yields a NULL rate, never a guessed month', async () => {
+    const h = recordDeps({ tier: 'starter', status: 'active', billing_interval: 'unknown' });
+    await applySubscriptionRecordUpdate({ customerId: 'cus_u', tier: 'pro' }, h.deps as never);
+    expect(h.state()!.billing_interval).toBe('unknown');
+    expect(h.state()!.monthly_rate_usd).toBeNull();
+  });
+});
+
+describe('2.3 the webhook case claims BEFORE the side-effect (structural)', () => {
+  const src = readFileSync(path.resolve(process.cwd(), 'src/index.ts'), 'utf8');
+  const block = src.slice(src.indexOf("case 'customer.subscription.updated'"));
+  const body = block.slice(0, block.indexOf('\n        }'));
+
+  it('exists as exactly ONE case in the switch', () => {
+    expect((src.match(/case 'customer\.subscription\.updated'/g) ?? []).length).toBe(1);
+  });
+
+  it('calls tryClaimEvent BEFORE handleSubscriptionUpdated — order is the contract', () => {
+    const claim = body.indexOf('tryClaimEvent');
+    const handle = body.indexOf('handleSubscriptionUpdated');
+    expect(claim).toBeGreaterThan(-1);
+    expect(handle).toBeGreaterThan(-1);
+    expect(claim).toBeLessThan(handle); // Stripe delivers at-least-once
+  });
+
+  it('answers a duplicate with 200, never a non-2xx that makes Stripe retry harder', () => {
+    expect(body).toMatch(/status: 'duplicate'/);
+    expect(body).not.toMatch(/status\(5\d\d\)/);
   });
 });
