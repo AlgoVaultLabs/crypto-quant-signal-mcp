@@ -129,6 +129,57 @@ export function stripComments(src, path) {
   return s;
 }
 
+/**
+ * Comment-stripping for the TUTORIAL checks — code comments only, blockquotes KEPT.
+ *
+ * The distinction is load-bearing and nearly shipped a vacuous gate. stripComments()
+ * above drops markdown blockquote lines because, for the retired-UI-path check, a
+ * blockquote is narrative. For D3 and D4 the blockquote IS the defect:
+ *
+ *   > *Screenshot placeholder — Codex CLI showing the AlgoVault tool call.*
+ *   > *Config verified 2026-08-05 against <URL>. Live numbers refresh in-page from <URL>.*
+ *
+ * Reusing stripComments() here would remove every violation before the regex ran, and
+ * the checks would report a confident, permanent PASS over an empty corpus. Same rule,
+ * opposite application — so it gets its own function rather than a boolean flag that a
+ * future edit could pass wrong.
+ *
+ * @param {string} src @param {string} path
+ */
+export function stripCodeCommentsOnly(src, path) {
+  let s = src;
+  if (/\.html?$/.test(path)) s = s.replace(/<!--[\s\S]*?-->/g, ' ');
+  if (/\.md$/.test(path)) s = s.replace(/<!--[\s\S]*?-->/g, ' ');
+  if (/\.(mjs|js|ts|tsx)$/.test(path)) {
+    s = s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
+  }
+  return s;
+}
+
+/**
+ * The 8 MCP-client tutorials, as (markdown source, rendered page) pairs.
+ *
+ * The markdown is the PRODUCER — scripts/render-integrations.mjs generates the HTML
+ * from it — so both are scanned. A fix applied only to the HTML passes a
+ * HTML-only gate and is then silently reverted by the next render.
+ */
+export const TUTORIAL_SLUGS = [
+  'claude-desktop', 'cursor', 'cline', 'claude-code',
+  'smithery', 'codex', 'kimi', 'glm-zcode',
+];
+
+/** @returns {string[]|null} null = a declared file is missing → INDETERMINATE, never a pass. */
+export function tutorialFiles(rootDir = ROOT) {
+  const files = [];
+  for (const slug of TUTORIAL_SLUGS) {
+    const md = join(rootDir, 'docs', 'integrations', 'mcp-clients', `${slug}.md`);
+    const html = join(rootDir, 'landing', 'integrations', `${slug}.html`);
+    if (!existsSync(md) || !existsSync(html)) return null;
+    files.push(md, html);
+  }
+  return files;
+}
+
 /** Load the MCP-client registry from the compiled SoT. Null = cannot verify. */
 function loadRegistry() {
   const dist = join(ROOT, 'dist', 'lib', 'integrations-data', 'mcp-clients.js');
@@ -184,6 +235,77 @@ export function checkByoModelCopy(entries) {
     rows: byo.length,
     hits: byo.filter((e) => /MCP client/i.test(renderedRowText(e))).map((e) => e.slug),
   };
+}
+
+// ── INTEGRATIONS-TUTORIAL-COPY-SWEEP-V2-W1: three tutorial-copy checks ──
+//
+// All three scan the markdown PRODUCER and its rendered page, and all three use
+// stripCodeCommentsOnly() — never stripComments() — because the defects live in
+// markdown blockquotes. See that function's docstring.
+
+/**
+ * CHECK 4 (C-D2) — the Telegram bot framed as a support channel.
+ *
+ * Scoped to the 8 tutorials so the LEGITIMATE Telegram surfaces are untouched: the
+ * `Try Free in Telegram` CTA on index.html / how-it-works.html and the nav's
+ * "Telegram Bot" entry are product links, not support promises. checkTelegramCtasPresent()
+ * asserts those still exist, so an over-broad sweep cannot quietly delete them.
+ */
+export function checkTgAsSupport(files, readFile) {
+  const hits = [];
+  // The handle and the word "support" inside one sentence — not merely one file.
+  const RE = /algovaultofficialbot[^.!?]*\bsupport\b|(?:\bsupport\b)[^.!?]*algovaultofficialbot/gi;
+  for (const f of files) {
+    const src = stripCodeCommentsOnly(readFile(f), f);
+    const m = src.match(RE);
+    if (m) hits.push({ file: f, count: m.length });
+  }
+  return hits;
+}
+
+/** Positive-presence guard for the legitimate Telegram CTAs. @returns {string[]} missing */
+export function checkTelegramCtasPresent(pairs, readFile) {
+  const missing = [];
+  for (const { file, needle } of pairs) {
+    let src;
+    try { src = readFile(file); } catch { missing.push(`${file} (unreadable)`); continue; }
+    if (!src.includes(needle)) missing.push(`${file} :: "${needle}"`);
+  }
+  return missing;
+}
+
+/** CHECK 5 (C-D3) — screenshot placeholders that never became screenshots. */
+export function checkScreenshotPlaceholders(files, readFile) {
+  const hits = [];
+  for (const f of files) {
+    const src = stripCodeCommentsOnly(readFile(f), f);
+    const m = src.match(/Screenshot placeholder/gi);
+    if (m) hits.push({ file: f, count: m.length });
+  }
+  return hits;
+}
+
+/**
+ * CHECK 6 (C-D4) — internal plumbing exposed as user copy.
+ *
+ * Two live variants: "Live numbers refresh in-page from …" and
+ * "Snapshot <date> — live numbers refreshed in-page from …".
+ *
+ * MUST NOT fire on `Config verified <date> against <vendor-URL>`, which is the
+ * verifiedAt/source trust signal and stays. Note those two sit on the SAME LINE in
+ * three tutorials, so this matches the offending PHRASE rather than excluding lines
+ * that mention "Config verified" — a line-level exclusion would silently skip exactly
+ * the three pages that need it.
+ */
+export function checkLiveNumbersNote(files, readFile) {
+  const hits = [];
+  const RE = /(?:live\s+numbers\s+refresh(?:ed)?\s+in-page|numbers\s+refreshed\s+in-page)/gi;
+  for (const f of files) {
+    const src = stripCodeCommentsOnly(readFile(f), f);
+    const m = src.match(RE);
+    if (m) hits.push({ file: f, count: m.length });
+  }
+  return hits;
 }
 
 /** CHECK 3 — REPORT rows whose vendor doc was last checked over 180 days ago. */
@@ -268,6 +390,76 @@ function selfTest() {
     fails.push('check3 must NOT report a fresh row');
   }
 
+  // ── CHECKS 4-6 (tutorial copy). Fixtures are BLOCKQUOTES on purpose: that is the
+  // shape the real defects take, and it is the shape stripComments() would erase.
+  const tut = {
+    '/fx/tg-support.md':
+      'Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify](…).',
+    '/fx/tg-clean.md':
+      'Try it free: get a BTC trade call right now. Or [verify the track record on-chain](…).',
+    // The bot may be named as a PRODUCT without promising support — must not fire.
+    '/fx/tg-product-link.md':
+      'Get free trade calls in Telegram via [@algovaultofficialbot](https://t.me/algovaultofficialbot).',
+    '/fx/shot.md': '> *Screenshot placeholder — Codex CLI showing the tool call.*',
+    '/fx/shot-clean.md': '> *Config verified 2026-08-05 against <https://vendor.example/docs>.*',
+    // Shape A — the whole blockquote is the defect (the 5 older tutorials).
+    '/fx/numbers-a.md':
+      '> *Snapshot 2026-05-19 — live numbers refreshed in-page from <https://algovault.com/api/performance-public>.*',
+    // Shape B — KEEP sentence + DEFECT sentence on ONE line (the 3 newer tutorials).
+    // This is the case a line-level "skip lines mentioning Config verified" would miss.
+    '/fx/numbers-b.md':
+      '> *Config verified 2026-08-05 against <https://vendor.example/docs>. Live numbers refresh in-page from <https://algovault.com/api/performance-public>.*',
+    // KEEP-only — must never fire.
+    '/fx/numbers-clean.md':
+      '> *Config verified 2026-08-05 against <https://vendor.example/docs>.*',
+  };
+  Object.assign(fixtures, tut);
+
+  // CHECK 4 (C-D2)
+  mustFire++;
+  if (checkTgAsSupport(['/fx/tg-support.md'], readFixture).length !== 1) fails.push('check4 must fire on TG-as-support');
+  for (const f of ['/fx/tg-clean.md', '/fx/tg-product-link.md']) {
+    mustNotFire++;
+    if (checkTgAsSupport([f], readFixture).length !== 0) fails.push(`check4 must NOT fire on ${f}`);
+  }
+
+  // CHECK 5 (C-D3)
+  mustFire++;
+  if (checkScreenshotPlaceholders(['/fx/shot.md'], readFixture).length !== 1) fails.push('check5 must fire on a screenshot placeholder');
+  mustNotFire++;
+  if (checkScreenshotPlaceholders(['/fx/shot-clean.md'], readFixture).length !== 0) fails.push('check5 must NOT fire on clean copy');
+
+  // CHECK 6 (C-D4) — both live variants must fire, and the KEEP string must not.
+  for (const f of ['/fx/numbers-a.md', '/fx/numbers-b.md']) {
+    mustFire++;
+    if (checkLiveNumbersNote([f], readFixture).length !== 1) fails.push(`check6 must fire on ${f}`);
+  }
+  mustNotFire++;
+  if (checkLiveNumbersNote(['/fx/numbers-clean.md'], readFixture).length !== 0) {
+    fails.push('check6 must NOT fire on "Config verified … against …" alone');
+  }
+
+  // The blockquote-stripping trap, pinned: if a future edit points these checks at
+  // stripComments(), every fixture above becomes invisible and the gate passes over
+  // nothing. Assert the two strippers actually differ on a blockquote.
+  const bq = '> *Screenshot placeholder — x.*';
+  if (/Screenshot placeholder/.test(stripComments(bq, '/fx/x.md'))) {
+    fails.push('stripComments() no longer strips md blockquotes — check1 carve-out broken');
+  }
+  if (!/Screenshot placeholder/.test(stripCodeCommentsOnly(bq, '/fx/x.md'))) {
+    fails.push('stripCodeCommentsOnly() strips md blockquotes — checks 4-6 would be VACUOUS');
+  }
+
+  // Positive-presence guard must itself be able to fail.
+  mustFire++;
+  if (checkTelegramCtasPresent([{ file: '/fx/tg-clean.md', needle: 'Try Free in Telegram' }], readFixture).length !== 1) {
+    fails.push('CTA presence guard must report a missing CTA');
+  }
+  mustNotFire++;
+  if (checkTelegramCtasPresent([{ file: '/fx/tg-product-link.md', needle: 'Telegram' }], readFixture).length !== 0) {
+    fails.push('CTA presence guard must NOT report a present CTA');
+  }
+
   // token → exit-code mapping. Asserting the token alone is not enough: a
   // re-coded mapping would leave every token assertion green.
   const MAP = { PASS: 0, FAIL: 1, INDETERMINATE: 3 };
@@ -292,6 +484,17 @@ function selfTest() {
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
+
+// Test-importable entrypoint (CLAUDE.md). Importing this module for its exported
+// check functions must NOT run the scan or call process.exit — only a direct
+// `node scripts/check-mcp-client-copy.mjs` does. Found the hard way: importing it
+// to probe stripComments() executed the whole gate and exited 3.
+const INVOKED_DIRECTLY =
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (!INVOKED_DIRECTLY) {
+  // Imported — expose the checks and stop here.
+} else {
 
 if (argv.includes('--self-test')) {
   verdictAndExit(selfTest());
@@ -367,4 +570,58 @@ if (stale.length) {
   );
 }
 
+// ── CHECKS 4-6 — tutorial copy (INTEGRATIONS-TUTORIAL-COPY-SWEEP-V2-W1) ──
+// Scanned over the markdown PRODUCER + its rendered page, so a fix applied only to
+// the generated HTML cannot pass; the next render would revert it.
+
+const tutFiles = tutorialFiles();
+if (!tutFiles) {
+  console.error('✗ a declared MCP-client tutorial source or page is missing — cannot verify.');
+  verdictAndExit('INDETERMINATE');
+}
+
+const readTut = (f) => readFileSync(f, 'utf8');
+const rel = (f) => f.replace(ROOT + '/', '');
+
+/** Run one tutorial check with fail-closed read handling + positive output. */
+function runTutCheck(n, label, fn, remedy) {
+  let hitList;
+  try {
+    hitList = fn(tutFiles, readTut);
+  } catch (e) {
+    console.error(`✗ check ${n} could not read a tutorial file: ${e && e.message}`);
+    verdictAndExit('INDETERMINATE');
+  }
+  const total = hitList.reduce((s, h) => s + h.count, 0);
+  if (hitList.length) {
+    failed = true;
+    console.error(`  ✗ check ${n} (${label}): checked ${tutFiles.length} files, ${total} violation(s) in ${hitList.length} file(s) — ${remedy}`);
+    for (const h of hitList) console.error(`      ${rel(h.file)}: ${h.count}×`);
+  } else {
+    console.log(`✓ check ${n} (${label}): checked ${tutFiles.length} files, 0 violations.`);
+  }
+}
+
+runTutCheck(4, 'C-D2 TG-as-support', checkTgAsSupport, 'delete the support clause; keep the verify CTA');
+runTutCheck(5, 'C-D3 screenshot placeholder', checkScreenshotPlaceholders, 'delete the blockquote entirely');
+runTutCheck(6, 'C-D4 live-numbers note', checkLiveNumbersNote, 'delete it; KEEP "Config verified … against …"');
+
+// Positive-presence guard: the legitimate Telegram surfaces must SURVIVE the sweep.
+// Deleting a support clause is a delete operation, and a delete that goes one grep
+// too wide would silently remove the product CTAs. Assert they are still there.
+const TG_CTAS = [
+  { file: join(ROOT, 'landing', 'index.html'), needle: 'Try Free in Telegram' },
+  { file: join(ROOT, 'landing', 'how-it-works.html'), needle: 'Try Free in Telegram' },
+];
+const missingCtas = checkTelegramCtasPresent(TG_CTAS, readTut);
+if (missingCtas.length) {
+  failed = true;
+  console.error(`  ✗ check 7 (legitimate TG CTAs): ${missingCtas.length} MISSING — an over-broad sweep removed a product link:`);
+  for (const m of missingCtas) console.error(`      ${rel(m)}`);
+} else {
+  console.log(`✓ check 7: ${TG_CTAS.length} legitimate Telegram CTA(s) still present.`);
+}
+
 verdictAndExit(failed ? 'FAIL' : 'PASS');
+
+} // end INVOKED_DIRECTLY

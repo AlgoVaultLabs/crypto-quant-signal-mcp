@@ -2,7 +2,7 @@
 
 Give Codex a composite trade verdict in one call. Works in the Codex CLI and the IDE extension.
 
-> *Config verified 2026-08-05 against <https://learn.chatgpt.com/docs/extend/mcp>. Live numbers refresh in-page from <https://algovault.com/api/performance-public>.*
+> *Config verified 2026-08-05 against <https://learn.chatgpt.com/docs/extend/mcp>.*
 
 ## Setup
 
@@ -29,8 +29,6 @@ Open settings, choose **MCP servers**, add a server, pick **Streamable HTTP**, a
 
 Run `codex` in a terminal and ask: *"Use AlgoVault to check BTC at 4h."* Codex invokes `get_trade_call` and returns call, confidence, regime and the drivers behind them.
 
-> *Screenshot placeholder — Codex CLI showing the AlgoVault tool call and the returned verdict.*
-
 Chain it into edits: *"If BTC 4h is BUY, add a long entry at the current bar in `strategy.py`."*
 
 ## Troubleshooting
@@ -53,4 +51,4 @@ Chain it into edits: *"If BTC 4h is BUY, add a long entry at the current bar in 
 
 ## Next steps
 
-Ask Codex for a verdict before your next entry. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify the track record on-chain](https://algovault.com/track-record).
+Ask Codex for a verdict before your next entry. [Verify the track record on-chain](https://algovault.com/track-record).

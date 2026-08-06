@@ -2,8 +2,6 @@
 
 Add AlgoVault's MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (100 calls/month, no signup).
 
-> *Snapshot 2026-05-19 — live numbers refreshed in-page from <https://algovault.com/api/performance-public>.*
-
 ## Setup
 
 Two paths. The UI path is easiest if you already use Claude Desktop daily.
@@ -31,8 +29,6 @@ Set `AV_API_KEY` in the env block or your shell. Free tier: drop the `Authorizat
 
 Ask Claude: *"Get me a trade call for BTC on the 1h timeframe."* The tool indicator appears bottom-right of the input box during the call. Claude returns the parsed verdict (call, confidence, regime, indicators) without you seeing raw API JSON.
 
-> *Screenshot placeholder — Claude Desktop chat showing the AlgoVault tool indicator and a `get_trade_call` response with `call=HOLD`, `confidence=13`, `regime=TRENDING_DOWN`.*
-
 ## Troubleshooting
 
 - **Custom connector not appearing in tool list** — restart Claude Desktop after saving the connector. The connector list reads at app start.
@@ -52,4 +48,4 @@ Ask Claude: *"Get me a trade call for BTC on the 1h timeframe."* The tool indica
 
 ## Next steps
 
-Try it free: get a BTC trade call in Claude Desktop right now. No signup. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify the track record on-chain](https://algovault.com/track-record).
+Try it free: get a BTC trade call in Claude Desktop right now. No signup. [Verify the track record on-chain](https://algovault.com/track-record).

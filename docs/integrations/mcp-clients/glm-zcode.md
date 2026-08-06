@@ -2,7 +2,7 @@
 
 Add AlgoVault to Z.ai's GLM harness in four clicks. No file editing required.
 
-> *Config verified 2026-08-05 against <https://zcode.z.ai/en/docs/mcp-services>. Live numbers refresh in-page from <https://algovault.com/api/performance-public>.*
+> *Config verified 2026-08-05 against <https://zcode.z.ai/en/docs/mcp-services>.*
 
 ## Setup
 
@@ -44,8 +44,6 @@ Switch to **Full configuration** and paste it directly. ZCode accepts both shape
 
 Ask ZCode: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and returns call, confidence, regime and the drivers behind them.
 
-> *Screenshot placeholder — ZCode MCP Servers panel with AlgoVault added, plus the returned verdict.*
-
 ## Troubleshooting
 
 - **Server shows as disconnected** — confirm the type is `HTTP`, not `SSE` or `stdio`.
@@ -66,4 +64,4 @@ Ask ZCode: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and
 
 ## Next steps
 
-Ask ZCode for a verdict before your next entry. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify the track record on-chain](https://algovault.com/track-record).
+Ask ZCode for a verdict before your next entry. [Verify the track record on-chain](https://algovault.com/track-record).

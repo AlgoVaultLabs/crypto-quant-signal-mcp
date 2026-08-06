@@ -2,8 +2,6 @@
 
 Wire AlgoVault into your Claude Code CLI as a project-scoped MCP server. Commit `.mcp.json` so every teammate gets the same setup.
 
-> *Snapshot 2026-05-19 — live numbers refreshed in-page from <https://algovault.com/api/performance-public>.*
-
 ## Setup
 
 **One-liner (recommended):**
@@ -40,8 +38,6 @@ Set `AV_API_KEY` in your shell or `.envrc`.
 
 In a Claude Code session, type `/mcp` to list connected servers. AlgoVault should appear with its tools (`get_trade_call`, `get_trade_signal`, `scan_funding_arb`, `get_market_regime`, and others). Then ask: *"Use AlgoVault to get a trade call for BTC 4h."* Claude Code shows the tool call inline; the returned JSON pretty-prints in the response.
 
-> *Screenshot placeholder — Claude Code terminal showing `/mcp` list with AlgoVault + its tools and a `get_trade_call` response.*
-
 ## Troubleshooting
 
 - **"Server not initialized" on first call** — Claude Code expects the 3-step MCP handshake; the `http` transport handles this automatically. If you see this error, your `.mcp.json` `type` might be set to `sse` instead of `http`.
@@ -61,4 +57,4 @@ In a Claude Code session, type `/mcp` to list connected servers. AlgoVault shoul
 
 ## Next steps
 
-Add AlgoVault to your strategy-dev repo in 30 seconds. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [see the verified track record](https://algovault.com/track-record).
+Add AlgoVault to your strategy-dev repo in 30 seconds. [See the verified track record](https://algovault.com/track-record).

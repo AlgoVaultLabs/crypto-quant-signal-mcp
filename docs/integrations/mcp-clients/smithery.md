@@ -2,8 +2,6 @@
 
 One command installs AlgoVault into Claude Desktop, Cursor, Cline, or Claude Code. Smithery picks the right config file for your client.
 
-> *Snapshot 2026-05-19 — live numbers refreshed in-page from <https://algovault.com/api/performance-public>.*
-
 ## Setup
 
 ```bash
@@ -24,8 +22,6 @@ $ npx -y @smithery/cli install crypto-quant-signal-mcp --client claude
 ✔ Config written to ~/Library/Application Support/Claude/claude_desktop_config.json.
 ℹ Restart Claude Desktop to load.
 ```
-
-> *Screenshot placeholder — terminal output of the Smithery install command + Claude Desktop restart prompt.*
 
 Restart Claude Desktop. Open a chat and ask *"Use AlgoVault to check BTC 4h."* AlgoVault's tools are now available.
 
@@ -49,4 +45,4 @@ Restart Claude Desktop. Open a chat and ask *"Use AlgoVault to check BTC 4h."* A
 
 ## Next steps
 
-One-command install: get AlgoVault in your client right now. Message [@algovaultofficialbot](https://t.me/algovaultofficialbot) for support, or [verify the track record on-chain](https://algovault.com/track-record). The full AlgoVault listing is at [smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp](https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp).
+One-command install: get AlgoVault in your client right now. [Verify the track record on-chain](https://algovault.com/track-record). The full AlgoVault listing is at [smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp](https://smithery.ai/server/@AlgoVaultLabs/crypto-quant-signal-mcp).

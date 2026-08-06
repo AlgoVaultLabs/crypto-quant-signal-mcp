@@ -12,7 +12,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://algovault.com/integrations/codex">
 <!-- WEBSITE-REFRESH-W1 C1 — snapshot date for the static numbers below; live source: /api/performance-public + /api/merkle-batches -->
-<meta name="last-updated" content="2026-08-05">
+<meta name="last-updated" content="2026-08-06">
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- BEGIN: AlgoVault canonical design loader (DESIGN-W2 / D2-C) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   "headline": "AlgoVault × Codex - Build Verifiable AI Trading Agents",
   "url": "https://algovault.com/integrations/codex",
   "datePublished": "2026-04-25T00:00:00+00:00",
-  "dateModified": "2026-08-05T15:00:00+00:00",
+  "dateModified": "2026-08-06T15:00:00+00:00",
   "author": {
     "@type": "Organization",
     "name": "AlgoVault Labs",
@@ -279,7 +279,7 @@ tailwind.config = {
       <div class="placeholder-cap" style="margin-bottom:14px">· codex integration</div>
       <!-- WEBSITE-REFRESH-W1 C7 — quotable factoid block (Schema.org Claim) for LLM citation. PRESERVED byte-identical per W10 preservation-LAW. -->
       <p class="quotable-fact" style="background: rgba(16,185,129,0.05); border-left: 3px solid #10b981; padding: 12px 16px; margin: 0 0 24px; border-radius: 0 4px 4px 0; color: #6ee7b7; font-size: 0.95em;" itemscope itemtype="https://schema.org/Claim">
-        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.7%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">445,110</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
+        <span itemprop="claimReviewed">AlgoVault has <strong style="color:#a7f3d0"><span data-tr-field="pfe_wr">91.8%</span></strong>+ PFE Win Rate across <strong style="color:#a7f3d0"><span data-tr-field="call_count">447,115</span></strong>+ signal calls, each Merkle-anchored on Base L2 (verifiable at <a href="/track-record" itemprop="url" style="color:#d4b255">algovault.com/track-record</a>).</span>
       </p>
       <!-- DESIGN-W10-FF-2 (2026-05-12): tier-stat-card per-section wrapping RESTORED
            (W10-FF-1 removal was based on misread of Mr.1 directive). Mr.1 clarified:
@@ -291,7 +291,7 @@ tailwind.config = {
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Codex</h1>
 <p>Give Codex a composite trade verdict in one call. Works in the Codex CLI and the IDE extension.</p>
 <blockquote>
-<p><em>Config verified 2026-08-05 against <a href="https://learn.chatgpt.com/docs/extend/mcp">https://learn.chatgpt.com/docs/extend/mcp</a>. Live numbers refresh in-page from <a href="https://algovault.com/api/performance-public">https://algovault.com/api/performance-public</a>.</em></p>
+<p><em>Config verified 2026-08-05 against <a href="https://learn.chatgpt.com/docs/extend/mcp">https://learn.chatgpt.com/docs/extend/mcp</a>.</em></p>
 </blockquote></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p>Codex reads MCP servers from <code>~/.codex/config.toml</code>. Add a table for AlgoVault:</p>
@@ -308,9 +308,6 @@ bearer_token_env_var = &quot;AV_API_KEY&quot;
 <p>Open settings, choose <strong>MCP servers</strong>, add a server, pick <strong>Streamable HTTP</strong>, and paste the same URL. The extension and the CLI read separate config, so set up whichever you use.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Example: get a BTC trade call</h2>
 <p>Run <code>codex</code> in a terminal and ask: <em>“Use AlgoVault to check BTC at 4h.”</em> Codex invokes <code>get_trade_call</code> and returns call, confidence, regime and the drivers behind them.</p>
-<blockquote>
-<p><em>Screenshot placeholder — Codex CLI showing the AlgoVault tool call and the returned verdict.</em></p>
-</blockquote>
 <p>Chain it into edits: <em>“If BTC 4h is BUY, add a long entry at the current bar in <code>strategy.py</code>.”</em></p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Troubleshooting</h2>
 <ul>
@@ -326,7 +323,7 @@ bearer_token_env_var = &quot;AV_API_KEY&quot;
 <p><strong>Does it need OAuth?</strong> No. AlgoVault takes a bearer token, or nothing at all on free tier.</p>
 <p><strong>Which tools appear?</strong> The same set every client gets, including <code>get_trade_call</code>, <code>scan_funding_arb</code> and <code>get_market_regime</code>.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>
-<p>Ask Codex for a verdict before your next entry. Message <a href="https://t.me/algovaultofficialbot">@algovaultofficialbot</a> for support, or <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'codex',campaign:'track-record'}})">verify the track record on-chain</a>.</p></div>
+<p>Ask Codex for a verdict before your next entry. <a href="https://algovault.com/track-record" onclick="if(window.plausible)plausible('CTA Click',{props:{source:'integration_tutorial',slug:'codex',campaign:'track-record'}})">Verify the track record on-chain</a>.</p></div>
       </article>
     </div>
   </div>
