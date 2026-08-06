@@ -51,27 +51,54 @@ describe('P2 landing verdict card — receipt fields (mirror real tool output)',
 
   it('shows verdict + conviction + humanized regime', () => {
     expect(sec).toContain('>BUY<');
-    expect(sec).toContain('· 60% conviction');
-    expect(sec).toContain('— Trending up');
+    expect(sec).toContain('· 62% conviction');
+    expect(sec).toContain('— Ranging');
   });
 
   it('shows the top 3 factors with direction', () => {
     expect(sec).toContain('Trend persistence');
     expect(sec).toContain('Funding');
     expect(sec).toContain('Open interest');
-    expect(sec).toContain('+18.1%');
+    expect(sec).toContain('+2.4%');
     expect(sec).toMatch(/ELEVATED/);
     expect(sec).toMatch(/HIGH/);
   });
 
+  /**
+   * SIGNAL-REASONING-PROJECTION-W1-V2 R8. The card advertises itself as "Example
+   * output", so it has to be output the tool would actually produce. This wave changed
+   * `reasoning`, which would have left the card asserting a string the tool can no
+   * longer emit — a false public claim created by the wave itself.
+   *
+   * The example ALSO moved AXS → XRP, and that was forced rather than chosen: the 06-20
+   * AXS capture recorded `funding_state: ELEVATED` but not the underlying `funding_rate`,
+   * and the projected prose cites the measured rate. Re-rendering AXS would have meant
+   * inventing a figure for public copy. The XRP call is the one this wave was opened
+   * over, measured live on 2026-08-06 with the full indicator set
+   * (`audits/p2-example-call-2026-08-06.json`), so every number on the card traces to a
+   * real reading — and it still clears the Q-P2-3 ">= 60% conviction" ratification at 62%.
+   */
   it('uses the captured call reasoning verbatim as the "Why" line', () => {
-    expect(sec).toContain('Trending regime, upward bias. Funding pressure elevated; one-sided crowd forming.');
-    expect(sec).toContain('Moderate conviction from blended signals.');
+    expect(sec).toContain('Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish.');
+    expect(sec).toContain('Flips to HOLD if funding normalises.');
+    // The defect this replaces, and the two phrasings the wave exists to retire.
+    expect(sec).not.toContain('upward bias');
+    expect(sec).not.toContain('Moderate conviction from blended signals');
+  });
+
+  it('the Why line is byte-identical to what the engine renders for this capture', () => {
+    // Card ≡ tool. The golden is produced by renderVerdictReasoning over the capture's
+    // own indicators, so the card cannot drift from the engine without this going red.
+    const golden = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'tests', 'fixtures', 'verdict-reasoning-golden.json'), 'utf8'),
+    ) as Record<string, string>;
+    const xrp = Object.entries(golden).find(([k]) => k.startsWith('XRP'))![1];
+    expect(norm(sec)).toContain(xrp);
   });
 
   it('"Example output" label is present (DEMONSTRATIVE-FROM-REAL-EVENT framing)', () => {
     expect(sec).toContain('Example output');
-    expect(sec).toContain('AXS · 1h · Binance');
+    expect(sec).toContain('XRP · 1h · Binance');
   });
 });
 

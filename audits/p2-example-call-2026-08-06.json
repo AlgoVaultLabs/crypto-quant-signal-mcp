@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "wave": "SIGNAL-REASONING-PROJECTION-W1-V2 (R8)",
+    "supersedes": "audits/p2-example-call-2026-06-20.json",
+    "purpose": "The REAL captured trade-call snapshot baked (STATIC) into the landing verdict card. Same DEMONSTRATIVE-FROM-REAL-EVENT framing as its predecessor: ships behind an explicit \"Example output\" label, never implies a live tradable signal. verdict/conviction/regime/factors/Why are STATIC from this capture; the Proof-line PFE WR + N stay LIVE-bound via data-tr-field (pfe_wr/call_count) and never come from this file. The capture timestamp is deliberately NOT rendered on the card face — timestamps age.",
+    "captured_at": "2026-08-06",
+    "source_tool": "get_trade_call",
+    "endpoint": "https://api.algovault.com/mcp",
+    "why_the_asset_changed": "The 06-20 AXS capture recorded `funding_state: ELEVATED` but NOT the underlying `funding_rate`. This wave's `reasoning` cites the measured rate, so the AXS card was not re-renderable without inventing a figure — and an invented number in public copy is a numerical-citation violation regardless of how plausible it looks. This XRP call is the one the wave was opened over (Mr.1's card), measured live 2026-08-06 on BINANCE 1h with the full indicator set, so every figure on the card traces to a real reading. `funding_rate` is recorded here precisely so the NEXT wave never faces this choice.",
+    "ratification_still_satisfied": "Q-P2-3 required a real BUY/SELL at conviction >= 60% (the track-record qualifying threshold). XRP BUY at 62% clears it."
+  },
+  "example_call": {
+    "coin": "XRP",
+    "timeframe": "1h",
+    "exchange": "BINANCE",
+    "exchange_label": "Binance",
+    "verdict": "BUY",
+    "conviction_pct": 62,
+    "regime": "RANGING",
+    "regime_humanized": "Ranging",
+    "indicators": {
+      "funding_rate": -0.00006641,
+      "funding_state": "ELEVATED",
+      "oi_change_pct": 2.36,
+      "oi_change_window": "24h",
+      "trend_persistence": "HIGH",
+      "breakout_pending": "INACTIVE"
+    },
+    "factors": [
+      { "factor": "trend_persistence", "direction": "neutral", "value": "HIGH" },
+      { "factor": "funding_state", "direction": "bullish", "value": "ELEVATED" },
+      { "factor": "oi_change_pct", "direction": "bullish", "value": "+2.4%" }
+    ],
+    "reasoning": "Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on and open interest is +2.4% over 24h, context only and not a verdict input. Flips to HOLD if funding normalises.",
+    "human_lines": {
+      "verdict_line": "BUY · 62% conviction — Ranging",
+      "why_line": "Why: Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on and open interest is +2.4% over 24h, context only and not a verdict input. Flips to HOLD if funding normalises."
+    },
+    "verification_uri": "https://algovault.com/track-record",
+    "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
+  },
+  "reasoning_provenance": "The `reasoning` string above is not hand-written copy. It is the byte-exact output of renderVerdictReasoning(buildFactorLedger(...)) over this capture's own indicators, pinned as the XRP fixture in tests/fixtures/verdict-reasoning-golden.json — so the card and the tool cannot drift without a test going red.",
+  "live_bound_note": "The card's Proof line binds pfe_wr + call_count through track-record-proxy.js. Nothing in this file is a source for those two numbers."
+}
