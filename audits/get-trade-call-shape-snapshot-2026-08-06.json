@@ -1,0 +1,121 @@
+{
+  "_meta": {
+    "wave": "SIGNAL-REASONING-PROJECTION-W1-V2 (reasoning becomes a projection of the factor ledger)",
+    "tool": "get_trade_call (+ get_trade_signal alias — same producer getTradeSignal)",
+    "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio + x402 paid route + okx a2mcp + Virtuals ACP (all via callCoreHandler)",
+    "captured_at": "2026-08-06",
+    "purpose": "Public-response-shape SoT after `reasoning` and `_receipts` were collapsed onto ONE factor ledger. Supersedes get-trade-call-shape-snapshot-2026-06-27.json and CARRIES FORWARD its central finding, which this wave acted on: the internal `oiScore` is derived from 24h PRICE change, and `indicators.oi_change_pct` enters NO verdict score. The 06-27 snapshot recorded that fact; `_receipts.factors[]` nevertheless kept shipping `oi_change_pct` with a verdict `direction`, so an agent reading a direction inferred a reason that did not exist. `factor_ledger[].contributes` now states it in the payload."
+  },
+  "endpoint": "MCP tool get_trade_call (reasoning + _receipts factor ledger)",
+  "snapshot_date": "2026-08-06",
+
+  "allowed_keys_exempt": true,
+  "allowed_keys_exempt_reason": "allowed_keys DEFERRED, not invented — carried forward VERBATIM in force from get-trade-call-shape-snapshot-2026-06-27.json, because the reason is still true: this is an MCP tool whose public response is CONDITIONAL (verdict, tier and flag state change which fields are present), so a single live probe cannot settle a COMPLETE allow-list, and an incomplete one published to crawlers is worse than an empty one because it looks authoritative. NARROWED by this wave: the `_receipts` sub-surface IS now enumerable, because R2 shipped an exported pure formatter (`formatReceipts` + `formatFactorLedger` in src/lib/receipts.ts) whose output is an explicit field copy rather than a spread — that enumeration is recorded below as `receipts_allowed_keys` and `factor_ledger_row_allowed_keys`. The remaining gap is the TOP-LEVEL envelope. Owner unchanged: OPS-SHAPE-ALLOWLIST-FROM-FORMATTER-W{NEXT}.",
+
+  "top_level_allowed_keys": [
+    "call", "confidence", "price", "indicators", "regime", "reasoning",
+    "timestamp", "coin", "timeframe", "_algovault", "closest_tradeable", "also_see", "_receipts"
+  ],
+
+  "reasoning_contract": {
+    "shape": "EXACTLY 3 sentences joined by '. ', whole string <= 280 characters, terminal period.",
+    "why_280": "Set by the CONSUMER, not by taste: algovault-bot renders `reasoning[:280]` (alert_engine.py), so a longer string is cut mid-word in front of a real user. The prior bound was an unexercised <=500 against a ~700-char 5-slot template.",
+    "why_period_delimited": "The verdict card and the bot's `_bulletize_reasoning` both split on '. '. Keeping the delimiter means ZERO renderer changes on any surface.",
+    "slots": [
+      "1 DRIVER — the top-ranked ledger row that CONTRIBUTES and whose direction agrees with the net. There is deliberately no fallback to 'top directional row': that would let the counterweight be narrated as the reason.",
+      "2 CONTEXT-OR-COUNTERWEIGHT — a real opposing contributor ('Against: …'), else the largest DORMANT contributor, else regime/open-interest/volatility as context.",
+      "3 FLIP — what would change the call, named from the ledger. Never a numeric threshold unless read from a code constant."
+    ],
+    "number_rule": "Every number in the string is reproducible from a value emitted in the SAME response under a closed set of projections, or is a code constant passed explicitly (FUNDING_Z_WINDOW_DAYS, PRICE_CHANGE_WINDOW_HOURS). This REPLACED a blanket `/\\d+\\.\\d+/` ban and is strictly stronger: the old rule permitted any integer (a fabricated '62% conviction cap' passed it) while forbidding `-0.0066%` even though `funding_rate: -0.00006641` shipped two fields away in the same JSON.",
+    "never": [
+      "a direction arrow on a factor with contributes=false — an arrow is a causal claim",
+      "a claim that any factor caps conviction — regime enters NEITHER the verdict NOR the confidence (VerdictGateInputs has no regime field; thresholds are per-timeframe)",
+      "'normal' or 'no factor cleared its threshold' over a funding row with too little history — both assert a measurement that was never taken",
+      "a component score, a weight coefficient, or any outcome_* field"
+    ]
+  },
+
+  "receipts_allowed_keys": [
+    "verdict", "conviction_pct", "regime", "factors", "factor_ledger",
+    "stripped_remainder", "track_record", "verification_uri", "disclaimer"
+  ],
+  "factor_ledger_row_allowed_keys": ["factor", "direction", "value", "contributes", "strength"],
+
+  "receipts_change": {
+    "factors": "DEPRECATED — superseded by factor_ledger. FROZEN BYTE-IDENTICAL this wave: same 1..3 rows, same selection rule, same order, same direction/value wire format. Frozen rather than widened because BOTH digest renderers take `factors.slice(0, 3)` (src/lib/scan-digest.ts and the Python mirror algovault-bot/scan_digest.py) — re-ranking or lengthening it would silently rewrite every Telegram scan line ever sent. Retirement is its own release wave with a cache-refresh notice: OPS-RECEIPTS-FACTORS-RETIRE-W{NEXT}.",
+    "factor_ledger": "NEW additive array. Every public indicator as a signed row with `contributes` + `strength`. PRESENT only when the caller supplies a ledger — get_trade_call does; the scan-digest enrichment path deliberately does not, which is what keeps its frozen byte-equality fixtures and tests/unit/receipts.test.ts passing UNMODIFIED.",
+    "stripped_remainder": "NEW additive object {count, net}. The moat-1-stripped contributors accounted for as a COUNT and a net sign, never their names. Half the score weight (rsi 30% + volume 20%) has no public counterpart, so without this the ledger would silently fail to add up.",
+    "no_rank": "`rank` exists on the INTERNAL ledger and is stripped by the public formatter. Across many observations a rank is an ordinal projection of the weight vector, which is an INTERNAL data class. `strength` is safe because it is scaled to the largest contribution in the SAME call, so it conveys within-call ordering and no coefficient.",
+    "verdict_unchanged": "call + confidence + regime + price + indicators are BYTE-IDENTICAL. No score, weight or threshold was touched; only how the result is DESCRIBED."
+  },
+
+  "indicators_allowed_keys": [
+    "funding_rate", "funding_24h_avg", "funding_state", "oi_change_pct", "oi_change_window",
+    "volume_24h", "trend_persistence", "breakout_pending", "underlying_session", "funding_note"
+  ],
+  "indicators_always_present": [
+    "funding_rate", "funding_24h_avg", "funding_state", "volume_24h",
+    "trend_persistence", "breakout_pending", "underlying_session"
+  ],
+  "indicators_conditional": {
+    "oi_change_pct": "present iff the oi_snapshots store is warm for (coin, exchange)",
+    "oi_change_window": "present iff oi_change_pct is",
+    "funding_note": "present iff the TradFi/pre-IPO funding annotation applies"
+  },
+
+  "which_indicators_drive_the_verdict": {
+    "note": "CARRIED FORWARD AND EXTENDED from the 06-27 snapshot. A public indicator is not the same thing as a scored input, and conflating the two is what produced the mislabelling this wave retires.",
+    "funding_rate": "YES — the 25% funding term, plus the funding-z adjustments (contributes=true)",
+    "regime": "YES via the 10% EMA term, but ONLY when their signs agree. Measured: regime can never carry the OPPOSITE sign to emaScore, but RANGING absorbs a bullish cross at RSI>=70, a bearish cross at RSI<=30, and any null RSI — on that divergence the row renders as context and the EMA contribution moves to stripped_remainder.",
+    "trend_persistence": "YES via the Hurst ADJUSTMENT, not a weight term. An AMPLIFIER: it scales whatever the net already is, so it carries no direction of its own and can never be a driver or a counterweight.",
+    "breakout_pending": "YES via the squeeze ADJUSTMENT. Also an amplifier.",
+    "oi_change_pct": "NO — contributes=false. It comes from computeOiDelta and enters no score. The 15% term named `oiScore` internally reads 24h PRICE change.",
+    "volume_24h": "NO — contributes=false. The scored volume term reads a per-bar candle-volume ratio, a different quantity.",
+    "funding_24h_avg": "NO — a literal alias of funding_rate.",
+    "underlying_session": "NO — drives only the market-closed caveat."
+  },
+
+  "enums": {
+    "call": ["BUY", "SELL", "HOLD"],
+    "factor_ledger[].direction": ["bullish", "bearish", "neutral"],
+    "factor_ledger[].strength": ["dominant", "supporting", "marginal", "none"],
+    "stripped_remainder.net": ["bullish", "bearish", "flat"]
+  },
+
+  "forbidden_keys": [
+    "outcome_return_pct", "outcome_price", "phase_e_wr", "outcome_win_rate", "realized_return", "pnl",
+    "rank", "weight", "score", "raw_score", "contribution",
+    "signal", "rsi", "ema_9", "ema_21", "funding_z_score", "squeeze_active", "try_next"
+  ],
+
+  "cache_contract": {
+    "response": "NOT cached. Every tools/call recomputes the verdict from live adapter reads; there is no HTTP cache header and no response memo.",
+    "funding_z_stats": "per-coin (mean, stdDev, sampleCount) cached 5 minutes in-process (FUNDING_STATS_TTL_MS). The underlying 14-day window moves on the order of hours, so the TTL is invisible to signal quality.",
+    "track_record": "the _receipts.track_record block is served from the in-process cache behind performance://signal-performance and is OMITTED entirely (fail-open) when that source is momentarily unavailable — never a stale hardcoded value.",
+    "top20_by_oi": "1 hour, used only by the asset-tier classifier.",
+    "cross_asset_grid": "TTL-cached and promise-coalesced; feeds only the additive closest_tradeable / also_see fields and never the verdict.",
+    "stateless_transport": "the remote MCP transport is stateless (sessionIdGenerator undefined), so nothing about this response depends on a prior request."
+  },
+
+  "error_contract": {
+    "TIER_LIMIT_REACHED": "TierLimitReachedError — structured, carries currentUsage/monthlyLimit/tier/suggestedUpgradeUrl/resetAtMs/referralCode. HOLD verdicts are free and never charged.",
+    "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "TradFiSymbolUnsupportedOnVenueError — carries suggested_venues so an agent can self-retry.",
+    "INSUFFICIENT_CANDLES": "InsufficientCandlesError — carries candlesAvailable/candlesRequired/suggestedTimeframes/suggestedAction.",
+    "free_tier_gate": "a plain Error carrying freeGateMessage(coin, timeframe) when the coin or timeframe is outside the caller's tier.",
+    "degradation": "an oi_snapshots failure OMITS oi_change_pct rather than emitting a stale or wrong-signed value, and never fails the verdict. Same fail-soft contract for the track record."
+  },
+
+  "consumers": [
+    "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call — read `reasoning` and, from this wave, `_receipts.factor_ledger[].contributes` to tell a driver from context",
+    "algovault-bot (Telegram) — pass-through only: `_trim_reasoning` takes sentence 1 for the digest, `_bulletize_reasoning` splits on '. ' for the alert card, `alert_engine.py` truncates at [:280]. NO local re-derivation; no bot change was needed this wave",
+    "src/lib/receipts.ts formatReceipts — the ONE allow-listed public formatter for both `factors[]` and `factor_ledger[]`",
+    "src/lib/scan-digest.ts enrichScanCall — reuses formatReceipts WITHOUT a ledger, so its frozen byte-equality fixtures are unaffected by construction",
+    "src/lib/verdict-factors.ts — the zero-import leaf that owns the ledger and the prose; scan_trade_calls inherits it automatically via getTradeSignal",
+    "landing/index.html — the baked 'Example output' verdict card, refreshed in the same wave so the site cannot advertise output the tool does not emit",
+    "x402 /x402/<tool>, okx.ai /a2mcp/<tool>, Virtuals ACP deliverable — all inherit byte-identically via callCoreHandler"
+  ],
+
+  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run verdict-reasoning-consistency verdict-reasoning-golden receipts scan-digest-enrich trade-call-reasoning-sanitization   # ledger↔prose sign consistency (REASONING_CONSISTENCY_VERDICT=PASS), the wave-owned prose golden, factors[] frozen byte-identical, digest parity, payload-pinned numbers",
+
+  "additive_and_correction_rule": "factor_ledger + stripped_remainder are ADDITIVE; factors[] is frozen byte-identical and marked DEPRECATED; `reasoning` changes CONTENT but not SHAPE (still '. '-delimited, so every renderer is untouched). Emitting a direction arrow for a contributes=false factor, publishing `rank` or any coefficient, or letting the prose name a factor the ledger does not contain with the sign the ledger assigned = Factuality/Data-Integrity violation → HALT."
+}

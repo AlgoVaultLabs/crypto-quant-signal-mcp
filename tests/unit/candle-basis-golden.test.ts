@@ -68,17 +68,33 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = join(HERE, '..', 'fixtures', 'get-trade-call-golden-preclosedbar.json');
 
 /** The complete volatile-field allow-list, as dotted paths. Asserted below so it cannot grow. */
-const NORMALIZED_KEYS = ['_algovault.version'] as const;
+const NORMALIZED_KEYS = ['_algovault.version', 'reasoning'] as const;
+
+/** The `reasoning` placeholder — see the exclusion note on `normalize`. */
+const REASONING_SENTINEL = '<REASONING — owned by verdict-reasoning-golden.test.ts>';
 
 /**
- * JSON round-trip then blank the one volatile path. The round-trip is deliberate:
+ * JSON round-trip then blank the volatile paths. The round-trip is deliberate:
  * the oracle is a JSON file, so `undefined`-valued keys must drop on both sides or
  * the deep-equal would compare a live object against something JSON can't express.
+ *
+ * ── Why `reasoning` joined the list (SIGNAL-REASONING-PROJECTION-W1-V2, D12) ──
+ * This fixture exists to prove the CLOSED-BAR refactor moved no output, and every
+ * scoring field it guards — call, confidence, each component score, regime, price —
+ * still deep-equals byte-exact. `reasoning` is now a projection of the factor ledger
+ * rather than a bucket-label template, so it legitimately changed; asserting it here
+ * would have forced a re-baseline of the whole oracle, and re-baselining an oracle to
+ * turn a red test green is exactly what this file's own header forbids.
+ *
+ * It is EXCLUDED here, not left unguarded: `tests/unit/verdict-reasoning-golden.test.ts`
+ * owns the prose against its own wave-owned fixture. The failure mode worth avoiding is
+ * a field asserted in NEITHER place, so the exclusion and the new owner land together.
  */
 function normalize(envelope: TradeCallResult): Record<string, unknown> {
   const clone = JSON.parse(JSON.stringify(envelope)) as Record<string, unknown>;
   const meta = clone._algovault as Record<string, unknown> | undefined;
   if (meta && 'version' in meta) meta.version = '<PKG_VERSION>';
+  if ('reasoning' in clone) clone.reasoning = REASONING_SENTINEL;
   return clone;
 }
 
@@ -148,11 +164,13 @@ describe('CH2 Step 2.0 — golden pre-closed-bar envelope', () => {
     expect(normalize(result)).toEqual(golden);
   });
 
-  it('normalizes EXACTLY one volatile field — the allow-list cannot grow silently', async () => {
+  it('normalizes EXACTLY the declared fields — the allow-list cannot grow silently', async () => {
     const result = await runGolden();
     const raw = JSON.parse(JSON.stringify(result)) as Record<string, unknown>;
 
-    expect(diffPaths(raw, normalize(result))).toEqual([...NORMALIZED_KEYS]);
+    // Sorted on both sides: the allow-list is a SET, and `diffPaths` walks live key
+    // order, so an unsorted compare would fail on a field reordering that changes nothing.
+    expect(diffPaths(raw, normalize(result)).sort()).toEqual([...NORMALIZED_KEYS].sort());
 
     // And the field really was populated before normalization — a null/absent
     // `version` would make the allow-list vacuous (it would "match" by both sides
@@ -160,6 +178,12 @@ describe('CH2 Step 2.0 — golden pre-closed-bar envelope', () => {
     const version = (raw._algovault as Record<string, unknown>).version;
     expect(typeof version).toBe('string');
     expect((version as string).length).toBeGreaterThan(0);
+    // Same vacuity guard for the newly-excluded field: if `reasoning` came back empty,
+    // the exclusion would "hold" by both sides being blank rather than by the tool
+    // actually producing prose — and the exclusion would then be hiding a dead feature.
+    expect(typeof raw.reasoning).toBe('string');
+    expect((raw.reasoning as string).length).toBeGreaterThan(30);
+    expect(raw.reasoning).not.toBe(REASONING_SENTINEL);
 
     // `timestamp` is deliberately NOT normalized — it is pinned by fake timers, so
     // it stays a real assertion that the clock seam did not move.
