@@ -29,7 +29,11 @@ import { renderBrandFooter } from './footer-content.js';
 
 const SHELL_CSS = `
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#0f1117; color:#e1e4e8; display:flex; justify-content:center; padding:48px 24px; min-height:100vh; }
+  /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
+     makes the brand footer a flex ITEM beside the card. Fix the container, never the footer.
+     Enforced by scripts/check-footer-body-flow.mjs, whose docblock carries the full rationale. */
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#0f1117; color:#e1e4e8; display:flex; flex-direction:column; min-height:100vh; }
+  .page-main { flex:1; display:flex; justify-content:center; width:100%; padding:48px 24px; }
   .wrap { max-width:640px; width:100%; }
   h1 { font-size:28px; margin-bottom:8px; }
   .sub { color:#8b949e; font-size:14px; margin-bottom:28px; line-height:1.5; }
@@ -59,7 +63,7 @@ function shell(title: string, body: string): string {
 <title>${title}</title>
 <style>${SHELL_CSS}</style>
 </head>
-<body><div class="wrap">${body}</div>${renderBrandFooter('desktop')}</body>
+<body><main class="page-main"><div class="wrap">${body}</div></main>${renderBrandFooter('desktop')}</body>
 </html>`;
 }
 

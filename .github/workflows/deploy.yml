@@ -161,6 +161,17 @@ jobs:
           node scripts/inject-footer.mjs --self-test
           node scripts/inject-footer.mjs --check
 
+      # DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1 — footer must render BELOW page content.
+      # The coverage canary above proves the footer is PRESENT and matches the SoT. Present and
+      # correctly PLACED are different claims, and only the first was checked: three pages
+      # (/welcome, /contact, /signup) shipped with a centering flex-row body that made the footer
+      # a flex ITEM beside the card. Design.md section 9 already required probing body styles
+      # before injecting footer chrome; this encodes that rule as a gate instead of prose.
+      - name: Footer body-flow canary (fail-closed)
+        run: |
+          node scripts/check-footer-body-flow.mjs --self-test
+          node scripts/check-footer-body-flow.mjs
+
       # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
       # lockstep canary above proves a SLUG is wired across its six homes; this one
       # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations

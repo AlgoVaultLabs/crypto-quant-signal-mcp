@@ -4802,7 +4802,11 @@ function getSignupPageHtml(): string {
 <!-- END: AlgoVault canonical design loader -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
+  /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
+     makes the brand footer a flex ITEM beside the card. Fix the container, never the footer.
+     Enforced by scripts/check-footer-body-flow.mjs, whose docblock carries the full rationale. */
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; flex-direction: column; min-height: 100vh; }
+  .page-main { flex: 1; display: flex; justify-content: center; align-items: center; width: 100%; padding: 24px; }
   .container { max-width: 960px; width: 100%; }
   h1 { font-size: 28px; margin-bottom: 8px; }
   .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
@@ -4814,6 +4818,7 @@ function getSignupPageHtml(): string {
 </style>
 </head>
 <body>
+<main class="page-main">
 <div class="container">
   <h1>AlgoVault Subscriptions</h1>
   <div class="subtitle">Free tier includes all assets and all 11 timeframes &mdash; capped at 100 calls/month. Upgrade for higher monthly limits and unlimited funding-arb results.</div>
@@ -4830,6 +4835,7 @@ function getSignupPageHtml(): string {
     <a class="btn" href="https://algovault.com/docs.html#x402" style="background:#1f6feb;white-space:nowrap">Pay per call with x402 &rarr;</a>
   </div>
 </div>
+</main>
 ${renderBrandFooter('desktop')}
 </body>
 </html>`;

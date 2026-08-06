@@ -106,7 +106,7 @@ export function getWelcomePageHtml(
              <div id="signup-email-error" class="signup-email-error" aria-live="polite"></div>
            </form>
          </div>`}
-         <a class="paywall-btn" href="/signup?plan=starter&utm_source=welcome_page${utmSource ? `_${utmSource}` : ''}${utmQuery}">Upgrade to ${PLANS.starter.label} — ${planPriceLabel('starter')}/mo</a>
+         <a class="paywall-btn paywall-upgrade" href="/signup?plan=starter&utm_source=welcome_page${utmSource ? `_${utmSource}` : ''}${utmQuery}">Upgrade to ${PLANS.starter.label} — ${planPriceLabel('starter')}/mo</a>
          <p class="paywall-fineprint">Or stay on the free tier — your API key is auto-provisioned on every <code>/signup</code> click. <a href="/signup?plan=pro${utmQuery}">Need higher volume? See Pro / Enterprise →</a></p>
        </div>`
     : '';
@@ -135,35 +135,44 @@ export function getWelcomePageHtml(
 <title>Welcome to AlgoVault ${tier ? `(${tier})` : ''}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
+  /* Sticky-footer shape (DESIGN-WELCOME-LAYOUT-AND-FOOTER-FLOW-W1). A centering flex ROW here
+     makes the brand footer a flex ITEM beside the card. Fix the container, never the footer.
+     Enforced by scripts/check-footer-body-flow.mjs, whose docblock carries the full rationale. */
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; display: flex; flex-direction: column; min-height: 100vh; }
+  .page-main { flex: 1; display: flex; justify-content: center; align-items: center; width: 100%; padding: 24px; }
   .container { max-width: 560px; width: 100%; text-align: center; }
   h1 { font-size: 28px; margin-bottom: 8px; }
   .subtitle { color: #8b949e; margin-bottom: 32px; font-size: 14px; }
-  .key-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: left; }
+  .key-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
   .key-box .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
   .key-box code { display: block; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px 16px; font-size: 16px; color: #3fb950; word-break: break-all; margin-bottom: 12px; }
   .key-box button { background: #238636; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
   .key-box button:hover { background: #2ea043; }
-  .pending { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; color: #d29922; }
-  .tg-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: left; }
+  .pending { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; color: #d29922; }
+  .tg-connect { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 32px 0; text-align: left; }
   .tg-connect .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
   .tg-connect p { color: #c9d1d9; font-size: 13px; margin-bottom: 12px; }
   .tg-connect .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; }
   .tg-connect .tg-btn:hover { background: #1c8ec0; }
-  .usage { margin-top: 24px; text-align: left; }
-  .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-  .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
-  .paywall-cta { background: #161b22; border: 1px solid #3fb950; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: left; }
+  .usage { margin-top: 32px; text-align: left; }
+  .usage h2 { font-size: 16px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+  .usage pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; font-size: 13px; overflow-x: auto; color: #c9d1d9; }
+  /* R2 vertical rhythm: values below (16/24/32) already occur in this file — the page's own
+     4px rhythm was re-used because Design.md defines no spacing scale. See status.md. */
+  .paywall-cta { background: #161b22; border: 1px solid #3fb950; border-radius: 12px; padding: 32px; margin: 32px 0; text-align: left; }
   .paywall-headline { color: #3fb950; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px; }
-  .paywall-body { color: #c9d1d9; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+  .paywall-body { color: #c9d1d9; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
   .paywall-btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 15px; font-weight: 600; margin-bottom: 12px; }
   .paywall-btn:hover { background: #2ea043; }
-  .paywall-fineprint { color: #8b949e; font-size: 12px; margin-top: 12px; }
+  /* Separates the two primary CTAs so they read as sequential steps, not a doubled choice.
+     Scoped class: the in-panel OAuth buttons also carry .paywall-btn and must not shift. */
+  .paywall-upgrade { margin-top: 24px; }
+  .paywall-fineprint { color: #8b949e; font-size: 12px; margin-top: 16px; }
   .paywall-fineprint a { color: #58a6ff; text-decoration: none; }
   /* POWER-USER-OUTREACH-W1-V2 signup-email form */
-  .signup-email-form { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 14px 16px; margin: 0 0 16px; }
+  .signup-email-form { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 16px; margin: 0 0 24px; }
   .signup-email-label { display: block; color: #8b949e; font-size: 12px; margin-bottom: 8px; }
-  .signup-email-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .signup-email-row { display: flex; gap: 8px; margin-bottom: 12px; }
   .signup-email-row input[type="email"] { flex: 1; background: #161b22; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; padding: 8px 12px; font-size: 14px; }
   .signup-email-row input[type="email"]:focus { outline: none; border-color: #3fb950; }
   .signup-email-btn { background: #1f6feb; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
@@ -176,6 +185,7 @@ export function getWelcomePageHtml(
 </style>
 </head>
 <body>
+<main class="page-main">
 <div class="container">
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">${tier ? tier.charAt(0).toUpperCase() + tier.slice(1) + ' plan activated' : isOrganicVisit ? 'AlgoVault MCP — the crypto signal layer for AI agents' : 'Setting up your account...'}</div>
@@ -196,6 +206,7 @@ export function getWelcomePageHtml(
     <p style="color:#8b949e;font-size:12px;margin-top:8px">Want to test with raw HTTP/curl? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#58a6ff">3-step handshake guide</a> in our docs. Supported exchanges: BINANCE (default), HL, BYBIT, OKX, BITGET. Need to find your key later? Visit <a href="/account" style="color:#58a6ff">/account</a>.</p>
   </div>
 </div>
+</main>
 <script>
   // POWER-USER-OUTREACH-W1-V2 signup-email form handler. Inline so no extra
   // network request; small payload; no framework dependency.
