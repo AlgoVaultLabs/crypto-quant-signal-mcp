@@ -268,12 +268,6 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 - **🌐 Three new exchanges: WhiteBIT, BitMart, XT.** AlgoVault's signal engine spans more perpetual-futures venues. Point any tool at the new venues via the `exchange` parameter.
 - **🔌 New venue integration pages.** Per-venue connect guides at [algovault.com/integrations](https://algovault.com/integrations).
 
-### v1.23.1 highlights (recap)
-
-- **🔗 A dedicated page for every way to connect.** New hub pages walk through each access channel end-to-end, with copy-paste code and a quick FAQ: [MCP](https://algovault.com/mcp), [REST API](https://algovault.com/rest-api), and [webhooks](https://algovault.com/webhooks).
-- **🧭 Tools index + unified navigation.** Browse all public tools at [algovault.com/tools](https://algovault.com/tools); a new Platform menu makes the whole site easier to navigate.
-
-
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
 ---
