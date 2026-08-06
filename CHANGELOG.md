@@ -5,6 +5,11 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0] - 2026-08-06
+
+### Added
+- Annual plans. Prepay a year and save: **Starter $79/yr** (~$6.58/mo, 34% off monthly) and **Pro $299/yr** (~$24.92/mo, 49% off monthly). Choose annual at checkout via `?interval=year`; monthly is unchanged and Enterprise remains contact-us.
+
 ## [1.25.0] - 2026-08-02
 
 ### Changed
