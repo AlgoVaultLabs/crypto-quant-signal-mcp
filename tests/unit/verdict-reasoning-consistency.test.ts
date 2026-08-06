@@ -189,25 +189,47 @@ describe('R5 — the prose can only ever say what the ledger says', () => {
     // non-contributing DIRECTIONAL row ever reached the prose. Counting them here means
     // the arrow-suppression rule is proven live rather than assumed.
     let nonContributingRendered = 0;
+    let arrowsChecked = 0;
     for (const c of CASES) {
       const ledger = buildFactorLedger(c.input);
       const prose = renderVerdictReasoning(ledger, c.call, c.confidence);
+      // SIGNAL-LEDGER-INTEGRITY-W1 CH3 made the premise structural: a non-contributing
+      // row now cannot HOLD a direction, so the renderer never has one to suppress.
+      for (const r of ledger.rows) {
+        if (!r.contributes) {
+          check(r.direction === 'neutral', `${c.name}: non-contributing "${r.factor}" holds direction ${r.direction} — CH3's guarantee is broken at the source`);
+        }
+      }
       for (const { factor, arrow } of clauseAttributions(prose)) {
         const row = ledger.rows.find((r) => r.factor === factor);
         check(!!row, `${c.name}: prose names "${factor}" which is not in the ledger: ${prose}`);
         if (!row) continue;
         if (!row.contributes && row.direction !== 'neutral') nonContributingRendered += 1;
         if (arrow === null) continue;
+        arrowsChecked += 1;
         // A direction ARROW is a causal claim. It may appear only for a row that
         // actually moved the score — the `oi_change_pct → bullish` defect verbatim.
         check(row.contributes, `${c.name}: non-contributing "${factor}" rendered with a direction arrow: ${prose}`);
         check(arrow === row.direction, `${c.name}: "${factor}" arrow ${arrow} ≠ ledger ${row.direction}: ${prose}`);
       }
     }
-    expect(
-      nonContributingRendered,
-      'VACUOUS: no case rendered a non-contributing row that HAS a direction, so the arrow-suppression rule was never exercised',
-    ).toBeGreaterThan(0);
+    // ── The vacuity guard, RESTATED (SIGNAL-LEDGER-INTEGRITY-W1 CH3) ──
+    // V2's version required at least one non-contributing row to reach the prose CARRYING
+    // a direction, so the renderer's arrow suppression was proven live. CH3 moved that
+    // guarantee from the renderer into the data — `classifyContribution` returns
+    // `neutral`/`none` for any non-contributing row — so such a row can no longer exist
+    // and the old counter is now unsatisfiable BY CONSTRUCTION. Demanding it would force
+    // the defect back to make the test pass.
+    //
+    // The renderer's suppression stays (defence in depth, asserted above); what this
+    // guard now proves is that the assertions ran against something: arrows were actually
+    // produced and checked, and non-contributing rows were actually present to inspect.
+    check(arrowsChecked > 0, 'VACUOUS: the corpus produced no direction arrows, so the arrow assertions never ran');
+    check(
+      CASES.some((c) => buildFactorLedger(c.input).rows.some((r) => !r.contributes)),
+      'VACUOUS: no non-contributing row appeared in any ledger',
+    );
+    expect(nonContributingRendered, 'a non-contributing row carried a direction — CH3 guarantees this cannot happen').toBe(0);
   });
 
   it('R5.3 — netDirection never contradicts the call', () => {

@@ -31,10 +31,10 @@
       { "factor": "funding_state", "direction": "bullish", "value": "ELEVATED" },
       { "factor": "oi_change_pct", "direction": "bullish", "value": "+2.4%" }
     ],
-    "reasoning": "Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on and open interest is +2.4% over 24h, context only and not a verdict input. Flips to HOLD if funding normalises.",
+    "reasoning": "Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on. Flips to HOLD if funding normalises.",
     "human_lines": {
       "verdict_line": "BUY · 62% conviction — Ranging",
-      "why_line": "Why: Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on and open interest is +2.4% over 24h, context only and not a verdict input. Flips to HOLD if funding normalises."
+      "why_line": "Why: Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on. Flips to HOLD if funding normalises."
     },
     "verification_uri": "https://algovault.com/track-record",
     "disclaimer": "Informational analytics, not investment advice. Past performance does not guarantee future results."
