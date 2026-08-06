@@ -545,3 +545,44 @@ describe('getFunnelScoreboard (composed, injected deps)', () => {
     expect(sb.data_freshness.stripe_source).toBe('unavailable');
   });
 });
+
+// ── OPS-STRIPE-SUBSCRIPTION-TRUTH-W2 · CH2 (AC 2.6) ─────────────────────────────────────────
+//
+// CH2 makes a cancellation flip `subscriber_profiles.status` off 'active' for the first time —
+// so for the first time a non-active row can EXIST. Every active-count derivation must exclude
+// it, or the wave that stopped MRR under-reporting starts it over-reporting instead.
+//
+// This exercises the SHIPPED predicate through the composed scoreboard (not a re-implementation
+// of the filter, which would agree with itself). The two totals are deliberately compared:
+// `reconciliation.profiles_total` counts ACTIVE rows, `enrichment.profiles_total` counts ALL of
+// them — if the filter were dropped, the first would silently become the second.
+describe('active-count derivations exclude a cancelled profile (CH2)', () => {
+  const twoProfiles = async () => ([
+    { customer_id: 'c_live', status: 'active', tier: 'pro', channel: 'direct',
+      converted_at: new Date(NOW - 32 * DAY).toISOString(), attribution_captured: false },
+    { customer_id: 'c_gone', status: 'canceled', tier: 'pro', channel: 'direct',
+      converted_at: new Date(NOW - 40 * DAY).toISOString(), attribution_captured: false },
+  ] as never);
+
+  it('a canceled row does NOT contribute to the reconciliation active count', async () => {
+    const sb = await getFunnelScoreboard({ days: 90 }, makeDeps({ listProfiles: twoProfiles }));
+    expect(sb.paying_subscribers.reconciliation.profiles_total).toBe(1);
+    // ...while the enrichment total still sees both, so the exclusion is real and not just a
+    // smaller fixture. If the active filter were removed, this pair would collapse to 2 and 2.
+    expect(sb.paying_subscribers.enrichment.profiles_total).toBe(2);
+  });
+
+  it('status matching is case-insensitive but strict — ACTIVE counts, past_due does not', async () => {
+    const mixed = async () => ([
+      { customer_id: 'c1', status: 'ACTIVE', tier: 'pro', channel: 'direct',
+        converted_at: new Date(NOW - 5 * DAY).toISOString(), attribution_captured: false },
+      { customer_id: 'c2', status: 'past_due', tier: 'pro', channel: 'direct',
+        converted_at: new Date(NOW - 5 * DAY).toISOString(), attribution_captured: false },
+      { customer_id: 'c3', status: null, tier: 'pro', channel: 'direct',
+        converted_at: new Date(NOW - 5 * DAY).toISOString(), attribution_captured: false },
+    ] as never);
+    const sb = await getFunnelScoreboard({ days: 90 }, makeDeps({ listProfiles: mixed }));
+    expect(sb.paying_subscribers.reconciliation.profiles_total).toBe(1);
+    expect(sb.paying_subscribers.enrichment.profiles_total).toBe(3);
+  });
+});

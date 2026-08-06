@@ -740,6 +740,100 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
   }
 }
 
+/** What `applySubscriptionRecordUpdate` did. `absent` is a fact, not a failure. */
+export type RecordUpdateOutcome = 'updated' | 'noop' | 'absent';
+
+/** The subscription facts a lifecycle event carries. Every field optional — absent = "unchanged". */
+export interface SubscriptionRecordUpdate {
+  customerId: string;
+  /** Resolved from the Stripe PRICE ID via the registry — never from event prose. */
+  tier?: string | null;
+  billingInterval?: StoredBillingInterval;
+  /** Read from the event's own `status`, never a literal we invent. */
+  status?: string | null;
+  subscriptionId?: string | null;
+}
+
+/**
+ * Bring an EXISTING subscriber profile in line with a subscription lifecycle event.
+ * OPS-STRIPE-SUBSCRIPTION-TRUTH-W2 CH2.
+ *
+ * WHY THIS EXISTS. `subscriber_profiles` was written once, at `checkout.session.completed`, and
+ * never again. A customer who upgraded starter→pro on 2026-07-17 still read `starter`/$9.99 while
+ * Stripe billed $49 — **$39.01/mo, 49.4% of true MRR, invisible** — and a cancellation would have
+ * left `status` reading `'active'` forever, which makes MRR OVER-count. Both are reporting
+ * defects only: `validateApiKey` resolves tier live from the price id, so entitlement and billing
+ * were always correct.
+ *
+ * 🛑 **UPDATE-ONLY. It never INSERTs.** A profile is created by the checkout path, which is the
+ * only place the attribution signals (channel, country, cold/warm, latency, the bridge) exist. A
+ * lifecycle event carries none of them, so inventing a row here would manufacture a profile whose
+ * every attribution column is a fabrication. `absent` is returned and the caller logs it.
+ *
+ * 🛑 **NO-OPS when nothing that matters changed.** `customer.subscription.updated` fires for trial
+ * changes, payment-method updates, metadata edits and cancel-at-period-end — none of which move
+ * money. Rewriting the row on those would churn it on noise and make the reconciliation canary
+ * alarm on our own writes. Both dimensions are compared, so a monthly→annual switch (real money,
+ * newly possible since 2026-08-05) is NOT a silent no-op.
+ *
+ * 🛑 **Verified by RESULT, not by a success log.** `dbRun` is fire-and-forget on Postgres — that
+ * is exactly how `buildSubscriberProfile` lost 100% of production writes with every assertion
+ * green (SEC-14). The write goes through the awaited `query` seam and the row is READ BACK before
+ * `updated` is returned; a write that did not land reports `noop`, never a false success.
+ */
+export async function applySubscriptionRecordUpdate(
+  u: SubscriptionRecordUpdate,
+  deps: ProfileDeps = defaultProfileDeps,
+): Promise<RecordUpdateOutcome> {
+  deps.ensure();
+  if (deps.ensureInterval) await deps.ensureInterval();
+
+  const rows = await deps.query<{ tier: string | null; status: string | null; billing_interval: string | null }>(
+    `SELECT tier, status, billing_interval FROM subscriber_profiles WHERE customer_id = ?`,
+    [u.customerId],
+  );
+  if (rows.length === 0) return 'absent';
+  const cur = rows[0];
+
+  // An absent field means "this event says nothing about that dimension" — keep what is stored.
+  const tier = u.tier ?? cur.tier;
+  const interval: StoredBillingInterval = u.billingInterval ?? normalizeBillingInterval(cur.billing_interval);
+  const status = u.status ?? cur.status;
+
+  const unchanged =
+    tier === cur.tier &&
+    interval === normalizeBillingInterval(cur.billing_interval) &&
+    status === cur.status;
+  if (unchanged) return 'noop';
+
+  // The rate is DERIVED from the (tier, interval) pair, never carried by the event and never
+  // arithmetic on amount_usd. amount_usd itself is NOT touched: it records what was charged on a
+  // date, which stays true regardless of what the subscription later became.
+  const monthlyRateUsd = deriveMonthlyRateUsd(tier, interval);
+
+  await deps.query(
+    `UPDATE subscriber_profiles
+        SET tier = ?, status = ?, billing_interval = ?, monthly_rate_usd = ?
+      WHERE customer_id = ?`,
+    [tier, status, interval, monthlyRateUsd, u.customerId],
+  );
+
+  // Verify by RESULT — re-read before claiming success.
+  const after = await deps.query<{ tier: string | null; status: string | null; billing_interval: string | null }>(
+    `SELECT tier, status, billing_interval FROM subscriber_profiles WHERE customer_id = ?`,
+    [u.customerId],
+  );
+  const a = after[0];
+  const landed = !!a && a.tier === tier && a.status === status
+    && normalizeBillingInterval(a.billing_interval) === interval;
+  if (!landed) {
+    console.error(`[applySubscriptionRecordUpdate] write did NOT land for ${u.customerId} — read-back mismatch (fire-and-forget hazard)`);
+    return 'noop';
+  }
+  console.log(`[applySubscriptionRecordUpdate] ${u.customerId} tier=${cur.tier}→${tier} interval=${normalizeBillingInterval(cur.billing_interval)}→${interval} status=${cur.status}→${status}`);
+  return 'updated';
+}
+
 /**
  * CONVERSION-MEASUREMENT-W1 C2: one-shot backfill of the bridge columns for
  * existing subscribers (those with a NULL bridge_confidence). Re-resolves the

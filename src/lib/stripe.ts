@@ -798,6 +798,105 @@ export async function handleSubscriptionDeleted(event: any): Promise<void> {
   // Invalidate cache
   invalidateCacheForCustomer(customerId);
   console.log(`Stripe: Subscription cancelled for ${customerId}`);
+
+  // OPS-STRIPE-SUBSCRIPTION-TRUTH-W2 CH2 — propagate the cancellation to the RECORD.
+  //
+  // Until now this handler invalidated a cache and logged, and nothing ever moved
+  // `subscriber_profiles.status` off the literal `'active'` written at conversion. A cancelled
+  // subscriber therefore read `active` forever, which makes MRR and every active-count
+  // OVER-report — the mirror of the under-report `.updated` causes.
+  //
+  // The value is READ FROM THE EVENT (`canceled`), never a literal invented here: Stripe owns
+  // that vocabulary and it is the only party that knows the terminal state.
+  //
+  // FORWARD GUARD, NO BACKFILL: zero cancelled subscriptions exist today, so this changes no
+  // existing row. It is armed for the first cancellation, not a repair of a past one.
+  await propagateSubscriptionToRecord(customerId, {
+    status: asSubscriptionStatus(subscription?.status) ?? 'canceled',
+  }, 'customer.subscription.deleted');
+}
+
+/** The subscription status as Stripe reports it, or null when the payload carries none. */
+function asSubscriptionStatus(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+/**
+ * Push resolved subscription facts into `subscriber_profiles`.
+ *
+ * ⚠️ **The import is DYNAMIC, and that is load-bearing, not stylistic.** `subscriber-attribution`
+ * imports `license.ts`, which imports `validateApiKey` from THIS module (`license.ts:12`), so a
+ * static import would close a require cycle straight through the license hot path. `index.ts`
+ * already lazy-imports the profiler for the same reason.
+ *
+ * FAIL-OPEN. This is a reporting write on a Stripe webhook path: it must never throw, never
+ * block the ACK, and never touch entitlement. An error here costs a stale row, which the
+ * reconciliation is there to catch; a throw here would cost the webhook.
+ */
+async function propagateSubscriptionToRecord(
+  customerId: string,
+  fields: { tier?: string | null; billingInterval?: 'month' | 'year' | 'unknown'; status?: string | null; subscriptionId?: string | null },
+  source: string,
+): Promise<void> {
+  try {
+    const { applySubscriptionRecordUpdate } = await import('./subscriber-attribution.js');
+    const outcome = await applySubscriptionRecordUpdate({ customerId, ...fields });
+    // Both branches log (CLAUDE.md: a load-bearing side-effect inside try/catch needs a
+    // success-path log). `absent` is a FACT, not an error — a lifecycle event carries none of
+    // the attribution signals a profile needs, so it must never mint one.
+    console.log(`[${source}] record update for ${customerId}: ${outcome}`);
+  } catch (err) {
+    console.error(`[${source}] record update failed (fail-open):`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * `customer.subscription.updated` — the event that has never reached the record.
+ * OPS-STRIPE-SUBSCRIPTION-TRUTH-W2 CH2.
+ *
+ * Resolves tier AND interval from the subscription's PRICE ID through the one registry
+ * (`resolveSubscription`), never from event prose — the same resolver `validateApiKey` and the
+ * census project from, so the record cannot disagree with entitlement about what was bought.
+ *
+ * ⚠️ This event fires for many reasons that do not move money: trial changes, payment-method
+ * updates, metadata edits, cancel-at-period-end. The no-op decision lives in
+ * `applySubscriptionRecordUpdate`, which compares BOTH dimensions plus status against the stored
+ * row — so noise does not churn the profile, while a monthly→annual switch (real money, on sale
+ * since 2026-08-05) is correctly NOT a no-op.
+ *
+ * Entitlement is untouched. `validateApiKey` reads the live subscription on every call and was
+ * always correct; this fixes the RECORD. Do not "unify" them — they answer different questions
+ * at different times, and the record is allowed to lag by a webhook.
+ */
+export async function handleSubscriptionUpdated(event: any): Promise<void> {
+  const subscription = event?.data?.object;
+  const rawCustomer = subscription?.customer;
+  const customerId = typeof rawCustomer === 'string' ? rawCustomer : rawCustomer?.id;
+  if (!customerId) {
+    console.warn('Stripe: customer.subscription.updated with no customer id — skipping (fail-open)');
+    return;
+  }
+
+  // Entitlement cache: what the customer is entitled to may have just changed.
+  invalidateCacheForCustomer(customerId);
+
+  const resolved = resolveSubscription(subscription ?? { items: { data: [] } });
+  if (!resolved) {
+    // "We do not recognise what this customer bought" is a distinct fact from any tier, and must
+    // not be written as one. Status still propagates — it is knowable regardless of the price.
+    console.warn(`Stripe: customer.subscription.updated for ${customerId} on an unrecognised price — tier/interval left unchanged`);
+    await propagateSubscriptionToRecord(customerId, {
+      status: asSubscriptionStatus(subscription?.status),
+    }, 'customer.subscription.updated');
+    return;
+  }
+
+  await propagateSubscriptionToRecord(customerId, {
+    tier: resolved.tier,
+    billingInterval: resolved.interval,
+    status: asSubscriptionStatus(subscription?.status),
+    subscriptionId: typeof subscription?.id === 'string' ? subscription.id : null,
+  }, 'customer.subscription.updated');
 }
 
 // ── Helpers ──

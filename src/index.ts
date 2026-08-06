@@ -86,6 +86,7 @@ import {
   constructWebhookEvent,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  handleSubscriptionUpdated,
   createCheckoutSession,
   getCustomerApiKey,
   validateApiKey,
@@ -1490,6 +1491,27 @@ async function startHttp() {
           // REFERRAL-LIGHT-W1 (C3): claw back any commission accrued on the refund.
           const { processChargeRefunded } = await import('./lib/referral-accrual.js');
           await processChargeRefunded(event);
+          break;
+        }
+        case 'customer.subscription.updated': {
+          // OPS-STRIPE-SUBSCRIPTION-TRUTH-W2 CH2 — the tier/interval change that never reached
+          // the record. Subscribed on the live endpoint by CH1 (set-compared, 6 events).
+          //
+          // Idempotency BEFORE the side-effect, same shape as the two cases above: Stripe
+          // delivers at-least-once and retries every non-2xx for up to 3 days.
+          const isNewUpd = await tryClaimEvent({
+            event_id: event.id,
+            event_type: event.type,
+            customer_email: null,
+            metadata: { source: 'customer.subscription.updated' },
+          });
+          if (!isNewUpd) {
+            console.log(`Stripe webhook: duplicate customer.subscription.updated (event ${event.id}) — already processed`);
+            // 200, never 500 — a non-2xx makes Stripe retry harder against an event we have
+            // already fully processed.
+            return res.json({ received: true, status: 'duplicate' });
+          }
+          await handleSubscriptionUpdated(event);
           break;
         }
         default:

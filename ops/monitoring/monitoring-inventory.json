@@ -435,7 +435,7 @@
       "schedule": null,
       "invoked_by": "called-by:stripe-webhook-events-canary",
       "install_state": "installed",
-      "sha256": "8a05eb42008d54fab6fda03a2046fdd7baac3b5aafdd38d7e1e26f78ae83c6c7",
+      "sha256": "4917b1b655b709f5a764f6438c56eb3e9963f77d0b0a8f59d5474baaf3555893",
       "alert_ids": [],
       "owner_wave": "OPS-STRIPE-WEBHOOK-EVENTS-W1"
     },
