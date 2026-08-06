@@ -1,0 +1,7 @@
+{
+  "XRP — the reported BUY at 62% narrated \"no clear direction\"": "Funding at -0.0066% is unusually negative for XRP over 14 days: shorts pay longs → bullish. Regime is ranging with no trend structure to lean on and open interest is +2.4% over 24h, context only and not a verdict input. Flips to HOLD if funding normalises.",
+  "BTC — the HOLD that opened \"Trending regime, upward bias\" over a bearish OI": "Regime is trending up on the moving-average cross → bullish. Funding at +0.0031% sits in BTC's normal 14-day band: no crowd pressure either way. Turns directional if funding moves off neutral.",
+  "SOL — half of the byte-identical pair": "Regime is trending down on the moving-average cross → bearish. Against: funding at -0.0060% is negative at a normal level for SOL: shorts pay longs → bullish. Becomes actionable if the breakout resolves.",
+  "DOGE — the other half; opposite-signed OI, 4x different funding": "Regime is trending down on the moving-average cross → bearish. Against: funding at -0.0014% is negative at a normal level for DOGE: shorts pay longs → bullish. Becomes actionable if the breakout resolves.",
+  "NEW LISTING — funding history below the sample floor (D9)": "Funding at -0.0080% means shorts pay longs, but NEWC funding history too short to score → bullish. Regime is ranging with no trend structure to lean on. Turns directional if enough funding history accumulates to score."
+}
