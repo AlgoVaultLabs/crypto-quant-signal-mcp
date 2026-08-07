@@ -62,9 +62,12 @@ if [ -r "$STATUS_MD" ]; then
   fi
 fi
 
-docker exec "$CTR" \
+# -e MUST precede the container name: `docker exec [OPTIONS] CONTAINER COMMAND`. With the flags
+# after "$CTR" docker took `-e` as the command and returned 127 — caught by the no-verdict-token
+# branch below rather than passing silently, which is why that branch exists.
+docker exec \
   -e RECALIBRATE_BOUNDARY_START="$BSTART" -e RECALIBRATE_BOUNDARY_END="$BEND" \
-  node "$HARNESS" > "$TMP/report.txt" 2>"$TMP/err"
+  "$CTR" node "$HARNESS" > "$TMP/report.txt" 2>"$TMP/err"
 RC=$?
 
 # The harness's contract: body first, verdict token ALWAYS LAST. A run that produced no
