@@ -57,8 +57,11 @@ describe('zero-phase regime harness', () => {
     check(predicted > 10 && predicted < 13, `closed form for 9/21 = ${predicted}, expected ≈11.64`);
 
     const s = CORPORA.reversal;
-    const fwd = H.transitionsOf(H.liveSeries(s));
-    const bwd = H.transitionsOf(H.backwardSeries(s));
+    // SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2: keyed on the CROSSOVER, not the label. The closed
+    // form is a property of sign(ema9 - ema21), which that wave left untouched; the LABEL now
+    // carries a band + a 12-bar confirmation and has a deliberately different lag.
+    const fwd = H.emaCrossTransitions(H.liveSeries(s));
+    const bwd = H.emaCrossTransitions(H.backwardSeries(s));
     const pairs = H.pairLags(fwd, bwd);
     check(pairs.length > 0, 'VACUOUS: the reversal fixture produced no paired EMA-driven transition');
 
@@ -97,7 +100,7 @@ describe('zero-phase regime harness', () => {
     );
 
     const s = CORPORA.reversal;
-    const pairs = H.pairLags(H.transitionsOf(H.liveSeries(s)), H.transitionsOf(H.backwardSeries(s)));
+    const pairs = H.pairLags(H.emaCrossTransitions(H.liveSeries(s)), H.emaCrossTransitions(H.backwardSeries(s)));
     check(pairs.length > 0, 'VACUOUS: no pair to test the rejection against');
     // The SAME measurement that passes against the true prediction must FAIL against the
     // perturbed one. If it passes both, the tolerance is too wide to detect anything.
@@ -108,25 +111,38 @@ describe('zero-phase regime harness', () => {
   });
 
   it('a monotone ramp yields NO crossover transition — the harness does not hallucinate flips', () => {
-    const fwd = H.transitionsOf(H.liveSeries(CORPORA.monotone));
-    const emaDriven = fwd.filter((t) => t.cause === 'ema_cross' || t.cause === 'both');
+    const emaDriven = H.emaCrossTransitions(H.liveSeries(CORPORA.monotone));
     check(emaDriven.length === 0, `monotone ramp produced ${emaDriven.length} EMA-driven transitions`);
   });
 
   /**
-   * The RSI-band path, demonstrated on a DETERMINISTIC fixture rather than argued for. A
-   * perfect uptrend pins RSI at 100, so `rsiVal < 70` fails and the public label collapses to
-   * RANGING for the entire trend. Pinned here so that if the gate is ever changed, the change
-   * is deliberate and visible.
+   * ⚠️ FLIPPED by SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. This test used to ASSERT THE DEFECT:
+   *
+   *   it('DEMONSTRATED — a perfect uptrend is labelled RANGING for its entire duration')
+   *
+   * It was the predecessor's deterministic demonstration that a saturating RSI forced the
+   * wrong label. That wave measured; this wave fixed it, so the assertion is inverted rather
+   * than deleted — an exemption and the test that encoded it are a pair, and removing only
+   * one half leaves either a guard that cannot fire or a lie in the suite.
+   *
+   * The PRECONDITIONS are still asserted (`emaCross` BULLISH, RSI still saturating at ≥ 70),
+   * so this cannot pass because the fixture stopped exercising the path.
    */
-  it('DEMONSTRATED — a perfect uptrend is labelled RANGING for its entire duration', () => {
+  it('FIXED — a perfect uptrend is TRENDING_UP, though its RSI still saturates', () => {
     const samples = H.liveSeries(CORPORA.monotone);
     check(samples.length > 100, `VACUOUS: only ${samples.length} samples on the monotone ramp`);
-    const labels = new Set(samples.map((s) => s.regime));
-    check(labels.size === 1 && labels.has('RANGING'), `monotone uptrend labels: ${[...labels].join(', ')}`);
     const mid = samples[Math.floor(samples.length / 2)];
+    // Preconditions: the v1 defect path is still live in the DATA...
     check(mid.emaCross === 'BULLISH', `mid-ramp emaCross = ${mid.emaCross}, expected BULLISH`);
-    check(mid.rsiVal !== null && mid.rsiVal >= 70, `mid-ramp rsiVal = ${mid.rsiVal}, expected >= 70`);
+    check(mid.rsiVal !== null && mid.rsiVal >= 70, `mid-ramp rsiVal = ${mid.rsiVal}, expected >= 70 (else the fixture stopped testing the defect)`);
+    // ...and the RULE no longer converts it into the wrong label.
+    check(mid.regime === 'TRENDING_UP', `mid-ramp regime = ${mid.regime}, expected TRENDING_UP`);
+    const steady = samples.slice(H.EMA_SLOW + 12);
+    check(steady.length > 100, `VACUOUS: steady state only ${steady.length} samples`);
+    check(steady.every((x) => x.regime === 'TRENDING_UP'), `steady-state labels: ${[...new Set(steady.map((x) => x.regime))].join(', ')}`);
+    // And the v1 rule, frozen in the harness, still shows the old behaviour — so the
+    // before/after comparison has a real "before".
+    check(H.legacyRuleIsFrozen().length === 0, `legacy v1 reference drifted: ${H.legacyRuleIsFrozen().join('; ')}`);
   });
 
   it('churn metrics are computed and the round-trip rate is well-formed', () => {
@@ -147,16 +163,12 @@ describe('zero-phase regime harness', () => {
    * production EXACTLY. An unpinned counterfactual silently stops describing the thing it is
    * counterfactual to.
    */
-  it('PIN — the sweep variant reproduces production exactly at the shipped (9, 21, 14)', () => {
-    let scored = 0;
-    for (const [name, s] of Object.entries(CORPORA)) {
-      const bars = s.length - 2 * H.EDGE_DISCARD_BARS;
-      check(bars > 0, `VACUOUS: corpus ${name} has no scorable interior for the pin`);
-      scored += bars;
-      const mismatches = H.sweepMatchesProductionAt921(s);
-      check(mismatches === 0, `${name}: sweep variant disagrees with production on ${mismatches} bars`);
-    }
-    check(scored > 500, `VACUOUS: the pin compared only ${scored} bars`);
+  it('PIN — the frozen v1 reference still reproduces the pre-wave rule', () => {
+    // Was: "the sweep variant reproduces PRODUCTION at (9,21,14)". Production's rule changed,
+    // so that pin is false by design; it is replaced rather than weakened. This asserts the
+    // two behaviours that DEFINED v1, so the "before" side of every comparison stays honest.
+    const violations = H.legacyRuleIsFrozen();
+    check(violations.length === 0, `legacy v1 reference drifted: ${violations.join('; ')}`);
   });
 
   it('the sweep responds to its periods — a different setting yields different churn', () => {
