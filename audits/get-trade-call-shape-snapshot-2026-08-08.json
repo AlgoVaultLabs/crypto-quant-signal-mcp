@@ -1,13 +1,13 @@
 {
   "_meta": {
-    "wave": "SIGNAL-LEDGER-INTEGRITY-W1 (CH1–CH6) — the ledger's own fields become structurally true",
+    "wave": "OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 — factors[].direction stops asserting an underived cause",
     "tool": "get_trade_call (+ get_trade_signal alias — same producer getTradeSignal)",
     "transport": "MCP Streamable-HTTP POST https://api.algovault.com/mcp (tools/call) + stdio + x402 paid route + okx a2mcp + Virtuals ACP (all via callCoreHandler)",
     "captured_at": "2026-08-07",
-    "purpose": "Public-response-shape SoT after the factor ledger's OWN fields were repaired. Supersedes get-trade-call-shape-snapshot-2026-08-06.json and carries its findings forward. The predecessor shipped a correct `reasoning` projection over a ledger with three defective fields: `contributes` varied per response for a structural property, `strength` could contradict `direction`, and `stripped_remainder.count` was ambiguous. Three of the four were caused by an AMBIGUOUS SPEC rather than by bad code — V2's own D7 defined the withheld count without saying whether a neutral withheld row counted."
+    "purpose": "Public-response-shape SoT after `_receipts.factors[].direction` stopped mapping the SIGN OF THE OI DELTA to a verdict direction. Supersedes get-trade-call-shape-snapshot-2026-08-07.json (the SIGNAL-LEDGER-INTEGRITY-W1 capture) and carries its findings forward. That wave corrected factor_ledger[] and FROZE factors[] under Branch B; this wave executes Branch A for the falsehood only. Removing a public field carries the >=12-month MCP feature-lifecycle floor; correcting a false value inside it does not — bundling the two is what had a self-contradicting field scheduled for repair in 2027."
   },
-  "endpoint": "MCP tool get_trade_call (factor ledger field semantics)",
-  "snapshot_date": "2026-08-07",
+  "endpoint": "MCP tool get_trade_call (factors[] direction semantics)",
+  "snapshot_date": "2026-08-08",
   "allowed_keys_exempt": true,
   "allowed_keys_exempt_reason": "allowed_keys DEFERRED, not invented — carried forward in force from the 08-06 snapshot, because the reason still holds: this is an MCP tool whose public response is CONDITIONAL (verdict, tier and flag state change which fields are present), so a single live probe cannot settle a COMPLETE allow-list, and an incomplete one published to crawlers is worse than an empty one because it looks authoritative. The `_receipts` sub-surface IS enumerated below (`receipts_allowed_keys`, `factor_ledger_row_allowed_keys`, `stripped_remainder_allowed_keys`) from the exported pure formatters. Owner of the remaining top-level gap: OPS-SHAPE-ALLOWLIST-FROM-FORMATTER-W{NEXT}.",
   "top_level_allowed_keys": [
@@ -26,15 +26,11 @@
     "_receipts"
   ],
   "field_semantics_corrected": {
-    "factor_ledger[].contributes": "NOW a pure function of the field NAME, declared once in `VERDICT_INPUT_CHANNELS` (src/lib/verdict-factors.ts). It answers 'does this indicator feed the verdict computation' — a fact about the MODEL — via a weight term OR a declared adjustment. It shipped as a per-response CONDITION at THREE sites (`ema !== 0`, the Hurst band, `squeezeActive`), so `trend_persistence` returned true on one asset and false on three others measured the same hour. A field that changes meaning between two calls to the same tool is worse for an agent than an absent one.",
-    "factor_ledger[].strength": "ENUM VALUE RENAMED `dominant` -> `primary`, same-week correction. The 0.6 BAND is retained — forcing a strict top-one onto contributions within 1% of each other asserts a hierarchy that does not exist, and exact ties would report ZERO top rows while two strong drivers are present. Only the WORD was wrong: `dominant` naming two rows is a word that has lost its meaning. Renamed one day after the field shipped, while it appears in no declared schema (there is no outputSchema on any tool) and the population branching on it is ~0; under the MCP feature-lifecycle norm this would otherwise cost a >=12-month deprecation cycle.",
-    "factor_ledger[].strength (invariant)": "`direction === 'neutral'` <=> `strength === 'none'`, a BICONDITIONAL guaranteed by construction: `classifyContribution` returns both from one input and every branch yielding a neutral direction yields 'none' with it. A live response carried `direction: neutral` + `strength: dominant`; the illegal state is now unrepresentable rather than merely tested for. Also: `contributes === false` => neutral/none, and the band's denominator is the largest |contribution| among DIRECTIONAL contributing rows only — taking it over all rows let an amplifier (25 pts) set the scale that every visible weight term (<=20) was measured against.",
-    "factor_ledger[oi_change_pct].direction": "CHANGED `bullish|bearish` -> ALWAYS `neutral`. Open interest feeds no weight term and no adjustment, so it has no verdict direction to report. Its SIGN is not lost — it is in `value` (`+2.4%`), which is where a reader should take it from. What is gone is the implication that it was a reason. NOTE the legacy `factors[]` still ships the ±0.5% direction; see `factors_ledger_divergence` below.",
-    "stripped_remainder.count": "DEPRECATED alias, retained one cycle so no consumer loses a key. Now EQUAL to `withheld_term_count`; it used to be a filtered count of non-zero contributions over a set that was itself variable, which is why it moved 1,1,1,2 across four live samples under a label that reads as a fixed cardinality.",
-    "stripped_remainder.withheld_term_count": "NEW. How many weight terms moat-1 withholds — CONSTANT for a given model (2 today: `rsi`, `volume`), derived from `WEIGHT_TERM_FIELD` so it cannot drift from the channel map. A bare count beside a noun-less label is what produced the `(new: 6)` operator misread of 2026-08-01; the name is the fix.",
-    "stripped_remainder.unnameable_this_response": "NEW `string[]`. Weight terms nameable in principle but not nameable THIS response — today only `ema`, when the regime label and the moving-average read diverge. This fact used to be folded into `count`, which is what made the count variable for a SECOND independent reason. Naming `ema` discloses nothing new: the live prose already says 'on the moving-average cross'.",
-    "stripped_remainder.unevaluated_terms": "NEW `string[]`. Withheld terms whose INPUT was missing (`rsi` with too few candles, `volume` with zero average bar volume), so no contribution exists to sign. Without it, 'they cancelled out' and 'we could not measure them' both render `net: 'flat'` — the V2-D9 defect (a silent default-deny presenting as a real measurement) applied to a second field.",
-    "verdict_unchanged": "call + confidence + price + regime + indicators are BYTE-IDENTICAL. No score, weight, threshold or scoring term was touched. The closed-bar golden fixture confirms it: its only diffs are the ledger fields listed here."
+    "factors[oi_change_pct].direction": "CHANGED `bullish|bearish` -> ALWAYS `neutral`. It mapped the sign of the OI delta to a verdict direction, and open interest feeds no weight term and no adjustment (`VERDICT_INPUT_CHANNELS`: `oi_change_pct` -> `feeds: []`). Nothing derived that arrow. The row is NOT weakened: still selected, still 3rd, still carrying its SIGNED `value` (`+2.4%`), which is where a reader should take the sign from. Only the false causal claim is gone.",
+    "the rule, stated generally": "A factor whose field feeds no verdict channel renders `direction: 'neutral'`, by NAME lookup against VERDICT_INPUT_CHANNELS. Applied UNCONDITIONALLY in formatReceipts — deliberately NOT branched on whether a ledger was supplied. formatReceipts has two callers (get_trade_call passes a ledger; enrichScanCall, behind scan_trade_calls and the TG digest, passes nothing), and a conditional would make the same factor read one way per endpoint. That path-dependence is worse than the divergence it would fix.",
+    "SELECTION unchanged": "length, order, which-3-rows, `factor` and `value` are byte-identical. Selection reads `breakout_pending === 'IMMINENT'` then `|oi_change_pct| >= 0.5`, never a direction.",
+    "factors[funding_state].direction — DELIBERATELY UNCHANGED": "Class 2, and it is NOT a falsehood. `factors[]` reads the per-asset z-BUCKET (NORMAL => neutral, a true statement that funding sits in its normal band); factor_ledger[] reads the CONTRIBUTION SIGN (a negative rate feeds the funding term, so bullish — also true). Two fields answer two different questions and both spell the answer `direction`. That is a NAMING COLLISION whose fix is documentary: OPS-RECEIPTS-DIRECTION-SEMANTICS-DECLARE-W{NEXT}, likely folded into SIGNAL-OUTPUT-SCHEMA-DECLARE-W{NEXT} at no plumbing cost. Asserted POSITIVELY by tests/unit/receipts-direction-parity.test.ts so the deferral cannot drift in silence.",
+    "verdict_unchanged": "call + confidence + price + regime + indicators + factor_ledger[] are BYTE-IDENTICAL. No score, weight or threshold was touched."
   },
   "receipts_allowed_keys": [
     "verdict",
@@ -62,14 +58,11 @@
     "net"
   ],
   "factors_ledger_divergence": {
-    "status": "DECLARED and BOUNDED, not resolved. `factors[]` is frozen (CH1.5 measured Branch B: its `direction` VALUES are asserted in five places in receipts.test.ts, and the byte-exact digest arrows are pinned in scan-digest-enrich.test.ts:112 and check-scan-digest-parity.mjs:65 with the Python mirror in lockstep).",
-    "known_limitation": "The RIGHT channel for 'these two disagree and here is which is authoritative' is a declared outputSchema with `deprecated: true` on the legacy array. There is NONE — raw tools/list confirms zero outputSchema across all 7 tools, negotiated protocol 2025-06-18. So an agent reading both fields has no machine-readable statement of which is authoritative. This is an accepted gap, owned by the two sequential follow-ups below.",
-    "compensating_control": "tests/unit/factors-ledger-divergence.test.ts enumerates every field that may disagree and the exact condition, and fails on any NEW divergence or any existing one widening. A prose note in an audit file cannot do that; no client reads audit files.",
-    "declared_divergences": [
-      "oi_change_pct — factors[] classifies the ±0.5% move; the ledger reports neutral (contributes:false). Occurs whenever |oi_change_pct| >= 0.5.",
-      "funding_state — factors[] reads the per-asset z-BUCKET (NORMAL => neutral); the ledger reads the global annualized LADDER, which scores a negative rate contrarian-bullish regardless of bucket. Occurs when funding_state is NORMAL and funding_rate != 0."
-    ],
-    "authoritative": "factor_ledger[]. Only it carries `contributes`, which is what distinguishes a driver from context."
+    "status": "REDUCED from two declared divergences to ONE. The `oi_change_pct` divergence is GONE — the two arrays now agree on it.",
+    "remaining": "funding_state ONLY, on NORMAL + a non-zero rate: bucket-deviation (factors[]) vs contribution-sign (factor_ledger[]). Both statements true; the field NAME is the collision.",
+    "authoritative": "factor_ledger[] — only it carries `contributes`, which distinguishes a driver from context.",
+    "compensating_control": "tests/unit/factors-ledger-divergence.test.ts enumerates what may disagree and fails on anything new. Its `oi_change_pct` exemption was DELETED by this wave because its own \"each declared divergence actually OCCURS\" assertion went red once the fix landed.",
+    "known_limitation": "Still no outputSchema on any of the 7 tools (protocol 2025-06-18), so the remaining collision has no machine-readable declaration. Owned by OPS-MCP-REGISTERTOOL-MIGRATION-W{NEXT} then SIGNAL-OUTPUT-SCHEMA-DECLARE-W{NEXT}."
   },
   "indicators_allowed_keys": [
     "funding_rate",
@@ -173,15 +166,14 @@
   },
   "consumers": [
     "MCP agent callers (Claude/Cursor/ChatGPT) via tools/call — branch on `_receipts.factor_ledger[].contributes` and `.strength`; both are now stable per field across calls",
-    "algovault-bot (Telegram) — pass-through only; `factors[]` is frozen so no digest line and no Python mirror moved in this wave",
     "src/lib/receipts.ts formatReceipts + formatFactorLedger + formatFactorLedgerRemainder — the allow-listed public formatters",
     "src/lib/verdict-factors.ts — VERDICT_INPUT_CHANNELS (the ONE wiring declaration), classifyContribution (the ONE direction+strength derivation), formatFactorLedgerRemainder (the ONE place the withheld block's wire names are written)",
     "src/lib/scan-digest.ts enrichScanCall — reuses formatReceipts WITHOUT a ledger, so its frozen byte-equality fixtures are unaffected by construction",
     "landing/index.html — the baked 'Example output' verdict card, whose Why line is asserted byte-identical to the engine's own golden",
-    "x402 /x402/<tool>, okx.ai /a2mcp/<tool>, Virtuals ACP deliverable — inherit byte-identically via callCoreHandler"
+    "x402 /x402/<tool>, okx.ai /a2mcp/<tool>, Virtuals ACP deliverable — inherit byte-identically via callCoreHandler",
+    "algovault-bot (Telegram) — CONSUMES `direction` verbatim (_DIR_ARROW); no renderer logic changed, but its captured factors[] fixtures and 4 assertions moved in the SAME wave (commit 478b62d). tests/fixtures/scan-showcase-golden.json is a REGISTERED shared artifact: byte-identical in both repos with a .sha256 in each, regenerated from ONE canonical Python run with byte-identity asserted BEFORE either hash was recorded."
   ],
-  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run verdict-factors-contributes verdict-factors-strength verdict-factors-withheld factors-ledger-divergence verdict-reasoning-consistency receipts scan-digest-enrich   # LEDGER_CONTRIBUTES/STRENGTH/WITHHELD + FACTORS_DIVERGENCE + REASONING_CONSISTENCY tokens, plus factors[] frozen byte-identical",
+  "drift_check_command": "cd ~/code/crypto-quant-signal-mcp && npx vitest run receipts-direction-parity factors-ledger-divergence receipts scan-digest-enrich scan-showcase-render && node scripts/check-scan-digest-parity.mjs --check   # RECEIPTS_DIRECTION_PARITY + FACTORS_DIVERGENCE tokens, plus the cross-repo digest pin",
   "additive_and_correction_rule": "`withheld_term_count` / `unnameable_this_response` / `unevaluated_terms` are ADDITIVE; `count` is retained one cycle and now equals `withheld_term_count`. `strength: 'dominant'` -> `'primary'` is an ENUM VALUE CHANGE, taken deliberately one day after the field shipped and while no schema declares it. `factor_ledger[oi_change_pct].direction` changes to `neutral`. `factors[]` is byte-frozen. A `contributes` value that depends on a reading, a `strength` that contradicts its `direction`, a withheld count that varies between responses, or a NEW undeclared factors[]/ledger divergence = Factuality/Data-Integrity violation -> HALT.",
-  "superseded_by": "get-trade-call-shape-snapshot-2026-08-08.json",
-  "superseded_reason": "Superseded by OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1. This snapshot recorded factors[] as byte-FROZEN under Branch B, with the oi_change_pct direction divergence declared rather than fixed. Branch A executed one day later for the FALSEHOOD half: factors[oi_change_pct].direction is now always `neutral`. The funding_state collision remains and is documented in the successor as Class 2 — a naming collision, not a falsehood."
+  "factors_deprecation": "factors[] remains DEPRECATED, superseded by factor_ledger[]. Earliest removal 2027-08-06 under the MCP >=12-month feature-lifecycle policy, executed by OPS-RECEIPTS-FACTORS-RETIRE-W{NEXT}. This wave corrected a VALUE inside it and did not shorten that clock."
 }
