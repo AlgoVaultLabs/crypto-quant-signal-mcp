@@ -63,16 +63,34 @@ resolve_template() {
   while IFS= read -r tpl; do
     [[ -z "$tpl" ]] && continue
     class="${tpl%-W\{NEXT\}}"
-    highest=$(grep -oE "^### .* — ${class}-W[0-9]+ — .*GREEN" "$status_path" 2>/dev/null \
+    # OPS-CLOSEDBAR-LIVENESS-BAND-W1 R4. The prior pattern was
+    #   ^### .* — ${class}-W[0-9]+ — .*GREEN
+    # which demands " — " IMMEDIATELY AFTER the wave id. CLAUDE.md MANDATES a
+    # "(Target ICP tier(s): …)" block in exactly that position, so it could never match a
+    # conforming entry. MEASURED 2026-08-07: 96 `OPS-*-W<N>` headings in status.md, ZERO
+    # matches — this resolver had NEVER resolved anything for ANY class, so every templated
+    # recommended_wave it shipped said "W1", a COMPLETED wave whenever the class had one.
+    # A regex that encodes a format its own SoT does not produce is a dark guard.
+    # Anchor on the wave id; require GREEN anywhere on the heading (accepting
+    # GREEN_WITH_CAVEAT / GREEN_RETROACTIVE_CLOSE, which are completions too).
+    highest=$(grep -oE "^### .*${class}-W[0-9]+.*GREEN" "$status_path" 2>/dev/null \
               | grep -oE "${class}-W[0-9]+" | grep -oE '[0-9]+$' | sort -n | tail -1 || true)
     if [[ -z "$highest" ]]; then
-      next=1
-      log "RESOLVER_MISS: template=${tpl} reason=no_completed_waves_for_class (resolving to W1)"
-    else
-      next=$((highest + 1))
+      # Ship the placeholder VERBATIM — exactly what this file's header has always documented.
+      # The prior code asserted W1: a CONFIDENT WRONG ANSWER, strictly worse than an unresolved
+      # template, because the operator cannot tell it was a guess.
+      log "RESOLVER_MISS: template=${tpl} reason=no_completed_waves_for_class (placeholder shipped verbatim)"
+      continue
     fi
+    next=$((highest + 1))
     if ! [[ "$next" =~ ^[0-9]+$ ]]; then
       log "RESOLVER_MISS: template=${tpl} reason=regex_extract_failed"
+      continue
+    fi
+    # Never hand the operator a wave that already shipped — re-running a completed wave is not
+    # a remedy, and this alert family has now produced that Action line twice.
+    if grep -qE "^### .*${class}-W${next}.*GREEN" "$status_path" 2>/dev/null; then
+      log "RESOLVER_MISS: template=${tpl} reason=resolved_wave_already_green (${class}-W${next}); placeholder shipped verbatim"
       continue
     fi
     body="${body//${tpl}/${class}-W${next}}"

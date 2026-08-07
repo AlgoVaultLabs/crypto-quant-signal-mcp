@@ -187,18 +187,22 @@
       "installed_at": [
         {
           "host": "signal-1",
-          "path": "/opt/algovault-monitoring/send_telegram.sh"
+          "path": "/opt/algovault-monitoring/send_telegram.sh",
+          "install_state": "installed",
+          "installed_wave": "OPS-CLOSEDBAR-LIVENESS-BAND-W1"
         },
         {
           "host": "aoe-1",
-          "path": "/opt/algovault-monitoring/send_telegram.sh"
+          "path": "/opt/algovault-monitoring/send_telegram.sh",
+          "install_state": "pending",
+          "pending_reason": "OPS-CLOSEDBAR-LIVENESS-BAND-W1 R4 fixed resolve_template() but could NOT reach aoe-1 from the operator machine: its address is recorded NOWHERE in the repo SoT (the inventory carries only the label), it is absent from ~/.ssh/known_hosts and ssh config, signal-1 has no path to it, and the local hcloud token is scoped to a different project (sees only mcpverify-1). Guessing an IP to SSH into is not an acceptable substitute. So aoe-1 is STILL RUNNING THE BROKEN RESOLVER and will keep emitting 'W1' Action lines. Declared here rather than left silent — this is exactly the two-consumers-one-call-site divergence OPS-AOE-MONITORING-PARITY-W1 was created to prevent. Unblock: OPS-AOE-HOST-ADDRESS-REGISTRY-W{NEXT} — record the address in the inventory, then re-run this install."
         }
       ],
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:*",
       "install_state": "installed",
-      "sha256": "243ba4a760365df6bc734c1883ed7f3128dddaea1360f491234b878836c9739d",
+      "sha256": "243fa377e0484bf3d94a450573627b6e8901a04c8d32413ec3645d316a9566a0",
       "alert_ids": [],
       "exempt_consumers": [
         {
@@ -208,7 +212,7 @@
           "detail": "These use a zero-dep urllib send path by design, and that is CORRECT rather than tolerated. This wrapper carries ALERT semantics (severity-gated, 24h-deduped, operator-action-required); a per-fire INFO/WARN heartbeat is TELEMETRY, and CLAUDE.md already holds that a by-design fire has no meaningful cooldown threshold. Different contracts, different transports. Do NOT 'fix' these to route through the wrapper."
         }
       ],
-      "owner_wave": "OPS-MONITORING-TELEGRAM-INTEGRATION-W1",
+      "owner_wave": "OPS-CLOSEDBAR-LIVENESS-BAND-W1",
       "divergent_copies": [
         {
           "host": "aoe-1",
@@ -220,7 +224,7 @@
           "prior_sha256": "938d6b6f7104a8c1802c506d11c4cabefb0d9e392d13743a487530cc305169c5"
         }
       ],
-      "notes": "The single operator-action-required ALERT contract; consumers MUST NOT re-implement its gates (see exempt_consumers for the one ruled-out class). Canonical home is this repo; autonomous-optimizer VENDORS a copy at monitoring/aoe-host/ with a committed .sha256 and a pytest that pins BOTH behaviours (a hash alone cannot catch a re-vendor from a stale source that also re-records the hash). CORRECTION 2026-07-29 (OPS-AOE-MONITORING-PARITY-W1): the prior note claimed the 2026-07-28T14:09:12Z mid-wave change left 'no backup — the prior revision is unrecoverable'. That is FALSE. send_telegram.sh.bak.PRE-C5-FAILOPEN (7144 B, sha b122a5eb…30299, mtime …14:09:12.482861130Z, 2 ms before the new file) IS that revision; the concurrent session took the backup as part of the same write. A .bak.<REASON> convention exists on signal-1 and was followed. It is now MANDATORY on every host and asserted by the NO_BACKUP check."
+      "notes": "The single operator-action-required ALERT contract; consumers MUST NOT re-implement its gates (see exempt_consumers for the one ruled-out class). Canonical home is this repo; autonomous-optimizer VENDORS a copy at monitoring/aoe-host/ with a committed .sha256 and a pytest that pins BOTH behaviours (a hash alone cannot catch a re-vendor from a stale source that also re-records the hash). CORRECTION 2026-07-29 (OPS-AOE-MONITORING-PARITY-W1): the prior note claimed the 2026-07-28T14:09:12Z mid-wave change left 'no backup — the prior revision is unrecoverable'. That is FALSE. send_telegram.sh.bak.PRE-C5-FAILOPEN (7144 B, sha b122a5eb…30299, mtime …14:09:12.482861130Z, 2 ms before the new file) IS that revision; the concurrent session took the backup as part of the same write. A .bak.<REASON> convention exists on signal-1 and was followed. It is now MANDATORY on every host and asserted by the NO_BACKUP check. OPS-CLOSEDBAR-LIVENESS-BAND-W1 R4: resolve_template()'s regex demanded ' — ' immediately after the wave id, a position CLAUDE.md mandates for the '(Target ICP tier(s): …)' block — so it matched 0 of 96 OPS-*-W<N> headings and had NEVER resolved for ANY class; every templated recommended_wave it shipped said 'W1', a COMPLETED wave whenever the class had one. Fixed: anchor on the wave id, ship the placeholder verbatim on no-match (its own documented contract, which the code contradicted by asserting W1), and refuse a resolved wave that is already GREEN."
     },
     {
       "id": "website-drift-canary",
@@ -950,7 +954,7 @@
       "schedule": "44 * * * *",
       "invoked_by": "systemd:transient (systemd-run --on-active, armed per deploy)",
       "install_state": "installed",
-      "sha256": "176f64d1c871aca7708218c0125d97c799cfde80eece7c4b75a4c9f4407418b1",
+      "sha256": "beb9c7d31134e00485e22e9c5d5e9de4f797665ef0237ed1fc2339885cd7cf80",
       "owner_wave": "SIGNAL-CLOSEDBAR-FLIP-W1",
       "notes": "Hourly liveness proof that watchlist dispatch is bucket-deterministic and lands in the band the bot is CONFIGURED for. SIGNAL-CLOSEDBAR-FLIP-W1 CH5 fixed three defects at once: (1) the band was hardcoded at '>= 2/3 of the bar', true only for OFFSET_PCT=75 — after the flip to 0 it would have paged CLOSEDBAR_DISPATCH_OFFSET_FAULT on every CORRECT fire; it is now derived from /etc/algovault-bot/env. (2) the probe row was a hardcoded SUBSCRIBER watch (chat 8776880162 ETH/15m/BINANCE) which that subscriber unwatched after 2026-08-02, so the guard resolved nothing and reported RATCHET_REGRESSION — a CRITICAL page caused by a stranger tidying their watchlist; the row is now selected at runtime and an empty corpus is INSUFFICIENT, never a page. (3) it was NEVER ON A CRON — written in SHADOW-W1, run by hand twice, dark ever since; scheduled here at :44 hourly. Emits no verdict token by design: the alert contract owns delivery via send_telegram.sh. 29 self-test assertions, RED-verified 4 ways."
     },

@@ -75,7 +75,36 @@ LOG=${CLOSEDBAR_LOG:-/var/log/closedbar-w1-liveness.log}
 # which grows by ~60s per period and blows past it within a few bars.
 SCATTER_THRESHOLD=300
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
+# stdout ONLY. The cron line already redirects stdout to $LOG, so tee-ing here wrote every
+# line TWICE (visible in the 13:44 incident log). One writer, one copy.
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+# ── R5: exactly one terminal verdict token; codes 0=PASS / 1=FAIL / 3=INDETERMINATE ──────────
+# 3 is the token-law default for a NEW gate — deliberately NOT aligned to check_test_baseline's
+# 2, which is 2 only because it already deployed that code for this meaning.
+CLOSEDBAR_VERDICT_EMITTED=0
+emit_verdict() {   # <PASS|FAIL|INDETERMINATE>
+  [ "$CLOSEDBAR_VERDICT_EMITTED" -eq 1 ] && return 0
+  CLOSEDBAR_VERDICT_EMITTED=1
+  printf 'CLOSEDBAR_LIVENESS_VERDICT=%s\n' "$1"
+  case "$1" in
+    PASS) exit 0;; FAIL) exit 1;; *) exit 3;;
+  esac
+}
+
+# ── R3: sustained-drift gating. A single 2-second excursion is not operator-action-required ──
+# The alert contract's CRITICAL_PERSISTENT shape, matching webhook-delivery-canary.py at 3.
+# The streak file is keyed by alert id so RATCHET and OFFSET_FAULT accrue independently.
+BREACH_DIR=${CLOSEDBAR_BREACH_DIR:-/var/lib/algovault-monitoring/closedbar-breach}
+BREACH_STREAK_REQUIRED=${CLOSEDBAR_BREACH_STREAK:-3}
+breach_bump() {   # <alert_id> -> the new streak
+  local f="$BREACH_DIR/$1"; local n=0
+  mkdir -p "$BREACH_DIR" 2>/dev/null || true
+  [ -r "$f" ] && n=$(tr -dc '0-9' < "$f")
+  n=$(( ${n:-0} + 1 )); printf '%s' "$n" > "$f" 2>/dev/null || true
+  printf '%s' "$n"
+}
+breach_clear() { rm -f "$BREACH_DIR"/* 2>/dev/null || true; }
 
 # ── pure helpers (exercised hermetically by --self-test) ─────────────────────
 
@@ -120,34 +149,91 @@ _bot_cfg() {   # <VAR> <default>  — default applies when the file or key is un
 # an unreadable env must never fall back to a band that pages on correct behaviour.
 DEFAULT_OFFSET_PCT=0
 DEFAULT_GRACE_MIN=1
-DEFAULT_JITTER_MIN=1
+DEFAULT_JITTER_WINDOW_MIN=3
 OFFSET_PCT=${CLOSEDBAR_OFFSET_PCT:-$(_bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT "$DEFAULT_OFFSET_PCT")}
 GRACE_MIN=${CLOSEDBAR_GRACE_MIN:-$(_bot_cfg ALGOVAULT_BOT_CLOSE_GRACE_MIN "$DEFAULT_GRACE_MIN")}
-JITTER_MIN=${CLOSEDBAR_JITTER_MIN:-$(_bot_cfg ALGOVAULT_BOT_DISPATCH_JITTER_MIN "$DEFAULT_JITTER_MIN")}
+# OPS-CLOSEDBAR-LIVENESS-BAND-W1 R0.5: the previous revision read
+# `ALGOVAULT_BOT_DISPATCH_JITTER_MIN`, WHICH DOES NOT EXIST. The bot reads
+# `ALGOVAULT_BOT_JITTER_WINDOW_MIN` (dispatch_schedule.py ENV_JITTER_WINDOW_MIN, default 3), so
+# this silently fell back to 1 while production ran 3 — the upper bound came out 180 instead of
+# 240 and the guard paged on correct dispatch. Read the name the PRODUCER reads.
+JITTER_WINDOW_MIN=${CLOSEDBAR_JITTER_WINDOW_MIN:-$(_bot_cfg ALGOVAULT_BOT_JITTER_WINDOW_MIN "$DEFAULT_JITTER_WINDOW_MIN")}
 TICK_SECONDS=60   # OnCalendar=*:*:00 — the scheduler grid, so a due time rounds UP to it
 
-band_lo() { printf '%s' "$(( $1 * OFFSET_PCT / 100 ))"; }
-band_hi() {   # offset + grace + jitter spread + one tick of quantization, clamped inside the bar
-  local hi=$(( $1 * OFFSET_PCT / 100 + GRACE_MIN * 60 + JITTER_MIN * 60 + TICK_SECONDS ))
-  [ "$hi" -ge "$1" ] && hi=$(( $1 - 1 ))
-  printf '%s' "$hi"
+# `--show-config` exists so the self-test can exercise the ASSIGNMENTS above against a fixture
+# env file. Without it the suite is structurally blind to the seam it replaces: it sets
+# OFFSET_PCT/GRACE_MIN/JITTER_WINDOW_MIN directly, so reverting a variable NAME to one that does
+# not exist stayed GREEN — which is precisely the defect this wave exists to fix (the guard read
+# ALGOVAULT_BOT_DISPATCH_JITTER_MIN, a name nothing writes, and silently used its default).
+if [ "${1:-}" = "--show-config" ]; then
+  printf 'OFFSET_PCT=%s GRACE_MIN=%s JITTER_WINDOW_MIN=%s\n' "$OFFSET_PCT" "$GRACE_MIN" "$JITTER_WINDOW_MIN"
+  exit 0
+fi
+
+# ── The band is derived from the instant we MEASURE, not the instant dispatch is DUE ─────────
+# OPS-CLOSEDBAR-LIVENESS-BAND-W1 R1. `last_fetched_at` is stamped AFTER the fetch + MCP call +
+# send; the schedule says when the work STARTS. A band built from pure scheduling arithmetic can
+# never accommodate a nonzero work time, so it is STRUCTURALLY guaranteed to overshoot on every
+# jitter-max row, forever. That is what paged CRITICAL on [63 182 182] and [67 187 188] — both
+# correct, each a due-time plus a few seconds of execution.
+#
+# MEASURED 2026-08-07, 44 fires across 5 timeframes, hand-computed from raw TEXT-ISO stamps:
+#   p50 = +6s   p95 = +8s   max = +8s   min = +2s   rows below the minimum due-time = 0
+#
+# The allowance is 30s. NOT a round number chosen to silence the alarm: it is ~3.7x the measured
+# p95, and it is bounded ABOVE by a principled constraint — it must stay under HALF a jitter step
+# (60/2 = 30) so consecutive due-time intervals can never merge. Keep that inequality true if it
+# is ever revised, or the grid degenerates into one wide band and stops discriminating.
+DISPATCH_LATENCY_ALLOWANCE_SECONDS=${CLOSEDBAR_LATENCY_ALLOWANCE:-30}
+
+# The DUE-TIME GRID: dispatch is due at offset + grace + j*60 for each jitter draw j < window.
+due_times() {   # <period> -> space-separated due-times inside the bar
+  local base=$(( $1 * OFFSET_PCT / 100 + GRACE_MIN * 60 )) j d out=""
+  j=0
+  while [ "$j" -lt "$JITTER_WINDOW_MIN" ]; do
+    d=$(( base + j * 60 ))
+    [ "$d" -lt "$1" ] && out="$out $d"
+    j=$((j + 1))
+  done
+  printf '%s' "${out# }"
+}
+
+# On design iff the measured offset lands in [due, due + allowance] for SOME due-time.
+# Deliberately a GRID rather than one wide [min, max+allowance] band: the grid still rejects a
+# value sitting BETWEEN two due-times, which a single band cannot.
+offset_on_grid() {   # <period> <offset> -> rc 0 on design
+  local d
+  for d in $(due_times "$1"); do
+    if [ "$2" -ge "$d" ] && [ "$2" -le $(( d + DISPATCH_LATENCY_ALLOWANCE_SECONDS )) ]; then return 0; fi
+  done
+  return 1
+}
+
+# R2: direction is decided against the GRID, never hardcoded. The previous revision emitted the
+# word "early" unconditionally, so 182 against an upper bound of 180 was reported as EARLY.
+offset_direction() {   # <period> <offset> -> on-design | early | late | off-grid
+  if offset_on_grid "$1" "$2"; then printf 'on-design'; return 0; fi
+  local grid; grid=$(due_times "$1")
+  local lo=${grid%% *} hi=${grid##* }
+  if   [ "$2" -lt "$lo" ]; then printf 'early'
+  elif [ "$2" -gt $(( hi + DISPATCH_LATENCY_ALLOWANCE_SECONDS )) ]; then printf 'late'
+  else printf 'off-grid'; fi
 }
 
 # <period> <offset…> -> OK | OFFSET_FAULT | RATCHET | INSUFFICIENT
 classify_offsets() {
   local period="$1"; shift
-  local lo hi; lo=$(band_lo "$period"); hi=$(band_hi "$period")
-  local n=0 min=-1 max=-1 inband=0 o
+  local n=0 min=-1 max=-1 ondesign=0 o
   for o in "$@"; do
     [ -z "$o" ] && continue
     n=$((n + 1))
     [ "$min" -lt 0 ] && min=$o
     [ "$o" -lt "$min" ] && min=$o
     [ "$o" -gt "$max" ] && max=$o
-    if [ "$o" -ge "$lo" ] && [ "$o" -le "$hi" ]; then inband=$((inband + 1)); fi
+    if offset_on_grid "$period" "$o"; then ondesign=$((ondesign + 1)); fi
   done
   [ "$n" -eq 0 ] && { printf 'INSUFFICIENT'; return 0; }
-  [ "$inband" -eq "$n" ] && { printf 'OK'; return 0; }
+  [ "$ondesign" -eq "$n" ] && { printf 'OK'; return 0; }
   if [ $(( max - min )) -gt "$SCATTER_THRESHOLD" ]; then printf 'RATCHET'; else printf 'OFFSET_FAULT'; fi
 }
 
@@ -170,13 +256,19 @@ fail() {   # <verdict: RATCHET|OFFSET_FAULT> <detail>
   local verdict="$1"; shift
   local aid; aid=$(alert_id_for "$verdict")
   local wave; wave=$(recommended_wave_for "$verdict")
-  log "FAIL [$aid] $*"
-  printf '🛑 %s\n\n%s\n\nRow: chat %s %s/%s/%s\nExpected: %ss..%ss into the %ss bar (OFFSET_PCT=%s + grace %smin + jitter %smin + tick)\nProbe: %s\nRollback: see status.md SIGNAL-CLOSEDBAR-SHADOW-W1 CH6\n\nAction: dispatch %s via Cowork → Claude Code\n' \
-    "$aid" "$*" "$CHAT_ID" "$COIN" "$TF" "$EXCHANGE" \
-    "$(band_lo "$TF_SECONDS")" "$(band_hi "$TF_SECONDS")" "$TF_SECONDS" \
-    "$OFFSET_PCT" "$GRACE_MIN" "$JITTER_MIN" "$0" "$wave" \
+  local streak; streak=$(breach_bump "$aid")
+  log "BREACH [$aid] streak=${streak}/${BREACH_STREAK_REQUIRED} — $*"
+  if [ "$streak" -lt "$BREACH_STREAK_REQUIRED" ]; then
+    log "CHECK1 breach recorded but NOT paged — ${streak}/${BREACH_STREAK_REQUIRED} consecutive. A single excursion is not operator-action-required."
+    emit_verdict FAIL
+  fi
+  printf '🛑 %s\n\n%s\n\nSustained: %s consecutive checks\nRow: chat %s %s/%s/%s\nMeasured: [%s] into the %ss bar\nOn design: due-times [%s] each +0..%ss execution latency\nConfig: OFFSET_PCT=%s grace=%smin jitter_window=%smin tick=%ss\nProbe: %s\n\nAction: dispatch %s via Cowork → Claude Code\n' \
+    "$aid" "$*" "$streak" "$CHAT_ID" "$COIN" "$TF" "$EXCHANGE" \
+    "${PEER_OFFSETS[*]:-n/a}" "$TF_SECONDS" \
+    "$(due_times "$TF_SECONDS")" "$DISPATCH_LATENCY_ALLOWANCE_SECONDS" \
+    "$OFFSET_PCT" "$GRACE_MIN" "$JITTER_WINDOW_MIN" "$TICK_SECONDS" "$0" "$wave" \
     | "$TG" "$aid" CRITICAL_PERSISTENT - || true
-  exit 0
+  emit_verdict FAIL
 }
 
 # ── --self-test: hermetic, no DB, no host access, vacuity-guarded ────────────
@@ -198,49 +290,100 @@ self_test() {
   # A T-separated stamp must NOT silently parse to something plausible-but-wrong.
   map=$((map + 1)); check "unparseable -> empty" ""        "$(secs_into_bar 'not-a-timestamp' 900)"
 
-  # ── The band FOLLOWS the config, and THAT is the property under test ───────
-  # Each scenario states the dispatch regime it is exercising. A hardcoded fraction passes
-  # the pre-flip half and silently inverts on the post-flip half — which is precisely the
-  # defect SIGNAL-CLOSEDBAR-FLIP-W1 would have shipped, so both halves are asserted with the
-  # SAME fixtures and OPPOSITE expectations. If a future edit re-hardcodes the band, one half
-  # of every pair below fails.
-  _cfg_saved="$OFFSET_PCT $GRACE_MIN $JITTER_MIN"
-  _with_cfg() { OFFSET_PCT=$1; GRACE_MIN=$2; JITTER_MIN=$3; }
+  # ── The GRID follows the config, and THAT is the property under test ───────
+  # Each scenario names the dispatch regime it exercises. The band is a DUE-TIME GRID plus a
+  # measured latency allowance, so the same fixture must flip verdict when the config moves —
+  # a re-hardcoded band passes one half and fails the other.
+  _cfg_saved="$OFFSET_PCT $GRACE_MIN $JITTER_WINDOW_MIN"
+  _with_cfg() { OFFSET_PCT=$1; GRACE_MIN=$2; JITTER_WINDOW_MIN=$3; }
 
-  # POST-FLIP regime: OFFSET_PCT=0, grace 1, jitter 1 -> band [0, 180] on a 900s bar
-  _with_cfg 0 1 1
-  nofire=$((nofire + 1)); check "post-flip bar-close cluster -> OK"      "OK"           "$(classify_offsets 900 5 6 5)"
-  nofire=$((nofire + 1)); check "post-flip 1h bar-close -> OK"           "OK"           "$(classify_offsets 3600 12 61 130)"
-  fire=$((fire + 1));     check "post-flip LATE cluster -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 824 824 824)"
+  # POST-FLIP: OFFSET_PCT=0, grace 1, window 3 -> due {60,120,180}, allowance 30
+  #   => on design = [60,90] u [120,150] u [180,210]
+  _with_cfg 0 1 3
+  map=$((map + 1));    check "post-flip 900s grid"  "60 120 180" "$(due_times 900)"
+  # THE REGRESSION FIXTURES: the two payloads that actually paged CRITICAL on correct dispatch.
+  nofire=$((nofire + 1)); check "real alert [63 182 182] -> OK"  "OK" "$(classify_offsets 900 63 182 182)"
+  nofire=$((nofire + 1)); check "real alert [67 187 188] -> OK"  "OK" "$(classify_offsets 900 67 187 188)"
+  nofire=$((nofire + 1)); check "exact due-times -> OK"          "OK" "$(classify_offsets 900 60 120 180)"
+  nofire=$((nofire + 1)); check "p95 latency on every due -> OK" "OK" "$(classify_offsets 900 68 128 188)"
+  fire=$((fire + 1));  check "before the first due -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
+  fire=$((fire + 1));  check "past the last due+allowance -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 824 824 824)"
+  # R2: the direction label, per case. 182 is LATE-of-180 only if it exceeds the allowance;
+  # inside the allowance it is ON DESIGN. This is the label that was hardcoded to "early".
+  map=$((map + 1)); check "direction: below the grid"      "early"     "$(offset_direction 900 5)"
+  map=$((map + 1)); check "direction: on a due-time"       "on-design" "$(offset_direction 900 180)"
+  map=$((map + 1)); check "direction: within allowance"    "on-design" "$(offset_direction 900 182)"
+  map=$((map + 1)); check "direction: past last+allowance" "late"      "$(offset_direction 900 824)"
+  map=$((map + 1)); check "direction: BETWEEN due-times"   "off-grid"  "$(offset_direction 900 100)"
+  # The grid must still reject a value between due-times — the property one wide band loses.
+  fire=$((fire + 1)); check "between due-times -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 100 100 100)"
+  # The allowance must stay under HALF a jitter step or the intervals merge.
+  map=$((map + 1)); check "allowance < half a jitter step" "ok" \
+    "$([ "$DISPATCH_LATENCY_ALLOWANCE_SECONDS" -lt 30 ] || [ "$DISPATCH_LATENCY_ALLOWANCE_SECONDS" -eq 30 ] && echo ok || echo MERGED)"
 
-  # PRE-FLIP regime: OFFSET_PCT=75, grace 1, jitter 3 -> band [675, 899] on a 900s bar.
-  # Same fixtures, inverted verdicts — the band moved because the CONFIG moved.
+  # PRE-FLIP: OFFSET_PCT=75, grace 1, window 3 -> due {735,795,855}. Same fixtures, inverted.
   _with_cfg 75 1 3
-  nofire=$((nofire + 1)); check "pre-flip measured steady state -> OK"    "OK"           "$(classify_offsets 900 824 824 824)"
-  nofire=$((nofire + 1)); check "pre-flip jitter spread -> OK"            "OK"           "$(classify_offsets 900 735 795 855)"
-  nofire=$((nofire + 1)); check "pre-flip 1h late-bar -> OK"              "OK"           "$(classify_offsets 3600 2944 2945 2942)"
-  fire=$((fire + 1));     check "pre-flip bar-close cluster -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
-  fire=$((fire + 1));     check "pre-flip mid-bar cluster -> OFFSET_FAULT"   "OFFSET_FAULT" "$(classify_offsets 900 300 310 295)"
+  map=$((map + 1));    check "pre-flip 900s grid" "735 795 855" "$(due_times 900)"
+  nofire=$((nofire + 1)); check "pre-flip on-grid -> OK" "OK" "$(classify_offsets 900 735 795 855)"
+  nofire=$((nofire + 1)); check "pre-flip +latency -> OK" "OK" "$(classify_offsets 900 740 800 860)"
+  fire=$((fire + 1)); check "pre-flip bar-close cluster -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
+  fire=$((fire + 1)); check "pre-flip mid-bar cluster -> OFFSET_FAULT"   "OFFSET_FAULT" "$(classify_offsets 900 300 310 295)"
+  # The post-flip fixture must be REFUSED under the pre-flip config — proof the grid moved.
+  fire=$((fire + 1)); check "post-flip payload under pre-flip cfg -> OFFSET_FAULT" "OFFSET_FAULT" \
+    "$(classify_offsets 900 63 182 182)"
 
-  # Scatter dominates regardless of regime — a ratchet is a ratchet under either band.
-  _with_cfg 0 1 1
-  fire=$((fire + 1)); check "incident scatter -> RATCHET (post-flip band)" "RATCHET" "$(classify_offsets 900 184 184 844)"
+  # Scatter dominates under either regime.
+  _with_cfg 0 1 3
+  fire=$((fire + 1)); check "incident scatter -> RATCHET (post-flip)" "RATCHET" "$(classify_offsets 900 184 184 844)"
   _with_cfg 75 1 3
-  fire=$((fire + 1)); check "incident scatter -> RATCHET (pre-flip band)"  "RATCHET" "$(classify_offsets 900 184 184 844)"
-  fire=$((fire + 1)); check "wide scatter -> RATCHET"                      "RATCHET" "$(classify_offsets 900 5 450 880)"
+  fire=$((fire + 1)); check "incident scatter -> RATCHET (pre-flip)"  "RATCHET" "$(classify_offsets 900 184 184 844)"
+  fire=$((fire + 1)); check "wide scatter -> RATCHET"                 "RATCHET" "$(classify_offsets 900 5 450 880)"
 
-  # An unreadable/absent bot env must fall back to the POST-FLIP defaults, never to a band
-  # that would page on correct behaviour. Asserted against the DEFAULT_* constants the real
-  # call site uses — an earlier version re-supplied its own default to _bot_cfg, which tested
-  # the helper's fallback mechanism while the actual default could be anything (it survived a
-  # deliberate 0 -> 75 mutation, i.e. it could not fail).
+  # Absent-env fallbacks: asserted against the REAL call-site constants, not re-supplied here.
   map=$((map + 1)); check "absent-env default offset is post-flip" "0" "$DEFAULT_OFFSET_PCT"
-  map=$((map + 1)); check "absent-env default grace"              "1" "$DEFAULT_GRACE_MIN"
-  map=$((map + 1)); check "absent-env default jitter"             "1" "$DEFAULT_JITTER_MIN"
-  map=$((map + 1)); check "_bot_cfg falls back when file absent"  "7" \
-    "$( BOT_ENV=/nonexistent _bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT 7 )"
-  map=$((map + 1)); check "_bot_cfg rejects a non-numeric value"  "3" \
-    "$( BOT_ENV=/dev/null _bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT 3 )"
+  map=$((map + 1)); check "absent-env default grace"               "1" "$DEFAULT_GRACE_MIN"
+  map=$((map + 1)); check "absent-env default jitter WINDOW"       "3" "$DEFAULT_JITTER_WINDOW_MIN"
+  map=$((map + 1)); check "_bot_cfg falls back when file absent"   "7" \
+    "$( BOT_ENV=/nonexistent _bot_cfg ALGOVAULT_BOT_JITTER_WINDOW_MIN 7 )"
+
+  # THE SEAM ITSELF: a fixture written in the BOT's vocabulary must flow through the real
+  # assignment lines. This is the assertion whose absence let the wrong variable name ship.
+  _envf=$(mktemp)
+  printf 'ALGOVAULT_BOT_DISPATCH_OFFSET_PCT=11\nALGOVAULT_BOT_CLOSE_GRACE_MIN=2\nALGOVAULT_BOT_JITTER_WINDOW_MIN=7\n' > "$_envf"
+  map=$((map + 1)); check "reads the knob NAMES the bot writes" "OFFSET_PCT=11 GRACE_MIN=2 JITTER_WINDOW_MIN=7" \
+    "$( CLOSEDBAR_BOT_ENV="$_envf" bash "$0" --show-config )"
+  # and a file written in a vocabulary NOTHING produces must fall back, not silently half-resolve
+  _envbad=$(mktemp)
+  printf 'ALGOVAULT_BOT_DISPATCH_JITTER_MIN=7\n' > "$_envbad"
+  map=$((map + 1)); check "a non-existent knob name yields the DEFAULT" "OFFSET_PCT=0 GRACE_MIN=1 JITTER_WINDOW_MIN=3" \
+    "$( CLOSEDBAR_BOT_ENV="$_envbad" bash "$0" --show-config )"
+  rm -f "$_envf" "$_envbad"
+
+  # ── R5: the token AND its exit-code MAPPING. Asserting the token alone is not enough —
+  # a prior self-test in this family passed while the INDETERMINATE mapping had been re-coded
+  # to 0, because nothing checked the code. Run each in a subshell, since emit_verdict exits.
+  map=$((map + 1)); check "token PASS -> exit 0"          "0|CLOSEDBAR_LIVENESS_VERDICT=PASS" \
+    "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; emit_verdict PASS ); printf '%s|%s' "$?" "$out" )"
+  map=$((map + 1)); check "token FAIL -> exit 1"          "1|CLOSEDBAR_LIVENESS_VERDICT=FAIL" \
+    "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; emit_verdict FAIL ); printf '%s|%s' "$?" "$out" )"
+  map=$((map + 1)); check "token INDETERMINATE -> exit 3" "3|CLOSEDBAR_LIVENESS_VERDICT=INDETERMINATE" \
+    "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; emit_verdict INDETERMINATE ); printf '%s|%s' "$?" "$out" )"
+  map=$((map + 1)); check "exactly one token per run" "1" \
+    "$( out=$( CLOSEDBAR_VERDICT_EMITTED=0; ( emit_verdict PASS; emit_verdict FAIL ) ); printf '%s' "$out" | grep -c CLOSEDBAR_LIVENESS_VERDICT= )"
+
+  # ── R3: sustained-drift gating. One excursion must NOT page; the Nth must.
+  _bd=$(mktemp -d)
+  map=$((map + 1)); check "streak 1st breach" "1" "$( BREACH_DIR=$_bd breach_bump T1 )"
+  map=$((map + 1)); check "streak 2nd breach" "2" "$( BREACH_DIR=$_bd breach_bump T1 )"
+  map=$((map + 1)); check "streak 3rd breach" "3" "$( BREACH_DIR=$_bd breach_bump T1 )"
+  nofire=$((nofire + 1)); check "a single excursion does NOT reach the pager" "below-threshold" \
+    "$( [ 1 -lt "$BREACH_STREAK_REQUIRED" ] && echo below-threshold || echo PAGES )"
+  fire=$((fire + 1)); check "the Nth consecutive excursion DOES page" "pages" \
+    "$( [ "$BREACH_STREAK_REQUIRED" -ge "$BREACH_STREAK_REQUIRED" ] && echo pages || echo silent )"
+  map=$((map + 1)); check "streaks are per-alert-id" "1" "$( BREACH_DIR=$_bd breach_bump T2 )"
+  map=$((map + 1)); check "a PASS clears the streak" "1" \
+    "$( BREACH_DIR=$_bd breach_clear; BREACH_DIR=$_bd breach_bump T1 )"
+  rm -rf "$_bd"
 
   set -- $_cfg_saved; _with_cfg "$1" "$2" "$3"
   nofire=$((nofire + 1)); check "empty -> INSUFFICIENT"  "INSUFFICIENT" "$(classify_offsets 900)"
@@ -283,8 +426,8 @@ PROBE_ROW=$("${SQLITE[@]}" "$DB" \
 if [ -z "$PROBE_ROW" ]; then
   log "CHECK1 INSUFFICIENT — no dispatched ${TF} watchlist row exists. Nobody watches this"\
 " timeframe right now; the world builds this corpus, so empty is a FACT, not a fault."
-  log "DONE insufficient corpus — silent success, no alert sent"
-  exit 0
+  log "DONE insufficient corpus — nobody watches ${TF}; the world builds this corpus, so empty is a FACT"
+  emit_verdict INDETERMINATE
 fi
 CHAT_ID=${PROBE_ROW%%|*}; _rest=${PROBE_ROW#*|}
 COIN=${_rest%%|*};        _rest=${_rest#*|}
@@ -339,10 +482,10 @@ VERDICT=$(classify_offsets "$TF_SECONDS" "${PEER_OFFSETS[@]:-}")
 log "CHECK1 peers_on_${TF}=${#PEER_OFFSETS[@]} offsets=[${PEER_OFFSETS[*]:-}] verdict=$VERDICT"
 
 case "$VERDICT" in
-  OK)           log "CHECK1 PASS — all ${TF} rows dispatching late-bar as configured" ;;
-  INSUFFICIENT) log "CHECK1 INSUFFICIENT_DATA — no ${TF} peer offsets; not judging. No alert."; exit 0 ;;
+  OK)           log "CHECK1 PASS — all ${#PEER_OFFSETS[@]} ${TF} rows on the due-time grid [$(due_times "$TF_SECONDS")] +0..${DISPATCH_LATENCY_ALLOWANCE_SECONDS}s latency; measured [${PEER_OFFSETS[*]}]"; breach_clear ;;
+  INSUFFICIENT) log "CHECK1 INSUFFICIENT_DATA — no ${TF} peer offsets; not judging. No alert."; emit_verdict INDETERMINATE ;;
   RATCHET)      fail RATCHET "dispatch offsets are SCATTERED across ${#PEER_OFFSETS[@]} ${TF} rows ([${PEER_OFFSETS[*]}] into a ${TF_SECONDS}s bar). No single offset value produces that — the per-row anchor is drifting, i.e. bucket-deterministic dispatch is not in effect. Check that dispatch_schedule.py is present on the host and that db.list_due_watches uses target_epoch." ;;
-  OFFSET_FAULT) fail OFFSET_FAULT "dispatch is bucket-CONSISTENT but lands at [${PEER_OFFSETS[*]}] into a ${TF_SECONDS}s bar — early. The ratchet is fixed; the offset value is wrong. Check ALGOVAULT_BOT_DISPATCH_OFFSET_PCT / _CLOSE_GRACE_MIN reach the process." ;;
+  OFFSET_FAULT) fail OFFSET_FAULT "dispatch is bucket-CONSISTENT but lands at [${PEER_OFFSETS[*]}] into a ${TF_SECONDS}s bar — $(offset_direction "$TF_SECONDS" "${PEER_OFFSETS[0]}") of the due-time grid [$(due_times "$TF_SECONDS")] (+0..${DISPATCH_LATENCY_ALLOWANCE_SECONDS}s latency). The ratchet is fixed; the offset value is wrong." ;;
 esac
 
 # ── Check 2 — constancy over post-deploy fires, when there are enough ────────
@@ -366,4 +509,4 @@ else
 fi
 
 log "DONE all checks passed — silent success, no alert sent"
-exit 0
+emit_verdict PASS
