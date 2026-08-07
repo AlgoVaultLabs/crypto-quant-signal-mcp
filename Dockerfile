@@ -37,6 +37,14 @@ COPY --from=builder /app/dist/ ./dist/
 # via src/lib/changelog-parser.ts — ship it inside the image so the script no
 # longer needs the `git` CLI (which the alpine node images do not include).
 COPY CHANGELOG.md ./
+# OPS-CLOSEDBAR-RECALIBRATE-READINESS-W1 — the readiness harness runs INSIDE this container
+# (that is where DATABASE_URL lives) and reads its thresholds from this file at RUNTIME. The
+# rest of ops/ is host-side and deliberately absent from the image, so without this single
+# COPY the harness would fail loadConfig() on every run and report INDETERMINATE forever —
+# dark on day one. Caught by checking the image, not by assuming.
+# NOTE: unlike ops/monitoring/** and ops/scripts/**, this path is NOT in deploy.yml's
+# paths-ignore — and must not be, because it IS baked in here and a change must rebuild.
+COPY ops/closedbar-recalibrate-config.json ./ops/closedbar-recalibrate-config.json
 # INTEGRATIONS-W1 C6 — landing/integrations/*.html pre-rendered mirrors
 # read at startup by the /docs/integrations/:exchange route in dist/index.js.
 # WEBSITE-REFRESH-W1 C4 — landing/skills.html read at startup by the

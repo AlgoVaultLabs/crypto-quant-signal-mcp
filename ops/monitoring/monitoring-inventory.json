@@ -1121,6 +1121,28 @@
         }
       ],
       "notes": "Watches CROSS-REPO GitHub Actions conclusions, which this inventory's host-artifact model could not see — and that blind spot is exactly why algovault-skills' Marketplace Health Check ran RED for 40 consecutive runs (2026-06-27 to 2026-08-05) with nobody knowing. Its own alert step was dark by construction: that repo holds no Telegram credentials, so the step resolved both secrets to empty and exit 0'd. DELIBERATELY kind:executable, NOT a new kind:github-workflow. The artifact this row governs is the local script — hashable, schedulable, ORPHAN/HASH_DRIFT-checkable like every other row. A remote workflow is not an artifact we install and the reconciler cannot hash one, so the cross-repo relationship is recorded as the `watches` field rather than by bending `kind`. Adding a watched workflow is a `watches` row, not a code change. NO TOKEN: the watched repos are public, so the workflow-runs REST endpoint reads unauthenticated (verified 2026-08-06) — a canary that needs a credential dies when the credential does, which is the class it exists to catch. Fail-open per ops/cron convention (an infra error exits 0 rather than bouncing the cron) but the XREPO_CI_VERDICT token still distinguishes PASS from INDETERMINATE, so 'all green' can never be confused with 'could not find out'. PROVEN TO FIRE before being called live: driven against a fixture API returning conclusion=failure, it invoked the alerter with alert_id=xrepo_ci_red severity=CRITICAL_PERSISTENT and a body naming the repo, workflow, conclusion and run URL. An empty watch list REFUSES (INDETERMINATE) rather than reporting a confident all-clear over nothing."
+    },
+    {
+      "id": "closedbar-recalibrate-readiness",
+      "artifact": "ops/cron/closedbar-recalibrate-readiness.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/cron/closedbar-recalibrate-readiness.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/cron/closedbar-recalibrate-readiness.sh",
+          "schedule": "24 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": "24 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "f9d6b4ae5d718772d94edfa8652d4a46b3e1b2ff855ad63a5cfca8ba287e0fb2",
+      "owner_wave": "OPS-CLOSEDBAR-RECALIBRATE-READINESS-W1",
+      "notes": "Hourly readiness gate for OPS-CLOSEDBAR-RECALIBRATE-W{NEXT} — the instrument built BEFORE the decision. Wraps the READ-ONLY harness src/scripts/closedbar-recalibrate-readiness.ts, which runs INSIDE the app container (where DATABASE_URL is) and emits exactly one RECALIBRATE_READINESS_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3, fail closed). Every statistic is sliced per-TIMEFRAME AND per-VENUE: a venue-blind report is the F2 defect that made the flip's 87.8% floor rate a Binance/XRP proxy against a real 78.58% spanning 2.85%-78.58%. The methodology-boundary interval [2026-08-07T10:16:12Z -> 12:28:57Z] is re-read from status.md at runtime and EXCLUDED (349 signals sit inside it). Thresholds live in ops/closedbar-recalibrate-config.json with a reason per row, derived from measured accrual and from the backfill's own EVAL_CANDLES horizons — 1d is the binding term at ~3 emitted/day + 72h maturity, which is what sets distinct_utc_days=7. NOT_READY is the expected steady state until the coarse timeframes accrue and is logged, never paged; only RECALIBRATE_READY (once ever, behind a marker) and RECALIBRATE_ACCRUAL_STALLED (48h of no growth) alert. The config is COPYed into the image by the Dockerfile — without that the harness would fail loadConfig() inside the container and report INDETERMINATE forever."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
