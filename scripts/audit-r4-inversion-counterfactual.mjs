@@ -61,8 +61,13 @@ function buildCurrentR4SQL(windowDays) {
       AVG(confidence)::float AS avg_confidence
     FROM signals
     WHERE created_at >= EXTRACT(EPOCH FROM NOW() - INTERVAL '${windowDays} days')
-    GROUP BY signal, regime
-    ORDER BY signal, regime;
+    -- SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2: `regime` means two different things either side of
+      -- 2026-08-07T15:28:44Z (v1 = emaCross AND an RSI band, RANGING as fallthrough; v2 =
+      -- separation band + 12-bar confirmation, no RSI term). Grouping by the version keeps the
+      -- two populations SEPARATE rather than averaging across two instruments, which is not a
+      -- delta. Do not collapse this back without deciding what a mixed cell would mean.
+    GROUP BY signal, regime, regime_rule_version
+    ORDER BY signal, regime, regime_rule_version;
   `;
 }
 
@@ -93,7 +98,12 @@ function buildCounterfactualSegmentSQL(windowDays) {
     FROM signals
     WHERE created_at >= EXTRACT(EPOCH FROM NOW() - INTERVAL '${windowDays} days')
       AND confidence IS NOT NULL
-    GROUP BY signal, regime, confidence_band
+    -- SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2: `regime` means two different things either side of
+    -- 2026-08-07T15:28:44Z (v1 = emaCross AND an RSI band, RANGING as fallthrough; v2 =
+    -- separation band + 12-bar confirmation, no RSI term). Grouping by the version keeps the
+    -- two populations SEPARATE rather than averaging across two instruments, which is not a
+    -- delta. Do not collapse this back without deciding what a mixed cell would mean.
+    GROUP BY signal, regime, confidence_band, regime_rule_version
     ORDER BY signal, regime, confidence_band;
   `;
 }
