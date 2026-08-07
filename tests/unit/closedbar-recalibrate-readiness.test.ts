@@ -96,6 +96,38 @@ describe('methodology boundary is an exclusion (M2)', () => {
     expect(b.source).toBe('status.md');
     expect(new Date(b.startMs).toISOString()).toBe('2026-09-01T00:00:00.000Z');
   });
+
+  // The harness runs INSIDE the container, where /var/lib/algovault-monitoring/status.md does
+  // not exist — the first live run proved it by reporting `config-fallback`. So the HOST wrapper
+  // reads status.md and passes the interval in, and that path outranks everything.
+  it('takes the boundary from the host wrapper when supplied, and labels the source', () => {
+    const prev = [process.env.RECALIBRATE_BOUNDARY_START, process.env.RECALIBRATE_BOUNDARY_END];
+    process.env.RECALIBRATE_BOUNDARY_START = '2026-10-01T00:00:00Z';
+    process.env.RECALIBRATE_BOUNDARY_END = '2026-10-01T02:00:00Z';
+    try {
+      const b = resolveBoundary(cfg, '[2026-09-01T00:00:00Z → 01:00:00Z]');
+      expect(b.source).toBe('status.md (via host wrapper)');
+      expect(new Date(b.endMs).toISOString()).toBe('2026-10-01T02:00:00.000Z');
+    } finally {
+      process.env.RECALIBRATE_BOUNDARY_START = prev[0];
+      process.env.RECALIBRATE_BOUNDARY_END = prev[1];
+      if (prev[0] === undefined) delete process.env.RECALIBRATE_BOUNDARY_START;
+      if (prev[1] === undefined) delete process.env.RECALIBRATE_BOUNDARY_END;
+    }
+  });
+
+  it('ignores a malformed wrapper boundary rather than trusting it', () => {
+    const prev = process.env.RECALIBRATE_BOUNDARY_START;
+    process.env.RECALIBRATE_BOUNDARY_START = 'not-a-date';
+    process.env.RECALIBRATE_BOUNDARY_END = 'also-not';
+    try {
+      expect(resolveBoundary(cfg, null).source).toMatch(/^config-fallback/);
+    } finally {
+      delete process.env.RECALIBRATE_BOUNDARY_END;
+      if (prev === undefined) delete process.env.RECALIBRATE_BOUNDARY_START;
+      else process.env.RECALIBRATE_BOUNDARY_START = prev;
+    }
+  });
 });
 
 describe('readiness verdict is computed, not judged (M5)', () => {

@@ -41,7 +41,30 @@ mkdir -p "$STATE_DIR"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/recalibrate.XXXXXX") || exit 0
 trap 'rm -rf "$TMP"' EXIT
 
-docker exec "$CTR" node "$HARNESS" > "$TMP/report.txt" 2>"$TMP/err"
+# M2 — re-read the methodology boundary from status.md HERE, on the host, because the harness
+# runs inside the container where that path does not exist. Passed in by env; the harness falls
+# back to its config copy (labelled) if this yields nothing, so a status.md change can never
+# silently do nothing.
+STATUS_MD=${RECALIBRATE_STATUS_MD:-/var/lib/algovault-monitoring/status.md}
+BSTART=""; BEND=""
+if [ -r "$STATUS_MD" ]; then
+  IV=$(grep -oE '\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z → [0-9T:Z-]+\]' "$STATUS_MD" | head -1)
+  BSTART=$(printf '%s' "$IV" | grep -oE '^\[[0-9-]{10}T[0-9:]{8}Z' | tr -d '[')
+  BEND=$(printf '%s' "$IV" | sed -E 's/.*→ *//; s/\]//')
+  # the record abbreviates the end when it shares the start's date
+  case "$BEND" in
+    ??:??:??Z) BEND="${BSTART%T*}T$BEND" ;;
+  esac
+  # Drift check: the config copy is a FALLBACK, not a second source of truth.
+  CFG_END=$(python3 -c "import json;print(json.load(open('/opt/crypto-quant-signal-mcp/ops/closedbar-recalibrate-config.json'))['methodology_boundary']['end_utc'])" 2>/dev/null || echo '')
+  if [ -n "$BEND" ] && [ -n "$CFG_END" ] && [ "$BEND" != "$CFG_END" ]; then
+    echo "recalibrate-readiness: BOUNDARY DRIFT — status.md says end=$BEND, config says end=$CFG_END. status.md wins; reconcile the config."
+  fi
+fi
+
+docker exec "$CTR" \
+  -e RECALIBRATE_BOUNDARY_START="$BSTART" -e RECALIBRATE_BOUNDARY_END="$BEND" \
+  node "$HARNESS" > "$TMP/report.txt" 2>"$TMP/err"
 RC=$?
 
 # The harness's contract: body first, verdict token ALWAYS LAST. A run that produced no

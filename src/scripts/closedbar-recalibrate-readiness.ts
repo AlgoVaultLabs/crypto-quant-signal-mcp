@@ -97,6 +97,16 @@ export function parseBoundaryFromStatusMd(text: string): { start: string; end: s
 }
 
 export function resolveBoundary(cfg: ReadinessConfig, statusMdText: string | null): Boundary {
+  // The host wrapper passes the interval in, because THIS PROCESS RUNS INSIDE THE CONTAINER and
+  // /var/lib/algovault-monitoring/status.md is a HOST path — the runtime re-read M2 asks for is
+  // structurally impossible from in here. The labelled fallback surfaced that on the first live
+  // run rather than letting it pass as a successful read, which is the whole point of labelling
+  // it. The wrapper also diffs what it read against the config copy and warns on drift.
+  const envStart = process.env.RECALIBRATE_BOUNDARY_START;
+  const envEnd = process.env.RECALIBRATE_BOUNDARY_END;
+  if (envStart && envEnd && Number.isFinite(Date.parse(envStart)) && Number.isFinite(Date.parse(envEnd))) {
+    return { startMs: Date.parse(envStart), endMs: Date.parse(envEnd), source: 'status.md (via host wrapper)' };
+  }
   if (statusMdText) {
     const parsed = parseBoundaryFromStatusMd(statusMdText);
     if (parsed) {

@@ -1140,7 +1140,7 @@
       "schedule": "24 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "f9d6b4ae5d718772d94edfa8652d4a46b3e1b2ff855ad63a5cfca8ba287e0fb2",
+      "sha256": "94582522ad391d336eab945eba26c57bec22272cb0d8632e0bc4edab92d83327",
       "owner_wave": "OPS-CLOSEDBAR-RECALIBRATE-READINESS-W1",
       "notes": "Hourly readiness gate for OPS-CLOSEDBAR-RECALIBRATE-W{NEXT} — the instrument built BEFORE the decision. Wraps the READ-ONLY harness src/scripts/closedbar-recalibrate-readiness.ts, which runs INSIDE the app container (where DATABASE_URL is) and emits exactly one RECALIBRATE_READINESS_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3, fail closed). Every statistic is sliced per-TIMEFRAME AND per-VENUE: a venue-blind report is the F2 defect that made the flip's 87.8% floor rate a Binance/XRP proxy against a real 78.58% spanning 2.85%-78.58%. The methodology-boundary interval [2026-08-07T10:16:12Z -> 12:28:57Z] is re-read from status.md at runtime and EXCLUDED (349 signals sit inside it). Thresholds live in ops/closedbar-recalibrate-config.json with a reason per row, derived from measured accrual and from the backfill's own EVAL_CANDLES horizons — 1d is the binding term at ~3 emitted/day + 72h maturity, which is what sets distinct_utc_days=7. NOT_READY is the expected steady state until the coarse timeframes accrue and is logged, never paged; only RECALIBRATE_READY (once ever, behind a marker) and RECALIBRATE_ACCRUAL_STALLED (48h of no growth) alert. The config is COPYed into the image by the Dockerfile — without that the harness would fail loadConfig() inside the container and report INDETERMINATE forever."
     }
