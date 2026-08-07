@@ -1,0 +1,40 @@
+{
+  "_comment": "Config for the shared pre-push `gate-staleness` block (OPS-GATE-STALENESS-ASSERT-W1). The block detects that the PUSHING WORKTREE's copy of scripts/check_test_baseline.sh is older than the declared contract. It exists because the pre-push hook is ONE shared file but invokes \"$(git rev-parse --show-toplevel)/scripts/check_test_baseline.sh\" — so the script is PER-WORKTREE and a checkout that has not rebased keeps running its own stale copy, unreachable by any commit to origin/main.",
+
+  "minimum_contract": 1,
+  "_minimum_contract_semantics": "The lowest ALGOVAULT_TEST_GATE_CONTRACT a worktree may carry and still PASS. Raise this in the SAME commit that bumps the marker in check_test_baseline.sh, or the bump is invisible.",
+
+  "mode": "report",
+  "_mode_semantics": "report | block. SHIPS AS `report` DELIBERATELY. Blocking on day one would refuse every stale checkout at once — the fleet wedge arriving through a different door, which this estate has already paid for twice (2026-08-01/02, ~70 of 74 checkouts unable to push for a day). In report mode the TOKEN tells the truth and the EXIT CODE stays 0. Same mode-1/mode-2 shape as check-session-drift.mjs.",
+
+  "promotion": {
+    "_comment": "BOTH conditions exist on purpose. A criterion of 'flip when stale reaches ~0' can never fire if staleness does not heal — and it does not appear to. Measured over ~24h: total worktrees 43 -> 45 and FIXED 17 -> 19, but BUGGY stayed at 24; the +2 were newly-created worktrees, and ZERO stale ones healed on their own. A guard permanently stuck in REPORT is decoration, and this estate has the precedent (MANUAL_PENDING items that sat for months until an escalation clock was attached).",
+    "numeric_criterion": {
+      "flip_to_block_when": "stale_worktree_count == 0",
+      "observed_at_install": 16,
+      "observed_at_install_note": "post-reclaim. 9 were already-active-and-stale; 7 more are stale AND hold unpushed work, so cc-session.sh clean correctly refuses to reclaim them — they can only heal by their owner rebasing or pushing."
+    },
+    "time_bound": {
+      "mandatory_review_by": "2026-09-06",
+      "trigger": "30 days from install if stale_worktree_count has not materially moved",
+      "owner_wave": "OPS-GATE-STALENESS-PROMOTE-W{NEXT}",
+      "_why": "Without a clock the numeric criterion may never fire and the guard reports forever. The review decides: promote to block, or accept REPORT permanently with a recorded reason."
+    },
+    "_rate_telemetry": "EVERY run appends `STALE_COUNT <n>` with a UTC timestamp to the shared ledger, so the healing RATE is measured rather than guessed at the promotion decision."
+  },
+
+  "transitional_content_fallback": {
+    "enabled": true,
+    "discriminator": "(.testResults // [])",
+    "_comment": "DECLARED DEBT. The marker only reaches a worktree when that worktree rebases, so on day one ZERO worktrees carry it and a marker-only test would report EVERY worktree stale — including the healthy ones. A guard that cries wolf once is ignored forever. So when the marker is absent we probe the script's CONTENT for the fixed predicate's signature. Verified on the whole fleet with ZERO misclassifications (19/19 FIXED, 24/24 BUGGY at measurement time).",
+    "_the_debt": "This couples the shared block to a substring of the script's implementation — a duplicated fact, which this estate has repeatedly ruled goes stale. It is accepted only because the alternative (marker-only) is a guard nobody would trust on day one.",
+    "remove_when": "marker coverage == 100% of worktrees",
+    "revisit_by": "2026-08-21",
+    "removed_by_wave": "OPS-GATE-STALENESS-PROMOTE-W{NEXT}",
+    "_removal_is_the_same_wave_as_promotion": "Retiring the fallback and flipping REPORT->block are the same decision: both become safe exactly when every worktree carries the marker."
+  },
+
+  "_exit_codes": "0 = PASS, 1 = FAIL (block mode only), 3 = INDETERMINATE. The 3 is the token-law DEFAULT for a NEW gate. It is deliberately NOT check_test_baseline.sh's 2 — that script deploys 2 for its own INDETERMINATE and keeps it because it already shipped 2. Nothing reads both spaces; do not 'align' them.",
+  "_override": "ALGOVAULT_GATE_STALENESS=warn downgrades the exit CODE, never the token.",
+  "owner_wave": "OPS-GATE-STALENESS-ASSERT-W1"
+}

@@ -104,6 +104,25 @@
 #      (nothing to diagnose, and unbounded per-run residue is what Ch3 is cleaning).
 set -uo pipefail
 
+# ── DECLARED CONTRACT VERSION  [OPS-GATE-STALENESS-ASSERT-W1] ──────────────────
+#
+# Read by the shared pre-push `gate-staleness` block, which cannot otherwise tell that
+# the copy it is about to run is current. The hook is ONE shared file, but it invokes
+# "$(git rev-parse --show-toplevel)/scripts/check_test_baseline.sh" — so the SCRIPT is
+# per-worktree, and a checkout that has not rebased keeps running its own stale copy.
+# Measured 2026-08-07: 24 of 43 worktrees still ran the pre-577a268 vacuous predicate.
+#
+# CONTRACT 1 guarantees:
+#   * report_usable() is NON-VACUOUS — an explicit boolean over a non-zero result count,
+#     never `jq -e` on a bare container (which exits 0 for [], {}, "" and 0).
+#   * the predicates are SOURCEABLE — sourcing this file loads them and returns before
+#     the gate body, so a fixture can assert report_usable + map_code without the suite.
+#
+# BUMP THIS when the contract changes, and raise `minimum_contract` in
+# ops/gate-staleness-config.json in the SAME commit. Staleness then becomes visible for
+# free — which is the whole point of the marker.
+ALGOVAULT_TEST_GATE_CONTRACT=1
+
 BASELINE_FILE="audits/test-baseline-known-failures.txt"
 
 # The measured free cap. Overridable for experiments, but VALIDATED below: `0` means
