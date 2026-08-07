@@ -1182,11 +1182,40 @@ async function startHttp() {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     // 'unsafe-inline' mirrors the Caddy policy: the function-rendered pages emit
     // inline <script> hydration and inline style="" attributes.
+    //
+    // DESIGN-ACCOUNT-THEME-TOKENS-W1 — style-src allows https://algovault.com.
+    //
+    // WHY: /account and /track-record link the canonical design loader
+    // (https://algovault.com/_design/algovault-design.css), which is where the brand
+    // design TOKENS live (:root{--bg,--fg,--fg-2,--fg-3,--line,--mint,--accent,--font-*}).
+    // On the APEX that URL is 'self' and resolves. On api.algovault.com it is CROSS-ORIGIN,
+    // this policy refused it, and every token fell back to nothing — so `background: var(--bg)`
+    // painted the browser default WHITE and `color: var(--fg-3)` painted near-black tab labels
+    // on a hardcoded dark bar. Identical page, correct on apex, broken on api: origin-dependent.
+    //
+    // Exact origin, never a wildcard. The alternative — inlining a :root block per page — would
+    // put the brand palette in a 5th place and mask this fault while /track-record stayed broken.
+    //
+    // HONEST COST, recorded rather than discovered later: this makes api-host pages carry a
+    // CROSS-HOST RUNTIME DEPENDENCY on the apex. If Caddy is down or the apex cert lapses while
+    // Node is up, every api page renders unstyled. Both hosts are the same box, so they mostly
+    // fail together — but not always, and the apex cert renews on its own schedule. The real end
+    // state is serving this stylesheet same-origin from the api host too; that needs a Dockerfile
+    // + deploy.yml change (api/_design/… is 404 today, the file is not in the runtime image), so
+    // it is deliberately NOT bundled here → OPS-DESIGN-CSS-SAME-ORIGIN-W{NEXT}.
+    //
+    // SCOPE: this is GLOBAL middleware (one setter, no per-route override), so the widening
+    // applies to every Express route including /mcp — harmless for style-src, since JSON
+    // endpoints load no stylesheets, but stated so it is not a surprise in a later audit.
+    // The Caddyfile twin is deliberately NOT widened: the pages it covers are served from the
+    // apex and are same-origin with the stylesheet, so 'self' already permits it. Leaving Caddy
+    // stricter is safe — the keep-in-sync warning above guards against pages being left
+    // UNCOVERED, not against Caddy being tighter than Express.
     res.setHeader(
       'Content-Security-Policy',
       "default-src 'self'; " +
         "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; " +
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://algovault.com; " +
         "font-src 'self' https://fonts.gstatic.com data:; " +
         "img-src 'self' data: https:; " +
         "connect-src 'self' https://api.algovault.com https://plausible.algovault.com; " +
