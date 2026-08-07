@@ -279,6 +279,98 @@ export interface IndicatorScores extends VerdictScoreInputs {
 }
 
 /**
+ * Separation, in basis points of the slow EMA, below which the EMA pair counts as CONTESTED
+ * rather than as a side. This is what gives `RANGING` a MEANING — "the two EMAs are not
+ * meaningfully apart" — instead of leaving it the fallthrough residue of an RSI band test.
+ *
+ * Calibrated on 24 series (8 assets × {15m·30d, 1h·60d, 4h·90d}, 37,872 samples) with the
+ * |sep| histogram plotted BEFORE the value was chosen, per the discrete-score-space lesson
+ * from SIGNAL-CLOSEDBAR-FLIP-W1. The neighbourhood is smooth — the `RANGING` share moves
+ * 23.1% → 30.4% → 36.8% across B = 8 → 10 → 12 bps, ~7pp per 2 bps with no discontinuity —
+ * so this is a calibration, not a cliff edge.
+ *
+ * TODO: revisit by 2026-08-21
+ */
+export const REGIME_SEPARATION_BPS = 10;
+
+/**
+ * Consecutive bars a side must hold before the label may flip to it. This is HYSTERESIS,
+ * and it is new — the pre-wave classifier had none of any kind (no confirmation margin, no
+ * minimum dwell), which is why its label reverted within 10 bars 53% of the time.
+ *
+ * It is computed INSIDE the candle window rather than persisted, so the function stays pure
+ * and the server stays stateless (the remote transport runs `sessionIdGenerator: undefined`
+ * — session affinity is forbidden).
+ *
+ * K = 12 is chosen so that minimum dwell ≥ 12 exceeds the pre-wave structural detection lag
+ * of 11.64 bars. That makes `dwell/lag ≥ 1` — *a label must outlive its own detection lag* —
+ * a STRUCTURAL property of the rule rather than a number reached by tuning. Measured
+ * achieved ratio at (10, 12): 1.54, against 0.601 before.
+ *
+ * TODO: revisit by 2026-08-21
+ */
+export const REGIME_CONFIRM_BARS = 12;
+
+/**
+ * The public `regime` label: a separation band plus a K-bar confirmation over the closes.
+ *
+ * ── What changed and why ────────────────────────────────────────────────────
+ * The pre-wave rule was:
+ *
+ *     let regime = 'RANGING';
+ *     if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) regime = 'TRENDING_UP';
+ *     else if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) regime = 'TRENDING_DOWN';
+ *
+ * Two defects, both measured by SIGNAL-REGIME-LABEL-STABILITY-W1:
+ *
+ *  1. **The RSI conjunction inverted its own input.** A saturating RSI is *evidence of* a
+ *     strong trend, but it FAILED the band test, so a perfect monotone uptrend was labelled
+ *     `RANGING` for all 257 of its scorable bars. ~49% of all label changes were an
+ *     oscillator crossing 70/30 rather than a trend changing. RSI is no longer consulted.
+ *  2. **`RANGING` was the fallthrough default** — the residue of whatever the band rejected,
+ *     rather than a statement about the market. It now means one thing: the EMAs are inside
+ *     `REGIME_SEPARATION_BPS` of each other, i.e. the cross is genuinely contested.
+ *
+ * ── Why the confirmation is a look-back, not persisted state ─────────────────
+ * Recomputing the whole sequence from the passed window each call is equivalent to carrying
+ * state, because the held label converges: with K = 12 over a ~100-bar window there are ~88
+ * confirmation opportunities, and if NONE of them agrees then `RANGING` is the honest answer
+ * anyway. Pinned by the window-convergence assertion in
+ * `tests/unit/regime-label-invariants.test.ts`.
+ *
+ * ── Safety ──────────────────────────────────────────────────────────────────
+ * Nothing here feeds a score. `emaScore` reads `emaCross`; this reads `closes`. No verdict
+ * can move because of this function, and `regime-label-invariants` asserts that on live data.
+ */
+export function classifyRegimeLabel(closes: number[]): RegimeType {
+  const fast = ema(closes, 9);
+  const slow = ema(closes, 21);
+  if (!fast || !slow) return 'RANGING';
+
+  const band = REGIME_SEPARATION_BPS / 10_000;
+  // +1 / −1 = a side; 0 = contested (inside the band, or not yet computable).
+  const sides: number[] = [];
+  for (let k = 0; k < fast.length; k++) {
+    const a = fast[k];
+    const b = slow[k];
+    if (isNaN(a) || isNaN(b) || b === 0) { sides.push(0); continue; }
+    const sep = (a - b) / b;
+    sides.push(Math.abs(sep) < band ? 0 : Math.sign(sep));
+  }
+
+  let held: RegimeType = 'RANGING';
+  for (let k = REGIME_CONFIRM_BARS - 1; k < sides.length; k++) {
+    const first = sides[k - REGIME_CONFIRM_BARS + 1];
+    let unanimous = true;
+    for (let m = k - REGIME_CONFIRM_BARS + 2; m <= k; m++) {
+      if (sides[m] !== first) { unanimous = false; break; }
+    }
+    if (unanimous) held = first > 0 ? 'TRENDING_UP' : first < 0 ? 'TRENDING_DOWN' : 'RANGING';
+  }
+  return held;
+}
+
+/**
  * The indicator pass, extracted PURE so it can be run twice over two candle windows.
  * Mirrors the existing `deriveVerdict` extraction: this function is the score half,
  * `deriveVerdict` is the score→verdict half, and both are exported and unit-testable.
@@ -299,20 +391,35 @@ export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
   // ── Compute indicators ──
   const rsiVal = rsi(closes, 14);
 
-  // EMA crossover detection
+  // EMA crossover detection.
+  //
+  // SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2 deleted two branches here. The pre-wave code read
+  // `prev9`/`prev21` to distinguish a FRESH cross from a SUSTAINED one:
+  //
+  //     if (curr9 > curr21 && prev9 <= prev21) emaCross = 'BULLISH';       // ← deleted
+  //     else if (curr9 < curr21 && prev9 >= prev21) emaCross = 'BEARISH';  // ← deleted
+  //     else if (curr9 > curr21) emaCross = 'BULLISH';
+  //     else if (curr9 < curr21) emaCross = 'BEARISH';
+  //
+  // The trailing pair are SUPERSETS of the leading pair and assign the same value, so the
+  // two `prev` reads could not change the result — `emaCross` was already exactly
+  // `sign(ema9 − ema21)`. Measured by SIGNAL-REGIME-LABEL-STABILITY-W1. Code that reads a
+  // variable it cannot act on is a lie in the source, so the dead branches are gone rather
+  // than kept for symmetry. This was NOT an unfinished hysteresis design — no comment ever
+  // claimed one; hysteresis is introduced separately, below, and for the first time.
+  //
+  // `emaScore` (10% weight) derives from `emaCross` and is UNTOUCHED by this wave. The
+  // regime label is a RENDERING of the cross, never an input to it — which is what makes
+  // every verdict byte-identical across this change.
   const ema9Series = ema(closes, 9);
   const ema21Series = ema(closes, 21);
   let emaCross: EmaCrossDirection = 'NEUTRAL';
   if (ema9Series && ema21Series && ema9Series.length >= 2) {
     const len = ema9Series.length;
     const curr9 = ema9Series[len - 1];
-    const prev9 = ema9Series[len - 2];
     const curr21 = ema21Series[len - 1];
-    const prev21 = ema21Series[len - 2];
-    if (!isNaN(curr9) && !isNaN(prev9) && !isNaN(curr21) && !isNaN(prev21)) {
-      if (curr9 > curr21 && prev9 <= prev21) emaCross = 'BULLISH';
-      else if (curr9 < curr21 && prev9 >= prev21) emaCross = 'BEARISH';
-      else if (curr9 > curr21) emaCross = 'BULLISH';
+    if (!isNaN(curr9) && !isNaN(curr21)) {
+      if (curr9 > curr21) emaCross = 'BULLISH';
       else if (curr9 < curr21) emaCross = 'BEARISH';
     }
   }
@@ -325,10 +432,14 @@ export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
   const hurstVal = hurstExponent(closes);
   const squeezeActive = detectSqueeze(highs, lows, closes);
 
-  // ── Detect regime FIRST (used for asymmetric thresholds) ──
-  let regime: RegimeType = 'RANGING';
-  if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) regime = 'TRENDING_UP';
-  else if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) regime = 'TRENDING_DOWN';
+  // ── The public regime LABEL (see classifyRegimeLabel) ──
+  //
+  // Read by nothing in this function's scoring. It is a public rendering, not a gate — the
+  // pre-wave comment here claimed it was "used for asymmetric thresholds", which was FALSE
+  // (there is no `regime ===` anywhere in the verdict path; the asymmetric-threshold design
+  // it referred to was defined and never wired). Corrected by
+  // SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2.
+  const regime: RegimeType = classifyRegimeLabel(closes);
 
   // ── Score each indicator (-100 to +100) ──
 

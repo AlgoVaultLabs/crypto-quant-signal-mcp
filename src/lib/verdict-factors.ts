@@ -540,12 +540,30 @@ function priceChangeRow(i: FactorLedgerInput): Scored {
 /**
  * Regime is the public face of the 10% EMA term — but only when they agree.
  *
- * Measured (CH1.4): `TRENDING_UP` requires `emaCross === 'BULLISH'` and
- * `TRENDING_DOWN` requires `'BEARISH'`, so regime can NEVER carry the opposite sign
- * to `emaScore`. It CAN be neutral where emaScore is signed — `RANGING` also absorbs
- * a bullish cross at RSI ≥ 70, a bearish cross at RSI ≤ 30, and any null RSI. On that
- * divergence the row degrades to context and the EMA contribution moves to
- * `strippedRemainder`, so the accounting still totals (D4).
+ * ⚠️ REWRITTEN by SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. The previous text said:
+ *
+ *   > Measured (CH1.4): `TRENDING_UP` requires `emaCross === 'BULLISH'` and
+ *   > `TRENDING_DOWN` requires `'BEARISH'`, so regime can NEVER carry the opposite sign
+ *   > to `emaScore`. It CAN be neutral where emaScore is signed — `RANGING` also absorbs
+ *   > a bullish cross at RSI ≥ 70, a bearish cross at RSI ≤ 30, and any null RSI.
+ *
+ * Both sentences are now FALSE, and the second one is why:
+ *
+ *  - **RSI no longer participates.** The label is a separation band plus a 12-bar
+ *    confirmation over the closes (`classifyRegimeLabel`), so `RANGING` no longer absorbs
+ *    an RSI-saturated cross. It now means the EMAs are within `REGIME_SEPARATION_BPS`.
+ *  - **Regime CAN now carry the OPPOSITE sign to `emaScore`.** The old conjunction made
+ *    that structurally impossible; hysteresis makes it ordinary. `emaCross` is
+ *    `sign(ema9 − ema21)` at the CURRENT bar, while the label only flips once a side has
+ *    held for `REGIME_CONFIRM_BARS`. In the window between a fresh cross and its
+ *    confirmation, the label still reads the OLD side while `emaScore` already reads the
+ *    new one. That is the hysteresis doing its job, not a defect.
+ *
+ * The code below needs no change: `agrees` is a sign comparison, and on ANY disagreement —
+ * opposite-sign (new) or signed-vs-neutral (old) — the row degrades to context and the EMA
+ * contribution moves to `strippedRemainder`, so the accounting still totals (D4). What the
+ * change does is make that branch fire in a new situation, so `stripped_remainder` VALUES
+ * move; that shift carries its own sign-off row rather than riding along unannounced.
  */
 function regimeRow(i: FactorLedgerInput): { scored: Scored; emaNameable: boolean } {
   const ema = i.scores.emaScore;
