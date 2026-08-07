@@ -413,6 +413,15 @@ jobs:
       # is installed), so macOS and this runner return the same verdict. Emits
       # SOURCE_GREPPABLE_VERDICT=PASS|FAIL|INDETERMINATE — exit 3 (enumerated nothing) blocks
       # too, so a broken scan can never read as "verified clean".
+      # OPS-TEST-GATE-VACUITY-W1 — `jq -e` on a container exits 0 for [], {}, "" and 0.
+      # That is how check_test_baseline.sh once printed PASS over a zero-result report.
+      # Self-test FIRST so a broken scanner can never read as "verified clean"; the scan
+      # itself is scoped structurally (executable scripts + workflows) with no allowlist.
+      - name: jq -e truthiness gate (fail-closed)
+        run: |
+          node scripts/check-jq-truthiness.mjs --self-test
+          node scripts/check-jq-truthiness.mjs
+
       - name: Source greppability gate (fail-closed)
         run: |
           node scripts/check-source-greppable.mjs --self-test

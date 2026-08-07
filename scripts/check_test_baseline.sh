@@ -118,6 +118,23 @@ MODE="${ALGOVAULT_TEST_GATE:-block}"
 TMP="${TMPDIR:-/tmp}"
 TMP="${TMP%/}"
 
+# ── test-importable entrypoint  [OPS-TEST-GATE-VACUITY-W1] ────────────────────
+#
+# The shell equivalent of CLAUDE.md's `if require.main === module` law: SOURCING this
+# file loads the pure predicates ONLY — the gate body never runs — so `report_usable`
+# can be exercised against fixtures without invoking the suite.
+#
+# This exists because the alternative was worse. The spec proposed an env lever that
+# substitutes the report body (ALGOVAULT_TEST_GATE_REPORT); that would be a bypass which
+# prints PASS, i.e. a silent green path on the one instrument every other gate's evidence
+# depends on — the exact shape this arc exists to eliminate. `ALGOVAULT_TEST_GATE=warn`
+# stays the ONLY sanctioned bypass, and it is loud: it downgrades the exit CODE while
+# still printing the real token.
+#
+# `return` outside a function is valid only in a sourced context, so the probe is
+# self-checking rather than a guess about how we were invoked.
+if (return 0 2>/dev/null); then TEST_GATE_SOURCED=1; else TEST_GATE_SOURCED=0; fi
+
 info() { echo "[test-gate] $*"; }
 warn() { echo "[test-gate] WARNING: $*" >&2; }
 
@@ -130,10 +147,17 @@ warn() { echo "[test-gate] WARNING: $*" >&2; }
 #
 # Falls back to $TMP (the old shared location) rather than dying: a gate that cannot
 # make a temp dir should still run the suite, just without collision-isolated logs.
-LOGDIR="$(mktemp -d "$TMP/test-gate-run.XXXXXX" 2>/dev/null)" || LOGDIR=""
-if [ -z "$LOGDIR" ] || [ ! -d "$LOGDIR" ]; then
-  LOGDIR="$TMP"
-  warn "could not create a per-run log dir under $TMP — falling back to shared log names."
+# Skipped when SOURCED: a fixture harness that only wants the predicates must not leave a
+# temp dir behind on every call. verdict()/cleanup_logdir_on_pass() both read ${LOGDIR:-}
+# defensively, so an empty value is safe.
+if [ "${TEST_GATE_SOURCED:-0}" = "1" ]; then
+  LOGDIR=""
+else
+  LOGDIR="$(mktemp -d "$TMP/test-gate-run.XXXXXX" 2>/dev/null)" || LOGDIR=""
+  if [ -z "$LOGDIR" ] || [ ! -d "$LOGDIR" ]; then
+    LOGDIR="$TMP"
+    warn "could not create a per-run log dir under $TMP — falling back to shared log names."
+  fi
 fi
 
 # ── the ONE place a verdict is emitted  [OPS-TEST-GATE-RECONCILE-W1] ───────────
@@ -210,6 +234,55 @@ compute_new_fails() {  # $1 = baseline set, $2 = current failing set
 decide_verdict() {  # $1 = new-failure set, $2 = node:test failure marker
   if [ -n "${1:-}" ] || [ -n "${2:-}" ]; then echo FAIL; else echo PASS; fi
 }
+
+# ── partial-run ratchet + failure-evidence ledger  [OPS-TEST-GATE-VACUITY-W1] ──
+#
+# The defect that started this arc was found because a ~5,000-test suite finished in 51
+# seconds and somebody refused to believe it. An EMPTY report is now caught by
+# report_usable; a PARTIAL one is the adjacent hazard, and nothing detected it.
+#
+# REPORT-ONLY, deliberately. It cannot distinguish a legitimate subset invocation
+# (`vitest run tests/unit`) or a wave that genuinely deletes tests from a real partial
+# run, so it states BOTH numbers and lets the human decide. Promotion to blocking is a
+# named follow-up gated on the observed false-positive rate — the same mode-1/mode-2
+# shape as the session-drift detector.
+
+RATCHET_DROP_FRACTION="${ALGOVAULT_TEST_GATE_RATCHET_FRACTION:-0.75}"
+
+gate_common_dir() {  # the shared, never-committed state dir; env var is unset above by design
+  git rev-parse --git-common-dir 2>/dev/null || echo ".git"
+}
+
+# The counter is KEYED, never global. 40+ worktrees run different branches and different
+# subsets against ONE $GIT_COMMON_DIR; a single shared count would be written by all of
+# them and the ratchet would fire constantly on other people's runs. Key = branch when we
+# have one, else the worktree path — sanitised to a flat filename.
+count_key() {
+  local raw
+  raw="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  [ -z "$raw" ] || [ "$raw" = "HEAD" ] && raw="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  printf '%s' "$raw" | tr '/ ' '__' | tr -cd 'A-Za-z0-9._-'
+}
+
+report_total_tests() {  # $1 = report path → total test count, or empty when unreadable
+  jq -r '[.testResults[]?.assertionResults[]?] | length' "$1" 2>/dev/null
+}
+
+# Pure decision helper, driven directly by --self-test.
+ratchet_verdict() {  # $1 = observed, $2 = prior, $3 = fraction → OK | DROP | NO_PRIOR
+  local obs="${1:-}" prior="${2:-}" frac="${3:-0.75}"
+  [ -z "$prior" ] && { echo NO_PRIOR; return 0; }
+  [ -z "$obs" ] && { echo NO_PRIOR; return 0; }
+  awk -v o="$obs" -v p="$prior" -v f="$frac" \
+      'BEGIN { if (p > 0 && o < p * f) print "DROP"; else print "OK" }'
+}
+
+# ── the sourcing boundary  [OPS-TEST-GATE-VACUITY-W1] ─────────────────────────
+# Everything ABOVE is a pure predicate or a decision helper; everything BELOW runs the
+# gate. A caller that sourced us gets the former and none of the latter, so a fixture can
+# assert `report_usable` + `map_code` — the token AND its exit code — without the suite.
+# Keep new predicates above this line and new gate logic below it.
+if [ "${TEST_GATE_SOURCED:-0}" = "1" ]; then return 0; fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # Was `exit 0` — a 9th silent fail-open. If we cannot even locate the repo root then
@@ -556,6 +629,39 @@ tests/brand-new.test.ts")" "")"
   # Vacuity guard — a self-test that ran zero assertions prints the same ✓ as one that
   # ran twelve. CLOSEDBAR CH2's PII-guard self-test shipped exactly that way and
   # reported a green "passed (0 must-fire, 0 must-not-fire)".
+  # ── ratchet + vacuity predicate, both directions  [OPS-TEST-GATE-VACUITY-W1] ──
+  # Assertions are wrapped so a broken subject reports FAIL rather than aborting the
+  # suite — "proven able to fail" must produce a VERDICT, not a crash.
+  st_eq() {  # $1 = label, $2 = got, $3 = want
+    st_map=$((st_map + 1))
+    if [ "$2" = "$3" ]; then echo "    ✓ $1 ⇒ $3"; else st_fails+=("$1: got '$2' want '$3'"); fi
+  }
+  st_eq "ratchet: no prior recorded"        "$(ratchet_verdict 4000 ""    0.75)" "NO_PRIOR"
+  st_eq "ratchet: unreadable observed"      "$(ratchet_verdict ""   4000  0.75)" "NO_PRIOR"
+  st_eq "ratchet: steady run"               "$(ratchet_verdict 4000 4000  0.75)" "OK"
+  st_eq "ratchet: suite GREW"               "$(ratchet_verdict 5000 4000  0.75)" "OK"
+  st_eq "ratchet: small dip is not a drop"  "$(ratchet_verdict 3200 4000  0.75)" "OK"
+  st_eq "ratchet: PARTIAL run FIRES"        "$(ratchet_verdict 1200 4000  0.75)" "DROP"
+  st_eq "ratchet: near-empty run FIRES"     "$(ratchet_verdict 1    4000  0.75)" "DROP"
+  st_eq "ratchet: prior 0 cannot divide"    "$(ratchet_verdict 0    0     0.75)" "OK"
+
+  # The vacuity predicate itself — the defect this wave exists for. Token AND code.
+  st_vac_dir="$(mktemp -d "$TMP/test-gate-vac.XXXXXX")"
+  printf '%s' '{"testResults":[]}'                                  > "$st_vac_dir/empty.json"
+  printf '%s' '{"testResults":[{"name":"a","assertionResults":[{}]}]}' > "$st_vac_dir/good.json"
+  printf '%s' '{}'                                                  > "$st_vac_dir/nokey.json"
+  printf '%s' 'not json'                                            > "$st_vac_dir/junk.json"
+  st_tok() { if report_usable "$1"; then echo PASS; else echo INDETERMINATE; fi; }
+  for st_f in empty nokey junk; do
+    st_eq "vacuity: $st_f report ⇒ token"      "$(st_tok "$st_vac_dir/$st_f.json")"              "INDETERMINATE"
+    st_eq "vacuity: $st_f report ⇒ exit code"  "$(map_code "$(st_tok "$st_vac_dir/$st_f.json")" block)" "2"
+  done
+  st_eq "vacuity: absent report ⇒ token"       "$(st_tok "$st_vac_dir/nope.json")"               "INDETERMINATE"
+  st_eq "vacuity: POPULATED report ⇒ token"    "$(st_tok "$st_vac_dir/good.json")"               "PASS"
+  st_eq "vacuity: POPULATED report ⇒ exit 0"   "$(map_code "$(st_tok "$st_vac_dir/good.json")" block)" "0"
+  st_eq "count_key is non-empty and flat"      "$(count_key | grep -cE '^[A-Za-z0-9._-]+$')"     "1"
+  rm -rf "$st_vac_dir"
+
   if [ "$st_fire" -eq 0 ] || [ "$st_nofire" -eq 0 ] || [ "$st_map" -eq 0 ]; then
     echo "self-test failed: VACUOUS — must-fire=$st_fire must-not-fire=$st_nofire must-map=$st_map (all must be > 0); refusing to report a pass."
     echo "TEST_GATE_VERDICT=INDETERMINATE"
@@ -710,6 +816,37 @@ if ! report_usable "$VITEST_JSON"; then
 fi
 CURRENT_FAILS="$(jq -r '.testResults[] | select(.status=="failed") | .name' "$VITEST_JSON" \
                  | sed "s#.*/tests/#tests/#" | sort -u)"
+
+# ── R3′: preserve the evidence BEFORE the report dir is cleaned up ─────────────
+# Delete on success, preserve on failure. $LOGDIR already survives a non-PASS, but it
+# lives under $TMPDIR which the OS reaps; this copy is durable and shared, matching
+# algovault-hook-skip.log / algovault-test-gate-failopen.log.
+GATE_FAIL_DIR="$(gate_common_dir)/algovault-test-gate-failures"
+PRESERVED_REPORT=""
+if [ -n "$CURRENT_FAILS" ] && mkdir -p "$GATE_FAIL_DIR" 2>/dev/null; then
+  PRESERVED_REPORT="$GATE_FAIL_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$(count_key).json"
+  cp "$VITEST_JSON" "$PRESERVED_REPORT" 2>/dev/null \
+    && echo "[test-gate] failing report preserved: $PRESERVED_REPORT" >&2 \
+    || PRESERVED_REPORT=""
+fi
+
+# ── R4: partial-run ratchet — REPORT-ONLY, never changes the verdict ───────────
+OBSERVED_TOTAL="$(report_total_tests "$VITEST_JSON")"
+COUNT_FILE="$(gate_common_dir)/algovault-test-gate-counts/$(count_key)"
+PRIOR_TOTAL=""
+[ -f "$COUNT_FILE" ] && PRIOR_TOTAL="$(cat "$COUNT_FILE" 2>/dev/null)"
+case "$(ratchet_verdict "$OBSERVED_TOTAL" "$PRIOR_TOTAL" "$RATCHET_DROP_FRACTION")" in
+  DROP)
+    warn "PARTIAL-RUN RATCHET: this run reported ${OBSERVED_TOTAL} tests; the previous run on this key reported ${PRIOR_TOTAL} (below ${RATCHET_DROP_FRACTION}x). REPORT-ONLY — the verdict is unchanged. A subset invocation and a wave that genuinely deletes tests are indistinguishable from here, so both numbers are stated rather than judged." ;;
+  NO_PRIOR)
+    info "partial-run ratchet: no prior count for this key — recording ${OBSERVED_TOTAL:-?}." ;;
+  *)
+    [ -n "$OBSERVED_TOTAL" ] && info "partial-run ratchet: ${OBSERVED_TOTAL} tests (prior ${PRIOR_TOTAL:-none}) — OK." ;;
+esac
+if [ -n "$OBSERVED_TOTAL" ] && mkdir -p "$(dirname "$COUNT_FILE")" 2>/dev/null; then
+  printf '%s\n' "$OBSERVED_TOTAL" > "$COUNT_FILE" 2>/dev/null || true
+fi
+
 cleanup_vitest_dir
 
 # ── run the node:test canaries (every tests/**/*.test.mjs that is NOT a vitest
