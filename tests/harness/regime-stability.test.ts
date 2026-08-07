@@ -141,6 +141,31 @@ describe('zero-phase regime harness', () => {
     check(causeSum === c.n_transitions, `cause decomposition sums to ${causeSum}, expected ${c.n_transitions}`);
   });
 
+  /**
+   * The R4 sweep restates the 3-line decision rule so the hardcoded periods can be varied.
+   * This is what makes that restatement safe: at the shipped (9, 21, 14) it must reproduce
+   * production EXACTLY. An unpinned counterfactual silently stops describing the thing it is
+   * counterfactual to.
+   */
+  it('PIN — the sweep variant reproduces production exactly at the shipped (9, 21, 14)', () => {
+    let scored = 0;
+    for (const [name, s] of Object.entries(CORPORA)) {
+      const bars = s.length - 2 * H.EDGE_DISCARD_BARS;
+      check(bars > 0, `VACUOUS: corpus ${name} has no scorable interior for the pin`);
+      scored += bars;
+      const mismatches = H.sweepMatchesProductionAt921(s);
+      check(mismatches === 0, `${name}: sweep variant disagrees with production on ${mismatches} bars`);
+    }
+    check(scored > 500, `VACUOUS: the pin compared only ${scored} bars`);
+  });
+
+  it('the sweep responds to its periods — a different setting yields different churn', () => {
+    const base = H.sweepChurn(CORPORA.walk, H.EMA_FAST, H.EMA_SLOW);
+    const faster = H.sweepChurn(CORPORA.walk, 5, 13);
+    check(base > 0, 'VACUOUS: baseline sweep produced zero flips');
+    check(faster !== base, `sweep is insensitive to its periods — (9,21) and (5,13) both give ${base}`);
+  });
+
   it('the declared INDETERMINATE threshold is enforced, not advisory', () => {
     check(H.MIN_TRANSITIONS_FOR_LATENCY === 30, `threshold drifted to ${H.MIN_TRANSITIONS_FOR_LATENCY}`);
     check(

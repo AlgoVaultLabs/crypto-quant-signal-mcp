@@ -46,6 +46,7 @@
  * and the mirror is exact. RSI-driven flips are counted in churn with lag `null`.
  */
 import { computeIndicatorScores } from '../../src/tools/get-trade-call.js';
+import { ema, rsi } from '../../src/lib/indicators.js';
 import type { Candle, RegimeType } from '../../src/types.js';
 
 /** Production fetches `now - 100 * intervalMs` (get-trade-call.ts:489). */
@@ -328,6 +329,22 @@ export function pairLags(
   return out;
 }
 
+/**
+ * A transition is ISOLATED when no other transition sits within `isolationBars` of it.
+ *
+ * This exists because the naive pairing is NOT IDENTIFIABLE at production churn rates. The
+ * classifier's structural lag is ≈11.64 bars while the measured median dwell is ≈7 bars, so
+ * the next flip arrives before the previous one has been detected and "nearest transition into
+ * the same label" matches unrelated events — which is exactly what a negative median lag
+ * reveals. Restricting to isolated transitions asks the question the data can actually answer:
+ * *when a transition IS separable, is it detected at the lag the closed form predicts?*
+ */
+export function isolatedTransitions(all: Transition[], isolationBars: number): Transition[] {
+  return all.filter((t) =>
+    all.every((o) => o.index === t.index || Math.abs(o.index - t.index) > isolationBars),
+  );
+}
+
 export interface LagMetrics {
   n_transitions_observed: number;
   p50: number | null;
@@ -355,6 +372,76 @@ export const MIN_TRANSITIONS_FOR_LATENCY = 30;
 
 export const latencyVerdict = (m: LagMetrics): 'MEASURED' | 'INDETERMINATE' =>
   m.n_transitions_observed >= MIN_TRANSITIONS_FOR_LATENCY ? 'MEASURED' : 'INDETERMINATE';
+
+// ── R4 counterfactual sweep ─────────────────────────────────────────────────
+
+/**
+ * ⚠️ COUNTERFACTUAL VARIANT — not the production path.
+ *
+ * Production hardcodes `ema(closes, 9)` / `ema(closes, 21)` / `rsi(closes, 14)`, so a
+ * window-length sweep is impossible through `computeIndicatorScores`: there is no parameter to
+ * vary. This restates the 3-line decision rule over the SAME production primitives with the
+ * periods opened up, and is used ONLY to price alternative settings.
+ *
+ * Every production measurement in this wave still goes through `computeIndicatorScores`
+ * verbatim. What makes this variant safe to trust is `sweepMatchesProductionAt921`: at the
+ * shipped (9, 21, 14) it must reproduce production's labels EXACTLY, bar for bar. If the rule
+ * ever drifts from production, that pin fails and the sweep is known to be stale — the
+ * alternative is an unpinned copy that silently diverges, which is how a counterfactual
+ * quietly stops describing the thing it is counterfactual to.
+ */
+export function sweepRegime(closes: number[], fast: number, slow: number, rsiPeriod: number): RegimeType {
+  const rsiVal = rsi(closes, rsiPeriod);
+  const fastSeries = ema(closes, fast);
+  const slowSeries = ema(closes, slow);
+  let emaCross = 'NEUTRAL';
+  if (fastSeries && slowSeries && fastSeries.length >= 2) {
+    const n = fastSeries.length;
+    const [cF, pF, cS, pS] = [fastSeries[n - 1], fastSeries[n - 2], slowSeries[n - 1], slowSeries[n - 2]];
+    if (!isNaN(cF) && !isNaN(pF) && !isNaN(cS) && !isNaN(pS)) {
+      if (cF > cS && pF <= pS) emaCross = 'BULLISH';
+      else if (cF < cS && pF >= pS) emaCross = 'BEARISH';
+      else if (cF > cS) emaCross = 'BULLISH';
+      else if (cF < cS) emaCross = 'BEARISH';
+    }
+  }
+  if (emaCross === 'BULLISH' && rsiVal !== null && rsiVal < 70) return 'TRENDING_UP';
+  if (emaCross === 'BEARISH' && rsiVal !== null && rsiVal > 30) return 'TRENDING_DOWN';
+  return 'RANGING';
+}
+
+/** The pin. Returns the number of bars where the variant and production disagree — must be 0. */
+export function sweepMatchesProductionAt921(candles: Candle[]): number {
+  let mismatches = 0;
+  for (let i = EDGE_DISCARD_BARS; i < candles.length - EDGE_DISCARD_BARS; i++) {
+    const prod = liveRegime(candles, i);
+    if (!prod) continue;
+    const start = Math.max(0, i - PRODUCTION_WINDOW_BARS + 1);
+    const closes = candles.slice(start, i + 1).map((c) => c.close);
+    if (sweepRegime(closes, EMA_FAST, EMA_SLOW, RSI_PERIOD) !== prod.regime) mismatches += 1;
+  }
+  return mismatches;
+}
+
+/** Flips per 100 bars for an arbitrary (fast, slow) setting — the churn side of the frontier. */
+export function sweepChurn(candles: Candle[], fast: number, slow: number, rsiPeriod = RSI_PERIOD): number {
+  let flips = 0;
+  let bars = 0;
+  let prev: RegimeType | null = null;
+  for (let i = EDGE_DISCARD_BARS; i < candles.length - EDGE_DISCARD_BARS; i++) {
+    const start = Math.max(0, i - PRODUCTION_WINDOW_BARS + 1);
+    const r = sweepRegime(
+      candles.slice(start, i + 1).map((c) => c.close),
+      fast,
+      slow,
+      rsiPeriod,
+    );
+    bars += 1;
+    if (prev !== null && r !== prev) flips += 1;
+    prev = r;
+  }
+  return bars > 0 ? (flips * 100) / bars : 0;
+}
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 

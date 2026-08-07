@@ -1,0 +1,3046 @@
+{
+  "wave": "SIGNAL-REGIME-LABEL-STABILITY-W1",
+  "generated_at_utc": "2026-08-07T13:06:36.881Z",
+  "classification": "INTERNAL",
+  "tree_sha": "095c21e1ae49b2335f37fead4acd7c8ddca6c7ef",
+  "classifier_unchanged_since": "dc42b38",
+  "method": "zero-phase: production classifier run forward and over the time-reversed series; tau = (t_forward - t_backward) / 2",
+  "reference_caveat": "The reference is NOT ground truth. Forward-backward filtering squares the magnitude response, so it is zero-phase AND sharper than production. It is valid for isolating LAG - phase is exactly what the construction removes - but its regime LABELS are not those of a hypothetical lag-free production classifier.",
+  "mirror_caveat": "Time reversal maps an uptrend to a downtrend. The mirror is EXACT for the EMA crossover and INEXACT through the RSI gate, so lag is reported ONLY for EMA-driven transitions. RSI-driven flips are counted in churn with lag null.",
+  "declared_indeterminate_threshold": {
+    "n_transitions_observed": 30,
+    "rationale": "A p90 over 3 transitions is not a measurement. Declared as a decision, not a filter for a later wave to \"fix\"."
+  },
+  "closed_form": {
+    "predicted_crossover_lag_bars": 11.639,
+    "ema_dc_delays": [
+      4,
+      10
+    ],
+    "preregistration_correction": "The wave pre-registered [tau_9, tau_21] = [4, 10] bars. That was WRONG: those bracket where each EMA SITS on a ramp, not where they CROSS. The difference must change sign, not merely shrink, so the crossover lags by more than either individual tau. Corrected closed form = 11.64 bars, confirmed by the harness at 11.5 (two-sided) and 12 (forward detection = ceil)."
+  },
+  "request_count": 440,
+  "request_budget_note": "The plan estimated 264 requests at an assumed 500 rows/page. Measured page depth is venue-specific (HL 1501, BINANCE/BYBIT ~200, OKX 100), so the real count is recorded here rather than the estimate.",
+  "matrix": [
+    {
+      "venue": "HL",
+      "coin": "BTC",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 298,
+        "flips_per_100_bars": 10.504053577722948,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5738255033557047,
+        "cause_ema_cross": 146,
+        "cause_rsi_band": 152,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 116,
+        "p50": -15.5,
+        "p90": 8,
+        "max": 37
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.485,
+        "TRENDING_DOWN": 0.429,
+        "RANGING": 0.086
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "HL",
+      "coin": "BTC",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 129,
+        "flips_per_100_bars": 9.234073013600574,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5116279069767442,
+        "cause_ema_cross": 49,
+        "cause_rsi_band": 78,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 46,
+        "p50": -3,
+        "p90": 11.5,
+        "max": 18.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4102,
+        "RANGING": 0.0809,
+        "TRENDING_UP": 0.5089
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "BTC",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 43,
+        "flips_per_100_bars": 8.651911468812877,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 9,
+        "round_trip_rate": 0.46511627906976744,
+        "cause_ema_cross": 29,
+        "cause_rsi_band": 14,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 27,
+        "p50": -5,
+        "p90": 5,
+        "max": 8
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5433,
+        "TRENDING_UP": 0.3662,
+        "RANGING": 0.0905
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.773
+    },
+    {
+      "venue": "HL",
+      "coin": "ETH",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 272,
+        "flips_per_100_bars": 9.58759252731759,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5477941176470589,
+        "cause_ema_cross": 136,
+        "cause_rsi_band": 134,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 116,
+        "p50": -9.5,
+        "p90": 9,
+        "max": 26
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.5005,
+        "TRENDING_DOWN": 0.4152,
+        "RANGING": 0.0842
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "HL",
+      "coin": "ETH",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 135,
+        "flips_per_100_bars": 9.663564781675017,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5555555555555556,
+        "cause_ema_cross": 67,
+        "cause_rsi_band": 66,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 60,
+        "p50": -5,
+        "p90": 12.5,
+        "max": 28
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.3958,
+        "RANGING": 0.0988,
+        "TRENDING_UP": 0.5054
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "ETH",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 57,
+        "flips_per_100_bars": 11.46881287726358,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5964912280701754,
+        "cause_ema_cross": 27,
+        "cause_rsi_band": 29,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -18,
+        "p90": -0.5,
+        "max": 8.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5131,
+        "RANGING": 0.1429,
+        "TRENDING_UP": 0.3441
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "HL",
+      "coin": "SOL",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 249,
+        "flips_per_100_bars": 8.776876982728234,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5140562248995983,
+        "cause_ema_cross": 143,
+        "cause_rsi_band": 105,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 127,
+        "p50": -9.5,
+        "p90": 8.5,
+        "max": 34
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4681,
+        "RANGING": 0.055,
+        "TRENDING_DOWN": 0.4769
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "SOL",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 124,
+        "flips_per_100_bars": 8.876163206871869,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5080645161290323,
+        "cause_ema_cross": 58,
+        "cause_rsi_band": 64,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 47,
+        "p50": -10.5,
+        "p90": 10.5,
+        "max": 15
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4345,
+        "RANGING": 0.0773,
+        "TRENDING_UP": 0.4882
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "SOL",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 47,
+        "flips_per_100_bars": 9.456740442655935,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.5319148936170213,
+        "cause_ema_cross": 23,
+        "cause_rsi_band": 24,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 23,
+        "p50": -5.5,
+        "p90": 6,
+        "max": 11
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5714,
+        "RANGING": 0.0885,
+        "TRENDING_UP": 0.34
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "HL",
+      "coin": "XRP",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 266,
+        "flips_per_100_bars": 9.376101515685583,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5300751879699248,
+        "cause_ema_cross": 132,
+        "cause_rsi_band": 133,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 117,
+        "p50": -3.5,
+        "p90": 14.5,
+        "max": 39.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4487,
+        "TRENDING_DOWN": 0.4642,
+        "RANGING": 0.0871
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "XRP",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 144,
+        "flips_per_100_bars": 10.307802433786685,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5625,
+        "cause_ema_cross": 54,
+        "cause_rsi_band": 88,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 47,
+        "p50": -6,
+        "p90": 15.5,
+        "max": 41.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4953,
+        "RANGING": 0.1031,
+        "TRENDING_UP": 0.4016
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "HL",
+      "coin": "XRP",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 46,
+        "flips_per_100_bars": 9.25553319919517,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.4782608695652174,
+        "cause_ema_cross": 22,
+        "cause_rsi_band": 24,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 19,
+        "p50": -2,
+        "p90": 14.5,
+        "max": 22
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.2797,
+        "TRENDING_DOWN": 0.6338,
+        "RANGING": 0.0865
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "HL",
+      "coin": "DOGE",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 268,
+        "flips_per_100_bars": 9.446598519562919,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5111940298507462,
+        "cause_ema_cross": 170,
+        "cause_rsi_band": 96,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 143,
+        "p50": -16,
+        "p90": -0.5,
+        "max": 13.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4586,
+        "TRENDING_DOWN": 0.484,
+        "RANGING": 0.0575
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "DOGE",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 133,
+        "flips_per_100_bars": 9.520400858983535,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.556390977443609,
+        "cause_ema_cross": 77,
+        "cause_rsi_band": 55,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 57,
+        "p50": -23,
+        "p90": 11.5,
+        "max": 22
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.5333,
+        "TRENDING_UP": 0.4016,
+        "RANGING": 0.0651
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "DOGE",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 46,
+        "flips_per_100_bars": 9.25553319919517,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.4782608695652174,
+        "cause_ema_cross": 24,
+        "cause_rsi_band": 22,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -2.5,
+        "p90": 12,
+        "max": 20
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.2817,
+        "TRENDING_DOWN": 0.6519,
+        "RANGING": 0.0664
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "BNB",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 248,
+        "flips_per_100_bars": 8.741628480789567,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.4838709677419355,
+        "cause_ema_cross": 123,
+        "cause_rsi_band": 125,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 109,
+        "p50": -7.5,
+        "p90": 9.5,
+        "max": 18.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.5065,
+        "RANGING": 0.0793,
+        "TRENDING_DOWN": 0.4142
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "HL",
+      "coin": "BNB",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 118,
+        "flips_per_100_bars": 8.446671438797424,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5423728813559322,
+        "cause_ema_cross": 60,
+        "cause_rsi_band": 58,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 48,
+        "p50": -7.5,
+        "p90": 11.5,
+        "max": 40.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4452,
+        "RANGING": 0.0515,
+        "TRENDING_UP": 0.5032
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "BNB",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 51,
+        "flips_per_100_bars": 10.261569416498993,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 9,
+        "round_trip_rate": 0.47058823529411764,
+        "cause_ema_cross": 29,
+        "cause_rsi_band": 21,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -7.5,
+        "p90": -1,
+        "max": 19.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.4386,
+        "TRENDING_DOWN": 0.4909,
+        "RANGING": 0.0704
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.773
+    },
+    {
+      "venue": "HL",
+      "coin": "ADA",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 257,
+        "flips_per_100_bars": 9.058864998237574,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.5058365758754864,
+        "cause_ema_cross": 129,
+        "cause_rsi_band": 128,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 113,
+        "p50": -7.5,
+        "p90": 11.5,
+        "max": 37.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4762,
+        "TRENDING_UP": 0.4572,
+        "RANGING": 0.0666
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 2,
+        "p50": 10.5,
+        "p90": 10.5,
+        "max": 10.5
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "HL",
+      "coin": "ADA",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 139,
+        "flips_per_100_bars": 9.94989262705798,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5323741007194245,
+        "cause_ema_cross": 54,
+        "cause_rsi_band": 84,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 49,
+        "p50": -7.5,
+        "p90": 13,
+        "max": 27.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4767,
+        "TRENDING_UP": 0.4209,
+        "RANGING": 0.1024
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "HL",
+      "coin": "ADA",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 42,
+        "flips_per_100_bars": 8.450704225352112,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5238095238095238,
+        "cause_ema_cross": 13,
+        "cause_rsi_band": 29,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 12,
+        "p50": 1,
+        "p90": 11,
+        "max": 11.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.6358,
+        "RANGING": 0.1268,
+        "TRENDING_UP": 0.2374
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "HL",
+      "coin": "AVAX",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 268,
+        "flips_per_100_bars": 9.446598519562919,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5186567164179104,
+        "cause_ema_cross": 138,
+        "cause_rsi_band": 126,
+        "cause_both": 4,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 128,
+        "p50": -6,
+        "p90": 9.5,
+        "max": 26.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.448,
+        "RANGING": 0.0783,
+        "TRENDING_DOWN": 0.4737
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 1,
+        "p50": 10.5,
+        "p90": 10.5,
+        "max": 10.5
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "AVAX",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 134,
+        "flips_per_100_bars": 9.591982820329276,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5,
+        "cause_ema_cross": 68,
+        "cause_rsi_band": 64,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 60,
+        "p50": -15,
+        "p90": 0.5,
+        "max": 12.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4395,
+        "RANGING": 0.0802,
+        "TRENDING_UP": 0.4803
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "HL",
+      "coin": "AVAX",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 47,
+        "flips_per_100_bars": 9.456740442655935,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5319148936170213,
+        "cause_ema_cross": 27,
+        "cause_rsi_band": 20,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 27,
+        "p50": -6,
+        "p90": 12.5,
+        "max": 20.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5755,
+        "TRENDING_UP": 0.3602,
+        "RANGING": 0.0644
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "BTC",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 284,
+        "flips_per_100_bars": 10.0105745505816,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5633802816901409,
+        "cause_ema_cross": 138,
+        "cause_rsi_band": 146,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 111,
+        "p50": -16.5,
+        "p90": 8,
+        "max": 38
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4931,
+        "TRENDING_DOWN": 0.418,
+        "RANGING": 0.0888
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "BTC",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 131,
+        "flips_per_100_bars": 9.377236936292054,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5190839694656488,
+        "cause_ema_cross": 51,
+        "cause_rsi_band": 78,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 46,
+        "p50": -3,
+        "p90": 11.5,
+        "max": 18.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.408,
+        "RANGING": 0.0809,
+        "TRENDING_UP": 0.5111
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "BTC",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 43,
+        "flips_per_100_bars": 8.651911468812877,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 9,
+        "round_trip_rate": 0.46511627906976744,
+        "cause_ema_cross": 29,
+        "cause_rsi_band": 14,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 27,
+        "p50": -5.5,
+        "p90": 5,
+        "max": 8
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5433,
+        "TRENDING_UP": 0.3662,
+        "RANGING": 0.0905
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.773
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "ETH",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 280,
+        "flips_per_100_bars": 9.86958054282693,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5535714285714286,
+        "cause_ema_cross": 132,
+        "cause_rsi_band": 146,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 118,
+        "p50": -4.5,
+        "p90": 12,
+        "max": 26
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.5023,
+        "TRENDING_DOWN": 0.4149,
+        "RANGING": 0.0828
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "ETH",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 131,
+        "flips_per_100_bars": 9.377236936292054,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5114503816793893,
+        "cause_ema_cross": 65,
+        "cause_rsi_band": 64,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 60,
+        "p50": -5,
+        "p90": 12.5,
+        "max": 28
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.3987,
+        "RANGING": 0.0974,
+        "TRENDING_UP": 0.5039
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "ETH",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 57,
+        "flips_per_100_bars": 11.46881287726358,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5964912280701754,
+        "cause_ema_cross": 27,
+        "cause_rsi_band": 29,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -18,
+        "p90": -0.5,
+        "max": 8.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5131,
+        "RANGING": 0.1408,
+        "TRENDING_UP": 0.3461
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "SOL",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 239,
+        "flips_per_100_bars": 8.424391963341558,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.497907949790795,
+        "cause_ema_cross": 137,
+        "cause_rsi_band": 101,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 123,
+        "p50": -8.5,
+        "p90": 10,
+        "max": 34
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4685,
+        "RANGING": 0.0539,
+        "TRENDING_DOWN": 0.4776
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "SOL",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 124,
+        "flips_per_100_bars": 8.876163206871869,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5,
+        "cause_ema_cross": 56,
+        "cause_rsi_band": 66,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 45,
+        "p50": -10.5,
+        "p90": 10.5,
+        "max": 15
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4309,
+        "RANGING": 0.0795,
+        "TRENDING_UP": 0.4896
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "SOL",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 47,
+        "flips_per_100_bars": 9.456740442655935,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.5319148936170213,
+        "cause_ema_cross": 23,
+        "cause_rsi_band": 24,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 23,
+        "p50": -5.5,
+        "p90": 6,
+        "max": 11
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5714,
+        "RANGING": 0.0885,
+        "TRENDING_UP": 0.34
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "XRP",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 282,
+        "flips_per_100_bars": 9.940077546704265,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5531914893617021,
+        "cause_ema_cross": 136,
+        "cause_rsi_band": 145,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 110,
+        "p50": -6.5,
+        "p90": 12,
+        "max": 39.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4494,
+        "TRENDING_DOWN": 0.4628,
+        "RANGING": 0.0878
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "XRP",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 146,
+        "flips_per_100_bars": 10.450966356478167,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5616438356164384,
+        "cause_ema_cross": 56,
+        "cause_rsi_band": 88,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 49,
+        "p50": -6,
+        "p90": 18.5,
+        "max": 41
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4932,
+        "RANGING": 0.1045,
+        "TRENDING_UP": 0.4023
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "XRP",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 46,
+        "flips_per_100_bars": 9.25553319919517,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.4782608695652174,
+        "cause_ema_cross": 22,
+        "cause_rsi_band": 24,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 19,
+        "p50": -2.5,
+        "p90": 11.5,
+        "max": 22
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.2797,
+        "TRENDING_DOWN": 0.6338,
+        "RANGING": 0.0865
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "DOGE",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 264,
+        "flips_per_100_bars": 9.305604511808248,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.4962121212121212,
+        "cause_ema_cross": 168,
+        "cause_rsi_band": 94,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 138,
+        "p50": -17,
+        "p90": 5,
+        "max": 21.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4586,
+        "TRENDING_DOWN": 0.4857,
+        "RANGING": 0.0557
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "DOGE",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 129,
+        "flips_per_100_bars": 9.234073013600574,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5426356589147286,
+        "cause_ema_cross": 77,
+        "cause_rsi_band": 51,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 58,
+        "p50": -21.5,
+        "p90": 11.5,
+        "max": 22
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.5369,
+        "TRENDING_UP": 0.4023,
+        "RANGING": 0.0608
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "DOGE",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 46,
+        "flips_per_100_bars": 9.25553319919517,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.4782608695652174,
+        "cause_ema_cross": 24,
+        "cause_rsi_band": 22,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -2.5,
+        "p90": 12,
+        "max": 20
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.2817,
+        "TRENDING_DOWN": 0.6499,
+        "RANGING": 0.0684
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "BNB",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 266,
+        "flips_per_100_bars": 9.376101515685583,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5338345864661654,
+        "cause_ema_cross": 135,
+        "cause_rsi_band": 131,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 110,
+        "p50": -11,
+        "p90": 10,
+        "max": 19.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.5093,
+        "RANGING": 0.0765,
+        "TRENDING_DOWN": 0.4142
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "BNB",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 120,
+        "flips_per_100_bars": 8.589835361488905,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5333333333333333,
+        "cause_ema_cross": 62,
+        "cause_rsi_band": 58,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 48,
+        "p50": -8,
+        "p90": 9.5,
+        "max": 40.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4402,
+        "RANGING": 0.0523,
+        "TRENDING_UP": 0.5075
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "BNB",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 57,
+        "flips_per_100_bars": 11.46881287726358,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.543859649122807,
+        "cause_ema_cross": 33,
+        "cause_rsi_band": 23,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 23,
+        "p50": -7.5,
+        "p90": 10,
+        "max": 19.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.4366,
+        "TRENDING_DOWN": 0.495,
+        "RANGING": 0.0684
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "ADA",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 265,
+        "flips_per_100_bars": 9.340853013746916,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5132075471698113,
+        "cause_ema_cross": 127,
+        "cause_rsi_band": 138,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 110,
+        "p50": -13.5,
+        "p90": 10.5,
+        "max": 14.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4815,
+        "TRENDING_UP": 0.4459,
+        "RANGING": 0.0726
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 1,
+        "p50": 10.5,
+        "p90": 10.5,
+        "max": 10.5
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "ADA",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 143,
+        "flips_per_100_bars": 10.236220472440944,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5524475524475524,
+        "cause_ema_cross": 56,
+        "cause_rsi_band": 86,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 51,
+        "p50": -8,
+        "p90": 11.5,
+        "max": 27.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4753,
+        "TRENDING_UP": 0.4209,
+        "RANGING": 0.1038
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "ADA",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 40,
+        "flips_per_100_bars": 8.048289738430583,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.525,
+        "cause_ema_cross": 11,
+        "cause_rsi_band": 29,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 10,
+        "p50": -4,
+        "p90": 26.5,
+        "max": 26.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.6338,
+        "RANGING": 0.1288,
+        "TRENDING_UP": 0.2374
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "AVAX",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 270,
+        "flips_per_100_bars": 9.517095523440254,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5259259259259259,
+        "cause_ema_cross": 146,
+        "cause_rsi_band": 120,
+        "cause_both": 4,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 134,
+        "p50": -6,
+        "p90": 8.5,
+        "max": 29
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4459,
+        "TRENDING_DOWN": 0.4741,
+        "RANGING": 0.08
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 1,
+        "p50": 10.5,
+        "p90": 10.5,
+        "max": 10.5
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "AVAX",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 132,
+        "flips_per_100_bars": 9.448818897637794,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.49242424242424243,
+        "cause_ema_cross": 68,
+        "cause_rsi_band": 62,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 60,
+        "p50": -16.5,
+        "p90": -0.5,
+        "max": 8
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4402,
+        "RANGING": 0.0809,
+        "TRENDING_UP": 0.4789
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BINANCE",
+      "coin": "AVAX",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 47,
+        "flips_per_100_bars": 9.456740442655935,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5319148936170213,
+        "cause_ema_cross": 27,
+        "cause_rsi_band": 20,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 27,
+        "p50": -6,
+        "p90": 12.5,
+        "max": 20.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5714,
+        "TRENDING_UP": 0.3642,
+        "RANGING": 0.0644
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "BTC",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 294,
+        "flips_per_100_bars": 10.363059569968277,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5714285714285714,
+        "cause_ema_cross": 140,
+        "cause_rsi_band": 154,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 113,
+        "p50": -16.5,
+        "p90": 8,
+        "max": 36.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4917,
+        "TRENDING_DOWN": 0.4198,
+        "RANGING": 0.0885
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "BTC",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 133,
+        "flips_per_100_bars": 9.520400858983535,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5263157894736842,
+        "cause_ema_cross": 51,
+        "cause_rsi_band": 80,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 46,
+        "p50": -3,
+        "p90": 12,
+        "max": 18.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4052,
+        "RANGING": 0.0823,
+        "TRENDING_UP": 0.5125
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "BTC",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 43,
+        "flips_per_100_bars": 8.651911468812877,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 9,
+        "round_trip_rate": 0.46511627906976744,
+        "cause_ema_cross": 29,
+        "cause_rsi_band": 14,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 27,
+        "p50": -5.5,
+        "p90": 5,
+        "max": 7.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5412,
+        "TRENDING_UP": 0.3682,
+        "RANGING": 0.0905
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.773
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "ETH",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 278,
+        "flips_per_100_bars": 9.799083538949594,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5503597122302158,
+        "cause_ema_cross": 134,
+        "cause_rsi_band": 142,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 119,
+        "p50": -5.5,
+        "p90": 11.5,
+        "max": 25
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.5016,
+        "TRENDING_DOWN": 0.4159,
+        "RANGING": 0.0825
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "ETH",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 133,
+        "flips_per_100_bars": 9.520400858983535,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.518796992481203,
+        "cause_ema_cross": 65,
+        "cause_rsi_band": 66,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 60,
+        "p50": -5,
+        "p90": 12.5,
+        "max": 28
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.398,
+        "RANGING": 0.0981,
+        "TRENDING_UP": 0.5039
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "ETH",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 57,
+        "flips_per_100_bars": 11.46881287726358,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5964912280701754,
+        "cause_ema_cross": 27,
+        "cause_rsi_band": 29,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -18,
+        "p90": -0.5,
+        "max": 8.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5191,
+        "RANGING": 0.1348,
+        "TRENDING_UP": 0.3461
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "SOL",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 248,
+        "flips_per_100_bars": 8.741628480789567,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5161290322580645,
+        "cause_ema_cross": 142,
+        "cause_rsi_band": 104,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 122,
+        "p50": -10,
+        "p90": 8,
+        "max": 25.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4702,
+        "RANGING": 0.0539,
+        "TRENDING_DOWN": 0.4759
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "SOL",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 122,
+        "flips_per_100_bars": 8.732999284180387,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5081967213114754,
+        "cause_ema_cross": 58,
+        "cause_rsi_band": 62,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 47,
+        "p50": -11,
+        "p90": 10.5,
+        "max": 15
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4324,
+        "RANGING": 0.0773,
+        "TRENDING_UP": 0.4903
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "SOL",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 47,
+        "flips_per_100_bars": 9.456740442655935,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.5531914893617021,
+        "cause_ema_cross": 25,
+        "cause_rsi_band": 22,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 23,
+        "p50": -5.5,
+        "p90": 6,
+        "max": 11
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5674,
+        "RANGING": 0.0905,
+        "TRENDING_UP": 0.3421
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "XRP",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 270,
+        "flips_per_100_bars": 9.517095523440254,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5333333333333333,
+        "cause_ema_cross": 134,
+        "cause_rsi_band": 135,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 109,
+        "p50": -6.5,
+        "p90": 13,
+        "max": 38
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4498,
+        "TRENDING_DOWN": 0.4639,
+        "RANGING": 0.0864
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "XRP",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 146,
+        "flips_per_100_bars": 10.450966356478167,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5753424657534246,
+        "cause_ema_cross": 56,
+        "cause_rsi_band": 88,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 47,
+        "p50": -12.5,
+        "p90": 11.5,
+        "max": 41.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4925,
+        "RANGING": 0.1045,
+        "TRENDING_UP": 0.403
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "XRP",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 46,
+        "flips_per_100_bars": 9.25553319919517,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.4782608695652174,
+        "cause_ema_cross": 22,
+        "cause_rsi_band": 24,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 19,
+        "p50": -2,
+        "p90": 14.5,
+        "max": 22
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.2797,
+        "TRENDING_DOWN": 0.6338,
+        "RANGING": 0.0865
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "DOGE",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 268,
+        "flips_per_100_bars": 9.446598519562919,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5074626865671642,
+        "cause_ema_cross": 170,
+        "cause_rsi_band": 96,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 144,
+        "p50": -16.5,
+        "p90": 5,
+        "max": 20
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.4614,
+        "TRENDING_DOWN": 0.4826,
+        "RANGING": 0.056
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "DOGE",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 131,
+        "flips_per_100_bars": 9.377236936292054,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.549618320610687,
+        "cause_ema_cross": 79,
+        "cause_rsi_band": 51,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 58,
+        "p50": -21.5,
+        "p90": 12,
+        "max": 22
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.5347,
+        "TRENDING_UP": 0.4044,
+        "RANGING": 0.0608
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "DOGE",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 46,
+        "flips_per_100_bars": 9.25553319919517,
+        "dwell_bars_p10": 2,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.4782608695652174,
+        "cause_ema_cross": 24,
+        "cause_rsi_band": 22,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -2.5,
+        "p90": 12,
+        "max": 20
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.2817,
+        "TRENDING_DOWN": 0.6499,
+        "RANGING": 0.0684
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "BNB",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 268,
+        "flips_per_100_bars": 9.446598519562919,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5298507462686567,
+        "cause_ema_cross": 133,
+        "cause_rsi_band": 135,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 111,
+        "p50": -8,
+        "p90": 9.5,
+        "max": 20
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.5065,
+        "RANGING": 0.0747,
+        "TRENDING_DOWN": 0.4188
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "BNB",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 122,
+        "flips_per_100_bars": 8.732999284180387,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.5327868852459017,
+        "cause_ema_cross": 62,
+        "cause_rsi_band": 60,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 48,
+        "p50": -8,
+        "p90": 10.5,
+        "max": 40.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4424,
+        "RANGING": 0.0515,
+        "TRENDING_UP": 0.5061
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "BNB",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 51,
+        "flips_per_100_bars": 10.261569416498993,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.49019607843137253,
+        "cause_ema_cross": 29,
+        "cause_rsi_band": 21,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 21,
+        "p50": -7.5,
+        "p90": -1,
+        "max": 19.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_UP": 0.4366,
+        "TRENDING_DOWN": 0.499,
+        "RANGING": 0.0644
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "ADA",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 269,
+        "flips_per_100_bars": 9.481847021501586,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5278810408921933,
+        "cause_ema_cross": 137,
+        "cause_rsi_band": 132,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 114,
+        "p50": -16.5,
+        "p90": 9.5,
+        "max": 38
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4766,
+        "TRENDING_UP": 0.4547,
+        "RANGING": 0.0687
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 1,
+        "p50": 10.5,
+        "p90": 10.5,
+        "max": 10.5
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "ADA",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 143,
+        "flips_per_100_bars": 10.236220472440944,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 5,
+        "round_trip_rate": 0.5384615384615384,
+        "cause_ema_cross": 56,
+        "cause_rsi_band": 86,
+        "cause_both": 1,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 52,
+        "p50": -7.5,
+        "p90": 11.5,
+        "max": 20
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4739,
+        "TRENDING_UP": 0.4245,
+        "RANGING": 0.1016
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.43
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "ADA",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 40,
+        "flips_per_100_bars": 8.048289738430583,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.525,
+        "cause_ema_cross": 11,
+        "cause_rsi_band": 29,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 10,
+        "p50": -4,
+        "p90": 26.5,
+        "max": 26.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.6358,
+        "RANGING": 0.1288,
+        "TRENDING_UP": 0.2354
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "AVAX",
+      "timeframe": "15m",
+      "bars": 2880,
+      "churn": {
+        "bars": 2837,
+        "n_transitions": 272,
+        "flips_per_100_bars": 9.58759252731759,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 7,
+        "round_trip_rate": 0.5294117647058824,
+        "cause_ema_cross": 144,
+        "cause_rsi_band": 124,
+        "cause_both": 4,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 132,
+        "p50": -6,
+        "p90": 8,
+        "max": 28.5
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_UP": 0.447,
+        "TRENDING_DOWN": 0.4744,
+        "RANGING": 0.0786
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 1,
+        "p50": 10.5,
+        "p90": 10.5,
+        "max": 10.5
+      },
+      "dwell_vs_lag": 0.601
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "AVAX",
+      "timeframe": "1h",
+      "bars": 1440,
+      "churn": {
+        "bars": 1397,
+        "n_transitions": 128,
+        "flips_per_100_bars": 9.162491052254833,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 8,
+        "round_trip_rate": 0.484375,
+        "cause_ema_cross": 68,
+        "cause_rsi_band": 58,
+        "cause_both": 2,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 60,
+        "p50": -16.5,
+        "p90": -0.5,
+        "max": 8
+      },
+      "latency_verdict": "MEASURED",
+      "label_share": {
+        "TRENDING_DOWN": 0.4395,
+        "RANGING": 0.0802,
+        "TRENDING_UP": 0.4803
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.687
+    },
+    {
+      "venue": "BYBIT",
+      "coin": "AVAX",
+      "timeframe": "4h",
+      "bars": 540,
+      "churn": {
+        "bars": 497,
+        "n_transitions": 47,
+        "flips_per_100_bars": 9.456740442655935,
+        "dwell_bars_p10": 1,
+        "dwell_bars_p50": 6,
+        "round_trip_rate": 0.5319148936170213,
+        "cause_ema_cross": 27,
+        "cause_rsi_band": 20,
+        "cause_both": 0,
+        "cause_unknown": 0
+      },
+      "lag": {
+        "n_transitions_observed": 27,
+        "p50": -6,
+        "p90": 12.5,
+        "max": 20.5
+      },
+      "latency_verdict": "INDETERMINATE",
+      "label_share": {
+        "TRENDING_DOWN": 0.5694,
+        "TRENDING_UP": 0.3662,
+        "RANGING": 0.0644
+      },
+      "lag_isolated": {
+        "n_transitions_observed": 0,
+        "p50": null,
+        "p90": null,
+        "max": null
+      },
+      "dwell_vs_lag": 0.516
+    }
+  ],
+  "aggregate": {
+    "cells_total": 72,
+    "cells_measured": 48,
+    "cells_indeterminate": 24,
+    "cells_no_data": 0,
+    "median_of_cell_p50_lag_bars": -8,
+    "isolated": {
+      "isolation_bars": 24,
+      "n_isolated_pairs_total": 7,
+      "median_of_cell_p50_lag_bars": 10.5,
+      "cells_contributing": 6
+    }
+  },
+  "r4_window_sweep": [
+    {
+      "coin": "BTC",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 12.518,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "BTC",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 11.373,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "BTC",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 9.227,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "BTC",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.441,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "BTC",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.011,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "ETH",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 13.233,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "ETH",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 11.087,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "ETH",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 9.657,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "ETH",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.798,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "ETH",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 7.439,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "SOL",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 11.445,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "SOL",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 10.873,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "SOL",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 8.87,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "SOL",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 7.725,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "SOL",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 7.082,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "XRP",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 14.807,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "XRP",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 12.089,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "XRP",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 10.3,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "XRP",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 9.871,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "XRP",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.798,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "DOGE",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 13.162,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "DOGE",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 10.157,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "DOGE",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 9.514,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "DOGE",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 7.439,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "DOGE",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 6.652,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "BNB",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 12.16,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "BNB",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 10.3,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "BNB",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 8.441,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "BNB",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 7.654,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "BNB",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 6.938,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "ADA",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 14.092,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "ADA",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 11.803,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "ADA",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 9.943,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "ADA",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.87,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "ADA",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.369,
+      "closed_form_lag_bars": 19.877
+    },
+    {
+      "coin": "AVAX",
+      "fast": 5,
+      "slow": 13,
+      "is_shipped": false,
+      "flips_per_100_bars": 12.947,
+      "closed_form_lag_bars": 6.714
+    },
+    {
+      "coin": "AVAX",
+      "fast": 7,
+      "slow": 17,
+      "is_shipped": false,
+      "flips_per_100_bars": 10.873,
+      "closed_form_lag_bars": 9.178
+    },
+    {
+      "coin": "AVAX",
+      "fast": 9,
+      "slow": 21,
+      "is_shipped": true,
+      "flips_per_100_bars": 9.585,
+      "closed_form_lag_bars": 11.639
+    },
+    {
+      "coin": "AVAX",
+      "fast": 12,
+      "slow": 26,
+      "is_shipped": false,
+      "flips_per_100_bars": 9.084,
+      "closed_form_lag_bars": 14.964
+    },
+    {
+      "coin": "AVAX",
+      "fast": 16,
+      "slow": 34,
+      "is_shipped": false,
+      "flips_per_100_bars": 8.083,
+      "closed_form_lag_bars": 19.877
+    }
+  ],
+  "h3_retrospective": {
+    "status": "SUPPORTED but RETROSPECTIVE — confirmed and ALREADY FIXED. Production flipped to CANDLE_BASIS=closed at 2026-08-07T10:16:12Z (verified in the container /proc/1/environ, not .env). This is the post-hoc explanation of the seed observation, NOT an open defect.",
+    "source": "candle_basis_shadow on signal-1 (Postgres signal_performance)",
+    "instrument": "BOTH sides come from the SAME instrument: one invocation of computeIndicatorScores per basis (get-trade-call.ts:596 live / :619 closed) on the SAME request. That is what makes the delta valid — a delta across two instruments is not a delta.",
+    "proxy_warning": "These are VERDICT disagreements, not REGIME-LABEL disagreements. The table answers \"did the bar basis change the CALL\", not \"did it change the LABEL\". It is the closest live proxy available and is labelled as a proxy, not as the measurement.",
+    "non_source": "candle_basis_shadow.structure_* is an explicit NON-SOURCE: 23 rows total, and it is get_market_regime`s price-STRUCTURE field (HIGHER_HIGHS / LOWER_LOWS / MIXED), not this regime. Using it would repeat the wrong-instrument error this arc has already hit four times.",
+    "query": "SELECT timeframe, count(*), round(100.0*count(*) FILTER (WHERE call_live IS DISTINCT FROM call_closed)/count(*),2) FROM candle_basis_shadow WHERE call_closed IS NOT NULL AND timeframe IN ('15m','1h','4h') GROUP BY ROLLUP(timeframe)",
+    "rows_measured_timeframes": 863363,
+    "disagreement_pct": {
+      "15m": 1.89,
+      "1h": 2.10,
+      "4h": 2.11,
+      "all": 2.00
+    },
+    "when_disagreeing": {
+      "n": 58333,
+      "mean_abs_confidence_delta": 25.56,
+      "mean_signed_confidence_delta": -4.24,
+      "reading": "The live basis was systematically 4.24 confidence points MORE BEARISH. Independently corroborates the flip wave`s own finding that partial bars pinned volume at -70 and imposed a systematic bearish bias."
+    }
+  }
+}
