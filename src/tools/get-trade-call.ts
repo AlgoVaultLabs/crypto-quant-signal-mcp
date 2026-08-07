@@ -79,13 +79,30 @@ const WEIGHTS = {
   volume: 0.20,
 };
 
-// v1.5: Symmetric signal thresholds — both directions require equal conviction
+// ── The LIVE directional rule, stated as MEASURED (SIGNAL-CLOSEDBAR-FLIP-W1 CH1, 2026-08-07) ──
+//   BUY  iff  rawScore  >  40   (BUY_BASE_THRESHOLD)
+//   SELL iff |rawScore| >  55   (SELL_THRESHOLD_GATED)
+// Both are resolved at the call site through getThresholdForTF(); there is NO regime gating.
+//
+// The rule is ASYMMETRIC, and this wave deliberately leaves it so.
+//
+// The v1.5 "symmetric thresholds — both directions require equal conviction" design was
+// NEVER WIRED. `SELL_BASE_THRESHOLD = 40` and `BUY_THRESHOLD_GATED = 55` sat here, defined
+// and never read — by any call site, test, or dynamic lookup (proven by a full-tree grep
+// across every file type before deletion). The sell path has always passed
+// SELL_THRESHOLD_GATED as its fallback, so the regime-aware gating those two constants
+// described has never existed either. They are deleted rather than left in place, because a
+// never-read constant that LOOKS live is a trap: the next person recalibrates by editing the
+// dead one and observes no effect. The intent is recorded here precisely because it was real
+// and unrealised — a recalibration wave should know it was tried, not rediscover it.
+//
+// DO NOT "symmetrise" these without measuring first. Over the 7-day shadow window
+// (n = 2,733,170): `|raw| > 54` admits 13,152 rows, `|raw| > 55` admits 281 — a 47× cliff,
+// because 12,873 rows sit at EXACTLY raw = −55. The score space is DISCRETE (fixed indicator
+// ladders × fixed weights), so raw scores pile into atoms and a threshold routinely lands on
+// one. Moving SELL by a single point is a 47× emission change, not a tuning nudge.
 const BUY_BASE_THRESHOLD = 40;
-const SELL_BASE_THRESHOLD = 40;
-
-// Regime-aware gates: require higher conviction when trading against the regime
-const BUY_THRESHOLD_GATED = 55;   // BUY in TRENDING_DOWN
-const SELL_THRESHOLD_GATED = 55;   // SELL in TRENDING_UP or RANGING
+const SELL_THRESHOLD_GATED = 55;
 
 // Theoretical max |rawScore| for proper confidence scaling
 // RSI(100)*0.30 + EMA(100)*0.10 + Funding(80)*0.25 + OI(60)*0.15 + Vol(100)*0.20 = 30+10+20+9+20 = 89

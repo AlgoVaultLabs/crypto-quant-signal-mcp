@@ -70,9 +70,16 @@ The report exists so the retune is measured, not guessed. Read, in `report-<date
 | By elapsed-fraction decile | whether divergence concentrates in young bars (it should) |
 | Daily timeseries | never retune off an aggregate — check for a trend |
 
-Thresholds in scope for the flip wave (all in `src/tools/get-trade-call.ts`):
-`BUY_BASE_THRESHOLD` (40) · `SELL_BASE_THRESHOLD` (40) · `SELL_THRESHOLD_GATED` (55) ·
-`MAX_RAW_SCORE` (89) · `MIN_TRACKABLE_CONFIDENCE`.
+Thresholds that actually exist (all in `src/tools/get-trade-call.ts`), as MEASURED at the flip:
+`BUY_BASE_THRESHOLD` (40) · `SELL_THRESHOLD_GATED` (55) · `MAX_RAW_SCORE` (89) ·
+`MIN_TRACKABLE_CONFIDENCE` (52). The live rule is **BUY `raw > 40`, SELL `|raw| > 55`, no
+regime gating** — asymmetric, and left so deliberately.
+
+> `SELL_BASE_THRESHOLD` and `BUY_THRESHOLD_GATED` were listed here until 2026-08-07 and were
+> **never read by anything** — deleted in SIGNAL-CLOSEDBAR-FLIP-W1 CH1. `MAX_RAW_SCORE` is the
+> confidence **divisor** (`confidence = round(|raw|/89×100)`), not a ceiling, so changing it
+> moves every published confidence number with no underlying change — a public-copy change
+> requiring architect sign-off, never a wave's own call.
 
 > **Retuning on guesses floods BUY signals.** That is the whole reason this wave measured
 > first. If the report says NOT_READY, the answer is to wait, not to lower the bar.
