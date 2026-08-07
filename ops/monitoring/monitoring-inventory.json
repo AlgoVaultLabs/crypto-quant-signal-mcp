@@ -942,17 +942,17 @@
         {
           "host": "signal-1",
           "path": "/usr/local/bin/closedbar-w1-liveness.sh",
-          "schedule": null
+          "schedule": "44 * * * *"
         }
       ],
       "criticality": "load-bearing",
       "repo_resident": true,
-      "schedule": null,
+      "schedule": "44 * * * *",
       "invoked_by": "systemd:transient (systemd-run --on-active, armed per deploy)",
       "install_state": "installed",
-      "sha256": "dbc55e06f39a98fa16fa7fa90e7f4773dcd46bafc3cdcbf4b4ca445d2be5e7e6",
-      "owner_wave": "OPS-CLOSEDBAR-DISPATCH-OFFSET-INCIDENT-W1",
-      "notes": "Deferred liveness probe for bucket-deterministic watchlist dispatch. SIGNAL-CLOSEDBAR-SHADOW-W1 CH6 installed it to /usr/local/bin with NO committed ancestor and no inventory row, so when a full-tree rsync reverted the bot on 2026-08-01 nothing detected it — the probe itself caught the symptom 90 minutes later, by luck of timing. Canonical home is now ops/monitoring/; the host copy carries the __DEPLOY_EPOCH__ substitution, so REGISTRY_PARITY is asserted against the HOST sha, not the repo one. Has a hermetic, vacuity-guarded --self-test (GNU and BSD date both exercised). Committed ancestor at ops/monitoring/closedbar-w1-liveness.sh, so git IS the recovery path; the host copy differs only by the __DEPLOY_EPOCH__ substitution. NO_BACKUP only scans /opt/algovault-monitoring/, which this artifact is not in."
+      "sha256": "176f64d1c871aca7708218c0125d97c799cfde80eece7c4b75a4c9f4407418b1",
+      "owner_wave": "SIGNAL-CLOSEDBAR-FLIP-W1",
+      "notes": "Hourly liveness proof that watchlist dispatch is bucket-deterministic and lands in the band the bot is CONFIGURED for. SIGNAL-CLOSEDBAR-FLIP-W1 CH5 fixed three defects at once: (1) the band was hardcoded at '>= 2/3 of the bar', true only for OFFSET_PCT=75 — after the flip to 0 it would have paged CLOSEDBAR_DISPATCH_OFFSET_FAULT on every CORRECT fire; it is now derived from /etc/algovault-bot/env. (2) the probe row was a hardcoded SUBSCRIBER watch (chat 8776880162 ETH/15m/BINANCE) which that subscriber unwatched after 2026-08-02, so the guard resolved nothing and reported RATCHET_REGRESSION — a CRITICAL page caused by a stranger tidying their watchlist; the row is now selected at runtime and an empty corpus is INSUFFICIENT, never a page. (3) it was NEVER ON A CRON — written in SHADOW-W1, run by hand twice, dark ever since; scheduled here at :44 hourly. Emits no verdict token by design: the alert contract owns delivery via send_telegram.sh. 29 self-test assertions, RED-verified 4 ways."
     },
     {
       "id": "algovault-bot-dispatch-schedule",

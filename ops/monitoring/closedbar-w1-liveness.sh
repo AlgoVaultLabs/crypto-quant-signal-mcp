@@ -56,11 +56,18 @@ if [ -r "$DEPLOY_STAMP" ]; then
   _stamped=$(head -1 "$DEPLOY_STAMP" 2>/dev/null | tr -dc '0-9')
   [ -n "$_stamped" ] && DEPLOY_EPOCH="$_stamped"
 fi
-CHAT_ID=8776880162
-COIN=ETH
-TF=15m
-TF_SECONDS=900
-EXCHANGE=BINANCE
+# ── The probe row is SELECTED at runtime, never hardcoded ────────────────────
+# SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This used to pin chat 8776880162 / ETH / 15m / BINANCE. That
+# row is a SUBSCRIBER'S watch — they unwatched it after 2026-08-02, so by the time this wave
+# ran the guard resolved nothing and reported CLOSEDBAR_DISPATCH_RATCHET_REGRESSION: a
+# CRITICAL page produced by a stranger tidying their watchlist. A guard whose subject any user
+# can delete is not a guard.
+#
+# So: probe the most-recently-dispatched row on the target timeframe, whoever owns it. If the
+# corpus is EMPTY that is a FACT about the world (nobody watches this TF), not a fault — the
+# world builds this corpus, so empty means INSUFFICIENT and never a page.
+TF=${CLOSEDBAR_TF:-15m}
+TF_SECONDS=${CLOSEDBAR_TF_SECONDS:-900}
 LOG=${CLOSEDBAR_LOG:-/var/log/closedbar-w1-liveness.log}
 
 # Jitter may span ALGOVAULT_BOT_JITTER_WINDOW_MIN (default 3) minutes, plus one 60s scheduler
@@ -269,9 +276,20 @@ if [ "${1:-}" = "--self-test" ]; then self_test; exit $?; fi
 # ── live run ────────────────────────────────────────────────────────────────
 log "START deploy_epoch=$DEPLOY_EPOCH"
 
-LAST_RAW=$("${SQLITE[@]}" "$DB" \
-  "SELECT last_fetched_at FROM watchlists
-    WHERE chat_id=$CHAT_ID AND coin='$COIN' AND timeframe='$TF' AND exchange='$EXCHANGE';" 2>/dev/null)
+PROBE_ROW=$("${SQLITE[@]}" "$DB" \
+  "SELECT chat_id||'|'||coin||'|'||exchange||'|'||last_fetched_at FROM watchlists
+    WHERE timeframe='$TF' AND last_fetched_at IS NOT NULL
+    ORDER BY last_fetched_at DESC LIMIT 1;" 2>/dev/null)
+if [ -z "$PROBE_ROW" ]; then
+  log "CHECK1 INSUFFICIENT — no dispatched ${TF} watchlist row exists. Nobody watches this"\
+" timeframe right now; the world builds this corpus, so empty is a FACT, not a fault."
+  log "DONE insufficient corpus — silent success, no alert sent"
+  exit 0
+fi
+CHAT_ID=${PROBE_ROW%%|*}; _rest=${PROBE_ROW#*|}
+COIN=${_rest%%|*};        _rest=${_rest#*|}
+EXCHANGE=${_rest%%|*}
+LAST_RAW=${_rest#*|}
 LAST_EPOCH=$(iso_to_epoch "$LAST_RAW")
 
 if [ -z "$LAST_EPOCH" ]; then
