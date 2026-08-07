@@ -94,21 +94,53 @@ secs_into_bar() {   # <timestamp|epoch> <period_seconds>
   printf '%s' "$(( e % ${2} ))"
 }
 
+# ── The expected band is DERIVED from the bot's live dispatch config ─────────
+# SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This used to hardcode "late is >= 2/3 of the bar, which is
+# where OFFSET_PCT=75 plus grace and jitter lands". That literal was correct only for the
+# offset in force when it was written, and the flip moved OFFSET_PCT 75 -> 0 — which would
+# have made EVERY correct post-flip fire (now ~1/60 of the bar in) read as OFFSET_FAULT. A
+# guard that pages on correct behaviour gets muted, and a muted guard is worse than none.
+#
+# So the band is a FUNCTION of the same knobs the dispatcher reads, taken from the bot's own
+# env file. Change the offset and this follows; there is no second copy to update.
+BOT_ENV=${CLOSEDBAR_BOT_ENV:-/etc/algovault-bot/env}
+_bot_cfg() {   # <VAR> <default>  — default applies when the file or key is unreadable
+  local v=""
+  [ -r "$BOT_ENV" ] && v=$(grep -E "^$1=" "$BOT_ENV" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')
+  case "$v" in (''|*[!0-9]*) printf '%s' "$2";; (*) printf '%s' "$v";; esac
+}
+# Named, so the self-test can assert the ACTUAL fallback rather than re-supplying its own —
+# an unreadable env must never fall back to a band that pages on correct behaviour.
+DEFAULT_OFFSET_PCT=0
+DEFAULT_GRACE_MIN=1
+DEFAULT_JITTER_MIN=1
+OFFSET_PCT=${CLOSEDBAR_OFFSET_PCT:-$(_bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT "$DEFAULT_OFFSET_PCT")}
+GRACE_MIN=${CLOSEDBAR_GRACE_MIN:-$(_bot_cfg ALGOVAULT_BOT_CLOSE_GRACE_MIN "$DEFAULT_GRACE_MIN")}
+JITTER_MIN=${CLOSEDBAR_JITTER_MIN:-$(_bot_cfg ALGOVAULT_BOT_DISPATCH_JITTER_MIN "$DEFAULT_JITTER_MIN")}
+TICK_SECONDS=60   # OnCalendar=*:*:00 — the scheduler grid, so a due time rounds UP to it
+
+band_lo() { printf '%s' "$(( $1 * OFFSET_PCT / 100 ))"; }
+band_hi() {   # offset + grace + jitter spread + one tick of quantization, clamped inside the bar
+  local hi=$(( $1 * OFFSET_PCT / 100 + GRACE_MIN * 60 + JITTER_MIN * 60 + TICK_SECONDS ))
+  [ "$hi" -ge "$1" ] && hi=$(( $1 - 1 ))
+  printf '%s' "$hi"
+}
+
 # <period> <offset…> -> OK | OFFSET_FAULT | RATCHET | INSUFFICIENT
-# "Late" is >= 2/3 of the bar, which is where OFFSET_PCT=75 plus grace and jitter lands.
 classify_offsets() {
   local period="$1"; shift
-  local n=0 min=-1 max=-1 late=0 o
+  local lo hi; lo=$(band_lo "$period"); hi=$(band_hi "$period")
+  local n=0 min=-1 max=-1 inband=0 o
   for o in "$@"; do
     [ -z "$o" ] && continue
     n=$((n + 1))
     [ "$min" -lt 0 ] && min=$o
     [ "$o" -lt "$min" ] && min=$o
     [ "$o" -gt "$max" ] && max=$o
-    [ "$o" -ge $(( period * 2 / 3 )) ] && late=$((late + 1))
+    if [ "$o" -ge "$lo" ] && [ "$o" -le "$hi" ]; then inband=$((inband + 1)); fi
   done
   [ "$n" -eq 0 ] && { printf 'INSUFFICIENT'; return 0; }
-  [ "$late" -eq "$n" ] && { printf 'OK'; return 0; }
+  [ "$inband" -eq "$n" ] && { printf 'OK'; return 0; }
   if [ $(( max - min )) -gt "$SCATTER_THRESHOLD" ]; then printf 'RATCHET'; else printf 'OFFSET_FAULT'; fi
 }
 
@@ -132,8 +164,10 @@ fail() {   # <verdict: RATCHET|OFFSET_FAULT> <detail>
   local aid; aid=$(alert_id_for "$verdict")
   local wave; wave=$(recommended_wave_for "$verdict")
   log "FAIL [$aid] $*"
-  printf '🛑 %s\n\n%s\n\nRow: chat %s %s/%s/%s\nExpected: >= %ss into the %ss bar (OFFSET_PCT=75 + grace + jitter)\nProbe: %s\nRollback: see status.md SIGNAL-CLOSEDBAR-SHADOW-W1 CH6\n\nAction: dispatch %s via Cowork → Claude Code\n' \
-    "$aid" "$*" "$CHAT_ID" "$COIN" "$TF" "$EXCHANGE" "$(( TF_SECONDS * 2 / 3 ))" "$TF_SECONDS" "$0" "$wave" \
+  printf '🛑 %s\n\n%s\n\nRow: chat %s %s/%s/%s\nExpected: %ss..%ss into the %ss bar (OFFSET_PCT=%s + grace %smin + jitter %smin + tick)\nProbe: %s\nRollback: see status.md SIGNAL-CLOSEDBAR-SHADOW-W1 CH6\n\nAction: dispatch %s via Cowork → Claude Code\n' \
+    "$aid" "$*" "$CHAT_ID" "$COIN" "$TF" "$EXCHANGE" \
+    "$(band_lo "$TF_SECONDS")" "$(band_hi "$TF_SECONDS")" "$TF_SECONDS" \
+    "$OFFSET_PCT" "$GRACE_MIN" "$JITTER_MIN" "$0" "$wave" \
     | "$TG" "$aid" CRITICAL_PERSISTENT - || true
   exit 0
 }
@@ -157,18 +191,51 @@ self_test() {
   # A T-separated stamp must NOT silently parse to something plausible-but-wrong.
   map=$((map + 1)); check "unparseable -> empty" ""        "$(secs_into_bar 'not-a-timestamp' 900)"
 
-  # must-fire: inputs that MUST be classified as a fault.
-  #   the real incident's three 15m rows, simultaneously 184/184/844 -> scattered
-  fire=$((fire + 1)); check "incident scatter -> RATCHET" "RATCHET" "$(classify_offsets 900 184 184 844)"
-  fire=$((fire + 1)); check "wide scatter -> RATCHET"     "RATCHET" "$(classify_offsets 900 5 450 880)"
-  #   tight cluster at bar-open: the bucket is fine, the offset is not
-  fire=$((fire + 1)); check "tight early -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
-  fire=$((fire + 1)); check "tight mid -> OFFSET_FAULT"   "OFFSET_FAULT" "$(classify_offsets 900 300 310 295)"
+  # ── The band FOLLOWS the config, and THAT is the property under test ───────
+  # Each scenario states the dispatch regime it is exercising. A hardcoded fraction passes
+  # the pre-flip half and silently inverts on the post-flip half — which is precisely the
+  # defect SIGNAL-CLOSEDBAR-FLIP-W1 would have shipped, so both halves are asserted with the
+  # SAME fixtures and OPPOSITE expectations. If a future edit re-hardcodes the band, one half
+  # of every pair below fails.
+  _cfg_saved="$OFFSET_PCT $GRACE_MIN $JITTER_MIN"
+  _with_cfg() { OFFSET_PCT=$1; GRACE_MIN=$2; JITTER_MIN=$3; }
 
-  # must-not-fire: healthy late-bar dispatch, including the full legitimate jitter spread.
-  nofire=$((nofire + 1)); check "measured steady state -> OK" "OK" "$(classify_offsets 900 824 824 824)"
-  nofire=$((nofire + 1)); check "jitter spread -> OK"         "OK" "$(classify_offsets 900 735 795 855)"
-  nofire=$((nofire + 1)); check "1h late-bar -> OK"           "OK" "$(classify_offsets 3600 2944 2945 2942)"
+  # POST-FLIP regime: OFFSET_PCT=0, grace 1, jitter 1 -> band [0, 180] on a 900s bar
+  _with_cfg 0 1 1
+  nofire=$((nofire + 1)); check "post-flip bar-close cluster -> OK"      "OK"           "$(classify_offsets 900 5 6 5)"
+  nofire=$((nofire + 1)); check "post-flip 1h bar-close -> OK"           "OK"           "$(classify_offsets 3600 12 61 130)"
+  fire=$((fire + 1));     check "post-flip LATE cluster -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 824 824 824)"
+
+  # PRE-FLIP regime: OFFSET_PCT=75, grace 1, jitter 3 -> band [675, 899] on a 900s bar.
+  # Same fixtures, inverted verdicts — the band moved because the CONFIG moved.
+  _with_cfg 75 1 3
+  nofire=$((nofire + 1)); check "pre-flip measured steady state -> OK"    "OK"           "$(classify_offsets 900 824 824 824)"
+  nofire=$((nofire + 1)); check "pre-flip jitter spread -> OK"            "OK"           "$(classify_offsets 900 735 795 855)"
+  nofire=$((nofire + 1)); check "pre-flip 1h late-bar -> OK"              "OK"           "$(classify_offsets 3600 2944 2945 2942)"
+  fire=$((fire + 1));     check "pre-flip bar-close cluster -> OFFSET_FAULT" "OFFSET_FAULT" "$(classify_offsets 900 5 6 5)"
+  fire=$((fire + 1));     check "pre-flip mid-bar cluster -> OFFSET_FAULT"   "OFFSET_FAULT" "$(classify_offsets 900 300 310 295)"
+
+  # Scatter dominates regardless of regime — a ratchet is a ratchet under either band.
+  _with_cfg 0 1 1
+  fire=$((fire + 1)); check "incident scatter -> RATCHET (post-flip band)" "RATCHET" "$(classify_offsets 900 184 184 844)"
+  _with_cfg 75 1 3
+  fire=$((fire + 1)); check "incident scatter -> RATCHET (pre-flip band)"  "RATCHET" "$(classify_offsets 900 184 184 844)"
+  fire=$((fire + 1)); check "wide scatter -> RATCHET"                      "RATCHET" "$(classify_offsets 900 5 450 880)"
+
+  # An unreadable/absent bot env must fall back to the POST-FLIP defaults, never to a band
+  # that would page on correct behaviour. Asserted against the DEFAULT_* constants the real
+  # call site uses — an earlier version re-supplied its own default to _bot_cfg, which tested
+  # the helper's fallback mechanism while the actual default could be anything (it survived a
+  # deliberate 0 -> 75 mutation, i.e. it could not fail).
+  map=$((map + 1)); check "absent-env default offset is post-flip" "0" "$DEFAULT_OFFSET_PCT"
+  map=$((map + 1)); check "absent-env default grace"              "1" "$DEFAULT_GRACE_MIN"
+  map=$((map + 1)); check "absent-env default jitter"             "1" "$DEFAULT_JITTER_MIN"
+  map=$((map + 1)); check "_bot_cfg falls back when file absent"  "7" \
+    "$( BOT_ENV=/nonexistent _bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT 7 )"
+  map=$((map + 1)); check "_bot_cfg rejects a non-numeric value"  "3" \
+    "$( BOT_ENV=/dev/null _bot_cfg ALGOVAULT_BOT_DISPATCH_OFFSET_PCT 3 )"
+
+  set -- $_cfg_saved; _with_cfg "$1" "$2" "$3"
   nofire=$((nofire + 1)); check "empty -> INSUFFICIENT"  "INSUFFICIENT" "$(classify_offsets 900)"
   # Ordering regression guard: a row whose last fire predates a JUST-completed deploy is
   # REALIGNING, never a ratchet. Encoded as the arithmetic the live path uses, since the branch

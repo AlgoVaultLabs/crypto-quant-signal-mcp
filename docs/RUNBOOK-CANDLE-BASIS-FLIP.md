@@ -1,10 +1,76 @@
 # RUNBOOK — flipping the signal engine to a confirmed-bar (closed-candle) basis
 
-**Owner:** `SIGNAL-CLOSEDBAR-FLIP-W{NEXT}` · **Prerequisite:** `SIGNAL-CLOSEDBAR-SHADOW-W1` (shipped 2026-08-01)
+**Owner:** `SIGNAL-CLOSEDBAR-FLIP-W1` (EXECUTED 2026-08-07) · **Prerequisite:** `SIGNAL-CLOSEDBAR-SHADOW-W1` (shipped 2026-08-01)
 
 `SIGNAL-CLOSEDBAR-SHADOW-W1` installed the confirmed-bar basis behind a **default-OFF** flag
-and started measuring. It flipped nothing. This runbook is how the flip actually happens.
-It is self-contained: you should not need the wave spec to execute it.
+and started measuring. It flipped nothing. This runbook is how the flip happened.
+
+> **⚠️ This document is now a RECORD, not a prescription.** The flip has been executed. §1–§7
+> below are kept as the executed procedure, but where they disagree with §A they are wrong —
+> several of their assumptions were falsified by the data at Step 0. Read §A first.
+
+---
+
+## §A — What was ACTUALLY applied (2026-08-07)
+
+| Layer | Change | Instant (UTC) |
+|---|---|---|
+| Engine | `CANDLE_BASIS=closed` appended to `/opt/crypto-quant-signal-mcp/.env`, `docker compose up -d mcp-server` | **10:16:12Z** |
+| Bot | `ALGOVAULT_BOT_DISPATCH_OFFSET_PCT` 75 → **0**, grace stays 1; deployed SHA-pinned via `ops/scripts/host-deploy.sh` | **12:25:23Z** |
+| Seeders | all **28** seeder crons re-timed to bar-close + 1..5 min, staggered within family | **12:28:57Z** |
+
+**Methodology boundary for the (unsegmented) track record: `[2026-08-07T10:16:12Z, 12:28:57Z]`.**
+Not a single instant — the ≥2h engine measurement window is mandatory *between* the engine flip
+and the bot/seeder changes, so one discontinuity was never achievable. Record the interval.
+
+### Thresholds: NOTHING was changed, and that was the finding
+
+`BUY_BASE_THRESHOLD=40` · `SELL_THRESHOLD_GATED=55` · `MAX_RAW_SCORE=89` ·
+`MIN_TRACKABLE_CONFIDENCE=52` are all byte-identical to their pre-flip values. §2's
+"recalibrate FROM the report" was attempted and **abandoned on the data**:
+
+- The tracked (PFE) population is **flat at 118.7% for every BUY threshold 40→45** — the knob
+  does not move the thing it was chosen to control. And PFE WR is a **rate**, so a larger
+  tracked population cannot bias the series anyway.
+- "Volume-neutral" holds only in aggregate: per-TF, a threshold of 41 spans **67% (4h) to
+  206% (1d)**.
+- Both candidate thresholds sit **on discrete atoms** — 10,748 rows at exactly `raw=41`;
+  12,873 at exactly `raw=−55`. The score space is discrete (fixed ladders × fixed weights), so
+  a threshold routinely lands ON a mass point. `|raw|>54` admits 13,152 rows and `|raw|>55`
+  admits 281 — a **47× cliff**. Never calibrate adjacent to a mass point; plot the local
+  histogram first and require a flat neighbourhood.
+- Changing basis *and* thresholds together makes any regression un-attributable.
+
+Recalibration is deferred to **`OPS-CLOSEDBAR-RECALIBRATE-W{NEXT}`**, which will have what no
+pre-flip wave can: real post-flip PFE outcomes. Shadow rows were never acted on.
+
+### The acceptance test that actually worked
+
+§6's before/after emission comparison is **underpowered** — BUY per 2h is `269.0 ± 66.5`
+(±24.7%), so the ~18% effect is smaller than the natural variance and cannot be falsified that
+way. Use the **paired** test instead: the shadow table computes both bases on the SAME
+invocations, so production must match `call_closed` and not `call_live`.
+
+| Window | if closed-basis | if live-basis | actual | selects |
+|---|---|---|---|---|
+| pre-flip 2h (control) | 303 | **243** | **243** | live ✅ |
+| post-flip 2h | **315 BUY / 3 SELL** | 296 / 7 | **315 / 3** | closed ✅ |
+
+The control is what makes it a test rather than an assertion. Observed **+17.1%** vs predicted
+**+18.7%**.
+
+### 1m is now push-invalid
+
+A 60s bar with a 60s dispatch tick has exactly one opportunity per bar, so the close-grace
+cannot be honoured and the verdict may be silently one bar stale. 1m is removed from `/watch`
+and `/scanwatch` (`validators.PUSH_TIMEFRAMES`) and **kept for on-demand** `/call`, `/regime`,
+`/scan` and the MCP tools. Existing 1m rows stay removable via `/unwatch`.
+
+### Also corrected at Step 0
+
+`SELL_BASE_THRESHOLD` and `BUY_THRESHOLD_GATED` were **never read by anything** and are
+deleted. The live rule is asymmetric — BUY `raw>40`, SELL `|raw|>55`, **no regime gating** —
+and the "v1.5 symmetric thresholds" design was never wired.
 
 ---
 
