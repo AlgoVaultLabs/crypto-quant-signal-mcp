@@ -107,11 +107,19 @@ describe('enrichScanCall — allow-listed enriched projection', () => {
 });
 
 describe('renderScanDigestLine — per-call digest block (bot-parity SoT)', () => {
+  /**
+   * OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R2 — RE-BASELINED. Class 1 (falsehood).
+   * WAS: `… · OI +10.0% (24h) ↑`. The ↑ came from the sign of the OI delta, and open
+   * interest feeds no weight term and no adjustment, so nothing derived it. The figure
+   * `+10.0%` still carries the sign; only the causal glyph is gone.
+   * UNCHANGED and load-bearing: `funding elevated ↑` — that arrow is Class 2, a deferred
+   * NAMING COLLISION rather than a falsehood, so it must NOT move in this wave.
+   */
   it('renders the spec-example BUY block: price · conviction · regime, 📊 drivers(+window), 💡 why', () => {
     const e = enrichScanCall(source(), 'BINANCE');
     expect(renderScanDigestLine(e)).toBe(
       '🟢 CL — BUY @ $71.49 · 60% conviction · TRENDING_UP\n' +
-        '   📊 trend persistence HIGH · funding elevated ↑ · OI +10.0% (24h) ↑\n' +
+        '   📊 trend persistence HIGH · funding elevated ↑ · OI +10.0% (24h)\n' +
         '   💡 Trending regime, upward bias',
     );
   });
@@ -145,8 +153,15 @@ describe('renderScanDigestLine — per-call digest block (bot-parity SoT)', () =
     expect(why).toBe('   💡 Trending regime, upward bias');
   });
 
-  it('arrows: bullish ↑, bearish ↓, neutral none', () => {
-    // ELEVATED + positive funding rate → bearish ↓ ; OI negative → bearish ↓
+  /**
+   * OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R2 — RE-BASELINED. Class 1 (falsehood).
+   * WAS: `… · OI -3.2% (24h) ↓`. Same reason as above — a sign-of-delta arrow for an
+   * input that moves no score. This case is the more instructive one: it proves the fix
+   * is NOT "arrows always disappear", because `funding elevated ↓` survives beside it.
+   */
+  it('arrows: funding keeps its ↑/↓, a non-contributing factor gets none', () => {
+    // ELEVATED + positive funding rate → bearish ↓ (Class 2, deferred — still derived
+    // from the bucket). OI negative → NO arrow (Class 1, fixed): it feeds nothing.
     const e = enrichScanCall(
       source({
         indicators: {
@@ -161,7 +176,7 @@ describe('renderScanDigestLine — per-call digest block (bot-parity SoT)', () =
       'BINANCE',
     );
     const drivers = renderScanDigestLine(e).split('\n').find((l) => l.includes('📊'))!;
-    expect(drivers).toBe('   📊 trend persistence LOW · funding elevated ↓ · OI -3.2% (24h) ↓');
+    expect(drivers).toBe('   📊 trend persistence LOW · funding elevated ↓ · OI -3.2% (24h)');
   });
 
   it('the rendered line never leaks outcome_* / raw indicators', () => {

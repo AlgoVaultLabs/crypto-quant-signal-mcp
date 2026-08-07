@@ -112,18 +112,38 @@ describe('formatReceipts — structured allow-listed block', () => {
     expect(f.direction).toBe('neutral');
   });
 
-  it('includes oi_change_pct (directional) as the 3rd factor on a salient move', () => {
+  /**
+   * OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R2 — RE-BASELINED. Class 1 (falsehood).
+   *
+   * WAS: `direction` `'bullish'` on a +2.4% move and `'bearish'` on −1.1%.
+   * WHY THE OLD VALUE WAS WRONG: it mapped the SIGN OF THE OI DELTA to a verdict
+   * direction, and open interest feeds no weight term and no adjustment
+   * (`VERDICT_INPUT_CHANNELS`: `oi_change_pct` → `feeds: []`). Nothing derived that
+   * arrow. The internal 15% term named `oiScore` reads 24h PRICE change, gated on
+   * `openInterest > 0` but never valued from it.
+   *
+   * The row is NOT weakened — it is still selected, still 3rd, and still carries its
+   * signed `value`. Only the false causal claim is gone. `factor_ledger[]` has said
+   * `neutral / contributes:false` for this row since SIGNAL-LEDGER-INTEGRITY-W1; this
+   * is `factors[]` stopping its disagreement with it.
+   */
+  it('includes oi_change_pct as the 3rd factor on a salient move — value signed, direction NEUTRAL', () => {
     const base = verdict().indicators;
     const up = formatReceipts(verdict({ indicators: { ...base, oi_change_pct: 2.4, breakout_pending: 'INACTIVE' } }))
       .factors.find((f) => f.factor === 'oi_change_pct');
     expect(up).toBeDefined();
-    expect(up!.direction).toBe('bullish');
+    expect(up!.direction).toBe('neutral');
+    // The SIGN is not lost — it is here, which is where a reader should take it from.
     expect(up!.value).toBe('+2.4%');
 
     const down = formatReceipts(verdict({ indicators: { ...base, oi_change_pct: -1.1, breakout_pending: 'INACTIVE' } }))
       .factors.find((f) => f.factor === 'oi_change_pct');
-    expect(down!.direction).toBe('bearish');
+    expect(down!.direction).toBe('neutral');
     expect(down!.value).toBe('-1.1%');
+
+    // Non-vacuity: an opposite-signed pair must still be DISTINGUISHABLE on the wire,
+    // or "drop the arrow" would have quietly become "drop the information".
+    expect(up!.value).not.toBe(down!.value);
   });
 
   it('SCAN-RANKBY-W3: omits the oi_change_pct factor while the store is warming (field absent)', () => {

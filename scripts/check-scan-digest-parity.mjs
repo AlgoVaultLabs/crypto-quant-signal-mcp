@@ -62,7 +62,12 @@ const DETAIL = {
 const EXCHANGE = 'BINANCE';
 const LOCKED_LINE =
   '🟢 CL — BUY @ $71.49 · 60% conviction · TRENDING_UP\n' +
-  '   📊 trend persistence HIGH · funding elevated ↑ · OI +10.0% (24h) ↑\n' +
+  // OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R2 — RE-BASELINED. Class 1 (falsehood).
+  // WAS `… · OI +10.0% (24h) ↑`. The OI arrow was derived from the sign of the delta for
+  // an input that feeds no weight term and no adjustment. `funding elevated ↑` is Class 2
+  // (a deferred naming collision, not a falsehood) and deliberately still stands.
+  // The BOT side moves in the SAME wave — this contract is the lockstep pin.
+  '   📊 trend persistence HIGH · funding elevated ↑ · OI +10.0% (24h)\n' +
   '   💡 Trending regime, upward bias';
 
 let scanDigest, webhook;

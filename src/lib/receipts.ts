@@ -31,7 +31,7 @@ import type { FundingState, TrendPersistence, BreakoutPending } from './indicato
 // The withheld block's wire names live in the zero-import leaf so they have exactly one
 // definition. Importing the leaf here does not compromise its purity — the constraint is
 // that the LEAF imports nothing, not that nothing imports it.
-import { formatFactorLedgerRemainder } from './verdict-factors.js';
+import { formatFactorLedgerRemainder, fieldContributes } from './verdict-factors.js';
 
 /** Aggregate track-record proof page. Mr.1 decision: NOT a per-call /verify/<id>. */
 export const VERIFICATION_URI = 'https://algovault.com/track-record';
@@ -221,11 +221,15 @@ function fundingDirection(state: FundingState, fundingRate: number): FactorDirec
   return 'neutral';
 }
 
-function oiDirection(oiChangePct: number): FactorDirection {
-  if (oiChangePct >= 0.5) return 'bullish';
-  if (oiChangePct <= -0.5) return 'bearish';
-  return 'neutral';
-}
+// `oiDirection()` DELETED — OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R1.
+//
+// It mapped the SIGN of the OI delta to a verdict direction, and open interest feeds no
+// weight term and no adjustment. Nothing derived that arrow: it was a falsehood, not an
+// approximation, and it was wrong on both call paths. The row's sign is not lost — it is
+// in `value` (`+27.6%`), which is where a reader should take it from.
+//
+// Deleted rather than left unreferenced: an orphaned derivation is re-adopted by the next
+// edit that needs "a direction for this row".
 
 function signedPct(n: number): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
@@ -236,10 +240,30 @@ function signedPct(n: number): string {
  * Core always-on drivers: trend persistence (regime quality) + funding state
  * (crowd positioning). The 3rd slot is the most salient situational driver:
  * an IMMINENT breakout setup if present, else a meaningful OI move (|Δ| ≥ 0.5%).
+ *
+ * ── OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R1 ─────────────────────────────────
+ * A factor whose field feeds NO verdict channel renders `direction: 'neutral'`, by NAME
+ * lookup against `VERDICT_INPUT_CHANNELS` — the map `SIGNAL-LEDGER-INTEGRITY-W1` CH2
+ * declared. No `signedContribution`, no `maxAbs`, no `kind`, no ledger, no venue field.
+ *
+ * Applied UNCONDITIONALLY, deliberately NOT as a branch on whether a ledger was supplied.
+ * `formatReceipts` has two callers — `get_trade_call` passes a ledger, `enrichScanCall`
+ * (scan_trade_calls + the TG digest) passes nothing — and a conditional would make the
+ * same factor read one way per endpoint. That path-dependence is worse than the
+ * divergence it would be fixing, so the rule has to hold on data every caller already has.
+ *
+ * SELECTION is untouched: it reads `breakout_pending === 'IMMINENT'` then `|oi| >= 0.5`,
+ * never a direction, so length / order / which-3-rows are byte-identical.
  */
 function buildFactors(ind: VerdictContext['indicators']): ReceiptFactor[] {
   const factors: ReceiptFactor[] = [
     { factor: 'trend_persistence', direction: 'neutral', value: ind.trend_persistence },
+    // Class 2 (funding) is DEFERRED, not overlooked. `factors[]` reads the z-BUCKET and
+    // the ledger reads the CONTRIBUTION SIGN; on NORMAL + a negative rate they disagree.
+    // Both statements are TRUE — they answer different questions that happen to share the
+    // field name `direction`. That is a naming collision, not a falsehood, so the fix is
+    // documentary: OPS-RECEIPTS-DIRECTION-SEMANTICS-DECLARE-W{NEXT}, likely folded into
+    // SIGNAL-OUTPUT-SCHEMA-DECLARE-W{NEXT} at no plumbing cost.
     { factor: 'funding_state', direction: fundingDirection(ind.funding_state, ind.funding_rate), value: ind.funding_state },
   ];
   if (ind.breakout_pending === 'IMMINENT') {
@@ -247,9 +271,12 @@ function buildFactors(ind: VerdictContext['indicators']): ReceiptFactor[] {
     factors.push({ factor: 'breakout_pending', direction: 'neutral', value: ind.breakout_pending });
   } else if (ind.oi_change_pct !== undefined && Math.abs(ind.oi_change_pct) >= 0.5) {
     // SCAN-RANKBY-W3: skipped while oi_change_pct is warming (omitted) — never a stale/wrong factor.
-    factors.push({ factor: 'oi_change_pct', direction: oiDirection(ind.oi_change_pct), value: signedPct(ind.oi_change_pct) });
+    factors.push({ factor: 'oi_change_pct', direction: 'neutral', value: signedPct(ind.oi_change_pct) });
   }
-  return factors;
+  // The ONE rule, over every row: a field that feeds no channel has no direction to give.
+  // Expressed as a pass over the finished array rather than per-branch so a future row
+  // added above inherits it without anyone remembering to.
+  return factors.map((f) => (fieldContributes(f.factor) ? f : { ...f, direction: 'neutral' as const }));
 }
 
 /**

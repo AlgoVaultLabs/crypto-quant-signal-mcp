@@ -44,11 +44,15 @@ const check = (cond: boolean, msg: string) => {
  * here must agree — that is what makes the set bounded rather than open-ended.
  */
 const DECLARED_DIVERGENCES: Record<string, { why: string; when: (ctx: Ctx) => boolean }> = {
-  oi_change_pct: {
-    why: 'factors[] classifies the ±0.5% move; the ledger reports neutral because open interest '
-       + 'feeds no weight term and no adjustment (contributes:false), so it has no verdict direction.',
-    when: (c) => c.oi !== undefined && Math.abs(c.oi) >= 0.5,
-  },
+  // `oi_change_pct` ENTRY DELETED — OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1.
+  //
+  // The entry is gone because the DIVERGENCE is gone: `factors[]` now reads `neutral`
+  // for any factor feeding no verdict channel, so it agrees with the ledger.
+  //
+  // It was removed because this file's own "each declared divergence actually OCCURS"
+  // assertion went red the moment the fix landed — the assertion working, not failing.
+  // A declared exemption that no longer fires is dead weight a future reader treats as
+  // a live constraint. Written one wave earlier for exactly this moment.
   funding_state: {
     why: 'factors[] reads the per-asset z-BUCKET (NORMAL ⇒ neutral); the ledger reads the global '
        + 'annualized LADDER, which scores a negative rate contrarian-bullish regardless of bucket.',

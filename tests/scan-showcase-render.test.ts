@@ -81,7 +81,10 @@ describe('renderScanShowcase — parity with the canonical Python renderer', () 
     expect(GOLDEN.expected).toMatch(/\$1\.19/);    // >=1    -> 2 decimals
     expect(GOLDEN.expected).toMatch(/\$0\.0412/);  // <1     -> toFixed(4), zeros stripped
     expect(GOLDEN.expected).toMatch(/funding elevated ↓/); // lowercased value + bearish arrow
-    expect(GOLDEN.expected).toMatch(/OI \+27\.6% \(24h\) ↑/); // window suffix + bullish arrow
+    // OPS-RECEIPTS-FACTORS-DIRECTION-FIX-W1 R2 — RE-BASELINED, Class 1: the OI arrow is gone (open interest feeds
+    // no verdict channel). The window suffix + SIGNED figure are what this branch guards.
+    expect(GOLDEN.expected).toMatch(/OI \+27\.6% \(24h\)/);   // window suffix, no arrow
+    expect(GOLDEN.expected).not.toMatch(/OI \+27\.6% \(24h\) ↑/); // and it must NOT come back
     expect(GOLDEN.expected).toMatch(/🔴 KOMA — SELL/);        // non-BUY marker
     // KOMA carries neither drivers nor reasoning, so its block is a SINGLE line.
     const koma = GOLDEN.expected.split('\n\n').find((b) => b.includes('KOMA'))!;
