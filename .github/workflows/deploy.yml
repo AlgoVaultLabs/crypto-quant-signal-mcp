@@ -172,6 +172,19 @@ jobs:
           node scripts/check-footer-body-flow.mjs --self-test
           node scripts/check-footer-body-flow.mjs
 
+      # DESIGN-ACCOUNT-THEME-TOKENS-W1 — design tokens must actually RESOLVE, per host.
+      # Every consumed custom property must resolve from the page OR from a stylesheet the page
+      # links AND that page's CSP permits on that host; plus the inverse, that every linked
+      # stylesheet is CSP-permitted. Evaluated on BOTH origins, because the same page with the
+      # same CSP resolves differently on the apex (stylesheet is 'self') than on api (it is
+      # cross-origin) — /account rendered white on api while being correct on the apex, and a
+      # single-host gate would have called it green. A gate that only asks "is this token defined
+      # somewhere" also passes that page: the token WAS defined, the CSP just refused the file.
+      - name: Design-token resolution canary (fail-closed)
+        run: |
+          node scripts/check-token-resolution.mjs --self-test
+          node scripts/check-token-resolution.mjs
+
       # LANDING-MCP-CLIENT-REGISTRY-W1 CH5 — the vendor-UI-path drift gate. The
       # lockstep canary above proves a SLUG is wired across its six homes; this one
       # proves the COPY is not stale. Claude Desktop renamed Settings → Integrations
