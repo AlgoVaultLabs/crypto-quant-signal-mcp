@@ -431,7 +431,7 @@ export function verifyClaim(claim, ctx, cfg) {
         tried.push(p);
       }
       if (!tried.length) return { status: 'UNRESOLVED', detail: `script ${claim.value} not tracked` };
-      return { status: 'REVIEW', detail: `no script on the claim line satisfies ${claim.codes.map((m) => `${m.code}=${m.meaning}`).join(', ')} (tried ${tried.join(', ')})` };
+      return { status: 'REVIEW', detail: `no script on the claim line satisfies ${claim.codes.map(renderCodePair).join(', ')} (tried ${tried.join(', ')})` };
     }
     case 'cron-schedule': {
       const rows = ctx.invRows.filter((r) => r.artifact && basename(r.artifact) === basename(claim.script));
@@ -575,6 +575,32 @@ function firstRefContaining(paths, refs) {
  * carries `line`) as from a new one. That is what makes the migration back-compatible by
  * construction rather than by a legacy code path.
  */
+/**
+ * Render ONE (code, meaning) pair. This is the CANONICAL serialisation site — R3.2's "one of the
+ * two, not both": `extractClaims` keeps emitting `{code, meaning}` objects, because `verifyClaim`
+ * needs both halves to test the ASSOCIATION and the dedupe key needs the structure. Normalising at
+ * extraction as well would be two places computing one identity, which is the drift shape this repo
+ * forbids. Every consumer that renders a pair — claimId, printFinding, verifyClaim's REVIEW detail
+ * — goes through here.
+ *
+ * `meaning` IS part of identity, and that is a measured decision rather than a stylistic one:
+ * verifyClaim asserts the code↔meaning ASSOCIATION, so an id carrying only codes would collapse
+ * check_test_baseline.sh's seven pairs to four codes and leave a `0=PASS` → `0=silent` swap
+ * invisible — reintroducing exactly the blindness being retired.
+ *
+ * MEASURED 2026-08-08 (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH1 §F4), and this is why the
+ * function exists: claimId did `.map(String)` over those objects, so 6 of 113 ids rendered as
+ * `exit:[object Object]/[object Object]/…` — encoding the NUMBER of pairs and nothing about their
+ * values. Mutating `2=INDETERMINATE` to `7=INDETERMINATE` on the live corpus changed the extracted
+ * codes array and left the entire 113-id set byte-identical. The gate was structurally incapable of
+ * detecting an exit-code change: precisely the drift class it exists for, and the class of the
+ * recorded check_test_baseline.sh 2-vs-3 incident where the SoT documented an undeployed code.
+ */
+export function renderCodePair(p) {
+  if (p && typeof p === 'object' && 'code' in p) return p.meaning == null ? String(p.code) : `${p.code}=${p.meaning}`;
+  return String(p); // primitives keep their own rendering; never the object default
+}
+
 export function claimId(c) {
   const base = `${c.class}:${c.value}`;
   if (c.class === 'wiring' && Array.isArray(c.points) && c.points.length) {
@@ -583,7 +609,8 @@ export function claimId(c) {
   if (c.class === 'script-content') {
     const parts = [];
     if (c.token) parts.push(`token:${c.token}`);
-    if (Array.isArray(c.codes) && c.codes.length) parts.push(`exit:${[...c.codes].map(String).sort().join('/')}`);
+    // sort the RENDERED pairs, so the same assertion in any order has one id
+    if (Array.isArray(c.codes) && c.codes.length) parts.push(`exit:${[...c.codes].map(renderCodePair).sort().join('/')}`);
     if (parts.length) return `${base}=${parts.join('|')}`;
   }
   return base;
@@ -673,7 +700,10 @@ function printFinding(kind, claim, result, corpusLineText) {
   // design — see buildLock — so say that plainly rather than printing "Lundefined", which reads
   // like a bug in the gate.
   const loc = claim.line ? `CLAUDE.md L${claim.line}` : 'CLAUDE.md (line: re-run locally)';
-  const what = claim.token || (claim.codes ? `exit ${claim.codes.join('/')}` : '') || (claim.points ? `→ ${claim.points.join('+')}` : '');
+  // THIRD [object Object] site, and the one a human actually reads: `codes.join('/')` calls the
+  // object default too, so a finding printed `exit [object Object]/[object Object]`. Same defect as
+  // claimId's, same single canonical renderer.
+  const what = claim.token || (claim.codes ? `exit ${claim.codes.map(renderCodePair).join('/')}` : '') || (claim.points ? `→ ${claim.points.join('+')}` : '');
   console.log(`  ${kind} [${claim.class}] ${loc}  ${claim.value} ${what ? `(${what}) ` : ''}— ${result.status}${result.detail ? `: ${result.detail}` : ''}`);
   if (corpusLineText) console.log(`      claim line: ${corpusLineText.trim().slice(0, 160)}`);
   if (kind === '✖') {
@@ -1062,10 +1092,57 @@ export function selfTest(cfg) {
   if (claimId(wire1) === claimId(wire2)) {
     fails.push('SUBJECT-ONLY id: a wiring claim changed its asserted point and the id did not change');
   }
-  const sc1 = { class: 'script-content', value: 'scripts/g.sh', codes: [2], line: 1 };
-  const sc2 = { class: 'script-content', value: 'scripts/g.sh', codes: [3], line: 1 };
-  if (claimId(sc1) === claimId(sc2)) {
-    fails.push('SUBJECT-ONLY id: a script-content claim changed its asserted exit code and the id did not change');
+  // ── (k1) THE BYPASSED ARTIFACT (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH3) ────────────────
+  //
+  // These fixtures are produced by the REAL extractClaims, and that is the whole point. The
+  // previous version of this case hand-wrote `codes: [2]` / `codes: [3]` — RAW NUMBERS, a shape
+  // extractClaims has never once emitted. It emits `{code, meaning}` OBJECTS. So the assertion
+  // passed for a reason that had nothing to do with production: String(2) !== String(3), while the
+  // real objects both stringified to "[object Object]".
+  //
+  // A hermetic fixture is structurally blind to exactly what its own seam replaces. Here the seam
+  // was the extractor's output shape, and substituting it made this guard vacuous while it looked
+  // like the strongest assertion in the file — it is the one case explicitly written to catch an
+  // exit-code change, and it could not have caught one.
+  const scriptContentFrom = (text) => {
+    const { claims } = extractClaims(text, cfg);
+    return claims.find((c) => c.class === 'script-content' && Array.isArray(c.codes) && c.codes.length);
+  };
+  const GATE_SPAN = '`scripts/check-canaries-wired.mjs`';
+  const sc1 = scriptContentFrom(`the gate ${GATE_SPAN} exits 0=PASS / 1=FAIL / 2=INDETERMINATE.\n`);
+  const sc2 = scriptContentFrom(`the gate ${GATE_SPAN} exits 0=PASS / 1=FAIL / 7=INDETERMINATE.\n`);
+  // Vacuity first: WE build this corpus, so extracting nothing is a defect in the test, not a fact
+  // about the world. Refuse rather than silently skip the assertions below.
+  if (!sc1 || !sc2) {
+    fails.push('exit-code fixtures extracted NOTHING — the self-test corpus stopped producing script-content claims');
+  } else if (sc1.codes.length !== 3 || !sc1.codes.every((p) => p && typeof p === 'object' && 'code' in p && 'meaning' in p)) {
+    fails.push(`exit-code fixture is not the extractor's real shape: ${JSON.stringify(sc1.codes)}`);
+  } else {
+    // the measured F4 scenario: one digit changes, and the id MUST change with it
+    if (claimId(sc1) === claimId(sc2)) {
+      fails.push('VALUE-BLIND id: an exit code changed from 2 to 7 and the claim id did not change — the drift class this gate exists for');
+    }
+    // and the id must never render the object default, in any pair count
+    for (const c of [sc1, sc2]) {
+      if (claimId(c).includes('[object Object]')) fails.push(`claim id renders [object Object]: ${claimId(c)}`);
+    }
+    // it must carry the actual asserted values, not merely differ
+    if (!claimId(sc1).includes('2=INDETERMINATE')) fails.push(`claim id does not encode its asserted pair: ${claimId(sc1)}`);
+    // COLLISION (forward-guard — zero live instances measured 2026-08-08, across all 89 lockable
+    // ids): equal pair COUNT with different values must not collapse to one id. Under the old
+    // `.map(String)` these were identical strings, so the claim set could change meaning silently.
+    const one1 = scriptContentFrom(`the gate ${GATE_SPAN} exits 2=INDETERMINATE.\n`);
+    const one2 = scriptContentFrom(`the gate ${GATE_SPAN} exits 3=INDETERMINATE.\n`);
+    if (!one1 || !one2) fails.push('single-pair collision fixtures extracted nothing');
+    else if (claimId(one1) === claimId(one2)) {
+      fails.push('COLLISION: two same-subject claims with equal pair count but different codes share one id');
+    }
+    // …and the same pairs in a different textual ORDER are the SAME claim, or the set is not a set
+    const ord1 = scriptContentFrom(`the gate ${GATE_SPAN} exits 0=PASS / 1=FAIL.\n`);
+    const ord2 = scriptContentFrom(`the gate ${GATE_SPAN} exits 1=FAIL / 0=PASS.\n`);
+    if (ord1 && ord2 && claimId(ord1) !== claimId(ord2)) {
+      fails.push('claimId is order-sensitive over exit pairs — the same assertion must have one id');
+    }
   }
   const tok1 = { class: 'script-content', value: 'scripts/g.sh', token: 'A_VERDICT', line: 1 };
   const tok2 = { class: 'script-content', value: 'scripts/g.sh', token: 'B_VERDICT', line: 1 };
