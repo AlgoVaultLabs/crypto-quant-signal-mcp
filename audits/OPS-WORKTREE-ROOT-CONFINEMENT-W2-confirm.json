@@ -1,0 +1,140 @@
+{
+ "_doc": "CH1 thin confirmation gate. READ-ONLY. STRUCTURAL rows carry the last RECORDED figure as history, never as an expectation (N2/M1).",
+ "wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2",
+ "chapter": "CH1",
+ "census_path": "/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/audits/OPS-WORKTREE-ROOT-CONFINEMENT-W1-census.json",
+ "census_sha256": "e244ba98856420ca6e5757decfee83fb34f9c1e4a1e77e9ce38a60ead9e31050",
+ "_census_location_note": "The W1 census lives in the VAULT (private), not the code repo: it enumerates the operator's home-directory layout and this repo is PUBLIC. CH2/CH4/CH5/CH6 gates read it as ./audits/...W1-census.json relative to the repo \u2014 that path does not resolve. Flagged for the architect; CH1 itself does not depend on the repo-relative path.",
+ "payload_floor_kb": 1024,
+ "_floor_source": "R2b prose; CH2 declares it as worktree_roots.payload_floor_kb with its reason.",
+ "safety": {
+  "payload_present": {
+   "expected": true,
+   "live": true
+  },
+  "payload_locked_live": {
+   "expected": true,
+   "live": true
+  },
+  "unique_work_worktrees": {
+   "expected": 4,
+   "live": 4
+  },
+  "unique_work_commits": {
+   "expected": 10,
+   "live": 10
+  },
+  "blocks_before": {
+   "expected": 6,
+   "live": 6
+  }
+ },
+ "contract": {
+  "duplicate_origins": {
+   "expected": 2,
+   "live": 2
+  },
+  "home_primaries": {
+   "expected": 3,
+   "live": 3
+  },
+  "git_repos": {
+   "expected": 7,
+   "live": 7
+  },
+  "wt_subdir": {
+   "expected": ".claude/worktrees",
+   "live": ".claude/worktrees"
+  },
+  "clean_remove_unflagged": {
+   "expected": true,
+   "live": true
+  }
+ },
+ "structural": {
+  "primaries": {
+   "expected": 25,
+   "live": 25
+  },
+  "worktrees": {
+   "expected": 43,
+   "live": 43
+  },
+  "R1_violations": {
+   "expected": 40,
+   "live": 40
+  },
+  "R2_violations": {
+   "expected": 10,
+   "live": 10
+  },
+  "orphans": {
+   "expected": 4,
+   "live": 4
+  },
+  "stale_admin_entries": {
+   "expected": 5,
+   "live": 5
+  },
+  "depth_ge2": {
+   "expected": 24,
+   "live": 24
+  }
+ },
+ "selfcheck": {
+  "schema_fields_missing_by_class": 0,
+  "_schema_detail": {
+   "missing": [],
+   "worktree_class_rows": 52,
+   "sparse_within_class": {
+    "unique_commits_by_patch_id": 12,
+    "nested_inside": 52
+   },
+   "declared_defaults": {
+    "unique_commits_by_patch_id": 0,
+    "nested_inside": null
+   }
+  },
+  "unquoted_safedir_hits_in_fenced_blocks": 0,
+  "moved_from_before_ch4": 0,
+  "listed_minus_stale_equals_present": true,
+  "_identity_operands": {
+   "listed": 48,
+   "stale": 5,
+   "present": 43
+  },
+  "r2_9th_identified": true,
+  "cc_session_line_citation_mismatches": 3,
+  "_cc_session_citations": {
+   "WT_SUBDIR": {
+    "spec_says": 27,
+    "live": 27,
+    "matches": true
+   },
+   "worktree_remove": {
+    "spec_says": 243,
+    "live": 359,
+    "matches": false
+   },
+   "env_copy": {
+    "spec_says": 160,
+    "live": 242,
+    "matches": false
+   },
+   "clean_consider": {
+    "spec_says": 230,
+    "live": 314,
+    "matches": false
+   }
+  },
+  "_cc_session_drift_note": "NOT one of CH1's declared probes, surfaced anyway. scripts/cc-session.sh grew 304 -> 442 lines in the 34 commits pulled this session (3ac6bb4 liveness / 1ec39b2 caller-worktree / 94d6078 one landed-predicate). 3 of the spec's 4 cited lines have MOVED, and CLAUDE.md makes >=3 <file>:<line> mismatches a HALT-class finding. The CONTRACT SUBSTANCE still holds (remove is unflagged; WT_SUBDIR unchanged) and R2c's core defect survives (0 hits for lock/exempt in the file), but CH2's R2c is written against a clean_consider() that now carries two new KEEP branches (caller-worktree, liveness) and a shared landed predicate. CH2 must be re-pointed at the current function before it is implemented.",
+  "unexempted_payload_paths": [],
+  "_protection_model": "protected = exempt_paths UNION live locks. CH2 has not shipped, so exempt_paths does not exist yet; a strict `\\ exempt_paths` would make CH1 HALT by construction before the chapter that creates exemptions can run. Locks are the pre-CH2 mechanism (\u00a71c: 'the mechanism supersedes locks' implies they are alternatives). Interpretation stated, not hidden.",
+  "_protection_detail": {
+   "payload_set": 10,
+   "exempt_rows": 0,
+   "locked_live": 10,
+   "unprotected": 0
+  }
+ }
+}

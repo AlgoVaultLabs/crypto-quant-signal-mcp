@@ -1,0 +1,36 @@
+=== CH1 positive per-row output (AC2) ===
+  SAFETY   payload_present          expected=True                 live=True                 OK
+  SAFETY   payload_locked_live      expected=True                 live=True                 OK
+  SAFETY   unique_work_worktrees    expected=4                    live=4                    OK
+  SAFETY   unique_work_commits      expected=10                   live=10                   OK
+  SAFETY   blocks_before            expected=6                    live=6                    OK
+  CONTRACT duplicate_origins        expected=2                    live=2                    OK
+  CONTRACT home_primaries           expected=3                    live=3                    OK
+  CONTRACT git_repos                expected=7                    live=7                    OK
+  CONTRACT wt_subdir                expected=.claude/worktrees    live=.claude/worktrees    OK
+  CONTRACT clean_remove_unflagged   expected=True                 live=True                 OK
+  STRUCT   primaries                last_recorded=25       live=25       same
+  STRUCT   worktrees                last_recorded=43       live=43       same
+  STRUCT   R1_violations            last_recorded=40       live=40       same
+  STRUCT   R2_violations            last_recorded=10       live=10       same
+  STRUCT   orphans                  last_recorded=4        live=4        same
+  STRUCT   stale_admin_entries      last_recorded=5        live=5        same
+  STRUCT   depth_ge2                last_recorded=24       live=24       same
+  IDENTITY listed=48 - stale=5 == present=43 -> True
+  R2 9th named        -> True
+  schema missing      -> none  (sparse handled by declared default: {'unique_commits_by_patch_id': 12, 'nested_inside': 52})
+  P9 fenced-block hits-> 0   moved_from before CH4 -> 0
+  PAYLOAD SET (10):
+    LOCKED       /Users/tank/algovault-bot-worktrees/closedbar-flip-w1
+    LOCKED       /Users/tank/algovault-bot-wt/growth-tg-acq-w1
+    LOCKED       /Users/tank/algovault-bot-wt/signal-closedbar-shadow-w1
+    LOCKED       /Users/tank/algovault-bot-wt/tglever-merge
+    LOCKED       /Users/tank/autonomous-optimizer-wt-bdir
+    LOCKED       /Users/tank/autonomous-optimizer-wt-bdir2
+    LOCKED       /Users/tank/autonomous-optimizer-wt-bdir25
+    LOCKED       /Users/tank/autonomous-optimizer-wt-carry
+    LOCKED       /Users/tank/code/algovault-bot-showcase-enrich
+    LOCKED       /Users/tank/code/avbot-wt-tgbot-bridge
+  unexempted_payload_paths = 0
+
+wrote /Users/tank/code/crypto-quant-signal-mcp/audits/OPS-WORKTREE-ROOT-CONFINEMENT-W2-confirm.json
