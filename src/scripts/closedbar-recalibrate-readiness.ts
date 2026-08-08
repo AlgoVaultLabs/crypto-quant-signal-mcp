@@ -227,6 +227,26 @@ export function computeReadiness(facts: ReadinessFacts, cfg: ReadinessConfig): {
   return { verdict: checks.every((c) => c.ok) ? 'PASS' : 'FAIL', checks };
 }
 
+// ── the canonical win predicate — ONE derivation ─────────────────────────────
+// OPS-CLOSEDBAR-DIRECTIONAL-BALANCE-W1. `pfe_return_pct` is a SIGNED move from entry price, so
+// for a SELL it is <= 0 BY CONSTRUCTION (computePFEMAE walks pfePrice DOWNWARD on the sell
+// branch, then returns (pfePrice - entryPrice)/entryPrice). A win therefore reads `> 0` for a
+// BUY and `< 0` for a SELL — the predicate production has always used
+// (performance-db.ts:1453, named in book-liveness.ts:11).
+//
+// The first revision of this harness used `> 0` for BOTH sides, which made a SELL win
+// STRUCTURALLY IMPOSSIBLE and reported sell_pfe_wr = 0.0%. That number was wrong (the real
+// figure is 26.2%) and an entire wave was written around it. Note that `return1candle` in
+// pfe-mae.ts IS direction-adjusted, so the codebase carries both conventions — which is exactly
+// why this belongs in ONE named place rather than inline at each call site.
+export const WIN_SQL =
+  "(CASE WHEN signal='BUY' THEN pfe_return_pct > 0 ELSE pfe_return_pct < 0 END)";
+
+export function isWin(side: string, pfe: number | null): boolean {
+  if (pfe === null || pfe === undefined) return false;
+  return side === 'BUY' ? pfe > 0 : pfe < 0;
+}
+
 // ── live report ──────────────────────────────────────────────────────────────
 
 function readStatusMd(cfg: ReadinessConfig): string | null {
@@ -262,7 +282,7 @@ async function report(candidate: number | null): Promise<Verdict> {
   const tfRows = await dbQuery<{ timeframe: string; emitted: string; matured: string; wins: string }>(
     `SELECT timeframe, count(*) AS emitted,
             count(*) FILTER (WHERE pfe_return_pct IS NOT NULL) AS matured,
-            count(*) FILTER (WHERE pfe_return_pct > 0) AS wins
+            count(*) FILTER (WHERE signal='BUY' AND pfe_return_pct > 0 OR signal='SELL' AND pfe_return_pct < 0) AS wins
        FROM signals WHERE created_at > $1 GROUP BY timeframe ORDER BY 2 DESC`, [endS]);
   console.log('per_tf:');
   const perTf: Record<string, number> = {};
@@ -275,7 +295,7 @@ async function report(candidate: number | null): Promise<Verdict> {
   const vRows = await dbQuery<{ exchange: string; emitted: string; matured: string; wins: string }>(
     `SELECT exchange, count(*) AS emitted,
             count(*) FILTER (WHERE pfe_return_pct IS NOT NULL) AS matured,
-            count(*) FILTER (WHERE pfe_return_pct > 0) AS wins
+            count(*) FILTER (WHERE signal='BUY' AND pfe_return_pct > 0 OR signal='SELL' AND pfe_return_pct < 0) AS wins
        FROM signals WHERE created_at > $1 GROUP BY exchange ORDER BY 3 DESC`, [endS]);
   console.log('per_venue:');
   const perVenue: Record<string, number> = {};
@@ -292,7 +312,7 @@ async function report(candidate: number | null): Promise<Verdict> {
     `SELECT 'post' AS era,
             count(*) FILTER (WHERE signal='BUY') AS buy, count(*) FILTER (WHERE signal='SELL') AS sell,
             count(*) FILTER (WHERE signal='BUY'  AND pfe_return_pct > 0) AS buy_wins,
-            count(*) FILTER (WHERE signal='SELL' AND pfe_return_pct > 0) AS sell_wins,
+            count(*) FILTER (WHERE signal='SELL' AND pfe_return_pct < 0) AS sell_wins,
             count(*) FILTER (WHERE signal='BUY'  AND pfe_return_pct IS NOT NULL) AS buy_m,
             count(*) FILTER (WHERE signal='SELL' AND pfe_return_pct IS NOT NULL) AS sell_m
        FROM signals WHERE created_at > $1
@@ -300,7 +320,7 @@ async function report(candidate: number | null): Promise<Verdict> {
      SELECT 'pre',
             count(*) FILTER (WHERE signal='BUY'), count(*) FILTER (WHERE signal='SELL'),
             count(*) FILTER (WHERE signal='BUY'  AND pfe_return_pct > 0),
-            count(*) FILTER (WHERE signal='SELL' AND pfe_return_pct > 0),
+            count(*) FILTER (WHERE signal='SELL' AND pfe_return_pct < 0),
             count(*) FILTER (WHERE signal='BUY'  AND pfe_return_pct IS NOT NULL),
             count(*) FILTER (WHERE signal='SELL' AND pfe_return_pct IS NOT NULL)
        FROM signals WHERE created_at < $2 AND created_at > $2 - 604800`, [endS, startS]);

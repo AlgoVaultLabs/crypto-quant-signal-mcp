@@ -9,6 +9,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  isWin,
+  WIN_SQL,
   assessCandidateFlatness,
   parseBoundaryFromStatusMd,
   resolveBoundary,
@@ -189,5 +191,45 @@ describe('config carries its own justification', () => {
     const oneD = cfg.per_timeframe_matured['1d'];
     expect(typeof oneD).not.toBe('string');
     expect((oneD as { value: number }).value).toBeLessThanOrEqual(30);
+  });
+});
+
+describe('the canonical win predicate (OPS-CLOSEDBAR-DIRECTIONAL-BALANCE-W1)', () => {
+  // pfe_return_pct is a SIGNED move from entry, so it is <= 0 for every SELL by construction.
+  // The first revision of this harness tested `> 0` for both sides, making a SELL win
+  // STRUCTURALLY IMPOSSIBLE — it reported sell_pfe_wr = 0.0% when the real figure is 26.2%,
+  // and a whole wave was written around that number. These tests fail on the wrong predicate.
+  it('a BUY wins on a POSITIVE excursion', () => {
+    expect(isWin('BUY', 1.5)).toBe(true);
+    expect(isWin('BUY', -1.5)).toBe(false);
+  });
+
+  it('a SELL wins on a NEGATIVE excursion — the case the old predicate could never satisfy', () => {
+    expect(isWin('SELL', -1.5)).toBe(true);
+    expect(isWin('SELL', 1.5)).toBe(false);
+  });
+
+  it('a dead book (pfe = 0) is a loss on BOTH sides, not a win', () => {
+    // 67.9% of pre-flip SELLs are dead books (pfe = mae = 0); they must not score as wins.
+    expect(isWin('BUY', 0)).toBe(false);
+    expect(isWin('SELL', 0)).toBe(false);
+  });
+
+  it('a null outcome is not a win', () => {
+    expect(isWin('BUY', null)).toBe(false);
+    expect(isWin('SELL', null)).toBe(false);
+  });
+
+  it('the SQL predicate branches on side rather than testing > 0 for both', () => {
+    expect(WIN_SQL).toContain("signal='BUY'");
+    expect(WIN_SQL).toContain('pfe_return_pct > 0');
+    expect(WIN_SQL).toContain('pfe_return_pct < 0');
+  });
+
+  it('SELL is not reachable under the OLD predicate — pins why this regressed', () => {
+    const oldPredicate = (_side: string, pfe: number) => pfe > 0;
+    const sellPfeValues = [-5, -1, 0];   // every value a SELL can actually take
+    expect(sellPfeValues.some((v) => oldPredicate('SELL', v))).toBe(false);
+    expect(sellPfeValues.some((v) => isWin('SELL', v))).toBe(true);
   });
 });
