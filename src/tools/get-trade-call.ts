@@ -3,7 +3,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 // `ema9Val`/`ema21Val`, which nothing ever read — dead on origin/main, so that was two
 // full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
 // The extraction surfaced it; the golden fixture proves removing it changed no output.
-import { rsi, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
+import { rsi, ema, atr, hurstExponent, detectSqueeze } from '../lib/indicators.js';
 import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
@@ -279,19 +279,53 @@ export interface IndicatorScores extends VerdictScoreInputs {
 }
 
 /**
- * Separation, in basis points of the slow EMA, below which the EMA pair counts as CONTESTED
- * rather than as a side. This is what gives `RANGING` a MEANING — "the two EMAs are not
- * meaningfully apart" — instead of leaving it the fallthrough residue of an RSI band test.
+ * How many ATRs of separation the EMA pair needs before it counts as a SIDE rather than
+ * CONTESTED. This is what gives `RANGING` a MEANING — "the two EMAs are not meaningfully
+ * apart, RELATIVE TO HOW MUCH THIS ASSET MOVES" — instead of the fallthrough residue of an
+ * RSI band test.
  *
- * Calibrated on 24 series (8 assets × {15m·30d, 1h·60d, 4h·90d}, 37,872 samples) with the
- * |sep| histogram plotted BEFORE the value was chosen, per the discrete-score-space lesson
- * from SIGNAL-CLOSEDBAR-FLIP-W1. The neighbourhood is smooth — the `RANGING` share moves
- * 23.1% → 30.4% → 36.8% across B = 8 → 10 → 12 bps, ~7pp per 2 bps with no discontinuity —
- * so this is a calibration, not a cliff edge.
+ * ── Why RELATIVE and not an absolute bps figure ─────────────────────────────
+ * The first cut of this rule used an absolute 10 bps and was REJECTED at measurement. EMA
+ * separation scales with per-bar volatility, so one absolute band means different things at
+ * different cadences AND across the asset universe. Measured over 90 cells, the `RANGING`
+ * share went 7.3% → 43.8% at 15m, 7.8% → 7.8% at 1h, and 8.6% → **2.9%** at 4h — i.e. at 4h
+ * the label claimed a trend 97.1% of the time against 91.4% before, making the wave's PRIMARY
+ * defect worse on a timeframe while the 28.7% aggregate looked like the intended correction.
+ * An aggregate can be neutral while every component moves.
+ *
+ * Timeframe is only a PROXY for volatility, and a poor one — BTC at 1h and a low-cap alt at
+ * 1h differ just as much. Normalising by the asset's own recent range fixes both axes at once.
+ *
+ * ── Reused, not invented ────────────────────────────────────────────────────
+ * The scale is **ATRP = ATR(14) / price**, which is already this repo's canonical volatility
+ * derivation (`rank-constants.ts:26`, the `volatility` rankBy lens; `atr()` in
+ * `lib/indicators.ts`). Scaling a threshold by ATR/price is likewise already the idiom here —
+ * `computeCrossVenueFundingSentiment` (`get-market-regime.ts:531`) replaced a fixed 1 bps
+ * threshold with exactly this. And normalising against an entity's own recent distribution is
+ * what `funding_state` already does with its per-asset z-score. A second volatility derivation
+ * in this tree would be the defect this arc has spent five waves retiring.
+ *
+ * ATR's period stays the canonical 14 for the same reason: it is the shipped derivation, and
+ * it sits between the classifier's own 9 and 21 rather than being a fast measure read against
+ * a slow trend.
+ *
+ * ── Chosen by INVARIANCE, not by picking a level ────────────────────────────
+ * The defensible target is that "contested" means the SAME THING at every cadence; no
+ * particular `RANGING` share was aimed at. Swept 0.05→0.45 with the normalised histogram
+ * plotted first (flat: 6.33/6.30/6.34/6.10/5.88/5.64/5.46/5.04/4.85/4.62/4.63/4.08% across
+ * 0.00→0.60 ATR, against 35.6%-then-collapsing for the rejected absolute band — normalising
+ * also made the distribution well-conditioned). 0.30 gives the TIGHTEST cross-timeframe
+ * spread, 1.5pp against 40.9pp for the absolute band, and lands on flat ground (5.46%, with
+ * 5.64% and 5.04% either side). The resulting level — `RANGING` ≈ 27.8/26.7/28.2% — is
+ * REPORTED, not targeted.
+ *
+ * Values ≤ 0.15 are excluded by the hard gate: every one of them leaves at least one
+ * timeframe claiming a trend MORE often than the pre-wave rule did, which would make this
+ * wave's primary defect worse on that timeframe.
  *
  * TODO: revisit by 2026-08-21
  */
-export const REGIME_SEPARATION_BPS = 10;
+export const REGIME_SEPARATION_ATR_MULT = 0.30;
 
 /**
  * Consecutive bars a side must hold before the label may flip to it. This is HYSTERESIS,
@@ -342,12 +376,24 @@ export const REGIME_CONFIRM_BARS = 12;
  * Nothing here feeds a score. `emaScore` reads `emaCross`; this reads `closes`. No verdict
  * can move because of this function, and `regime-label-invariants` asserts that on live data.
  */
-export function classifyRegimeLabel(closes: number[]): RegimeType {
+export function classifyRegimeLabel(candles: Candle[]): RegimeType {
+  const closes = candles.map((c) => c.close);
   const fast = ema(closes, 9);
   const slow = ema(closes, 21);
   if (!fast || !slow) return 'RANGING';
 
-  const band = REGIME_SEPARATION_BPS / 10_000;
+  // The band, in fractional terms, scaled by the asset's own recent range. Computed from the
+  // SAME candle array the trend is measured on, so it inherits the selected candle basis
+  // (`CANDLE_BASIS=closed` ⇒ complete bars only) rather than reimporting partial-bar
+  // contamination through a separate fetch.
+  const atrVal = atr(candles.map((c) => c.high), candles.map((c) => c.low), closes, 14);
+  const lastClose = closes[closes.length - 1];
+  const atrp = atrVal !== null && lastClose > 0 ? atrVal / lastClose : null;
+  // No ATR (too few bars) ⇒ no defensible band ⇒ CONTESTED, which reads as `RANGING`. That is
+  // the honest answer, and it default-denies rather than asserting a trend on thin data.
+  if (atrp === null || !(atrp > 0)) return 'RANGING';
+  const band = REGIME_SEPARATION_ATR_MULT * atrp;
+
   // +1 / −1 = a side; 0 = contested (inside the band, or not yet computable).
   const sides: number[] = [];
   for (let k = 0; k < fast.length; k++) {
@@ -439,7 +485,7 @@ export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
   // (there is no `regime ===` anywhere in the verdict path; the asymmetric-threshold design
   // it referred to was defined and never wired). Corrected by
   // SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2.
-  const regime: RegimeType = classifyRegimeLabel(closes);
+  const regime: RegimeType = classifyRegimeLabel(candles);
 
   // ── Score each indicator (-100 to +100) ──
 
