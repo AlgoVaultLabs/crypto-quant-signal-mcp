@@ -5,7 +5,7 @@
  * — outcome_return_pct / outcome_price can never appear because they are never
  * read or written here (and getLatestVerdict doesn't even SELECT them). Quota
  * wiring mirrors the free crypto tools: get_equity_call is HOLD-free (charges
- * only a non-HOLD verdict, like get_trade_call); get_equity_regime charges per
+ * every verdict, like get_trade_call since R-A); get_equity_regime charges per
  * call (like get_market_regime — regime has no HOLD). QUOTA-CONSISTENCY-COUNT-
  * ALL-W1 (2026-06-08, Q2=B).
  */
@@ -136,9 +136,14 @@ function assertQuotaAvailable(license: LicenseInfo): void {
 /** get_equity_call orchestrator: quota → normalize → universe → latest verdict → format. */
 export async function getEquityCall(input: { symbol: string; license?: LicenseInfo }): Promise<EquityCallOutput | EquityErrorOutput> {
   const license = input.license || { tier: 'free' as const, key: null };
-  // QUOTA-CONSISTENCY-COUNT-ALL-W1 (Q2=B): read-only gate here; the charge happens
-  // AFTER the verdict and only for non-HOLD — HOLD equity calls are free, mirroring
-  // get_trade_call. (get_equity_regime still charges per call via quotaGate.)
+  // QUOTA-CONSISTENCY-COUNT-ALL-W1 (Q2=B): read-only gate here; the charge happens AFTER the
+  // verdict, so an error path never charges. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A)
+  // removed the non-HOLD condition, mirroring get_trade_call.
+  //
+  // This path is DARK (EQUITY_TOOLS_ENABLED defaults OFF and is unset in production), so the
+  // "equity HOLDs are charged while crypto HOLDs are free" divergence the wave spec cited as a
+  // live defect was not in fact reachable. It is fixed anyway: leaving a second billing rule
+  // parked on a disabled path is how it diverges again the day someone switches it on.
   assertQuotaAvailable(license);
   const pool = getEquityPool();
   const symbol = normalizeSymbol(input.symbol);
@@ -168,9 +173,9 @@ export async function getEquityCall(input: { symbol: string; license?: LicenseIn
       _algovault: meta('get_equity_call'),
     };
   }
-  // Charge only for an actionable (non-HOLD) verdict — HOLDs are free (parity with
-  // get_trade_call). Error paths above return before this, so they never charge.
-  if (v.call !== 'HOLD') trackCall(license);
+  // R-A: every verdict charges, HOLD included (parity with get_trade_call). Error paths above
+  // return before this, so they still never charge.
+  trackCall(license);
   return formatEquityCall(v, entry.rank_adv);
 }
 

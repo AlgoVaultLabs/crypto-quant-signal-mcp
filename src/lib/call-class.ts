@@ -51,9 +51,43 @@ export type BillingAxis = 'always' | 'verdict' | 'never';
 export const BILLING_AXIS_BY_QUOTA_UNIT: Record<QuotaUnit, BillingAxis> = {
   'per-call': 'always',
   'per-non-hold-min1': 'always',
-  'per-non-hold': 'verdict',
+  'per-verdict': 'always',
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): flat billing — every successful verdict is
+  // one metered call, HOLD included. No live registry row uses `per-non-hold` any more; the
+  // member survives ONLY so the frozen pre-cutover map below can still name what history meant.
+  'per-non-hold': 'always',
   'rate-limited': 'never',
 };
+
+// ── The flat-billing cutover (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1, architect Q3-a) ──
+//
+// WHY THIS INSTANT EXISTS. Flipping the axis alone would reclassify EVERY historical HOLD row
+// from `free_hold` to `billable`, because this module's SQL is generated from the CURRENT
+// registry and applied to the whole of `request_log`. The operator funnel would then report
+// "~99% of external calls are free HOLDs" as 0% for all time — a retroactive restatement of a
+// dashboard dimension, which CLAUDE.md's Data Integrity law forbids.
+//
+// So classification is a function of (tool, verdict, WHEN THE ROW WAS WRITTEN). A row keeps the
+// semantics that were in force when it was billed. That is the only reading under which the
+// number a dashboard showed last week and the number it shows today are both true.
+export const FLAT_BILLING_CUTOVER_ISO = '2026-08-08T00:00:00.000Z';
+export const FLAT_BILLING_CUTOVER_MS = Date.parse(FLAT_BILLING_CUTOVER_ISO);
+
+/**
+ * FROZEN HISTORICAL FACT — the tools that were verdict-billable BEFORE the cutover.
+ *
+ * This is deliberately a literal and not a projection, which is the opposite of every other
+ * derivation in this module, so the reason matters: the live registry describes what we charge
+ * NOW. What we charged in July is not a fact the registry can still answer once it changes, and
+ * re-deriving it from a mutable source is exactly how a "historical" number silently becomes a
+ * restatement of the present. History is immutable; this list is too. NEVER add to it — a tool
+ * added after the cutover was never verdict-billable.
+ */
+export const LEGACY_VERDICT_BILLABLE_TOOLS: readonly string[] = Object.freeze([
+  'get_trade_call',
+  'get_trade_signal', // alias of get_trade_call; stored as its own tool_name
+  'get_equity_call',
+]);
 
 /**
  * Every registry tool NAME AND ALIAS → its billing axis.
@@ -99,12 +133,20 @@ export function callClassFor(
   toolName: string | null | undefined,
   verdict: string | null | undefined,
   isBotInternal = false,
+  atMs: number = Date.now(),
 ): CallClass {
   if (isBotInternal) return 'internal';
   if (!toolName) return 'unclassified';
   const axis = BILLING_AXIS_BY_TOOL[toolName];
   if (axis === undefined) return 'unclassified';
   if (axis === 'never') return 'unmetered';
+  // Pre-cutover rows keep the semantics that were in force when they were billed (Q3-a).
+  // A non-finite `atMs` must NOT silently fall through to the permissive branch — an unknown
+  // timestamp is not evidence the row is modern, so treat it as legacy.
+  const isLegacy = !Number.isFinite(atMs) || atMs < FLAT_BILLING_CUTOVER_MS;
+  if (isLegacy && LEGACY_VERDICT_BILLABLE_TOOLS.includes(toolName)) {
+    return verdict === HOLD_VERDICT ? 'free_hold' : 'billable';
+  }
   if (axis === 'always') return 'billable';
   return verdict === HOLD_VERDICT ? 'free_hold' : 'billable';
 }
@@ -128,30 +170,62 @@ function inList(tools: readonly string[]): string {
   return tools.map(() => '?').join(',');
 }
 
-/** `billable` — always-charged tools, plus verdict-charged tools whose verdict is not HOLD. */
+/**
+ * `"timestamp"` is TEXT holding a UTC ISO-8601 instant in both backends, so a lexicographic
+ * comparison against another UTC ISO string is a correct chronological comparison and needs no
+ * cast. That matters: `::timestamptz` is Postgres-only and would break the SQLite suites, and
+ * `datetime()` is SQLite-only and would break Postgres. Double-quoting survives both (in
+ * Postgres `timestamp` is a type name; in SQLite the quotes are simply allowed).
+ */
+const PRE_CUTOVER = `"timestamp" < ?`;
+const POST_CUTOVER = `("timestamp" >= ? OR "timestamp" IS NULL)`;
+
+/**
+ * `billable` — evaluated under the semantics in force WHEN EACH ROW WAS WRITTEN (Q3-a).
+ *
+ * Post-cutover: every metered tool charges, verdict irrelevant (R-A).
+ * Pre-cutover:  the legacy verdict-billable tools charged only on a non-HOLD.
+ *
+ * A NULL timestamp counts as post-cutover for `billable` and is excluded from `free_hold`, so a
+ * row with no instant is never counted twice and never invents a historical freebie.
+ */
 export function billablePredicate(): ClassPredicate | null {
+  const metered = [...ALWAYS_BILLABLE_TOOLS, ...VERDICT_BILLABLE_TOOLS];
+  if (metered.length === 0) return null;
   const clauses: string[] = [];
   const params: string[] = [];
-  if (ALWAYS_BILLABLE_TOOLS.length > 0) {
-    clauses.push(`tool_name IN (${inList(ALWAYS_BILLABLE_TOOLS)})`);
-    params.push(...ALWAYS_BILLABLE_TOOLS);
+
+  // Post-cutover: any metered tool, any verdict.
+  clauses.push(`(${POST_CUTOVER} AND tool_name IN (${inList(metered)}))`);
+  params.push(FLAT_BILLING_CUTOVER_ISO, ...metered);
+
+  // Pre-cutover: metered tools that were NOT verdict-billable then, unconditionally...
+  const legacyAlways = metered.filter((t) => !LEGACY_VERDICT_BILLABLE_TOOLS.includes(t));
+  if (legacyAlways.length > 0) {
+    clauses.push(`(${PRE_CUTOVER} AND tool_name IN (${inList(legacyAlways)}))`);
+    params.push(FLAT_BILLING_CUTOVER_ISO, ...legacyAlways);
   }
-  if (VERDICT_BILLABLE_TOOLS.length > 0) {
+  // ...plus the verdict-billable ones, only when the verdict was not HOLD.
+  if (LEGACY_VERDICT_BILLABLE_TOOLS.length > 0) {
     clauses.push(
-      `(tool_name IN (${inList(VERDICT_BILLABLE_TOOLS)}) AND (verdict IS NULL OR verdict <> ?))`,
+      `(${PRE_CUTOVER} AND tool_name IN (${inList(LEGACY_VERDICT_BILLABLE_TOOLS)})`
+      + ` AND (verdict IS NULL OR verdict <> ?))`,
     );
-    params.push(...VERDICT_BILLABLE_TOOLS, HOLD_VERDICT);
+    params.push(FLAT_BILLING_CUTOVER_ISO, ...LEGACY_VERDICT_BILLABLE_TOOLS, HOLD_VERDICT);
   }
-  if (clauses.length === 0) return null;
   return { sql: `(${clauses.join(' OR ')})`, params };
 }
 
-/** `free_hold` — verdict-charged tools that returned HOLD. */
+/**
+ * `free_hold` — a HISTORICAL class. Only pre-cutover rows can belong to it, because after the
+ * cutover no HOLD is free on any rail (R-A). It is deliberately NOT retired: the rows it
+ * describes still exist, and re-labelling them would restate what the dashboards reported.
+ */
 export function freeHoldPredicate(): ClassPredicate | null {
-  if (VERDICT_BILLABLE_TOOLS.length === 0) return null;
+  if (LEGACY_VERDICT_BILLABLE_TOOLS.length === 0) return null;
   return {
-    sql: `(tool_name IN (${inList(VERDICT_BILLABLE_TOOLS)}) AND verdict = ?)`,
-    params: [...VERDICT_BILLABLE_TOOLS, HOLD_VERDICT],
+    sql: `(${PRE_CUTOVER} AND tool_name IN (${inList(LEGACY_VERDICT_BILLABLE_TOOLS)}) AND verdict = ?)`,
+    params: [FLAT_BILLING_CUTOVER_ISO, ...LEGACY_VERDICT_BILLABLE_TOOLS, HOLD_VERDICT],
   };
 }
 

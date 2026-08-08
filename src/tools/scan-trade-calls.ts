@@ -256,8 +256,11 @@ export async function runScanTradeCall(
   }
 
   const result = await scanTradeCalls(params);
-  // HOLDs are free — charge only the non-HOLD calls actually returned (>=1).
-  const units = Math.max(1, result.eligible_non_hold);
+  // R-G: charge per RETURNED VERDICT, HOLD rows included. Charging only the non-HOLD rows made
+  // a scan the free-HOLD loophole that re-opens everything R-A closes — a caller could take 50
+  // verdicts for the price of one. `Math.max(1, …)` is retained so a scan that returns nothing
+  // at all still costs the one call it consumed; clampUnits default-denies anything else.
+  const units = Math.max(1, result.calls.length);
   const tracked = trackCall(license, units);
 
   const sid = getRequestSessionId() ?? null;

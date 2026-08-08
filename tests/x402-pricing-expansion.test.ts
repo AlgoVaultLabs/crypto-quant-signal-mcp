@@ -66,10 +66,18 @@ describe('x402 pricing expansion — gated/discoverable set (+3 named; get_trade
   });
 });
 
-describe('x402 pricing expansion — free-quota rule UNCHANGED (R3)', () => {
-  it('registry quota.unit for the 3 is byte-unchanged (the free-100 rail is intact)', () => {
-    expect(getFeature('scan_trade_calls')!.quota.unit).toBe('per-non-hold-min1');
-    expect(getFeature('get_equity_call')!.quota.unit).toBe('per-non-hold');
+describe('x402 pricing expansion — the free-quota rule is now FLAT (R3 superseded by R-A/R-G)', () => {
+  it('registry quota.unit for the 3, after the flat-billing flip', () => {
+    // This assertion originally pinned the units as "byte-unchanged" to prove the x402 PRICING
+    // wave had not disturbed the free rail. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 changes the
+    // free rail deliberately (architect R-A/R-G), so the pin moves with it. What it still
+    // guards is unchanged: the x402 per-call PRICES are a separate axis and must not have moved
+    // — asserted in the describe blocks above.
+    expect(getFeature('scan_trade_calls')!.quota.unit).toBe('per-verdict');
+    expect(getFeature('get_equity_call')!.quota.unit).toBe('per-call');
     expect(getFeature('get_equity_regime')!.quota.unit).toBe('per-call');
+    // ...and no live feature may reintroduce a verdict-conditional freebie.
+    expect(getFeature('scan_trade_calls')!.quota.holdFree).toBe(false);
+    expect(getFeature('get_equity_call')!.quota.holdFree).toBe(false);
   });
 });

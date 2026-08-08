@@ -27,9 +27,9 @@
     "exchange": "BINANCE",
     "venue_status": "promoted",
     "quota": {
-      "used": 0,
+      "used": 1,
       "total": 500,
-      "remaining": 500,
+      "remaining": 499,
       "resets_at": "2026-08-28T12:06:00.000Z"
     }
   },

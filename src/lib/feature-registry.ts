@@ -26,12 +26,15 @@ import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
 /**
  * How a feature consumes quota:
  *  - 'per-call'          : 1 call per invocation (no HOLD concept).
- *  - 'per-non-hold'      : 1 call only for an actionable verdict (HOLD is free).
- *  - 'per-non-hold-min1' : 1 call per non-HOLD returned, minimum 1 (the market scanner).
+ *  - 'per-verdict'       : 1 call per RETURNED VERDICT, HOLD included (the batch scanner, R-G).
+ *  - 'per-non-hold'      : RETIRED by PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A). No live row
+ *                          uses it; the member survives only so `call-class.ts` can still name
+ *                          what pre-cutover history meant.
+ *  - 'per-non-hold-min1' : RETIRED by the same wave, superseded by 'per-verdict'.
  *  - 'rate-limited'      : NOT metered against the 100/mo call quota — token/usage
  *                          rate-limited separately (limiter: src/lib/chat-rate-limit.ts).
  */
-export type QuotaUnit = 'per-call' | 'per-non-hold' | 'per-non-hold-min1' | 'rate-limited';
+export type QuotaUnit = 'per-call' | 'per-verdict' | 'per-non-hold' | 'per-non-hold-min1' | 'rate-limited';
 
 /**
  * SCAN-RANKBY-W1: a public, derive-not-hardcode advertisement of a tool's
@@ -122,7 +125,8 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     aliases: ['get_trade_signal'],
     channels: { mcp: true, httpX402: true, bot: true, webhook: true, a2mcp: true, acp: true },
     webhookEvent: 'trade_call',
-    quota: { unit: 'per-non-hold', holdFree: true },
+    // R-A: every verdict is one metered call. HOLD is a verdict, not a freebie.
+    quota: { unit: 'per-call', holdFree: false },
     x402: { basePriceUsd: 0.02 },
     descriptionRef: 'TRADE_CALL_DESCRIPTION',
     enabled: true,
@@ -157,7 +161,9 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     // flipping these two flags is what makes /scan appear on both push channels.
     channels: { mcp: true, httpX402: true, bot: true, webhook: true, a2mcp: true, acp: true },
     webhookEvent: 'scan_digest',
-    quota: { unit: 'per-non-hold-min1', holdFree: true },
+    // R-G: charge per RETURNED verdict, HOLD rows included — otherwise a scan is the
+    // free-HOLD loophole that re-opens everything R-A closes.
+    quota: { unit: 'per-verdict', holdFree: false },
     // OPS-X402-PRICING-EXPANSION-W1: FLAT $0.02/scan. x402 declares the price in the
     // 402 BEFORE the tool runs, so it CANNOT bill per-result — the per-result
     // max(1, non-HOLD) rule is the FREE-quota rail ONLY (supersedes the earlier per-unit proposal).
@@ -171,7 +177,9 @@ export const FEATURE_REGISTRY: FeatureSpec[] = [
     name: 'get_equity_call',
     aliases: [],
     channels: { mcp: true, httpX402: true, bot: false, webhook: false, a2mcp: false, acp: false },
-    quota: { unit: 'per-non-hold', holdFree: true }, // HOLD-free per QUOTA-CONSISTENCY-COUNT-ALL-W1
+    // R-A parity. Path is dark (EQUITY_TOOLS_ENABLED default OFF) but must not carry a
+    // second billing rule waiting to diverge the day it is switched on.
+    quota: { unit: 'per-call', holdFree: false },
     x402: { basePriceUsd: 0.02 }, // OPS-X402-PRICING-EXPANSION-W1: flat $0.02/call (free rail unchanged)
     descriptionRef: 'GET_EQUITY_CALL_DESCRIPTION',
     enabled: true,

@@ -139,7 +139,12 @@ describe('runScanTradeCall — quota charging', () => {
     expect(r.calls).toHaveLength(0);
   });
 
-  it('includeHolds rows do not add to the charge', async () => {
+  it('includeHolds rows DO add to the charge — you pay for the verdicts you receive (R-G)', async () => {
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1: charging only the non-HOLD rows made a scan the
+    // free-HOLD loophole that re-opens everything R-A closes — ask for 10 verdicts, pay for 5.
+    // Note the symmetry this preserves: a DEFAULT scan omits HOLD rows from `calls`, so it is
+    // unaffected. You are charged for what you are handed, which is why `includeHolds` is the
+    // only shape whose price moves.
     _setScanScorerForTest(specScorer(SPEC));
     const r = await runScanTradeCall(
       { topN: 100, timeframe: '15m', exchange: 'BINANCE', includeHolds: true, limit: 10 },
@@ -147,8 +152,8 @@ describe('runScanTradeCall — quota charging', () => {
     );
     if (isExhausted(r)) throw new Error('unexpected exhaustion');
     expect(r.calls.length).toBe(10); // 5 non-HOLD + 5 HOLD
-    expect(r.eligible_non_hold).toBe(5); // HOLDs excluded from the charge
-    expect(r._algovault.quota.used).toBe(5);
+    expect(r.eligible_non_hold).toBe(5); // still reported — it is a RESULT field, not the price
+    expect(r._algovault.quota.used).toBe(10); // charged per returned verdict
   });
 });
 

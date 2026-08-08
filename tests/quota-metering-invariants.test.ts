@@ -53,7 +53,7 @@ import { getEquityCall, getEquityRegime } from '../src/lib/equities/equity-tool-
 import { runScanTradeCall } from '../src/tools/scan-trade-calls.js';
 import { getAdapter } from '../src/lib/exchange-adapter.js';
 import { getUniverseEntry, getLatestVerdict, type PublicVerdictRow } from '../src/lib/equities/equity-store.js';
-import { scanTradeCalls, type ScanTradeCallsResult } from '../src/lib/trade-call-scanner.js';
+import { scanTradeCalls, type ScanTradeCallsResult, type ScanCallItem } from '../src/lib/trade-call-scanner.js';
 import { checkQuota, resetLicenseCache } from '../src/lib/license.js';
 import { readFileSync } from 'node:fs';
 import type { ExchangeAdapter, Candle, AssetContext, LicenseInfo } from '../src/types.js';
@@ -90,8 +90,28 @@ const verdict = (call: 'BUY' | 'SELL' | 'HOLD'): PublicVerdictRow => ({
   regime: 'trending_up', factors: ['technical:x'], engine_version: 'equities-v1', pfe_horizon_sessions: 5,
 });
 
-const scanResult = (eligible_non_hold: number): ScanTradeCallsResult => ({
-  scanned: 100, eligible_non_hold, holds: 100 - eligible_non_hold, errors: 0, partial: false, calls: [],
+// PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH3): this fake used to set `eligible_non_hold`
+// while leaving `calls: []`, which VIOLATES the producer's own invariant — the real scanner
+// computes `eligible_non_hold = calls.filter(c => c.call !== 'HOLD').length`
+// (trade-call-scanner.ts), so an empty `calls` with a non-zero count cannot occur in production.
+// It went unnoticed because the old charge rule read `eligible_non_hold`; R-G reads the RETURNED
+// verdicts, and the gap surfaced immediately as "charges 1" where the fixture meant 3. Build a
+// self-consistent result so the fake cannot drift from the shape it stands in for.
+const scanCall = (i: number, call: 'BUY' | 'HOLD'): ScanCallItem => ({
+  coin: `C${i}`, timeframe: '15m', exchange: 'BINANCE' as ScanCallItem['exchange'],
+  call: call as ScanCallItem['call'], confidence: 70, regime: 'TRENDING' as ScanCallItem['regime'],
+});
+/** `nonHold` actionable rows RETURNED (default scans omit HOLD rows from `calls`). */
+const scanResult = (eligible_non_hold: number, returnedHolds = 0): ScanTradeCallsResult => ({
+  scanned: 100,
+  eligible_non_hold,
+  holds: 100 - eligible_non_hold,
+  errors: 0,
+  partial: false,
+  calls: [
+    ...Array.from({ length: eligible_non_hold }, (_, i) => scanCall(i, 'BUY')),
+    ...Array.from({ length: returnedHolds }, (_, i) => scanCall(1000 + i, 'HOLD')),
+  ],
 });
 
 function scanUsed(r: Awaited<ReturnType<typeof runScanTradeCall>>): number {
@@ -115,18 +135,24 @@ beforeEach(() => {
 
 // ── crypto singles + alias ──
 describe('crypto singles — trackCall once per billable result', () => {
-  it('get_trade_call: charges 1 on non-HOLD, 0 on HOLD (HOLDs free) — rising tape', async () => {
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): the charge is now VERDICT-INDEPENDENT. These
+  // two used to assert `r.call === 'HOLD' ? 0 : 1`, which made the expectation a function of the
+  // tape — so on a flat tape they asserted "charged nothing" and passed whether or not the meter
+  // ran at all. Asserting exactly 1 REGARDLESS of the verdict is both the new rule and a
+  // strictly stronger test: it fails if the charge is skipped, doubled, or made conditional again.
+  it('get_trade_call: charges exactly 1 whatever the verdict — rising tape', async () => {
     vi.mocked(getAdapter).mockReturnValue(createMockAdapter({ getCandles: vi.fn().mockResolvedValue(mockCandles(120, 3000, 'up')) }));
     const lic = freshStarter();
-    const r = await getTradeSignal({ coin: 'ETH', timeframe: '1h', license: lic });
-    expect(usedFor(lic)).toBe(r.call === 'HOLD' ? 0 : 1);
+    await getTradeSignal({ coin: 'ETH', timeframe: '1h', license: lic });
+    expect(usedFor(lic)).toBe(1);
   });
 
-  it('get_trade_call: charge==non-HOLD invariant holds on a flat tape', async () => {
+  it('get_trade_call: charges exactly 1 on a flat tape too — the HOLD case', async () => {
     vi.mocked(getAdapter).mockReturnValue(createMockAdapter({ getCandles: vi.fn().mockResolvedValue(mockCandles(120, 3000, 'flat')) }));
     const lic = freshStarter();
     const r = await getTradeSignal({ coin: 'ETH', timeframe: '1h', license: lic });
-    expect(usedFor(lic)).toBe(r.call === 'HOLD' ? 0 : 1);
+    expect(r.call).toBe('HOLD');   // vacuity guard: this fixture must actually produce a HOLD
+    expect(usedFor(lic)).toBe(1);
   });
 
   it('get_market_regime: charges exactly 1 per call (no HOLD concept)', async () => {
@@ -152,7 +178,7 @@ describe('crypto singles — trackCall once per billable result', () => {
 });
 
 // ── equity tools — get_equity_call HOLD-free (Q2=B); get_equity_regime per-call ──
-describe('equity tools — HOLD-free call, per-call regime', () => {
+describe('equity tools — every verdict charges (R-A), per-call regime', () => {
   beforeEach(() => {
     vi.mocked(getUniverseEntry).mockResolvedValue({ symbol: 'AAPL', rank_adv: 12, is_etf: false });
   });
@@ -164,11 +190,13 @@ describe('equity tools — HOLD-free call, per-call regime', () => {
     expect(usedFor(lic)).toBe(1);
   });
 
-  it('get_equity_call does NOT charge a HOLD verdict (parity with get_trade_call)', async () => {
+  it('get_equity_call DOES charge a HOLD verdict (R-A parity with get_trade_call)', async () => {
+    // The path is dark (EQUITY_TOOLS_ENABLED default OFF) but must not park a second billing
+    // rule waiting to diverge the day it is switched on.
     vi.mocked(getLatestVerdict).mockResolvedValue(verdict('HOLD'));
     const lic = freshStarter();
     await getEquityCall({ symbol: 'AAPL', license: lic });
-    expect(usedFor(lic)).toBe(0);
+    expect(usedFor(lic)).toBe(1);
   });
 
   it('get_equity_call does NOT charge an error path (no verdict for session)', async () => {
@@ -186,8 +214,8 @@ describe('equity tools — HOLD-free call, per-call regime', () => {
   });
 });
 
-// ── scanner — max(1, non-HOLD returned) ──
-describe('scan_trade_calls — 1 per non-HOLD returned, floor 1', () => {
+// ── scanner — max(1, RETURNED verdicts incl. HOLD) — R-G ──
+describe('scan_trade_calls — 1 per RETURNED verdict, floor 1', () => {
   it('3 non-HOLD returned → charges 3', async () => {
     vi.mocked(scanTradeCalls).mockResolvedValue(scanResult(3));
     const r = await runScanTradeCall({ topN: 100, timeframe: '15m', exchange: 'BINANCE', limit: 10 }, freshStarter());

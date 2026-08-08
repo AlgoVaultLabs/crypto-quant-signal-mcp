@@ -410,8 +410,10 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     }
   }
 
-  // Quota gate (read-only check — actual increment happens after we know the verdict,
-  // because HOLD signals are free and shouldn't count against quota).
+  // Quota gate. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-F): the CHECK happens here, before
+  // the upstream venue fetch, so an exhausted caller no longer burns a fetch to be told no —
+  // CH1 measured 13,973 such fetches in 30 days on the free tier alone. The INCREMENT still
+  // happens after a successful result, because an error is not a verdict and is never charged.
   // Internal grid-refresh calls skip quota entirely — they are server-side
   // pre-computation, not per-agent usage.
   const quota = input.internal
@@ -786,14 +788,17 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // an advance-warning field that under-reports by one is exactly the kind of off-by-one a
   // caller would mistrust. `upgradeHint` deliberately still reads the pre-charge value so the
   // 80% nudge threshold is unchanged by this wave.
+  // R-A: every successful verdict is one metered call — HOLD included. The verdict-conditional
+  // skip that used to live here is gone; "which verdicts are free" is no longer representable.
   let charged: ReturnType<typeof trackCall> | null = null;
-  if (!input.internal && signal !== 'HOLD') {
+  if (!input.internal) {
     charged = trackCall(license);
   }
 
-  // Upgrade hint: only for free tier, never for HOLD signals, never for
-  // internal grid-refresh calls (their meta block is discarded anyway).
-  const upgradeHint = !input.internal && signal !== 'HOLD'
+  // Upgrade hint: free tier only, never for internal grid-refresh calls (their meta block is
+  // discarded anyway). No longer suppressed on HOLD — a HOLD now consumes quota, so withholding
+  // the nudge on exactly the verdict that spends their allowance would be the wrong silence.
+  const upgradeHint = !input.internal
     ? getUpgradeHint(license, { used: quota.used, total: quota.total })
     : undefined;
 

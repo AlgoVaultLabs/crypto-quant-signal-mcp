@@ -479,12 +479,21 @@ export async function deliverOne(
     };
   }
 
-  // FEATURE-PARITY-CHANNELS-W1 CH2: a scan_digest delivery charges the scanner rule
-  // — max(1, non-HOLD calls in the digest), exactly like the pull scanner. Signal
-  // events stay 1 (byte-identical to CALL-REGIME-WEBHOOK-LAYER-W1). The quota gate
-  // above pauses on exhaustion; this only scales the charge AMOUNT.
+  // FEATURE-PARITY-CHANNELS-W1 CH2: a scan_digest delivery charges the scanner rule, exactly
+  // like the pull scanner. The quota gate above pauses on exhaustion; this only scales the
+  // charge AMOUNT.
+  //
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-G): that rule is now "per RETURNED verdict, HOLD
+  // included", so this follows scan-trade-calls.ts rather than keeping a fourth, divergent copy
+  // of the non-HOLD filter. This was the FOURTH implementation of that filter (with
+  // get-trade-call.ts, scan-trade-calls.ts and the feature-registry declaration) and the one the
+  // wave spec did not name — CH1 found it by tracing 5,120 quota units on the Pro key that
+  // `request_log` could not account for, because this rail charges without logging a request.
+  //
+  // Non-scan_digest events stay 1 and were ALREADY verdict-independent, which is why flat
+  // billing changes nothing for the two live (quarantined) subscriptions.
   const quotaUnits = eventData.type === 'scan_digest'
-    ? Math.max(1, eventData.calls.filter((c) => c.call !== 'HOLD').length)
+    ? Math.max(1, eventData.calls.length)
     : 1;
 
   const payload = buildPayload(eventData, delivery.id);

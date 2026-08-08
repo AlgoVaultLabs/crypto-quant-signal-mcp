@@ -38,7 +38,7 @@ import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { recordCandleBasisShadow } from '../../src/lib/candle-basis-shadow.js';
 import { getCandleBasis, isCandleBasisShadowEnabled } from '../../src/lib/candle-basis-flag.js';
 import { splitCandleWindow } from '../../src/lib/candle-window.js';
-import { resetLicenseCache } from '../../src/lib/license.js';
+import { resetLicenseCache, _resetCallTrackersForTest } from '../../src/lib/license.js';
 import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/lib/cross-asset-grid.js';
 import type { ExchangeAdapter, Candle } from '../../src/types.js';
 import { goldenAssetContext } from '../fixtures/candle-basis-golden-inputs.js';
@@ -91,6 +91,11 @@ describe('CH2 — closed-bar basis', () => {
     vi.setSystemTime(NOW);
     vi.clearAllMocks();
     resetLicenseCache();
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): every call now charges the shared free
+    // meter, so without a per-test reset each test inherits the previous test's `used` and the
+    // envelope comparisons below compare "3rd call" with "1st call". `resetLicenseCache` clears
+    // the cached LICENSE, which is a different module-level cache and never touched the meters.
+    _resetCallTrackersForTest();
     process.env.CQS_API_KEY = 'test-key';
     delete process.env.CANDLE_BASIS;
     delete process.env.CANDLE_BASIS_SHADOW_ENABLED;
@@ -231,6 +236,9 @@ describe('CH2 — closed-bar basis', () => {
       expect(recordCandleBasisShadow).not.toHaveBeenCalled();
 
       vi.clearAllMocks();
+      // R-A: both invocations charge now, so the meter must be reset or the two envelopes
+      // differ by `_algovault.quota.used` alone — see the note in AC5.
+      _resetCallTrackersForTest();
       delete process.env.CANDLE_BASIS_SHADOW_ENABLED; // shadow ON ⇒ the branch runs and throws
       vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
       const withShadow = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
@@ -251,6 +259,12 @@ describe('CH2 — closed-bar basis', () => {
       expect(recordCandleBasisShadow).toHaveBeenCalledTimes(1);
 
       vi.clearAllMocks();
+      // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): both invocations are HOLDs, and a HOLD now
+      // CHARGES — so without this the second call's `_algovault.quota.used` is 2 against the
+      // first's 1 and the envelopes differ for a reason that has nothing to do with the shadow.
+      // Reset the meter rather than excluding the quota block: comparing the WHOLE envelope is
+      // the point of the assertion.
+      _resetCallTrackersForTest();
       process.env.CANDLE_BASIS_SHADOW_ENABLED = '0';
       vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
       const off = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });

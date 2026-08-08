@@ -507,6 +507,24 @@ export function resetLicenseCache(): void {
   cachedLicense = null;
 }
 
+/**
+ * TEST SEAM — clear the in-memory call meters (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH3).
+ *
+ * `resetLicenseCache` clears the cached LICENSE, which is a different thing: the meters are a
+ * separate module-level map and survived it. That gap was invisible while HOLD was free — two
+ * successive HOLD calls both charged nothing, so a test could compare their envelopes and see
+ * identical `_algovault.quota`. Under R-A the meter advances on every call, so any test that
+ * invokes a tool twice and compares output needs the meter reset between them or it is
+ * comparing "first call" against "second call".
+ *
+ * Deliberately NOT exported as part of the runtime contract: production has no reason to zero a
+ * caller's meter, and a reachable "reset my quota" primitive is a billing bypass.
+ */
+export function _resetCallTrackersForTest(): void {
+  callTrackers.clear();
+  bonusRemaining.clear();
+}
+
 // ── Access checks ──
 
 export function isFreeTier(license?: LicenseInfo): boolean {
@@ -862,6 +880,11 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
       meta: {
         used: tracker.count,
         total: quota,
+        // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1: WHICH wall the caller hit. The two meters
+        // refuse independently and convert differently — a monthly wall is a budget signal, a
+        // daily wall is a pacing one — so the funnel cannot attribute upgrade intent without
+        // knowing which fired. CH4 emits `'daily'` from the daily meter.
+        limit: 'monthly' as const,
       },
     });
     return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };

@@ -16,6 +16,9 @@ import {
   BILLING_AXIS_BY_QUOTA_UNIT,
   ALWAYS_BILLABLE_TOOLS,
   VERDICT_BILLABLE_TOOLS,
+  LEGACY_VERDICT_BILLABLE_TOOLS,
+  FLAT_BILLING_CUTOVER_MS,
+  FLAT_BILLING_CUTOVER_ISO,
   UNMETERED_TOOLS,
 } from '../src/lib/call-class.js';
 import { FEATURE_REGISTRY } from '../src/lib/feature-registry.js';
@@ -33,10 +36,16 @@ describe('call-class — derives from FEATURE_REGISTRY, never a parallel literal
     }
   });
 
-  it('every axis bucket is non-empty — a silently-empty bucket would zero a digest line', () => {
+  it('every LIVE axis bucket is non-empty — a silently-empty bucket would zero a digest line', () => {
     expect(ALWAYS_BILLABLE_TOOLS.length).toBeGreaterThan(0);
-    expect(VERDICT_BILLABLE_TOOLS.length).toBeGreaterThan(0);
     expect(UNMETERED_TOOLS.length).toBeGreaterThan(0);
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): the VERDICT bucket is now empty BY DESIGN —
+    // no tool charges conditionally on its verdict any more. Asserting emptiness (rather than
+    // deleting the line) keeps the vacuity guard honest: if a future wave re-introduces a
+    // verdict-conditional tool, this fails and forces the decision to be explicit.
+    expect(VERDICT_BILLABLE_TOOLS).toEqual([]);
+    // The historical set is NOT empty — history still has free HOLDs in it.
+    expect(LEGACY_VERDICT_BILLABLE_TOOLS.length).toBeGreaterThan(0);
   });
 
   it('the axis partition is total and disjoint', () => {
@@ -45,11 +54,20 @@ describe('call-class — derives from FEATURE_REGISTRY, never a parallel literal
     expect(new Set(all)).toEqual(new Set(Object.keys(BILLING_AXIS_BY_TOOL))); // total
   });
 
-  it('HOLD on a verdict-charged tool is FREE — the defect that made 2,707 look unmetered', () => {
-    expect(callClassFor('get_trade_call', 'HOLD')).toBe('free_hold');
-    expect(callClassFor('get_trade_signal', 'HOLD')).toBe('free_hold'); // the alias too
-    expect(callClassFor('get_trade_call', 'BUY')).toBe('billable');
-    expect(callClassFor('get_trade_call', 'SELL')).toBe('billable');
+  it('HOLD is BILLABLE now, and was FREE before the cutover — the same row, two eras', () => {
+    // The 2,707-call forensic that created this module remains true OF ITS OWN ERA: those rows
+    // were free by design and still classify that way. Going forward R-A ends it.
+    const BEFORE = FLAT_BILLING_CUTOVER_MS - 60_000;
+    const AFTER = FLAT_BILLING_CUTOVER_MS + 60_000;
+    expect(callClassFor('get_trade_call', 'HOLD', false, BEFORE)).toBe('free_hold');
+    expect(callClassFor('get_trade_signal', 'HOLD', false, BEFORE)).toBe('free_hold'); // alias too
+    expect(callClassFor('get_trade_call', 'HOLD', false, AFTER)).toBe('billable');
+    expect(callClassFor('get_trade_signal', 'HOLD', false, AFTER)).toBe('billable');
+    // An actionable verdict never depended on the era.
+    for (const at of [BEFORE, AFTER]) {
+      expect(callClassFor('get_trade_call', 'BUY', false, at)).toBe('billable');
+      expect(callClassFor('get_trade_call', 'SELL', false, at)).toBe('billable');
+    }
   });
 
   it('per-call tools charge regardless of verdict; scan charges min-1 even if all HOLD', () => {
@@ -83,16 +101,22 @@ describe('call-class — SQL predicates encode the SAME rule as callClassFor', (
     }
   });
 
-  it('billable covers both axes; freeHold covers only the verdict axis', () => {
+  it('billable covers every metered tool; freeHold covers only the LEGACY verdict set', () => {
     const b = billablePredicate()!;
     for (const t of ALWAYS_BILLABLE_TOOLS) expect(b.params).toContain(t);
-    for (const t of VERDICT_BILLABLE_TOOLS) expect(b.params).toContain(t);
-    expect(b.params).toContain('HOLD');
+    expect(b.params).toContain('HOLD');       // still bound, for the pre-cutover branch
+    expect(b.params).toContain(FLAT_BILLING_CUTOVER_ISO);
 
     const f = freeHoldPredicate()!;
-    for (const t of VERDICT_BILLABLE_TOOLS) expect(f.params).toContain(t);
-    // An always-charged tool must NOT be reachable via the free-HOLD predicate.
-    for (const t of ALWAYS_BILLABLE_TOOLS) expect(f.params).not.toContain(t);
+    for (const t of LEGACY_VERDICT_BILLABLE_TOOLS) expect(f.params).toContain(t);
+    // free_hold is now HISTORICAL: it must be bounded by the cutover, or it would keep
+    // classifying new rows as free and under-report demand for ever.
+    expect(f.sql).toContain('"timestamp" <');
+    expect(f.params).toContain(FLAT_BILLING_CUTOVER_ISO);
+    // A tool that was never verdict-billable must NOT be reachable via the free-HOLD predicate.
+    for (const t of ALWAYS_BILLABLE_TOOLS.filter((x) => !LEGACY_VERDICT_BILLABLE_TOOLS.includes(x))) {
+      expect(f.params).not.toContain(t);
+    }
   });
 
   it('billable treats a NULL verdict as chargeable (matches the runtime meter)', () => {
