@@ -148,16 +148,48 @@ describe('freshness is claim-set equality, not container equality (R1b)', () => 
     } finally { sb.cleanup(); }
   });
 
-  it('adding a claim DOES invalidate, and prints the --sync remediation', { timeout: 120_000 }, () => {
+  /**
+   * FLIPPED by OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH2, deliberately and in place.
+   *
+   * As written by PUBLISH-PRECONDITION-W1 this asserted `token === 'FAIL'`, which encoded the
+   * severity that wave shipped: any claim-set delta was fatal. CH2 retires exactly that, because
+   * the FAIL returned BEFORE the unpublished / in_flight / was_verified ladder could run — so the
+   * race-awareness PUBLISH-PRECONDITION-W1 itself built was unreachable in the one scenario it was
+   * built for. A severity ladder is only as good as the earliest predicate that can short-circuit
+   * it.
+   *
+   * What the case was really protecting is UNCHANGED and still asserted: a claim-set change must
+   * never pass SILENTLY, and the operator must be told what to do about it. Only the verdict moved,
+   * from FAIL to a reported PASS. Flipping it here rather than quarantining it follows this repo's
+   * rule that a guard and the test encoding it are a pair — leaving the old assertion would have
+   * made this file a lie about the shipped contract.
+   */
+  it('adding a claim REPORTS with a severity and the --sync remediation, and PASSES', { timeout: 120_000 }, () => {
     const sb = sandbox();
     try {
       gate(sb, ['--sync']);
       // A path the corpus does not already claim — otherwise the id set legitimately collapses.
       writeFileSync(sb.corpus, readFileSync(sb.corpus, 'utf8') + '\n- Test layout is pinned by `vitest.config.ts`.\n');
       const r = gate(sb, ['--check']);
-      expect(r.token, r.out.slice(-1500)).toBe('FAIL');
-      expect(r.out).toMatch(/claim not in the lock/);
+      expect(r.token, r.out.slice(-1500)).toBe('PASS');
+      // still DETECTED, still NAMED, still actionable — only no longer fatal
+      expect(r.out).toMatch(/STALE_SYNCABLE/);
+      expect(r.out).toMatch(/vitest\.config\.ts/);
       expect(r.out).toMatch(/--sync/);
+      expect(r.out).toMatch(/REPORT-only/);
+    } finally { sb.cleanup(); }
+  });
+
+  it('a claim-set delta is never silent — the ids that moved are always printed', { timeout: 120_000 }, () => {
+    const sb = sandbox();
+    try {
+      gate(sb, ['--sync']);
+      const before = gate(sb, ['--check']);
+      expect(before.out).not.toMatch(/STALE_/); // fresh lock: nothing to report
+      writeFileSync(sb.corpus, readFileSync(sb.corpus, 'utf8') + '\n- Test layout is pinned by `vitest.config.ts`.\n');
+      const after = gate(sb, ['--check']);
+      // The whole point of REPORT rather than BLOCK is that it must still be LOUD.
+      expect(after.out.split('\n').filter((l: string) => l.includes('STALE_')).length).toBeGreaterThan(0);
     } finally { sb.cleanup(); }
   });
 });
