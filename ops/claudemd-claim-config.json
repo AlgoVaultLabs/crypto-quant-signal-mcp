@@ -28,6 +28,39 @@
     "criterion": "A report class promotes to block only after ≥30 consecutive --check runs (CI + local combined) with ZERO false positives in that class, counted from the gate's own printed per-claim output — a number that can be checked, not a vibe. The flip is a config edit owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; do not flip it inline."
   },
 
+  "_freshness_doc": "OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH2. A stale lock is BOOKKEEPING and REPORTS; the dangerous condition — a claim this lock recorded as VERIFIED whose path is now absent — still BLOCKS, and is now reachable WHILE the lock is stale, which it was not before. These four severities are DERIVED from buildLock's own three-state path marking, never re-derived. NOTE the distinct key: `report_class_promotion` above governs CLAIM CLASSES (repo-path, script-content, …) and is owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; `freshness_promotion` below governs STALENESS SEVERITY and is owned by OPS-CLAUDEMD-FRESHNESS-PROMOTE-W{NEXT}. Two criteria, two owners — do not collapse them.",
+
+  "freshness_severity": [
+    {
+      "severity": "STALE_SYNCABLE",
+      "ship": "report",
+      "reason": "The added claim's subject resolves in this tree, so the lock simply has not absorbed it yet. Nothing about the repo is wrong and the pusher can fix it in one command. Blocking here is pure bookkeeping tax, and a gate that refuses a correct push gets disabled."
+    },
+    {
+      "severity": "STALE_IN_FLIGHT",
+      "ship": "report",
+      "reason": "The subject is on a pushed remote ref but not merged. Another wave's merge order must never break this push — the same rule the per-claim in_flight downgrade already applies. Measured 2026-08-08: this was the ACTUAL state of the claim that blocked every worktree, and the severity table that shipped without this row could not classify it."
+    },
+    {
+      "severity": "STALE_UNPUBLISHED",
+      "ship": "report",
+      "reason": "The subject is on no remote ref — it is in another session's working tree. The pusher can neither verify it nor honestly declare it; only the owning session can. Blocking lands the verdict on someone with no move available, which is the deadlock CLAUDE.md records having already fired three times."
+    },
+    {
+      "severity": "STALE_DROPPED",
+      "ship": "report",
+      "reason": "CLAUDE.md stopped making a claim the lock still carries. The manual retiring a prescription is normal editing, not a repo defect, and the claim is no longer enforced against anything. A file DELETION is a different condition and is caught by the was_verified BLOCK, which is unaffected by this row."
+    }
+  ],
+
+  "freshness_promotion": {
+    "runs_required": 20,
+    "escalate_after": "2026-10-31",
+    "owner": "OPS-CLAUDEMD-FRESHNESS-PROMOTE-W{NEXT}",
+    "reason": "STALE_SYNCABLE is the only severity that could ever justify blocking again, since it is the only one the pusher can act on. Both bounds are required: a numeric bar alone can never fire if staleness does not heal, and CLAUDE.md records a guard sitting in REPORT indefinitely as decoration with the same shape as a months-old MANUAL_PENDING.",
+    "criterion": "Promote STALE_SYNCABLE back to block only after ≥20 consecutive --check runs recording zero STALE_SYNCABLE rows, measured from the shared $GIT_COMMON_DIR/algovault-claudemd-freshness.log ledger this gate appends on every run — a rate, not a guess. Past escalate_after, a still-REPORT gate must be ESCALATED to the architect with the measured healing rate attached, not silently left in place. STALE_IN_FLIGHT / STALE_UNPUBLISHED / STALE_DROPPED are NOT promotion candidates: none of them is the pusher's to fix."
+  },
+
   "absence_markers": ["DOES NOT EXIST", "does not exist", "never built", "NEVER built", "retired by", "retired 2", "— retired", "RETIRED"],
   "nonclaim_markers": ["DEPRECATED", "deprecated"],
 

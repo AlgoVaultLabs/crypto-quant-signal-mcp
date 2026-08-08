@@ -45,7 +45,7 @@
  * ALGOVAULT_CLAUDEMD_GATE=warn downgrades the EXIT CODE only — never the token.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, basename } from 'node:path';
@@ -110,7 +110,7 @@ export function maskCorrections(text) {
 // ── config ────────────────────────────────────────────────────────────────────
 
 export function validateConfig(cfg) {
-  for (const key of ['classes', 'exemptions', 'root_file_map', 'wiring_point_map', 'repo_prefixes', 'vault_names', 'vault_prefixes', 'absence_markers', 'nonclaim_markers', 'report_class_promotion']) {
+  for (const key of ['classes', 'exemptions', 'root_file_map', 'wiring_point_map', 'repo_prefixes', 'vault_names', 'vault_prefixes', 'absence_markers', 'nonclaim_markers', 'report_class_promotion', 'freshness_severity', 'freshness_promotion']) {
     if (!(key in cfg)) throw new Error(`config missing required key: ${key}`);
   }
   for (const row of cfg.exemptions) {
@@ -118,6 +118,28 @@ export function validateConfig(cfg) {
   }
   if (typeof cfg.report_class_promotion.runs_required !== 'number') {
     throw new Error('report_class_promotion.runs_required must be numeric — a promotion criterion is a number that can be checked, not a vibe');
+  }
+  // Every staleness severity is DECLARED with its own reason. A severity that lives only in code
+  // gets "fixed" by a future wave enforcing the contract — the same argument as the exemption rows.
+  const FRESHNESS_SEVERITIES = ['STALE_SYNCABLE', 'STALE_IN_FLIGHT', 'STALE_UNPUBLISHED', 'STALE_DROPPED'];
+  for (const severity of FRESHNESS_SEVERITIES) {
+    const row = (cfg.freshness_severity || []).find((r) => r.severity === severity);
+    if (!row) throw new Error(`freshness_severity is missing a row for ${severity} — all four must be declared`);
+    if (!row.reason || typeof row.reason !== 'string') throw new Error(`freshness_severity row ${severity} has no reason`);
+    // Build Rule 6: no new BLOCK condition ships in this wave. A config that quietly flips one to
+    // block would bypass the promotion criterion below, which is the whole control.
+    if (row.ship !== 'report') throw new Error(`freshness_severity row ${severity} must ship 'report' — promotion is owned by ${cfg.freshness_promotion?.owner ?? 'the freshness_promotion criterion'}, not an inline edit`);
+  }
+  // A promotion criterion needs a TIME BOUND, not just a numeric one: a numeric bar alone can never
+  // fire if staleness does not heal, and a guard permanently stuck in REPORT is decoration.
+  if (typeof cfg.freshness_promotion.runs_required !== 'number') {
+    throw new Error('freshness_promotion.runs_required must be numeric');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(cfg.freshness_promotion.escalate_after || ''))) {
+    throw new Error('freshness_promotion.escalate_after must be a YYYY-MM-DD calendar bound — a numeric criterion with no deadline is how a REPORT-only guard becomes permanent');
+  }
+  if (!cfg.freshness_promotion.reason || !cfg.freshness_promotion.owner) {
+    throw new Error('freshness_promotion needs both a reason and an owning follow-up wave');
   }
   return cfg;
 }
@@ -578,10 +600,35 @@ export function sameClaimSet(a, b) {
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
+/**
+ * The claim ids the CURRENT lock records as VERIFIED — no marker, so the path resolved when it was
+ * synced. Best-effort: a missing or unparseable lock yields an empty set, because `--sync` has to
+ * work on a fresh clone.
+ */
+export function verifiedIdsInLock(lockPath = LOCK_PATH) {
+  try {
+    const prev = JSON.parse(readFileSync(lockPath, 'utf8'));
+    return new Set((prev.claims || []).filter((c) => !c.in_flight && !c.unpublished).map((c) => claimId(c)));
+  } catch { return new Set(); }
+}
+
 export function buildLock(rawText, cfg) {
   const { claims } = extractClaims(rawText, cfg);
   const trackedSet = new Set(tracked());
   const refs = remoteRefs();
+  // MEASURED 2026-08-08 (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH1, §F6): without this, `--sync`
+  // DESTROYS the one safety property this subsystem has. A claim locked as verified whose path was
+  // then deleted is re-derived here, found on no ref, and stamped `unpublished` — which isBlocking
+  // correctly treats as non-blocking. So the sequence "delete a prescribed file, edit any unrelated
+  // prose, run the remediation the gate itself prints" turns a BLOCK into a PASS. Reproduced
+  // end-to-end: 1 blocking → `CLAUDEMD_CLAIMS_VERDICT=PASS`.
+  //
+  // `unpublished`/`in_flight` mean "this was never verified here, so the pusher cannot act on it".
+  // Once the lock has recorded a claim as verified, that sentence is false forever after: the path
+  // WAS resolvable, and its disappearance is a deletion, not a publish race. So the markers are
+  // refused for those ids and the claim keeps blocking. A genuine rename is unaffected — CLAUDE.md
+  // renaming a path removes the old id from the corpus entirely, so it never reaches this branch.
+  const wasVerified = verifiedIdsInLock();
   const locked = claims.filter((c) => LOCK_CLASSES.has(c.class));
   // Derived, never hand-maintained: stamped at --sync (where remote refs are visible) so CI —
   // which checks out one branch and can see none of them — inherits the same verdict. Resolved in
@@ -598,6 +645,11 @@ export function buildLock(rawText, cfg) {
       const { line: _line, ...rest } = c;
       if (c.class !== 'repo-path' || !missingSet.has(c.value)) return rest;
       const ref = inFlightBy.get(c.value);
+      // A claim this lock already recorded as VERIFIED never gets downgraded — see wasVerified.
+      if (wasVerified.has(claimId(c))) {
+        console.error(`⚠ ${c.value}: locked as VERIFIED and its path is now gone — keeping it blocking rather than stamping ${ref ? 'in_flight' : 'unpublished'}. A prescribed file was deleted; --sync must not launder that into a pass.`);
+        return rest;
+      }
       // Three states, and the third is the one this wave adds. A path on NO remote ref is not
       // "a file that exists nowhere and never will" — it is in-flight one step earlier, sitting
       // in some session's working tree. The pusher can neither verify it nor fix it, so blocking
@@ -629,6 +681,110 @@ function printFinding(kind, claim, result, corpusLineText) {
   }
 }
 
+// ── staleness severity (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH2) ─────────
+
+/** The config row governing one staleness severity. Fail-closed: validateConfig demands all four. */
+function freshnessRow(cfg, severity) {
+  return (cfg.freshness_severity || []).find((r) => r.severity === severity);
+}
+
+/**
+ * Classify each member of a claim-set delta.
+ *
+ * SINGLE DERIVATION: the three path states are NOT re-derived here. buildLock already resolved
+ * tracked-vs-in_flight-vs-unpublished (it is the only place that can see remote refs), so this
+ * reads its markers. A second implementation of "is this path published" would drift from the
+ * first, which is the exact shape this repo forbids.
+ *
+ * @returns {{id:string, severity:string, direction:'added'|'removed', ref:string|null}[]}
+ */
+export function classifyStaleness(added, removed, freshClaims, _cfg) {
+  const byId = new Map((freshClaims || []).map((c) => [claimId(c), c]));
+  const rows = [];
+  for (const id of added) {
+    const c = byId.get(id);
+    rows.push({
+      id,
+      // in_flight is the THIRD state the original severity table omitted, and it was the state the
+      // live 2026-08-08 case was actually in.
+      severity: c?.in_flight ? 'STALE_IN_FLIGHT' : c?.unpublished ? 'STALE_UNPUBLISHED' : 'STALE_SYNCABLE',
+      direction: 'added',
+      ref: c?.in_flight ?? null,
+    });
+  }
+  for (const id of removed) rows.push({ id, severity: 'STALE_DROPPED', direction: 'removed', ref: null });
+  return rows;
+}
+
+const SYNC_CMD = 'node scripts/check-claudemd-claims.mjs --sync   # then commit ops/claudemd-claims.lock.json';
+
+/** Per-severity remediation. A report nobody can act on is the failure mode being retired. */
+function staleRemediation(row) {
+  switch (row.severity) {
+    case 'STALE_SYNCABLE':
+      return `this claim's subject resolves in this tree — it is yours to land: ${SYNC_CMD}`;
+    case 'STALE_IN_FLIGHT':
+      return `subject lives on ${row.ref}; the lock absorbs it on the next --sync and it settles when that branch merges. Nothing for you to do.`;
+    case 'STALE_UNPUBLISHED':
+      return `subject is on no remote ref — it is in some other session's working tree. Only that session can publish it; do NOT --sync this one in on their behalf.`;
+    case 'STALE_DROPPED':
+      return `CLAUDE.md no longer makes this claim; --sync drops it from the lock.`;
+    default:
+      return SYNC_CMD;
+  }
+}
+
+function printStaleness(rows, cfg) {
+  if (!rows.length) return;
+  for (const row of rows) {
+    const cr = freshnessRow(cfg, row.severity);
+    const sign = row.direction === 'added' ? '+' : '−';
+    console.log(`  ⚠ ${sign} [${row.severity}] ${row.id}`);
+    console.log(`      why REPORT: ${cr ? cr.reason : '(no config row — see ops/claudemd-claim-config.json)'}`);
+    console.log(`      do: ${staleRemediation(row)}`);
+  }
+  const bySeverity = rows.reduce((a, r) => ((a[r.severity] = (a[r.severity] || 0) + 1), a), {});
+  console.log(`  lock staleness is REPORT-only (${Object.entries(bySeverity).map(([k, v]) => `${k}=${v}`).join(' · ')}). ` +
+    `A stale lock is bookkeeping; it does not block. What still BLOCKS is a claim this lock recorded as VERIFIED whose path is now gone.`);
+}
+
+/**
+ * One row per run, in the SHARED $GIT_COMMON_DIR so all worktrees feed one series. R2.4's promotion
+ * back to BLOCK is then decided on a measured healing RATE, not a guess — and per CLAUDE.md, a
+ * promotion criterion that cannot be measured is how a guard gets stuck in REPORT forever.
+ * Best-effort by construction: a gate must never fail because a log was unwritable.
+ */
+function appendFreshnessLedger(rows, addedN, removedN) {
+  const override = process.env.ALGOVAULT_CLAUDEMD_LEDGER;
+  if (override === '0' || override === 'off') return;
+  try {
+    let target = override;
+    if (!target) {
+      const common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: ROOT, encoding: 'utf8' }).trim();
+      target = join(resolve(ROOT, common), 'algovault-claudemd-freshness.log');
+    }
+    const by = rows.reduce((a, r) => ((a[r.severity] = (a[r.severity] || 0) + 1), a), {});
+    const cols = ['STALE_SYNCABLE', 'STALE_IN_FLIGHT', 'STALE_UNPUBLISHED', 'STALE_DROPPED'].map((s) => `${s}=${by[s] || 0}`);
+    appendFileSync(target, [
+      new Date().toISOString(), ROOT, `added=${addedN}`, `removed=${removedN}`, ...cols,
+    ].join('\t') + '\n');
+  } catch { /* a ledger is telemetry; it never gates a push */ }
+}
+
+/**
+ * Parse the lock, or say why not. A malformed lock used to throw an uncaught SyntaxError, which
+ * killed the process with NO verdict token at all — the one outcome the token law forbids, since a
+ * caller greping for PASS|FAIL|INDETERMINATE would find nothing and have to guess.
+ */
+function readLock(path) {
+  let raw;
+  try { raw = readFileSync(path, 'utf8'); } catch (e) { return { error: `lock unreadable at ${path}: ${e.message}` }; }
+  let lock;
+  try { lock = JSON.parse(raw); } catch (e) { return { error: `lock is not parseable JSON (${path}): ${e.message}` }; }
+  if (!lock || !Array.isArray(lock.claims)) return { error: `lock is malformed (claims is not an array) at ${path}` };
+  return { lock };
+}
+
 function runCheck(cfg, { probeHosts = false } = {}) {
   const ctx = makeContext(cfg);
   const corpusReadable = existsSync(CORPUS_PATH);
@@ -655,7 +811,9 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     if (!existsSync(LOCK_PATH)) {
       return { verdict: 'FAIL', why: `lock missing at ops/claudemd-claims.lock.json — run: node scripts/check-claudemd-claims.mjs --sync (and commit the lock)` };
     }
-    const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
+    const parsed = readLock(LOCK_PATH);
+    if (parsed.error) return { verdict: 'INDETERMINATE', why: `${parsed.error} — a lock that cannot be read is not a report, it is an unverifiable run` };
+    const lock = parsed.lock;
     // FRESHNESS = CLAIM-SET EQUALITY, and nothing else.
     //
     // It used to be `corpus_sha256 !== fresh || JSON.stringify(claims) !== …`, which made THREE
@@ -668,29 +826,51 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     // claimId() is line-agnostic, so this computes the same id set from an OLD-shape lock as from
     // a new one. That is why the migration needs no legacy compare path: a new verifier reading
     // the not-yet-regenerated lock simply passes, which is exactly the intra-wave transition.
-    if (!sameClaimSet(lock.claims, freshLock.claims)) {
-      const before = new Set(claimIdSet(lock.claims)), after = new Set(claimIdSet(freshLock.claims));
-      const added = [...after].filter((x) => !before.has(x));
-      const removed = [...before].filter((x) => !after.has(x));
-      for (const id of added.slice(0, 10)) console.log(`  + claim not in the lock: ${id}`);
-      for (const id of removed.slice(0, 10)) console.log(`  - locked claim no longer made: ${id}`);
-      return { verdict: 'FAIL', why: `lock is STALE vs the live corpus — the CLAIM SET changed (+${added.length}/-${removed.length}). Run: node scripts/check-claudemd-claims.mjs --sync (and commit the lock)` };
-    }
-    console.log(`corpus: ${CORPUS_PATH} (reachable; ${corpusLines.length} lines, ${stats.blocks} correction blocks stripped) — lock fresh (${claimIdSet(lock.claims).length} claim ids)`);
+    // ── STALENESS IS CLASSIFIED, NOT FATAL (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH2) ────────
+    //
+    // This used to `return FAIL` right here, and that single early return is the generator defect
+    // the wave exists to retire. Everything below it — the `unpublished` / `in_flight` /
+    // `was_verified` ladder that OPS-CLAIM-VERIFIER-COVERAGE-W1 and
+    // OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1 built FOR THIS EXACT RACE — was unreachable in
+    // precisely the scenario it was designed for. Measured 2026-08-08: a foreign edit to the shared
+    // vault corpus named a file that was committed and pushed on another session's branch;
+    // buildLock stamped it `in_flight`, isBlocking returned FALSE — the ladder had the right answer
+    // and never got to give it, because this predicate ran first and returned FAIL.
+    //
+    // A severity ladder is only as good as the earliest predicate that can short-circuit it.
+    //
+    // So: classify the delta per id, REPORT it, and fall through to the per-claim verification that
+    // owns the dangerous conditions. The bookkeeping condition stops blocking; the dangerous one
+    // (a claim the lock recorded as VERIFIED whose path is now absent) keeps blocking, and is now
+    // reachable WHILE the lock is stale — which it never was before.
+    const freshIds = new Set(claimIdSet(freshLock.claims));
+    const lockIds = new Set(claimIdSet(lock.claims));
+    const added = [...freshIds].filter((x) => !lockIds.has(x));
+    const removed = [...lockIds].filter((x) => !freshIds.has(x));
+    const stale = classifyStaleness(added, removed, freshLock.claims, cfg);
+    console.log(`corpus: ${CORPUS_PATH} (reachable; ${corpusLines.length} lines, ${stats.blocks} correction blocks stripped) — ${
+      stale.length ? `lock STALE (+${added.length}/-${removed.length}), reported below` : `lock fresh (${lockIds.size} claim ids)`}`);
+    printStaleness(stale, cfg);
+    appendFreshnessLedger(stale, added.length, removed.length);
     // The committed lock is the MEMORY of what was once verified, and it is what separates the two
     // reasons a path can be missing. A claim locked with no marker was satisfied at sync time; if
     // its path is gone now, a commit removed a prescribed path — definitively wrong, and
     // definitively the pusher's doing, so it BLOCKS. A claim that was never verified (new, or
     // already marked) only REPORTS. Without this the two collapse, and `unpublished` would become
     // a way to delete a prescribed file unnoticed.
+    //
+    // This marking now runs UNCONDITIONALLY. It used to sit after the staleness return, so one
+    // unrelated prose edit anywhere in a corpus ~22 worktrees share was enough to make every
+    // deleted-prescribed-path invisible.
     const lockedVerified = new Set(
       lock.claims.filter((c) => !c.in_flight && !c.unpublished).map((c) => claimId(c)),
     );
     claims = claims.map((c) => (lockedVerified.has(claimId(c)) ? { ...c, was_verified: true } : c));
   } else {
     if (!existsSync(LOCK_PATH)) return { verdict: 'INDETERMINATE', why: 'corpus unreachable AND lock missing — nothing to verify' };
-    const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
-    if (!Array.isArray(lock.claims)) return { verdict: 'INDETERMINATE', why: 'lock is malformed (claims not an array)' };
+    const parsed = readLock(LOCK_PATH);
+    if (parsed.error) return { verdict: 'INDETERMINATE', why: parsed.error };
+    const lock = parsed.lock;
     // CI sees a MERGED, settled world, so "it was only in someone's working tree" is no longer an
     // excuse — a prescribed path missing here is real. The `unpublished` downgrade is therefore
     // stripped; `in_flight` is deliberately NOT, because a branch that has not merged yet is a
