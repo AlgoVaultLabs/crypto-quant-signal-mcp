@@ -185,9 +185,18 @@ test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → sig
   // the cards must still carry a reachable contact path — only the mechanism moved.
   assert.match(html, /<a href="\/contact">Contact us<\/a>/, 'Enterprise contact line rendered (form)');
   assert.doesNotMatch(html, /mailto:/, 'no unclickable mailto CTA on the cards');
-  assert.match(html, /<li>3,000 calls\/month<\/li>/, 'Starter allowance rendered');
-  assert.match(html, /<li>15,000 calls\/month<\/li>/, 'Pro allowance rendered');
-  assert.doesNotMatch(html, /<li>100,000 calls\/month<\/li>/, 'Enterprise allowance card removed');
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B): the allowances are read from the plan SoT
+  // (the same dist/ build this canary already imports `renderPlanCards` from) instead of being
+  // hardcoded. The ladder moved 3,000→10,000 and 15,000→100,000; re-pinning fresh literals here
+  // would just re-arm this same failure on the next move.
+  const { PLANS, planCallsLabel } = await import('../../dist/lib/plans.js');
+  assert.match(html, new RegExp(`<li>${planCallsLabel('starter')} calls/month</li>`), 'Starter allowance rendered');
+  assert.match(html, new RegExp(`<li>${planCallsLabel('pro')} calls/month</li>`), 'Pro allowance rendered');
+  // "Enterprise card removed" can no longer be expressed as "100,000 calls/month is absent" —
+  // that is now PRO's allowance. Assert the Enterprise IDENTITY instead: it appears exactly once,
+  // in the contact line, and never as a card.
+  assert.equal((html.match(new RegExp(PLANS.enterprise.label, 'g')) ?? []).length, 1,
+    'Enterprise appears only in the contact line, never as a card');
   // index.ts must call the helper (byte-identical render):
   const idx = await read('src/index.ts');
   assert.match(idx, /\$\{renderPlanCards\(\)\}/, 'getSignupPageHtml renders via renderPlanCards()');
