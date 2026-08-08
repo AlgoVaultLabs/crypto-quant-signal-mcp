@@ -25,6 +25,18 @@ import {
 // module cannot supply. `buildLimitMessage` is now a thin adapter over `buildQuotaNoticeMessage`.
 import { buildLimitMessage } from '../../src/lib/quota-notice.js';
 import { bonusCallsLabel, shareLink, REFERRAL_TERMS } from '../../src/lib/referral-constants.js';
+import { PLANS, FREE_MONTHLY_CALLS, planCallsLabel, planPriceLabel } from '../../src/lib/plans.js';
+
+// PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH2): the upgrade phrase is DERIVED in
+// `nudge-copy.ts` from the plan SoT, so the expected copy is derived here too. Re-pinning
+// "Starter, 10,000 calls/mo (20× the free tier)" as a literal would just re-arm the breakage the
+// next ladder move causes — and the wording, which is what these tests exist to protect, is
+// still asserted verbatim around it.
+const STARTER_MULTIPLE = Math.round(PLANS.starter.monthlyCalls / FREE_MONTHLY_CALLS);
+const STARTER_OFFER = `${PLANS.starter.label}, ${planCallsLabel('starter')} calls/mo, ${planPriceLabel('starter')}`;
+const STARTER_OFFER_MULT =
+  `${PLANS.starter.label}, ${planCallsLabel('starter')} calls/mo (${STARTER_MULTIPLE}× the free tier), ${planPriceLabel('starter')}`;
+const STARTER_LIMIT_LINE = `${PLANS.starter.label} — ${planCallsLabel('starter')} calls/month`;
 
 const STATS = { pfeWr: '91.6', callCount: '246,331' };
 const CODE = 'ABCD1234';
@@ -55,7 +67,7 @@ describe('buildSoftNudge (80% soft nudge) — unchanged (upgrade-only)', () => {
     expect(msg).toBe(
       "You've used 80 of your 100 free calls this month. " +
       'Verify the proof first: 91.6% PFE win rate across 246,331+ on-chain calls at algovault.com/track-record. ' +
-      'Upgrade to keep scanning → Starter, 3,000 calls/mo (30× the free tier), $9.99: ' +
+      `Upgrade to keep scanning → ${STARTER_OFFER_MULT}: ` +
       'https://api.algovault.com/signup?plan=starter&upgrade_from=soft',
     );
   });
@@ -70,7 +82,7 @@ describe('buildAhaHint (celebrate-the-aha) — unchanged (keyless aha fallback)'
     expect(msg).toBe(
       "That's a live BUY/SELL call — one of 246,331+ on AlgoVault's on-chain-verified track record (91.6% PFE win rate). " +
       'See every call before you commit: algovault.com/track-record. ' +
-      'Keep scanning all month → Starter, 3,000 calls/mo, $9.99: ' +
+      `Keep scanning all month → ${STARTER_OFFER}: ` +
       'https://api.algovault.com/signup?plan=starter&upgrade_from=aha',
     );
   });
@@ -85,7 +97,7 @@ describe('buildLimitMessage (100% limit) — the ONE exhaustion notice', () => {
     buildLimitMessage({ used: 100, total: 100, referralCode, resetAtMs: RESET_AT, nowMs: NOW });
   const headline = 'Free monthly quota used: 100/100. Access returns 2026-08-07 (5 days).';
   const upgradeLine =
-    'Recommended for sustained volume: Starter — 3,000 calls/month, card required: ' +
+    `Recommended for sustained volume: ${STARTER_LIMIT_LINE}, card required: ` +
     'https://api.algovault.com/signup?plan=starter&upgrade_from=limit';
   const offer = `Keep going free: refer a friend — you both get ${BONUS} bonus calls.`;
 
@@ -104,7 +116,7 @@ describe('buildLimitMessage (100% limit) — the ONE exhaustion notice', () => {
   it('always retains BOTH arms (acquisition > revenue — neither is ever removed)', () => {
     for (const code of [CODE, null]) {
       const m = limit(code);
-      expect(m).toContain('Starter — 3,000 calls/month');
+      expect(m).toContain(STARTER_LIMIT_LINE);
       expect(m).toContain('upgrade_from=limit');
       expect(m.toLowerCase()).toContain('refer a friend');
     }

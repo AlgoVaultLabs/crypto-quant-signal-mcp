@@ -14,6 +14,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { PLANS } from '../src/lib/plans.js';
 
 const ORIGINAL = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL, CQS_API_KEY: process.env.CQS_API_KEY, SSRF: process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK, PREFIX: process.env.ALLOW_DEV_KEY_PREFIX };
 
@@ -116,7 +117,7 @@ describe('/api/webhooks: CRUD lifecycle', () => {
     expect(json.subscription.id).toBeGreaterThan(0);
     expect(json.subscription.secret).toMatch(/^whsec_/);
     expect(json.subscription.events).toEqual(['trade_call', 'regime_shift']);
-    expect(json.quota.total).toBe(3000); // starter
+    expect(json.quota.total).toBe(PLANS.starter.monthlyCalls); // projects the plan SoT, not a literal
     // Security: owner_key must never appear anywhere in the response.
     expect(JSON.stringify(json).includes('owner_key')).toBe(false);
   });

@@ -21,6 +21,7 @@ import {
 import { closeDb, dbQuery, dbRun } from '../src/lib/performance-db.js';
 import { initAnalytics } from '../src/lib/analytics.js';
 import { initQuotaDb } from '../src/lib/license.js';
+import { FREE_MONTHLY_CALLS } from '../src/lib/plans.js';
 
 describe('resolvePqlThresholds — defaults / override / default-deny', () => {
   it('defaults to 80 / 20 / 7 when unset', () => {
@@ -122,9 +123,11 @@ describeOrSkip('C3 SQLite integration — pql_candidates view + getPqlCandidates
     const ipAha   = `cccc${SENT}3`;  // PQL via reached_aha
     const ipNone  = `dddd${SENT}4`;  // NOT a PQL
 
-    // ipQuota: 1 call + a quota footprint of 85 (=85% of the free 100 limit).
+    // ipQuota: 1 call + a quota footprint at 85% of the free limit, DERIVED from the SoT.
+    // The literal 85 meant 85% only while the free allowance was 100; R-B moved it to 500,
+    // where 85 is 17% — under the 80% threshold, so the row silently stopped qualifying.
     await seedFreeCall(ipQuota, `sess${SENT}Q`);
-    await dbRun(`INSERT INTO quota_usage (tracker_key, call_count, period_start) VALUES (?, ?, ?)`, `free:${ipQuota}`, 85, '2026-06-01');
+    await dbRun(`INSERT INTO quota_usage (tracker_key, call_count, period_start) VALUES (?, ?, ?)`, `free:${ipQuota}`, Math.round(0.85 * FREE_MONTHLY_CALLS), '2026-06-01');
     // ipFreq: 4 recent calls (>= the callFreq=3 threshold), no quota row.
     for (let i = 0; i < 4; i++) await seedFreeCall(ipFreq, `sess${SENT}F${i}`);
     // ipAha: 1 call whose session reached the aha (first_non_hold_verdict).
@@ -162,7 +165,7 @@ describeOrSkip('C3 SQLite integration — pql_candidates view + getPqlCandidates
   it('default-deny — a denied (Infinity) quota threshold disables ONLY the quota criterion', async () => {
     const ipQuota = `eeee${SENT}5`; // quota 85 but NO recent-call/aha signal beyond 1 call
     await seedFreeCall(ipQuota, `sess${SENT}E`);
-    await dbRun(`INSERT INTO quota_usage (tracker_key, call_count, period_start) VALUES (?, ?, ?)`, `free:${ipQuota}`, 85, '2026-06-01');
+    await dbRun(`INSERT INTO quota_usage (tracker_key, call_count, period_start) VALUES (?, ?, ?)`, `free:${ipQuota}`, Math.round(0.85 * FREE_MONTHLY_CALLS), '2026-06-01');
 
     // quota gate denied (Infinity), callFreq high → ipQuota should NOT qualify.
     const denied = await getPqlCandidates({ thresholds: { quotaPct: Infinity, callFreq: 999, windowDays: 7 } });

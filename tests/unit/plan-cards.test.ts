@@ -127,7 +127,13 @@ describe('renderPlanCards — Enterprise is contact-us (R4)', () => {
     // feature list went with it: a card advertising 100,000 calls with no price and no CTA was
     // the half-measure the architect removed.
     const c = renderPlanCards();
-    expect(c).not.toContain('100,000 calls/month');
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B) raised Pro to 100,000/mo, which is the
+    // number the retired Enterprise card used to advertise — so "no '100,000 calls/month'" now
+    // fires on the legitimate PRO card. Assert the Enterprise IDENTITY is absent instead, which
+    // is what this test always meant.
+    // Enterprise appears exactly ONCE, in the contact line — never as a card.
+    expect(c).toContain('Need Enterprise?');
+    expect(c.match(new RegExp(PLANS.enterprise.label, 'g')) ?? []).toHaveLength(1);
     expect(c).not.toContain('SLA guarantee');
     expect(c).not.toContain('Dedicated support');
     expect(c).not.toContain('price-contact');

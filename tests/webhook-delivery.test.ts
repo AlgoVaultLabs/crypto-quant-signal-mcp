@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import crypto from 'node:crypto';
+import { FREE_MONTHLY_CALLS } from '../src/lib/plans.js';
 
 const ORIGINAL = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, DATABASE_URL: process.env.DATABASE_URL, SSRF: process.env.WEBHOOK_SSRF_ALLOW_LOOPBACK };
 
@@ -217,9 +218,11 @@ describe('deliverOne: delivery, retry, idempotency, auto-disable', () => {
 describe('quota gate', () => {
   it('pauses delivery (stays pending, no HTTP) when the owner quota is exhausted, and charges on success', async () => {
     const license = await import('../src/lib/license.js');
-    // Free quota = 100. Exhaust the owner's bucket.
+    // Exhaust the owner's bucket — SIZE READ FROM THE SoT. The free allowance moved 100 -> 500
+    // (R-B), and a hardcoded loop stops exhausting the moment the ladder changes, silently
+    // turning this gate test into a no-op that asserts the happy path instead of the gate.
     const ownerKey = 'free:exhausted';
-    for (let i = 0; i < 100; i++) license.trackCallByKey(ownerKey, 'free');
+    for (let i = 0; i < FREE_MONTHLY_CALLS; i++) license.trackCallByKey(ownerKey, 'free');
 
     const sub = await store.createSubscription({ url: 'https://sink/h', events: ['trade_call'], tier: 'free', ownerKey });
     const { deliveryId } = await store.enqueueDelivery({ subscriptionId: sub.id, eventId: 'call:x', eventType: 'trade_call', eventData: eventData() });

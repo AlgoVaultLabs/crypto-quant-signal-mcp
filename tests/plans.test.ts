@@ -29,6 +29,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PLANS,
   planMonthlyRateUsd,
+  INTERVAL_MONTHS,
   planAnnualMonthlyEquivalent,
   type PaidPlanId,
 } from '../src/lib/plans.js';
@@ -111,12 +112,22 @@ describe('planAnnualMonthlyEquivalent — byte-identical after the refactor', ()
   });
 });
 
-describe('the divisor appears exactly once (architect ruling on AC 2.4)', () => {
+describe('the divisor is a TABLE applied exactly once (CH2 supersedes the 2026-08-05 ruling)', () => {
   /**
    * Strip comments before grepping for a construct, per CLAUDE.md: this file's own docblocks
-   * discuss "/12" and "$79/12 = 6.5833…" in prose, and a naive count would demand deleting the
-   * most valuable lines in the module. `check-canaries-wired.mjs` strips for the same reason —
-   * a mention in a comment is not an occurrence.
+   * discuss "/12" in prose, and a naive count would demand deleting the most valuable lines in
+   * the module. `check-canaries-wired.mjs` strips for the same reason — a mention in a comment
+   * is not an occurrence.
+   *
+   * WHAT CHANGED, AND WHY THIS IS STRICTLY STRONGER.
+   *
+   * The 2026-08-05 ruling banned a `MONTHS_PER_YEAR` constant: with TWO intervals and ONE
+   * divisor, naming `12` split the derivation across a constant and its only use.
+   * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH2) adds a third term, at which point the divisor
+   * becomes a per-interval FACT — and a fact that varies by case belongs in an exhaustive table
+   * `tsc` can force you to complete. So the old assertion ("exactly one `/ 12`") is replaced by
+   * a stronger one: **no bare numeric divisor may appear in this module at all**, and the single
+   * division site divides by a NAMED month count.
    */
   const stripComments = (src: string): string =>
     src
@@ -125,32 +136,45 @@ describe('the divisor appears exactly once (architect ruling on AC 2.4)', () => 
       .filter((l) => !/^\s*\/\//.test(l))        // whole-line // comments
       .join('\n');
 
-  const code = stripComments(readFileSync(path.resolve(process.cwd(), 'src/lib/plans.ts'), 'utf8'));
+  const raw = readFileSync(path.resolve(process.cwd(), 'src/lib/plans.ts'), 'utf8');
+  const code = stripComments(raw);
 
-  it('divides by 12 in exactly ONE place in plans.ts', () => {
-    const hits = code.match(/\/\s*12\b/g) ?? [];
-    expect(hits).toHaveLength(1);
+  it('contains NO bare numeric divisor — every month count is named', () => {
+    expect(code.match(/\/\s*\d/g) ?? []).toHaveLength(0);
   });
 
-  it('that one place is planMonthlyRateUsd, not a formatter', () => {
-    // The surviving divisor must sit in the primitive. If a future edit moves it back into
-    // planAnnualMonthlyEquivalent, the single-derivation property is gone even though the
-    // count above would still read 1.
-    const fn = code.slice(code.indexOf('export function planMonthlyRateUsd'));
+  it('divides in exactly ONE place, and it divides by a month COUNT', () => {
+    const divisions = code.match(/\breturn\s+[A-Za-z0-9_.\[\]]+\s*\/\s*[A-Za-z0-9_.\[\]]+/g) ?? [];
+    expect(divisions).toEqual(['return total / months']);
+  });
+
+  it('that one place is planPrepayMonthlyRateUsd, not a formatter', () => {
+    // If a future edit moves the division back into a label builder, the single-derivation
+    // property is gone even though the count above would still read 1.
+    const fn = code.slice(code.indexOf('export function planPrepayMonthlyRateUsd'));
     const body = fn.slice(0, fn.indexOf('\n}'));
-    expect(body).toMatch(/\/\s*12\b/);
-    expect(body).toContain('priceUsdAnnual');
+    expect(body).toMatch(/\btotal\s*\/\s*months\b/);
+  });
+
+  it('INTERVAL_MONTHS is the one declaration of months-per-interval, and it is complete', () => {
+    expect(code).toContain('INTERVAL_MONTHS');
+    // Every BillingInterval member must have a months entry — tsc enforces the KEYS via the
+    // Record type; this asserts the VALUES, which tsc cannot.
+    for (const [interval, months] of Object.entries(INTERVAL_MONTHS)) {
+      expect(months, interval).toBeGreaterThan(0);
+      expect(Number.isInteger(months), interval).toBe(true);
+    }
+    expect(planMonthlyRateUsd('starter', 'year')).toBe(
+      (PLANS.starter.priceUsdAnnual as number) / INTERVAL_MONTHS.year,
+    );
   });
 
   it('proves the strip is real — the raw source DOES mention /12 in prose', () => {
     // Vacuity guard: if stripComments ever returned '' or the file moved, the counts above
     // would pass trivially. This asserts the fixture is genuinely comment-bearing.
-    const raw = readFileSync(path.resolve(process.cwd(), 'src/lib/plans.ts'), 'utf8');
-    expect((raw.match(/\/\s*12\b/g) ?? []).length).toBeGreaterThan(1);
+    expect((raw.match(/\/\s*12\b/g) ?? []).length).toBeGreaterThan(0);
+    expect((code.match(/\/\s*12\b/g) ?? []).length).toBe(0);
     expect(code.length).toBeGreaterThan(200);
-  });
-
-  it('does NOT introduce a MONTHS_PER_YEAR constant (explicitly rejected)', () => {
-    expect(code).not.toMatch(/MONTHS_PER_YEAR/);
+    expect(code.length).toBeLessThan(raw.length);
   });
 });

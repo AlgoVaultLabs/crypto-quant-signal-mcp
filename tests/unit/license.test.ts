@@ -17,6 +17,7 @@ import {
   getFundingArbLimit,
   getMonthlyQuota,
 } from '../../src/lib/license.js';
+import { PLANS, FREE_MONTHLY_CALLS } from '../../src/lib/plans.js';
 import type { LicenseInfo } from '../../src/types.js';
 
 const FREE: LicenseInfo = { tier: 'free', key: null };
@@ -88,13 +89,18 @@ describe('getFundingArbLimit (free tier still capped at 5)', () => {
   });
 });
 
-describe('getMonthlyQuota (regression: free tier stays at 100/month)', () => {
-  it('free = 100', () => {
-    expect(getMonthlyQuota('free')).toBe(100);
+// PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH2): the ladder moved (R-B) — Free 100→500,
+// Starter 3,000→10,000, Pro 15,000→100,000 — so these assertions now PROJECT from the plan SoT
+// instead of re-pinning a fresh set of literals that the next ladder move would break again.
+// The literal values themselves are pinned once, in `tests/unit/quota-single-derivation.test.ts`,
+// which is the file that owns "what did the architect actually rule".
+describe('getMonthlyQuota projects the plan SoT', () => {
+  it('free = FREE_MONTHLY_CALLS', () => {
+    expect(getMonthlyQuota('free')).toBe(FREE_MONTHLY_CALLS);
   });
-  it('starter = 3000, pro = 15000, enterprise = 100000', () => {
-    expect(getMonthlyQuota('starter')).toBe(3_000);
-    expect(getMonthlyQuota('pro')).toBe(15_000);
-    expect(getMonthlyQuota('enterprise')).toBe(100_000);
+  it('starter/pro/enterprise = their PLANS.monthlyCalls', () => {
+    expect(getMonthlyQuota('starter')).toBe(PLANS.starter.monthlyCalls);
+    expect(getMonthlyQuota('pro')).toBe(PLANS.pro.monthlyCalls);
+    expect(getMonthlyQuota('enterprise')).toBe(PLANS.enterprise.monthlyCalls);
   });
 });

@@ -41,7 +41,7 @@ const LIVE_RAIL: SuggestedX402 = {
 
 /** A caller who burned the whole free allowance in ~1 day → sustained volume. */
 const HEAVY: QuotaNoticeContext = {
-  meter: 'calls', used: 100, limit: 100, resetAtMs: RESET_AT, nowMs: NOW,
+  meter: 'calls', used: FREE_MONTHLY_CALLS, limit: FREE_MONTHLY_CALLS, resetAtMs: RESET_AT, nowMs: NOW,
   periodStartMs: NOW - 1 * DAY, referralCode: null, x402: LIVE_RAIL,
 };
 /** A caller who took the full 30-day window to burn 100 → bursty / low volume. */
@@ -49,8 +49,8 @@ const LIGHT: QuotaNoticeContext = { ...HEAVY, periodStartMs: NOW - 30 * DAY };
 
 describe('R2 — every surface carries the four required facts', () => {
   it('1. WHAT HAPPENED — the message states usage as N/limit', () => {
-    expect(buildQuotaNoticeMessage(HEAVY)).toContain('Free monthly quota used: 100/100');
-    expect(quotaNoticeFacts(HEAVY).usage_display).toBe('100/100');
+    expect(buildQuotaNoticeMessage(HEAVY)).toContain(`Free monthly quota used: ${FREE_MONTHLY_CALLS}/${FREE_MONTHLY_CALLS}`);
+    expect(quotaNoticeFacts(HEAVY).usage_display).toBe(`${FREE_MONTHLY_CALLS}/${FREE_MONTHLY_CALLS}`);
   });
 
   it('2. WHEN IT RETURNS — a real date, COMPUTED from the reset instant', () => {
@@ -82,10 +82,30 @@ describe('R2 — every surface carries the four required facts', () => {
     expect(heavy).toContain('https://api.algovault.com/x402/get_trade_call'); // still offered
     expect(recommendPath(HEAVY)).toBe('subscription');
 
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B): LIGHT now recommends the SUBSCRIPTION too,
+    // and that is arithmetic rather than a regression. Break-even is
+    // `priceUsdMonthly / perCall` = 9.99 / 0.02 = 500, which the new free allowance EXACTLY
+    // equals. At the monthly wall `used === limit === 500` and `elapsedDays <= 30`, so the
+    // projection `used / elapsedDays * 30` is >= 500 for every caller who reaches it — the
+    // x402-leading arm is now UNREACHABLE from the monthly wall. It is also the right answer:
+    // 500 calls costs $10.00 on the rail versus $9.99 on the plan.
     const light = buildQuotaNoticeMessage(LIGHT);
-    expect(light).toContain('Recommended at your volume: pay per call');
-    expect(light).toContain('For sustained volume: Starter'); // subscription retained beneath
-    expect(recommendPath(LIGHT)).toBe('x402');
+    expect(light).toContain('Recommended for sustained volume: Starter');
+    expect(recommendPath(LIGHT)).toBe('subscription');
+  });
+
+  it('3a. the x402-leading arm still WORKS — it is unreachable from the wall, not deleted', () => {
+    // Guards the thing the collision above could hide: if `recommendPath` had silently lost its
+    // ability to rank pay-per-call first, every assertion in this file would still pass. So rank
+    // a caller whose PROJECTION is genuinely below break-even (possible off the wall, e.g. the
+    // 80% soft-nudge surface) and require the other answer.
+    const lowVolume = { ...HEAVY, used: 100, periodStartMs: NOW - 30 * DAY };
+    expect(recommendPath(lowVolume)).toBe('x402');
+    expect(buildQuotaNoticeMessage(lowVolume)).toContain('Recommended at your volume: pay per call');
+    // ...and the boundary is the break-even itself, not a hardcoded number.
+    const be = subscriptionBreakEvenCalls(0.02) as number;
+    expect(recommendPath({ ...HEAVY, used: be - 1, periodStartMs: NOW - 30 * DAY })).toBe('x402');
+    expect(recommendPath({ ...HEAVY, used: be, periodStartMs: NOW - 30 * DAY })).toBe('subscription');
   });
 
   it('3b. the ranking is derived from the two LIVE prices, not a hardcoded threshold', () => {
@@ -247,9 +267,11 @@ describe('the plan SoT is the one derivation', () => {
     expect(getMonthlyQuota('free')).toBe(FREE_MONTHLY_CALLS);
   });
 
-  it('the free tier stays at 100 — operator-FROZEN', () => {
-    expect(FREE_MONTHLY_CALLS).toBe(100);
-    expect(getMonthlyQuota('free')).toBe(100);
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B): re-frozen at 500 by Mr.1 2026-08-08, raised
+  // in the same deploy that made every verdict chargeable so no tracker is newly walled.
+  it('the free tier stays at 500 — operator-FROZEN', () => {
+    expect(FREE_MONTHLY_CALLS).toBe(500);
+    expect(getMonthlyQuota('free')).toBe(500);
   });
 
   it('no live per-call price ⇒ no break-even to compute (default-deny, not a guess)', () => {
@@ -344,7 +366,7 @@ describe('AC2 — at the cap, EVERY call is refused (HOLD and non-HOLD alike)', 
       expect(err.code).toBe('TIER_LIMIT_REACHED');
       expect(err.current_usage).toBe(FREE_MONTHLY_CALLS);
       expect(err.monthly_limit).toBe(FREE_MONTHLY_CALLS);
-      expect(err.message).toContain('Free monthly quota used: 100/100');
+      expect(err.message).toContain(`Free monthly quota used: ${FREE_MONTHLY_CALLS}/${FREE_MONTHLY_CALLS}`);
       expect(err.message).toMatch(/Access returns \d{4}-\d{2}-\d{2} \(\d+ days\)/);
       expect(err.resets_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       expect(err.suggested_action.length).toBeGreaterThan(0);

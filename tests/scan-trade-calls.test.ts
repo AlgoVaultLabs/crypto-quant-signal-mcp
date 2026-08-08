@@ -28,6 +28,7 @@ import {
   type ScanQuotaExhaustedResponse,
 } from '../src/tools/scan-trade-calls.js';
 import { PROMOTED_VENUE_IDS } from '../src/lib/capabilities.js';
+import { FREE_MONTHLY_CALLS } from '../src/lib/plans.js';
 
 const mockUniverse = vi.mocked(getExchangeTopAssetsWithVolume);
 const SCHEMA = z.object(SCAN_TRADE_CALLS_SCHEMA);
@@ -167,10 +168,10 @@ describe('runScanTradeCall — exhausted-tier entry block', () => {
     // `tier_limit_reached` here, so an agent needed two branches for one event). `error` keeps
     // its original lowercase value, which is what a pre-wave consumer matched on.
     expect(r.code).toBe('TIER_LIMIT_REACHED');
-    expect(r.message).toContain('Free monthly quota used: 1000/100');
+    expect(r.message).toContain(`Free monthly quota used: 1000/${FREE_MONTHLY_CALLS}`);
     expect(r.message).toMatch(/Access returns \d{4}-\d{2}-\d{2} \(\d+ days\)/);
     expect(r.resets_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(r.usage_display).toBe('1000/100');
+    expect(r.usage_display).toBe(`1000/${FREE_MONTHLY_CALLS}`);
     expect(r.quota.resets_at).toBe(r.resets_at);
     // REFERRAL-INPRODUCT-NUDGE-W1: the wall keeps the referral arm (keyless here → the
     // get-your-link path) + the structured referral_hint.

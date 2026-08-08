@@ -30,15 +30,18 @@ describe('trackCall(license, units) — default-1 back-compat', () => {
     const r = trackCall(starter('u-default-1'));
     expect(r.used).toBe(1);
     expect(r.allowed).toBe(true);
-    expect(r.total).toBe(getMonthlyQuota('starter')); // 3000
-    expect(r.remaining).toBe(2999);
+    expect(r.total).toBe(getMonthlyQuota('starter'));
+    // Derived, not re-pinned: `remaining` is a PROPERTY of the charge (quota − used), so it must
+    // follow the ladder. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 moved Starter 3,000 → 10,000 and
+    // hardcoding 9,999 here would just queue the same breakage for the next ladder move.
+    expect(r.remaining).toBe(getMonthlyQuota('starter') - 1);
   });
 
   it('two default calls accumulate to 2', () => {
     trackCall(starter('u-default-2'));
     const r = trackCall(starter('u-default-2'));
     expect(r.used).toBe(2);
-    expect(r.remaining).toBe(2998);
+    expect(r.remaining).toBe(getMonthlyQuota('starter') - 2);
   });
 });
 
@@ -46,7 +49,7 @@ describe('trackCall(license, units) — batch charge', () => {
   it('units=5 increments by exactly 5 in one atomic charge', () => {
     const r = trackCall(starter('u-batch-5'), 5);
     expect(r.used).toBe(5);
-    expect(r.remaining).toBe(2995);
+    expect(r.remaining).toBe(getMonthlyQuota('starter') - 5);
   });
 
   it('a 5-unit batch then a default-1 call accumulates to 6', () => {
@@ -60,13 +63,13 @@ describe('trackCallByKey(key, tier, units)', () => {
   it('default-1 back-compat: no units arg charges 1', () => {
     const r = trackCallByKey('u-bk-default', 'pro');
     expect(r.used).toBe(1);
-    expect(r.total).toBe(getMonthlyQuota('pro')); // 15000
+    expect(r.total).toBe(getMonthlyQuota('pro'));
   });
 
   it('units=5 increments by exactly 5', () => {
     const r = trackCallByKey('u-bk-batch5', 'pro', 5);
     expect(r.used).toBe(5);
-    expect(r.remaining).toBe(14995);
+    expect(r.remaining).toBe(getMonthlyQuota('pro') - 5);
   });
 });
 

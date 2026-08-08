@@ -22,6 +22,7 @@ import {
 import { closeDb, dbQuery, dbRun } from '../src/lib/performance-db.js';
 import { initAnalytics } from '../src/lib/analytics.js';
 import { initQuotaDb } from '../src/lib/license.js';
+import { FREE_MONTHLY_CALLS } from '../src/lib/plans.js';
 
 // ── Table-routing query mock for the resolver ──
 interface MockData {
@@ -223,7 +224,7 @@ describeOrSkip('C2 SQLite integration — column ensure + backfill', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       '2026-06-01T00:00:00.000Z', `${SENT}sess`, 'get_trade_call', 'free', 12, iph, 0,
     );
-    await dbRun(`INSERT INTO quota_usage (tracker_key, call_count, period_start) VALUES (?, ?, ?)`, `free:${iph}`, 42, '2026-06-01');
+    await dbRun(`INSERT INTO quota_usage (tracker_key, call_count, period_start) VALUES (?, ?, ?)`, `free:${iph}`, Math.round(0.42 * FREE_MONTHLY_CALLS), '2026-06-01');
     await dbRun(
       `INSERT INTO subscriber_profiles (customer_id, client_reference_id, converted_at) VALUES (?, ?, ?)`,
       `${SENT}1`, cref, '2026-06-07T00:00:00.000Z',
@@ -239,6 +240,6 @@ describeOrSkip('C2 SQLite integration — column ensure + backfill', () => {
     expect(out[0].bridge_confidence).toBe('probabilistic');
     expect(out[0].pre_conversion_calls).toBe(1);
     expect(out[0].pre_conversion_sessions).toBe(1);
-    expect(Number(out[0].peak_quota_pct)).toBe(42);
+    expect(Number(out[0].peak_quota_pct)).toBe(42); // 42% of the free limit, whatever the limit is
   });
 });

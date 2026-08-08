@@ -19,8 +19,10 @@ import {
   planAnnualMonthlyEquivalent,
   planAnnualSavingsPct,
   planPriceLabel,
+  planPrepayTotalUsd,
   type PaidPlanId,
 } from '../../src/lib/plans.js';
+import { getMonthlyQuota } from '../../src/lib/license.js';
 
 const ANNUAL_PLANS: PaidPlanId[] = ['starter', 'pro'];
 
@@ -95,8 +97,17 @@ describe('plans.ts — annual figures are DERIVED, never asserted independently'
   });
 
   it('interval is a billing cadence, never an entitlement — allowance is unchanged', () => {
-    // A regression here would mean annual buyers silently get a different quota.
-    expect(PLANS.starter.monthlyCalls).toBe(3_000);
-    expect(PLANS.pro.monthlyCalls).toBe(15_000);
+    // A regression here would mean prepay buyers silently get a different quota. Asserting the
+    // ladder's LITERALS here would be a second copy of them (they are pinned once, in
+    // tests/unit/quota-single-derivation.test.ts), so assert the PROPERTY instead: the allowance
+    // is a function of TIER ALONE. `getMonthlyQuota` takes no interval argument, and a plan spec
+    // carries exactly one `monthlyCalls` no matter how many prepay terms it is sold on.
+    for (const id of Object.keys(PLANS) as PaidPlanId[]) {
+      expect(getMonthlyQuota(id), id).toBe(PLANS[id].monthlyCalls);
+      // Sold on more than one term, still ONE allowance.
+      const terms = [1, 6, 12].filter((m) => planPrepayTotalUsd(id, m) !== null);
+      expect(terms.length, id).toBeGreaterThanOrEqual(1);
+      expect(new Set(terms.map(() => PLANS[id].monthlyCalls)).size, id).toBe(1);
+    }
   });
 });

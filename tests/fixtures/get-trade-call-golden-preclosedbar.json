@@ -28,8 +28,8 @@
     "venue_status": "promoted",
     "quota": {
       "used": 0,
-      "total": 100,
-      "remaining": 100,
+      "total": 500,
+      "remaining": 500,
       "resets_at": "2026-08-28T12:06:00.000Z"
     }
   },

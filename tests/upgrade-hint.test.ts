@@ -5,6 +5,7 @@ import { getUpgradeHint, trackCall, resetLicenseCache } from '../src/lib/license
 // builder directly, so the test exercises the string a caller actually receives.
 import { buildQuotaNoticeMessage } from '../src/lib/quota-notice.js';
 import type { LicenseInfo } from '../src/types.js';
+import { PLANS, FREE_MONTHLY_CALLS, planCallsLabel } from '../src/lib/plans.js';
 
 describe('getUpgradeHint', () => {
   const free: LicenseInfo = { tier: 'free', key: null };
@@ -32,7 +33,10 @@ describe('getUpgradeHint', () => {
     expect(hint).toContain("You've used 80 of your 100 free calls"); // factual used/total
     expect(hint).toContain('PFE win rate');
     expect(hint).toContain('algovault.com/track-record');           // trust→conversion lever
-    expect(hint).toContain('Starter, 3,000 calls/mo (30× the free tier)');
+    expect(hint).toContain(
+      `${PLANS.starter.label}, ${planCallsLabel('starter')} calls/mo `
+      + `(${Math.round(PLANS.starter.monthlyCalls / FREE_MONTHLY_CALLS)}× the free tier)`,
+    );
     expect(hint).toContain('$9.99');
     expect(hint).toContain('signup?plan=starter&upgrade_from=soft'); // primary funnel attribution
     expect(hint).not.toContain('unlimited');                         // copy-rule: no "unlimited"

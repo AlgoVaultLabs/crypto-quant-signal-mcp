@@ -20,7 +20,7 @@ import { getTrackRecord } from './track-record-snapshot.js';
 import { buildSoftNudge } from './nudge-copy.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message moved to the one notice contract.
 import { buildQuotaNoticeMessage } from './quota-notice.js';
-import { PLANS, FREE_MONTHLY_CALLS, DEFAULT_UPGRADE_PLAN, planPriceLabel } from './plans.js';
+import { PLANS, FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, DEFAULT_UPGRADE_PLAN, planPriceLabel } from './plans.js';
 // REFERRAL-LIGHT-W1 (C2): free-tier keys + the referee bonus-calls meter.
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
@@ -786,6 +786,30 @@ export function getMonthlyQuota(tier: LicenseTier): number {
     // bot enforces per-user quota in its own SQLite.
     case 'internal': return Infinity;
     default: return FREE_MONTHLY_CALLS;
+  }
+}
+
+/**
+ * Per-UTC-day allowance for a tier (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1, R-B/R-D).
+ *
+ * Sibling of `getMonthlyQuota`, projected from the SAME plan SoT for the same reason: a second
+ * copy of the ladder is how the page and the enforcement drift apart. The two meters refuse
+ * INDEPENDENTLY — this is NOT a sub-limit of the monthly quota, so `dailyCalls * 31` is
+ * deliberately not `monthlyCalls`.
+ *
+ * `Infinity` for the exempt tiers and for Enterprise, whose `dailyCalls` is `null` ("no daily
+ * ceiling"). A null must never collapse to 0, which would refuse every call.
+ */
+export function getDailyCap(tier: LicenseTier): number {
+  switch (tier) {
+    case 'starter': return PLANS.starter.dailyCalls ?? Infinity;
+    case 'pro': return PLANS.pro.dailyCalls ?? Infinity;
+    case 'enterprise': return PLANS.enterprise.dailyCalls ?? Infinity;
+    case 'x402': return Infinity;
+    // Parity with getMonthlyQuota: the bot enforces per-user quota in its own SQLite, and the
+    // ~6,200 internal calls/day CH1 measured would break on day one without this.
+    case 'internal': return Infinity;
+    default: return FREE_DAILY_CALLS;
   }
 }
 

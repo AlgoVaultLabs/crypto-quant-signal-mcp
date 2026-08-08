@@ -42,6 +42,18 @@ export interface PlanSpec {
   readonly label: string;
   /** Monthly call allowance. The SoT `getMonthlyQuota` projects from. */
   readonly monthlyCalls: number;
+  /**
+   * Per-UTC-day call allowance, or `null` when the plan has no daily ceiling
+   * (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1, R-B). The SoT `getDailyCap` projects from.
+   *
+   * TWO METERS, REFUSING INDEPENDENTLY. Monthly caps the budget; daily shapes the pacing. A
+   * call is refused when EITHER is exhausted, so this is not a sub-limit of `monthlyCalls` and
+   * `dailyCalls * 31` is deliberately not equal to it.
+   *
+   * `null` is "no daily ceiling", never "zero" — Enterprise is a contact-us tier whose pacing
+   * is whatever a real deal sets, so it must not be fabricated here.
+   */
+  readonly dailyCalls: number | null;
   /** Monthly subscription price in USD. */
   readonly priceUsdMonthly: number;
   /**
@@ -51,26 +63,50 @@ export interface PlanSpec {
    *
    * The allowance does NOT change with interval: an annual Starter still gets
    * `monthlyCalls` per month. Interval is a billing cadence, never an entitlement.
+   *
+   * ⚠️ RETIRED BY CH6 of PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): 6-month prepay
+   * REPLACES annual. It survives this chapter only so `plans.ts` and its consumers move in
+   * separate, individually-green commits — CH6 removes the field, the `'year'` interval and
+   * every annual delegate together with `signup-flow.ts` and the annual suites.
    */
   readonly priceUsdAnnual?: number;
+  /**
+   * Six-month prepay price in USD, or `undefined` when the plan is not sold on it.
+   * Architect-set (Mr.1, R-C): Starter $39.90, Pro $129. Standing prices — no scarcity framing.
+   */
+  readonly priceUsd6Month?: number;
 }
 
 /**
- * The paid ladder. Free (100/mo) is not a plan — it is the absence of one.
+ * The paid ladder. Free (500/mo + 100/day) is not a plan — it is the absence of one.
  *
- * Annual prices are architect-set (Mr.1, 2026-08-05), NOT derived from a discount rate: the
- * two discounts differ (Starter 34%, Pro 49%) because they were chosen per-tier. Every
- * *displayed* discount is computed back off these two numbers by `planAnnualSavingsPct`, so
- * the page can never claim a percentage the price does not support.
+ * Prepay prices are architect-set, NOT derived from a discount rate: the two discounts differ
+ * because they were chosen per-tier. Every *displayed* discount is computed back off these
+ * numbers by `planPrepaySavingsPct`, so the page can never claim a percentage the price does
+ * not support.
  */
 export const PLANS: Readonly<Record<PaidPlanId, PlanSpec>> = {
-  starter: { label: 'Starter', monthlyCalls: 3_000, priceUsdMonthly: 9.99, priceUsdAnnual: 79 },
-  pro: { label: 'Pro', monthlyCalls: 15_000, priceUsdMonthly: 49, priceUsdAnnual: 299 },
-  enterprise: { label: 'Enterprise', monthlyCalls: 100_000, priceUsdMonthly: 299 },
+  starter: { label: 'Starter', monthlyCalls: 10_000, dailyCalls: 1_000, priceUsdMonthly: 9.99, priceUsdAnnual: 79, priceUsd6Month: 39.90 },
+  pro: { label: 'Pro', monthlyCalls: 100_000, dailyCalls: 10_000, priceUsdMonthly: 49, priceUsdAnnual: 299, priceUsd6Month: 129 },
+  enterprise: { label: 'Enterprise', monthlyCalls: 100_000, dailyCalls: null, priceUsdMonthly: 299 },
 };
 
-/** Free-tier monthly call allowance. Operator-FROZEN at 100 (OPS-QUOTA-EXHAUSTION-NOTICE-W1). */
-export const FREE_MONTHLY_CALLS = 100;
+/**
+ * Free-tier monthly call allowance. Operator-FROZEN at 500 (Mr.1, 2026-08-08, R-B).
+ *
+ * Raised 100 → 500 in the same deploy that made EVERY verdict chargeable (R-A), so no existing
+ * tracker is newly walled at cutover. Note the ceiling rises 5x while the measured hold rate
+ * (98.6%) means consumption accelerates ~72x — the new ladder is deliberately tighter per
+ * actionable verdict, which is the point, not an oversight.
+ */
+export const FREE_MONTHLY_CALLS = 500;
+
+/**
+ * Free-tier per-UTC-day call allowance (R-B). Resets at 00:00 UTC (R-D) — a calendar boundary
+ * that can be STATED in copy, unlike the rolling monthly window which starts at each caller's
+ * own first call and therefore resets on a date nobody can be told in advance.
+ */
+export const FREE_DAILY_CALLS = 100;
 
 /** The plan a free caller is upsold to. Every free→paid CTA points here. */
 export const DEFAULT_UPGRADE_PLAN: PaidPlanId = 'starter';
@@ -129,15 +165,87 @@ export function planAnnualPriceLabel(id: PaidPlanId): string | null {
  * _(Architect ruling 2026-08-05: this replaces the spec's AC 2.4 "no `/12` literal", which
  * banned the mechanism where it meant to require the guard. The property is (a) derive from
  * `PLANS`, never from the charge; (b) refuse rather than fabricate; (c) the divisor appears
- * ONCE — here. A `MONTHS_PER_YEAR` constant was explicitly rejected: naming the divisor at one
+ * ONCE. A `MONTHS_PER_YEAR` constant was explicitly rejected: naming the divisor at one
  * of two adjacent call sites and not the other manufactures the drift class this arc retired.)_
+ *
+ * 🔄 **THAT REJECTION IS DELIBERATELY OVERTURNED** by PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1
+ * (CH2), and the reasoning is worth keeping because both rulings were right at the time. With
+ * exactly TWO intervals and ONE divisor, naming `12` bought nothing and split the derivation
+ * across a constant and its only use. With THREE (`month`, `6month`, `year` mid-migration) the
+ * divisor becomes a per-interval FACT, and a fact that varies by case belongs in a table the
+ * type system can force you to complete — `INTERVAL_MONTHS` below. The property the original
+ * ruling protected (the divisor appears ONCE) is strengthened, not weakened: it now appears
+ * once PER INTERVAL, in one exhaustive `Record`, and `tsc` fails the build if a new interval
+ * forgets its months.
  */
 export function planMonthlyRateUsd(id: PaidPlanId, interval: BillingInterval): number | null {
+  return planPrepayMonthlyRateUsd(id, INTERVAL_MONTHS[interval]);
+}
+
+// ── Interval-neutral prepay derivation (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH2) ──
+//
+// Everything below is parameterised by a MONTH COUNT rather than a `BillingInterval` token, so
+// the 6-month prepay that CH6 introduces needs no second copy of this arithmetic. `BillingInterval`
+// is the BILLING vocabulary (what Stripe sold); months are the UNIT the maths needs. Keeping them
+// separate is what lets CH6 widen the union and drop `'year'` without touching a single formula.
+
+/**
+ * Months billed per interval. EXHAUSTIVE by construction: adding a member to `BillingInterval`
+ * without adding its months here is a `tsc` error, which is the whole reason this is a `Record`
+ * and not a lookup with a default.
+ */
+export const INTERVAL_MONTHS: Readonly<Record<BillingInterval, number>> = { month: 1, year: 12 };
+
+/** Months in the six-month prepay term (R-C). CH6 folds this into `INTERVAL_MONTHS`. */
+export const PREPAY_6MONTH_MONTHS = 6;
+
+/**
+ * Total USD charged up-front for a `months`-long prepay term, or null when the plan is not sold
+ * on that term. `months === 1` is the ordinary monthly subscription.
+ *
+ * 🛑 null is a REFUSAL, not a zero (see `planMonthlyRateUsd`) — a term nobody priced must never
+ * be fabricated by scaling a term that was priced.
+ */
+export function planPrepayTotalUsd(id: PaidPlanId, months: number): number | null {
   const spec = PLANS[id];
-  if (interval === 'month') return spec.priceUsdMonthly;
-  const annual = spec.priceUsdAnnual;
-  if (typeof annual !== 'number') return null;
-  return annual / 12;
+  if (months === 1) return spec.priceUsdMonthly;
+  if (months === PREPAY_6MONTH_MONTHS) return spec.priceUsd6Month ?? null;
+  if (months === 12) return spec.priceUsdAnnual ?? null; // retired by CH6
+  return null;
+}
+
+/** UNROUNDED monthly rate a `months`-term prepay contributes to MRR, or null. */
+export function planPrepayMonthlyRateUsd(id: PaidPlanId, months: number): number | null {
+  const total = planPrepayTotalUsd(id, months);
+  if (total === null || months <= 0) return null;
+  return total / months;
+}
+
+/** Prepay total as it renders in copy (`$39.90`, `$129`), or null. */
+export function planPrepayPriceLabel(id: PaidPlanId, months: number): string | null {
+  const total = planPrepayTotalUsd(id, months);
+  if (total === null) return null;
+  return `$${Number.isInteger(total) ? total : total.toFixed(2)}`;
+}
+
+/** What a prepay term works out to per month (`$6.65`, `$21.50`), or null. */
+export function planPrepayMonthlyEquivalent(id: PaidPlanId, months: number): string | null {
+  const rate = planPrepayMonthlyRateUsd(id, months);
+  if (rate === null) return null;
+  return `$${rate.toFixed(2)}`;
+}
+
+/** Whole-percent saving of a prepay term vs paying monthly for the same span, or null. */
+export function planPrepaySavingsPct(id: PaidPlanId, months: number): number | null {
+  const total = planPrepayTotalUsd(id, months);
+  const monthly = PLANS[id].priceUsdMonthly;
+  if (total === null || monthly <= 0 || months <= 0) return null;
+  return Math.round((1 - total / (monthly * months)) * 100);
+}
+
+/** True when the plan is sold on the six-month term. */
+export function planHasSixMonth(id: PaidPlanId): boolean {
+  return typeof PLANS[id].priceUsd6Month === 'number';
 }
 
 /**
@@ -154,9 +262,7 @@ export function planMonthlyRateUsd(id: PaidPlanId, interval: BillingInterval): n
  * both ways by `tests/plans.test.ts` ("byte-identical to the pre-refactor expression").
  */
 export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
-  const rate = planMonthlyRateUsd(id, 'year');
-  if (rate === null) return null;
-  return `$${rate.toFixed(2)}`;
+  return planPrepayMonthlyEquivalent(id, INTERVAL_MONTHS.year);
 }
 
 /**
@@ -165,10 +271,7 @@ export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
  * Rounded to the nearest percent for copy. Starter → 34 (79 vs 119.88), Pro → 49 (299 vs 588).
  */
 export function planAnnualSavingsPct(id: PaidPlanId): number | null {
-  const spec = PLANS[id];
-  const annual = spec.priceUsdAnnual;
-  if (typeof annual !== 'number' || spec.priceUsdMonthly <= 0) return null;
-  return Math.round((1 - annual / (spec.priceUsdMonthly * 12)) * 100);
+  return planPrepaySavingsPct(id, INTERVAL_MONTHS.year);
 }
 
 /**

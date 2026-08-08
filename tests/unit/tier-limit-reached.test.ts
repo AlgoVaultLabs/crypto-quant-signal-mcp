@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { TierLimitReachedError } from '../../src/lib/errors.js';
+import { PLANS, planCallsLabel } from '../../src/lib/plans.js';
 
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: `retryAfterDays` is no longer passed alongside the reset
 // instant — it is DERIVED from it, so the two cannot disagree. These helpers keep every
@@ -60,7 +61,7 @@ describe('TierLimitReachedError', () => {
     expect(err.message.toLowerCase()).toContain('refer a friend');
     expect(err.message).toContain('500 bonus calls');
     expect(err.message).toContain('Create your free account for a referral link'); // keyless path
-    expect(err.message).toContain('Starter — 3,000 calls/month'); // upgrade retained
+    expect(err.message).toContain(`${PLANS.starter.label} — ${planCallsLabel('starter')} calls/month`); // upgrade retained
     expect(err.message).toContain('signup?plan=starter&upgrade_from=limit');
     expect(err.message).not.toContain('unlimited');
     // The dollar figure is deliberately NOT inlined — the notice links to the plan page so a
