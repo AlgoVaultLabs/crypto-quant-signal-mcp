@@ -68,6 +68,27 @@ is_main_worktree() {
   [ "$gd" = "$gcd" ]
 }
 
+# true (0) iff $1 is the worktree the CALLER is standing in.
+#
+# `clean` used to be protected from this by accident: its `merged` leg tested against
+# LOCAL `main`, which lags origin/main, so a session's own fresh worktree was almost
+# always refused as "unmerged". Fixing that leg to ask the correct question (is the work
+# on origin/main?) removes the accident — a session that commits, pushes, and then runs
+# `clean --force` would delete the directory it is running from, mid-session. Measured
+# 2026-08-08: the worktree executing this very wave appeared in its own WOULD-REMOVE list.
+#
+# The fix belongs here, not in the landed-predicate: "is this work safe to lose" and "is
+# someone standing here" are different questions, and the second was never asked at all.
+# `pwd -P` on both sides because /Users/tank and /private/... resolve to the same tree.
+# [OPS-UNPUSHED-WORK-TRIAGE-W1]
+is_caller_worktree() {
+  local p="$1" pp cwd
+  pp=$(cd "$p" 2>/dev/null && pwd -P) || return 1
+  cwd=$(pwd -P) || return 1
+  case "$cwd" in "$pp"|"$pp"/*) return 0 ;; esac
+  return 1
+}
+
 native_worktree_supported() {
   claude --help 2>/dev/null | grep -q -- '--worktree'
 }
@@ -229,7 +250,11 @@ cmd_list() {
 
 clean_consider() {
   local root="$1" path="$2" branch="$3" force="$4" reasons="" landed
-  is_main_worktree "$path" && return 1   # never the main checkout
+  is_main_worktree "$path" && return 1     # never the main checkout
+  if is_caller_worktree "$path"; then      # never the directory we are standing in
+    echo "KEEP          $path ($branch) — self (the worktree this command is running from)"
+    return 1
+  fi
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then reasons="$reasons dirty"; fi
   # ONE derivation of "has this worktree's work landed?", consumed here AND by the
   # unpushed-work detector. It replaces TWO separate wrong answers to that same question:
