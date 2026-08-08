@@ -228,16 +228,37 @@ cmd_list() {
 }
 
 clean_consider() {
-  local root="$1" path="$2" branch="$3" force="$4" reasons="" head
+  local root="$1" path="$2" branch="$3" force="$4" reasons="" landed
   is_main_worktree "$path" && return 1   # never the main checkout
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then reasons="$reasons dirty"; fi
-  head=$(git -C "$path" rev-parse HEAD 2>/dev/null || echo "")
-  if [ -z "$head" ] || ! git -C "$root" merge-base --is-ancestor "$head" main 2>/dev/null; then
-    reasons="$reasons unmerged"
-  fi
-  if git -C "$path" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
-    if [ -n "$(git -C "$path" rev-list '@{upstream}'..HEAD 2>/dev/null)" ]; then reasons="$reasons unpushed"; fi
-  fi
+  # ONE derivation of "has this worktree's work landed?", consumed here AND by the
+  # unpushed-work detector. It replaces TWO separate wrong answers to that same question:
+  #
+  #   1. `merge-base --is-ancestor HEAD main` — against **local** `main`, which lags
+  #      origin/main on this machine routinely. Refuses a worktree whose work is
+  #      demonstrably on the shared remote.
+  #   2. `git rev-list '@{upstream}'..HEAD`   — distance from the branch's OWN REMOTE
+  #      TRACKING REF, stale on any branch whose work landed by a squash/rebase merge.
+  #      Not a measure of unique work at all.
+  #
+  # MEASURED 2026-08-07: (2) reported 30 commits "at risk" across 7 worktrees when the
+  # true figure in those 7 was ZERO — every HEAD was already an ancestor of origin/main —
+  # while 9 genuinely-unique commits sat in 5 OTHER worktrees it never reached.
+  #
+  # Both legs asked "has this work landed", answered differently, and were wrong in
+  # different ways; keeping two would drift again in whichever one nobody was watching.
+  # STRICTLY SAFER than either, not a relaxation — "every commit is on origin/main" is
+  # the strongest safety statement available and dominates local `main` in BOTH
+  # directions (lagging, AND ahead-with-unpushed-commits-on-main). UNKNOWN is treated as
+  # unsafe, so an undeterminable worktree is never reclaimed. Both reason tokens are
+  # still emitted, so operator-facing output keeps its shape.
+  # [OPS-UNPUSHED-WORK-TRIAGE-W1]
+  landed="$(bash "$root/scripts/lib/branch-work-landed.sh" "$path" 2>/dev/null || echo 'UNKNOWN predicate-failed')"
+  case "$landed" in
+    LANDED\ *) : ;;                                                    # all on origin/main
+    UNIQUE\ *) reasons="$reasons unmerged unpushed(${landed#UNIQUE })" ;;
+    *)         reasons="$reasons unmerged unpushed(unverifiable)" ;;   # fail-safe
+  esac
   if [ -z "$reasons" ]; then
     if [ "$force" -eq 1 ]; then
       git -C "$root" worktree remove "$path" && echo "REMOVED       $path ($branch)"
