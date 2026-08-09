@@ -26,10 +26,101 @@ PORT_BASE=3100                 # avoids server 3000 / facilitator 4022 / landing
 PORT_RANGE=400                 # candidate window 3100..3499
 WT_SUBDIR=".claude/worktrees"  # native `claude -w` location; fallback mirrors it
 
+# Where THIS script lives. `clean` iterates every primary on the machine
+# (OPS-WORKTREE-ROOT-CONFINEMENT-W2 R2c/F2), and the other primaries — algovault-bot,
+# autonomous-optimizer, ~/git/* — do not contain scripts/lib/. Resolving a helper from the
+# ITERATED repo would make every non-cqsm worktree report `unpushed(unverifiable)`: fail-safe,
+# but it would refuse the whole fleet and read as a broken tool. The script knows where its
+# own lib is; the repo being examined does not.
+CC_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
 # --- helpers ---
 die() { echo "cc-session: $*" >&2; exit 1; }
 
 repo_root() { git rev-parse --show-toplevel 2>/dev/null; }
+
+# Absolute path to the ONE shared-state SoT, resolved from this script, not from $PWD.
+shared_state_file() { printf '%s\n' "$CC_SELF_DIR/../ops/shared-worktree-state.json"; }
+
+# --- OPS-WORKTREE-ROOT-CONFINEMENT-W2 R2c: exemptions + locks ------------------------------
+#
+# `clean` reclaimed on dirty/unmerged/unpushed alone. None of those sees a worktree holding a
+# gitignored local-only DATASET: measured, 10 worktrees carry ~1.63 GB of research data, and
+# every one is merged+clean+pushed or one `git commit` from it — i.e. indistinguishable from
+# garbage to the predicate. Two independent protections are consulted here, and BOTH are
+# declared rather than inferred:
+#
+#   exempt_paths  — the SoT row, which survives an unlock and states WHY on the row
+#   worktree lock — git's own mechanism, which is what actually refuses `worktree remove`
+#
+# Neither subsumes the other: a lock with no row is undocumented, and a row with no lock is
+# only as strong as the code that reads it. `clean` honours either.
+CC_EXEMPT_JSON=""
+collect_exemptions() {
+  local f; f="$(shared_state_file)"
+  CC_EXEMPT_JSON=""
+  [ -r "$f" ] || return 0
+  command -v node >/dev/null 2>&1 || return 0
+  # path<TAB>reason, one per line. Fails soft: an unreadable SoT must not break `list`.
+  CC_EXEMPT_JSON="$(node -e '
+    try {
+      const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+      for (const e of ((j.worktree_roots||{}).exempt_paths)||[]) {
+        if (typeof e.path === "string" && e.path.startsWith("/"))
+          console.log(e.path + "\t" + (e.reason||"declared exemption").slice(0,90));
+      }
+    } catch {}
+  ' "$f" 2>/dev/null || true)"
+}
+
+# Locked worktree paths for ONE primary. `locked` follows `branch` in --porcelain, so the
+# streaming loop cannot see it at dispatch time; collect the set up front instead.
+CC_LOCKED_PATHS=""
+collect_locked_paths() {
+  local root="$1" line cur=""
+  CC_LOCKED_PATHS=""
+  while IFS= read -r line; do
+    case "$line" in
+      worktree\ *) cur="${line#worktree }" ;;
+      locked*)     [ -n "$cur" ] && CC_LOCKED_PATHS="$CC_LOCKED_PATHS$cur
+" ;;
+    esac
+  done < <(git -C "$root" worktree list --porcelain 2>/dev/null)
+}
+
+# Echo the exemption reason for $1 and return 0; return 1 if not protected.
+worktree_exempt_reason() {
+  local p="$1" line
+  case "$CC_LOCKED_PATHS" in
+    *"$p"$'\n'*) echo "locked (git worktree lock — remove refuses it)"; return 0 ;;
+  esac
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      "$p"$'\t'*) echo "exempt: ${line#*$'\t'}"; return 0 ;;
+    esac
+  done <<EOF
+$CC_EXEMPT_JSON
+EOF
+  return 1
+}
+
+# Every primary on this machine, discovered STRUCTURALLY (.git as a DIRECTORY), never by name.
+# The network-backed Drive mounts are pruned by path: traversing them cost a measured 120 s.
+discover_primaries() {
+  find "$HOME" \
+    -path "$HOME/Library" -prune -o \
+    -path "$HOME/My Drive" -prune -o \
+    -path "$HOME/Google Drive" -prune -o \
+    -path "$HOME/.Trash" -prune -o \
+    -path "$HOME/.cache" -prune -o \
+    -name node_modules -prune -o \
+    -maxdepth 4 -name .git -type d -print 2>/dev/null \
+  | sed 's|/\.git$||' | sort -u || true
+  # `|| true`: find exits non-zero on any unreadable directory, and under `set -o pipefail`
+  # that killed the whole command substitution — the sweep printed its header and then
+  # silently stopped, which is the failure mode this chapter exists to remove.
+}
 
 slugify() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9._-'
@@ -312,8 +403,12 @@ cmd_list() {
 }
 
 clean_consider() {
-  local root="$1" path="$2" branch="$3" force="$4" reasons="" landed inuse
-  is_main_worktree "$path" && return 1     # never the main checkout
+  local root="$1" path="$2" branch="$3" force="$4" reasons="" landed inuse exempt
+  is_main_worktree "$path" && return 1     # never the main checkout — and never a counted row
+  # Counted AFTER the main-checkout return, so `considered` means "rows that got a terminal
+  # disposition". Counting the main worktree would make considered exceed the printed rows by
+  # exactly one per primary, and the subtraction would stop reconciling against its own output.
+  CC_CONSIDERED=$(( CC_CONSIDERED + 1 ))
   if is_caller_worktree "$path"; then      # never the directory we are standing in
     echo "KEEP          $path ($branch) — self (the worktree this command is running from)"
     return 1
@@ -323,6 +418,14 @@ clean_consider() {
   if inuse=$(worktree_in_use_reason "$path" "$CC_MAX_AGE_HOURS"); then
     CC_HELD_LIVENESS=$(( CC_HELD_LIVENESS + 1 ))
     echo "KEEP          $path ($branch) — $inuse"
+    return 1
+  fi
+  # Declared protection — a gitignored dataset is invisible to every predicate below this
+  # line. Asked BEFORE dirty/landed for the same reason liveness is: it is decisive and
+  # cheap, and a protected worktree's reclaim-eligibility is not a question worth computing.
+  if exempt=$(worktree_exempt_reason "$path"); then
+    CC_HELD_EXEMPT=$(( CC_HELD_EXEMPT + 1 ))
+    echo "KEEP          $path ($branch) — $exempt"
     return 1
   fi
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then reasons="$reasons dirty"; fi
@@ -348,15 +451,26 @@ clean_consider() {
   # unsafe, so an undeterminable worktree is never reclaimed. Both reason tokens are
   # still emitted, so operator-facing output keeps its shape.
   # [OPS-UNPUSHED-WORK-TRIAGE-W1]
-  landed="$(bash "$root/scripts/lib/branch-work-landed.sh" "$path" 2>/dev/null || echo 'UNKNOWN predicate-failed')"
+  # Resolved from THIS SCRIPT's lib, not from "$root": `clean` now iterates every primary on
+  # the machine, and only this repo carries scripts/lib/.
+  landed="$(bash "$CC_SELF_DIR/lib/branch-work-landed.sh" "$path" 2>/dev/null || echo 'UNKNOWN predicate-failed')"
   case "$landed" in
     LANDED\ *) : ;;                                                    # all on origin/main
     UNIQUE\ *) reasons="$reasons unmerged unpushed(${landed#UNIQUE })" ;;
     *)         reasons="$reasons unmerged unpushed(unverifiable)" ;;   # fail-safe
   esac
   if [ -z "$reasons" ]; then
+    CC_REMOVABLE=$(( CC_REMOVABLE + 1 ))
     if [ "$force" -eq 1 ]; then
-      git -C "$root" worktree remove "$path" && echo "REMOVED       $path ($branch)"
+      # EXACTLY ONE terminal disposition per row. The old form was `remove && echo REMOVED`,
+      # so a refused remove printed NEITHER `REMOVED` NOR `KEEP` — a silent row, which is the
+      # absence-of-alert anti-pattern: indistinguishable from a row that was never considered.
+      if git -C "$root" worktree remove "$path" 2>/dev/null; then
+        echo "REMOVED       $path ($branch)"
+      else
+        echo "KEEP          $path ($branch) — REFUSED by git (locked or dirty); nothing was removed"
+        return 1
+      fi
     else
       echo "WOULD-REMOVE  $path ($branch)"
     fi
@@ -367,8 +481,8 @@ clean_consider() {
 }
 
 cmd_clean() {
-  local force=0 root path branch removed=0
-  CC_HELD_LIVENESS=0
+  local force=0 root path branch removed=0 this_only=0 primaries P
+  CC_HELD_LIVENESS=0; CC_CONSIDERED=0; CC_REMOVABLE=0; CC_HELD_EXEMPT=0
   # Default 24h: a Claude Code session is interactive, so a worktree untouched for a full
   # day is not mid-turn. Raise it to be more cautious, lower it deliberately to reclaim a
   # worktree you KNOW is finished. The window governs signal (B) ONLY — a live process
@@ -378,7 +492,8 @@ cmd_clean() {
     case "$1" in
       --force)          force=1 ;;
       --max-age-hours)  shift; CC_MAX_AGE_HOURS="${1:-24}" ;;
-      *) die "clean: unknown argument '$1' (expected --force, --max-age-hours N)" ;;
+      --this-repo-only) this_only=1 ;;   # the pre-W2 single-repo behaviour, kept explicit
+      *) die "clean: unknown argument '$1' (expected --force, --max-age-hours N, --this-repo-only)" ;;
     esac
     shift
   done
@@ -387,23 +502,52 @@ cmd_clean() {
   esac
   root=$(repo_root) || die "not in a git repository"
   collect_live_cwds
+  collect_exemptions
   echo "cc-session clean: $([ $force -eq 1 ] && echo APPLY || echo 'DRY-RUN (use --force to apply)')"
   echo "  liveness: process-cwd $([ "$CC_LIVE_CWDS_OK" -eq 1 ] && echo "OK ($(printf '%s\n' "$CC_LIVE_CWDS" | grep -c . ) cwds)" || echo 'UNAVAILABLE — refusing all') · recency window ${CC_MAX_AGE_HOURS}h"
-  while IFS= read -r line; do
-    case "$line" in
-      worktree\ *) path="${line#worktree }" ;;
-      branch\ *)
-        branch="${line#branch refs/heads/}"
-        if clean_consider "$root" "$path" "$branch" "$force"; then removed=$(( removed + 1 )); fi
-        ;;
-    esac
-  done < <(git -C "$root" worktree list --porcelain)
+  echo "  exemptions: $(printf '%s\n' "$CC_EXEMPT_JSON" | grep -c . ) declared row(s) from $(shared_state_file)"
+
+  # PER PRIMARY, not per repo. `cmd_clean` used to iterate only $(git rev-parse --show-toplevel),
+  # so a run from THIS repo could never reach another primary's garbage — it would reclaim one
+  # repo's worth and report success. Worse for safety: every exempt payload path is owned by
+  # algovault-bot or autonomous-optimizer, so from here they appeared ZERO times and a
+  # "no exempt paths seen" result was indistinguishable from "all exempt paths honoured".
+  if [ "$this_only" -eq 1 ]; then primaries="$root"; else primaries="$(discover_primaries)"; fi
+  [ -n "$primaries" ] || die "clean: discovered no primaries — refusing to report an empty sweep as success"
+
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    git -C "$P" rev-parse --git-dir >/dev/null 2>&1 || { echo "=== primary $P === UNREACHABLE — FAIL, not skipped"; continue; }
+    echo "=== primary $P ==="
+    collect_locked_paths "$P"
+    CC_CONSIDERED=0; CC_EXEMPT_HELD=0; CC_REMOVABLE=0; CC_HELD_EXEMPT=0
+    while IFS= read -r line; do
+      case "$line" in
+        worktree\ *) path="${line#worktree }" ;;
+        branch\ *)
+          branch="${line#branch refs/heads/}"
+          if clean_consider "$P" "$path" "$branch" "$force"; then removed=$(( removed + 1 )); fi
+          ;;
+      esac
+    done < <(git -C "$P" worktree list --porcelain 2>/dev/null)
+    # The subtraction, printed explicitly: an exemption that is never shown is an exemption
+    # nobody can audit. considered counts rows REACHED, so it is comparable to the row count.
+    echo "  considered=$CC_CONSIDERED exempt=$CC_HELD_EXEMPT removable=$CC_REMOVABLE"
+  done <<EOF
+$primaries
+EOF
+
   if [ "$CC_HELD_LIVENESS" -gt 0 ]; then
     echo "cc-session clean: $CC_HELD_LIVENESS worktree(s) HELD BY LIVENESS — re-run later, or"
     echo "  --max-age-hours N to narrow the recency window (a live process is never overridable)."
   fi
   if [ "$force" -eq 1 ]; then
-    git -C "$root" worktree prune
+    while IFS= read -r P; do
+      [ -n "$P" ] || continue
+      git -C "$P" worktree prune 2>/dev/null || true
+    done <<EOF
+$primaries
+EOF
     echo "cc-session clean: pruned admin entries; removed $removed worktree(s)."
   fi
 }
