@@ -154,6 +154,10 @@ candidate is a cliff edge.** The flat-neighbourhood requirement is binding and u
 
 ## 5. `asymmetry_provenance` — the 15-point gap was NEVER DESIGNED
 
+> ⚠️ **THIS SECTION IS SUPERSEDED AND ITS CONCLUSION IS WRONG.** Kept verbatim below, with the
+> correction at the end of the section — the wrong answer is the lesson. See
+> `OPS-CLOSEDBAR-SELL-ASYMMETRY-W1-2026-08-08.md` §1.
+
 `git log -S` on both constants converges on one commit:
 
 **`73e34e5` · 2026-04-28 · `feat(call): C1+C2 OUTPUT-SANITIZE-W1`**
@@ -184,6 +188,29 @@ together.
 **The spec's central question has a third answer: the asymmetry is a WIRING DEFECT, not a tuned
 choice and not a bias compensation.** A threshold whose justification dissolved and a threshold that
 was never wired as designed are different objects, and this is the latter.
+
+_(Corrected 2026-08-08 `OPS-CLOSEDBAR-SELL-ASYMMETRY-W1` — **every claim in this section above is
+false, and the conclusion inverts the truth.** The gap WAS designed, deliberately, as bias
+compensation. **(1)** `73e34e5` is the **RENAME** `src/tools/get-trade-signal.ts` →
+`get-trade-call.ts`; a `-S` pickaxe scoped to a single post-rename path cannot cross a rename, so
+every constant necessarily shows there as a `/dev/null →` addition. That probe artifact is the whole
+of "converges on one commit". **(2)** The four constants were introduced by **`b671c52`
+(2026-04-10)**, 18 days earlier. **(3)** The regime gating **was wired**, in that same `b671c52`, and
+ran for four days — **`29d9576` (2026-04-14, R4) deliberately removed it**, as its own flips #4 and
+#5: *"BUY has a consistent 15-point structural advantage (40 vs 55) regardless of regime … Target:
+BUY share >= 60%"*. **(4)** The `−70` volume floor shipped in **`a530f4e` (2026-04-07)**, seven days
+BEFORE the gap and 21 before `73e34e5` — so the thresholds were tuned against a pre-existing bearish
+pull, which `b671c52` had measured and recorded at **97% SELL share**. Reproduce: `-S … --
+src/tools/get-trade-call.ts` stops at `73e34e5`; `--follow` adds `29d9576` + `b671c52`; `-- src/`
+adds `3cc3464`. **Generator-level rule: provenance pickaxes are scoped to a DIRECTORY or carry
+`--follow`, never to one post-rename path.** The section's §4 mechanism claim is also wrong in a
+smaller way — the −55 atom is measured in the CLOSED basis, so it is what SURVIVED the flip, not
+"the partial-bar volume artifact the flip removed"; volume-floor incidence measures 60.06% live →
+35.26% closed, so ~41% was removed and the residue is genuine low-volume books. **The operational
+verdict of this wave — move nothing — is UNAFFECTED and was independently re-derived**; only the
+reason is corrected. The wrong reason mattered: "never designed" invites reinstating the symmetric
+design as a bug fix, when it was a ratified choice whose justification later expired on its own
+terms.)_
 
 ---
 

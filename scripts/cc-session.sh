@@ -89,6 +89,69 @@ is_caller_worktree() {
   return 1
 }
 
+# ── LIVENESS ──────────────────────────────────────────────────────────────────
+#
+# `clean` decides whether work is safe to LOSE. That says nothing about whether someone
+# is WORKING here, and until 2026-08-08 nothing asked. The old `merged` leg tested against
+# local `main` (which lags) and so refused fresh worktrees by accident; correcting it
+# removed that accidental shield, so the question now has to be asked on purpose.
+#
+# TWO signals, because MEASURED 2026-08-08 neither is sufficient alone:
+#
+#   A. a live process whose cwd is at/under the worktree — a hard fact, never overridable.
+#   B. working-tree content modified inside a recency window.
+#
+# (B) is LOAD-BEARING, not belt-and-braces. Measured: `closedbar-directional-balance` had
+# been touched 54 MINUTES earlier and had ZERO processes holding cwd there — an idle
+# session between turns leaves no process footprint at all. Signal (A) alone would have
+# deleted it.
+#
+# The window is asymmetric ON PURPOSE and the asymmetry is the whole argument: a false
+# "in use" costs a deferred reclaim (cheap, self-heals on the next run), a false "free"
+# destroys live work. It is NOT tuned to make any particular set reclaimable.
+#
+# Deliberately NOT used: the git index mtime. It looked ideal, but `clean_consider` runs
+# `git status` on every worktree, so a self-poisoned instrument was the obvious risk.
+# Probed rather than assumed — `git status --porcelain` left the index mtime byte-identical,
+# so it would in fact have been safe. It is still not used, because it only proves someone
+# ran a git command, while (B) proves the tree itself changed. Recording the probe so the
+# next reader does not repeat it. [OPS-UNPUSHED-WORK-TRIAGE-W1]
+
+CC_LIVE_CWDS=""      # newline-delimited "<pid> <cmd> <cwd>", enumerated ONCE per run
+CC_LIVE_CWDS_OK=0    # 1 iff enumeration actually succeeded
+
+# Enumerate every process cwd on the box, once. 451 entries took <1s when measured.
+collect_live_cwds() {
+  command -v lsof >/dev/null 2>&1 || { CC_LIVE_CWDS_OK=0; return; }
+  CC_LIVE_CWDS=$(lsof -d cwd -F pcn 2>/dev/null | awk '
+    /^p/{pid=substr($0,2)} /^c/{cmd=substr($0,2)}
+    /^n\//{print pid, cmd, substr($0,2)}')
+  [ -n "$CC_LIVE_CWDS" ] && CC_LIVE_CWDS_OK=1 || CC_LIVE_CWDS_OK=0
+}
+
+# echoes a human reason and returns 0 iff $1 looks in use; returns 1 iff provably idle.
+worktree_in_use_reason() {
+  local p="$1" hours="$2" pp hit
+  pp=$(cd "$p" 2>/dev/null && pwd -P) || { echo "in-use(unresolvable-path)"; return 0; }
+
+  # (A) hard signal. Undeterminable => refuse: never delete on an unanswered question.
+  if [ "$CC_LIVE_CWDS_OK" -ne 1 ]; then
+    echo "in-use(undeterminable: lsof unavailable)"; return 0
+  fi
+  hit=$(printf '%s\n' "$CC_LIVE_CWDS" | awk -v d="$pp" '
+    { c=$3; for (i=4; i<=NF; i++) c = c " " $i
+      if (c == d || index(c, d "/") == 1) { print $2; exit } }')
+  if [ -n "$hit" ]; then echo "in-use(process: $hit)"; return 0; fi
+
+  # (B) recency. -print -quit short-circuits on the first hit; .git and node_modules
+  # excluded (a symlinked node_modules is not matched by find without -L anyway).
+  if [ -n "$(find "$pp" -maxdepth 3 -not -path '*/.git/*' -not -path '*/node_modules*' \
+              -newermt "-${hours} hours" -print -quit 2>/dev/null)" ]; then
+    echo "in-use(touched <${hours}h ago)"; return 0
+  fi
+  return 1
+}
+
 native_worktree_supported() {
   claude --help 2>/dev/null | grep -q -- '--worktree'
 }
@@ -249,10 +312,17 @@ cmd_list() {
 }
 
 clean_consider() {
-  local root="$1" path="$2" branch="$3" force="$4" reasons="" landed
+  local root="$1" path="$2" branch="$3" force="$4" reasons="" landed inuse
   is_main_worktree "$path" && return 1     # never the main checkout
   if is_caller_worktree "$path"; then      # never the directory we are standing in
     echo "KEEP          $path ($branch) — self (the worktree this command is running from)"
+    return 1
+  fi
+  # Someone else may be working here. Asked BEFORE the landed-predicate: "safe to lose"
+  # and "in use" are independent questions, and this one is cheaper to answer.
+  if inuse=$(worktree_in_use_reason "$path" "$CC_MAX_AGE_HOURS"); then
+    CC_HELD_LIVENESS=$(( CC_HELD_LIVENESS + 1 ))
+    echo "KEEP          $path ($branch) — $inuse"
     return 1
   fi
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then reasons="$reasons dirty"; fi
@@ -298,9 +368,27 @@ clean_consider() {
 
 cmd_clean() {
   local force=0 root path branch removed=0
-  [ "${1:-}" = "--force" ] && force=1
+  CC_HELD_LIVENESS=0
+  # Default 24h: a Claude Code session is interactive, so a worktree untouched for a full
+  # day is not mid-turn. Raise it to be more cautious, lower it deliberately to reclaim a
+  # worktree you KNOW is finished. The window governs signal (B) ONLY — a live process
+  # holding cwd is a fact and no flag overrides it.
+  CC_MAX_AGE_HOURS=24
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --force)          force=1 ;;
+      --max-age-hours)  shift; CC_MAX_AGE_HOURS="${1:-24}" ;;
+      *) die "clean: unknown argument '$1' (expected --force, --max-age-hours N)" ;;
+    esac
+    shift
+  done
+  case "$CC_MAX_AGE_HOURS" in
+    ''|*[!0-9]*) die "clean: --max-age-hours needs a non-negative integer" ;;
+  esac
   root=$(repo_root) || die "not in a git repository"
+  collect_live_cwds
   echo "cc-session clean: $([ $force -eq 1 ] && echo APPLY || echo 'DRY-RUN (use --force to apply)')"
+  echo "  liveness: process-cwd $([ "$CC_LIVE_CWDS_OK" -eq 1 ] && echo "OK ($(printf '%s\n' "$CC_LIVE_CWDS" | grep -c . ) cwds)" || echo 'UNAVAILABLE — refusing all') · recency window ${CC_MAX_AGE_HOURS}h"
   while IFS= read -r line; do
     case "$line" in
       worktree\ *) path="${line#worktree }" ;;
@@ -310,6 +398,10 @@ cmd_clean() {
         ;;
     esac
   done < <(git -C "$root" worktree list --porcelain)
+  if [ "$CC_HELD_LIVENESS" -gt 0 ]; then
+    echo "cc-session clean: $CC_HELD_LIVENESS worktree(s) HELD BY LIVENESS — re-run later, or"
+    echo "  --max-age-hours N to narrow the recency window (a live process is never overridable)."
+  fi
   if [ "$force" -eq 1 ]; then
     git -C "$root" worktree prune
     echo "cc-session clean: pruned admin entries; removed $removed worktree(s)."

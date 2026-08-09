@@ -101,6 +101,63 @@ const WEIGHTS = {
 // because 12,873 rows sit at EXACTLY raw = −55. The score space is DISCRETE (fixed indicator
 // ladders × fixed weights), so raw scores pile into atoms and a threshold routinely lands on
 // one. Moving SELL by a single point is a 47× emission change, not a tuning nudge.
+//
+// ── PROVENANCE CORRECTED, AND THE ASYMMETRY RATIFIED (OPS-CLOSEDBAR-SELL-ASYMMETRY-W1, 2026-08-08) ──
+// "NEVER WIRED" above is FALSE, and is kept visible because the wrong answer is the lesson.
+// The v1.5 symmetric design WAS wired — in `b671c52` (2026-04-10) — and ran for four days.
+// `29d9576` (2026-04-14, "R4") DELIBERATELY removed the regime gating on both sides and wired
+// BUY→base(40) / SELL→gated(55), stating the intent outright: "Combined effect: BUY has a
+// consistent 15-point structural advantage (40 vs 55) regardless of regime … Target: BUY share
+// >= 60%". It was flips #4 and #5 of five, applied against a scoring skew `b671c52` had measured
+// at 97% SELL share. Only the narrower claim survives: AFTER R4 those two constants were genuinely
+// dead, which is why `dc42b38` could delete them.
+//   Why the wrong answer looked right: a `-S` pickaxe scoped to THIS path cannot cross the
+//   `73e34e5` RENAME (get-trade-signal.ts → get-trade-call.ts) and stops there, showing all four
+//   constants as /dev/null additions. Scope provenance pickaxes to a DIRECTORY or use --follow.
+//
+// SO THE 15-POINT GAP IS AN ARTIFACT — DESIGNED bias-compensation whose cause and whose
+// justification have both since dissolved:
+//   - the bearish pull it offset was substantially removed by SIGNAL-CLOSEDBAR-FLIP-W1
+//     (volume-floor incidence measured 60.06% live basis → 35.26% closed basis), and
+//   - `9a0bd02` (2026-05-28) re-measured the differential that justified it at +3.17pp against a
+//     pre-declared +5pp KEEP bar and returned verdict RELAX.
+//
+// IT IS RATIFIED AND DELIBERATELY RETAINED ANYWAY. **DO NOT "FIX" THE ASYMMETRY.** No reachable
+// candidate exists: the atom sits at EXACTLY −55 and the rule is strict, so every downward move
+// admits it whole. Measured twice, on different windows, same conclusion — cite the right one:
+//   FLIP-W1 (n = 2,733,170):  >54 admits 13,152  vs  >55 admits 281  → 47× cliff, 12,873 at −55
+//   ASYM-W1 (n = 3,109,879):  >54 admits  4,592  vs  >55 admits 241  → 19× cliff,  4,352 at −55
+// And what a relaxation admits is 94.8–98.9% volume-floor + RSI-neutral rows (RSI saying nothing),
+// against 10.8% of what is emitted today. Symmetric-40 would emit 55,439 SELLs — 230×.
+// Ratified in SIGNAL-CLOSEDBAR-FLIP-W1 Q4, OPS-CLOSEDBAR-RECALIBRATE-READINESS-W1,
+// OPS-CLOSEDBAR-DIRECTIONAL-BALANCE-W1, and OPS-CLOSEDBAR-SELL-ASYMMETRY-W1.
+// Full evidence: audits/OPS-CLOSEDBAR-SELL-ASYMMETRY-W1-2026-08-08.md
+//
+// ⚠ EXPIRY CONDITION — THIS RATIFICATION IS NOT PERMANENT, AND IS NOT INHERITABLE.
+// "No reachable candidate" is a property of the CURRENT SCORE LADDER, not of the engine. The
+// atoms exist only because the score space is DISCRETE: fixed indicator bucket values × fixed
+// `WEIGHTS`. `raw` is exactly `Σ bucket_i × WEIGHTS_i` (see deriveVerdict), so the reachable
+// score set — and therefore WHERE the atoms sit and how big they are — is a pure function of
+// those two inputs. Change EITHER and the atom map moves.
+//
+// That means a retune from ANY source RE-OPENS the asymmetry question rather than settling it:
+//   - editing `WEIGHTS` above (rsi .30 / ema .10 / funding .25 / oi .15 / volume .20);
+//   - editing ANY bucket ladder — the volume ladder (100/80/50/10/−30/−70) is the one that
+//     produces the current −55 atom, but rsi/ema/funding/oi are equally load-bearing;
+//   - an AOE weight promotion becoming live. NOTE, because this is the silent one:
+//     `src/lib/aoe-config-reader.ts` ALREADY implements that path — Redis
+//     `algovault:aoe:recommended_weights:<venue>:<strategy>`, 60 s cache — and it has ZERO
+//     consumers today, so `WEIGHTS` is currently code-only and can move only by editing this
+//     file. THE DAY IT IS WIRED INTO THE SCORER, weights become runtime-mutable with no deploy
+//     and no diff, and this verdict expires WITHOUT ANY CODE CHANGE TO OBSERVE.
+//
+// So whoever wires it, or retunes a ladder, OWNS re-deriving this: re-run the atom histogram and
+// the per-candidate counterfactual on the new ladder (§2–§3 of the audit are the template) BEFORE
+// assuming 55 is still correct. Do NOT carry the 47×/19× cliff forward as a standing fact — it is
+// a measurement of one ladder, and a re-derivation may well find a reachable candidate that does
+// not exist today. Related coupling: `MAX_RAW_SCORE = 89` is itself derived from these same
+// weights (30+10+20+9+20), and it is PUBLIC-COPY — so a retune also moves every published
+// confidence number. One retune, three things to re-derive.
 const BUY_BASE_THRESHOLD = 40;
 const SELL_THRESHOLD_GATED = 55;
 
