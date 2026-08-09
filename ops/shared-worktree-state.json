@@ -267,14 +267,14 @@
     },
     "exempt_paths": [
       {
-        "path": "/Users/tank/autonomous-optimizer-wt-bdir25",
-        "reason": "holds ~1022 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage",
+        "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir25",
+        "reason": "holds ~1022 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir25 in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
-        "path": "/Users/tank/autonomous-optimizer-wt-bdir",
-        "reason": "holds ~389 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage",
+        "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir",
+        "reason": "holds ~389 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
@@ -315,20 +315,20 @@
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
-        "path": "/Users/tank/autonomous-optimizer-wt-carry",
-        "reason": "holds ~17 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage",
+        "path": "/Users/tank/code/.worktrees/autonomous-optimizer/carry",
+        "reason": "holds ~17 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-carry in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
-        "path": "/Users/tank/autonomous-optimizer-wt-bdir2",
-        "reason": "holds ~15 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage",
+        "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir2",
+        "reason": "holds ~15 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir2 in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
-        "path": "/Users/tank/git/algovault-skills",
-        "reason": "duplicate clone whose sibling ~/code/algovault-skills carries 31 unreviewed changes; neither side is retired by this wave. Rewritten by CH6 in the same commit as the ~/git migration (F7).",
+        "path": "/Users/tank/code/algovault-skills.dup-20260809",
+        "reason": "duplicate clone whose sibling ~/code/algovault-skills carries 31 unreviewed changes; neither side is retired by this wave. Rewritten by CH6 in the same commit as the ~/git migration (F7). [CH6: relocated from /Users/tank/git/algovault-skills in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "2026-11-09",
         "owner_wave": "OPS-STALE-CLONE-RETIRE-W{NEXT}"
       }
