@@ -49,7 +49,7 @@ In a Claude Code session, type `/mcp` to list connected servers. AlgoVault shoul
 
 **Project scope vs user scope?** Project (`.mcp.json` in repo root) shares with the team. User (`~/.claude/mcp.json`) is private.
 
-**Free tier works?** Yes. Drop the `--header` arg from `claude mcp add`. 100 calls/month, all coins + timeframes.
+**Free tier works?** Yes. Drop the `--header` arg from `claude mcp add`. 200 calls/month (100/day), all coins + timeframes.
 
 **Multiple MCP servers?** Yes — repeat `claude mcp add` per server.
 

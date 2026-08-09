@@ -53,6 +53,23 @@ const GUARDED: ReadonlyArray<{ path: string; reason: string }> = [
   { path: 'src/lib/signup-flow.ts', reason: 'the function-rendered checkout cards (/signup, /join, referral)' },
   { path: 'src/index.ts', reason: 'the function-rendered x402 card on the signup page' },
   { path: 'src/lib/email.ts', reason: 'outbound customer email — invisible on the website, still public copy' },
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH7, P1). The gate is this registry, never a
+  // re-grep of src/ — behaviour identifiers (`free_hold`, `holdFree`) and correction records
+  // must survive, and only an explicit path list can tell those from a live promise.
+  //
+  // The three shape snapshots are BUILD INPUTS, not artefacts: `build-knowledge-json.mjs`
+  // projects every `audits/*-shape-snapshot-*.json` into the PUBLIC knowledge bundle's
+  // `response_shapes`, so a stale `error_contract` string here is shipped copy that agents
+  // read. All three carried the identical "HOLD verdicts are free and never charged" line.
+  { path: 'audits/get-trade-call-shape-snapshot-2026-08-06.json', reason: 'projected into the public knowledge bundle response_shapes' },
+  { path: 'audits/get-trade-call-shape-snapshot-2026-08-07.json', reason: 'projected into the public knowledge bundle response_shapes' },
+  { path: 'audits/get-trade-call-shape-snapshot-2026-08-08.json', reason: 'projected into the public knowledge bundle response_shapes — the one that actually reached the emitted bundle' },
+  { path: 'landing/integrations.html', reason: 'hand-authored client index; carries free-tier allowance copy' },
+  { path: 'src/lib/integrations-data/mcp-clients.ts', reason: 'the SoT the docs client table is generated FROM — fixing only the output rots on next build' },
+  { path: 'src/lib/landing-content.ts', reason: 'the dual-render copy SoT injected into both index artboards' },
+  { path: 'src/lib/welcome-page.ts', reason: 'the /welcome paywall card — the first paid-tier copy a free caller sees' },
+  { path: 'src/lib/referral-pages.ts', reason: 'referral landing copy quoting the free allowance' },
+  { path: 'src/tools/scan-trade-calls.ts', reason: 'R-G — the batch tool whose per-verdict charge closes the free-HOLD loophole' },
   { path: 'scripts/render-jsx-static.mjs', reason: 'ONE of four copies of the same Offer literal' },
 ];
 

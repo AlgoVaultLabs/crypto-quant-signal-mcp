@@ -10,8 +10,9 @@
 // Responsibilities the scanner module deliberately does NOT have:
 //   • checkQuota entry gate (free-tier exhaustion → getQuotaExhaustedMessage)
 //   • charge the batch via the C1 multi-unit seam: trackCall(license, units)
-//     where units = max(1, non-HOLD calls returned) — HOLDs are free (extends
-//     the shipped get_trade_call HOLDs-are-free law to batch shape)
+//     where units = max(1, calls RETURNED) — every returned verdict counts, HOLD
+//     included (R-G). Charging only non-HOLD would make a scan the free-HOLD
+//     loophole that re-opens everything R-A closes.
 //   • assemble the `_algovault` envelope (tool/version/quota/track-record ptr)
 //
 // Result shaping stays allow-listed: the response is the scanner's result

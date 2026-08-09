@@ -353,7 +353,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch the AlgoVault verdict.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin: 'ETH', timeframe: '1h'}</code>, and returns the parsed <code>signal</code>/<code>confidence</code>/<code>regime</code>/<code>factors</code> payload. Free tier covers 100 calls/month — plenty for development.</p>
+<p><strong>Fetch the AlgoVault verdict.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin: 'ETH', timeframe: '1h'}</code>, and returns the parsed <code>signal</code>/<code>confidence</code>/<code>regime</code>/<code>factors</code> payload. Free tier covers 200 calls/month (100/day) — plenty for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> When the verdict satisfies the agent’s pre-configured policy (<code>signal === 'BUY' AND confidence &gt; 70</code>), the script proceeds to the execution branch. The policy lives in your code — AlgoVault returns the analytics; the agent decides.</p>

@@ -4915,7 +4915,7 @@ function getSignupPageHtml(): string {
 <main class="page-main">
 <div class="container">
   <h1>AlgoVault Subscriptions</h1>
-  <div class="subtitle">Free tier includes all assets and all 11 timeframes &mdash; capped at 100 calls/month. Upgrade for higher monthly limits and unlimited funding-arb results.</div>
+  <div class="subtitle">Free tier includes all assets and all 11 timeframes &mdash; capped at 200 calls/month and 100 per UTC day. Every verdict counts, HOLD included. Upgrade for higher limits and unlimited funding-arb results.</div>
   <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px;flex-wrap:wrap">
     ${EXCHANGES.map(e => '<span style="color:#8b949e;font-size:12px;font-weight:600">' + e.label + '</span>').join('<span style="color:#6e7681">&middot;</span>')}
   </div>

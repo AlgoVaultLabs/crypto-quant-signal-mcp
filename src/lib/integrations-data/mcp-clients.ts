@@ -31,7 +31,7 @@ const MCP_CLIENTS: SurfaceModule = {
     title: 'Connect Your MCP Client',
     marginTopClass: 'mt-8',
     introHtml:
-      'Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 100 calls/month.',
+      'Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 200 calls/month, and at 100 calls per UTC day.',
     firstColumnHeader: 'Surface',
     // NOTE: footerVerifiedDate is not rendered — the date used to live inside
     // footerPreamble. Since each row now carries its own `verifiedAt`, a single

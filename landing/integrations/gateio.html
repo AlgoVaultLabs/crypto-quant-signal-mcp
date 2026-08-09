@@ -361,7 +361,7 @@ if (verdict.call === 'BUY' &amp;&amp; verdict.confidence &gt; 70) {
 <p><strong>Resolve contract sizing.</strong> It reads <code>quanto_multiplier</code> from the single-contract endpoint and converts the target coin quantity into an integer contract count. This step comes <em>first</em> because it is the one most likely to be silently wrong — see Recipe 1.</p>
 </li>
 <li>
-<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers 100 calls/month — plenty for development.</p>
+<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers 200 calls/month (100/day) — plenty for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy and build the order.</strong> When the verdict satisfies a pre-configured policy (e.g. <em>the agent’s policy fires when <code>confidence &gt; 70</code> AND <code>call === 'BUY'</code></em>), the script assembles the Gate order body and prints it. The policy lives entirely in your code — AlgoVault returns the analytics; the agent decides. The script aborts immediately if <code>GATEIO_TESTNET</code> is not set, and refuses to run if the base URL is not the testnet host.</p>

@@ -40,6 +40,14 @@
  *      link in the list. Positional only.
  * Every other line of the original six rows is present verbatim in the new fixture (verified by
  * exhaustive old-line containment, not by eyeballing the diff).
+ *
+ * FIXTURE MAINTENANCE — PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH7, 2026-08-09): regenerated
+ * to absorb the R-B free-tier allowance change in `mcp-clients.ts` `intro`:
+ *   "capped at 100 calls/month." -> "capped at 200 calls/month, and at 100 calls per UTC day."
+ * The word-level diff against the old fixture was EXACTLY that one sentence — 4 words added
+ * before the count and 4 after it, zero other lines touched — verified before regenerating
+ * rather than after. The second clause is not decoration: R-B added a SECOND meter, and copy
+ * naming only the monthly one would understate the wall a free caller actually hits first.
  */
 
 import { describe, it, expect } from 'vitest';

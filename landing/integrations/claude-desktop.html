@@ -289,7 +289,7 @@ tailwind.config = {
            redundant TL;DR section before wrapping (so it doesn't become an empty card). -->
       <article>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h1>Connect AlgoVault to Claude Desktop</h1>
-<p>Add AlgoVault’s MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (100 calls/month, no signup).</p></div>
+<p>Add AlgoVault’s MCP tools to Claude Desktop as a custom connector. ≤5 minutes; works on the free tier (200 calls/month, 100/day, no signup).</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Setup</h2>
 <p>Two paths. The UI path is easiest if you already use Claude Desktop daily.</p>
 <p><strong>Path 1 — UI (recommended).</strong> Open Claude Desktop → Settings → Connectors → <em>Add custom connector</em>. Name: <code>AlgoVault</code>. URL: <code>https://api.algovault.com/mcp?src=docs</code>. Save and restart Claude Desktop. The free tier needs no header. Paid tier: add <code>Authorization: Bearer av_live_…</code> as a custom header.</p>
@@ -316,8 +316,8 @@ tailwind.config = {
 <li><strong><code>npx not found</code></strong> (JSON path) — install Node 20+ (<code>brew install node</code> on macOS). Claude Desktop spawns <code>npx</code> via PATH.</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
-<p><strong>Do I need an API key for the free tier?</strong> No. Free tier (100 calls/month) works without any header. The UI path also accepts no-key setup.</p>
-<p><strong>Which tier ships with Claude Desktop?</strong> AlgoVault’s free tier covers every coin and every timeframe. Paid tiers start at $9.99/mo (3,000 calls).</p>
+<p><strong>Do I need an API key for the free tier?</strong> No. Free tier (200 calls/month, 100/day) works without any header. The UI path also accepts no-key setup.</p>
+<p><strong>Which tier ships with Claude Desktop?</strong> AlgoVault’s free tier covers every coin and every timeframe. Paid tiers start at $9.99/mo (10,000 calls/mo, 1,000/day).</p>
 <p><strong>Can my <a href="http://Claude.ai">Claude.ai</a> account share the connection?</strong> No — <a href="http://Claude.ai">Claude.ai</a> (web) and Claude Desktop maintain separate connector lists. Add AlgoVault on each surface.</p>
 <p><strong>How do I see my call usage?</strong> Visit <code>algovault.com/account</code> with your API key. Live counters update within seconds.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>

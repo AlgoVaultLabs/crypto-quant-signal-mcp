@@ -36,8 +36,6 @@ import {
   planPrepayPriceLabel,
   planHasSixMonth,
   planMonthlyRateUsd,
-  planAnnualMonthlyEquivalent,
-  planAnnualSavingsPct,
   type PaidPlanId,
 } from '../../src/lib/plans.js';
 import { getMonthlyQuota, getDailyCap } from '../../src/lib/license.js';
@@ -171,14 +169,15 @@ describe('INTERVAL_MONTHS — the divisor is a table, and the annual surface sti
     }
   });
 
-  it('the annual delegates render byte-identically to before the refactor', () => {
-    // CH2 rewrote these as thin delegates over the months-parameterised helpers. These strings
-    // are LIVE on the pricing page until CH6 removes annual, so the bytes may not move.
-    expect(planAnnualMonthlyEquivalent('starter')).toBe('$6.58');
-    expect(planAnnualMonthlyEquivalent('pro')).toBe('$24.92');
-    expect(planAnnualMonthlyEquivalent('enterprise')).toBeNull();
-    expect(planAnnualSavingsPct('starter')).toBe(34);
-    expect(planAnnualSavingsPct('pro')).toBe(49);
-    expect(planAnnualSavingsPct('enterprise')).toBeNull();
+  it('the six-month copy figures come out of the SAME months-parameterised helpers', () => {
+    // CH2 rewrote the annual labels as thin delegates over these helpers; CH7 retired the
+    // delegates and pointed the copy straight at the generic form. These strings are LIVE on the
+    // pricing page, so the bytes may not move without the price moving.
+    expect(planPrepayMonthlyEquivalent('starter', PREPAY_6MONTH_MONTHS)).toBe('$6.65');
+    expect(planPrepayMonthlyEquivalent('pro', PREPAY_6MONTH_MONTHS)).toBe('$21.50');
+    expect(planPrepayMonthlyEquivalent('enterprise', PREPAY_6MONTH_MONTHS)).toBeNull();
+    expect(planPrepaySavingsPct('starter', PREPAY_6MONTH_MONTHS)).toBe(33);
+    expect(planPrepaySavingsPct('pro', PREPAY_6MONTH_MONTHS)).toBe(56);
+    expect(planPrepaySavingsPct('enterprise', PREPAY_6MONTH_MONTHS)).toBeNull();
   });
 });

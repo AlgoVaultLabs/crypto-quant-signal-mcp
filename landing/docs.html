@@ -79,9 +79,9 @@ tailwind.config = {
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
   "category": "Software / API / FinanceApplication",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes" },
-    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
-    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" }
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "200 calls/month (up to 100/day), all assets, all 11 timeframes" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "10,000 calls/month (up to 1,000/day)", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "100,000 calls/month (up to 10,000/day)", "url": "https://api.algovault.com/signup?plan=pro" }
   ],
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "91.7%" },
@@ -126,9 +126,9 @@ tailwind.config = {
   "description": "Composite trade calls for AI trading agents across major crypto perpetual-futures venues, 850+ assets, 11 timeframes. Market regime classification + cross-venue funding-rate arbitrage. Every call Merkle-anchored on Base L2.",
   "url": "https://algovault.com",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 100 calls/month" },
-    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
-    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 15K calls/month", "url": "https://api.algovault.com/signup?plan=pro" }
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "All crypto + TradFi assets, all 11 timeframes (1m-1d), 200 calls/month (up to 100/day)" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "All crypto + TradFi assets, all 11 timeframes, 10,000 calls/month (up to 1,000/day)", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "All crypto and TradFi assets, all 11 timeframes, 100,000 calls/month (up to 10,000/day)", "url": "https://api.algovault.com/signup?plan=pro" }
   ],
   "author": { "@id": "https://algovault.com/#organization" }
 }
@@ -367,7 +367,7 @@ tailwind.config = {
       <div class="bg-navy-700 border border-white/5 rounded-xl px-5 py-3 text-sm text-gray-300 italic mb-4">
         "Get me a trade call for BTC on the 1h timeframe"
       </div>
-      <p class="text-gray-500 text-xs">Free tier: all supported assets, all 11 timeframes (1m&ndash;1d), 100 calls/month. No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
+      <p class="text-gray-500 text-xs">Free tier: all supported assets, all 11 timeframes (1m&ndash;1d), 200 calls/month (up to 100/day). No signup needed. <a href="https://api.algovault.com/signup" class="text-mint-400 hover:underline">Upgrade to Starter ($9.99/mo) or Pro</a> for higher monthly limits and unlimited funding-arb results.</p>
       <p class="text-gray-400 text-sm mt-4">Your agent can also ask AlgoVault to teach itself how to use the tools &mdash; see <a href="#knowledge-tools-overview" class="text-mint-400 hover:underline">Knowledge Tools</a> below.</p>
     </section>
 
@@ -907,7 +907,7 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
   <h3 id="connect-mcp" class="text-lg font-semibold text-white mb-4 mt-8 flex items-center gap-2">
     <span class="text-mint-400">&#9670;</span> Connect Your MCP Client
   </h3>
-  <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 100 calls/month.</p>
+  <p class="text-gray-400 text-sm mb-6">Your <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">av_live_&hellip;</code> API key works across every MCP-compatible client. Pick yours below. Free tier (no key) also works for <strong>every coin + every timeframe</strong>, capped at 200 calls/month, and at 100 calls per UTC day.</p>
 
   <div class="overflow-x-auto mb-6">
     <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden text-sm">
@@ -2090,15 +2090,16 @@ cfg = gate_api.Configuration(
           <th class="text-center text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Enterprise</th>
         </tr></thead>
         <tbody>
-          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Price</td><td class="text-center text-white text-sm px-4 py-2.5">$0</td><td class="text-center text-white text-sm px-4 py-2.5">$9.99/mo</td><td class="text-center text-white text-sm px-4 py-2.5">$49/mo</td><td class="text-center text-white text-sm px-4 py-2.5">$299/mo</td></tr>
-          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Monthly calls</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">100</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">3,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">15,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">100,000</td></tr>
-          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Assets</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">BTC + ETH</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td></tr>
-          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Timeframes</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">15m, 1h</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Price</td><td class="text-center text-white text-sm px-4 py-2.5">$0</td><td class="text-center text-white text-sm px-4 py-2.5">$9.99/mo<br><span class="text-gray-500 text-xs">or $39.90/6mo</span></td><td class="text-center text-white text-sm px-4 py-2.5">$49/mo<br><span class="text-gray-500 text-xs">or $129/6mo</span></td><td class="text-center text-white text-sm px-4 py-2.5">Contact us</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Monthly calls</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">200</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">10,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">100,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Custom</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Daily calls</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">100</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">1,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">10,000</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Custom</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Assets</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All crypto + TradFi</td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-400 text-sm px-4 py-2.5">Timeframes</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">All 11</td></tr>
           <tr><td class="text-gray-400 text-sm px-4 py-2.5">Funding arb results</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Top 5</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Unlimited</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Unlimited</td><td class="text-center text-gray-300 text-sm px-4 py-2.5">Unlimited</td></tr>
         </tbody>
       </table>
 
-      <p class="text-gray-400 text-sm mb-8">The engine returns HOLD on <span data-tr-field="hold_rate">99.2%</span> of scans &mdash; it calls only when multiple indicators align.</p>
+      <p class="text-gray-400 text-sm mb-8">The engine returns HOLD on <span data-tr-field="hold_rate">99.2%</span> of scans &mdash; it calls only when multiple indicators align. Every verdict counts against your allowance, HOLD included: knowing when <em>not</em> to trade is the other half of the product, and it costs the same to compute. The two meters are independent &mdash; a call is refused when either the monthly or the daily allowance is exhausted, and the daily one resets at 00:00 UTC.</p>
 
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What happens after you subscribe</h3>

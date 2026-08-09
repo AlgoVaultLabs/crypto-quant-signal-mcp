@@ -10,7 +10,7 @@
  * and `{pfeWr}`/`{callCount}` (the track-record SoT, injected by the caller from
  * `getTrackRecord()`, never hardcoded here). Each closes on an action-verb CTA +
  * outcome + link per the `feedback_cta_not_feature_description` LAW. PFE-only
- * (no `outcome_return_pct`); no "unlimited" (Starter = 3,000, "30× the free
+ * (no `outcome_return_pct`); no "unlimited" (Starter = 10,000, "50× the free
  * tier"); ≤20 words/sentence.
  *
  * `upgrade_from` is the PRIMARY funnel-attribution param — the `/signup` handler
@@ -28,7 +28,7 @@ import { shareLink, bonusCallsLabel, REFERRAL_TERMS } from './referral-constants
 // would silently rot. They project from the plan SoT now.
 import { PLANS, DEFAULT_UPGRADE_PLAN, FREE_MONTHLY_CALLS, planCallsLabel, planPriceLabel } from './plans.js';
 
-/** `Starter, 3,000 calls/mo, $9.99` — the upgrade offer as one derived phrase. */
+/** `Starter, 10,000 calls/mo, $9.99` — the upgrade offer as one derived phrase. */
 function upgradeOfferPhrase(opts: { withMultiple?: boolean } = {}): string {
   const id = DEFAULT_UPGRADE_PLAN;
   const multiple = Math.round(PLANS[id].monthlyCalls / FREE_MONTHLY_CALLS);

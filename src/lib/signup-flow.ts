@@ -12,12 +12,14 @@
 import { EXCHANGE_COUNT } from './capabilities.js';
 import {
   PLANS,
+  PREPAY_6MONTH_MONTHS,
   planCallsLabel,
+  planDailyCallsLabel,
   planPriceLabel,
-  planAnnualPriceLabel,
-  planAnnualMonthlyEquivalent,
-  planAnnualSavingsPct,
-  planHasAnnual,
+  planPrepayPriceLabel,
+  planPrepayMonthlyEquivalent,
+  planPrepaySavingsPct,
+  planHasSixMonth,
   type PaidPlanId,
 } from './plans.js';
 
@@ -92,51 +94,71 @@ export function renderSignupFlowTailwind(): string {
 // rendered BYTES are unchanged (the SoT holds exactly these values), which the existing
 // signup/join page tests assert — the point is that a price move is now a one-line edit in
 // one file rather than a hunt across HTML, `getMonthlyQuota` and the quota-exhaustion copy.
-// PRICING-ANNUAL-AND-HOLD-PROMISE-W1: annual-first pricing.
+// PRICING-ANNUAL-AND-HOLD-PROMISE-W1: prepay-first pricing.
+// PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): the prepay term is SIX MONTHS, not a year.
 //
-// The ANNUAL price leads on Starter and Pro (architect decision, Mr.1 2026-08-05) because the
-// first-payment size is the acquisition constraint this wave exists to move. Three rules govern
-// how it renders, and all three are Public-copy LAW rather than taste:
+// The prepay price leads on Starter and Pro (architect decision, Mr.1 2026-08-05) because the
+// first-payment size is the acquisition constraint this wave exists to move — and halving the
+// term from 12 months to 6 halves that first payment again ($79 -> $39.90, $299 -> $129). Three
+// rules govern how it renders, and all three are Public-copy LAW rather than taste:
 //
-//   1. The annual TOTAL is always shown next to the effective monthly rate. Leading with
-//      "$6.58/mo" for something that bills $79 once a year is the misleading framing.
+//   1. The prepay TOTAL is always shown next to the effective monthly rate. Leading with
+//      "$6.65/mo" for something that bills $39.90 once every six months is the misleading framing.
 //   2. The monthly option stays visible and one click away — never buried, never a dark pattern.
-//   3. No countdown, no "limited time", no fake scarcity. The saving is a computed fact.
+//   3. No countdown, no "limited time", no fake scarcity. These are STANDING prices (R-C) and the
+//      saving is a computed fact.
 //
 // Enterprise carries no self-serve price at all: its CTA is replaced by ONE contact line beneath
 // the tier row (R4), so the card keeps its feature list without implying a checkout that does not
 // exist. `ENTERPRISE_PRICE_ID` stays live and unarchived in Stripe — zero subscribers today, but
 // an in-flight subscription must never break.
 
-/** The price block for a plan sold annually: annual total, effective monthly, saving, monthly alt. */
-function annualPriceBlock(id: PaidPlanId): string {
-  return `<div class="price">${planAnnualPriceLabel(id)}<span>/yr</span></div>
-      <div class="price-sub">${planAnnualMonthlyEquivalent(id)}/mo effective <span class="save">Save ${planAnnualSavingsPct(id)}%</span></div>
+/** The price block for a prepay plan: term total, effective monthly, saving, monthly alt. */
+function prepayPriceBlock(id: PaidPlanId): string {
+  const months = PREPAY_6MONTH_MONTHS;
+  return `<div class="price">${planPrepayPriceLabel(id, months)}<span>/${months}mo</span></div>
+      <div class="price-sub">${planPrepayMonthlyEquivalent(id, months)}/mo effective <span class="save">Save ${planPrepaySavingsPct(id, months)}%</span></div>
       <div class="price-alt">or ${planPriceLabel(id)}/mo billed monthly</div>`;
 }
 
-/** Both CTAs for a plan sold annually — annual primary, monthly a plain secondary link. */
+/** Both CTAs for a prepay plan — six-month primary, monthly a plain secondary link. */
 function planCtas(id: PaidPlanId, signupBase: string): string {
   const label = PLANS[id].label;
-  return `<a class="btn" href="${signupBase}/signup?plan=${id}&amp;interval=year">Subscribe to ${label} — annual</a>
+  return `<a class="btn" href="${signupBase}/signup?plan=${id}&amp;interval=6month">Subscribe to ${label} — 6 months</a>
       <a class="btn-alt" href="${signupBase}/signup?plan=${id}">or pay ${planPriceLabel(id)}/mo</a>`;
 }
 
+/**
+ * The allowance bullets — TWO ATOMIC lines, monthly and daily.
+ *
+ * They are separate bullets because they are separate meters (R-B): a call is refused when
+ * EITHER is exhausted, so "10,000/month (up to 1,000/day)" would read as a sub-limit of the
+ * first. `planDailyCallsLabel` returns null for a plan with no daily cap, in which case the
+ * second bullet is OMITTED rather than filled with a guess.
+ */
+function allowanceBullets(id: PaidPlanId): string {
+  const daily = planDailyCallsLabel(id);
+  const monthly = `<li>${planCallsLabel(id)} calls/month</li>`;
+  return daily === null ? monthly : `${monthly}
+        <li>Up to ${daily} calls/day</li>`;
+}
+
 export function renderPlanCards(signupBase = ''): string {
-  // Guard the invariant the markup below assumes, rather than silently rendering "null/yr" if a
-  // future edit drops an annual price from the SoT.
-  const annualBacked = planHasAnnual('starter') && planHasAnnual('pro');
-  const starterPrice = annualBacked ? annualPriceBlock('starter') : `<div class="price">${planPriceLabel('starter')}<span>/mo</span></div>`;
-  const proPrice = annualBacked ? annualPriceBlock('pro') : `<div class="price">${planPriceLabel('pro')}<span>/mo</span></div>`;
-  const starterCta = annualBacked ? planCtas('starter', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=starter">Subscribe to Starter</a>`;
-  const proCta = annualBacked ? planCtas('pro', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=pro">Subscribe to Pro</a>`;
+  // Guard the invariant the markup below assumes, rather than silently rendering "null/6mo" if a
+  // future edit drops a six-month price from the SoT.
+  const prepayBacked = planHasSixMonth('starter') && planHasSixMonth('pro');
+  const starterPrice = prepayBacked ? prepayPriceBlock('starter') : `<div class="price">${planPriceLabel('starter')}<span>/mo</span></div>`;
+  const proPrice = prepayBacked ? prepayPriceBlock('pro') : `<div class="price">${planPriceLabel('pro')}<span>/mo</span></div>`;
+  const starterCta = prepayBacked ? planCtas('starter', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=starter">Subscribe to Starter</a>`;
+  const proCta = prepayBacked ? planCtas('pro', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=pro">Subscribe to Pro</a>`;
 
   return `<div class="plans">
     <div class="plan">
       <h2>${PLANS.starter.label}</h2>
       ${starterPrice}
       <ul>
-        <li>${planCallsLabel('starter')} calls/month</li>
+        ${allowanceBullets('starter')}
+        <li>Every verdict counts, including HOLD</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
@@ -148,7 +170,8 @@ export function renderPlanCards(signupBase = ''): string {
       <h2>${PLANS.pro.label}</h2>
       ${proPrice}
       <ul>
-        <li>${planCallsLabel('pro')} calls/month</li>
+        ${allowanceBullets('pro')}
+        <li>Every verdict counts, including HOLD</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
@@ -156,7 +179,7 @@ export function renderPlanCards(signupBase = ''): string {
       ${proCta}
     </div>
   </div>
-  <div class="plans-contact">Need ${PLANS.enterprise.label}? <a href="/contact">Contact us</a> for pricing.</div>`;
+  <div class="plans-contact">Need ${PLANS.enterprise.label}? <a href="/contact">Contact us</a> for custom volume.</div>`;
 }
 
 /**

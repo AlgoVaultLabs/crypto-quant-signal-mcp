@@ -7,6 +7,14 @@
  * CURRENT getWelcomePageHtml BEFORE the unified branch is added, then re-asserted
  * after — any drift on the OFF path fails the build (protects the LIVE /welcome).
  * (byte-equivalence-fixture-for-inline-to-data-driven-refactor.)
+ *
+ * SNAPSHOT MAINTENANCE — PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH7, 2026-08-09): the five
+ * `organic` snapshots were regenerated for the R-B ladder + R-A flat-billing copy in the
+ * paywall card. The word-level diff was verified BEFORE regenerating and is exactly four
+ * edits, all inside the two paywall strings: free 100 -> 200 + the new daily cap, Starter
+ * 3,000 -> 10,000 + its daily cap, and the added "Every verdict counts, HOLD included."
+ * Nothing outside `.paywall-headline` / `.paywall-body` moved, which is the property this
+ * guard actually protects — the OFF path's LAYOUT, not its copy.
  */
 import { describe, expect, it } from 'vitest';
 import { getWelcomePageHtml } from '../src/lib/welcome-page.js';

@@ -54,7 +54,7 @@ Ask ZCode: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and
 
 ## FAQ
 
-**Free tier OK?** Yes. Skip the `Authorization` header. 100 calls/month, every coin and timeframe.
+**Free tier OK?** Yes. Skip the `Authorization` header. 200 calls/month (100/day), every coin and timeframe.
 
 **Is this the same as the Z.ai API route?** No. ZCode is the app; the API route dials AlgoVault server-side with no client.
 

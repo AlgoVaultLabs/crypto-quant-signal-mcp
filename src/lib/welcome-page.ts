@@ -11,7 +11,15 @@
  */
 
 import { renderSigninComponent } from './signin-component.js';
-import { PLANS, planPriceLabel } from './plans.js';
+import {
+  PLANS,
+  DEFAULT_UPGRADE_PLAN,
+  planPriceLabel,
+  planCallsLabel,
+  planDailyCallsLabel,
+  freeCallsLabel,
+  freeDailyCallsLabel,
+} from './plans.js';
 // FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1: brand footer from the one SoT.
 import { renderBrandFooter } from './footer-content.js';
 
@@ -70,8 +78,8 @@ export function getWelcomePageHtml(
 
   const paywallCta = isOrganicVisit
     ? `<div class="paywall-cta">
-         <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
-         <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div class="paywall-headline">Free-tier MCP access — ${freeCallsLabel()} calls per month, up to ${freeDailyCallsLabel()} per day</div>
+         <p class="paywall-body">Upgrade to ${PLANS[DEFAULT_UPGRADE_PLAN].label} for ${planCallsLabel(DEFAULT_UPGRADE_PLAN)} calls per month (up to ${planDailyCallsLabel(DEFAULT_UPGRADE_PLAN)} per day), full asset coverage, and unlimited Telegram bot alerts. Every verdict counts, HOLD included.</p>
          ${opts.unifiedSignin ? unifiedCard : `${opts.newSignupEnabled ? `
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>

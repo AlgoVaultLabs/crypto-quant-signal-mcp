@@ -90,7 +90,7 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
   });
 
   it('keyless free-start CTA surfaced → #quickstart; the dead #free anchor is gone', () => {
-    expect(count('Start free — 100 calls/month, no card. Get your first BTC verdict in 30 seconds →')).toBe(2);
+    expect(count('Start free — 200 calls/month, no card. Get your first BTC verdict in 30 seconds →')).toBe(2);
     expect(html).not.toContain('href="#free"');
   });
 
@@ -99,10 +99,13 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     // 'Signup Click' Plausible event's source:'pricing-section' prop). plan= kept — it is
     // functional (selects the plan). href is now the clean canonical signup URL.
     //
-    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: Starter and Pro carry `&amp;interval=year` because annual
+    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: Starter and Pro carry a prepay interval because prepay
     // leads on those cards. Enterprise has NO checkout href at all — it is contact-us now.
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): the prepay term is 6 months, not a year, and
+    // the annual href must be GONE rather than merely outranked — CH8 archives its Stripe Price.
+    expect(html).not.toContain('interval=year');
     for (const plan of ['starter', 'pro']) {
-      expect(count(`href="https://api.algovault.com/signup?plan=${plan}&amp;interval=year"`)).toBe(2);
+      expect(count(`href="https://api.algovault.com/signup?plan=${plan}&amp;interval=6month"`)).toBe(2);
       expect(count(`plausible('Signup Click',{props:{plan:'${plan}',source:'pricing-section'}})`)).toBe(2);
       expect(html).not.toContain(`href="#${plan}"`);
     }
@@ -112,15 +115,20 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     expect(html).not.toContain('upgrade_from=landing_pricing');
   });
 
-  it('LAW: Brain-Layer hero + tier card copy + x402 card (annual-first; Enterprise is contact-us)', () => {
+  it('LAW: Brain-Layer hero + tier card copy + x402 card (prepay-first; Enterprise is contact-us)', () => {
     expect(html).toContain('The Brain Layer');
     expect(count('>Start Free<')).toBe(2);
-    // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: annual leads on Starter and Pro, in BOTH artboards, and
-    // the effective monthly rate is always shown next to the annual total.
-    expect(count('$6.58/mo effective')).toBe(2);
-    expect(count('$24.92/mo effective')).toBe(2);
-    expect(count('Save 34%')).toBe(2);
-    expect(count('Save 49%')).toBe(2);
+    // Prepay leads on Starter and Pro, in BOTH artboards, and the effective monthly rate is
+    // always shown next to the prepay total (R-C: six months, $39.90 / $129).
+    expect(count('$6.65/mo effective')).toBe(2);
+    expect(count('$21.50/mo effective')).toBe(2);
+    expect(count('Save 33%')).toBe(2);
+    expect(count('Save 56%')).toBe(2);
+    // R-B's second meter and R-A's flat-billing statement, on every metered card, both artboards.
+    expect(count('Up to 100 calls/day')).toBe(2);
+    expect(count('Up to 1,000 calls/day')).toBe(2);
+    expect(count('Up to 10,000 calls/day')).toBe(2);
+    expect(count('Every verdict counts, including HOLD')).toBe(6);
     expect(count('or $9.99/mo billed monthly')).toBe(2);
     expect(count('or $49/mo billed monthly')).toBe(2);
     // Enterprise: no self-serve price, no CTA, ONE contact line per artboard.

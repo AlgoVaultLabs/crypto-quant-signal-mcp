@@ -317,11 +317,11 @@ tailwind.config = {
 <li><strong>“Server not initialized”</strong> — first call needs the MCP handshake; Cline handles this automatically on <code>streamableHttp</code>. If you see this, switch <code>type</code> to <code>streamableHttp</code> (NOT <code>sse</code>).</li>
 <li><strong><code>autoApprove</code> not respected</strong> — Cline asks before each tool call by default. Add tool names to <code>autoApprove</code> (e.g. <code>[&quot;get_trade_call&quot;]</code>) to pre-approve.</li>
 <li><strong>Cline can’t find <code>cline_mcp_settings.json</code></strong> — path varies by OS. Access via Cline panel → Configure MCP Servers; that opens the file.</li>
-<li><strong>Tool calls silently rejected on free tier</strong> — your free-tier counter is full (100 calls/month resets at UTC month boundary). Remove the <code>headers</code> block if you accidentally left an empty Bearer; or upgrade at <code>algovault.com/account</code> for Starter (3,000/mo).</li>
+<li><strong>Tool calls silently rejected on free tier</strong> — your free-tier counter is full (200 calls/month, 100/day; the monthly counter resets at the UTC month boundary and the daily one at 00:00 UTC). Remove the <code>headers</code> block if you accidentally left an empty Bearer; or upgrade at <code>algovault.com/account</code> for Starter (10,000/mo, 1,000/day).</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
 <p><strong>Cline vs Continue.dev?</strong> Both are VSCode coding agents. Cline supports MCP natively. Continue.dev’s MCP support is community-driven.</p>
-<p><strong>Free tier?</strong> Yes. Remove the <code>headers</code> field. 100 calls/month.</p>
+<p><strong>Free tier?</strong> Yes. Remove the <code>headers</code> field. 200 calls/month (100/day).</p>
 <p><strong>SSE vs streamableHttp?</strong> <code>streamableHttp</code> is the modern transport. AlgoVault MCP supports both, but new setups should use <code>streamableHttp</code>.</p>
 <p><strong>Auto-approve safe?</strong> Auto-approve is convenient for trusted servers. AlgoVault is read-only (no order placement), so auto-approving its tools won’t trigger side effects.</p></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>Next steps</h2>

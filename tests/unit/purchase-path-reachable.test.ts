@@ -15,18 +15,23 @@
  * "is the href inside markup a human can click".
  *
  * Structural, deliberately: it derives the plan set from `plans.ts` and the surfaces from a
- * declared list, so adding a 6-month interval or a new tier is covered without touching this file.
+ * declared list, so adding an interval or a new tier is covered without touching this file.
+ *
+ * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH7) EXTENDED the interval set rather than rewriting
+ * the gate: `'year'` became `'6month'` in `BUYABLE_INTERVALS`, and a new case asserts that NO
+ * surface still offers `interval=year` at all. Both directions matter — the first proves the new
+ * path is clickable, the second proves the retired one is gone rather than merely de-emphasised.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderPlanCards } from '../../src/lib/signup-flow.js';
-import { PLANS, planHasAnnual, type PaidPlanId } from '../../src/lib/plans.js';
+import { PLANS, planHasSixMonth, type PaidPlanId } from '../../src/lib/plans.js';
 
 const ROOT = join(__dirname, '..', '..');
 
 /** Plans sold self-serve. Enterprise is contact-us — it has no purchase path by design. */
-const SELF_SERVE: PaidPlanId[] = (Object.keys(PLANS) as PaidPlanId[]).filter(planHasAnnual);
+const SELF_SERVE: PaidPlanId[] = (Object.keys(PLANS) as PaidPlanId[]).filter(planHasSixMonth);
 
 interface Surface {
   readonly name: string;
@@ -56,14 +61,21 @@ function clickableHrefs(html: string): string[] {
   return [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map((m) => m[1]);
 }
 
+/** The intervals a buyer must be able to reach by CLICKING, on every advertising surface. */
+const BUYABLE_INTERVALS = ['month', '6month'] as const;
+type BuyableInterval = (typeof BUYABLE_INTERVALS)[number];
+
+/** Intervals that must NOT appear as a purchase link anywhere. `'year'` retired in R-C. */
+const RETIRED_INTERVALS = ['year'] as const;
+
 /** `?plan=x` with no interval param → monthly (the route's documented default). */
-function buysPlan(href: string, plan: string, interval: 'month' | 'year'): boolean {
+function buysPlan(href: string, plan: string, interval: BuyableInterval): boolean {
   if (!href.includes(`/signup?plan=${plan}`)) return false;
-  const isAnnual = href.includes('interval=year');
   // Guard against a same-prefix plan id (e.g. `pro` matching `pro-plus`) once such a tier exists.
   const after = href.split(`/signup?plan=${plan}`)[1] ?? '';
   if (after && !after.startsWith('&')) return false;
-  return interval === 'year' ? isAnnual : !isAnnual;
+  const prepay = href.includes('interval=6month');
+  return interval === '6month' ? prepay : !prepay;
 }
 
 describe('purchase-path reachability — an advertised plan must be buyable', () => {
@@ -80,7 +92,7 @@ describe('purchase-path reachability — an advertised plan must be buyable', ()
 
   for (const surface of SURFACES) {
     for (const plan of SELF_SERVE) {
-      for (const interval of ['month', 'year'] as const) {
+      for (const interval of BUYABLE_INTERVALS) {
         it(`${surface.name}: ${plan} is buyable ${interval}ly from CLICKABLE markup`, () => {
           const hrefs = clickableHrefs(surface.html());
           expect(hrefs.length, 'no anchors parsed — the extractor broke, not the page').toBeGreaterThan(0);
@@ -94,6 +106,20 @@ describe('purchase-path reachability — an advertised plan must be buyable', ()
       }
     }
   }
+
+  it('no surface still offers a RETIRED interval — annual is gone, not just de-emphasised', () => {
+    // The other half of an interval swap. Without this, a page could keep its old annual anchor
+    // beside the new six-month one and every "is it buyable" case above would still pass, while
+    // the buyer is offered a term whose Stripe Price CH8 archives.
+    expect(RETIRED_INTERVALS.length).toBeGreaterThan(0); // vacuity guard
+    for (const surface of SURFACES) {
+      const hrefs = clickableHrefs(surface.html());
+      for (const dead of RETIRED_INTERVALS) {
+        const offenders = hrefs.filter((h) => h.includes(`interval=${dead}`));
+        expect(offenders, `${surface.name} still links interval=${dead}`).toEqual([]);
+      }
+    }
+  });
 
   it('a JSON-LD Offer url alone does NOT satisfy the gate — the original false positive', () => {
     // Pin the discriminator itself. `landing/index.html` genuinely carries

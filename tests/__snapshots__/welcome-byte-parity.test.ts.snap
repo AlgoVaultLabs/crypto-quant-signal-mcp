@@ -64,8 +64,8 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">AlgoVault MCP — the crypto signal layer for AI agents</div>
   <div class="paywall-cta">
-         <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
-         <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div class="paywall-headline">Free-tier MCP access — 200 calls per month, up to 100 per day</div>
+         <p class="paywall-body">Upgrade to Starter for 10,000 calls per month (up to 1,000 per day), full asset coverage, and unlimited Telegram bot alerts. Every verdict counts, HOLD included.</p>
          
          <div id="signup-email-block">
            <form id="signup-email-form" class="signup-email-form" novalidate>
@@ -219,8 +219,8 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">AlgoVault MCP — the crypto signal layer for AI agents</div>
   <div class="paywall-cta">
-         <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
-         <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div class="paywall-headline">Free-tier MCP access — 200 calls per month, up to 100 per day</div>
+         <p class="paywall-body">Upgrade to Starter for 10,000 calls per month (up to 1,000 per day), full asset coverage, and unlimited Telegram bot alerts. Every verdict counts, HOLD included.</p>
          
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
@@ -393,8 +393,8 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">AlgoVault MCP — the crypto signal layer for AI agents</div>
   <div class="paywall-cta">
-         <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
-         <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div class="paywall-headline">Free-tier MCP access — 200 calls per month, up to 100 per day</div>
+         <p class="paywall-body">Upgrade to Starter for 10,000 calls per month (up to 1,000 per day), full asset coverage, and unlimited Telegram bot alerts. Every verdict counts, HOLD included.</p>
          
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
@@ -567,8 +567,8 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">AlgoVault MCP — the crypto signal layer for AI agents</div>
   <div class="paywall-cta">
-         <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
-         <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div class="paywall-headline">Free-tier MCP access — 200 calls per month, up to 100 per day</div>
+         <p class="paywall-body">Upgrade to Starter for 10,000 calls per month (up to 1,000 per day), full asset coverage, and unlimited Telegram bot alerts. Every verdict counts, HOLD included.</p>
          
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>
@@ -741,8 +741,8 @@ exports[`welcome-page byte-parity when UNIFIED_SIGNIN off (legacy layout intact)
   <h1>Welcome to AlgoVault! &#x1f389;</h1>
   <div class="subtitle">AlgoVault MCP — the crypto signal layer for AI agents</div>
   <div class="paywall-cta">
-         <div class="paywall-headline">Free-tier MCP access — 100 calls per month</div>
-         <p class="paywall-body">Upgrade to Starter for 3,000 calls per month, full asset coverage, and unlimited Telegram bot alerts.</p>
+         <div class="paywall-headline">Free-tier MCP access — 200 calls per month, up to 100 per day</div>
+         <p class="paywall-body">Upgrade to Starter for 10,000 calls per month (up to 1,000 per day), full asset coverage, and unlimited Telegram bot alerts. Every verdict counts, HOLD included.</p>
          
          <div class="startfree-block" style="margin:10px 0">
            <button type="button" class="paywall-btn" style="background:#238636;width:100%;border:0;cursor:pointer" onclick="avStartFree(this)">⚡ Start free — no card, no email · get a live BTC signal now</button>

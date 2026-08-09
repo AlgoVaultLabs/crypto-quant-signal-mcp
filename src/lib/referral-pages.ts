@@ -373,7 +373,7 @@ export function renderJoinPage(opts: { refValid: boolean; code?: string }): stri
     const body = `
     <style>${PLAN_CARDS_CSS}</style>
     <h1>A friend gave you ${bonusCallsLabel()} bonus calls.</h1>
-    <p class="sub">Start free, no card — you'll get ${bonusCallsLabel()} one-time bonus calls on top of the 100 free calls every account gets.</p>
+    <p class="sub">Start free, no card — you'll get ${bonusCallsLabel()} one-time bonus calls on top of the 200 free calls every account gets.</p>
     ${renderReferralSignupForm({ ref: opts.code, source: 'join-page', heading: 'Start free — no card', cta: `Claim my ${bonusCallsLabel()} calls — start free &rarr;` })}
     <h2>Or pick a plan</h2>
     ${renderPlanCards(SIGNUP_BASE)}

@@ -356,7 +356,7 @@ console.log('=== NO REAL ORDERS PLACED ===');
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch AlgoVault regime reads in parallel.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> for <code>BTC</code> / <code>ETH</code> / <code>SOL</code> on the <code>4h</code> timeframe (each call returns <code>regime</code> alongside the signal/confidence), and returns the parsed payloads. Free tier covers 100 calls/month — three regime reads per scan is ample for development.</p>
+<p><strong>Fetch AlgoVault regime reads in parallel.</strong> The shared helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> for <code>BTC</code> / <code>ETH</code> / <code>SOL</code> on the <code>4h</code> timeframe (each call returns <code>regime</code> alongside the signal/confidence), and returns the parsed payloads. Free tier covers 200 calls/month (100/day) — three regime reads per scan is ample for development.</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> The agent’s grid-bot policy fires only when at least one asset in the scan returns a <code>RANGING</code> regime (grid bots only profit in range-bound markets — running them in <code>TRENDING_*</code> or <code>VOLATILE</code> regimes destroys capital). The policy lives in your code — AlgoVault returns the regime classifications; the agent decides.</p>

@@ -8,9 +8,9 @@
   "brand": { "@type": "Brand", "name": "AlgoVault Labs" },
   "category": "Software / API / FinanceApplication",
   "offers": [
-    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "100 calls/month, all assets, all 11 timeframes" },
-    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "3,000 calls/month", "url": "https://api.algovault.com/signup?plan=starter" },
-    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "15,000 calls/month", "url": "https://api.algovault.com/signup?plan=pro" }
+    { "@type": "Offer", "price": "0", "priceCurrency": "USD", "name": "Free", "description": "200 calls/month (up to 100/day), all assets, all 11 timeframes" },
+    { "@type": "Offer", "price": "9.99", "priceCurrency": "USD", "name": "Starter", "description": "10,000 calls/month (up to 1,000/day)", "url": "https://api.algovault.com/signup?plan=starter" },
+    { "@type": "Offer", "price": "49", "priceCurrency": "USD", "name": "Pro", "description": "100,000 calls/month (up to 10,000/day)", "url": "https://api.algovault.com/signup?plan=pro" }
   ],
   "additionalProperty": [
     { "@type": "PropertyValue", "name": "PFE win rate", "value": "{{pfe_wr}}%" },

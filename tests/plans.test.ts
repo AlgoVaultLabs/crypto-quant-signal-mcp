@@ -30,9 +30,10 @@ import {
   PLANS,
   planMonthlyRateUsd,
   planPrepayMonthlyRateUsd,
+  planPrepayMonthlyEquivalent,
   PREPAY_ANNUAL_MONTHS,
+  PREPAY_6MONTH_MONTHS,
   INTERVAL_MONTHS,
-  planAnnualMonthlyEquivalent,
   type PaidPlanId,
 } from '../src/lib/plans.js';
 
@@ -84,34 +85,41 @@ describe('planMonthlyRateUsd — the single MRR derivation', () => {
   });
 });
 
-describe('planAnnualMonthlyEquivalent — byte-identical after the refactor', () => {
+describe('the prepay monthly equivalent is byte-identical to the pre-refactor expression', () => {
+  // CH7 retired `planAnnualMonthlyEquivalent`; the property it guarded did NOT retire with it,
+  // so the oracle now rides the generic `planPrepayMonthlyEquivalent(id, months)` and is checked
+  // on BOTH terms — the live six-month copy AND the annual one that historical MRR still values.
   // The literal pre-refactor expression, reproduced here as the oracle. If the primitive ever
   // starts rounding, or the formatter stops using .toFixed(2), this diverges and fails.
-  const preRefactor = (id: PaidPlanId): string | null => {
-    const p = PLANS[id].priceUsdAnnual;
+  const preRefactor = (id: PaidPlanId, months: number): string | null => {
+    const p = months === PREPAY_ANNUAL_MONTHS ? PLANS[id].priceUsdAnnual : PLANS[id].priceUsd6Month;
     if (typeof p !== 'number') return null;
-    return `$${(p / 12).toFixed(2)}`;
+    return `$${(p / months).toFixed(2)}`;
   };
 
-  it('renders exactly what the pre-refactor expression rendered, for EVERY tier', () => {
-    for (const tier of ALL_TIERS) {
-      expect(planAnnualMonthlyEquivalent(tier)).toBe(preRefactor(tier));
+  it('renders exactly what the pre-refactor expression rendered, for EVERY tier and both terms', () => {
+    for (const months of [PREPAY_6MONTH_MONTHS, PREPAY_ANNUAL_MONTHS]) {
+      for (const tier of ALL_TIERS) {
+        expect(planPrepayMonthlyEquivalent(tier, months), `${tier}@${months}`).toBe(preRefactor(tier, months));
+      }
     }
   });
 
-  it('still renders the live pricing-page strings to the cent', () => {
-    expect(planAnnualMonthlyEquivalent('starter')).toBe('$6.58');
-    expect(planAnnualMonthlyEquivalent('pro')).toBe('$24.92');
+  it('renders the live pricing-page strings to the cent', () => {
+    expect(planPrepayMonthlyEquivalent('starter', PREPAY_6MONTH_MONTHS)).toBe('$6.65');
+    expect(planPrepayMonthlyEquivalent('pro', PREPAY_6MONTH_MONTHS)).toBe('$21.50');
   });
 
   it('still returns null for the monthly-only tier — the null branch survived too', () => {
-    expect(planAnnualMonthlyEquivalent('enterprise')).toBeNull();
-    expect(preRefactor('enterprise')).toBeNull();
+    expect(planPrepayMonthlyEquivalent('enterprise', PREPAY_6MONTH_MONTHS)).toBeNull();
+    expect(preRefactor('enterprise', PREPAY_6MONTH_MONTHS)).toBeNull();
   });
 
   it('formats the primitive rather than re-dividing — the two agree to the cent', () => {
     for (const tier of ANNUAL_TIERS) {
-      expect(planAnnualMonthlyEquivalent(tier)).toBe(`$${planPrepayMonthlyRateUsd(tier, PREPAY_ANNUAL_MONTHS)!.toFixed(2)}`);
+      for (const months of [PREPAY_6MONTH_MONTHS, PREPAY_ANNUAL_MONTHS]) {
+        expect(planPrepayMonthlyEquivalent(tier, months)).toBe(`$${planPrepayMonthlyRateUsd(tier, months)!.toFixed(2)}`);
+      }
     }
   });
 });

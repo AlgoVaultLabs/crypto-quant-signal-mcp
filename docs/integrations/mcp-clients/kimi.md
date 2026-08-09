@@ -44,7 +44,7 @@ Ask Kimi: *"Use AlgoVault to check BTC at 4h."* It invokes `get_trade_call` and 
 
 ## FAQ
 
-**Free tier OK?** Yes. Drop `bearerTokenEnvVar`. 100 calls/month, every coin and timeframe.
+**Free tier OK?** Yes. Drop `bearerTokenEnvVar`. 200 calls/month (100/day), every coin and timeframe.
 
 **User vs project config?** Project config is commit-friendly, so teammates inherit it. User config stays private.
 

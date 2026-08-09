@@ -16,10 +16,13 @@ import { renderPlanCards } from '../../src/lib/signup-flow.js';
 import { CONTACT_FALLBACK_EMAIL } from '../../src/lib/contact-page.js';
 import {
   PLANS,
+  PREPAY_6MONTH_MONTHS as M,
   planPriceLabel,
-  planAnnualPriceLabel,
-  planAnnualMonthlyEquivalent,
-  planAnnualSavingsPct,
+  planCallsLabel,
+  planDailyCallsLabel,
+  planPrepayPriceLabel,
+  planPrepayMonthlyEquivalent,
+  planPrepaySavingsPct,
 } from '../../src/lib/plans.js';
 
 describe('renderPlanCards — REFERRAL-WEB-FIX-W1 link-base contract', () => {
@@ -34,7 +37,7 @@ describe('renderPlanCards — REFERRAL-WEB-FIX-W1 link-base contract', () => {
     const c = renderPlanCards('https://api.algovault.com');
     expect(c).toContain('href="https://api.algovault.com/signup?plan=starter"');
     expect(c).toContain('href="https://api.algovault.com/signup?plan=pro"');
-    expect(c).toContain('href="https://api.algovault.com/signup?plan=starter&amp;interval=year"');
+    expect(c).toContain('href="https://api.algovault.com/signup?plan=starter&amp;interval=6month"');
   });
 
   it('renders the 2 self-serve plans + the SoT exchange count (no card drift between surfaces)', () => {
@@ -48,31 +51,31 @@ describe('renderPlanCards — REFERRAL-WEB-FIX-W1 link-base contract', () => {
   });
 });
 
-describe('renderPlanCards — annual-first (PRICING-ANNUAL-AND-HOLD-PROMISE-W1)', () => {
-  it('leads with the annual TOTAL, not the effective monthly rate', () => {
+describe('renderPlanCards — prepay-first, six-month term (R-C)', () => {
+  it('leads with the prepay TOTAL, not the effective monthly rate', () => {
     const c = renderPlanCards();
     // The headline `.price` must carry the yearly figure + /yr.
-    expect(c).toContain(`<div class="price">${planAnnualPriceLabel('starter')}<span>/yr</span></div>`);
-    expect(c).toContain(`<div class="price">${planAnnualPriceLabel('pro')}<span>/yr</span></div>`);
+    expect(c).toContain(`<div class="price">${planPrepayPriceLabel('starter', M)}<span>/${M}mo</span></div>`);
+    expect(c).toContain(`<div class="price">${planPrepayPriceLabel('pro', M)}<span>/${M}mo</span></div>`);
   });
 
-  it('always shows the effective monthly rate ALONGSIDE the annual total, never instead of it', () => {
+  it('always shows the effective monthly rate ALONGSIDE the prepay total, never instead of it', () => {
     // Quoting only "$6.58/mo" for something billed $79 once a year is the misleading framing the
     // public-copy LAW forbids; both numbers must be present together.
     const c = renderPlanCards();
     for (const id of ['starter', 'pro'] as const) {
-      expect(c).toContain(`${planAnnualMonthlyEquivalent(id)}/mo effective`);
-      expect(c).toContain(`${planAnnualPriceLabel(id)}<span>/yr</span>`);
+      expect(c).toContain(`${planPrepayMonthlyEquivalent(id, M)}/mo effective`);
+      expect(c).toContain(`${planPrepayPriceLabel(id, M)}<span>/${M}mo</span>`);
     }
   });
 
   it('shows the computed saving, and it matches plans.ts exactly', () => {
     const c = renderPlanCards();
-    expect(c).toContain(`Save ${planAnnualSavingsPct('starter')}%`);
-    expect(c).toContain(`Save ${planAnnualSavingsPct('pro')}%`);
+    expect(c).toContain(`Save ${planPrepaySavingsPct('starter', M)}%`);
+    expect(c).toContain(`Save ${planPrepaySavingsPct('pro', M)}%`);
     // Sanity-anchor the approved values so a silent SoT edit is still visible here.
-    expect(c).toContain('Save 34%');
-    expect(c).toContain('Save 49%');
+    expect(c).toContain('Save 33%');
+    expect(c).toContain('Save 56%');
   });
 
   it('keeps the monthly option visible and one click away — no dark pattern', () => {
@@ -83,10 +86,12 @@ describe('renderPlanCards — annual-first (PRICING-ANNUAL-AND-HOLD-PROMISE-W1)'
     }
   });
 
-  it('routes the annual CTA through ?interval=year', () => {
+  it('routes the prepay CTA through ?interval=6month', () => {
     const c = renderPlanCards();
-    expect(c).toContain('href="/signup?plan=starter&amp;interval=year"');
-    expect(c).toContain('href="/signup?plan=pro&amp;interval=year"');
+    expect(c).toContain('href="/signup?plan=starter&amp;interval=6month"');
+    expect(c).toContain('href="/signup?plan=pro&amp;interval=6month"');
+    // R-C: annual is out of the buyer-facing vocabulary entirely, not merely de-emphasised.
+    expect(c).not.toContain('interval=year');
   });
 
   it('carries NO scarcity language — Public-copy LAW', () => {
@@ -117,6 +122,7 @@ describe('renderPlanCards — Enterprise is contact-us (R4)', () => {
     // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the CTA is the FORM now, not a mailto — Cloudflare
     // rewrites every mailto: into /cdn-cgi/l/email-protection#, so the old link was unclickable.
     expect(c).toContain('<a href="/contact">Contact us</a>');
+    expect(c).toContain('for custom volume'); // R-E: no published Enterprise quota or price
     expect(c).not.toContain('mailto:');
     // The address survives as the contact page's own secondary fallback, with ONE owner.
     expect(CONTACT_FALLBACK_EMAIL).toBe('admin@algovault.com');

@@ -355,7 +355,7 @@ if (verdict.call === 'BUY' &amp;&amp; verdict.confidence &gt; 70) {
 <p>The script does three things in order:</p>
 <ol>
 <li>
-<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers 100 calls/month.</p>
+<p><strong>Fetch the AlgoVault verdict.</strong> The helper opens an MCP session against <code>https://api.algovault.com/mcp</code>, calls <code>get_trade_call</code> with <code>{coin, timeframe}</code>, and returns the parsed <code>call</code> / <code>confidence</code> / <code>regime</code> / <code>reasoning</code> payload. Free tier covers 200 calls/month (100/day).</p>
 </li>
 <li>
 <p><strong>Apply the agent’s policy.</strong> When the verdict satisfies a pre-configured policy (e.g. <em>the agent’s policy fires when <code>confidence &gt; 70</code> AND <code>call === 'BUY'</code></em>), the script proceeds to the validation branch. The policy lives entirely in your code — AlgoVault returns the analytics; the agent decides.</p>

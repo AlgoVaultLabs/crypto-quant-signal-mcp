@@ -837,7 +837,8 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // `indicator-buckets.ts` helpers stay exported: their unit test is the moat-1
   // forbidden-token regression guard and is worth keeping green on its own.
 
-  // Increment quota counter only for non-HOLD (HOLDs are free).
+  // Increment the quota counter on every successful verdict (R-A — HOLD included; see the
+  // note further down for why the branch that used to sit here is gone).
   // Internal grid-refresh calls skip the counter entirely.
   const license = input.license || { tier: 'free' as const, key: null };
   // OPS-QUOTA-EXHAUSTION-NOTICE-W1: keep the POST-charge meter reading for `_algovault.quota`.

@@ -2,8 +2,10 @@
  * Three-tier access gating (checked in order):
  * 1. x402 (valid payment proof in header → full access)
  * 2. API key (CQS_API_KEY env var or Authorization: Bearer header)
- *    - Pro ($49/mo): 15K calls/mo, overage $0.01/call
- *    - Enterprise ($299/mo): 100K calls/mo, overage $0.005/call
+ *    - Starter: 10K calls/mo + 1K/day · Pro: 100K/mo + 10K/day (see plans.ts#PLANS —
+ *      the ONE ladder; this comment names tiers, never their numbers)
+ *    - Enterprise: custom volume, contact-us. There is no overage billing on any tier:
+ *      the wall REFUSES, it does not bill.
  * 3. Free tier (no key, no payment)
  */
 import { AsyncLocalStorage } from 'node:async_hooks';

@@ -32,6 +32,8 @@
  * (already live, not a hardcoded literal) and is left unmarked.
  */
 
+import { freeCallsLabel, freeDailyCallsLabel } from './plans.js';
+
 /** Greppable marker the injector + drift canary key on. */
 export const LANDING_COPY_MARKER = 'data-av-copy';
 
@@ -74,9 +76,12 @@ export const LANDING_COPY: Readonly<Record<string, CopyEntry>> = {
     desktop: 'View Track Record',
     mobile: 'View Track Record',
   },
+  // The two allowances interpolate from the plan SoT rather than being typed here. `plans.ts`
+  // is a declared leaf (it imports nothing), so this stays a data module with one dependency
+  // and cannot drift from what the meter actually enforces.
   'hero.free_tier_note': {
-    desktop: 'No signup required. Free tier: all assets, all 11 timeframes, 100 calls/month.',
-    mobile: 'No signup required. Free tier: all assets, all 11 timeframes, 100 calls/month.',
+    desktop: `No signup required. Free tier: all assets, all 11 timeframes, ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()}/day).`,
+    mobile: `No signup required. Free tier: all assets, all 11 timeframes, ${freeCallsLabel()} calls/month (up to ${freeDailyCallsLabel()}/day).`,
   },
 };
 

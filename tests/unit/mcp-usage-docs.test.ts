@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { MCP_USAGE_HTML } from '../../src/lib/mcp-usage-docs.js';
+import { freeCallsLabel, freeDailyCallsLabel } from '../../src/lib/plans.js';
 
 describe('MCP_USAGE_HTML — structural invariants', () => {
   it('contains the #connect-mcp anchor (deep-link target from welcome email + signup page)', () => {
@@ -69,9 +70,12 @@ describe('MCP_USAGE_HTML — structural invariants', () => {
     expect(MCP_USAGE_HTML).toMatch(/href="#testing-with-curl"/);
   });
 
-  it('mentions free-tier unlock copy (all coins + all timeframes, 100/mo cap)', () => {
+  it('mentions free-tier unlock copy (all coins + all timeframes, the two allowance caps)', () => {
     expect(MCP_USAGE_HTML).toMatch(/every coin.*every timeframe|all 11 timeframes|every supported/i);
-    expect(MCP_USAGE_HTML).toMatch(/100 calls\/month|capped at 100/i);
+    // Derived from the plan SoT, not a literal: R-B moved the free cap 100 -> 200 and added a
+    // second daily meter, and a hardcoded expectation here is what makes the next move a chore.
+    expect(MCP_USAGE_HTML).toContain(`capped at ${freeCallsLabel()} calls/month`);
+    expect(MCP_USAGE_HTML).toContain(`${freeDailyCallsLabel()} calls per UTC day`);
   });
 });
 

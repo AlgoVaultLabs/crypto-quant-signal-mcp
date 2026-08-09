@@ -96,7 +96,7 @@ export interface ScanTradeCallsResult {
   scanned: number;
   /** Non-HOLD calls in the RETURNED `calls[]` — the handler's quota-unit driver. */
   eligible_non_hold: number;
-  /** HOLD cells computed (informational; HOLDs are free + excluded unless includeHolds). */
+  /** HOLD cells computed (informational; excluded from `calls[]` unless includeHolds). */
   holds: number;
   /** Cells that failed to score (isolated + skipped). */
   errors: number;

@@ -165,7 +165,7 @@
     "tools_list": "no ttlMs/cacheScope is advertised (those arrive in MCP 2026-07-28; we negotiate 2025-06-18)."
   },
   "error_contract": {
-    "TIER_LIMIT_REACHED": "TierLimitReachedError — structured, carries currentUsage/monthlyLimit/tier/suggestedUpgradeUrl/resetAtMs/referralCode. HOLD verdicts are free and never charged.",
+    "TIER_LIMIT_REACHED": "TierLimitReachedError — structured, carries currentUsage/monthlyLimit/tier/suggestedUpgradeUrl/resetAtMs/referralCode. Every successful verdict counts as one metered call, HOLD included (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A); errors are not verdicts and are never charged. Two independent meters — the refusal carries `limit: 'daily'|'monthly'`.",
     "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "TradFiSymbolUnsupportedOnVenueError — carries suggested_venues so an agent can self-retry.",
     "INSUFFICIENT_CANDLES": "InsufficientCandlesError — carries candlesAvailable/candlesRequired/suggestedTimeframes/suggestedAction.",
     "free_tier_gate": "a plain Error carrying freeGateMessage(coin, timeframe) when the coin or timeframe is outside the caller's tier.",

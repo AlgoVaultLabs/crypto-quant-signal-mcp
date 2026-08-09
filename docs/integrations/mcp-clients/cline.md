@@ -37,13 +37,13 @@ Cline can also wire AlgoVault into multi-step plans — *"If ETH 1h is BUY, writ
 - **"Server not initialized"** — first call needs the MCP handshake; Cline handles this automatically on `streamableHttp`. If you see this, switch `type` to `streamableHttp` (NOT `sse`).
 - **`autoApprove` not respected** — Cline asks before each tool call by default. Add tool names to `autoApprove` (e.g. `["get_trade_call"]`) to pre-approve.
 - **Cline can't find `cline_mcp_settings.json`** — path varies by OS. Access via Cline panel &rarr; Configure MCP Servers; that opens the file.
-- **Tool calls silently rejected on free tier** — your free-tier counter is full (100 calls/month resets at UTC month boundary). Remove the `headers` block if you accidentally left an empty Bearer; or upgrade at `algovault.com/account` for Starter (3,000/mo).
+- **Tool calls silently rejected on free tier** — your free-tier counter is full (200 calls/month, 100/day; the monthly counter resets at the UTC month boundary and the daily one at 00:00 UTC). Remove the `headers` block if you accidentally left an empty Bearer; or upgrade at `algovault.com/account` for Starter (10,000/mo, 1,000/day).
 
 ## FAQ
 
 **Cline vs Continue.dev?** Both are VSCode coding agents. Cline supports MCP natively. Continue.dev's MCP support is community-driven.
 
-**Free tier?** Yes. Remove the `headers` field. 100 calls/month.
+**Free tier?** Yes. Remove the `headers` field. 200 calls/month (100/day).
 
 **SSE vs streamableHttp?** `streamableHttp` is the modern transport. AlgoVault MCP supports both, but new setups should use `streamableHttp`.
 

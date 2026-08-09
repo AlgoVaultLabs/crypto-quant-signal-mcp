@@ -41,7 +41,7 @@ Chain it into edits: *"If BTC 4h is BUY, add a long entry at the current bar in 
 
 ## FAQ
 
-**Free tier OK?** Yes. Drop `bearer_token_env_var`. 100 calls/month, every coin and timeframe.
+**Free tier OK?** Yes. Drop `bearer_token_env_var`. 200 calls/month (100/day), every coin and timeframe.
 
 **CLI and IDE together?** Yes. They keep separate config, so add the block in both if you use both.
 

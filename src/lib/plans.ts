@@ -123,9 +123,35 @@ export const FREE_DAILY_CALLS = 100;
 /** The plan a free caller is upsold to. Every free→paid CTA points here. */
 export const DEFAULT_UPGRADE_PLAN: PaidPlanId = 'starter';
 
-/** Locale-grouped allowance for copy (`3,000`). Never hand-typed at a call site. */
+/** Locale-grouped monthly allowance for copy (`10,000`). Never hand-typed at a call site. */
 export function planCallsLabel(id: PaidPlanId): string {
   return PLANS[id].monthlyCalls.toLocaleString('en-US');
+}
+
+/**
+ * Locale-grouped DAILY allowance for copy (`1,000`), or null when the plan has no daily cap.
+ *
+ * 🛑 null is a REFUSAL, not "unlimited" and not zero. Enterprise carries `dailyCalls: null`
+ * because no real deal has set one; a caller rendering copy must OMIT the bullet rather than
+ * print a fabricated number or the word "unlimited", which R-E removed from this ladder.
+ *
+ * The daily cap is a SECOND meter, not a slice of the monthly one — a call is refused when
+ * EITHER is exhausted — so copy states it as its own atomic bullet ("Up to 1,000 calls/day")
+ * rather than folding it into the monthly line, where it would read as a sub-limit.
+ */
+export function planDailyCallsLabel(id: PaidPlanId): string | null {
+  const d = PLANS[id].dailyCalls;
+  return typeof d === 'number' ? d.toLocaleString('en-US') : null;
+}
+
+/** Locale-grouped free-tier allowances for copy (`200`, `100`). Same atomic-bullet rule. */
+export function freeCallsLabel(): string {
+  return FREE_MONTHLY_CALLS.toLocaleString('en-US');
+}
+
+/** @see freeCallsLabel — the free tier's per-UTC-day cap, as it renders in copy. */
+export function freeDailyCallsLabel(): string {
+  return FREE_DAILY_CALLS.toLocaleString('en-US');
 }
 
 /** Price as it renders in copy (`$9.99`, `$49`). Trailing `.00` is never emitted. */
@@ -134,24 +160,17 @@ export function planPriceLabel(id: PaidPlanId): string {
   return `$${Number.isInteger(p) ? p : p.toFixed(2)}`;
 }
 
-// ── Annual prepay (PRICING-ANNUAL-AND-HOLD-PROMISE-W1) ──
+// ── Prepay terms (PRICING-ANNUAL-AND-HOLD-PROMISE-W1 → PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1) ──
 //
-// Every annual figure on every surface is COMPUTED from `priceUsdAnnual` + `priceUsdMonthly`.
-// Nothing downstream may hand-type "$79", "$6.58/mo" or "Save 34%": the whole point of the
+// Every prepay figure on every surface is COMPUTED from the term total + `priceUsdMonthly`.
+// Nothing downstream may hand-type "$39.90", "$6.65/mo" or "Save 33%": the whole point of the
 // single-derivation rule here is that moving a price moves the badge, the effective rate and
 // the copy together, so the page cannot advertise a discount the price does not support.
-
-/** True when the plan is sold annually. Enterprise is not — it is contact-us. */
-export function planHasAnnual(id: PaidPlanId): boolean {
-  return typeof PLANS[id].priceUsdAnnual === 'number';
-}
-
-/** Annual price as it renders in copy (`$79`, `$299`), or null when not sold annually. */
-export function planAnnualPriceLabel(id: PaidPlanId): string | null {
-  const p = PLANS[id].priceUsdAnnual;
-  if (typeof p !== 'number') return null;
-  return `$${Number.isInteger(p) ? p : p.toFixed(2)}`;
-}
+//
+// The helpers are GENERIC in `months` (`planPrepay*`) rather than one named family per term.
+// That is the R-C lesson made structural: a `planAnnual*` family had the term welded into its
+// name, so replacing the term meant replacing the API and every call site. See the CH7 note
+// below for what survived the annual retirement and why.
 
 /**
  * The MONTHLY RATE in USD that a subscription on (`plan`, `interval`) contributes to MRR, or
@@ -269,31 +288,20 @@ export function planHasSixMonth(id: PaidPlanId): boolean {
   return typeof PLANS[id].priceUsd6Month === 'number';
 }
 
-/**
- * What the annual price works out to per month (`$6.58`, `$24.92`), or null.
- *
- * This is the number a buyer actually compares against the monthly price, so it is always
- * shown alongside the annual total rather than instead of it — quoting only "$6.58/mo" for a
- * plan that bills $79 once a year would be the misleading framing the public-copy LAW forbids.
- *
- * FORMATS `planMonthlyRateUsd(id, 'year')` rather than re-dividing: one derivation, two
- * consumers (this label and the MRR materialisation). The refactor was gated on proving the
- * rendered bytes do not move — this string is live on the pricing page — which holds because
- * the primitive returns the quotient UNROUNDED and the `.toFixed(2)` here is unchanged. Pinned
- * both ways by `tests/plans.test.ts` ("byte-identical to the pre-refactor expression").
- */
-export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
-  return planPrepayMonthlyEquivalent(id, PREPAY_ANNUAL_MONTHS);
-}
-
-/**
- * Whole-percent saving of annual prepay vs paying monthly for a year, or null.
- *
- * Rounded to the nearest percent for copy. Starter → 34 (79 vs 119.88), Pro → 49 (299 vs 588).
- */
-export function planAnnualSavingsPct(id: PaidPlanId): number | null {
-  return planPrepaySavingsPct(id, PREPAY_ANNUAL_MONTHS);
-}
+// PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH7, R-C): the ANNUAL COPY HELPERS ARE RETIRED —
+// `planHasAnnual`, `planAnnualPriceLabel`, `planAnnualMonthlyEquivalent`, `planAnnualSavingsPct`.
+// CH6's note above `PREPAY_ANNUAL_MONTHS` said "CH7 removes it with the last annual helper", and
+// this is that removal: `signup-flow.ts` was the last consumer, and nothing renders an annual
+// figure to a buyer any more.
+//
+// What deliberately SURVIVES, and why each one is not an oversight:
+//   - `priceUsdAnnual` on the plan spec, because `subscriber-attribution.ts` must value a
+//     historical `'year'` subscription row for MRR forever — those rows outlive the product.
+//   - `PREPAY_ANNUAL_MONTHS`, which is the divisor that valuation needs. It names 12 without
+//     re-admitting `'year'` to `BillingInterval`, which is the whole point of the split.
+//   - The GENERIC `planPrepay*(id, months)` family, which the six-month copy now uses and which
+//     never had a term baked into its name.
+// A future wave that removes the last `'year'` row from the subscriber table can take the rest.
 
 /**
  * Monthly call volume at which a subscription becomes cheaper than paying per call.
@@ -402,8 +410,25 @@ export const TIER_CLAIMS: readonly TierClaim[] = [
   },
   {
     id: 'x402-free-then-paid',
-    match: /^100 free calls\/mo first, then pay-per-call$/,
+    match: /^200 free calls\/mo first, then pay-per-call$/,
     evidence: { kind: 'sot', ref: 'src/lib/plans.ts#FREE_MONTHLY_CALLS' },
+  },
+  {
+    // R-B's SECOND meter gets its OWN row rather than a widened `monthly-call-allowance`
+    // regex: the two allowances are independent walls, and one claim covering both would
+    // let a daily figure go stale while the monthly one still vouched for the bullet.
+    id: 'daily-call-allowance',
+    match: /^Up to [\d,]+ calls\/day$/,
+    evidence: { kind: 'sot', ref: 'src/lib/plans.ts#PLANS' },
+  },
+  {
+    // R-A. The evidence is the DECLARATION, not a tool branch: the charge model lives in
+    // `feature-registry.ts` (`quota.unit`) and is projected through `call-class.ts`
+    // (`BILLING_AXIS_BY_QUOTA_UNIT`), so a registry row that re-exempted HOLD would break
+    // this claim's evidence rather than quietly contradicting the copy.
+    id: 'all-verdicts-count',
+    match: /^Every verdict counts, including HOLD$/,
+    evidence: { kind: 'code', ref: 'src/lib/feature-registry.ts' },
   },
 ];
 

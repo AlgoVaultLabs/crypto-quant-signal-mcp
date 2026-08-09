@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong>100 free calls/month. Start in 30 seconds.</strong>
+  <strong>200 free calls/month, 100/day. Start in 30 seconds.</strong>
 </p>
 
 <p align="center">
@@ -231,7 +231,9 @@ Single-prompt wrappers over 1–3 tool calls — regime gating, multi-timeframe 
 
 Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you pay for call volume, nothing else.
 
-| Feature | Free | Starter ($9.99/mo) | Pro ($49/mo) | Enterprise (contact us) | x402 (per call) |
+Two meters per paid tier, monthly and daily, enforced independently: a call is refused when either is exhausted, and the daily window is a UTC calendar day resetting at 00:00 UTC. Every successful verdict counts against them, HOLD included — knowing when *not* to trade is the other half of the product, and it costs the same to compute.
+
+| Feature | Free | Starter ($9.99/mo · $39.90/6mo) | Pro ($49/mo · $129/6mo) | Enterprise (contact us) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
 | Exchanges | All 15 | All 15 | All 15 | All 15 | All 15 | <!-- SNAPSHOT-LINE-TABLE -->
 | Assets | All 740+ | All 740+ | All 740+ | All 740+ | All 740+ | <!-- SNAPSHOT-LINE-TABLE -->
@@ -239,12 +241,13 @@ Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you
 | Timeframes | All 11 | All 11 | All 11 | All 11 | All 11 |
 | Funding arb results | Top 5 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Track record | Full access | Full access | Full access | Full access | Full access |
-| Monthly calls | 100/mo | 3,000/mo | 15,000/mo | 100,000/mo | Unlimited |
+| Monthly calls | 200/mo | 10,000/mo | 100,000/mo | Custom volume — contact us | Unlimited |
+| Daily calls | 100/day | 1,000/day | 10,000/day | Custom volume — contact us | Unlimited |
 | Support | Community | Email | Priority | Dedicated | — |
-| Price | $0 | $9.99/mo ($79/yr) | $49/mo ($299/yr) | Contact us | $0.01–0.05/call |
+| Price | $0 | $9.99/mo or $39.90/6mo | $49/mo or $129/6mo | Contact us | $0.01–0.05/call |
 
 
-**Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). Starter ($9.99/mo) unlocks 3,000 calls/mo. API key delivered instantly after checkout.
+**Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). Starter unlocks 10,000 calls/mo (up to 1,000/day) for $9.99/mo, or $39.90 for six months prepaid — add `?interval=6month` to pick the prepay term. API key delivered instantly after checkout.
 
 **x402 micropayments:** AI agents pay per HTTP call with USDC on [Base](https://www.base.org) — no signup, no API key, no billing. The payment receipt is the credential. See [x402.org](https://x402.org).
 

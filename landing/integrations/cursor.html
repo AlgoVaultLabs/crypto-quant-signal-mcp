@@ -317,7 +317,7 @@ tailwind.config = {
 <li><strong>Tools appear once then disappear</strong> — your <code>mcp.json</code> may have invalid JSON (trailing comma, unquoted key). Cursor silently drops servers it can’t parse. Validate via <code>jq . ~/.cursor/mcp.json</code> (or use Cursor’s Validate JSON command). Fix the parse error and restart.</li>
 </ul></div>
 <div class="tier-stat-card" style="padding:24px;gap:0;margin-bottom:18px"><h2>FAQ</h2>
-<p><strong>Free tier OK?</strong> Yes. Remove the <code>headers</code> block from <code>mcp.json</code>. 100 calls/month, every coin + timeframe.</p>
+<p><strong>Free tier OK?</strong> Yes. Remove the <code>headers</code> block from <code>mcp.json</code>. 200 calls/month (100/day), every coin + timeframe.</p>
 <p><strong>Per-project vs global?</strong> Per-project (<code>.cursor/mcp.json</code>) is commit-friendly — teammates inherit. Global is private.</p>
 <p><strong>Cursor’s agent vs chat?</strong> Both have access to MCP tools. The agent can chain calls + edit code; chat is single-turn.</p>
 <p><strong>Does Cursor Composer use these tools?</strong> Yes. Composer has the same MCP access as the agent and chat panels.</p></div>

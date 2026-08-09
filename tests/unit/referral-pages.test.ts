@@ -16,6 +16,7 @@ import {
   renderAdminPayoutsPage,
 } from '../../src/lib/referral-pages.js';
 import { commissionPct, bonusCallsLabel, commissionMonthsLabel, usdcMinPayoutLabel, payoutScheduleLabel } from '../../src/lib/referral-constants.js';
+import { freeCallsLabel } from '../../src/lib/plans.js';
 
 describe('renderReferralStatsPage', () => {
   const page = renderReferralStatsPage({
@@ -288,9 +289,9 @@ describe('renderJoinPage — REFERRAL-WEB-FIX-W1 (the referee landing / #1 bug f
     expect(valid).toContain(`Claim my ${bonusCallsLabel()} calls`);
   });
 
-  it('clarifies the bonus is ONE-TIME on top of the 100/mo (kills the recurring misread)', () => {
+  it('clarifies the bonus is ONE-TIME on top of the free monthly allowance (kills the recurring misread)', () => {
     expect(valid).toContain(`${bonusCallsLabel()} one-time bonus calls`);
-    expect(valid).toContain('on top of the 100 free calls');
+    expect(valid).toContain(`on top of the ${freeCallsLabel()} free calls`);
   });
 
   it('shows the paid plans with ABSOLUTE api links (/signup is api-canonical, not apex-proxied)', () => {
