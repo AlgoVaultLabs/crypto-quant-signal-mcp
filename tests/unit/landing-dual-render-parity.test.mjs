@@ -39,12 +39,35 @@ async function landingFiles() {
   return out.sort();
 }
 
-/** Parse the SoT SOURCE (dist-free) → { 'hero.x': { desktop, mobile } }. */
+/**
+ * Parse the SoT SOURCE (dist-free) → { 'hero.x': { desktop, mobile } | { derived: true } }.
+ *
+ * TWO entry shapes, and the distinction is load-bearing:
+ *
+ *   - A single-quoted STRING literal is static copy. Its bytes are readable straight from the
+ *     source, so this file can compare a rendered node against it with no build — which is the
+ *     whole point of the "dist-free" in test (a)'s name.
+ *
+ *   - A TEMPLATE literal is DERIVED copy: PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH7) made
+ *     `hero.free_tier_note` interpolate the free allowances from `plans.ts`, because a hand-typed
+ *     pricing figure in a copy registry is exactly the drift this wave exists to close. A regex
+ *     cannot evaluate `${freeCallsLabel()}`, and faking it here would mean re-deriving the ladder
+ *     in a third place.
+ *
+ * So a derived entry keeps every STRUCTURAL guarantee below (the key is known, the variant is
+ * valid, both twins are marked) and delegates the BYTE comparison to
+ * `scripts/inject-landing-copy.mjs --check`, which loads the COMPILED module and can actually
+ * evaluate it. That check is wired into CI and the pre-push gate, so the assertion is relocated,
+ * not dropped — and `derivedKeys` is asserted non-empty below so this branch cannot quietly
+ * become a way to exempt every key.
+ */
 function parseSoT(src) {
   const map = {};
-  const re = /'(hero\.[a-z_]+)':\s*\{\s*desktop:\s*'((?:[^'\\]|\\.)*)',\s*mobile:\s*'((?:[^'\\]|\\.)*)',?\s*\}/g;
+  const staticRe = /'(hero\.[a-z_]+)':\s*\{\s*desktop:\s*'((?:[^'\\]|\\.)*)',\s*mobile:\s*'((?:[^'\\]|\\.)*)',?\s*\}/g;
   let m;
-  while ((m = re.exec(src))) map[m[1]] = { desktop: m[2], mobile: m[3] };
+  while ((m = staticRe.exec(src))) map[m[1]] = { desktop: m[2], mobile: m[3] };
+  const derivedRe = /'(hero\.[a-z_]+)':\s*\{\s*desktop:\s*`(?:[^`\\]|\\.)*`,\s*mobile:\s*`(?:[^`\\]|\\.)*`,?\s*\}/g;
+  while ((m = derivedRe.exec(src))) if (!map[m[1]]) map[m[1]] = { derived: true };
   return map;
 }
 
@@ -64,11 +87,20 @@ function markedNodes(html) {
 test('(a) every data-av-copy node matches the SoT value (dist-free parity)', async () => {
   const sot = parseSoT(await read('src/lib/landing-content.ts'));
   assert.ok(Object.keys(sot).length >= 5, `SoT parsed ≥5 hero keys (got ${Object.keys(sot).length})`);
+  // Vacuity guards, both directions. If the derived branch ever swallowed every key this test
+  // would pass having compared nothing, and if the static parser stopped matching it would pass
+  // having found nothing to compare — the two failure modes a `continue` invites.
+  const staticKeys = Object.keys(sot).filter((k) => !sot[k].derived);
+  const derivedKeys = Object.keys(sot).filter((k) => sot[k].derived);
+  assert.ok(staticKeys.length >= 4, `≥4 STATIC hero keys still byte-compared here (got ${staticKeys.length})`);
+  assert.deepStrictEqual(derivedKeys, ['hero.free_tier_note'],
+    'exactly one derived key is expected; a new one needs a deliberate decision, not a silent exemption');
   for (const f of await landingFiles()) {
     for (const n of markedNodes(await read(f))) {
       const entry = sot[n.key];
       assert.ok(entry, `${f}: marker "${n.key}" has no SoT entry`);
       assert.ok(n.variant === 'desktop' || n.variant === 'mobile', `${f}: bad variant "${n.variant}" on ${n.key}`);
+      if (entry.derived) continue; // byte check owned by inject-landing-copy --check (see parseSoT)
       assert.strictEqual(n.inner, entry[n.variant],
         `${f}: ${n.key}.${n.variant} inner copy drifted from the SoT (run \`node scripts/inject-landing-copy.mjs\`)`);
     }

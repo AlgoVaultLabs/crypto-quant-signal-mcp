@@ -169,15 +169,27 @@ test('plan-card tiers preserved (REFERRAL-WEB-FIX-W1: extracted index.ts → sig
   // The rendered prices + allowances are what a visitor actually sees — pin them here so a
   // bad SoT edit fails loudly instead of silently repricing three public pages.
   //
-  // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: Starter and Pro lead with the ANNUAL price; the monthly
+  // PRICING-ANNUAL-AND-HOLD-PROMISE-W1 → PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): Starter
+  // and Pro lead with the PREPAY price, now a six-month term rather than a year; the monthly
   // figure is still rendered, as the secondary "or $X/mo billed monthly" line. Enterprise has no
   // self-serve price at all — it is contact-us — so its former $299/mo assertion is inverted.
-  assert.match(html, /\$79<span>\/yr<\/span>/, 'Starter annual price rendered');
-  assert.match(html, /\$299<span>\/yr<\/span>/, 'Pro annual price rendered');
-  assert.match(html, /or \$9\.99\/mo billed monthly/, 'Starter monthly alternative still offered');
-  assert.match(html, /or \$49\/mo billed monthly/, 'Pro monthly alternative still offered');
-  assert.match(html, /\$6\.58\/mo effective/, 'Starter effective monthly rate shown beside the annual total');
-  assert.match(html, /\$24\.92\/mo effective/, 'Pro effective monthly rate shown beside the annual total');
+  //
+  // Derived from the same dist/ build this canary already imports, for the reason the allowance
+  // assertions below give: re-pinning fresh literals just re-arms this failure on the next move.
+  const { PREPAY_6MONTH_MONTHS, planPrepayPriceLabel, planPrepayMonthlyEquivalent, planPrepaySavingsPct, planPriceLabel } =
+    await import('../../dist/lib/plans.js');
+  const M = PREPAY_6MONTH_MONTHS;
+  const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const id of ['starter', 'pro']) {
+    assert.match(html, new RegExp(`${esc(planPrepayPriceLabel(id, M))}<span>/${M}mo</span>`), `${id} prepay price rendered`);
+    assert.match(html, new RegExp(`${esc(planPrepayMonthlyEquivalent(id, M))}/mo effective`), `${id} effective monthly rate shown beside the prepay total`);
+    assert.match(html, new RegExp(`Save ${planPrepaySavingsPct(id, M)}%`), `${id} computed saving rendered`);
+    assert.match(html, new RegExp(`or ${esc(planPriceLabel(id))}/mo billed monthly`), `${id} monthly alternative still offered`);
+  }
+  // R-C: annual left the buyer-facing vocabulary entirely. CH8 archives both annual Stripe
+  // Prices, so a surviving /yr card would advertise a term that cannot be bought.
+  assert.doesNotMatch(html, /<span>\/yr<\/span>/, 'no annual price block survives on the cards');
+  assert.doesNotMatch(html, /interval=year/, 'no annual checkout href survives on the cards');
   assert.doesNotMatch(html, /\$299<span>\/mo<\/span>/, 'Enterprise self-serve price removed (contact-us)');
   // CONTACT-PAGE-APEX-AND-INQUIRY-TYPE-W1: the contact line targets the /contact FORM, not a
   // mailbox. Cloudflare rewrites every mailto: into /cdn-cgi/l/email-protection#, so the
