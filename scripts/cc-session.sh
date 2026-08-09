@@ -6,13 +6,19 @@
 #                   create/launch an isolated worktree session at the DECLARED destination
 #                   <worktree_roots.worktree_root>/<repo>/<task>, based on a FRESHLY FETCHED
 #                   remote default branch. --base overrides the default branch.
-#                   BEHAVIOUR CHANGE (OPS-WORKTREE-ROOT-CONFINEMENT-W2 R3a): `claude -w` is
-#                   no longer used even when available — it takes a NAME, not a destination,
-#                   and placement is declared rather than left to whichever tool version is
-#                   installed. Measured: one primary held FOUR worktree parents, with all
-#                   three modern placements appearing inside a single ~24h window.
+#                   BEHAVIOUR CHANGE (OPS-WORKTREE-CREATE-HOOK-W1 R3c): `claude -w` IS used
+#                   again on the default path. W2 R3a had banned it because it takes a NAME
+#                   and no destination, so placement could not be expressed through it — that
+#                   reason is now RETIRED: the `WorktreeCreate` hook owns placement at
+#                   creation time, so `claude -w <task>` lands at the declared destination
+#                   without this script computing one. Placement moved from a per-worktree
+#                   script (which goes stale per checkout) to one file outside every repo.
+#                   `--base` STILL forces the manual path: an explicit base ref cannot be
+#                   expressed through `claude --worktree`, and a flag that quietly does
+#                   nothing is worse than no flag.
 #                   ALGOVAULT_WORKTREE_ROOT overrides the root for a deliberate off-root
-#                   session and is validated before anything is created.
+#                   session; on the manual path it is validated before anything is created,
+#                   and on the hook path the hook reads the same variable.
 #   list            show every worktree: path, branch, ahead/behind, dirty, assigned port,
 #                   and GUARDS — how many registered pre-push/pre-commit gate scripts are
 #                   actually present in that checkout (read-only projection of
@@ -337,10 +343,27 @@ cmd_new() {
   git rev-parse --verify --quiet "${base}^{commit}" >/dev/null 2>&1 \
     || die "base '$base' is not a resolvable commit-ish — nothing was created"
 
-  # `claude --worktree` takes no base argument, so an explicit --base cannot be expressed on the
-  # native path. Rather than accept the flag and silently ignore it, --base FORCES the manual
-  # path. A flag that quietly does nothing is worse than no flag.
-  # ── PLACEMENT IS DECLARED, NOT EMERGENT (OPS-WORKTREE-ROOT-CONFINEMENT-W2 R3a) ───────────
+  # ── PLACEMENT IS THE HOOK'S, NOT THIS SCRIPT'S (OPS-WORKTREE-CREATE-HOOK-W1 R3c) ─────────
+  #
+  # W2 R3a forced the manual path for EVERY session because `claude --worktree` accepts a
+  # NAME and no destination, so a declared destination could not be expressed through it.
+  # That reason is retired. The `WorktreeCreate` hook now replaces the tool's default
+  # placement logic at creation time and reads the SAME SoT this script does, so the native
+  # path lands at the declared destination without this script computing one.
+  #
+  # Why that is strictly better, and the whole point of the wave: this script is
+  # PER-WORKTREE and goes stale per checkout (measured 24/43 on the sibling gate), while the
+  # hook is ONE file outside every repo and cannot. Placement therefore stops being this
+  # script's responsibility rather than being duplicated in two places that can disagree.
+  #
+  # `--base` STILL forces the manual path below: an explicit base ref cannot be expressed
+  # through `claude --worktree`, and a flag that quietly does nothing is worse than no flag.
+  if native_worktree_supported && [ "$explicit_base" -eq 0 ]; then
+    echo "cc-session: delegating placement to the WorktreeCreate hook (\`claude --worktree $task\`)" >&2
+    exec claude --worktree "$task"
+  fi
+  # ── MANUAL PATH — reached only for --base, or a Claude Code without native -w ────────────
+  # Everything below is W2's frozen placement logic, unchanged.
   #
   # Placement used to be whatever the running tool preferred. Measured: ONE primary had FOUR
   # worktree parents, and all three modern placements appeared inside a single ~24h window —
@@ -348,10 +371,10 @@ cmd_new() {
   # documented, only declared, so the destination now comes from the SoT and is passed
   # explicitly.
   #
-  # BEHAVIOUR CHANGE, stated not buried: an explicit destination FORCES the manual
-  # `git worktree add` path for every session, because `claude --worktree [name]` accepts a
-  # NAME and no destination (verified against `claude --help`). `--base` already forced it for
-  # the same reason. Everything the native path provided is preserved above this line:
+  # W2 R3a's clause here read "an explicit destination FORCES the manual path for every
+  # session". That is no longer true and has been corrected rather than left standing: since
+  # OPS-WORKTREE-CREATE-HOOK-W1 R3c, only `--base` (or a Claude Code without native `-w`)
+  # reaches this path. Everything the native path provided is preserved above this line:
   # `git fetch origin` first, the remote default resolved via symbolic-ref (never hardcoded
   # `main`), and the warn-with-cached-ref-age fail-open when the network is down.
   wt_root="${ALGOVAULT_WORKTREE_ROOT:-$(worktree_root_from_sot)}"
@@ -364,9 +387,9 @@ cmd_new() {
   wt="$wt_root/$(basename "$root")/$task"; branch="worktree-$task"
   [ -e "$wt" ] && die "destination already exists: $wt"
   mkdir -p "$(dirname "$wt")" || die "cannot create $(dirname "$wt")"
-  if native_worktree_supported && [ "$explicit_base" -eq 0 ]; then
-    echo "cc-session: NOT using \`claude --worktree\` — it takes a name, not a destination, and placement is declared in $(shared_state_file)" >&2
-  fi
+  # (W2's "NOT using \`claude --worktree\`" notice was here. It is unreachable now — the only
+  # condition it announced is exactly the condition that `exec`s above — so it is removed
+  # rather than left as dead code that reads like live behaviour.)
   echo "cc-session: git worktree add $wt -b $branch $base" >&2
   git worktree add "$wt" -b "$branch" "$base"
   for f in .env .env.local; do
