@@ -1,0 +1,61 @@
+{
+  "_doc": "OPS-GIT-IDENTITY-CANONICALIZE-W1 — allowlist for scripts/check-author-identity.sh. Every exemption row carries its OWN reason; a reason living only in a comment or in prose gets 'fixed' by a future wave enforcing the contract. Missing, empty or unparseable ⇒ AUTHOR_IDENTITY_VERDICT=INDETERMINATE, exit 3 — never a pass. WE author this file, so empty is a defect in our config, not a fact about the world.",
+
+  "_semantics": "ALLOWLIST, not deny-list: an email absent from `allowed` FAILS. `denied` exists so the guard NAMES a known-bad address in its output instead of merely failing to match it — the diagnostic difference between 'not allowed' and 'this is the Gmail we retired on 2026-08-09'.",
+
+  "_scope": "core.hooksPath is set --local in crypto-quant-signal-mcp, so this pre-commit block governs that repo and its linked worktrees ONLY. CI identities (ci@algovault.com, github-actions@github.com) and host identities (funnel-snapshot@algovault.com, algovault@hetzner.local, editorial@algovault.com) author commits on machines where this hook is not installed, and are deliberately NOT allowlisted here: allowlisting an identity this guard can never legitimately see would weaken it for zero benefit. If one ever appears locally, that is a real finding.",
+
+  "allowed": [
+    {
+      "email": "264139505+AlgoVaultFi@users.noreply.github.com",
+      "name": "AlgoVaultFi",
+      "class": "canonical",
+      "reason": "Canonical commit identity for every AlgoVault repo. Chosen over admin@algovault.com by OPS-GIT-IDENTITY-CANONICALIZE-W1-V2 D4: measured at wave time, admin@ was the effective identity of ZERO repos while this noreply form already had 5, so 'admin@ avoids a shortlog split' had no subject. admin@algovault.com REMAINS a verified email on the AlgoVaultFi account — it is simply not the commit address."
+    },
+    {
+      "email": "268183053+Megatron888-Robot@users.noreply.github.com",
+      "name": "Megatron888-Robot",
+      "class": "megatron",
+      "reason": "Scoped by a single includeIf to ~/Documents/GitHub/desktop-tutorial — the one repo on this machine with a Megatron888-Robot origin. Noreply form, never the Gmail: that account has 'Block command line pushes that expose my email' ON, so a Gmail-authored commit pushed AS that account would be rejected GH007. A single-value guard would fire on every legitimate commit here and be disabled within a week."
+    }
+  ],
+
+  "denied": [
+    {
+      "email": "test@test.local",
+      "reason": "Introduced 2026-06-18T21:51:51+08:00 by OPS-VITEST-SUITE-REPAIR-W1 CH4 as a local user.email in the SHARED .git/config of the primary crypto-quant-signal-mcp checkout, and inherited by all 14 of its worktrees. Authored every commit for 52 days. Unrecoverable by email verification — .local is a reserved TLD and can never be verified on a GitHub account.",
+      "commits_at_wave_time": 649
+    },
+    {
+      "email": "megatronwarlord1998@gmail.com",
+      "reason": "Operator's personal Gmail on the Megatron888-Robot personal account. Filter-repo'd out of crypto-quant-signal-mcp in Apr-2026, then re-contaminated from 2026-04-17 — the day after the rewrite — because the lane fix set values without retiring the class. This guard is the generator form of that fix.",
+      "commits_at_wave_time": 633
+    },
+    {
+      "email": "diophantus.hau@gmail.com",
+      "reason": "Operator's personal Gmail, pinned as a local override in algovault-editorial + algovault-editorial-content. A personal mailbox in AlgoVaultLabs-owned repos is the exact defect this wave retires, and it is unverified on the AlgoVaultFi account, so it buys zero attribution while carrying full exposure.",
+      "commits_at_wave_time": 43
+    }
+  ],
+
+  "exempt_repos": [
+    { "path": "~/.claude/skills/claudeception", "origin": "https://github.com/blader/Claudeception.git", "reason": "Third-party upstream clone (blader/*); no AlgoVault commit expected. Carries no local override, so it inherits the canonical global — a PR from here is correctly authored AlgoVaultFi. Untouched: .git/config byte-identical, verified by sha256 before/after." },
+    { "path": "~/.claude/skills/napkin", "origin": "https://github.com/blader/napkin.git", "reason": "Third-party upstream clone (blader/*); same inheritance and same byte-identical guarantee as claudeception." },
+    { "path": "~/.claude/skills/taskmaster", "origin": "https://github.com/blader/taskmaster.git", "reason": "Third-party upstream clone (blader/*); same inheritance and same byte-identical guarantee as claudeception." },
+    { "path": "~/Projects/backup-framework", "origin": null, "reason": "Local-only project, no remote. No local override, so it inherits canonical after CH2; inert either way since nothing is ever pushed. Untouched." },
+    { "path": "~/Projects/hlc-engine", "origin": null, "reason": "Local-only project, no remote. Same as backup-framework." },
+    { "path": "~/code/mcpverify-site", "origin": "https://github.com/mcpverify/mcpverify-site.git", "reason": "SECOND BUSINESS. CH1 P2 measured MCPVerifyLabs as a distinct GitHub User (id 314603622, created 2026-08-08) under the mcpverify Organization; this machine's only authenticated account (AlgoVaultFi, id 264139505) cannot read the repo at all (404 / 'Repository not found'). Its local override is already correct and its whole history is consistently that identity. Untouched — do not guess an identity for another business's repos. TODO: revisit by 2026-08-23." },
+    { "path": "~/code/chain-watchdog", "origin": "https://github.com/mcpverify/chain-watchdog.git", "reason": "SECOND BUSINESS, same owner and same reasoning as mcpverify-site. NOTE: the V1 sweep recorded this repo as having no origin; that was wrong — it has one, under the mcpverify org. TODO: revisit by 2026-08-23." }
+  ],
+
+  "_exempt_repos_forward_risk": "The two mcpverify/* checkouts are immune because they carry local overrides. A FRESH CLONE of an mcpverify repo would inherit AlgoVaultFi and mis-attribute the second business. That gap is what the 2026-08-23 TODO covers; closing it means either an includeIf scoping block for a declared MCPVerify root, or a local override at clone time. Architect's call — OPS-MCPVERIFY-IDENTITY-SCOPE-W{NEXT}.",
+
+  "promotion": {
+    "mode": "report",
+    "max_violations": 0,
+    "not_before": "2026-08-16",
+    "owner": "OPS-AUTHOR-IDENTITY-PROMOTE-W{NEXT}",
+    "reason": "REPORT-first because a guard that blocks on day one wedges the fleet, and a guard permanently stuck in REPORT is decoration. 7 days rather than the usual 14+ because remediation here is INSTANT AND GLOBAL — CH2 fixed inheritance in one file and CH3 deleted 11 local overrides in one pass — unlike gate-staleness, whose per-worktree healing depends on each checkout rebasing and measurably did not converge over 24h.",
+    "criterion": "BOTH conditions, never collapsed into one: max_violations must be 0 across the observation window AND today must be >= not_before. A numeric bar alone can be met on day one by a machine nobody committed from; a date bar alone promotes a guard that is still firing. Every run appends its verdict to $GIT_COMMON_DIR/algovault-author-identity.log so the promotion decision is MEASURED from that log, not asserted."
+  }
+}
