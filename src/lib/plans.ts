@@ -283,6 +283,20 @@ export function planAnnualSavingsPct(id: PaidPlanId): number | null {
  * should pay per call, above it the subscription wins. Nothing is hardcoded, so moving
  * either price moves the recommendation with zero code change.
  *
+ * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A) makes this comparison HONEST for the first
+ * time. Previously the rail settled only on an actionable verdict while the subscription
+ * metered only actionable verdicts too — but the caller RECEIVED (and the venues served)
+ * every HOLD in between, so neither side of the ratio counted the same thing the customer
+ * was actually consuming. Now both rails charge per verdict, so `monthly ÷ per-call` compares
+ * like with like: N calls costs `N × perCall` on the rail and a flat `priceUsdMonthly` on the
+ * plan, for the same N.
+ *
+ * ⚠️ At today's numbers the break-even (500) EXACTLY equals `FREE_MONTHLY_CALLS`. That is a
+ * coincidence of $9.99 / $0.02 / 500, not a designed relationship — and it makes the
+ * pay-per-call recommendation unreachable from the monthly wall, where `used === limit === 500`
+ * always projects at or above break-even. Moving any one of those three numbers separates them
+ * again; see `recommendPath` in quota-notice.ts, whose boundary is pinned by test.
+ *
  * Returns `null` when no per-call price is available (no live x402 rail) — the caller
  * then has only one path to recommend and no comparison to make.
  */

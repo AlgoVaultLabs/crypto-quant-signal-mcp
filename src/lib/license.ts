@@ -45,8 +45,6 @@ interface RequestContext {
   license: LicenseInfo;
   sessionId?: string;
   ipHash?: string;
-  /** Set by tool handler so HTTP layer can skip x402 settlement for HOLD. */
-  lastVerdict?: string;
   /**
    * OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: the per-request `classifyTraffic`
    * verdict (is_automated), computed ONCE at the /mcp POST (and x402/a2mcp) layer
@@ -108,15 +106,16 @@ export function getRequestSource(): string | undefined {
   return requestContext.getStore()?.source;
 }
 
-/** Store the tool verdict so HTTP handler can skip x402 settlement for HOLD. */
-export function setRequestVerdict(verdict: string): void {
-  const ctx = requestContext.getStore();
-  if (ctx) ctx.lastVerdict = verdict;
-}
-
-export function getRequestVerdict(): string | undefined {
-  return requestContext.getStore()?.lastVerdict;
-}
+// PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH5): `setRequestVerdict` / `getRequestVerdict` and
+// the `lastVerdict` context field are DELETED. They existed for exactly one purpose — their own
+// docstring said so: "so HTTP layer can skip x402 settlement for HOLD" — and R-A removed that
+// skip. Verified before removal: one writer (index.ts), ZERO readers, no test.
+//
+// Deleted rather than left in place because a write-only seam is worse than no seam: it still
+// LOOKS like the source of truth for "what did this request decide", so the next wave wires a
+// second consumer to a field nothing maintains. Same reasoning as this file's
+// `getQuotaExhaustedMessage` tombstone above. The per-request verdict is still logged to
+// `request_log.verdict`, which is where a consumer should read it.
 
 /**
  * OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: read the per-request automated

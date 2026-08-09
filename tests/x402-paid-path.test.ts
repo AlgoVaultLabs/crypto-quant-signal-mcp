@@ -453,24 +453,29 @@ describe('R2 — every payable route × {clean, duplicated} content-type', () =>
 });
 
 /**
- * OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 R3 — "HOLDs are always free" as an ASSERTION.
+ * R3, INVERTED BY RATIFIED PRICING CHANGE — every verdict settles, HOLD included.
  *
- * That is a canonical public pricing promise (brand-facts M3) enforced by exactly one line:
- * `if (pendingSettlement && verdict !== 'HOLD') settleX402Async(...)`. Nothing tested it — the
- * pre-existing settle-skip assertions cover only the downgrade and replay paths. Deleting the
- * `verdict !== 'HOLD'` guard would start charging for HOLDs, change public pricing, and ship green.
- * These make that impossible, in both directions and on both routes.
+ * These assertions were written by OPS-X402-TRADE-CALL-CONTENT-TYPE-W1 to make it impossible to
+ * start charging for HOLDs without noticing: "deleting the `verdict !== 'HOLD'` guard would
+ * change public pricing and ship green." They did their job — this wave deleted exactly that
+ * guard, and the suite went red rather than silently repricing the rail.
+ *
+ * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A, architect-ratified 2026-08-08) makes charging
+ * for HOLDs the INTENDED behaviour: paying only on an actionable verdict was a structural
+ * incentive against the selectivity that is the product, on a rail whose measured hold rate is
+ * ~99%. So the assertions are INVERTED, not deleted — the same two directions are still pinned,
+ * and re-introducing the skip now fails just as loudly as removing it used to.
  */
-describe('R3 — HOLDs are free, directional calls charge (brand M3 / Data Integrity)', () => {
+describe('R3 — every verdict settles, HOLD included (R-A); errors never do', () => {
   for (const path of ['get_trade_signal', 'get_trade_call']) {
-    it(`${path}: HOLD → 200 with the verdict AND no settle (FREE)`, async () => {
+    it(`${path}: HOLD → 200 with the verdict AND settles (R-A)`, async () => {
       nextVerdict = 'HOLD';
       setProof(req(0.02), freshNonce());
       const res = await post(path, { coin: 'BTC', timeframe: '4h' });
       expect(res.status).toBe(200);
       expect((await res.json() as { call?: string }).call).toBe('HOLD');
       await settleTick();
-      expect(settleCalls, 'a HOLD must NEVER settle — charging for HOLDs is a public pricing change').toBe(0);
+      expect(settleCalls, 'a HOLD is a verdict and MUST settle — R-A; re-introducing the skip pays the rail on ~1 call in 100').toBe(1);
     });
 
     it(`${path}: directional → 200 AND settles (the charge still happens)`, async () => {
@@ -484,7 +489,7 @@ describe('R3 — HOLDs are free, directional calls charge (brand M3 / Data Integ
     });
   }
 
-  it('a free HOLD is still SERVED — the verdict is returned, never withheld', async () => {
+  it('a HOLD is still SERVED in full — paying for it must not degrade it', async () => {
     nextVerdict = 'HOLD';
     setProof(req(0.02), freshNonce());
     const body = await (await post('get_trade_call', { coin: 'BTC', timeframe: '4h' })).json() as
@@ -493,7 +498,7 @@ describe('R3 — HOLDs are free, directional calls charge (brand M3 / Data Integ
     expect(body.confidence).toBe(70);
   });
 
-  it('the HOLD-skip is get_trade_signal-ONLY — an always-charge tool settles regardless', async () => {
+  it('an always-charge tool settles regardless of any verdict in flight', async () => {
     nextVerdict = 'HOLD'; // must not leak into other tools' settle decision
     setProof(req(0.02), freshNonce());
     const res = await post('get_market_regime', { coin: 'BTC', timeframe: '1h' });

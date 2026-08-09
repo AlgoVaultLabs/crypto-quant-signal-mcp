@@ -40,7 +40,7 @@ import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
-import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, getRequestVerdict, setRequestVerdict, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
+import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
 import { initX402, settleX402Async, buildX402PaymentRequiredResult } from './lib/x402.js';
 import { mountX402HttpRoutes, HTTP_TOOLS } from './lib/x402-http-routes.js';
 import { mountOkxA2mcpRoutes } from './lib/okx-a2mcp.js';
@@ -421,8 +421,6 @@ function createServer(): McpServer {
         // contract-correct engine. Quota is handled inside whichever engine runs.
         const { route, result } = await runAsCaller(toolNameForAnalytics, () => routeTradeCall({ coin, timeframe, includeReasoning, exchange, assetClass, license }));
         const verdict = (result as { call?: 'BUY' | 'SELL' | 'HOLD' }).call;
-        // Verdict stored for x402 settlement skip (HOLDs / error paths don't settle).
-        setRequestVerdict(verdict ?? 'HOLD');
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: toolNameForAnalytics,
@@ -3671,9 +3669,17 @@ async function startHttp() {
         }
       }
 
-      // Fire-and-forget: settle x402 payment after response is sent
-      // Free HOLDs: skip settlement when get_trade_signal returned HOLD
-      if (pendingSettlement && getRequestVerdict() !== 'HOLD') {
+      // Fire-and-forget: settle the x402 payment after the response is sent.
+      //
+      // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): the `getRequestVerdict() !== 'HOLD'`
+      // guard is GONE. It meant the per-call rail was paid only when the model said "trade",
+      // which is a structural incentive against the selectivity that IS the product — the
+      // published hold rate is ~99%, so the rail was collecting on roughly 1 call in 100 while
+      // serving all of them. A verdict is the product on every rail; HOLD is a verdict.
+      //
+      // An ERROR still never settles, and that is unchanged: this line only runs after a
+      // successful response, and every failure path above returns before reaching it.
+      if (pendingSettlement) {
         settleX402Async(pendingSettlement);
       }
     });

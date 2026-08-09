@@ -498,10 +498,15 @@ export function mountX402HttpRoutes(app: Express): string[] {
         // Public output == MCP tool output (single source of truth).
         res.json(result);
 
-        // Async settle (R6): fire-and-forget after response. get_trade_signal HOLDs
-        // stay free (no capture), exactly like the MCP path.
-        const verdict = tool === 'get_trade_signal' ? (result as TradeCallResult).call : 'PAID';
-        if (pendingSettlement && verdict !== 'HOLD') {
+        // Async settle (R6): fire-and-forget after the response.
+        //
+        // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): every verdict settles, HOLD included —
+        // byte-for-byte the same rule as the MCP path in index.ts, which is the point. The two
+        // rails previously each carried their own copy of the HOLD skip, so "which verdicts are
+        // free" was answerable differently depending on how you called the same tool.
+        //
+        // Reached only after `res.json(result)`, so an error path still never settles.
+        if (pendingSettlement) {
           settleX402Async(pendingSettlement);
         }
 
