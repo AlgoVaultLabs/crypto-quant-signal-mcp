@@ -3,10 +3,16 @@
 # Part of CC-PARALLEL-SESSION-ISOLATION-W1. See docs/RUNBOOK-PARALLEL-SESSIONS.md.
 #
 #   new <task> [--base <ref>]
-#                   create/launch an isolated worktree session, based on a FRESHLY FETCHED
-#                   remote default branch (native `claude -w` if available, else a
-#                   `git worktree add` fallback). --base overrides the default and forces
-#                   the fallback path, because `claude --worktree` takes no base ref.
+#                   create/launch an isolated worktree session at the DECLARED destination
+#                   <worktree_roots.worktree_root>/<repo>/<task>, based on a FRESHLY FETCHED
+#                   remote default branch. --base overrides the default branch.
+#                   BEHAVIOUR CHANGE (OPS-WORKTREE-ROOT-CONFINEMENT-W2 R3a): `claude -w` is
+#                   no longer used even when available — it takes a NAME, not a destination,
+#                   and placement is declared rather than left to whichever tool version is
+#                   installed. Measured: one primary held FOUR worktree parents, with all
+#                   three modern placements appearing inside a single ~24h window.
+#                   ALGOVAULT_WORKTREE_ROOT overrides the root for a deliberate off-root
+#                   session and is validated before anything is created.
 #   list            show every worktree: path, branch, ahead/behind, dirty, assigned port,
 #                   and GUARDS — how many registered pre-push/pre-commit gate scripts are
 #                   actually present in that checkout (read-only projection of
@@ -24,7 +30,9 @@ set -euo pipefail
 # --- config ---
 PORT_BASE=3100                 # avoids server 3000 / facilitator 4022 / landing 5500
 PORT_RANGE=400                 # candidate window 3100..3499
-WT_SUBDIR=".claude/worktrees"  # native `claude -w` location; fallback mirrors it
+# WT_SUBDIR removed by OPS-WORKTREE-ROOT-CONFINEMENT-W2 R3a: it placed worktrees INSIDE the
+# repo, which is the nesting shape behind the vitest-discovery pathology (1779 discovered
+# test files vs 298 real). Placement now comes from worktree_roots.worktree_root in the SoT.
 
 # Where THIS script lives. `clean` iterates every primary on the machine
 # (OPS-WORKTREE-ROOT-CONFINEMENT-W2 R2c/F2), and the other primaries — algovault-bot,
@@ -120,6 +128,21 @@ discover_primaries() {
   # `|| true`: find exits non-zero on any unreadable directory, and under `set -o pipefail`
   # that killed the whole command substitution — the sweep printed its header and then
   # silently stopped, which is the failure mode this chapter exists to remove.
+}
+
+# Declared worktree root, read from the ONE SoT. No default and no fallback: an undeclared
+# root is the emergent-placement state this wave exists to retire, so it must fail, not guess.
+worktree_root_from_sot() {
+  local f out; f="$(shared_state_file)"
+  [ -r "$f" ] || die "cannot read $f — placement is declared there and has no default"
+  command -v node >/dev/null 2>&1 || die "node is required to read the declared worktree root"
+  out="$(node -e '
+    const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+    const r=(j.worktree_roots||{}).worktree_root;
+    if (typeof r !== "string" || !r.startsWith("/")) process.exit(2);
+    console.log(r);
+  ' "$f" 2>/dev/null)" || die "ops/shared-worktree-state.json declares no absolute worktree_roots.worktree_root"
+  printf '%s\n' "$out"
 }
 
 slugify() {
@@ -289,7 +312,7 @@ fetch_or_warn() {
 
 # --- subcommands ---
 cmd_new() {
-  local root task wt branch port f base="" explicit_base=0 positional=""
+  local root task wt wt_root branch port f base="" explicit_base=0 positional=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --base)   [ $# -ge 2 ] || die "--base requires a ref"; base="$2"; explicit_base=1; shift 2 ;;
@@ -317,16 +340,33 @@ cmd_new() {
   # `claude --worktree` takes no base argument, so an explicit --base cannot be expressed on the
   # native path. Rather than accept the flag and silently ignore it, --base FORCES the manual
   # path. A flag that quietly does nothing is worse than no flag.
-  if native_worktree_supported; then
-    if [ "$explicit_base" -eq 0 ]; then
-      echo "cc-session: native isolated session → claude --worktree $task (base: $base, freshly fetched)" >&2
-      exec claude --worktree "$task"
-    fi
-    echo "cc-session: --base $base given → using the manual worktree path (claude --worktree accepts no base ref)" >&2
+  # ── PLACEMENT IS DECLARED, NOT EMERGENT (OPS-WORKTREE-ROOT-CONFINEMENT-W2 R3a) ───────────
+  #
+  # Placement used to be whatever the running tool preferred. Measured: ONE primary had FOUR
+  # worktree parents, and all three modern placements appeared inside a single ~24h window —
+  # it is CWD-derived and tool-version-dependent. A convention that mutable cannot be
+  # documented, only declared, so the destination now comes from the SoT and is passed
+  # explicitly.
+  #
+  # BEHAVIOUR CHANGE, stated not buried: an explicit destination FORCES the manual
+  # `git worktree add` path for every session, because `claude --worktree [name]` accepts a
+  # NAME and no destination (verified against `claude --help`). `--base` already forced it for
+  # the same reason. Everything the native path provided is preserved above this line:
+  # `git fetch origin` first, the remote default resolved via symbolic-ref (never hardcoded
+  # `main`), and the warn-with-cached-ref-age fail-open when the network is down.
+  wt_root="${ALGOVAULT_WORKTREE_ROOT:-$(worktree_root_from_sot)}"
+  # Validated BEFORE anything is created, so a bad override cannot leave a half-made worktree.
+  case "$wt_root" in
+    /*) ;;
+    *)  die "worktree root must be an ABSOLUTE path, got '$wt_root' (a relative or ~ root resolves against \$PWD and lands the worktree wherever you happened to stand — the exact failure this declares away)" ;;
+  esac
+  [ -n "$task" ] || die "empty task after slugify"
+  wt="$wt_root/$(basename "$root")/$task"; branch="worktree-$task"
+  [ -e "$wt" ] && die "destination already exists: $wt"
+  mkdir -p "$(dirname "$wt")" || die "cannot create $(dirname "$wt")"
+  if native_worktree_supported && [ "$explicit_base" -eq 0 ]; then
+    echo "cc-session: NOT using \`claude --worktree\` — it takes a name, not a destination, and placement is declared in $(shared_state_file)" >&2
   fi
-
-  # fallback: manual git worktree (older Claude Code without -w, or an explicit --base)
-  wt="$WT_SUBDIR/$task"; branch="worktree-$task"
   echo "cc-session: git worktree add $wt -b $branch $base" >&2
   git worktree add "$wt" -b "$branch" "$base"
   for f in .env .env.local; do
