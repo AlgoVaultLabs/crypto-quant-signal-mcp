@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "_comment": [
+    "check-new-dark-exports.mjs — PRICING-FOLLOWUPS-GENERATOR-W1 CH2.",
+    "",
+    "Flags exports a branch ADDS whose reference count across src/ is 1 — the declaration",
+    "alone. That is the 'built, tested, never wired' class: a symbol shipped by a wave that no",
+    "production path calls, green the whole way because every assertion pointed at the",
+    "primitive rather than the path.",
+    "",
+    "WHY A DELTA AND NOT A CENSUS — the settled empirical negative, recorded so nobody",
+    "re-litigates it. Measured on src/lib/** at e8a9c05: 1,812 exports, 971 with zero",
+    "non-owning-file consumers — 475 runtime symbols WITH a test consumer, 350 type-only, 146",
+    "with no consumer anywhere. A whole-repo guard would demand ~971 allowlist rows, and the",
+    "475 bucket is CLAUDE.md's own MANDATED test-importable-seam pattern, so the guard would",
+    "fight the house style and be allowlisted into uselessness on day one. The same measurement",
+    "on the wave that shipped the defect: 23 new exports, 2 flagged — hoursUntilUtcDayReset (the",
+    "real defect) and dailyUsedFor (a second of the same class). Two rows per wave, not 971.",
+    "",
+    "EXEMPT BY CONSTRUCTION, never by row:",
+    "  · type-only exports (`export type` / `export interface`) — a type has no call site",
+    "  · re-exports (`export { x } from` / `export * from`) — they declare nothing new",
+    "Both are handled in code, so no one can be tempted to allowlist an entire class."
+  ],
+  "verdict_token": "DARK_EXPORTS_VERDICT",
+  "exit_codes": { "PASS": 0, "FAIL": 1, "INDETERMINATE": 3 },
+  "mode": "report",
+  "promotion": {
+    "max_unexplained": 0,
+    "not_before": "2026-08-16",
+    "_why": [
+      "REPORT-first per house law (G-D). Both conditions must hold to flip to block: zero",
+      "unexplained hits AND the date passed. A numeric criterion alone can never fire if the",
+      "count does not heal; a date alone flips a guard that is still noisy.",
+      "",
+      "not_before is +7d rather than the usual +14d because the measured signal is 2 flagged",
+      "out of 23 new exports on a real wave — a rate that does not need a fortnight of",
+      "observation to judge. Every run appends its count to the ledger, so the flip decision",
+      "reads a series rather than a guess."
+    ]
+  },
+  "ledger": ".git/algovault-dark-exports.log",
+  "name_exemptions": [
+    {
+      "pattern": "^_.*ForTest$",
+      "reason": "Module-level cache/state reset seams. CLAUDE.md MANDATES them ('Module-level singleton caches need full reset + per-cache partial + read-only inspector'), they exist to be called from tests, and the leading underscore already marks them as non-API. Measured on the reference wave: 2 of the 23 new exports."
+    },
+    {
+      "pattern": "^_reset.*$",
+      "reason": "Same class, older naming (`_resetBinanceAdapterCaches`, `_setSnapshotForTest` siblings). Kept as a separate pattern rather than widened into the one above so a future rename does not silently exempt more than intended."
+    }
+  ],
+  "symbol_exemptions": []
+}
