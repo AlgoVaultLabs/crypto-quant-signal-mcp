@@ -522,7 +522,13 @@ export function resetLicenseCache(): void {
  */
 export function _resetCallTrackersForTest(): void {
   callTrackers.clear();
+  dailyTrackers.clear();
   bonusRemaining.clear();
+}
+
+/** Read-only inspector for the daily meter (tests + the /account portal diagnostics). */
+export function dailyUsedFor(license: LicenseInfo): number {
+  return dailyTrackers.get(deriveTrackerKey(license))?.count ?? 0;
 }
 
 // ── Access checks ──
@@ -579,6 +585,64 @@ interface CallTracker {
 const callTrackers = new Map<string, CallTracker>();
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 let quotaDbInitialized = false;
+
+// ── The DAILY meter (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH4, R-B/R-D) ──
+//
+// A SECOND meter, not a sub-limit of the monthly one. Monthly caps the budget; daily shapes the
+// pacing. They refuse INDEPENDENTLY, so `dailyCalls * 31 !== monthlyCalls` by design.
+//
+// The period is a UTC CALENDAR DAY, deliberately unlike the monthly meter's ROLLING 30-day
+// window. That asymmetry is the whole point of R-D: the rolling window is anchored on each
+// caller's own first call, so its reset lands on a date nobody can be told in advance — you
+// cannot write "resets on the 1st" in copy when it is a different instant for every caller. A
+// UTC day resets at 00:00Z for everyone, which is a fact the pricing page can state.
+interface DailyTracker {
+  count: number;
+  /** `YYYY-MM-DD` in UTC. Changing day IS the reset — no timer, no sweep. */
+  day: string;
+}
+
+const dailyTrackers = new Map<string, DailyTracker>();
+
+/** The UTC calendar day an instant belongs to (`2026-08-08`). */
+export function utcDayKey(atMs: number = Date.now()): string {
+  return new Date(atMs).toISOString().slice(0, 10);
+}
+
+/**
+ * Whole hours until the next 00:00 UTC, floored at 1 while the day is still running.
+ *
+ * The retry hint a DAILY wall needs. `daysUntilMonthReset` would answer "27 days" to a caller
+ * who is back in business after lunch, which is worse than saying nothing — it reads as a
+ * month-long lockout and is the kind of wrong-but-confident number that loses a subscriber.
+ * Returns at least 1 so the copy never renders "come back in 0 hours".
+ */
+export function hoursUntilUtcDayReset(atMs: number = Date.now()): number {
+  const next = Date.UTC(
+    new Date(atMs).getUTCFullYear(),
+    new Date(atMs).getUTCMonth(),
+    new Date(atMs).getUTCDate() + 1,
+  );
+  return Math.max(1, Math.ceil((next - atMs) / (60 * 60 * 1000)));
+}
+
+/** Advance the daily meter and write it through. Never refuses — refusal is `checkQuota`'s job. */
+function chargeDaily(key: string, units: number): DailyTracker {
+  const t = getDailyTracker(key);
+  t.count += units;
+  persistDailyTracker(key, t);
+  return t;
+}
+
+function getDailyTracker(key: string): DailyTracker {
+  const today = utcDayKey();
+  let t = dailyTrackers.get(key);
+  if (!t || t.day !== today) {
+    t = { count: 0, day: today };
+    dailyTrackers.set(key, t);
+  }
+  return t;
+}
 
 // ── REFERRAL-LIGHT-W1 (C2): referee bonus-calls meter ──
 // In-memory map mirrors the quota_usage pattern — seeded from referral_bonus at
@@ -666,11 +730,21 @@ export function initQuotaDb(): void {
       tracker_key TEXT PRIMARY KEY,
       call_count INTEGER NOT NULL DEFAULT 0,
       period_start TEXT NOT NULL,
-      milestone_referral_shown INTEGER NOT NULL DEFAULT 0
+      milestone_referral_shown INTEGER NOT NULL DEFAULT 0,
+      daily_count INTEGER NOT NULL DEFAULT 0,
+      daily_day TEXT NOT NULL DEFAULT ''
     )`);
     // REFERRAL-INPRODUCT-NUDGE-W1: backfill the lifetime-dedup column on EXISTING
     // tables (prod PG is pre-applied via SSH; this is the in-code idempotent net).
     ensureQuotaMilestoneColumn().catch(() => {});
+    // CH4: same net for the daily meter. The CREATE above only helps a FRESH store; every
+    // existing deployment reaches the columns through this idempotent ensure.
+    ensureQuotaDailyColumns()
+      .then(() => dbQuery<{ tracker_key: string; daily_count: string; daily_day: string }>(
+        'SELECT tracker_key, daily_count, daily_day FROM quota_usage',
+      ))
+      .then((r) => loadDailyRows(r ?? []))
+      .catch(() => {});
     // Load persisted counts into memory (dbQuery is always async)
     const now = Date.now();
     dbQuery<{ tracker_key: string; call_count: string; period_start: string }>(
@@ -701,6 +775,23 @@ function loadQuotaRows(rows: { tracker_key: string; call_count: string; period_s
   }
 }
 
+/**
+ * Warm the daily meter from the store, DISCARDING any row whose day is not today.
+ *
+ * The monthly loader skips an expired period; this is the same idea on a calendar boundary. A
+ * loader that trusted the stored count without checking the day would resurrect yesterday's
+ * total after any restart or deploy — walling a caller for a day they have not spent. That is
+ * the failure mode worth guarding: it is silent, it only appears after a restart, and it looks
+ * exactly like correct enforcement.
+ */
+function loadDailyRows(rows: { tracker_key: string; daily_count: string; daily_day: string }[]): void {
+  const today = utcDayKey();
+  for (const row of rows) {
+    if (row.daily_day !== today) continue; // stale day — starts at zero, by design
+    dailyTrackers.set(row.tracker_key, { count: Number(row.daily_count) || 0, day: today });
+  }
+}
+
 function persistTracker(key: string, tracker: CallTracker): void {
   try {
     dbRun(
@@ -715,8 +806,66 @@ function persistTracker(key: string, tracker: CallTracker): void {
   }
 }
 
+/**
+ * Write-through for the daily meter (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH4).
+ *
+ * Stores the DAY alongside the count, so a restart cannot resurrect yesterday's total: the
+ * loader compares the stored day to today and treats a mismatch as zero. Storing only a count
+ * would silently carry a caller's spent day across a deploy, walling them for a day they never
+ * used. Best-effort, exactly like `persistTracker` — a metering write must never fail a request.
+ */
+function persistDailyTracker(key: string, t: DailyTracker): void {
+  if (!_dailyColsReady) return; // columns not ensured yet — in-memory meter still works
+  try {
+    dbRun(
+      `INSERT INTO quota_usage (tracker_key, call_count, period_start, daily_count, daily_day)
+       VALUES (?, 0, ?, ?, ?)
+       ON CONFLICT (tracker_key) DO UPDATE SET daily_count = ?, daily_day = ?`,
+      key, new Date().toISOString(), t.count, t.day,
+      t.count, t.day,
+    );
+  } catch {
+    // Best-effort persistence — don't block the request
+  }
+}
+
 // ── REFERRAL-INPRODUCT-NUDGE-W1 (2026-06-22): usage-milestone aha referral (c) ──
 const PG = !!process.env.DATABASE_URL;
+
+let _dailyColsReady = false;
+/**
+ * Idempotent ensure of the DAILY meter columns on the EXISTING `quota_usage` store — it extends
+ * that table rather than adding a second one, so a caller's two meters cannot end up in
+ * disagreeing rows.
+ *
+ * PG: native `ADD COLUMN IF NOT EXISTS`, and prod is PRE-APPLIED via SSH BEFORE the code deploy
+ * (CLAUDE.md: pre-apply schema, then ship code that is a no-op against the prepared DB).
+ * SQLite has NO `ADD COLUMN IF NOT EXISTS` (verified 3.37 — it is a syntax error), so it takes
+ * the `PRAGMA table_info` pre-check, mirroring `ensureQuotaMilestoneColumn` exactly.
+ */
+export async function ensureQuotaDailyColumns(): Promise<void> {
+  if (_dailyColsReady) return;
+  try {
+    if (PG) {
+      dbExec('ALTER TABLE quota_usage ADD COLUMN IF NOT EXISTS daily_count INTEGER NOT NULL DEFAULT 0;');
+      dbExec("ALTER TABLE quota_usage ADD COLUMN IF NOT EXISTS daily_day TEXT NOT NULL DEFAULT '';");
+    } else {
+      const rows = await dbQuery<{ name: string }>('PRAGMA table_info(quota_usage)', []);
+      const have = new Set(rows.map((r) => r.name));
+      if (!have.has('daily_count')) dbExec('ALTER TABLE quota_usage ADD COLUMN daily_count INTEGER NOT NULL DEFAULT 0;');
+      if (!have.has('daily_day')) dbExec("ALTER TABLE quota_usage ADD COLUMN daily_day TEXT NOT NULL DEFAULT '';");
+    }
+    _dailyColsReady = true;
+  } catch {
+    // Leave the flag false: the in-memory meter keeps enforcing, we simply do not persist.
+    // A metering table we cannot extend must not take the server down.
+  }
+}
+
+/** TEST SEAM — re-arm the daily-column ensure (module-level latch). */
+export function _resetDailyColsForTest(ready = false): void {
+  _dailyColsReady = ready;
+}
 
 /** Monthly billable-call counts at which a KEYED user is offered the referral
  *  (trigger c). Free cap is 100/mo → both reachable. Lifetime-deduped per milestone
@@ -843,6 +992,38 @@ export interface TrackCallResult {
    * `_algovault` envelope (the scan/trade shape snapshots are a strict allow-list).
    */
   bonus_remaining?: number;
+  /**
+   * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (CH4): WHICH meter refused, or `null` when the call
+   * was allowed. Additive — every existing consumer ignores it.
+   *
+   * The two meters retry on completely different horizons (hours to 00:00 UTC vs days to the
+   * caller's own rolling reset), so a refusal that does not say which one fired cannot render a
+   * correct retry hint. A daily wall must never tell a caller to come back in 27 days.
+   */
+  limit?: 'daily' | 'monthly' | null;
+}
+
+/**
+ * Whether a PAID tier is hard-walled at its ceiling, or merely metered.
+ *
+ * ⚠️ `false` PRESERVES TODAY'S BEHAVIOUR, and that is a deliberate, flagged decision rather than
+ * an oversight. On live `main` `checkQuota` walls ONLY `tier === 'free'` and `trackCall` returns
+ * `allowed: true` unconditionally for paid tiers — so the advertised Starter/Pro ceilings have
+ * never been refusals, only meters. R-B's "a call is refused when either is exhausted" assumes an
+ * enforcement posture that does not exist yet.
+ *
+ * Flipping this to `true` is a NEW customer-facing refusal on the revenue path, so it is an
+ * architect decision, not a side effect of adding a second meter. CH1 measured every paying
+ * subscriber at ≤5.1% of the new monthly cap, so nothing is walled either way today — which is
+ * precisely why this can wait for an explicit ruling instead of being decided here.
+ *
+ * Both meters read this ONE flag, so the posture cannot drift between them.
+ */
+const PAID_TIERS_ARE_HARD_WALLED = false;
+
+/** True when this tier's meters REFUSE at the ceiling (vs merely counting past it). */
+function tierIsWalled(tier: LicenseTier): boolean {
+  return tier === 'free' || PAID_TIERS_ARE_HARD_WALLED;
 }
 
 /**
@@ -852,7 +1033,7 @@ export interface TrackCallResult {
  */
 export function checkQuota(license: LicenseInfo): TrackCallResult {
   if (license.tier === 'x402' || license.tier === 'internal') {
-    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity, limit: null };
   }
 
   const key = deriveTrackerKey(license);
@@ -862,7 +1043,7 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);
 
-  if (license.tier === 'free' && tracker.count >= quota) {
+  if (tierIsWalled(license.tier) && tracker.count >= quota) {
     // REFERRAL-LIGHT-W1 (C2): if the referee still has bonus calls, the request
     // is NOT blocked (the actual consume happens in trackCall) — and it is NOT a
     // quota_hit_block (the user hasn't hit a wall).
@@ -887,10 +1068,28 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
         limit: 'monthly' as const,
       },
     });
-    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
+    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota, limit: 'monthly' };
   }
 
-  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+  // The DAILY meter, checked SECOND and reported second on purpose: when both are exhausted the
+  // monthly wall is the binding one (its retry is days, not hours), so naming the daily wall
+  // there would understate the wait. Bonus calls are a MONTHLY grant and deliberately do not
+  // lift a daily wall — pacing is not budget.
+  const dailyCap = getDailyCap(license.tier);
+  if (tierIsWalled(license.tier) && Number.isFinite(dailyCap)) {
+    const daily = getDailyTracker(key);
+    if (daily.count >= dailyCap) {
+      recordFunnelEvent({
+        eventType: 'quota_hit_block',
+        sessionId: getRequestSessionId() ?? null,
+        licenseTier: license.tier,
+        meta: { used: daily.count, total: dailyCap, limit: 'daily' as const },
+      });
+      return { allowed: false, remaining, overage, used: tracker.count, total: quota, limit: 'daily' };
+    }
+  }
+
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota, limit: null };
 }
 
 /**
@@ -903,12 +1102,17 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
  */
 export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
   if (license.tier === 'x402' || license.tier === 'internal') {
-    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity, limit: null };
   }
 
   const key = deriveTrackerKey(license);
   const tracker = getCallTracker(key);
   const quota = getMonthlyQuota(license.tier);
+
+  // CH4: ONE charging rule, BOTH meters. The daily meter advances on every charged unit
+  // regardless of tier or posture — a meter that only counts when it also refuses cannot report
+  // usage, and `_algovault` surfaces the count long before anyone is walled.
+  chargeDaily(key, clampUnits(units));
 
   // REFERRAL-LIGHT-W1 (C2): free tier draws monthly-then-bonus (atomic overflow).
   if (license.tier === 'free') {
@@ -937,7 +1141,7 @@ export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
 /** Check (without incrementing) an explicit tracker key against the monthly meter. */
 export function checkQuotaByKey(trackerKey: string, tier: LicenseTier): TrackCallResult {
   if (tier === 'x402' || tier === 'internal') {
-    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity, limit: null };
   }
   const tracker = getCallTracker(trackerKey);
   const quota = getMonthlyQuota(tier);
@@ -949,18 +1153,30 @@ export function checkQuotaByKey(trackerKey: string, tier: LicenseTier): TrackCal
     if (tier === 'free' && (bonusRemaining.get(trackerKey) ?? 0) > 0) {
       return { allowed: true, remaining, overage, used: tracker.count, total: quota, bonus_remaining: bonusRemaining.get(trackerKey) };
     }
-    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota };
+    return { allowed: false, remaining: 0, overage, used: tracker.count, total: quota, limit: 'monthly' };
   }
-  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+  // CH4: the daily meter, with THIS path's existing posture preserved. Note the by-key path
+  // walls EVERY tier while `checkQuota` walls only free — a pre-existing inconsistency this wave
+  // deliberately does not "fix", because doing so would silently stop refusing paid webhook
+  // owners at their ceiling. Recorded rather than changed.
+  const dailyCap = getDailyCap(tier);
+  if (Number.isFinite(dailyCap)) {
+    const daily = getDailyTracker(trackerKey);
+    if (daily.count >= dailyCap) {
+      return { allowed: false, remaining, overage, used: tracker.count, total: quota, limit: 'daily' };
+    }
+  }
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota, limit: null };
 }
 
-/** Increment + check an explicit tracker key against the monthly meter. */
+/** Increment + check an explicit tracker key against BOTH meters. */
 export function trackCallByKey(trackerKey: string, tier: LicenseTier, units = 1): TrackCallResult {
   if (tier === 'x402' || tier === 'internal') {
-    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity };
+    return { allowed: true, remaining: Infinity, overage: 0, used: 0, total: Infinity, limit: null };
   }
   const tracker = getCallTracker(trackerKey);
   const quota = getMonthlyQuota(tier);
+  chargeDaily(trackerKey, clampUnits(units)); // CH4: one charging rule, both meters
   // REFERRAL-LIGHT-W1 (C2): free tier draws monthly-then-bonus (atomic overflow).
   if (tier === 'free') {
     return freeMeterCharge(trackerKey, tracker, quota, clampUnits(units));

@@ -1154,7 +1154,14 @@ async function startHttp() {
   void import('./lib/referral-accrual.js').then((m) => m.ensureReferralWebhookEvents()).catch(() => {});
 
   const { default: express } = await import('express');
-  const { default: rateLimit } = await import('express-rate-limit');
+  const { default: rateLimit, ipKeyGenerator } = await import('express-rate-limit');
+  // CH4 per-key burst guard: same Bearer extraction as webhook-api.ts#apiKeyOf. Kept local
+  // rather than exported from there — that module owns webhook routing, not MCP transport.
+  const bearerKeyOf = (req: import('express').Request): string | null => {
+    const auth = req.headers.authorization;
+    if (typeof auth === 'string' && auth.startsWith('Bearer ')) return auth.slice(7).trim() || null;
+    return null;
+  };
 
   const app = express();
   app.set('trust proxy', 1); // Trust Caddy reverse proxy for req.secure, req.ip
@@ -1226,6 +1233,45 @@ async function startHttp() {
 
   // Rate limiting
   app.use('/mcp', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
+
+  // ── Ops-only per-KEY burst guard (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH4) ──
+  //
+  // NOT MARKETED and deliberately carries no TIER_CLAIM: this protects the upstream venues, it
+  // is not part of the product's advertised ladder. Its job is narrow — stop a 10,000-call/day
+  // Pro from spending its whole daily budget in sixty seconds and taking the venue rate limits
+  // with it. The daily meter caps the DAY; nothing capped the MINUTE.
+  //
+  // WHY PER-KEY, GIVEN /mcp IS ALREADY 120/min. That limiter keys on IP, so it does not bind a
+  // key driven from several hosts — which is exactly the scripted/agent shape this guards.
+  //
+  // CALIBRATION — measured, not guessed (CH1 follow-up query, request_log, 30d):
+  //   external per-(key,minute):  p50 1 · p95 11 · p99 18 · MAX 22   (n = 10,930 minutes)
+  //   paid tiers only (90d):      p50 1 · p95  8 · p99  9 · MAX 17   (n =    926 minutes)
+  // The spec asked for "the measured p95 legitimate burst". p95 is 11 — and a REFUSAL threshold
+  // set at p95 refuses 5% of legitimate minutes by construction. p95 is a typical-load
+  // statistic, not a headroom one. The cap is therefore set from the observed MAX with real
+  // headroom: 120/min is 5.5x the busiest legitimate minute ever recorded and 11x p95, while
+  // still cutting a runaway from 10,000/min to 120. It also matches the existing per-IP number,
+  // so a single key behind a single IP sees no new constraint at all.
+  //
+  // `internal` is exempt: the TG bot measured p95 13/min and MAX 33/min, and it enforces its own
+  // per-user quota in its own SQLite (see getMonthlyQuota / getDailyCap).
+  const MCP_PER_KEY_BURST_PER_MIN = 120;
+  app.use('/mcp', rateLimit({
+    windowMs: 60_000,
+    max: MCP_PER_KEY_BURST_PER_MIN,
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Only callers presenting a key are governed here; keyless traffic is already covered by
+    // the per-IP limiter above, and collapsing it all onto one bucket would throttle unrelated
+    // callers behind a shared NAT as though they were one abuser.
+    skip: (req: import('express').Request): boolean => {
+      const key = bearerKeyOf(req);
+      if (!key) return true;                       // keyless → per-IP limiter owns it
+      return key === process.env.CQS_API_KEY;      // internal/self → exempt
+    },
+    keyGenerator: (req: import('express').Request): string => bearerKeyOf(req) ?? ipKeyGenerator(req.ip ?? 'unknown'),
+  }));
   app.use('/analytics', rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false }));
   app.use('/webhooks', rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false }));
 
