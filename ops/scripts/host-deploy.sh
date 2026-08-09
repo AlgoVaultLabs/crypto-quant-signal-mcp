@@ -25,7 +25,7 @@
 # scope here.
 #
 # Usage:
-#   ops/scripts/host-deploy.sh --repo ~/algovault-bot --ref origin/main \
+#   ops/scripts/host-deploy.sh --repo ~/code/algovault-bot --ref origin/main \
 #       --host root@204.168.185.24 --dest /opt/algovault-bot \
 #       --manifest ops/deploy/algovault-bot.manifest \
 #       --owner algovault-bot:algovault-bot \
