@@ -9,6 +9,7 @@
  * 3. Free tier (no key, no payment)
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { utcDayKey, utcDayResetAtMs, hoursUntilUtcDayReset } from './utc-day.js';
 import { verifyX402Payment, isX402Configured, paymentMatchesToolRoute, classifyToolRouteMismatch } from './x402.js';
 import { extractPaymentNonce, extractPayerWallet, tryClaimPayment, RAIL_BASE_USDC } from './x402-idempotency-store.js';
 import { validateApiKey as stripeValidateApiKey } from './stripe.js';
@@ -527,10 +528,17 @@ export function _resetCallTrackersForTest(): void {
   bonusRemaining.clear();
 }
 
-/** Read-only inspector for the daily meter (tests + the /account portal diagnostics). */
-export function dailyUsedFor(license: LicenseInfo): number {
-  return dailyTrackers.get(deriveTrackerKey(license))?.count ?? 0;
-}
+// PRICING-FOLLOWUPS-GENERATOR-W1 CH1: `dailyUsedFor()` is DELETED.
+//
+// It was a second way to ask "how many calls has this caller made today", alongside the one
+// `checkQuota` computes to decide the daily wall — and its docstring claimed "/account portal
+// diagnostics" as a consumer it never had. Measured before deleting: zero non-test references in
+// all of `src/`. It was exported, tested, and called by nothing, the same class as
+// `hoursUntilUtcDayReset` in the same module.
+//
+// `checkQuota` now returns `daily_used` / `daily_total` from the read it already performs, so
+// there is exactly ONE production answer to that question. Two ways to read one number is drift
+// surface, and this pair is what a refusal message prints — the place drift is most expensive.
 
 // ── Access checks ──
 
@@ -605,27 +613,13 @@ interface DailyTracker {
 
 const dailyTrackers = new Map<string, DailyTracker>();
 
-/** The UTC calendar day an instant belongs to (`2026-08-08`). */
-export function utcDayKey(atMs: number = Date.now()): string {
-  return new Date(atMs).toISOString().slice(0, 10);
-}
-
-/**
- * Whole hours until the next 00:00 UTC, floored at 1 while the day is still running.
- *
- * The retry hint a DAILY wall needs. `daysUntilMonthReset` would answer "27 days" to a caller
- * who is back in business after lunch, which is worse than saying nothing — it reads as a
- * month-long lockout and is the kind of wrong-but-confident number that loses a subscriber.
- * Returns at least 1 so the copy never renders "come back in 0 hours".
- */
-export function hoursUntilUtcDayReset(atMs: number = Date.now()): number {
-  const next = Date.UTC(
-    new Date(atMs).getUTCFullYear(),
-    new Date(atMs).getUTCMonth(),
-    new Date(atMs).getUTCDate() + 1,
-  );
-  return Math.max(1, Math.ceil((next - atMs) / (60 * 60 * 1000)));
-}
+// CH1: the UTC day-boundary arithmetic moved DOWN into the `utc-day.ts` leaf so `quota-notice.ts`
+// — which may not import this module (cycle) — projects the daily retry hint from the SAME
+// derivation the meter enforces against. Re-exported so every existing importer of `license.ts`
+// keeps working; the `import` above it is what this module's own internals bind to (a bare
+// `export … from` re-exports without binding locally, and the two `utcDayKey()` calls below
+// would be a ReferenceError).
+export { utcDayKey, utcDayResetAtMs, hoursUntilUtcDayReset };
 
 /** Advance the daily meter and write it through. Never refuses — refusal is `checkQuota`'s job. */
 function chargeDaily(key: string, units: number): DailyTracker {
@@ -1002,6 +996,20 @@ export interface TrackCallResult {
    * correct retry hint. A daily wall must never tell a caller to come back in 27 days.
    */
   limit?: 'daily' | 'monthly' | null;
+  /**
+   * The DAILY meter's own pair, present whenever a finite daily cap applies to this tier.
+   *
+   * PRICING-FOLLOWUPS-GENERATOR-W1 CH1. `used`/`total` above are and remain the MONTHLY pair —
+   * they feed the `_algovault.quota` envelope, where monthly is the correct and expected number.
+   * CH4 returned only that pair from the daily branch too, so a daily refusal rendered
+   * `100/200`: the monthly figures under a daily wall. The two meters now travel as two pairs.
+   *
+   * ONE derivation: these are the same `daily.count` / `dailyCap` the branch below already
+   * computed to decide `limit`, returned rather than re-read. That is why `dailyUsedFor()` — a
+   * second, independent way to ask "daily used" — was deleted in the same change.
+   */
+  daily_used?: number;
+  daily_total?: number;
 }
 
 /**
@@ -1077,17 +1085,35 @@ export function checkQuota(license: LicenseInfo): TrackCallResult {
   // there would understate the wait. Bonus calls are a MONTHLY grant and deliberately do not
   // lift a daily wall — pacing is not budget.
   const dailyCap = getDailyCap(license.tier);
-  if (tierIsWalled(license.tier) && Number.isFinite(dailyCap)) {
+  if (Number.isFinite(dailyCap)) {
     const daily = getDailyTracker(key);
-    if (daily.count >= dailyCap) {
+    // REPORTING is unconditional on a finite cap; REFUSING still requires the tier to be walled.
+    // `trackCall` advances the daily meter for paid tiers too (`chargeDaily` is unconditional),
+    // so withholding the pair from an unwalled tier would hide a number we are in fact keeping —
+    // and `PAID_TIERS_ARE_HARD_WALLED` is a rollback lever that must not change what a caller can
+    // SEE, only what refuses them.
+    if (tierIsWalled(license.tier) && daily.count >= dailyCap) {
       recordFunnelEvent({
         eventType: 'quota_hit_block',
         sessionId: getRequestSessionId() ?? null,
         licenseTier: license.tier,
         meta: { used: daily.count, total: dailyCap, limit: 'daily' as const },
       });
-      return { allowed: false, remaining, overage, used: tracker.count, total: quota, limit: 'daily' };
+      // The daily pair travels WITH the discriminator. Returning `limit: 'daily'` while carrying
+      // only the monthly pair is what made the refusal say "100/200 … 30 days" for a wall that
+      // lifts at midnight — the funnel event below already had the right numbers, and only the
+      // caller-facing return did not.
+      return {
+        allowed: false, remaining, overage, used: tracker.count, total: quota,
+        limit: 'daily', daily_used: daily.count, daily_total: dailyCap,
+      };
     }
+    // Allowed, but a daily cap DOES apply — report it so a caller can see both meters without a
+    // second call. Same two numbers, same read; no independent path to disagree with.
+    return {
+      allowed: true, remaining, overage, used: tracker.count, total: quota,
+      limit: null, daily_used: daily.count, daily_total: dailyCap,
+    };
   }
 
   return { allowed: true, remaining, overage, used: tracker.count, total: quota, limit: null };

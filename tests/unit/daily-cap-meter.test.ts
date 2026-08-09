@@ -19,7 +19,6 @@ import {
   checkQuotaByKey,
   getMonthlyQuota,
   getDailyCap,
-  dailyUsedFor,
   utcDayKey,
   hoursUntilUtcDayReset,
   _resetCallTrackersForTest,
@@ -59,7 +58,9 @@ describe('AC4.1 — the daily wall refuses with limit:"daily" and an HOURS retry
     expect(r.used).toBe(FREE_DAILY_CALLS);
     expect(r.total).toBe(FREE_MONTHLY_CALLS);
     expect(r.used).toBeLessThan(r.total);
-    expect(dailyUsedFor(lic)).toBe(FREE_DAILY_CALLS);
+    // CH1: read the DAILY pair off the production result, not a bypass inspector.
+    expect(r.daily_used).toBe(FREE_DAILY_CALLS);
+    expect(r.daily_total).toBe(FREE_DAILY_CALLS);
   });
 
   it('an allowed call reports limit:null rather than omitting the field', () => {
@@ -89,7 +90,7 @@ describe('AC4.2 — the meters are independent in BOTH directions', () => {
     const after = checkQuota(lic);
     expect(after.allowed).toBe(true);
     expect(after.limit).toBeNull();
-    expect(dailyUsedFor(lic)).toBe(0);           // daily reset
+    expect(after.daily_used).toBe(0);            // daily reset
     expect(after.used).toBe(FREE_DAILY_CALLS);   // monthly carried over
   });
 
@@ -99,7 +100,7 @@ describe('AC4.2 — the meters are independent in BOTH directions', () => {
     const lic = free('monthly-wall');
     // Spend the whole month without ever tripping the daily cap: one full day per day.
     let day = 8;
-    while (dailyUsedFor(lic) >= 0 && checkQuota(lic).used < FREE_MONTHLY_CALLS) {
+    while (checkQuota(lic).used < FREE_MONTHLY_CALLS) {
       vi.setSystemTime(Date.parse(`2026-08-${String(day).padStart(2, '0')}T06:00:00.000Z`));
       for (let i = 0; i < FREE_DAILY_CALLS; i++) trackCall(lic);
       day += 1;
@@ -121,8 +122,9 @@ describe('AC4.2 — the meters are independent in BOTH directions', () => {
   it('one charging rule: a single call advances BOTH meters by the same units', () => {
     const lic = free('both');
     trackCall(lic, 5);
-    expect(dailyUsedFor(lic)).toBe(5);
-    expect(checkQuota(lic).used).toBe(5);
+    const r = checkQuota(lic);
+    expect(r.daily_used).toBe(5);
+    expect(r.used).toBe(5);
   });
 });
 
@@ -138,7 +140,9 @@ describe('AC4.3 — the exempt tiers are untouched (the biggest regression risk)
     const r = checkQuota(bot);
     expect(r.allowed).toBe(true);
     expect(r.limit).toBeNull();
-    expect(dailyUsedFor(bot)).toBe(0); // internal short-circuits before any meter
+    // internal short-circuits before ANY metering — so it reports no daily pair at all,
+    // which is a sharper statement of the same fact than a zero count was.
+    expect(r.daily_used).toBeUndefined();
   });
 
   it('x402 is exempt on both meters — it pays per call, not per period', () => {
@@ -190,6 +194,6 @@ describe('R-D — the period key is a UTC calendar day', () => {
     expect(getDailyCap('pro')).toBe(PLANS.pro.dailyCalls);
     const lic = starter('s1');
     trackCall(lic, 3);
-    expect(dailyUsedFor(lic)).toBe(3);
+    expect(checkQuota(lic).daily_used).toBe(3);
   });
 });

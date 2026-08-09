@@ -30,6 +30,9 @@
  * `nudge-copy.ts` and consumes this module, so an import here would close a cycle.
  */
 import { PLANS, DEFAULT_UPGRADE_PLAN, planCallsLabel, subscriptionBreakEvenCalls } from './plans.js';
+// LEAF, not `license.ts` — see the module note above on why that import would cycle. This is the
+// SAME derivation the daily meter enforces against, which is the point of extracting it.
+import { hoursUntilUtcDayReset } from './utc-day.js';
 import { nudgeSignupUrl, referralSignupUrl } from './nudge-copy.js';
 import { shareLink, bonusCallsLabel } from './referral-constants.js';
 import type { SuggestedX402 } from '../types.js';
@@ -39,6 +42,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Which meter the caller exhausted. They are independent — exhausting one leaves the other intact. */
 export type QuotaMeter = 'calls' | 'chat';
 
+/**
+ * WHICH wall refused — orthogonal to `QuotaMeter`, which names the SURFACE (calls vs chat).
+ *
+ * R-B gave the `calls` surface two independent meters, and they retry on horizons an order of
+ * magnitude apart: hours to the next 00:00 UTC vs days to the caller's own rolling reset. A
+ * notice that does not know which one fired cannot state either correctly — and the one it
+ * guessed was the monthly one, which told a caller walled for a few hours to come back in 30
+ * days. `chat` has no daily meter, so `'monthly'` is the only reachable value there.
+ */
+export type QuotaWall = 'daily' | 'monthly';
+
 /** The path the notice leads with, chosen from the caller's measured burn rate. */
 export type RecommendedPath = 'subscription' | 'x402';
 
@@ -46,8 +60,16 @@ export interface QuotaNoticeContext {
   meter: QuotaMeter;
   /** Calls consumed this period. */
   used: number;
-  /** The period cap (free `calls` = 100, free `chat` = 10). */
+  /** The period cap (free `calls` = 200/mo, free `chat` = 10). */
   limit: number;
+  /**
+   * Which meter refused. DEFAULTS to `'monthly'`, which is what every pre-R-B caller meant and
+   * is why adding this field moved zero rendered bytes on the monthly path.
+   *
+   * When `'daily'`, `used`/`limit` MUST be the DAILY pair — the whole defect this closes was a
+   * daily refusal rendering the monthly pair, so the two travel together or not at all.
+   */
+  wall?: QuotaWall;
   /** Epoch ms at which access returns. Rolling for `calls`, calendar-month for `chat`. */
   resetAtMs: number;
   /** Injectable clock (tests). Defaults to `Date.now()`. */
@@ -80,13 +102,27 @@ export interface QuotaNoticeFacts {
   resets_at_date: string;
   /** Whole days until `resets_at`, ceiling, floored at 0. Matches `daysUntilMonthReset`. */
   retry_after_days: number;
+  /**
+   * Whole hours to the next 00:00 UTC — present ONLY on a daily wall, absent on a monthly one.
+   *
+   * Two fields rather than one polymorphic "retry_after", because a machine reading this has to
+   * branch on the unit anyway and a single field would make the unit implicit. Absence is the
+   * signal that days is the right horizon.
+   */
+  retry_after_hours?: number;
+  /** Which wall refused — the discriminator the shape snapshot has promised since CH7. */
+  limit: QuotaWall;
   /** Which path the notice leads with. */
   recommended_path: RecommendedPath;
 }
 
-/** Per-meter nouns. Keeping them in one place is why a new surface cannot invent a fifth phrasing. */
-const METER_COPY: Record<QuotaMeter, { noun: string; upgradeFrom: string }> = {
-  calls: { noun: 'Free monthly quota', upgradeFrom: 'limit' },
+/**
+ * Per-(meter, wall) nouns. Keeping them in one place is why a new surface cannot invent a fifth
+ * phrasing — and why the noun cannot drift from the usage pair printed beside it: both are
+ * projected from `ctx.wall` in `buildQuotaNoticeMessage`, in one expression.
+ */
+const METER_COPY: Record<QuotaMeter, { noun: string; dailyNoun?: string; upgradeFrom: string }> = {
+  calls: { noun: 'Free monthly quota', dailyNoun: 'Free daily quota', upgradeFrom: 'limit' },
   chat: { noun: 'Free monthly chat quota', upgradeFrom: 'limit_chat' },
 };
 
@@ -137,6 +173,7 @@ export function quotaNoticeFacts(ctx: QuotaNoticeContext): QuotaNoticeFacts {
   // already uses when a caller has no tracker.
   const resetAtMs = Number.isFinite(ctx.resetAtMs) ? ctx.resetAtMs : now + FALLBACK_WINDOW_MS;
   const msUntil = resetAtMs - now;
+  const wall: QuotaWall = ctx.wall ?? 'monthly';
   return {
     usage_display: `${ctx.used}/${ctx.limit}`,
     current_usage: ctx.used,
@@ -144,8 +181,39 @@ export function quotaNoticeFacts(ctx: QuotaNoticeContext): QuotaNoticeFacts {
     resets_at: new Date(resetAtMs).toISOString(),
     resets_at_date: utcDate(resetAtMs),
     retry_after_days: msUntil <= 0 ? 0 : Math.ceil(msUntil / DAY_MS),
+    // Hours are the DAILY wall's unit and are absent on a monthly one, so a reader branches on
+    // presence rather than on a magnitude. Derived from `hoursUntilUtcDayReset` — the same
+    // function the meter's own boundary uses — rather than a second ceil-over-duration here.
+    ...(wall === 'daily' ? { retry_after_hours: hoursUntilUtcDayReset(now) } : {}),
+    limit: wall,
     recommended_path: recommendPath(ctx),
   };
+}
+
+/**
+ * The refusal headline — ONE projection of `f.limit`, which is why the noun, the usage pair and
+ * the retry horizon cannot disagree with each other.
+ *
+ * They disagreed in production for a day and a half: a daily wall rendered the MONTHLY noun
+ * ("Free monthly quota"), the MONTHLY pair (`100/200`) and the MONTHLY horizon ("30 days") for a
+ * caller whose access returned within hours. Three wrong facts, one root cause — the sentence was
+ * assembled from parts that each independently assumed the monthly meter. Assembling it from the
+ * discriminator instead makes that class unwritable: there is no expression here that mentions a
+ * meter without going through `wall`.
+ *
+ * `chat` has no daily meter, so its branch is the monthly one by construction.
+ */
+function headline(ctx: QuotaNoticeContext, f: QuotaNoticeFacts): string {
+  const copy = METER_COPY[ctx.meter];
+  if (f.limit === 'daily') {
+    // `retry_after_hours` is present exactly when `limit === 'daily'` (see quotaNoticeFacts), but
+    // read defensively: a hand-built facts object from a JS caller must degrade to a sentence,
+    // never to `undefined hours` on the one response a walled caller receives.
+    const hrs = f.retry_after_hours ?? hoursUntilUtcDayReset(ctx.nowMs ?? Date.now());
+    return `${copy.dailyNoun ?? copy.noun} used: ${f.usage_display}. `
+      + `Access returns at 00:00 UTC (${hrs} ${hrs === 1 ? 'hour' : 'hours'}).`;
+  }
+  return `${copy.noun} used: ${f.usage_display}. Access returns ${f.resets_at_date} (${f.retry_after_days} days).`;
 }
 
 /** The subscription arm. Links; never inlines a dollar figure (a link cannot go stale). */
@@ -194,9 +262,7 @@ function referralLine(referralCode: string | null | undefined): string {
  */
 export function buildQuotaNoticeMessage(ctx: QuotaNoticeContext): string {
   const f = quotaNoticeFacts(ctx);
-  const lines: string[] = [
-    `${METER_COPY[ctx.meter].noun} used: ${f.usage_display}. Access returns ${f.resets_at_date} (${f.retry_after_days} days).`,
-  ];
+  const lines: string[] = [headline(ctx, f)];
 
   if (ctx.meter === 'chat') {
     lines.push(subscriptionLine('chat', true));
@@ -222,7 +288,12 @@ export function buildQuotaNoticeMessage(ctx: QuotaNoticeContext): string {
  */
 export function buildQuotaSuggestedAction(ctx: QuotaNoticeContext): string {
   const f = quotaNoticeFacts(ctx);
-  const wait = `or wait until ${f.resets_at_date} for the free quota to reset`;
+  // The do-nothing fallback is a SECOND rendering of the same fact the headline states, so it
+  // projects from the same discriminator. Left keyed on the monthly reset date it would tell a
+  // daily-walled caller to wait weeks — the identical defect, one field over.
+  const wait = f.limit === 'daily'
+    ? 'or wait until 00:00 UTC for the daily allowance to reset'
+    : `or wait until ${f.resets_at_date} for the free quota to reset`;
   if (ctx.meter === 'chat') {
     return `Upgrade to ${PLANS[DEFAULT_UPGRADE_PLAN].label} at ${nudgeSignupUrl('limit_chat' as Parameters<typeof nudgeSignupUrl>[0])} for a higher chat allowance, ${wait}.`;
   }

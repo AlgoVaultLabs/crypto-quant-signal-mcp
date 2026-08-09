@@ -158,7 +158,7 @@
     "tools_list": "no ttlMs/cacheScope is advertised (those arrive in MCP 2026-07-28; we negotiate 2025-06-18)."
   },
   "error_contract": {
-    "TIER_LIMIT_REACHED": "TierLimitReachedError — structured, carries currentUsage/monthlyLimit/tier/suggestedUpgradeUrl/resetAtMs/referralCode. Every successful verdict counts as one metered call, HOLD included (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A); errors are not verdicts and are never charged. Two independent meters — the refusal carries `limit: 'daily'|'monthly'`.",
+    "TIER_LIMIT_REACHED": "TierLimitReachedError — structured, carries currentUsage/monthlyLimit/tier/suggestedUpgradeUrl/resetAtMs/referralCode. Every successful verdict counts as one metered call, HOLD included (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A); errors are not verdicts and are never charged. Two independent meters — the refusal carries `limit: 'daily'|'monthly'`. A DAILY refusal additionally carries `daily_used`/`daily_limit` (the pair that actually refused) and `retry_after_hours` (to the next 00:00 UTC); all three are ABSENT on a monthly refusal, where `retry_after_days` is the horizon. Made true by PRICING-FOLLOWUPS-GENERATOR-W1 CH1 — between CH7 and that fix this sentence was a promise the thrown error did not keep.",
     "TRADFI_SYMBOL_UNSUPPORTED_ON_VENUE": "TradFiSymbolUnsupportedOnVenueError — carries suggested_venues so an agent can self-retry.",
     "INSUFFICIENT_CANDLES": "InsufficientCandlesError — carries candlesAvailable/candlesRequired/suggestedTimeframes/suggestedAction.",
     "free_tier_gate": "a plain Error carrying freeGateMessage(coin, timeframe) when the coin or timeframe is outside the caller's tier.",

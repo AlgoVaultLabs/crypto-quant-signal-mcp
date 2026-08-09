@@ -4,7 +4,8 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 // full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
 // The extraction surfaced it; the golden fixture proves removing it changed no output.
 import { rsi, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js'
+import type { TrackCallResult } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
 import { buildFactorLedger, renderVerdictReasoning } from '../lib/verdict-factors.js';
@@ -473,8 +474,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // happens after a successful result, because an error is not a verdict and is never charged.
   // Internal grid-refresh calls skip quota entirely — they are server-side
   // pre-computation, not per-agent usage.
-  const quota = input.internal
-    ? { allowed: true, used: 0, total: 0 }
+  // Typed as the full TrackCallResult so the internal-skip literal and the real result are ONE
+  // shape. Left as a narrowed literal the union drops `limit`/`daily_*`, and the refusal below
+  // cannot see which meter fired — the branch never refuses, but the TYPE is what carries the
+  // discriminator to the throw site.
+  const quota: TrackCallResult = input.internal
+    ? { allowed: true, used: 0, total: 0, remaining: Infinity, overage: 0, limit: null }
     : checkQuota(input.license || { tier: 'free', key: null });
   if (!quota.allowed) {
     const licenseForReset = input.license || { tier: 'free' as const, key: null };
@@ -488,7 +493,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       resetAtMs: monthResetAtMs(licenseForReset),
       periodStartMs: periodStartMs(licenseForReset),
       referralCode: referralCodeForKey(licenseForReset.key),
-      tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
+      tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch,
+      // CH1: the wall discriminator + the DAILY pair travel WITH the refusal. Passing
+      // `quota.limit` alone would let a daily wall render the monthly numbers again, which is the
+      // defect this closes — so the three move together, from the ONE `checkQuota` result.
+      wall: quota.limit === 'daily' ? 'daily' : 'monthly',
+      dailyUsed: quota.daily_used,
+      dailyLimit: quota.daily_total,
     });
   }
 

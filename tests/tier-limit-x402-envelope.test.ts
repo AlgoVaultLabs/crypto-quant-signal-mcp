@@ -51,12 +51,24 @@ describe('buildTierLimitPayload', () => {
     // OPS-QUOTA-EXHAUSTION-NOTICE-W1 grew the envelope by four ADDITIVE notice fields. Every
     // pre-existing key keeps its name, value and relative order — an existing consumer reading
     // `retry_after_days` or `referral_hint` is untouched.
+    //
+    // KEY-SET MAINTENANCE — PRICING-FOLLOWUPS-GENERATOR-W1 CH1 (2026-08-09): `limit` joins as a
+    // fifth additive field, between `recommended_path` and `suggested_action`. It is not
+    // optional cosmetics: the PUBLISHED get_trade_call shape snapshot has promised
+    // `limit: 'daily'|'monthly'` on every refusal since CH7 of the prior wave, and the thrown
+    // error carried `undefined` until this change — so the contract agents parse was false.
+    // This assertion firing is the guard working; it was updated deliberately, not silenced.
+    //
+    // The DAILY-only trio (`retry_after_hours`, `daily_used`, `daily_limit`) is spread on
+    // presence, so a MONTHLY refusal — which is what this fixture is — keeps exactly this key
+    // set. `daily-refusal-contract.test.ts` asserts their ABSENCE here and their presence there.
     expect(Object.keys(p)).toEqual([
       'code', 'error_code', 'message', 'current_usage', 'monthly_limit',
       'tier', 'suggested_upgrade_url', 'retry_after_days',
-      'resets_at', 'usage_display', 'recommended_path', 'suggested_action',
+      'resets_at', 'usage_display', 'recommended_path', 'limit', 'suggested_action',
       'referral_hint',
     ]);
+    expect(p.limit).toBe('monthly');
     expect(p.resets_at).toBe('2026-08-14T00:00:00.000Z');
     expect(p.usage_display).toBe('100/100');
     // No live rail was passed ⇒ nothing to compare ⇒ the subscription leads, and the prose

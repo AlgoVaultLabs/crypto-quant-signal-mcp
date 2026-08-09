@@ -208,6 +208,12 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       periodStartMs: periodStartMs(license),
       referralCode: referralCodeForKey(license.key),
       tool: 'scan_funding_arb', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
+      // CH1: the wall discriminator + the DAILY pair travel WITH the refusal. Passing
+      // `limit` alone would let a daily wall render the monthly numbers again, which is the
+      // defect this closes — so the three move together, from the ONE `checkQuota` result.
+      wall: gate.limit === 'daily' ? 'daily' : 'monthly',
+      dailyUsed: gate.daily_used,
+      dailyLimit: gate.daily_total,
     });
   }
   const quota = trackCall(license);

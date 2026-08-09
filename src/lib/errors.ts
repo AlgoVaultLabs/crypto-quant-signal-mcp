@@ -22,7 +22,7 @@ import { buildReferralHint, type ReferralHint } from './nudge-copy.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (2026-08-02): the exhaustion notice is now ONE contract shared
 // by every free-tier surface (message + facts + suggested_action). `quota-notice` is a pure leaf
 // (plans / nudge-copy / referral-constants only), so importing it here closes no cycle.
-import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts, type QuotaNoticeContext } from './quota-notice.js';
+import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts, type QuotaNoticeContext, type QuotaWall } from './quota-notice.js';
 // FUNNEL-FIX-AGENT-X402-NUDGE-W1: type-only import (no runtime edge) so this light module never
 // imports the x402-nudge leaf — the additive `suggested_x402` is COMPUTED by the caller (index.ts)
 // and passed in; this formatter only serializes it.
@@ -121,6 +121,18 @@ export class TierLimitReachedError extends Error {
    * COMPUTED from this instant instead of being passed alongside it, so the two cannot disagree.
    */
   readonly resets_at: string;
+  /**
+   * WHICH meter refused. The public shape snapshot has PROMISED this field since CH7 of
+   * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 ("the refusal carries `limit: 'daily'|'monthly'`");
+   * until CH1 of this wave it was `undefined` on every thrown error, so the published contract
+   * was false for the agents that parse it.
+   */
+  readonly limit: QuotaWall;
+  /** The DAILY pair, present only on a daily wall — the numbers that actually refused. */
+  readonly daily_used?: number;
+  readonly daily_limit?: number;
+  /** Hours to 00:00 UTC — present only on a daily wall. Absence means days is the horizon. */
+  readonly retry_after_hours?: number;
   /** Structured-error law: one imperative next step, always incl. the wait-for-reset fallback. */
   readonly suggested_action: string;
   /** Epoch ms the meter's period began. camelCase ⇒ NOT a wire field; feeds `noticeContext()`. */
@@ -161,6 +173,18 @@ export class TierLimitReachedError extends Error {
     tool?: string;
     /** Injectable clock (tests only). */
     nowMs?: number;
+    /**
+     * WHICH meter refused (PRICING-FOLLOWUPS-GENERATOR-W1 CH1). Defaults to `'monthly'`, which
+     * is what every pre-R-B throw site meant — so adding it moved zero bytes on that path.
+     *
+     * On `'daily'` the caller MUST also pass `dailyUsed`/`dailyLimit`: a daily wall that renders
+     * the monthly pair is the exact defect this closes, and letting the discriminator travel
+     * without its numbers would leave that possible.
+     */
+    wall?: QuotaWall;
+    /** The DAILY meter's pair — required when `wall === 'daily'`, ignored otherwise. */
+    dailyUsed?: number;
+    dailyLimit?: number;
   }) {
     // OPS-QUOTA-EXHAUSTION-NOTICE-W1 (was REFERRAL-INPRODUCT-NUDGE-W1 / ACTIVATION-NUDGE-W1):
     // the shared builder is now `quota-notice`, the ONE notice every free-tier surface renders
@@ -172,10 +196,17 @@ export class TierLimitReachedError extends Error {
     // The x402 arm is NOT known here — `index.ts` derives the live rail at serialization time —
     // so the constructor renders the base notice and `buildTierLimitPayload` re-renders it from
     // the SAME function with the rail attached. One derivation, two call sites.
+    // On a DAILY wall the notice renders the DAILY pair — `used`/`limit` here are the notice's
+    // "what refused you" numbers, not the monthly envelope's. `current_usage`/`monthly_limit`
+    // below keep the monthly pair, because those wire fields have always meant the monthly meter
+    // and every existing consumer reads them that way.
+    const wall: QuotaWall = args.wall ?? 'monthly';
+    const isDaily = wall === 'daily' && typeof args.dailyUsed === 'number' && typeof args.dailyLimit === 'number';
     const noticeCtx: QuotaNoticeContext = {
       meter: 'calls',
-      used: args.currentUsage,
-      limit: args.monthlyLimit,
+      used: isDaily ? (args.dailyUsed as number) : args.currentUsage,
+      limit: isDaily ? (args.dailyLimit as number) : args.monthlyLimit,
+      wall: isDaily ? 'daily' : 'monthly',
       resetAtMs: args.resetAtMs,
       periodStartMs: args.periodStartMs,
       referralCode: args.referralCode ?? null,
@@ -198,6 +229,10 @@ export class TierLimitReachedError extends Error {
     this.resets_at = facts.resets_at;
     this.suggested_action = buildQuotaSuggestedAction(noticeCtx);
     this.tool = args.tool;
+    this.limit = noticeCtx.wall ?? 'monthly';
+    this.daily_used = isDaily ? args.dailyUsed : undefined;
+    this.daily_limit = isDaily ? args.dailyLimit : undefined;
+    this.retry_after_hours = facts.retry_after_hours;
     Object.setPrototypeOf(this, TierLimitReachedError.prototype);
   }
 
@@ -212,10 +247,15 @@ export class TierLimitReachedError extends Error {
    * "or pay per call via x402" that stayed in the text even when no rail was live.
    */
   noticeContext(x402?: SuggestedX402): QuotaNoticeContext {
+    const isDaily = this.limit === 'daily' && typeof this.daily_used === 'number' && typeof this.daily_limit === 'number';
     return {
       meter: 'calls',
-      used: this.current_usage,
-      limit: this.monthly_limit,
+      // Same projection the constructor made. If this re-render disagreed with the thrown
+      // message about WHICH meter refused, `buildTierLimitPayload` would ship a different
+      // sentence than the error carries — the exact drift `noticeContext()` exists to prevent.
+      used: isDaily ? (this.daily_used as number) : this.current_usage,
+      limit: isDaily ? (this.daily_limit as number) : this.monthly_limit,
+      wall: isDaily ? 'daily' : 'monthly',
       resetAtMs: this.resetAtMs,
       periodStartMs: this.periodStartMs,
       referralCode: this.referralCode,
@@ -243,6 +283,16 @@ export interface TierLimitPayload {
   usage_display: string;
   /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: which path the notice leads with. Additive. */
   recommended_path: 'subscription' | 'x402';
+  /**
+   * PRICING-FOLLOWUPS-GENERATOR-W1 CH1: WHICH meter refused. Additive, and the field the
+   * published `get_trade_call` shape snapshot has promised since CH7 — this is where that
+   * promise becomes true. `'monthly'` on every pre-existing refusal, so no consumer moves.
+   */
+  limit: 'daily' | 'monthly';
+  /** The DAILY pair + hours horizon — present ONLY on a daily wall. Additive. */
+  daily_used?: number;
+  daily_limit?: number;
+  retry_after_hours?: number;
   /** OPS-QUOTA-EXHAUSTION-NOTICE-W1: the structured-error law's `suggested_<action>`. Additive. */
   suggested_action: string;
   referral_hint: ReferralHint;
@@ -281,6 +331,12 @@ export function buildTierLimitPayload(
     resets_at: facts.resets_at,
     usage_display: facts.usage_display,
     recommended_path: facts.recommended_path,
+    limit: facts.limit,
+    // Spread-on-presence keeps the key SET byte-identical for a monthly refusal — the same
+    // allow-list discipline `suggested_x402` already uses below.
+    ...(facts.retry_after_hours !== undefined ? { retry_after_hours: facts.retry_after_hours } : {}),
+    ...(err.daily_used !== undefined ? { daily_used: err.daily_used } : {}),
+    ...(err.daily_limit !== undefined ? { daily_limit: err.daily_limit } : {}),
     suggested_action: buildQuotaSuggestedAction(ctx),
     referral_hint: err.referral_hint,
     ...(opts?.suggestedX402 ? { suggested_x402: opts.suggestedX402 } : {}),

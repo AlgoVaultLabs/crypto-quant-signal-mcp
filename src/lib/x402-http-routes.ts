@@ -19,7 +19,14 @@
  *
  * Paywall (R2): reuses `resolveLicense` (x402 → API key → free). Unpaid (`tier!=='x402'`)
  * → 402 carrying the HTTP resource URL + bazaar extension (the listing channel). Paid →
- * run the core fn, then settle fire-and-forget (R6; HOLD verdicts stay free, like MCP).
+ * run the core fn, then settle fire-and-forget — EVERY verdict settles, HOLD included
+ * (PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A), matching MCP.
+ *
+ * This line read "R6; HOLD verdicts stay free, like MCP" until 2026-08-09 — false since CH5 of
+ * that wave removed the settle-skip a few lines below, and false in the module HEADER, where a
+ * reader looks before touching anything. A header asserting the opposite of the code is an
+ * invitation to "restore" the skip and re-open the loophole R-A closed, on the revenue rail.
+ * Pinned at zero by `daily-refusal-contract.test.ts`'s free-HOLD comment canary.
  *
  * Input validation: each body is validated against the SAME JSON Schema declared to the
  * Bazaar (`BAZAAR_ROUTES[tool].inputSchema`) via ajv (single source for input shape).

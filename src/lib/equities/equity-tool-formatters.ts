@@ -92,7 +92,14 @@ export function formatEquityRegime(v: PublicVerdictRow): EquityRegimeOutput {
   };
 }
 
-function tierLimitError(license: LicenseInfo, q: { used: number; total: number }, tool: string): TierLimitReachedError {
+// CH1: `q` widened to carry the wall discriminator + daily pair. The equity tools are
+// dark-retired behind EQUITY_TOOLS_ENABLED, but a refusal shape that differs by tier is
+// exactly the drift a shared formatter exists to prevent — so they thread it too.
+function tierLimitError(
+  license: LicenseInfo,
+  q: { used: number; total: number; limit?: 'daily' | 'monthly' | null; daily_used?: number; daily_total?: number },
+  tool: string,
+): TierLimitReachedError {
   return new TierLimitReachedError({
     currentUsage: q.used,
     monthlyLimit: q.total,
@@ -107,6 +114,9 @@ function tierLimitError(license: LicenseInfo, q: { used: number; total: number }
     // FUNNEL-FIX-AGENT-X402-NUDGE-W1: equities are HELD (no suggested_x402 today) — but passing
     // the tool means they AUTO-JOIN the x402 nudge the moment EQUITY_PUBLIC_COPY_HOLD flips.
     tool,
+    wall: q.limit === 'daily' ? 'daily' : 'monthly',
+    dailyUsed: q.daily_used,
+    dailyLimit: q.daily_total,
   });
 }
 
@@ -125,8 +135,13 @@ function quotaGate(license: LicenseInfo): void {
 
 /**
  * Read-only exhaustion gate — throws if quota is ALREADY exhausted, WITHOUT charging.
- * Mirrors get_trade_call (checkQuota at entry; the charge happens after the verdict,
- * so HOLD verdicts and error paths stay free). Used by get_equity_call.
+ * Mirrors get_trade_call (checkQuota at entry; the charge happens after the verdict, so an
+ * ERROR path never charges — but every VERDICT does, HOLD included, per R-A).
+ * Used by get_equity_call.
+ *
+ * The clause "so HOLD verdicts and error paths stay free" stood here until 2026-08-09,
+ * contradicting the comment ten lines below that records R-A removing exactly that condition.
+ * Same class as the `x402-http-routes.ts` module-header lie fixed in the same change.
  */
 function assertQuotaAvailable(license: LicenseInfo): void {
   const q = checkQuota(license);
