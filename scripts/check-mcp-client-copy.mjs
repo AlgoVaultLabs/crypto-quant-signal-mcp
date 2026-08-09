@@ -586,20 +586,39 @@ function selfTest() {
   }
 
   // ── CHECK 8 (C-BLOCKLIST). The must-NOT-fire cases matter more than the
-  // must-fire ones here: a quota pattern that also swallows a VENUE's API rate
-  // limit would force an editor to weaken real exchange documentation.
+  // must-fire ones here: a pattern that also swallows legitimate copy would force
+  // an editor to weaken real documentation to get a push through.
+  //
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (2026-08-09) RETIRED the `per-day-quota`
+  // class and these fixtures moved WITH it. R-B introduced a real per-UTC-day cap, so
+  // '100 calls/day' became an accurate statement the gate was blocking — and the
+  // per-day fixtures are kept, INVERTED, as the regression lock: they must now be
+  // inert. Deleting them instead would leave nothing asserting the ban is gone, and a
+  // silently-reinstated pattern would block every pricing page again.
   const bl = {
-    '/fx/bl-quota.md': 'Free tier covers 20 calls/day per IP — plenty for development.',
-    '/fx/bl-quota-upto.md': 'Free tier covers up to 20 calls/day per IP',
-    '/fx/bl-quota-free.md': 'Free tier covers 20 free calls/day',
-    '/fx/bl-quota-words.md': 'Free tier covers 20 calls per day',
-    '/fx/bl-quota-future.md': 'Free tier covers 25 calls/day',   // the class, not the literal
-    '/fx/bl-ok-month.md': 'Free tier: 100 calls/month, every coin and timeframe.',
+    // Retired class — every one of these is legitimate copy now and must NOT fire.
+    '/fx/bl-quota.md': 'Free tier covers 100 calls/day per IP — plenty for development.',
+    '/fx/bl-quota-upto.md': 'Free tier covers up to 100 calls/day per IP',
+    '/fx/bl-quota-free.md': 'Free tier covers 100 free calls/day',
+    '/fx/bl-quota-words.md': 'Free tier covers 100 calls per day',
+    '/fx/bl-quota-future.md': 'Starter covers 1,000 calls/day',
+    '/fx/bl-ok-month.md': 'Free tier: 200 calls/month, every coin and timeframe.',
     // Real venue rate limits that MUST survive — these are exchange API facts.
     '/fx/bl-ok-venue1.md': 'Awareness that rate limits are **per-IP, not per-key** (2,400 weight/min, 1,200 order/min)',
     '/fx/bl-ok-venue2.md': 'Awareness of the order rate limit — 10/s per UID and 3/s per IP on the place-order endpoint.',
+    // LIVE class — the free-HOLD promise, in the paraphrases it actually shipped as.
+    '/fx/bl-hold-are.md': 'HOLD verdicts are free and never charged.',
+    '/fx/bl-hold-is.md': 'A HOLD is free, so scan as often as you like.',
+    '/fx/bl-hold-adj.md': 'Batch scans give you free HOLDs at no quota cost.',
+    '/fx/bl-hold-never.md': 'A HOLD is never charged against your allowance.',
+    '/fx/bl-hold-count.md': "HOLDs don't count towards your monthly quota.",
+    // ...and the copy this wave actually shipped, which must stay inert. The pattern is
+    // DIRECTIONAL: it needs HOLD adjacent to a free/never-charged claim, so the true
+    // statement of the same fact is not collateral damage.
+    '/fx/bl-ok-hold-counts.md': 'Every verdict counts, HOLD included.',
+    '/fx/bl-ok-hold-flat.md': 'Free tier: 200 calls/month. Every successful verdict is one metered call, HOLD included.',
     // A doc explaining the ban must not be punished by the ban.
-    '/fx/bl-ok-comment.html': '<!-- retired: 20 calls/day --><p>Free tier: 100 calls/month.</p>',
+    '/fx/bl-ok-comment.html': '<!-- retired: HOLDs are free --><p>Every verdict counts, HOLD included.</p>',
   };
   Object.assign(fixtures, bl);
 
@@ -608,12 +627,15 @@ function selfTest() {
     console.error('✗ self-test could not load ops/brand-forbidden-phrases.json — cannot verify C-BLOCKLIST.');
     return 'INDETERMINATE';
   }
-  for (const f of ['/fx/bl-quota.md', '/fx/bl-quota-upto.md', '/fx/bl-quota-free.md',
-                   '/fx/bl-quota-words.md', '/fx/bl-quota-future.md']) {
+  for (const f of ['/fx/bl-hold-are.md', '/fx/bl-hold-is.md', '/fx/bl-hold-adj.md',
+                   '/fx/bl-hold-never.md', '/fx/bl-hold-count.md']) {
     mustFire++;
     if (checkBlocklist([f], readFixture, testBl).length !== 1) fails.push(`check8 must fire on ${f}`);
   }
-  for (const f of ['/fx/bl-ok-month.md', '/fx/bl-ok-venue1.md', '/fx/bl-ok-venue2.md', '/fx/bl-ok-comment.html']) {
+  for (const f of ['/fx/bl-quota.md', '/fx/bl-quota-upto.md', '/fx/bl-quota-free.md',
+                   '/fx/bl-quota-words.md', '/fx/bl-quota-future.md', '/fx/bl-ok-month.md',
+                   '/fx/bl-ok-venue1.md', '/fx/bl-ok-venue2.md', '/fx/bl-ok-hold-counts.md',
+                   '/fx/bl-ok-hold-flat.md', '/fx/bl-ok-comment.html']) {
     mustNotFire++;
     if (checkBlocklist([f], readFixture, testBl).length !== 0) fails.push(`check8 must NOT fire on ${f}`);
   }

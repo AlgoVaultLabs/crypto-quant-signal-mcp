@@ -78,7 +78,7 @@ describe('brand blocklist: schema', () => {
   it('refuses an exemption with no reason', () => {
     // Proves the loader's refusal is real, not decorative.
     const raw = JSON.parse(readFileSync(JSON_PATH, 'utf8'));
-    raw.exempt_paths = [{ path: 'x.md', phrase_id: 'per-day-quota' }]; // no reason
+    raw.exempt_paths = [{ path: 'x.md', phrase_id: 'free-hold-promise' }]; // no reason
     const tmp = join(ROOT, 'ops', '.brand-blocklist-parity-tmp.json');
     const fs = require('node:fs');
     fs.writeFileSync(tmp, JSON.stringify(raw));
@@ -94,17 +94,26 @@ describe('brand blocklist: BEHAVIOUR (a hash cannot catch a stale re-vendor)', (
   const bl = loadBlocklist(JSON_PATH)!;
   const read = (f: string) => FIXTURES[f];
 
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (2026-08-09): the `per-day-quota` class was
+  // RETIRED — ruling R-B gave the free tier a real per-UTC-day cap, so "100 calls/day"
+  // became an accurate statement the gate was blocking. The live class is now the
+  // free-HOLD promise, which R-A made false everywhere. The retired class's fixtures are
+  // kept INVERTED rather than deleted: they are the regression lock proving the ban is
+  // gone, and without them a silently-reinstated pattern would block every pricing page.
   const FIXTURES: Record<string, string> = {
     // must fire — the phrase CLASS, not one literal
-    'a.md': 'Free tier covers 20 calls/day per IP — plenty for development.',
-    'b.md': 'Free tier covers up to 20 calls/day per IP',
-    'c.md': 'Free tier covers 20 free calls/day',
-    'd.md': 'Free tier covers 20 calls per day',
-    'e.md': 'Free tier covers 25 calls/day',
-    // must NOT fire — the correction itself, and real VENUE rate limits
-    'ok1.md': 'Free tier: 100 calls/month, every coin and timeframe.',
+    'a.md': 'HOLD verdicts are free and never charged.',
+    'b.md': 'A HOLD is free, so scan as often as you like.',
+    'c.md': 'Batch scans give you free HOLDs at no quota cost.',
+    'd.md': 'A HOLD is never charged against your allowance.',
+    'e.md': "HOLDs don't count towards your monthly quota.",
+    // must NOT fire — the correction itself, real VENUE rate limits, and the RETIRED class
+    'ok1.md': 'Free tier: 200 calls/month, every coin and timeframe.',
     'ok2.md': 'rate limits are per-IP, not per-key (2,400 weight/min, 1,200 order/min)',
     'ok3.md': '10/s per UID and 3/s per IP on the place-order endpoint.',
+    'ok4.md': 'Every verdict counts, HOLD included.',
+    'ok5.md': 'Free tier covers 100 calls/day per IP — plenty for development.',
+    'ok6.md': 'Starter covers 1,000 calls per day.',
   };
 
   for (const f of ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']) {
@@ -113,15 +122,25 @@ describe('brand blocklist: BEHAVIOUR (a hash cannot catch a stale re-vendor)', (
     });
   }
 
-  for (const f of ['ok1.md', 'ok2.md', 'ok3.md']) {
+  for (const f of ['ok1.md', 'ok2.md', 'ok3.md', 'ok4.md', 'ok5.md', 'ok6.md']) {
     it(`spares ${f}`, () => {
       expect(checkBlocklist([f], read, bl, '').length).toBe(0);
     });
   }
 
-  it('a future per-day number is caught by the class, not by a literal list', () => {
+  it('a fresh paraphrase is caught by the class, not by a literal list', () => {
     // The whole reason the blocklist stores a PATTERN. If this ever fails, someone
     // replaced the regex with an enumeration of today's known-bad strings.
     expect(checkBlocklist(['e.md'], read, bl, '').length).toBe(1);
+  });
+
+  it('the RETIRED per-day class stays retired — and its correction is not resurrected', () => {
+    // The other half of a retirement. Asserting only that the new phrase fires would let
+    // someone re-add the old one tomorrow and every test above would still pass, while
+    // the deploy blocked on legitimate copy — which is exactly how this wave's deploy failed.
+    expect(bl.map((p) => p.id)).not.toContain('per-day-quota');
+    for (const f of ['ok5.md', 'ok6.md']) {
+      expect(checkBlocklist([f], read, bl, ''), `${f} states a REAL daily cap`).toEqual([]);
+    }
   });
 });

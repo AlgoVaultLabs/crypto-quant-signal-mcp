@@ -6,19 +6,28 @@
     "This file is the ONE source. crypto-quant-signal-mcp reads it directly;",
     "algovault-skills carries a VENDORED copy plus a committed .sha256 of THIS file,",
     "and a parity assertion in each repo. The row below is the only canonical hash",
-    "reference point — the vendored copy never records a second hash of its own,",
+    "reference point \u2014 the vendored copy never records a second hash of its own,",
     "because a second recorded hash is a second thing that can drift.",
     "",
-    "WHY A PATTERN, NOT A LITERAL LIST: '20 calls/day', '20 free calls/day' and",
-    "'20 calls per day' are one class. A literal list lets '25 calls/day' through",
-    "tomorrow, which is exactly the defect this gate exists to make impossible.",
+    "WHY A PATTERN, NOT A LITERAL LIST: 'HOLDs are free', 'free HOLD' and 'HOLD",
+    "verdicts are never charged' are one class. A literal list lets the next",
+    "paraphrase through, which is exactly the defect this gate exists to make",
+    "impossible.",
     "",
     "WHY NO BRAND-FACTS PROSE: brand-facts.md is private (vault). Only the",
-    "machine-checkable pattern and a citation travel into this public repo — same",
+    "machine-checkable pattern and a citation travel into this public repo \u2014 same",
     "discipline as ops/claudemd-claims.lock.json, which carries identifiers only.",
     "",
-    "SCOPE: seeded with per-day-quota ONLY. This wave is not a brand-facts",
-    "migration; widening is OPS-BRAND-BLOCKLIST-WIDEN-W{NEXT}."
+    "RETIRED 2026-08-09 \u2014 `per-day-quota` (pattern \\b\\d+\\s*(free\\s*)?calls?\\s*/?\\s*(per\\s*)?day\\b,",
+    "correction '100 calls/month'). Its reason was 'Free tier is a monthly cap. Per-day",
+    "phrasing overstates it.' Architect ruling R-B introduced a REAL per-UTC-day cap",
+    "(free 100/day, Starter 1,000/day, Pro 10,000/day), so the premise is now false and",
+    "'100 calls/day' is an accurate statement the gate was blocking. A guard whose",
+    "premise a later wave invalidates must be RETIRED WITH ITS FIXTURES, not exempted",
+    "per-path \u2014 the exemption for the runbook that quoted the ban went with it, and the",
+    "runbook's authoring rule was rewritten rather than left describing a dead ban.",
+    "",
+    "SCOPE: one phrase class at a time. Widening is OPS-BRAND-BLOCKLIST-WIDEN-W{NEXT}."
   ],
   "source": "brand-facts.md M-series (vault, private)",
   "installed_at": [
@@ -39,25 +48,25 @@
   "exempt_paths": [
     {
       "path": "docs/RUNBOOK-INTEGRATION-TUTORIAL-AUTHORING.md",
-      "phrase_id": "per-day-quota",
-      "reason": "The runbook that DOCUMENTS this ban has to quote the banned phrase to be useful ('Never write 20 calls/day'). Comment-stripping cannot help — it is markdown prose, not a comment. CLAUDE.md gate-writing bug (a): a gate that demands the deletion of the line explaining the defect is a gate that gets disabled. Exemption is declared HERE on the row, never in prose, so a future wave enforcing the contract cannot silently 'fix' it."
+      "phrase_id": "free-hold-promise",
+      "reason": "The runbook that DOCUMENTS this ban has to quote the banned phrase to be useful ('Never write that HOLD is free'). Comment-stripping cannot help \u2014 it is markdown prose, not a comment. CLAUDE.md gate-writing bug (a): a gate that demands the deletion of the line explaining the defect is a gate that gets disabled. Exemption is declared HERE on the row, never in prose, so a future wave enforcing the contract cannot silently 'fix' it. This row REPLACES the identical one that covered the retired `per-day-quota` class \u2014 same file, same reason, new phrase."
     }
   ],
   "exempt_consumers": [
     {
-      "what": "exchange venue rate-limit prose",
-      "example": "10/s per UID and 3/s per IP on the place-order endpoint",
-      "why": "A VENUE's API rate limit, not AlgoVault's free-tier quota. The pattern is written so these never match: it requires a digit adjacent to calls/day, so 'per IP' alone is inert. Asserted in both directions by the gate's self-test."
+      "what": "the free-HOLD purge registry in this repo",
+      "example": "tests/unit/no-free-hold-promise.test.ts names `free_hold` and `holdFree` as behaviour identifiers",
+      "why": "Behaviour identifiers, code comments and historical correction records are EXEMPT per the 2026-08-05 scope ruling; this blocklist scans reader-facing SURFACES (landing/**, docs/**, README) and never src/ or tests/, so the two guards do not overlap. The pattern is also directional \u2014 it requires HOLD adjacent to a free/never-charged claim, so 'Free tier: 200 calls/month' and 'Every verdict counts, HOLD included' are both inert."
     }
   ],
   "phrases": [
     {
-      "id": "per-day-quota",
-      "pattern": "\\b\\d+\\s*(free\\s*)?calls?\\s*/?\\s*(per\\s*)?day\\b",
-      "correction": "100 calls/month",
+      "id": "free-hold-promise",
+      "pattern": "\\bHOLDs?\\b\\s*(?:verdicts?\\s*)?(?:are|is)\\s+(?:always\\s+)?free\\b|\\bfree\\s+HOLDs?\\b|\\bHOLDs?\\b[^.\\n]{0,25}\\bnever\\s+charged\\b|\\bHOLDs?\\b[^.\\n]{0,20}\\b(?:do\\s*not|don'?t)\\s+count\\b",
+      "correction": "every verdict counts against your quota, HOLD included",
       "severity": "high",
-      "reason": "Free tier is a monthly cap. Per-day phrasing overstates it.",
-      "ratified": "brand-facts.md:95,:502"
+      "reason": "Flat billing (R-A): every successful verdict is one metered call on BOTH rails. 'HOLD is free' was true until 2026-08-09 and is now a pricing misstatement \u2014 the most expensive kind, because ~99% of verdicts ARE holds.",
+      "ratified": "PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A (Mr.1, 2026-08-07)"
     }
   ]
 }

@@ -96,8 +96,18 @@ looks like three unrelated canaries rather than "you ran the generators out of o
 - **Track token matches the slug** — `X-AlgoVault-Track-Token: int-<slug>` on every config path.
   `smithery` is the documented exception: it shows only the `@smithery/cli` install and carries no
   raw connect URL, so it has no token by design.
-- **Free-tier quota is `100 calls/month`.** Per-day phrasing is forbidden by `brand-facts.md:95`
-  and corrected at severity HIGH by `:502`. Never write `20 calls/day` or any `per IP` daily cap.
+- **The free tier has TWO caps: `200 calls/month` AND `100 calls/day`.** Both are real and
+  enforced independently — a call is refused when either is exhausted, and the daily window is a
+  UTC calendar day resetting at 00:00 UTC. State whichever the reader needs; stating only one is
+  fine, stating a wrong number is not. _(Until 2026-08-09 this rule read "per-day phrasing is
+  forbidden — never write `20 calls/day`", and the blocklist enforced it at severity HIGH. Ruling
+  R-B introduced the daily cap, so the ban's premise died and the `per-day-quota` phrase class was
+  retired with it. The history is kept because the ban is still quoted in older tutorials.)_
+- **Never write that HOLD is free.** Every successful verdict is one metered call on both the
+  subscription quota and the x402 rail, HOLD included (ruling R-A). This one IS blocklist-enforced
+  at severity HIGH (`free-hold-promise` in `ops/brand-forbidden-phrases.json`), and it is the
+  expensive mistake to make: roughly 99% of verdicts are holds, so "HOLDs are free" misstates
+  almost the entire bill. The correct phrasing is "every verdict counts, HOLD included".
 - **Numbers get a `data-tr-field` span**, not a literal. A bare figure rots; a span hydrates from
   `/api/performance-public` and its baked value is refreshed at deploy.
 - **Build Rule 9** (Design.md §10): ≤20 words per sentence, no "powerful/seamless/robust/
