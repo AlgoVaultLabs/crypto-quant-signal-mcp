@@ -92,14 +92,26 @@ export const PLANS: Readonly<Record<PaidPlanId, PlanSpec>> = {
 };
 
 /**
- * Free-tier monthly call allowance. Operator-FROZEN at 500 (Mr.1, 2026-08-08, R-B).
+ * Free-tier monthly call allowance. Operator-FROZEN at 200 (Mr.1, 2026-08-09, R-B amended).
  *
- * Raised 100 → 500 in the same deploy that made EVERY verdict chargeable (R-A), so no existing
- * tracker is newly walled at cutover. Note the ceiling rises 5x while the measured hold rate
- * (98.6%) means consumption accelerates ~72x — the new ladder is deliberately tighter per
- * actionable verdict, which is the point, not an oversight.
+ * Raised 100 → 200 in the same deploy that made EVERY verdict chargeable (R-A). The cutover
+ * comparison is against what PRODUCTION runs, which is 100 — the 2026-08-08 value of 500 was
+ * amended to 200 on 2026-08-09 and never shipped, so it is not a baseline anything migrates from.
+ * Measured on signal-1 2026-08-09 over the 232 free trackers whose rolling period is still open:
+ * 12 exceed 100, 7 exceed 200, 3 exceed 500. Raising the wall therefore strands NOBODY — the 7
+ * above 200 are a subset of the 12 already walled today, and the 5 sitting between 101 and 200
+ * are un-walled by the change. (Against the never-shipped 500 the picture reverses: 200 would
+ * wall 4 more, which is why the amendment is a real decision and not a no-op.)
+ *
+ * The dominant migration effect is NOT the cap arithmetic, it is R-A: every historical
+ * `call_count` was accumulated under HOLD-free metering, so it understates what the same traffic
+ * consumes once every verdict counts. At the measured 98.6% hold rate consumption accelerates
+ * ~72x while the ceiling only doubles — the new ladder is deliberately tighter per ACTIONABLE
+ * verdict, which is the point, not an oversight.
+ *
+ * The amendment also un-breaks `recommendPath`: see `subscriptionBreakEvenCalls` below.
  */
-export const FREE_MONTHLY_CALLS = 500;
+export const FREE_MONTHLY_CALLS = 200;
 
 /**
  * Free-tier per-UTC-day call allowance (R-B). Resets at 00:00 UTC (R-D) — a calendar boundary
@@ -300,11 +312,16 @@ export function planAnnualSavingsPct(id: PaidPlanId): number | null {
  * like with like: N calls costs `N × perCall` on the rail and a flat `priceUsdMonthly` on the
  * plan, for the same N.
  *
- * ⚠️ At today's numbers the break-even (500) EXACTLY equals `FREE_MONTHLY_CALLS`. That is a
- * coincidence of $9.99 / $0.02 / 500, not a designed relationship — and it makes the
- * pay-per-call recommendation unreachable from the monthly wall, where `used === limit === 500`
- * always projects at or above break-even. Moving any one of those three numbers separates them
- * again; see `recommendPath` in quota-notice.ts, whose boundary is pinned by test.
+ * ⚠️ The relationship to `FREE_MONTHLY_CALLS` is load-bearing for `recommendPath`, and it is a
+ * coincidence of three independently-moving numbers rather than a designed one. At the briefly-
+ * held 500 free allowance the break-even ($9.99 / $0.02 = 500) EXACTLY equalled it, which made
+ * the pay-per-call arm UNREACHABLE from the monthly wall: with `used === limit === 500` and
+ * `elapsedDays <= 30`, the projection `used / elapsedDays * 30` is >= 500 for every caller who
+ * gets there. At the amended cap of 200 the two separate again and BOTH arms are reachable from
+ * the wall — a caller who took the full window to burn 200 projects 200/mo (below break-even →
+ * pay per call is the honest answer), while one who burned it in a day projects 6,000/mo
+ * (subscription). Moving the free cap, the plan price, or the rail price moves this; the
+ * boundary AND both arms are pinned by test in `quota-exhaustion-notice.test.ts`.
  *
  * Returns `null` when no per-call price is available (no live x402 rail) — the caller
  * then has only one path to recommend and no comparison to make.

@@ -97,10 +97,11 @@ describe('enforcement projects the plan SoT (never a second copy of the ladder)'
 });
 
 describe('R-B ladder — the architect-set values', () => {
-  // The ONE place literals are legitimate: pinning what Mr.1 actually ruled (2026-08-08).
+  // The ONE place literals are legitimate: pinning what Mr.1 actually ruled (2026-08-08, free
+  // monthly amended 500 → 200 on 2026-08-09 before any of it shipped).
   // Everything else in this file compares derived-vs-SoT so it cannot rot.
-  it('is Free 500/100, Starter 10K/1K, Pro 100K/10K', () => {
-    expect([FREE_MONTHLY_CALLS, FREE_DAILY_CALLS]).toEqual([500, 100]);
+  it('is Free 200/100, Starter 10K/1K, Pro 100K/10K', () => {
+    expect([FREE_MONTHLY_CALLS, FREE_DAILY_CALLS]).toEqual([200, 100]);
     expect([PLANS.starter.monthlyCalls, PLANS.starter.dailyCalls]).toEqual([10_000, 1_000]);
     expect([PLANS.pro.monthlyCalls, PLANS.pro.dailyCalls]).toEqual([100_000, 10_000]);
   });

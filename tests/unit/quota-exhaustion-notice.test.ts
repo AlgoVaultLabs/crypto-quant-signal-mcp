@@ -44,7 +44,7 @@ const HEAVY: QuotaNoticeContext = {
   meter: 'calls', used: FREE_MONTHLY_CALLS, limit: FREE_MONTHLY_CALLS, resetAtMs: RESET_AT, nowMs: NOW,
   periodStartMs: NOW - 1 * DAY, referralCode: null, x402: LIVE_RAIL,
 };
-/** A caller who took the full 30-day window to burn 100 → bursty / low volume. */
+/** A caller who took the full 30-day window to burn the same allowance → bursty / low volume. */
 const LIGHT: QuotaNoticeContext = { ...HEAVY, periodStartMs: NOW - 30 * DAY };
 
 describe('R2 — every surface carries the four required facts', () => {
@@ -82,27 +82,25 @@ describe('R2 — every surface carries the four required facts', () => {
     expect(heavy).toContain('https://api.algovault.com/x402/get_trade_call'); // still offered
     expect(recommendPath(HEAVY)).toBe('subscription');
 
-    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B): LIGHT now recommends the SUBSCRIPTION too,
-    // and that is arithmetic rather than a regression. Break-even is
-    // `priceUsdMonthly / perCall` = 9.99 / 0.02 = 500, which the new free allowance EXACTLY
-    // equals. At the monthly wall `used === limit === 500` and `elapsedDays <= 30`, so the
-    // projection `used / elapsedDays * 30` is >= 500 for every caller who reaches it — the
-    // x402-leading arm is now UNREACHABLE from the monthly wall. It is also the right answer:
-    // 500 calls costs $10.00 on the rail versus $9.99 on the plan.
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B amended 2026-08-09): the SECOND arm, reachable
+    // from the same wall. Break-even is `priceUsdMonthly / perCall` = 9.99 / 0.02 = 500; the free
+    // cap is 200. LIGHT burned the whole allowance across the full 30-day window, so it projects
+    // 200/mo — below break-even, where paying per call genuinely IS cheaper ($4.00 on the rail
+    // versus $9.99 on the plan). Both arms are asserted from the wall on purpose: at the briefly-
+    // held cap of 500 the two numbers collided and this arm was unreachable, which is exactly the
+    // kind of dead branch that rots unnoticed.
     const light = buildQuotaNoticeMessage(LIGHT);
-    expect(light).toContain('Recommended for sustained volume: Starter');
-    expect(recommendPath(LIGHT)).toBe('subscription');
+    expect(light).toContain('Recommended at your volume: pay per call');
+    expect(recommendPath(LIGHT)).toBe('x402');
   });
 
-  it('3a. the x402-leading arm still WORKS — it is unreachable from the wall, not deleted', () => {
-    // Guards the thing the collision above could hide: if `recommendPath` had silently lost its
-    // ability to rank pay-per-call first, every assertion in this file would still pass. So rank
-    // a caller whose PROJECTION is genuinely below break-even (possible off the wall, e.g. the
-    // 80% soft-nudge surface) and require the other answer.
+  it('3a. the boundary is the break-even itself, not a hardcoded number', () => {
+    // Guards the thing a collision could hide: if `recommendPath` silently lost its ability to
+    // rank either path first, a single-arm suite would still pass. Rank a caller whose PROJECTION
+    // is genuinely below break-even and require the other answer, then walk the boundary.
     const lowVolume = { ...HEAVY, used: 100, periodStartMs: NOW - 30 * DAY };
     expect(recommendPath(lowVolume)).toBe('x402');
     expect(buildQuotaNoticeMessage(lowVolume)).toContain('Recommended at your volume: pay per call');
-    // ...and the boundary is the break-even itself, not a hardcoded number.
     const be = subscriptionBreakEvenCalls(0.02) as number;
     expect(recommendPath({ ...HEAVY, used: be - 1, periodStartMs: NOW - 30 * DAY })).toBe('x402');
     expect(recommendPath({ ...HEAVY, used: be, periodStartMs: NOW - 30 * DAY })).toBe('subscription');
@@ -267,11 +265,22 @@ describe('the plan SoT is the one derivation', () => {
     expect(getMonthlyQuota('free')).toBe(FREE_MONTHLY_CALLS);
   });
 
-  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B): re-frozen at 500 by Mr.1 2026-08-08, raised
-  // in the same deploy that made every verdict chargeable so no tracker is newly walled.
-  it('the free tier stays at 500 — operator-FROZEN', () => {
-    expect(FREE_MONTHLY_CALLS).toBe(500);
-    expect(getMonthlyQuota('free')).toBe(500);
+  // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-B, amended by Mr.1 2026-08-09): re-frozen at 200,
+  // raised from 100 in the same deploy that made every verdict chargeable so no tracker is newly
+  // walled. The 2026-08-08 value was 500 and never shipped.
+  it('the free tier stays at 200 — operator-FROZEN', () => {
+    expect(FREE_MONTHLY_CALLS).toBe(200);
+    expect(getMonthlyQuota('free')).toBe(200);
+  });
+
+  // The relationship the amendment restored. `recommendPath` compares a projection against
+  // break-even; when the free cap EQUALS break-even the x402 arm is unreachable from the monthly
+  // wall by construction (see plans.ts). Pin the inequality itself, so a future cap change that
+  // silently recreates the collision fails HERE with the reason, not three files away.
+  it('the free cap sits BELOW break-even — so both recommendation arms stay reachable', () => {
+    const be = subscriptionBreakEvenCalls(0.02) as number;
+    expect(be).toBe(500);
+    expect(FREE_MONTHLY_CALLS).toBeLessThan(be);
   });
 
   it('no live per-call price ⇒ no break-even to compute (default-deny, not a guess)', () => {
