@@ -26,7 +26,8 @@
 #   The docs page /docs/en/hooks#worktreecreate claims `worktree_path`, `worktree_reason` and
 #   `base_path`. NONE of the three exists. It omits `name` and `transcript_path`, which do.
 #   Do not "restore" those fields from the docs — they were measured absent.
-#   Full evidence: audits/OPS-WORKTREE-CREATE-HOOK-W1-worktree-create-contract.md
+#   Canonical record: the measured U-table in the OPS-WORKTREE-CREATE-HOOK-W1 CH1 status.md
+#   entry (with probe.json alongside it in $ALGOVAULT_HOOK_ARTIFACTS).
 #
 # ── REGISTRATION SHAPE: NESTED ONLY ───────────────────────────────────────────────────────
 #   { "hooks": { "WorktreeCreate": [ { "hooks": [ { "type":"command","command":"<abs>" } ] } ] } }
