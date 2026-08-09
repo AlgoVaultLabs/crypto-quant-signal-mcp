@@ -88,11 +88,11 @@
     "deploy.yml": [".github/workflows/deploy.yml"],
     "prepublishOnly": ["package.json"],
     "pre-push": ["scripts/install_", "scripts/check_test_baseline.sh", "tests/"],
-    "pre-commit": ["scripts/install_system_map_hook.sh"],
+    "pre-commit": ["scripts/install_", "scripts/check-author-identity.sh"],
     "package.json": ["package.json"],
     "monitoring-inventory": ["ops/monitoring/monitoring-inventory.json"]
   },
-  "_wiring_point_map_note": "Entries ending in / or _ are PREFIXES. pre-push resolves through the per-gate hook installers (scripts/install_*_hook.sh — measured: session-drift and source-greppable each ship their own), the baseline gate script, or the vitest suite the pre-push hook runs (tests/).",
+  "_wiring_point_map_note": "Entries ending in / or _ are PREFIXES. pre-push resolves through the per-gate hook installers (scripts/install_*_hook.sh — measured: session-drift and source-greppable each ship their own), the baseline gate script, or the vitest suite the pre-push hook runs (tests/). pre-commit was the LITERAL ['scripts/install_system_map_hook.sh'] until OPS-GIT-IDENTITY-CANONICALIZE-W1, when a second pre-commit gate (author-identity) shipped and a CLAUDE.md line prescribing it would have failed the BLOCKING `wiring` class purely because the map named one installer by hand. Widened to the same `scripts/install_` PREFIX convention pre-push already used — which still covers install_system_map_hook.sh — plus the gate script itself. A hand-maintained literal list of installers is the duplicated fact that goes stale; the prefix is the SoT.",
 
   "_corpus_enumeration": {
     "_doc": "OPS-CLAIM-VERIFIER-COVERAGE-W1 R1 — every PRESCRIPTIVE doc assessed for inclusion, with the measured firing rate that decided it. Historical sources (status.md, Old Status/**, audits/**, and any _( … )_ note) are excluded by definition: their entries are past-tense by design and must never be 'corrected' to match present reality.",
