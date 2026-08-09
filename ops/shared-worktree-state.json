@@ -1,13 +1,9 @@
 {
-  "_doc": "OPS-SHARED-WORKTREE-STATE-REGISTRY-W1 — the SoT for every resource shared ACROSS worktrees on a developer machine. Worktrees isolate the git INDEX and nothing else: $GIT_COMMON_DIR/hooks/*, ~/.crypto-quant-signal/performance.db, the $GIT_COMMON_DIR ledgers and shared deploy checkouts are all common to every checkout. CLAUDE.md's own law — 'a shared primitive gets a CONSUMER REGISTRY, not just drift detection; detection is strictly weaker than enumeration' — was applied to host monitoring artefacts and never to developer-machine state, which is why the 4th writer to pre-push broke every session on 2026-08-01. Read by scripts/check-shared-state.mjs. Missing or unparseable ⇒ SHARED_STATE_VERDICT=INDETERMINATE, exit 3 — never a pass.",
-
-  "_consumers_policy": "consumers[] is ENUMERATED, never a count. Where the consumer set is genuinely dynamic (every live worktree governed by a shared hook), the row carries `consumers_derived_from` — the exact command that enumerates it — and check-shared-state.mjs PRINTS the enumeration at runtime. Freezing 75 worktree paths into a committed file would be stale within the hour; a hand-maintained COUNT is forbidden outright (this repo has already had '3 send paths'→8 and '6th consumer'→12 drift unnoticed).",
-
-  "_sha256_policy": "ONE canonical sha256 per fact, and for most rows here that hash lives somewhere else already. Repo-tracked scripts are integrity-checked by git itself. The two ops/ artefacts below carry `inventory_ref` because ops/monitoring/monitoring-inventory.json already records their canonical sha256 and reconciles it daily — recording it a second time would be a second thing that can drift, which is the exact failure mode the monitoring-inventory arc codified. The generated hooks are machine-local and rewritten by every install, so a hash of them is meaningless by construction. A null sha256 here always carries its reason.",
-
+  "_doc": "OPS-SHARED-WORKTREE-STATE-REGISTRY-W1 \u2014 the SoT for every resource shared ACROSS worktrees on a developer machine. Worktrees isolate the git INDEX and nothing else: $GIT_COMMON_DIR/hooks/*, ~/.crypto-quant-signal/performance.db, the $GIT_COMMON_DIR ledgers and shared deploy checkouts are all common to every checkout. CLAUDE.md's own law \u2014 'a shared primitive gets a CONSUMER REGISTRY, not just drift detection; detection is strictly weaker than enumeration' \u2014 was applied to host monitoring artefacts and never to developer-machine state, which is why the 4th writer to pre-push broke every session on 2026-08-01. Read by scripts/check-shared-state.mjs. Missing or unparseable \u21d2 SHARED_STATE_VERDICT=INDETERMINATE, exit 3 \u2014 never a pass.",
+  "_consumers_policy": "consumers[] is ENUMERATED, never a count. Where the consumer set is genuinely dynamic (every live worktree governed by a shared hook), the row carries `consumers_derived_from` \u2014 the exact command that enumerates it \u2014 and check-shared-state.mjs PRINTS the enumeration at runtime. Freezing 75 worktree paths into a committed file would be stale within the hour; a hand-maintained COUNT is forbidden outright (this repo has already had '3 send paths'\u21928 and '6th consumer'\u219212 drift unnoticed).",
+  "_sha256_policy": "ONE canonical sha256 per fact, and for most rows here that hash lives somewhere else already. Repo-tracked scripts are integrity-checked by git itself. The two ops/ artefacts below carry `inventory_ref` because ops/monitoring/monitoring-inventory.json already records their canonical sha256 and reconciles it daily \u2014 recording it a second time would be a second thing that can drift, which is the exact failure mode the monitoring-inventory arc codified. The generated hooks are machine-local and rewritten by every install, so a hash of them is meaningless by construction. A null sha256 here always carries its reason.",
   "skip_ledger_stale_threshold": 200,
   "_skip_ledger_stale_threshold_reason": "The skip ledger records a guard that ran nowhere. With 69 of 75 checkouts missing at least one gate script on 2026-08-02, a normal week legitimately produces dozens of rows, so a low threshold would fire constantly and teach the operator to ignore it. 200 flags a genuinely persistent unguarded population without crying wolf during the reclamation backlog. Re-tune when OPS-WORKTREE-RECLAIM-W{NEXT} lands and the population drops.",
-
   "resources": [
     {
       "id": "hook-pre-push",
@@ -29,14 +25,15 @@
       "id": "hook-pre-commit",
       "path": "$GIT_COMMON_DIR/hooks/pre-commit",
       "kind": "git-hook",
-      "writers": ["scripts/install_system_map_hook.sh"],
+      "writers": [
+        "scripts/install_system_map_hook.sh"
+      ],
       "consumers_derived_from": "git worktree list --porcelain | awk '/^worktree /{print $2}'",
       "invariant": "Same composability contract as pre-push. Until OPS-SHARED-WORKTREE-STATE-REGISTRY-W1 this hook was a whole-file `exec` that truncated anything already present; it is now a guarded block, so a second pre-commit consumer can be added without erasing the first.",
       "severity": "report",
       "sha256": null,
-      "_sha256_reason": "Same as hook-pre-push — generated per install."
+      "_sha256_reason": "Same as hook-pre-push \u2014 generated per install."
     },
-
     {
       "id": "block-test-gate",
       "path": "$GIT_COMMON_DIR/hooks/pre-push",
@@ -44,11 +41,17 @@
       "hook": "pre-push",
       "block_name": "test-gate",
       "script": "scripts/check_test_baseline.sh",
-      "writers": ["scripts/install_test_gate_hook.sh"],
-      "consumers": ["$GIT_COMMON_DIR/hooks/pre-push"],
+      "writers": [
+        "scripts/install_test_gate_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
       "invariant": "The script must be reachable from the resolved remote default ref before the block may be installed (UNPUBLISHED_DEP). A worktree lacking it skips loudly with a ledger row rather than blocking the push.",
       "severity": "block",
-      "backstopped_by": [".github/workflows/deploy.yml"],
+      "backstopped_by": [
+        ".github/workflows/deploy.yml"
+      ],
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism."
     },
@@ -59,12 +62,16 @@
       "hook": "pre-push",
       "block_name": "session-drift",
       "script": "scripts/check-session-drift.mjs",
-      "writers": ["scripts/install_session_drift_hook.sh"],
-      "consumers": ["$GIT_COMMON_DIR/hooks/pre-push"],
+      "writers": [
+        "scripts/install_session_drift_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
       "invariant": "Same publish precondition as every block. THIS IS THE ONE WITH REAL RESIDUAL EXPOSURE when skipped.",
       "severity": "block",
       "backstopped_by": [],
-      "_backstopped_by_reason": "NOT backstopped, and cannot be. The gate reasons about the set of live worktrees; a CI runner is a fresh clone with exactly one, so deploy.yml runs only its --self-test (deploy.yml:269). A worktree lacking this file therefore has NO stale_base protection at all — measured 2026-08-02 at 55 of 74 checkouts. Reported separately from the backstopped gates because one undifferentiated 'unguarded' count would be true and useless.",
+      "_backstopped_by_reason": "NOT backstopped, and cannot be. The gate reasons about the set of live worktrees; a CI runner is a fresh clone with exactly one, so deploy.yml runs only its --self-test (deploy.yml:269). A worktree lacking this file therefore has NO stale_base protection at all \u2014 measured 2026-08-02 at 55 of 74 checkouts. Reported separately from the backstopped gates because one undifferentiated 'unguarded' count would be true and useless.",
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism."
     },
@@ -75,11 +82,18 @@
       "hook": "pre-push",
       "block_name": "source-greppable",
       "script": "scripts/check-source-greppable.mjs",
-      "writers": ["scripts/install_source_greppable_hook.sh"],
-      "consumers": ["$GIT_COMMON_DIR/hooks/pre-push"],
-      "invariant": "Same publish precondition. This is the block whose 2026-08-01 install — for a script present in one worktree only — deadlocked every parallel session and motivated this registry.",
+      "writers": [
+        "scripts/install_source_greppable_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "Same publish precondition. This is the block whose 2026-08-01 install \u2014 for a script present in one worktree only \u2014 deadlocked every parallel session and motivated this registry.",
       "severity": "block",
-      "backstopped_by": [".github/workflows/deploy.yml", "package.json:prepublishOnly"],
+      "backstopped_by": [
+        ".github/workflows/deploy.yml",
+        "package.json:prepublishOnly"
+      ],
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism."
     },
@@ -90,9 +104,13 @@
       "hook": "pre-commit",
       "block_name": "system-map",
       "script": "scripts/check_system_map.sh",
-      "writers": ["scripts/install_system_map_hook.sh"],
-      "consumers": ["$GIT_COMMON_DIR/hooks/pre-commit"],
-      "invariant": "Same publish precondition. Present in 74/74 checkouts as measured — the only gate with full coverage, because the script predates every live worktree.",
+      "writers": [
+        "scripts/install_system_map_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-commit"
+      ],
+      "invariant": "Same publish precondition. Present in 74/74 checkouts as measured \u2014 the only gate with full coverage, because the script predates every live worktree.",
       "severity": "block",
       "backstopped_by": [],
       "_backstopped_by_reason": "Local-only by design (it inspects the staged diff), but unlike session-drift its coverage is complete, so the absence of a CI backstop costs nothing today.",
@@ -106,15 +124,21 @@
       "hook": "pre-push",
       "block_name": "push-safety",
       "script": "scripts/check-push-safety.sh",
-      "writers": ["scripts/install_push_safety_hook.sh"],
-      "consumers": ["$GIT_COMMON_DIR/hooks/pre-push"],
-      "invariant": "Refuses HISTORY DESTRUCTION — a non-fast-forward or a deletion — on a ref declared in ops/push-safety-config.json, and NOTHING else. Ordinary fast-forward pushes, brand-new branches and every non-protected ref are explicitly allowed: this repo's LAW is auto-commit + auto-push and merges land as fast-forwards, so a conventional main-protection hook would halt every wave. Converts two CLAUDE.md laws ('Never force push to main/master', 'Never reset --hard / push --force / branch -D without auth') from prose into mechanical enforcement — measured 2026-08-02, ZERO of the four then-live blocks read the hook's stdin, so neither law was enforced by anything.",
+      "writers": [
+        "scripts/install_push_safety_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "Refuses HISTORY DESTRUCTION \u2014 a non-fast-forward or a deletion \u2014 on a ref declared in ops/push-safety-config.json, and NOTHING else. Ordinary fast-forward pushes, brand-new branches and every non-protected ref are explicitly allowed: this repo's LAW is auto-commit + auto-push and merges land as fast-forwards, so a conventional main-protection hook would halt every wave. Converts two CLAUDE.md laws ('Never force push to main/master', 'Never reset --hard / push --force / branch -D without auth') from prose into mechanical enforcement \u2014 measured 2026-08-02, ZERO of the four then-live blocks read the hook's stdin, so neither law was enforced by anything.",
       "severity": "block",
-      "backstopped_by": [".github/workflows/deploy.yml"],
-      "_backstopped_by_reason": "CI runs --self-test ONLY. The live check needs a real push's stdin, which a CI runner does not have — the same structural limit that keeps check-session-drift.mjs and check-shared-state.mjs self-test-only. tests/unit/push-safety.test.ts covers the same logic a second way, deliberately: a dedicated workflow step keeps CI coverage if that test is ever quarantined.",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml"
+      ],
+      "_backstopped_by_reason": "CI runs --self-test ONLY. The live check needs a real push's stdin, which a CI runner does not have \u2014 the same structural limit that keeps check-session-drift.mjs and check-shared-state.mjs self-test-only. tests/unit/push-safety.test.ts covers the same logic a second way, deliberately: a dedicated workflow step keeps CI coverage if that test is ever quarantined.",
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
-      "notes": "Sorts FIRST under the helper's canonical LC_ALL=C block order (push-safety < session-drift < shared-state < source-greppable < test-gate) — the cheapest guard and the most consequential, so history destruction is refused in milliseconds rather than after a full vitest run. CONSEQUENCE: it CONSUMES the hook's stdin. Measured, none of the other four read stdin, so nothing breaks today; a future stdin-reading block would find it drained and should tee here rather than reorder. This was the FIRST consumer of scripts/lib/hook-block.sh written by someone other than its author, and it installed with no --allow-unpublished: the three-state publish precondition correctly reported 'pending merge' and allowed it."
+      "notes": "Sorts FIRST under the helper's canonical LC_ALL=C block order (push-safety < session-drift < shared-state < source-greppable < test-gate) \u2014 the cheapest guard and the most consequential, so history destruction is refused in milliseconds rather than after a full vitest run. CONSEQUENCE: it CONSUMES the hook's stdin. Measured, none of the other four read stdin, so nothing breaks today; a future stdin-reading block would find it drained and should tee here rather than reorder. This was the FIRST consumer of scripts/lib/hook-block.sh written by someone other than its author, and it installed with no --allow-unpublished: the three-state publish precondition correctly reported 'pending merge' and allowed it."
     },
     {
       "id": "block-shared-state",
@@ -123,34 +147,63 @@
       "hook": "pre-push",
       "block_name": "shared-state",
       "script": "scripts/check-shared-state.mjs",
-      "writers": ["scripts/install_shared_state_hook.sh"],
-      "consumers": ["$GIT_COMMON_DIR/hooks/pre-push"],
-      "invariant": "This reconciler polices the shared hooks, and is itself installed by the mechanism it polices (scripts/lib/hook-block.sh) — deliberate dogfooding: a guard exempt from its own contract is the first one to rot.",
+      "writers": [
+        "scripts/install_shared_state_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "This reconciler polices the shared hooks, and is itself installed by the mechanism it polices (scripts/lib/hook-block.sh) \u2014 deliberate dogfooding: a guard exempt from its own contract is the first one to rot.",
       "severity": "block",
-      "backstopped_by": [".github/workflows/deploy.yml", "package.json:prepublishOnly"],
-      "_backstopped_by_reason": "CI runs --self-test ONLY. A live --check on a CI runner is structurally vacuous — one worktree, no installed hooks — so it would pass over an empty corpus and read as coverage. Same treatment deploy.yml:269 already gives check-session-drift.mjs.",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml",
+        "package.json:prepublishOnly"
+      ],
+      "_backstopped_by_reason": "CI runs --self-test ONLY. A live --check on a CI runner is structurally vacuous \u2014 one worktree, no installed hooks \u2014 so it would pass over an empty corpus and read as coverage. Same treatment deploy.yml:269 already gives check-session-drift.mjs.",
       "sha256": null,
       "_sha256_reason": "Repo-tracked; git is the integrity mechanism."
     },
-
+    {
+      "id": "block-dark-exports",
+      "path": "$GIT_COMMON_DIR/hooks/pre-push",
+      "kind": "hook-block",
+      "hook": "pre-push",
+      "block_name": "dark-exports",
+      "script": "scripts/check-new-dark-exports.mjs",
+      "writers": [
+        "scripts/install_dark_exports_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "The script must be reachable from the resolved remote default ref before the block may be installed (UNPUBLISHED_DEP). A worktree lacking it skips loudly with a ledger row rather than blocking the push.",
+      "severity": "report",
+      "_severity_reason": "Ships REPORT-first per G-D: the token tells the truth (DARK_EXPORTS_VERDICT=FAIL) while the exit stays 0 until BOTH promotion conditions in ops/dark-exports-config.json hold \u2014 dark<=0 AND date>=2026-08-16. Promotion wave: PRICING-FOLLOWUPS-DARK-EXPORTS-PROMOTE-W{NEXT}.",
+      "backstopped_by": [],
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "notes": "Flags exports the branch ADDS whose src/ reference count is 1 (declaration only) \u2014 the 'built, tested, never wired' class that shipped hoursUntilUtcDayReset dark for 1.5 days. Deliberately a DELTA, not a census: whole-repo was measured and rejected (1,812 exports / 971 dark, largest bucket is CLAUDE.md's own mandated test-importable-seam pattern). Numbers: audits/PRICING-FOLLOWUPS-GENERATOR-W1-dark-export-census.md."
+    },
     {
       "id": "shared-test-db",
       "path": "$HOME/.crypto-quant-signal/performance.db",
       "kind": "sqlite-db",
-      "writers": ["src/lib/performance-db.ts"],
+      "writers": [
+        "src/lib/performance-db.ts"
+      ],
       "consumers_derived_from": "rg -l \"from '.*performance-db'\" src/ tests/",
-      "invariant": "ONE SQLite file, in WAL mode, shared by every worktree's test run. src/lib/performance-db.ts:36 resolves `process.env.PERFORMANCE_DB_PATH || ~/.crypto-quant-signal/performance.db`, so PERFORMANCE_DB_PATH is the isolation lever and it already exists — no new mechanism is needed, only a declared contract. Measured 2026-08-02: 30,638,080 bytes with live -shm/-wal siblings.",
+      "invariant": "ONE SQLite file, in WAL mode, shared by every worktree's test run. src/lib/performance-db.ts:36 resolves `process.env.PERFORMANCE_DB_PATH || ~/.crypto-quant-signal/performance.db`, so PERFORMANCE_DB_PATH is the isolation lever and it already exists \u2014 no new mechanism is needed, only a declared contract. Measured 2026-08-02: 30,638,080 bytes with live -shm/-wal siblings.",
       "severity": "report",
       "sha256": null,
       "_sha256_reason": "A live database mutated by every test run; a hash is meaningless.",
       "exempt_consumers": [
         {
           "path": "tests/analytics-external-only.test.ts",
-          "reason": "OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 measured 5/5 failures with a concurrent writer versus 1/15 serial, because it asserts pre/post deltas on WHOLE-TABLE aggregates while other processes INSERT into request_log. It was the FIRST suite to set PERFORMANCE_DB_PATH; it is no longer the only one — see the four rows below."
+          "reason": "OPS-ANALYTICS-EXT-PARALLEL-FLAKE-W1 measured 5/5 failures with a concurrent writer versus 1/15 serial, because it asserts pre/post deltas on WHOLE-TABLE aggregates while other processes INSERT into request_log. It was the FIRST suite to set PERFORMANCE_DB_PATH; it is no longer the only one \u2014 see the four rows below."
         },
         {
           "path": "tests/attribution-connect.test.ts",
-          "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Asserts by_source is an empty array over a WHOLE WINDOW, keyed on neither source nor session, so ANY foreign mcp_connect row breaks it — a disjoint sentinel prefix cannot help, and that window is already collided in-run by funnel-snapshot.test.ts. This is the file W1 caught failing on 2 of 5 concurrent gate runs with a genuine assertion mismatch."
+          "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Asserts by_source is an empty array over a WHOLE WINDOW, keyed on neither source nor session, so ANY foreign mcp_connect row breaks it \u2014 a disjoint sentinel prefix cannot help, and that window is already collided in-run by funnel-snapshot.test.ts. This is the file W1 caught failing on 2 of 5 concurrent gate runs with a genuine assertion mismatch."
         },
         {
           "path": "tests/funnel-snapshot.test.ts",
@@ -165,16 +218,21 @@
           "reason": "OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3. Same class: column-ensure + backfill assertions over shared tables."
         }
       ],
-      "notes": "Every other suite that touches the DB writes the developer's real file. vitest.config.ts sets no global PERFORMANCE_DB_PATH (verified). That is the declared contract, not an accident: CONCURRENT_WRITER reports it rather than blocking, because forcing isolation on every suite is a separate wave with its own blast radius. OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3 isolated the four suites whose assertions are prefix-BLIND (measured: 3 concurrent processes against the shared DB failed 1-8 tests EACH in every round; with isolation, 0) and deliberately left the rest, since a suite scoped to its own uniquely-named rows is not exposed. STILL OPEN and NOT closed by isolation: the concurrent cold-open MIGRATION race at src/lib/performance-db.ts:400-411 (bare ALTER, no IF NOT EXISTS, no lock, no busy_timeout) — the Postgres twin at :430-435 already carries the defense and a comment naming the race, so the SQLite gap is a known, undefended asymmetry. Owner: OPS-SQLITE-COLD-OPEN-MIGRATION-RACE-W{NEXT}."
+      "notes": "Every other suite that touches the DB writes the developer's real file. vitest.config.ts sets no global PERFORMANCE_DB_PATH (verified). That is the declared contract, not an accident: CONCURRENT_WRITER reports it rather than blocking, because forcing isolation on every suite is a separate wave with its own blast radius. OPS-PARALLEL-SESSION-CAPACITY-W2 Ch3 isolated the four suites whose assertions are prefix-BLIND (measured: 3 concurrent processes against the shared DB failed 1-8 tests EACH in every round; with isolation, 0) and deliberately left the rest, since a suite scoped to its own uniquely-named rows is not exposed. STILL OPEN and NOT closed by isolation: the concurrent cold-open MIGRATION race at src/lib/performance-db.ts:400-411 (bare ALTER, no IF NOT EXISTS, no lock, no busy_timeout) \u2014 the Postgres twin at :430-435 already carries the defense and a comment naming the race, so the SQLite gap is a known, undefended asymmetry. Owner: OPS-SQLITE-COLD-OPEN-MIGRATION-RACE-W{NEXT}."
     },
-
     {
       "id": "ledger-hook-skip",
       "path": "$GIT_COMMON_DIR/algovault-hook-skip.log",
       "kind": "ledger",
-      "writers": ["scripts/lib/hook-block.sh", "$GIT_COMMON_DIR/hooks/pre-push", "$GIT_COMMON_DIR/hooks/pre-commit"],
-      "consumers": ["scripts/check-shared-state.mjs"],
-      "invariant": "TSV: timestamp, event (SKIP | UNPUBLISHED_OVERRIDE), block name, worktree, script. A deliberate fail-open must be loud AND auditable — this file is the audit half, and SKIP_LEDGER_STALE is what turns it into an escalation rather than a log nobody reads.",
+      "writers": [
+        "scripts/lib/hook-block.sh",
+        "$GIT_COMMON_DIR/hooks/pre-push",
+        "$GIT_COMMON_DIR/hooks/pre-commit"
+      ],
+      "consumers": [
+        "scripts/check-shared-state.mjs"
+      ],
+      "invariant": "TSV: timestamp, event (SKIP | UNPUBLISHED_OVERRIDE), block name, worktree, script. A deliberate fail-open must be loud AND auditable \u2014 this file is the audit half, and SKIP_LEDGER_STALE is what turns it into an escalation rather than a log nobody reads.",
       "severity": "report",
       "sha256": null,
       "_sha256_reason": "Append-only local log."
@@ -183,33 +241,45 @@
       "id": "ledger-test-gate-failopen",
       "path": "$GIT_COMMON_DIR/algovault-test-gate-failopen.log",
       "kind": "ledger",
-      "writers": ["scripts/check_test_baseline.sh"],
-      "consumers": ["scripts/check_test_baseline.sh"],
-      "invariant": "Records UNGATED PUSHES only — a blocked run let nothing through, so it is not a ledger event. The next GREEN run reports and clears it. Registered here so the hook-skip ledger is recognisably the SAME convention rather than a second dialect; measured 0 bytes on 2026-08-02, i.e. never yet written.",
+      "writers": [
+        "scripts/check_test_baseline.sh"
+      ],
+      "consumers": [
+        "scripts/check_test_baseline.sh"
+      ],
+      "invariant": "Records UNGATED PUSHES only \u2014 a blocked run let nothing through, so it is not a ledger event. The next GREEN run reports and clears it. Registered here so the hook-skip ledger is recognisably the SAME convention rather than a second dialect; measured 0 bytes on 2026-08-02, i.e. never yet written.",
       "severity": "report",
       "sha256": null,
       "_sha256_reason": "Append-only local log."
     },
-
     {
       "id": "host-deploy-primitive",
       "path": "ops/scripts/host-deploy.sh",
       "kind": "shared-primitive",
-      "writers": ["OPS-BOT-DEPLOY-PROVENANCE-W1"],
-      "consumers": ["ops/cron/bot-deploy-parity.sh", "ops/deploy/algovault-bot.manifest"],
+      "writers": [
+        "OPS-BOT-DEPLOY-PROVENANCE-W1"
+      ],
+      "consumers": [
+        "ops/cron/bot-deploy-parity.sh",
+        "ops/deploy/algovault-bot.manifest"
+      ],
       "invariant": "Deploys a RESOLVED COMMIT, never a working directory, and refuses a ref that is not an ancestor of origin/main. It is cross-repo by construction (takes --repo), which is why it lives here and in neither consumer repo. This SUPERSEDES the ops/deploy/assert-deploy-ref.sh that this wave's spec proposed: never deploying a working tree dominates asserting on one, so a second primitive was deliberately NOT built.",
       "severity": "report",
       "sha256": null,
       "inventory_ref": "ops/monitoring/monitoring-inventory.json#host-deploy-primitive",
-      "_sha256_reason": "The canonical sha256 lives on the monitoring-inventory row and is reconciled daily. A second recorded hash is a second thing that can drift — the exact law the monitoring-inventory arc codified.",
+      "_sha256_reason": "The canonical sha256 lives on the monitoring-inventory row and is reconciled daily. A second recorded hash is a second thing that can drift \u2014 the exact law the monitoring-inventory arc codified.",
       "notes": "Rollout to the remaining services is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT} (measured: of 16 /opt dirs, 10 are not git checkouts and NONE records a deployed SHA). Deliberately not pre-empted here."
     },
     {
       "id": "bot-deploy-parity-canary",
       "path": "ops/cron/bot-deploy-parity.sh",
       "kind": "shared-primitive",
-      "writers": ["OPS-BOT-DEPLOY-PROVENANCE-W1"],
-      "consumers": ["crontab:root@signal-1"],
+      "writers": [
+        "OPS-BOT-DEPLOY-PROVENANCE-W1"
+      ],
+      "consumers": [
+        "crontab:root@signal-1"
+      ],
       "invariant": "Daily L2 detect: compares the live /opt/algovault-bot tree against DEPLOYED_MANIFEST.sha256, written FROM THE COMMIT by host-deploy.sh. Registered here because it is the detection half of the incident-B pair whose L1 half is host-deploy-primitive; the two must be retired together or not at all.",
       "severity": "report",
       "sha256": null,
@@ -218,7 +288,7 @@
     }
   ],
   "worktree_roots": {
-    "_doc": "OPS-WORKTREE-ROOT-CONFINEMENT-W2 CH2. Worktree placement was the last emergent shared resource on this machine: it is CWD-derived and tool-version-dependent (three placements measured inside one 24h window), so it cannot be documented, only DECLARED. Paths are ABSOLUTE — a tilde row matches nothing resolved from `git worktree list --porcelain`, i.e. an exemption that silently does not exist.",
+    "_doc": "OPS-WORKTREE-ROOT-CONFINEMENT-W2 CH2. Worktree placement was the last emergent shared resource on this machine: it is CWD-derived and tool-version-dependent (three placements measured inside one 24h window), so it cannot be documented, only DECLARED. Paths are ABSOLUTE \u2014 a tilde row matches nothing resolved from `git worktree list --porcelain`, i.e. an exemption that silently does not exist.",
     "repo_root": {
       "path": "/Users/tank/code",
       "reason": "the ONE repo root; a second root is the duplicate-clone generator (2 live duplicates prove it)"
@@ -227,7 +297,7 @@
     "destination_template": "/Users/tank/code/.worktrees/<repo>/<task>",
     "destination_reason": "dot-prefixed so ~/code reads as a plain list of repos; outside every repo tree so the vitest-discovery pathology (1779 discovered test files vs 298 real) is structurally impossible rather than merely detected; promotes the convention 4 worktrees already follow",
     "payload_floor_kb": 1024,
-    "payload_floor_reason": "1 MB — 256x above observed noise (a 4 KB .env.local, copied into every worktree by cc-session.sh by design; resolve with `grep -n '.env.local' scripts/cc-session.sh`); 15x below the smallest real payload (15.5 MB). The margin above noise is comfortable; 15x below the smallest payload is tighter than it looks, so anything landing in the band floor -> 15.5 MB REPORTS for human classification rather than passing silently.",
+    "payload_floor_reason": "1 MB \u2014 256x above observed noise (a 4 KB .env.local, copied into every worktree by cc-session.sh by design; resolve with `grep -n '.env.local' scripts/cc-session.sh`); 15x below the smallest real payload (15.5 MB). The margin above noise is comfortable; 15x below the smallest payload is tighter than it looks, so anything landing in the band floor -> 15.5 MB REPORTS for human classification rather than passing silently.",
     "payload_report_band_kb": {
       "from": 1024,
       "to": 15872,
@@ -238,7 +308,7 @@
         "predicate": "path startsWith worktree_root + '/'",
         "mode": "report",
         "baseline": 35,
-        "baseline_note": "35 as check-worktree-root.mjs measures it, 2026-08-09: NON-EXEMPT worktrees outside worktree_root. This is the guard's OWN metric — CH1's raw 40 counted exempt paths too, and a baseline that is not the number the promotion criterion reads is a baseline nobody can compare against. A PREFIX predicate, not a shape predicate: the 4 compliant worktrees are direct children of worktree_root, and an exact <repo>/<task> rule would score them violations too. The population moves (43->48 worktrees during CH2 alone), so this is history, not an expectation — promotion reads max_violations, never this figure.",
+        "baseline_note": "35 as check-worktree-root.mjs measures it, 2026-08-09: NON-EXEMPT worktrees outside worktree_root. This is the guard's OWN metric \u2014 CH1's raw 40 counted exempt paths too, and a baseline that is not the number the promotion criterion reads is a baseline nobody can compare against. A PREFIX predicate, not a shape predicate: the 4 compliant worktrees are direct children of worktree_root, and an exact <repo>/<task> rule would score them violations too. The population moves (43->48 worktrees during CH2 alone), so this is history, not an expectation \u2014 promotion reads max_violations, never this figure.",
         "promotion": {
           "max_violations": 0,
           "not_before": "2026-08-23",
@@ -268,13 +338,13 @@
     "exempt_paths": [
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir25",
-        "reason": "holds ~1022 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir25 in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~1022 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir25 in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir",
-        "reason": "holds ~389 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~389 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
@@ -316,19 +386,19 @@
       },
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/carry",
-        "reason": "holds ~17 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-carry in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~17 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-carry in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir2",
-        "reason": "holds ~15 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir2 in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~15 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir2 in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
         "path": "/Users/tank/code/algovault-skills.dup-20260809",
-        "reason": "duplicate clone whose sibling ~/code/algovault-skills carries 31 unreviewed changes; neither side is retired by this wave. Rewritten by CH6 in the same commit as the ~/git migration (F7). [CH6: relocated from /Users/tank/git/algovault-skills in the same commit as the move — an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "duplicate clone whose sibling ~/code/algovault-skills carries 31 unreviewed changes; neither side is retired by this wave. Rewritten by CH6 in the same commit as the ~/git migration (F7). [CH6: relocated from /Users/tank/git/algovault-skills in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
         "expires": "2026-11-09",
         "owner_wave": "OPS-STALE-CLONE-RETIRE-W{NEXT}"
       }

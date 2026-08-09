@@ -491,10 +491,43 @@ ${CANONICAL_FOOTER_HTML}
 `;
 }
 
+/**
+ * PRICING TOKENS (PRICING-FOLLOWUPS-GENERATOR-W1 CH3, ruling G-B).
+ *
+ * Tutorial sources carry `{{PRICING.<key>}}` instead of hand-typed ladder literals, so a price
+ * or quota change is a token re-emit rather than a sweep across every tutorial. CH7 of the prior
+ * wave fixed the RENDERED pages while their sources still said "100 calls/month" — the next
+ * render would have silently reverted it, which is the class this retires.
+ *
+ * FAIL-CLOSED. An unresolved placeholder aborts the whole render: passing `{{PRICING.foo}}`
+ * through to a published page is worse than a stale literal, because it is visibly broken AND
+ * still wrong, and a silent passthrough is how a typo'd key would ship unnoticed.
+ */
+const PRICING_TOKENS = JSON.parse(
+  await readFile(join(ROOT, 'ops', 'pricing-tokens.json'), 'utf8'),
+).tokens;
+
+function substitutePricingTokens(md, srcPath) {
+  const out = md.replace(/\{\{PRICING\.([a-z0-9_]+)\}\}/g, (whole, key) => {
+    const v = PRICING_TOKENS[key];
+    if (typeof v !== 'string') {
+      throw new Error(
+        `[render] unknown pricing token ${whole} in ${srcPath}\n` +
+        `         known keys: ${Object.keys(PRICING_TOKENS).join(', ')}\n` +
+        `         (regenerate with: node scripts/emit-pricing-tokens.mjs)`,
+      );
+    }
+    return v;
+  });
+  const leftover = out.match(/\{\{PRICING\.[^}]*\}\}/);
+  if (leftover) throw new Error(`[render] unresolved pricing placeholder ${leftover[0]} in ${srcPath}`);
+  return out;
+}
+
 async function renderOne(exchange) {
   const srcPath = getSrcPath(exchange);
   const dstPath = join(TARGET_DIR, `${exchange}.html`);
-  let mdSource = await readFile(srcPath, 'utf8');
+  let mdSource = substitutePricingTokens(await readFile(srcPath, 'utf8'), srcPath);
 
   // SEO-STRIP-TRACKING-PARAMS-W1: strip the utm_* tracking triple from the
   // INTERNAL algovault.com/track-record link in the rendered (web) mirror.
