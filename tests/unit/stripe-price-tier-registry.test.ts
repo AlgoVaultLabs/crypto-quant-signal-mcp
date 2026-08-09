@@ -1,6 +1,13 @@
 /**
  * PRICING-ANNUAL-AND-HOLD-PROMISE-W1 (C1) — the Stripe price→tier registry.
  *
+ * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): the two ANNUAL bindings became SIX-MONTH ones.
+ * The registry's shape is unchanged — still five configured prices, still resolved by TIER_RANK
+ * then INTERVAL_RANK — so these assertions move by vocabulary only. `'year'` deliberately no
+ * longer appears here: it is not a cadence anything can be SOLD on, and the registry answers
+ * "what may be sold". Historical `'year'` ROWS keep their meaning through
+ * `StoredBillingInterval`, which is a different vocabulary and is tested separately.
+ *
  * WHAT THIS PINS, AND WHY IT EXISTS.
  *
  * Annual prepay adds two new Stripe Price ids. Before this wave, four separate sites resolved
@@ -30,8 +37,8 @@ vi.hoisted(() => {
   process.env.STRIPE_STARTER_PRICE_ID = 'price_starter_monthly';
   process.env.STRIPE_PRO_PRICE_ID = 'price_pro_monthly';
   process.env.STRIPE_ENTERPRISE_PRICE_ID = 'price_enterprise_monthly';
-  process.env.STRIPE_STARTER_ANNUAL_PRICE_ID = 'price_starter_annual';
-  process.env.STRIPE_PRO_ANNUAL_PRICE_ID = 'price_pro_annual';
+  process.env.STRIPE_STARTER_6MONTH_PRICE_ID = 'price_starter_6month';
+  process.env.STRIPE_PRO_6MONTH_PRICE_ID = 'price_pro_6month';
   // No secret key → the Stripe client stays null. The registry is pure and needs no client.
   delete process.env.STRIPE_SECRET_KEY;
 });
@@ -59,19 +66,19 @@ beforeEach(() => {
   process.env.STRIPE_STARTER_PRICE_ID = 'price_starter_monthly';
   process.env.STRIPE_PRO_PRICE_ID = 'price_pro_monthly';
   process.env.STRIPE_ENTERPRISE_PRICE_ID = 'price_enterprise_monthly';
-  process.env.STRIPE_STARTER_ANNUAL_PRICE_ID = 'price_starter_annual';
-  process.env.STRIPE_PRO_ANNUAL_PRICE_ID = 'price_pro_annual';
+  process.env.STRIPE_STARTER_6MONTH_PRICE_ID = 'price_starter_6month';
+  process.env.STRIPE_PRO_6MONTH_PRICE_ID = 'price_pro_6month';
   _rebuildPriceTierMapForTest();
 });
 
 describe('price→tier registry — resolution', () => {
-  it('maps all five configured prices to the right tier AND interval', () => {
+  it('maps all five configured prices to the right tier AND interval (3 monthly + 2 six-month)', () => {
     const cases: Array<[string, string, string]> = [
       ['price_starter_monthly', 'starter', 'month'],
       ['price_pro_monthly', 'pro', 'month'],
       ['price_enterprise_monthly', 'enterprise', 'month'],
-      ['price_starter_annual', 'starter', 'year'],
-      ['price_pro_annual', 'pro', 'year'],
+      ['price_starter_6month', 'starter', '6month'],
+      ['price_pro_6month', 'pro', '6month'],
     ];
     // Vacuity guard: an empty map would make every assertion below trivially unreachable.
     expect(_inspectPriceTierMap().size).toBe(5);
@@ -89,15 +96,15 @@ describe('price→tier registry — resolution', () => {
   it('THE REGRESSION THIS WAVE EXISTS FOR: an annual-only subscription resolves to its paid tier', () => {
     // Pre-registry this returned null at validateApiKey → {valid:false} → a prepaying annual
     // customer's API key did not work at all.
-    expect(highestTier(subWith('price_pro_annual'))).toBe('pro');
-    expect(highestTier(subWith('price_starter_annual'))).toBe('starter');
+    expect(highestTier(subWith('price_pro_6month'))).toBe('pro');
+    expect(highestTier(subWith('price_starter_6month'))).toBe('starter');
   });
 
   it('skips UNCONFIGURED env vars instead of indexing an empty-string key', () => {
     // The pre-registry code compared `item.price.id === ENTERPRISE_PRICE_ID` with both sides ''
     // when that var was unset. An '' key in the map would be the same landmine.
     delete process.env.STRIPE_ENTERPRISE_PRICE_ID;
-    delete process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
+    delete process.env.STRIPE_PRO_6MONTH_PRICE_ID;
     _rebuildPriceTierMapForTest();
 
     expect(_inspectPriceTierMap().has('')).toBe(false);
@@ -105,7 +112,7 @@ describe('price→tier registry — resolution', () => {
     expect(tierForPriceId('')).toBeNull();
     expect(highestTier(subWith(''))).toBeNull();
     // An unconfigured interval is simply not offered — not an error, and not a silent monthly.
-    expect(priceIdFor('pro', 'year')).toBeNull();
+    expect(priceIdFor('pro', '6month')).toBeNull();
   });
 });
 
@@ -153,13 +160,13 @@ describe('price→tier registry — ORDER INDEPENDENCE (CLAUDE.md: never rent a 
     // The old `for … if (x) break` shape made the winner depend on Stripe's array order.
     expect(highestTier(subWith('price_enterprise_monthly', 'price_starter_monthly'))).toBe('enterprise');
     expect(highestTier(subWith('price_starter_monthly', 'price_enterprise_monthly'))).toBe('enterprise');
-    expect(highestTier(subWith('price_pro_monthly', 'price_starter_annual'))).toBe('pro');
-    expect(highestTier(subWith('price_starter_annual', 'price_pro_monthly'))).toBe('pro');
+    expect(highestTier(subWith('price_pro_monthly', 'price_starter_6month'))).toBe('pro');
+    expect(highestTier(subWith('price_starter_6month', 'price_pro_monthly'))).toBe('pro');
   });
 
   it('an unrecognised item does not mask a recognised one, in either order', () => {
-    expect(highestTier(subWith('price_unknown', 'price_pro_annual'))).toBe('pro');
-    expect(highestTier(subWith('price_pro_annual', 'price_unknown'))).toBe('pro');
+    expect(highestTier(subWith('price_unknown', 'price_pro_6month'))).toBe('pro');
+    expect(highestTier(subWith('price_pro_6month', 'price_unknown'))).toBe('pro');
   });
 
   it('tolerates a malformed subscription rather than throwing on the hot path', () => {
@@ -178,13 +185,13 @@ describe('priceIdFor — the checkout resolver', () => {
     expect(priceIdFor('enterprise')).toBe('price_enterprise_monthly');
   });
 
-  it('returns the annual price when the year interval is requested', () => {
-    expect(priceIdFor('starter', 'year')).toBe('price_starter_annual');
-    expect(priceIdFor('pro', 'year')).toBe('price_pro_annual');
+  it('returns the 6-month price when the 6month interval is requested', () => {
+    expect(priceIdFor('starter', '6month')).toBe('price_starter_6month');
+    expect(priceIdFor('pro', '6month')).toBe('price_pro_6month');
   });
 
   it('returns null for Enterprise annual — deliberately not sold', () => {
-    expect(priceIdFor('enterprise', 'year')).toBeNull();
+    expect(priceIdFor('enterprise', '6month')).toBeNull();
   });
 });
 
@@ -200,8 +207,8 @@ describe('priceIdFor — the checkout resolver', () => {
 describe('resolveSubscription — tier AND interval from the one registry', () => {
   it('resolves both dimensions for every configured price', () => {
     expect(resolveSubscription(subWith('price_starter_monthly'))).toEqual({ tier: 'starter', interval: 'month' });
-    expect(resolveSubscription(subWith('price_starter_annual'))).toEqual({ tier: 'starter', interval: 'year' });
-    expect(resolveSubscription(subWith('price_pro_annual'))).toEqual({ tier: 'pro', interval: 'year' });
+    expect(resolveSubscription(subWith('price_starter_6month'))).toEqual({ tier: 'starter', interval: '6month' });
+    expect(resolveSubscription(subWith('price_pro_6month'))).toEqual({ tier: 'pro', interval: '6month' });
     expect(resolveSubscription(subWith('price_enterprise_monthly'))).toEqual({ tier: 'enterprise', interval: 'month' });
   });
 
@@ -210,7 +217,7 @@ describe('resolveSubscription — tier AND interval from the one registry', () =
   });
 
   it('highestTier is a PROJECTION of it — the two can never disagree about tier', () => {
-    for (const id of ['price_starter_monthly', 'price_starter_annual', 'price_pro_annual', 'price_enterprise_monthly', 'price_nope']) {
+    for (const id of ['price_starter_monthly', 'price_starter_6month', 'price_pro_6month', 'price_enterprise_monthly', 'price_nope']) {
       expect(highestTier(subWith(id))).toBe(resolveSubscription(subWith(id))?.tier ?? null);
     }
   });
@@ -219,16 +226,16 @@ describe('resolveSubscription — tier AND interval from the one registry', () =
     // This is the property the second dimension made observable. The OLD highestTier did not
     // need it — on a same-tier tie both branches yielded the same TIER, so iteration order was
     // invisible. Returning an interval makes it visible, so it must be DECLARED.
-    const monthFirst = resolveSubscription(subWith('price_starter_monthly', 'price_starter_annual'));
-    const yearFirst = resolveSubscription(subWith('price_starter_annual', 'price_starter_monthly'));
+    const monthFirst = resolveSubscription(subWith('price_starter_monthly', 'price_starter_6month'));
+    const yearFirst = resolveSubscription(subWith('price_starter_6month', 'price_starter_monthly'));
     expect(monthFirst).toEqual(yearFirst);
     // year wins: declared, and the conservative direction for MRR (the LOWER monthly number).
-    expect(monthFirst).toEqual({ tier: 'starter', interval: 'year' });
+    expect(monthFirst).toEqual({ tier: 'starter', interval: '6month' });
   });
 
   it('tier rank still dominates interval rank — a monthly Pro beats an annual Starter', () => {
-    const a = resolveSubscription(subWith('price_starter_annual', 'price_pro_monthly'));
-    const b = resolveSubscription(subWith('price_pro_monthly', 'price_starter_annual'));
+    const a = resolveSubscription(subWith('price_starter_6month', 'price_pro_monthly'));
+    const b = resolveSubscription(subWith('price_pro_monthly', 'price_starter_6month'));
     expect(a).toEqual(b);
     expect(a).toEqual({ tier: 'pro', interval: 'month' });
   });
@@ -243,32 +250,32 @@ describe('resolveSubscription — tier AND interval from the one registry', () =
 });
 
 describe('buildCensusComposition — the census can finally answer "how many are annual"', () => {
-  const r = (tier: 'starter' | 'pro' | 'enterprise', interval: 'month' | 'year'): ResolvedSubscription =>
+  const r = (tier: 'starter' | 'pro' | 'enterprise', interval: 'month' | '6month'): ResolvedSubscription =>
     ({ tier, interval });
 
   it('counts each (tier, interval) cell', () => {
-    const c = buildCensusComposition([r('starter', 'month'), r('starter', 'year'), r('starter', 'month'), r('pro', 'month')]);
+    const c = buildCensusComposition([r('starter', 'month'), r('starter', '6month'), r('starter', 'month'), r('pro', 'month')]);
     expect(c).toEqual([
       { tier: 'starter', interval: 'month', count: 2 },
-      { tier: 'starter', interval: 'year', count: 1 },
+      { tier: 'starter', interval: '6month', count: 1 },
       { tier: 'pro', interval: 'month', count: 1 },
     ]);
   });
 
   it('emits a DETERMINISTIC order from our rank tables, not the input order', () => {
-    const forward = buildCensusComposition([r('enterprise', 'month'), r('starter', 'year'), r('pro', 'month'), r('starter', 'month')]);
-    const reversed = buildCensusComposition([r('starter', 'month'), r('pro', 'month'), r('starter', 'year'), r('enterprise', 'month')]);
+    const forward = buildCensusComposition([r('enterprise', 'month'), r('starter', '6month'), r('pro', 'month'), r('starter', 'month')]);
+    const reversed = buildCensusComposition([r('starter', 'month'), r('pro', 'month'), r('starter', '6month'), r('enterprise', 'month')]);
     expect(forward).toEqual(reversed);
     expect(forward.map((x) => `${x.tier}:${x.interval}`)).toEqual([
-      'starter:month', 'starter:year', 'pro:month', 'enterprise:month',
+      'starter:month', 'starter:6month', 'pro:month', 'enterprise:month',
     ]);
   });
 
   it('omits cells that were not observed — absent means zero, and no impossible pair is invented', () => {
     const c = buildCensusComposition([r('enterprise', 'month')]);
     expect(c).toHaveLength(1);
-    // There is no (enterprise, year) Price, so nothing may emit a row for it.
-    expect(c.find((x) => x.tier === 'enterprise' && x.interval === 'year')).toBeUndefined();
+    // There is no (enterprise, 6month) Price, so nothing may emit a row for it.
+    expect(c.find((x) => x.tier === 'enterprise' && x.interval === '6month')).toBeUndefined();
   });
 
   it('is empty for no subscriptions — a fact, not a failure', () => {
@@ -276,7 +283,7 @@ describe('buildCensusComposition — the census can finally answer "how many are
   });
 
   it('censusTierTotal sums a tier across intervals, so the headline PROJECTS from composition', () => {
-    const c = buildCensusComposition([r('starter', 'month'), r('starter', 'year'), r('starter', 'year'), r('pro', 'month')]);
+    const c = buildCensusComposition([r('starter', 'month'), r('starter', '6month'), r('starter', '6month'), r('pro', 'month')]);
     expect(censusTierTotal(c, 'starter')).toBe(3);
     expect(censusTierTotal(c, 'pro')).toBe(1);
     expect(censusTierTotal(c, 'enterprise')).toBe(0);

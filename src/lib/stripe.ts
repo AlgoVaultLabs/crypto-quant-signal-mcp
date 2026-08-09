@@ -13,6 +13,9 @@ import { sendWelcomeEmail, maskEmail } from './email.js';
 import { sendAlert } from './telegram.js';
 import { recordIndeterminate } from './indeterminate-counter.js';
 import type { PaidPlanId, BillingInterval } from './plans.js';
+// The RECORD vocabulary, which is wider than the billing one: it retains 'year' for rows
+// sold before R-C retired annual, plus 'unknown'. Type-only, so no import cycle.
+import type { StoredBillingInterval } from './subscriber-attribution.js';
 
 // Stripe v22 exports the class as both named and default.
 // Node16 moduleResolution resolves the default export reliably.
@@ -93,7 +96,7 @@ const TIER_RANK: Readonly<Record<PaidPlanId, number>> = { starter: 1, pro: 2, en
  *
  * Pinned by the order-independence test beside `TIER_RANK`'s.
  */
-const INTERVAL_RANK: Readonly<Record<BillingInterval, number>> = { month: 1, year: 2 };
+const INTERVAL_RANK: Readonly<Record<BillingInterval, number>> = { month: 1, '6month': 2 };
 
 /**
  * The declared bindings, in env-var order. Order here is presentational only — `buildPriceTierMap`
@@ -108,8 +111,13 @@ export function currentPriceBindings(): readonly PriceBinding[] {
     { priceId: process.env.STRIPE_STARTER_PRICE_ID || '', tier: 'starter', interval: 'month', envVar: 'STRIPE_STARTER_PRICE_ID' },
     { priceId: process.env.STRIPE_PRO_PRICE_ID || '', tier: 'pro', interval: 'month', envVar: 'STRIPE_PRO_PRICE_ID' },
     { priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || '', tier: 'enterprise', interval: 'month', envVar: 'STRIPE_ENTERPRISE_PRICE_ID' },
-    { priceId: process.env.STRIPE_STARTER_ANNUAL_PRICE_ID || '', tier: 'starter', interval: 'year', envVar: 'STRIPE_STARTER_ANNUAL_PRICE_ID' },
-    { priceId: process.env.STRIPE_PRO_ANNUAL_PRICE_ID || '', tier: 'pro', interval: 'year', envVar: 'STRIPE_PRO_ANNUAL_PRICE_ID' },
+    // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): 6-month prepay REPLACES annual. The two
+    // STRIPE_*_ANNUAL_PRICE_ID bindings are gone, so an annual Price can no longer be resolved
+    // to a tier — which is correct, because nothing may be sold on it any more. Existing annual
+    // SUBSCRIPTIONS are unaffected: their tier resolves from the subscription's own price via
+    // `validateApiKey`, and CH1 re-confirmed there are ZERO of them.
+    { priceId: process.env.STRIPE_STARTER_6MONTH_PRICE_ID || '', tier: 'starter', interval: '6month', envVar: 'STRIPE_STARTER_6MONTH_PRICE_ID' },
+    { priceId: process.env.STRIPE_PRO_6MONTH_PRICE_ID || '', tier: 'pro', interval: '6month', envVar: 'STRIPE_PRO_6MONTH_PRICE_ID' },
   ];
 }
 
@@ -371,7 +379,7 @@ export async function createCheckoutSession(
   opts: CheckoutSessionOptions = {},
 ): Promise<string | null> {
   if (!stripe) return null;
-  const interval: BillingInterval = opts.interval === 'year' ? 'year' : 'month';
+  const interval: BillingInterval = opts.interval === '6month' ? '6month' : 'month';
 
   // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: `interval` is an OPTIONAL TRAILING param defaulting to
   // 'month', so every existing call site keeps its exact behaviour (CLAUDE.md enum-widening rule —
@@ -835,7 +843,7 @@ function asSubscriptionStatus(v: unknown): string | null {
  */
 async function propagateSubscriptionToRecord(
   customerId: string,
-  fields: { tier?: string | null; billingInterval?: 'month' | 'year' | 'unknown'; status?: string | null; subscriptionId?: string | null },
+  fields: { tier?: string | null; billingInterval?: StoredBillingInterval; status?: string | null; subscriptionId?: string | null },
   source: string,
 ): Promise<void> {
   try {

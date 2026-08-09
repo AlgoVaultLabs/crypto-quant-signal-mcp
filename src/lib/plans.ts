@@ -35,7 +35,7 @@ export type PaidPlanId = 'starter' | 'pro' | 'enterprise';
  * established which cadence this row was sold on"), never of a plan, so it lives with the
  * record — see `StoredBillingInterval` in `subscriber-attribution.ts`.
  */
-export type BillingInterval = 'month' | 'year';
+export type BillingInterval = 'month' | '6month';
 
 export interface PlanSpec {
   /** Display name as it appears in public copy. */
@@ -194,10 +194,19 @@ export function planMonthlyRateUsd(id: PaidPlanId, interval: BillingInterval): n
  * without adding its months here is a `tsc` error, which is the whole reason this is a `Record`
  * and not a lookup with a default.
  */
-export const INTERVAL_MONTHS: Readonly<Record<BillingInterval, number>> = { month: 1, year: 12 };
+export const INTERVAL_MONTHS: Readonly<Record<BillingInterval, number>> = { month: 1, '6month': 6 };
 
-/** Months in the six-month prepay term (R-C). CH6 folds this into `INTERVAL_MONTHS`. */
+/** Months in the six-month prepay term (R-C). Now also `INTERVAL_MONTHS['6month']`. */
 export const PREPAY_6MONTH_MONTHS = 6;
+
+/**
+ * Months in the retired ANNUAL term. `'year'` left `BillingInterval` in CH6 (R-C: 6-month
+ * prepay REPLACES annual), but the annual copy helpers below still render live on the pricing
+ * page until CH7 takes them down, and `StoredBillingInterval` must keep reading `'year'` rows
+ * forever. This names the divisor for those two survivors without re-admitting the token to the
+ * billing vocabulary. CH7 removes it with the last annual helper.
+ */
+export const PREPAY_ANNUAL_MONTHS = 12;
 
 /**
  * Total USD charged up-front for a `months`-long prepay term, or null when the plan is not sold
@@ -210,7 +219,7 @@ export function planPrepayTotalUsd(id: PaidPlanId, months: number): number | nul
   const spec = PLANS[id];
   if (months === 1) return spec.priceUsdMonthly;
   if (months === PREPAY_6MONTH_MONTHS) return spec.priceUsd6Month ?? null;
-  if (months === 12) return spec.priceUsdAnnual ?? null; // retired by CH6
+  if (months === PREPAY_ANNUAL_MONTHS) return spec.priceUsdAnnual ?? null; // retired by CH7 with the copy
   return null;
 }
 
@@ -262,7 +271,7 @@ export function planHasSixMonth(id: PaidPlanId): boolean {
  * both ways by `tests/plans.test.ts` ("byte-identical to the pre-refactor expression").
  */
 export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
-  return planPrepayMonthlyEquivalent(id, INTERVAL_MONTHS.year);
+  return planPrepayMonthlyEquivalent(id, PREPAY_ANNUAL_MONTHS);
 }
 
 /**
@@ -271,7 +280,7 @@ export function planAnnualMonthlyEquivalent(id: PaidPlanId): string | null {
  * Rounded to the nearest percent for copy. Starter → 34 (79 vs 119.88), Pro → 49 (299 vs 588).
  */
 export function planAnnualSavingsPct(id: PaidPlanId): number | null {
-  return planPrepaySavingsPct(id, INTERVAL_MONTHS.year);
+  return planPrepaySavingsPct(id, PREPAY_ANNUAL_MONTHS);
 }
 
 /**

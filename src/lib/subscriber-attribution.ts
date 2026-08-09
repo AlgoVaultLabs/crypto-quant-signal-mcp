@@ -17,7 +17,7 @@
  */
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
 import { getMonthlyQuota } from './license.js';
-import { PLANS, planMonthlyRateUsd, type PaidPlanId, type BillingInterval } from './plans.js';
+import { PLANS, planMonthlyRateUsd, planPrepayMonthlyRateUsd, PREPAY_ANNUAL_MONTHS, type PaidPlanId, type BillingInterval } from './plans.js';
 
 const PG = !!process.env.DATABASE_URL;
 const TS = PG ? 'TIMESTAMPTZ' : 'TIMESTAMP';
@@ -167,18 +167,32 @@ export function ensureSubscriberProfilesSchema(): void {
  * pass on a fiction, and — because an annual Starter's monthly rate is $6.58 against a monthly
  * Starter's $9.99 — a wrong guess is a wrong MRR that looks entirely plausible.
  */
-export type StoredBillingInterval = BillingInterval | 'unknown';
+export type StoredBillingInterval = BillingInterval | 'year' | 'unknown';
+
+/**
+ * 🕰️ `'year'` is listed EXPLICITLY, and must stay listed after it left `BillingInterval`.
+ *
+ * PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C) replaced annual with a 6-month term, so `'year'`
+ * is no longer a cadence anything can be SOLD on. It remains a cadence rows were sold on. A
+ * record's vocabulary has to keep reading its own history — narrowing this union to the live
+ * billing one would make every historical annual row fail to type, and the "fix" a future wave
+ * would reach for is `normalizeBillingInterval` returning `'unknown'` for them, silently
+ * dropping their MRR to null. The billing vocabulary shrinks; the record vocabulary only grows.
+ */
 
 /**
  * Coerce an untrusted cadence string to the stored vocabulary. Pure; exported for test.
  *
- * Default-DENY: anything not exactly `month`/`year` becomes `unknown`, never a guess. The live
- * input is `session.metadata.billing_interval`, which `createCheckoutSession` stamps on every
- * checkout since PRICING-ANNUAL-AND-HOLD-PROMISE-W1 — so it is present and trustworthy going
- * forward, and simply absent on the pre-annual cohort.
+ * Default-DENY: anything not exactly `month`/`6month`/`year` becomes `unknown`, never a guess.
+ * The live input is `session.metadata.billing_interval`, which `createCheckoutSession` stamps on
+ * every checkout since PRICING-ANNUAL-AND-HOLD-PROMISE-W1 — so it is present and trustworthy
+ * going forward, and simply absent on the pre-annual cohort.
+ *
+ * `'year'` is still ACCEPTED even though nothing can be sold on it any more: existing rows carry
+ * it, and coercing them to `unknown` would null their MRR (see the type note above).
  */
 export function normalizeBillingInterval(v: unknown): StoredBillingInterval {
-  return v === 'month' || v === 'year' ? v : 'unknown';
+  return v === 'month' || v === '6month' || v === 'year' ? v : 'unknown';
 }
 
 /** True when `v` is a tier the plan ladder knows how to price. Pure; exported for test. */
@@ -196,6 +210,10 @@ export function isPaidPlanId(v: unknown): v is PaidPlanId {
  */
 export function deriveMonthlyRateUsd(tier: unknown, interval: StoredBillingInterval): number | null {
   if (interval === 'unknown' || !isPaidPlanId(tier)) return null;
+  // A historical `'year'` row is still worth its annual rate — it is a live subscription until it
+  // renews or cancels, and CH1 confirmed zero of them exist today. Priced through the months
+  // path so it survives `'year'` leaving the billing vocabulary.
+  if (interval === 'year') return planPrepayMonthlyRateUsd(tier, PREPAY_ANNUAL_MONTHS);
   return planMonthlyRateUsd(tier, interval);
 }
 

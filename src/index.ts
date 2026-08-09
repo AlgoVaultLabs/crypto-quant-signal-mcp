@@ -1732,10 +1732,23 @@ async function startHttp() {
 
     try {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: `?interval=year` selects annual prepay. Anything
+      // PRICING-ANNUAL-AND-HOLD-PROMISE-W1: an explicit prepay token selects prepay. Anything
       // else — absent, misspelt, hostile — resolves to 'month', so a malformed query can only
-      // ever bill the SMALLER amount. Never infer annual from a partial match.
-      const interval = req.query.interval === 'year' ? 'year' : 'month';
+      // ever bill the SMALLER amount. Never infer a prepay term from a partial match.
+      //
+      // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-C): `?interval=6month` replaces
+      // `?interval=year`. The old token is REDIRECTED rather than silently downgraded to
+      // monthly — external links to `?interval=year` exist (the npm README, dev.to, a GitHub
+      // Discussion and an X thread all shipped it on 2026-08-06), and quietly billing those
+      // callers $9.99/mo when they clicked an annual-prepay link would be the worse failure.
+      // A 302 to the 6-month equivalent keeps the intent (prepay, discounted) and lets the
+      // caller see what they are actually buying before confirming.
+      if (req.query.interval === 'year') {
+        const q = new URLSearchParams(req.query as Record<string, string>);
+        q.set('interval', '6month');
+        return res.redirect(302, `/signup?${q.toString()}`);
+      }
+      const interval = req.query.interval === '6month' ? '6month' : 'month';
       const url = await createCheckoutSession(plan, baseUrl, {
         utmSource,
         utmCampaign,

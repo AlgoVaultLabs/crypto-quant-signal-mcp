@@ -156,15 +156,16 @@ describe('INTERVAL_MONTHS — the divisor is a table, and the annual surface sti
   it('covers every BillingInterval member', () => {
     // Exhaustiveness is enforced by tsc on the Record type; this asserts the VALUES, which tsc
     // cannot. A wrong month count here silently misprices MRR for every subscription.
-    expect(INTERVAL_MONTHS).toEqual({ month: 1, year: 12 });
+    // R-C: `'year'` left BillingInterval; `'6month'` replaced it.
+    expect(INTERVAL_MONTHS).toEqual({ month: 1, '6month': 6 });
   });
 
   it('planMonthlyRateUsd is INTERVAL_MONTHS applied to the prepay total', () => {
     for (const tier of PAID) {
       expect(planMonthlyRateUsd(tier, 'month'), tier).toBe(PLANS[tier].priceUsdMonthly);
-      const annual = PLANS[tier].priceUsdAnnual;
-      expect(planMonthlyRateUsd(tier, 'year'), tier).toBe(
-        typeof annual === 'number' ? annual / INTERVAL_MONTHS.year : null,
+      const six = PLANS[tier].priceUsd6Month;
+      expect(planMonthlyRateUsd(tier, '6month'), tier).toBe(
+        typeof six === 'number' ? six / INTERVAL_MONTHS['6month'] : null,
       );
     }
   });

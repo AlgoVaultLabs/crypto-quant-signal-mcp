@@ -29,6 +29,8 @@ import { describe, it, expect } from 'vitest';
 import {
   PLANS,
   planMonthlyRateUsd,
+  planPrepayMonthlyRateUsd,
+  PREPAY_ANNUAL_MONTHS,
   INTERVAL_MONTHS,
   planAnnualMonthlyEquivalent,
   type PaidPlanId,
@@ -45,14 +47,16 @@ describe('planMonthlyRateUsd — the single MRR derivation', () => {
   });
 
   it('returns the annual price divided across the year for an annual subscription', () => {
-    expect(planMonthlyRateUsd('starter', 'year')).toBe(79 / 12);
-    expect(planMonthlyRateUsd('pro', 'year')).toBe(299 / 12);
+    // R-C retired `'year'` from BillingInterval, so the annual rate is now reached through the
+    // MONTHS path — the same derivation, addressed by term length instead of by a billing token.
+    expect(planPrepayMonthlyRateUsd('starter', PREPAY_ANNUAL_MONTHS)).toBe(79 / 12);
+    expect(planPrepayMonthlyRateUsd('pro', PREPAY_ANNUAL_MONTHS)).toBe(299 / 12);
   });
 
   it('returns the rate UNROUNDED — rounding is the caller’s presentation choice', () => {
     // 79/12 = 6.58333…  If the primitive rounded to cents this would be 6.58 and the
     // byte-identity guarantee below would be accidental rather than structural.
-    const starter = planMonthlyRateUsd('starter', 'year')!;
+    const starter = planPrepayMonthlyRateUsd('starter', PREPAY_ANNUAL_MONTHS)!;
     expect(starter).not.toBe(6.58);
     expect(starter).toBeCloseTo(6.5833, 4);
   });
@@ -61,11 +65,11 @@ describe('planMonthlyRateUsd — the single MRR derivation', () => {
     // Enterprise has no priceUsdAnnual at all. Dividing a price nobody set would invent an
     // annual Enterprise tier that is not on sale.
     expect(PLANS.enterprise.priceUsdAnnual).toBeUndefined();
-    expect(planMonthlyRateUsd('enterprise', 'year')).toBeNull();
+    expect(planPrepayMonthlyRateUsd('enterprise', PREPAY_ANNUAL_MONTHS)).toBeNull();
   });
 
   it('🛑 null is a REFUSAL, not a zero — a plan we cannot price is not one worth nothing', () => {
-    const rate = planMonthlyRateUsd('enterprise', 'year');
+    const rate = planPrepayMonthlyRateUsd('enterprise', PREPAY_ANNUAL_MONTHS);
     expect(rate).toBeNull();
     expect(rate).not.toBe(0);
     // The distinction is the whole point: summing null-as-0 into MRR would silently report an
@@ -75,7 +79,7 @@ describe('planMonthlyRateUsd — the single MRR derivation', () => {
 
   it('the annual rate is always below the monthly price — otherwise "save" is a lie', () => {
     for (const tier of ANNUAL_TIERS) {
-      expect(planMonthlyRateUsd(tier, 'year')!).toBeLessThan(planMonthlyRateUsd(tier, 'month')!);
+      expect(planPrepayMonthlyRateUsd(tier, PREPAY_ANNUAL_MONTHS)!).toBeLessThan(planMonthlyRateUsd(tier, 'month')!);
     }
   });
 });
@@ -107,7 +111,7 @@ describe('planAnnualMonthlyEquivalent — byte-identical after the refactor', ()
 
   it('formats the primitive rather than re-dividing — the two agree to the cent', () => {
     for (const tier of ANNUAL_TIERS) {
-      expect(planAnnualMonthlyEquivalent(tier)).toBe(`$${planMonthlyRateUsd(tier, 'year')!.toFixed(2)}`);
+      expect(planAnnualMonthlyEquivalent(tier)).toBe(`$${planPrepayMonthlyRateUsd(tier, PREPAY_ANNUAL_MONTHS)!.toFixed(2)}`);
     }
   });
 });
@@ -164,8 +168,8 @@ describe('the divisor is a TABLE applied exactly once (CH2 supersedes the 2026-0
       expect(months, interval).toBeGreaterThan(0);
       expect(Number.isInteger(months), interval).toBe(true);
     }
-    expect(planMonthlyRateUsd('starter', 'year')).toBe(
-      (PLANS.starter.priceUsdAnnual as number) / INTERVAL_MONTHS.year,
+    expect(planPrepayMonthlyRateUsd('starter', PREPAY_ANNUAL_MONTHS)).toBe(
+      (PLANS.starter.priceUsdAnnual as number) / PREPAY_ANNUAL_MONTHS,
     );
   });
 
