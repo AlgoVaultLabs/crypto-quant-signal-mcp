@@ -63,9 +63,38 @@ ALERT_ID=MONITORING_DECLARATION_SYNC_FAILED
 RECOMMENDED_WAVE='OPS-MONITORING-DECLARATION-SYNC-W{NEXT}'
 BACKUP_REASON=${DECLARATION_SYNC_BACKUP_REASON:-MONITORING-INVENTORY-HOST-SYNC-W1}
 
-# <filename>|<required top-level key>|<min entry count, 0 = presence only>
+# ── WHICH HOST GETS WHICH DECLARATION (OPS-DECLARATION-SYNC-YAML-W1) ─────────────────────────
+# Resolution mirrors monitoring-inventory-reconcile.py EXACTLY — same variable, same default — so
+# there is ONE host-label convention in this directory rather than a second dialect. aoe-1's cron
+# sets MONITORING_HOST_LABELS=aoe-1 for both scripts; the signal host takes the default.
+#
+# WHY SCOPING IS NOT OPTIONAL, measured the hard way in this wave: the first cut synced all ten
+# declarations to BOTH hosts on the theory that a few inert extra files were harmless next to the
+# risk of forking a shared primitive. The AOE reconciler disagreed within a minute —
+#   CHECK ORPHAN: BREACH ["OPS-SEED-ORCHESTRATOR-W1-baseline.json", …5 files]
+# — and it was right: aoe-1 runs none of those canaries, so those configs had no consumer there,
+# and an unregistered file on a host is exactly what ORPHAN exists to catch. Note this does NOT
+# fork the primitive: the SCRIPT stays byte-identical on both hosts and only its BEHAVIOUR branches
+# on the label, which is the same shape the reconciler already uses.
+HOST_LABELS=${MONITORING_HOST_LABELS:-signal-1,204.168.185.24}
+
+# True when $1 (a scope field) applies to this host. `*` = every host.
+scope_applies() {
+  case "$1" in *'*'*) return 0 ;; esac
+  local want have
+  local IFS=,
+  for want in $1; do
+    for have in $HOST_LABELS; do
+      [ "$want" = "$have" ] && return 0
+    done
+  done
+  return 1
+}
+
+# <filename>|<required top-level key>|<min entry count, 0 = presence only>|<host scope>
 # The count floor is a REFUSAL threshold, not a target: it exists so a truncated or half-written
 # body can never replace a working file. Keep it well below the live value.
+# The scope is `*` for a declaration every host reads, or a comma-list of host labels.
 #
 # ── THIS SET IS NO LONGER MAINTAINED BY MEMORY (OPS-DECLARATION-SYNC-YAML-W1, 2026-08-10) ─────
 # It is still hand-written HERE on purpose — a separate config file would itself be a declaration
@@ -80,27 +109,30 @@ BACKUP_REASON=${DECLARATION_SYNC_BACKUP_REASON:-MONITORING-INVENTORY-HOST-SYNC-W
 # had simply never been added, which is exactly why the fix is a derived-coverage assertion rather
 # than "add YAML support": a hand-maintained set drifts in whatever format nobody is thinking about.
 DECLARATIONS=(
-  "monitoring-inventory.json|artifacts|40"
-  "doc-host-path-claims.json|claims|1"
-  "network-posture.json|hosts|1"
-  "schedule-boundary-rule.json|canonical_minutes|5"
+  # Every host's reconciler reads these five, so they are `*`.
+  "monitoring-inventory.json|artifacts|40|*"
+  "doc-host-path-claims.json|claims|1|*"
+  "network-posture.json|hosts|1|*"
+  "schedule-boundary-rule.json|canonical_minutes|5|*"
   # Ch3's SOT_PARITY config. In the set on purpose: the check that audits whether the hosts read
   # the committed declaration must not itself be configured by a copy nobody keeps current.
   # `enforcement` is a string, so presence-only (0) — there is nothing to count.
-  "sot-parity-config.json|enforcement|0"
+  "sot-parity-config.json|enforcement|0|*"
   # ── added by OPS-DECLARATION-SYNC-YAML-W1 ──
+  # All five are signal-host canary configs: their consumers run only there, and syncing them
+  # everywhere makes them ORPHANs on hosts that read them from nowhere (measured — see above).
   # The file whose 5-day rot motivated this: retired in the repo 2026-08-05, still live on the
   # host 2026-08-10, because no sync path reached a .yaml. Live `rows` is 30; floor well below.
-  "website-drift-manifest.yaml|rows|20"
-  "postgres-cpu-autopilot-registry.yaml|classes|3"
-  "recommendation-drift-manifest.yaml|rows|2"
+  "website-drift-manifest.yaml|rows|20|signal-1"
+  "postgres-cpu-autopilot-registry.yaml|classes|3|signal-1"
+  "recommendation-drift-manifest.yaml|rows|2|signal-1"
   # JSON, and never synced — the two the "add YAML" framing would have walked straight past.
-  "venue-slo-tiers.json|majors|3"
+  "venue-slo-tiers.json|majors|3|signal-1"
   # `baseline-data`: HASH_DRIFT on it is SEVERE because the baseline IS what "normal" means. Note
   # the direction this establishes — a host-side regeneration that is not committed gets REVERTED
   # within the hour. That is intended (committed is canonical, and network-posture.json already
   # sets the precedent), but it means a legitimate incident-time re-baseline must be committed.
-  "OPS-SEED-ORCHESTRATOR-W1-baseline.json|by_venue_total_24h|3"
+  "OPS-SEED-ORCHESTRATOR-W1-baseline.json|by_venue_total_24h|3|signal-1"
 )
 
 verdict() { echo "DECLARATION_SYNC_VERDICT=$1"; exit "$2"; }
@@ -157,9 +189,10 @@ PY
 # missing PyYAML must be INDETERMINATE ("verified nothing") rather than a per-file FAILED, or a
 # host without the module reports N specific refusals for one missing dependency.
 declares_yaml() {
-  local d name
+  local d name scope
   for d in "${DECLARATIONS[@]}"; do
-    IFS='|' read -r name _ _ <<< "$d"
+    IFS='|' read -r name _ _ scope <<< "$d"
+    scope_applies "$scope" || continue      # a YAML row for another host needs no parser here
     case "$name" in *.yaml|*.yml) return 0 ;; esac
   done
   return 1
@@ -247,13 +280,34 @@ self_test() {
   fi
   checks=$((checks+1))
   # Every declared row must be well-formed, or the runtime loop silently skips it.
-  local d name key min
+  local d name key min scope
   for d in "${DECLARATIONS[@]}"; do
-    IFS='|' read -r name key min <<< "$d"
+    IFS='|' read -r name key min scope <<< "$d"
     checks=$((checks+1))
-    if [ -z "$name" ] || [ -z "$key" ] || ! [ "$min" -ge 0 ] 2>/dev/null; then
-      echo "  ✗ malformed declaration row: '$d'"; fails=$((fails+1))
+    if [ -z "$name" ] || [ -z "$key" ] || ! [ "$min" -ge 0 ] 2>/dev/null || [ -z "$scope" ]; then
+      echo "  ✗ malformed declaration row (name|key|min|scope): '$d'"; fails=$((fails+1))
     fi
+  done
+
+  # scope_applies(): the seam that decides what a host installs, so assert it directly rather
+  # than trusting it. A wrong answer here either starves a host or plants ORPHANs on it.
+  ( HOST_LABELS=signal-1,204.168.185.24
+    scope_applies '*'              ) >/dev/null 2>&1; ck 'scope * applies anywhere'          "$?" 0
+  ( HOST_LABELS=signal-1; scope_applies 'signal-1' ) >/dev/null 2>&1; ck 'own label applies'  "$?" 0
+  ( HOST_LABELS=aoe-1;    scope_applies 'signal-1' ) >/dev/null 2>&1; ck 'other label REFUSED' "$?" 1
+  ( HOST_LABELS=aoe-1;    scope_applies 'signal-1,aoe-1' ) >/dev/null 2>&1; ck 'list matches'  "$?" 0
+  ( HOST_LABELS=aoe-1;    scope_applies '' ) >/dev/null 2>&1; ck 'empty scope applies nowhere' "$?" 1
+  # Vacuity in the OTHER direction: on each real host at least one row must be in scope, or the
+  # sync is a silent no-op there — the exact shape of failure this whole script exists to end.
+  local n l
+  for l in signal-1 aoe-1; do
+    n=0
+    for d in "${DECLARATIONS[@]}"; do
+      IFS='|' read -r _ _ _ scope <<< "$d"
+      ( HOST_LABELS=$l; scope_applies "$scope" ) >/dev/null 2>&1 && n=$((n+1))
+    done
+    checks=$((checks+1))
+    [ "$n" -gt 0 ] || { echo "  ✗ no declaration is in scope for host label '$l'"; fails=$((fails+1)); }
   done
 
   if [ "$fails" -ne 0 ]; then
@@ -282,13 +336,19 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/declsync.XXXXXX") || verdict INDETERMINATE 3
 trap "rm -rf '$WORK'" EXIT
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-changed=0; failed=0; unchanged=0
+changed=0; failed=0; unchanged=0; skipped=0
 fail_detail=""
 
 echo "declaration sync — ${#DECLARATIONS[@]} declared file(s) from $BASE_URL"
 
 for d in "${DECLARATIONS[@]}"; do
-  IFS='|' read -r name key min <<< "$d"
+  IFS='|' read -r name key min scope <<< "$d"
+  if ! scope_applies "$scope"; then
+    # POSITIVE output, not silence: a skipped row must be distinguishable from a synced one, or
+    # "nothing happened" reads the same as "everything was already current".
+    echo "  – SKIPPED  $name — scoped to '$scope', this host is '$HOST_LABELS'"
+    skipped=$((skipped+1)); continue
+  fi
   dest="$DEST_DIR/$name"
   cand="$WORK/$name"
 

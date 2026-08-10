@@ -32,13 +32,19 @@ function run(...args: string[]): { out: string; code: number } {
   }
 }
 
-/** The declared file set, parsed out of the script itself — the script IS the SoT for it. */
-function declaredSet(): { name: string; key: string; min: number }[] {
+/**
+ * The declared file set, parsed out of the script itself — the script IS the SoT for it.
+ *
+ * The 4th field (host scope) was added by OPS-DECLARATION-SYNC-YAML-W1 and is REQUIRED: the regex
+ * will not match a 3-field row, so an entry written in the old shape fails the vacuity guard below
+ * rather than being silently parsed with an undefined scope and synced everywhere.
+ */
+function declaredSet(): { name: string; key: string; min: number; scope: string }[] {
   const src = readFileSync(SCRIPT, 'utf8');
   const block = /DECLARATIONS=\(([\s\S]*?)\n\)/.exec(src);
   if (!block) throw new Error('could not locate the DECLARATIONS array in the script');
-  return [...block[1].matchAll(/"([^"|]+)\|([^"|]+)\|(\d+)"/g)].map((m) => ({
-    name: m[1], key: m[2], min: Number(m[3]),
+  return [...block[1].matchAll(/"([^"|]+)\|([^"|]+)\|(\d+)\|([^"]+)"/g)].map((m) => ({
+    name: m[1], key: m[2], min: Number(m[3]), scope: m[4].trim(),
   }));
 }
 
@@ -273,6 +279,40 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
     const known = new Set(rows.map((r) => base(r.host_path)));
     const orphans = declared.filter((n) => !known.has(n));
     expect(orphans, `declared but absent from the inventory: ${orphans.join(', ')}`).toEqual([]);
+  });
+
+  it('every entry declares a host scope drawn from the labels the inventory knows', () => {
+    // The scope decides what each host installs. An unknown label starves a host silently (the
+    // file is declared, matches nobody, and is never written) — indistinguishable from healthy.
+    const known = new Set<string>();
+    for (const r of rows) for (const e of (r as { installed_at?: { host: string }[] }).installed_at ?? []) {
+      if (e.host) known.add(e.host);
+    }
+    expect(known.size, 'the inventory declares no host labels at all').toBeGreaterThanOrEqual(2);
+    for (const d of declaredSet()) {
+      expect(d.scope.length, `${d.name} has an empty host scope`).toBeGreaterThan(0);
+      if (d.scope === '*') continue;
+      for (const label of d.scope.split(',').map((s) => s.trim())) {
+        expect(known.has(label), `${d.name} is scoped to unknown host label '${label}'`).toBe(true);
+      }
+    }
+  });
+
+  it('a host-specific declaration is NOT scoped to every host', () => {
+    // The measured regression this wave shipped and then fixed: syncing signal-only canary configs
+    // to aoe-1 turned all five into `CHECK ORPHAN: BREACH` there within a minute, because that box
+    // reads none of them. `*` must mean "every host genuinely consumes this", never "unsure".
+    const signalOnly = [
+      'website-drift-manifest.yaml', 'postgres-cpu-autopilot-registry.yaml',
+      'recommendation-drift-manifest.yaml', 'venue-slo-tiers.json',
+      'OPS-SEED-ORCHESTRATOR-W1-baseline.json',
+    ];
+    for (const name of signalOnly) {
+      const d = declaredSet().find((x) => x.name === name);
+      expect(d, `${name} left the declared set`).toBeTruthy();
+      expect(d!.scope, `${name} must stay host-scoped — '*' plants it as an ORPHAN elsewhere`)
+        .not.toBe('*');
+    }
   });
 
   it('reports its own breadth, so a silent narrowing is visible', () => {
