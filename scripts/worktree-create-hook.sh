@@ -211,10 +211,41 @@ if [ -r "$REPO_TOP/.worktreeinclude" ]; then
   done < "$REPO_TOP/.worktreeinclude"
 fi
 
-# PORT allocation — same window cc-session.sh uses (base 3100, range 400), hashed off the path.
-if [ -f "$DEST/.env.local" ] && ! grep -qs '^PORT=' "$DEST/.env.local" 2>/dev/null; then
-  h=$(printf '%s' "$DEST" | cksum | cut -d' ' -f1)
-  printf 'PORT=%s\n' "$(( 3100 + (h % 400) ))" >> "$DEST/.env.local" 2>/dev/null && say "assigned PORT"
+# PORT allocation — THE SHARED DERIVATION (OPS-WORKTREE-HOOK-PORT-PARITY-W1 R2c).
+#
+# Two defects, both closed by the same change:
+#   (a) this block hashed $DEST while cc-session.sh hashed the TASK NAME, so the two produced
+#       different numbers from the same window — and `cc-session.sh port <task>`, documented as
+#       "the deterministic port a task would use" and called by the SessionStart bootstrap,
+#       could not reproduce the port this hook had written;
+#   (b) it was gated on .env.local ALREADY EXISTING. .worktreeinclude only copies that file if
+#       the primary has one, and this primary has neither .env nor .env.local — so the branch
+#       never fired, and "replaces ALL of creation" was not true of the PORT half.
+#
+# The helper travels with this script (same resolution as the SoT above), so a user-level
+# registration pointing at an absolute committed path resolves it too.
+# THE IGNORE GUARD IS NOT OPTIONAL, AND IT IS WHY THIS WRITE IS SAFE TO MAKE UNCONDITIONAL.
+# `.env.local` is gitignored IN THIS REPO (`.env.*`) — but this hook is registered at USER
+# level and fires for EVERY repo on this machine, including ones that ignore no such thing.
+# There, an unconditional write would leave a fresh untracked file in every worktree it
+# creates, and `cc-session.sh clean` reads dirtiness as an in-use signal: the whole fleet
+# would quietly become unreclaimable. That is the npm-sentinel trap exactly, one directory
+# over. So the condition is CHECKED at runtime in the target repo rather than assumed from
+# this one, and a repo that does not ignore the file simply does not get the write.
+PORT_LIB="$SELF_DIR/lib/alloc-port.sh"
+if ! grep -qs '^PORT=' "$DEST/.env.local" 2>/dev/null; then
+  if ! git -C "$DEST" check-ignore -q .env.local 2>/dev/null; then
+    say "PORT skipped — .env.local is NOT gitignored in this repo; writing it would make every worktree read dirty to \`clean\`"
+  elif [ -r "$PORT_LIB" ] && WT_PORT="$(bash "$PORT_LIB" "$TASK" 2>>"$LOG")" && [ -n "$WT_PORT" ]; then
+    # `>>` CREATES .env.local when the primary had none — the half of "replace ALL of
+    # creation" that was missing.
+    printf 'PORT=%s\n' "$WT_PORT" >> "$DEST/.env.local" 2>/dev/null \
+      && say "assigned PORT=$WT_PORT (shared derivation, task='$TASK')"
+  else
+    # Individually fail-open: an unreadable helper costs the PORT, never the worktree. The
+    # SessionStart bootstrap allocates from the SAME helper on first session start.
+    say "PORT skipped — '$PORT_LIB' unreadable or produced nothing; bootstrap will allocate"
+  fi
 fi
 
 # Dependencies: BACKGROUNDED behind a sentinel. A worktree without node_modules is usable;
