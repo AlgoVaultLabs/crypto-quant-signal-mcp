@@ -74,17 +74,64 @@ say "fired: name='${RAW_NAME:-<absent>}' cwd='$HOOK_CWD'"
 # ── 2. emit(): the ONE exit point that writes stdout ───────────────────────────────────────
 emit_path() { printf '%s\n' "$1"; exit 0; }
 
-# Fail-open: place at the DEFAULT location and still exit 0.
+# ── FAIL-OPEN DESTINATION ──────────────────────────────────────────────────────────────────
+# A SAFETY FALLBACK MUST NOT MANUFACTURE THE CONDITION A GUARD BLOCKS ON.
+#
+# This branch used to place at the tool default, `<repo>/.claude/worktrees/<name>` — INSIDE the
+# repo, which is precisely an R2 nesting violation. While R2 only reported, that was a benign
+# degradation. The moment R2 blocks (OPS-WORKTREE-ROOT-R2-PROMOTE-W1), it becomes: the hook
+# quietly does the safe thing, and the session it just rescued then cannot push. The coupling
+# was invisible until promotion was contemplated, and it had already fired twice for real.
+#
+# So fail-open now lands INSIDE the declared root. It still fails OPEN — this changes only
+# WHERE it lands, never WHETHER it succeeds. A session that cannot create a worktree is a worse
+# outcome than one placed imperfectly.
+#
+# The `_failopen-` prefix is deliberate and greppable: it separates "the hook degraded" from
+# "someone bypassed the tool entirely", which are different problems with different fixes.
+#
+# RESOLUTION ORDER — and note the first is unavailable in the commonest fail-open case:
+#   1. worktree_root from the SoT, when the SoT is readable
+#   2. HOOK_FAILOPEN_ROOT_LITERAL — a CACHE of that same value. The canonical home stays the
+#      SoT; a unit test asserts the two are equal, so drift is caught at TEST time rather than
+#      at fail-open time, which is the one moment nobody is watching. (A fallback for "cannot
+#      read the SoT" cannot itself live in the SoT — that circularity is why this is a literal.)
+#   3. the tool default, logged loudly as FAILOPEN_UNPLACED, so an operator whose push is later
+#      refused can see why. Never silently produce the blocked condition.
+HOOK_FAILOPEN_ROOT_LITERAL="/Users/tank/code/.worktrees"
+
 fail_open() {
   local reason="$1" name="$2"
-  say "FAIL-OPEN: $reason — falling back to the default location"
-  local root def
+  local root def froot src
   root="$(git -C "$HOOK_CWD" rev-parse --show-toplevel 2>/dev/null)"
   if [ -z "$root" ]; then
     say "FAIL-OPEN-ABORT: no repository at '$HOOK_CWD' — no valid path exists to print"
     exit 1
   fi
-  def="$root/.claude/worktrees/$name"
+
+  froot=""; src=""
+  if [ -r "$SOT" ]; then
+    froot="$(jq -r '.worktree_roots.worktree_root // empty' "$SOT" 2>/dev/null)"
+    [ -n "$froot" ] && src="SoT"
+  fi
+  if [ -z "$froot" ] && [ -n "$HOOK_FAILOPEN_ROOT_LITERAL" ]; then
+    froot="$HOOK_FAILOPEN_ROOT_LITERAL"; src="literal-cache"
+  fi
+
+  case "$froot" in
+    /*)
+      def="$froot/$(basename "$root")/_failopen-$name"
+      say "FAIL-OPEN: $reason — placing INSIDE the declared root via $src"
+      ;;
+    *)
+      # Last resort only. This DOES produce an R2 nesting violation, so it is logged as such
+      # rather than left for the operator to discover as an unexplained push refusal.
+      def="$root/.claude/worktrees/$name"
+      say "FAILOPEN_UNPLACED: $reason — and no worktree_root could be resolved (SoT unreadable, literal empty)."
+      say "FAILOPEN_UNPLACED: placing at the tool default '$def', which IS an R2 nesting violation and WILL be refused by a blocking pre-push. Fix the SoT or the literal."
+      ;;
+  esac
+
   mkdir -p "$(dirname "$def")" 2>/dev/null
   if [ ! -e "$def" ]; then
     git -C "$root" worktree add "$def" -b "worktree-$name" >/dev/null 2>&1 \

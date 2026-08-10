@@ -39,9 +39,22 @@ const SELF = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG = path.join(SELF, "..", "ops", "shared-worktree-state.json");
 const TOKEN = "WORKTREE_ROOT_VERDICT";
 const PASS = "PASS", FAIL = "FAIL", INDET = "INDETERMINATE";
-// INDETERMINATE = 3: the token-law default for a NEW gate. check_test_baseline.sh uses 2 only
-// because it already deployed 2; that divergence is deliberate and must not be "aligned".
-const CODE = { [PASS]: 0, [FAIL]: 1, [INDET]: 3 };
+// ─── INDETERMINATE EXITS 0 HERE, AND THAT IS THE OPPOSITE CALL TO check_test_baseline.sh ────
+// DO NOT "ALIGN" THESE. The asymmetry is deliberate and is a blast-radius judgement, not drift:
+//
+//   * Failing to enumerate lets at most ONE misplaced worktree survive ONE push. Low cost, and
+//     the next push re-checks it.
+//   * BLOCKING on an instrument we have MEASURED to be unstable (566 worktrees in one read,
+//     31 in the next, same machine, same flags — OPS-WORKTREE-ROOT-R2-PROMOTE-W1) wedges every
+//     checkout sharing $GIT_COMMON_DIR. This estate has wedged its fleet twice in 27 hours and
+//     both times the cause was a guard refusing on something it could not evaluate.
+//
+// Once R2 is BLOCKING, "cannot evaluate" must therefore be permissive while "evaluated and
+// violated" refuses. The TOKEN still tells the whole truth — only the CODE is permissive — so
+// a caller that wants to be strict gates on the token, exactly as the token law requires.
+// check_test_baseline.sh is the reverse (its INDETERMINATE blocks) because a test suite that
+// did not run is a claim nobody made; here the claim is about a world we failed to read.
+const CODE = { [PASS]: 0, [FAIL]: 1, [INDET]: 0 };
 
 // ─── R2f: the parser is a PURE FUNCTION, exported and fixture-tested ───────────────────────
 // A hermetic self-test is structurally blind to exactly what its seam replaces. The seam here
@@ -135,8 +148,19 @@ export function evaluate({ primaries, worktrees, config, today, fixture = false 
     if (n === 0) positives.push(`primary has zero worktrees (a fact, not a gap): ${p}`);
   }
 
-  const verdict = problems.length ? INDET : PASS;  // mode=report: violations never FAIL
-  return { verdict, problems, positives, r1, r2, r3, exemptCount: exempt.size, staleExempt: stale.length };
+  // Mode is read PER ASSERTION from the SoT, never hardcoded — R1 and R2 promote on separate
+  // timelines and one shared switch would hold the stricter hostage. `block` is the only value
+  // that refuses; anything else (including a typo) reports, because a mode nobody declared must
+  // not silently start blocking a fleet.
+  const modeOf = (name) => (assertions[name] || {}).mode;
+  const blocking = [];
+  if (modeOf("R1_confinement") === "block" && r1.length) blocking.push(`R1_confinement (${r1.length})`);
+  if (modeOf("R2_nesting") === "block" && r2.length) blocking.push(`R2_nesting (${r2.length})`);
+
+  const verdict = blocking.length ? FAIL : (problems.length ? INDET : PASS);
+  return { verdict, problems, positives, r1, r2, r3, blocking,
+           modes: { R1_confinement: modeOf("R1_confinement"), R2_nesting: modeOf("R2_nesting") },
+           exemptCount: exempt.size, staleExempt: stale.length };
 }
 
 // ─── live collection ───────────────────────────────────────────────────────────────────────
@@ -153,17 +177,53 @@ function discoverPrimaries() {
   return [...new Set(out.split("\n").filter((l) => l.endsWith("/.git")).map((l) => l.slice(0, -5)))].sort();
 }
 
-function collectWorktrees(primaries) {
+// DEDUPED BY RESOLVED ABSOLUTE PATH. Two discovered "primaries" can share one $GIT_COMMON_DIR
+// (a linked worktree that carries a real `.git` DIRECTORY, a bind-mount, a second checkout of
+// the same common dir), and each then returns the WHOLE worktree list. Without a dedupe the
+// same worktree is counted once per entry point, so a violation class inflates by roughly the
+// number of sharing entry points while `primaries` stays put — a count that is a function of
+// how the world was reached rather than what is in it.
+//
+// HONEST SCOPE: this hardening is structural, not a proven diagnosis. Measured 2026-08-10 on
+// this machine, 27 primaries resolved to 27 DISTINCT common dirs and produced 0 duplicate rows,
+// so the sharing condition is NOT currently instantiated and this does not explain the observed
+// 566-vs-31 swing. It makes the count well-defined; `collectStable` below does the detecting.
+export function collectWorktrees(primaries) {
   const rows = [];
+  const seen = new Set();
   for (const p of primaries) {
     let out = "";
     try {
       out = execFileSync("git", ["-c", "safe.directory=*", "-C", p, "worktree", "list", "--porcelain"],
                          { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     } catch { continue; }
-    for (const w of parsePorcelain(out)) if (w.path !== p) rows.push({ ...w, primary: p });
+    for (const w of parsePorcelain(out)) {
+      if (w.path === p) continue;
+      const key = path.resolve(w.path);
+      if (seen.has(key)) continue;          // same worktree, different entry point
+      seen.add(key);
+      rows.push({ ...w, path: key, primary: p });
+    }
   }
   return rows;
+}
+
+// SELF-AGREEMENT, not a magic threshold. Enumerate the world TWICE inside one invocation and
+// require the two path sets to be identical. This detects exactly the observed failure — a
+// count that moves between reads of a world that did not move — and needs no N that would be
+// wrong at 3x and right at 17x. Cost is one extra `find` plus one `worktree list` per primary.
+//
+// A genuine concurrent create/remove also trips this. That is CORRECT: mid-flight is precisely
+// when we cannot answer, and saying so is the honest verdict.
+export function collectStable() {
+  const p1 = discoverPrimaries();
+  const w1 = collectWorktrees(p1);
+  const p2 = discoverPrimaries();
+  const w2 = collectWorktrees(p2);
+  const key = (xs) => xs.map((w) => w.path).sort().join("\n");
+  const primKey = (xs) => [...xs].sort().join("\n");
+  const stable = key(w1) === key(w2) && primKey(p1) === primKey(p2);
+  return { primaries: p1, worktrees: w1, stable, delta: { a: w1.length, b: w2.length, pa: p1.length, pb: p2.length } };
 }
 
 function emit(verdict, lines, warnMode) {
@@ -223,7 +283,42 @@ function selfTest() {
   // ---- must-map: token -> exit code
   check("must-map: PASS->0", CODE[PASS] === 0);
   check("must-map: FAIL->1", CODE[FAIL] === 1);
-  check("must-map: INDETERMINATE->3", CODE[INDET] === 3);
+  // DELIBERATE, and this assertion exists to stop a future wave "aligning" it back to 3.
+  // Once R2 blocks, "could not evaluate" must be permissive while "evaluated and violated"
+  // refuses — see the CODE table for the blast-radius reasoning. The TOKEN is unchanged, so
+  // any caller wanting strictness gates on the token, per the token law.
+  check("must-map: INDETERMINATE->0 (permissive BY DESIGN, opposite of check_test_baseline.sh)",
+        CODE[INDET] === 0);
+  check("must-map: the permissive code applies to the CODE table only, never to the token",
+        INDET === "INDETERMINATE" && CODE[FAIL] !== 0);
+
+  // ---- must-fire: a blocking assertion with a violation FAILS
+  const blk = ev({ primaries: ["/r/repo"], worktrees: [WT("/r/repo/.claude/worktrees/x")],
+    config: CFG({ assertions: { R1_confinement: { mode: "report" }, R2_nesting: { mode: "block" } } }) });
+  check("must-fire: R2 mode=block with a nested worktree -> FAIL", blk.verdict === FAIL);
+  check("must-fire: ...and names which assertion blocked", blk.blocking.some((b) => b.startsWith("R2_nesting")));
+  check("must-fire: ...and FAIL maps to a blocking exit code", CODE[blk.verdict] === 1);
+
+  // ---- must-not-fire: block mode with ZERO violations still passes
+  const blkClean = ev({ primaries: ["/r/repo"], worktrees: [WT("/r/.worktrees/repo/task")],
+    config: CFG({ assertions: { R1_confinement: { mode: "report" }, R2_nesting: { mode: "block" } } }) });
+  check("must-not-fire: R2 mode=block with no nesting -> PASS", blkClean.verdict === PASS);
+  check("must-not-fire: ...and nothing is listed as blocking", blkClean.blocking.length === 0);
+
+  // ---- must-not-fire: an UNDECLARED or misspelled mode reports, never blocks. A mode nobody
+  // declared must not silently start refusing a fleet.
+  const typo = ev({ primaries: ["/r/repo"], worktrees: [WT("/r/repo/.claude/worktrees/x")],
+    config: CFG({ assertions: { R1_confinement: { mode: "report" }, R2_nesting: { mode: "blocked" } } }) });
+  check("must-not-fire: a misspelled mode ('blocked') reports rather than blocks", typo.verdict === PASS);
+  const missing = ev({ primaries: ["/r/repo"], worktrees: [WT("/r/repo/.claude/worktrees/x")],
+    config: CFG({ assertions: { R1_confinement: { mode: "report" } } }) });
+  check("must-not-fire: an assertion with no declared mode reports rather than blocks", missing.verdict === PASS);
+
+  // ---- must-fire: R1 blocks independently of R2 (separate timelines, separate switches)
+  const r1blk = ev({ primaries: ["/r/repo"], worktrees: [WT("/elsewhere/w")],
+    config: CFG({ assertions: { R1_confinement: { mode: "block" }, R2_nesting: { mode: "report" } } }) });
+  check("must-fire: R1 mode=block is independent of R2's mode", r1blk.verdict === FAIL &&
+        r1blk.blocking.some((b) => b.startsWith("R1_confinement")));
 
   // ---- R2f: the BYPASSED artefact. The seam the fixtures replace is the porcelain parser.
   const fixture = [
@@ -279,12 +374,24 @@ if (mode === "--self-test") {
     emit(INDET, [`[worktree-root] cannot read/parse ${CONFIG}: ${e.message}`], warnMode);
   }
   const today = new Date().toISOString().slice(0, 10);
-  const primaries = discoverPrimaries();
-  const worktrees = collectWorktrees(primaries);
+  const { primaries, worktrees, stable, delta } = collectStable();
+
+  // Enumeration disagreed with itself between two reads of the same world. Refuse to JUDGE —
+  // never refuse the PUSH. See the CODE table for why this exits 0.
+  if (!stable) {
+    emit(INDET, [
+      `[worktree-root] ENUMERATION UNSTABLE — two reads disagreed: worktrees ${delta.a} vs ${delta.b}, primaries ${delta.pa} vs ${delta.pb}.`,
+      `[worktree-root] Refusing to judge rather than to push: a violation would survive one push, whereas blocking on an unstable instrument wedges every checkout sharing $GIT_COMMON_DIR.`,
+      `[worktree-root] Cause is under investigation as OPS-WORKTREE-ENUM-STABILITY-W{NEXT}; a concurrent worktree create/remove also trips this legitimately.`,
+    ], warnMode);
+  }
+
   const r = evaluate({ primaries, worktrees, config, today, fixture: false });
+  const modeLine = Object.entries(r.modes || {}).map(([k, v]) => `${k}=${v ?? "undeclared"}`).join(" ");
   const lines = [
-    `[worktree-root] primaries=${primaries.length} worktrees=${worktrees.length} exempt_rows=${r.exemptCount ?? 0}`,
+    `[worktree-root] primaries=${primaries.length} worktrees=${worktrees.length} exempt_rows=${r.exemptCount ?? 0} (enumeration self-agreed across two reads)`,
     `[worktree-root] root=${config.worktree_roots?.worktree_root}`,
+    `[worktree-root] modes: ${modeLine}`,
     `R1_violations=${r.r1.length}`,
     `R2_violations=${r.r2.length}`,
     `R3_shape_violations=${r.r3?.length ?? 0}`,
@@ -294,7 +401,13 @@ if (mode === "--self-test") {
   if (r.r1.length > 12) lines.push(`  R1 … ${r.r1.length - 12} more (not truncated silently: full count above)`);
   for (const v of r.r2) lines.push(`  R2 nested: ${v}`);
   for (const p of r.problems) lines.push(`  PROBLEM: ${p}`);
-  lines.push(`[worktree-root] mode=report — violations are counted, not blocked. Promotion carries a count AND a date, per assertion, in ${path.basename(CONFIG)}.`);
+  if (r.blocking?.length) {
+    lines.push(`[worktree-root] BLOCKING: ${r.blocking.join(", ")} — this assertion is mode=block in ${path.basename(CONFIG)}.`);
+    lines.push(`[worktree-root] Remediation: move the worktree under ${config.worktree_roots?.worktree_root}, or declare an exempt_paths row with a reason and an expiry.`);
+    lines.push(`[worktree-root] Override (report-only, loud): ALGOVAULT_WORKTREE_ROOT_GATE=warn git push …`);
+  } else {
+    lines.push(`[worktree-root] no assertion is both blocking and violated. Report-mode assertions are counted, not blocked; promotion carries a count AND a deadline, per assertion, in ${path.basename(CONFIG)}.`);
+  }
   emit(r.verdict, lines, warnMode);
 } else {
   emit(INDET, [`[worktree-root] unknown mode ${mode} (expected --check or --self-test)`], warnMode);
