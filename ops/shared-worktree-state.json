@@ -349,30 +349,6 @@
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
-        "path": "/Users/tank/algovault-bot-wt/signal-closedbar-shadow-w1",
-        "reason": "holds ~43 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
-        "expires": "never",
-        "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
-      },
-      {
-        "path": "/Users/tank/algovault-bot-worktrees/closedbar-flip-w1",
-        "reason": "holds ~36 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
-        "expires": "never",
-        "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
-      },
-      {
-        "path": "/Users/tank/algovault-bot-wt/growth-tg-acq-w1",
-        "reason": "holds ~36 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
-        "expires": "never",
-        "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
-      },
-      {
-        "path": "/Users/tank/algovault-bot-wt/tglever-merge",
-        "reason": "holds ~36 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
-        "expires": "never",
-        "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
-      },
-      {
         "path": "/Users/tank/code/avbot-wt-tgbot-bridge",
         "reason": "holds ~36 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
         "expires": "never",
