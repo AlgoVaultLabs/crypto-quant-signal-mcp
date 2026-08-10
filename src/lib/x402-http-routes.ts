@@ -41,7 +41,7 @@ import { clientIp } from './client-ip.js';
 // including paid x402/a2mcp, via the ONE canonical classifier — no second isbot impl.
 import { classifyTraffic } from './traffic-classifier.js';
 import { generate402Response, settleX402Async, paymentMatchesToolRoute } from './x402.js';
-import { tryClaimPayment, extractPaymentNonce, extractPayerWallet, RAIL_BASE_USDC } from './x402-idempotency-store.js';
+import { tryClaimPayment, extractPaymentNonce, extractPayerWallet, railForRequirement } from './x402-idempotency-store.js';
 import { BAZAAR_ROUTES, bazaarResourceUrl, bazaarRouteDescription } from './x402-bazaar.js';
 import { resolveFacilitatorFromEnv } from './x402-facilitator.js';
 import { getTradeSignal } from '../tools/get-trade-call.js';
@@ -455,7 +455,13 @@ export function mountX402HttpRoutes(app: Express): string[] {
       const payerWallet = extractPayerWallet(pendingSettlement.paymentPayload);
       // OPS-ZERO-VS-UNKNOWN-W3: THREE outcomes. A truthy/falsy test here would silently
       // reintroduce the exact conflation this wave removes, so the outcome is matched by name.
-      const outcome = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet, RAIL_BASE_USDC);
+      // OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1: the rail is DERIVED from the matched requirement
+      // (network + EIP-712 domain), never a hardcoded literal. This site passed RAIL_BASE_USDC
+      // unconditionally, so the first Circle Gateway payment — OP Mainnet, 2026-08-10 13:03Z —
+      // was recorded as Base. Unrecognised pair ⇒ RAIL_UNKNOWN; the claim decision is unaffected
+      // either way, exactly like `payerWallet` above.
+      const rail = railForRequirement(pendingSettlement.requirements);
+      const outcome = await tryClaimPayment(nonce ?? '', tool, paidAmount, payerWallet, rail);
       if (outcome === 'INDETERMINATE') {
         // We could not determine claim state, so we refuse — never double-settle. But we say SO,
         // because the client's retry decision depends on it: "already used" is terminal and a

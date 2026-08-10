@@ -24,7 +24,7 @@ import { declareBazaarRoute } from './x402-bazaar.js';
 import { FEATURE_REGISTRY, getFeature } from './feature-registry.js';
 // Diagnostics only (verify-failure logging). ONE payer extractor across the codebase — the HTTP
 // route already uses this for wallet attribution; a second copy here would be free to drift.
-import { extractPayerWallet } from './x402-idempotency-store.js';
+import { extractPayerWallet, railForRequirement } from './x402-idempotency-store.js';
 import {
   GATEWAY_EIP712_DOMAIN_NAME,
   gatewayRequirementsCarryDomain,
@@ -525,7 +525,7 @@ export async function verifyX402Payment(
       const payer = verifyResult.payer ?? extractPayerWallet(paymentPayload) ?? 'unknown';
       console.warn(
         `x402 verify failed [${dialect}]: ${verifyResult.invalidReason} — ${verifyResult.invalidMessage} ` +
-        `(tool=${toolName ?? '(flattened pool)'} payer=${payer} rail=${railName(matched)} ` +
+        `(tool=${toolName ?? '(flattened pool)'} payer=${payer} rail=${railForRequirement(matched)} ` +
         `network=${m.network} payTo=${m.payTo} amount=${m.amount})`,
       );
       return { valid: false, dialect, rejectReason: 'facilitator_invalid' };
@@ -785,15 +785,13 @@ function reqFields(req: unknown): {
   };
 }
 
-/**
- * Which rail a matched requirement belongs to — DIAGNOSTICS ONLY, never a gate.
- * `extra.name` is the canonical discriminator: both rails are scheme `exact`, and only the
- * EIP-712 domain name distinguishes them (Gateway `GatewayWalletBatched` vs CDP `USD Coin`).
- */
-function railName(req: unknown): string {
-  const r = (req ?? {}) as { extra?: { name?: unknown } };
-  return typeof r.extra?.name === 'string' ? r.extra.name : 'unknown';
-}
+// OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1 retired the local `railName()` that used to live here.
+// It read `extra.name` alone and returned the raw EIP-712 domain ('USD Coin' /
+// 'GatewayWalletBatched') for the verify-failure log. That was a SECOND rail derivation, in a
+// different vocabulary from the one persisted to `processed_x402_payments.rail` — so the log and
+// the DB named the same rail two ways, and neither could be grepped against the other. The
+// verify-failure log now prints the canonical rail id from `railForRequirement`, and it already
+// carries `network=` beside it, so nothing diagnostic is lost. One derivation, one vocabulary.
 
 /**
  * Does the buyer's matched requirement bind to THIS server's identity (asset+network+payTo) on

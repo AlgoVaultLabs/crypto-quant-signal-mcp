@@ -51,11 +51,14 @@ vi.mock('../src/lib/x402.js', () => ({
   classifyToolRouteMismatch: () => mockState.classify,
 }));
 
-vi.mock('../src/lib/x402-idempotency-store.js', () => ({
-  // REVENUE-METER-TRUTH-W4 Step 0B: a `vi.mock` FACTORY must enumerate EVERY export the module
-  // under test imports — adding one to the real module breaks every such mock with
-  // "No X export is defined on the mock". Keep this in step with the store's exports.
-  RAIL_BASE_USDC: 'base-usdc',
+// OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1: spread the ORIGINAL rather than enumerating exports.
+// The prior factory listed them by hand with a note to "keep this in step with the store's
+// exports" — an instruction no gate enforces, so adding `railForRequirement` landed it as
+// `undefined` and every test here died inside `bindAndClaimX402`. Fix the FIXTURE, not the code
+// (napkin, 2026-08-04): the store's PURE helpers should be the REAL ones anyway — only
+// `tryClaimPayment` needs stubbing, because only it touches the DB.
+vi.mock('../src/lib/x402-idempotency-store.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/x402-idempotency-store.js')>()),
   extractPaymentNonce: (payload: unknown) =>
     (payload as { payload?: { authorization?: { nonce?: string } } })?.payload?.authorization?.nonce,
   // OPS-X402-WALLET-ATTRIBUTION-W1: license.ts now also extracts the payer wallet (additive).

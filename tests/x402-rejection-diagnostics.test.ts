@@ -168,7 +168,14 @@ describe('facilitator verify rejection — the log must name the decision inputs
       // POSITIVE assertions — the values an operator needs to tell a wrong-key payer from an outage.
       expect(line).toContain('self_transfer');
       expect(line).toContain(BUYER);                 // payer
-      expect(line).toContain('GatewayWalletBatched'); // which rail
+      // WHICH RAIL — deliberately the canonical rail id, not the raw EIP-712 domain.
+      // OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1 retired the local `railName()` that printed
+      // `GatewayWalletBatched` here. It was a SECOND rail derivation in a different vocabulary
+      // from the one persisted to `processed_x402_payments.rail`, so a log line and a DB row
+      // named the same rail two ways and could not be grepped against each other. This asserts
+      // the shared id; the domain is still recoverable from `network=` on the same line. Do NOT
+      // "restore" the domain-name assertion — that would re-fork the vocabulary.
+      expect(line).toContain('rail=op-gateway-usdc');
       expect(line).toContain(GW_NET);                 // network
       expect(line).toContain(GW_SELLER);              // payTo — the other half of "self_transfer"
       expect(line).toContain('get_trade_signal');     // tool

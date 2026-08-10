@@ -35,11 +35,11 @@ vi.mock('../src/lib/x402.js', () => ({
   classifyToolRouteMismatch: () => 'insufficient',
 }));
 
-vi.mock('../src/lib/x402-idempotency-store.js', () => ({
-  // REVENUE-METER-TRUTH-W4 Step 0B: a `vi.mock` FACTORY must enumerate EVERY export the module
-  // under test imports — adding one to the real module breaks every such mock with
-  // "No X export is defined on the mock". Keep this in step with the store's exports.
-  RAIL_BASE_USDC: 'base-usdc',
+// OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1: spread the ORIGINAL rather than enumerating exports —
+// see the identical note in x402-mcp-binding.test.ts. Hand-enumeration made every added export a
+// breaking change to unrelated suites; only `tryClaimPayment` (the DB writer) needs a stub.
+vi.mock('../src/lib/x402-idempotency-store.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/x402-idempotency-store.js')>()),
   extractPaymentNonce: (payload: unknown) => {
     const n = (payload as { payload?: { authorization?: { nonce?: string } } })?.payload?.authorization?.nonce;
     mockState.nonceSeen = n;

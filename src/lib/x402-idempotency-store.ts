@@ -60,15 +60,75 @@ import type { SettlementClass } from '../scripts/backfill-x402-payer-wallet.js';
 const CLAIM_INITIAL_SETTLEMENT_STATE: SettlementClass = 'CLAIMED_UNSETTLED';
 
 /** Rail written when a caller does not declare one — never guessed on their behalf. */
-const RAIL_UNKNOWN = 'unknown';
+export const RAIL_UNKNOWN = 'unknown';
 
 /**
- * The Base/USDC rail. Both writers of this table settle on Base, so this is structural today.
+ * The Base/USDC rail (CDP facilitator, `eip155:8453`).
+ *
  * `rail` describes ROWS THAT EXIST, never all x402 revenue: OKX `/a2mcp/*` (X-Layer/USDT0) does not
- * write here at all, so a SUM over this table is a Base-only figure and must be labelled as one.
+ * write here at all, so a SUM over this table excludes it and must be labelled accordingly.
  * Making OKX record here is `OPS-A2MCP-SETTLEMENT-RECORDING-W{NEXT}` — filed, not fixed.
+ *
+ * _(Corrected 2026-08-10 OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1. This said "Both writers of this
+ * table settle on Base, so this is structural today", and BOTH call sites passed this constant as
+ * a hardcoded literal on that basis. Circle Gateway went live on `eip155:10` on 2026-07-25, which
+ * falsified it — but nothing caught it, because no Gateway payment was made until 2026-08-10
+ * 13:03Z. That first one settled on OP Mainnet and was recorded `base-usdc`. The rail is now
+ * DERIVED per payment; a structural assumption in prose is exactly what went stale.)_
  */
 export const RAIL_BASE_USDC = 'base-usdc';
+
+/** The Circle Gateway rail (`eip155:10`, GatewayWalletBatched EIP-712 domain). */
+export const RAIL_OP_GATEWAY_USDC = 'op-gateway-usdc';
+
+/**
+ * THE rail derivation — `(network, EIP-712 domain name) → rail id`, allowlisted.
+ *
+ * WHY NOT NETWORK ALONE, which is the intuitive read and what this wave was dispatched to do.
+ * Both rails are scheme `exact`; `x402.ts:356` says it outright — *"Gateway IS `exact`;
+ * `GatewayWalletBatched` is extra.name, not a scheme"* — and `x402.ts` already carries a
+ * `gatewayRegistrationIsCollisionFree(...)` guard whose entire purpose is the case where Gateway
+ * is configured on the SAME network as CDP. Network happens to discriminate TODAY (8453 vs 10);
+ * that is a fact about current configuration, not about the protocol. Keying on it alone would
+ * silently mislabel the day someone points Gateway at Base — the same shape of stale structural
+ * assumption this function exists to retire. So the pair is the key, and neither half alone.
+ *
+ * NEVER GUESSES. An unrecognised pair returns RAIL_UNKNOWN rather than a plausible default: a
+ * visible `unknown` is honest and greppable, while `base-usdc` on an OP payment is a lie that
+ * reconciles cleanly and corrupts every rail-keyed revenue figure downstream.
+ *
+ * ORDER-INDEPENDENT BY CONSTRUCTION. `requirements` may arrive as an array (the SDK's
+ * `findMatchingRequirements` return), and `license.ts` used to read `[0]`. Picking an index rents
+ * a load-bearing property from upstream iteration order (CLAUDE.md). Instead: map EVERY entry,
+ * and answer only if they agree. Zero recognised → unknown; more than one distinct rail →
+ * ambiguous → unknown. Reversing the array cannot change the result.
+ */
+export function railForRequirement(requirements: unknown): string {
+  const list = Array.isArray(requirements) ? requirements : [requirements];
+  const rails = new Set<string>();
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const r = entry as { network?: unknown; extra?: { name?: unknown } };
+    const network = typeof r.network === 'string' ? r.network : undefined;
+    const domain = typeof r.extra?.name === 'string' ? r.extra.name : undefined;
+    if (!network || !domain) continue;
+    const rail = RAIL_BY_NETWORK_AND_DOMAIN[`${network}|${domain}`];
+    if (rail) rails.add(rail);
+  }
+  return rails.size === 1 ? [...rails][0]! : RAIL_UNKNOWN;
+}
+
+/**
+ * The allowlist. Adding a rail is ONE row here — never a new branch at a call site, which is how
+ * two call sites came to disagree with reality in the first place.
+ *
+ * `USD Coin` is USDC's on-chain `name()` and is NOT unique to Base (see the per-network EIP-712
+ * domain note in x402.ts:61), which is the second reason the network must be half of the key.
+ */
+const RAIL_BY_NETWORK_AND_DOMAIN: Readonly<Record<string, string>> = Object.freeze({
+  'eip155:8453|USD Coin': RAIL_BASE_USDC,
+  'eip155:10|GatewayWalletBatched': RAIL_OP_GATEWAY_USDC,
+});
 
 const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   CREATE TABLE IF NOT EXISTS processed_x402_payments (
