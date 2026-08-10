@@ -192,11 +192,12 @@
           "installed_wave": "OPS-CLOSEDBAR-LIVENESS-BAND-W1"
         },
         {
-          "host": "aoe-1",
-          "path": "/opt/algovault-monitoring/send_telegram.sh",
-          "install_state": "pending",
-          "pending_reason": "OPS-CLOSEDBAR-LIVENESS-BAND-W1 R4 fixed resolve_template() but could NOT reach aoe-1 from the operator machine: its address is recorded NOWHERE in the repo SoT (the inventory carries only the label), it is absent from ~/.ssh/known_hosts and ssh config, signal-1 has no path to it, and the local hcloud token is scoped to a different project (sees only mcpverify-1). Guessing an IP to SSH into is not an acceptable substitute. So aoe-1 is STILL RUNNING THE BROKEN RESOLVER and will keep emitting 'W1' Action lines. Declared here rather than left silent — this is exactly the two-consumers-one-call-site divergence OPS-AOE-MONITORING-PARITY-W1 was created to prevent. Unblock: OPS-AOE-HOST-ADDRESS-REGISTRY-W{NEXT} — record the address in the inventory, then re-run this install."
-        }
+         "host": "aoe-1",
+         "path": "/opt/algovault-monitoring/send_telegram.sh",
+         "install_state": "installed",
+         "installed_wave": "OPS-AOE-SEND-TELEGRAM-REPARITY-W1",
+         "notes": "Was `pending` for 12 days (2026-07-29 -> 2026-08-10) on a recorded reason that was FALSE: \"its address is recorded NOWHERE in the repo SoT\". It was committed in FOUR files, two of them machine-readable - scripts/data/boot-critical-units.json is a label->{address} map for exactly these two hosts with a live consumer (scripts/check-boot-readiness.mjs). One git grep would have refuted the claim; the wave deferred on it instead, and aoe-1 ran a known-broken resolve_template() for the duration. The host copy was an EXACT committed ancestor (deff19d, 2026-07-28), never a fork, so the install lost nothing. Installed via ops/scripts/install-monitoring-artifact.sh, which reads THIS registry to enumerate every consumer, so a two-consumers-one-call-site divergence cannot recur by omission."
+       }
       ],
       "criticality": "load-bearing",
       "schedule": null,
@@ -1018,6 +1019,21 @@
       "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
       "notes": "SHA-pinned deploy primitive. Runs on the OPERATOR's machine, not on a host — hence installed_at is empty and host/host_path are n-a rather than invented; it is listed so the registry records the tool that governs deploys, and REGISTRY_PARITY has nothing to assert for it. Refuses any ref that is not an ancestor of origin/main, materializes git archive <sha>, swaps per manifest entry (never whole-directory — /opt/algovault-bot holds a 171M .venv the units execute), sets ownership at the destination including the .bak copy, and stamps DEPLOYED_SHA + DEPLOYED_MANIFEST.sha256. Generic: 7 substantive /opt services share the class it closes; rollout is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT}."
     },
+   {
+     "id": "install-monitoring-artifact",
+     "artifact": "ops/scripts/install-monitoring-artifact.sh",
+     "kind": "executable",
+     "host": "n-a",
+     "host_path": "n-a",
+     "criticality": "load-bearing",
+     "schedule": null,
+     "invoked_by": "operator (manual, from a developer checkout)",
+     "install_state": "installed",
+     "sha256": "e2077c148bfa5ac830193e9e5db19481a701dd0ddde61693ba3b8c9bfcf36e48",
+     "owner_wave": "OPS-AOE-SEND-TELEGRAM-REPARITY-W1",
+     "repo_resident": true,
+     "notes": "Installs a monitoring artifact to EVERY host its installed_at registry names, resolving each label through scripts/data/boot-critical-units.json (the existing label->{address} SoT - deliberately NOT a new registry, because a duplicated fact goes stale). Runs on the OPERATOR's machine, so host/host_path are n-a rather than invented, same shape as host-deploy-primitive. NO CRON MAY EVER CALL IT: it moves executable code, and an unattended privileged install is what CLAUDE.md forbids - this is the human-invoked, reviewed path. Dry run by default; --apply required. Refuses unless the repo file already matches the row's canonical sha256, so it cannot plant the drift HASH_DRIFT exists to catch. Exists because installed_at was DECLARATIVE ONLY: REGISTRY_PARITY could report a missed consumer but nothing ever read the registry to install, so 'update the primitive everywhere' stayed an act of memory and send_telegram.sh diverged twice."
+   },
     {
       "id": "checkout-parity",
       "artifact": "ops/cron/checkout-parity.sh",
