@@ -66,6 +66,19 @@ BACKUP_REASON=${DECLARATION_SYNC_BACKUP_REASON:-MONITORING-INVENTORY-HOST-SYNC-W
 # <filename>|<required top-level key>|<min entry count, 0 = presence only>
 # The count floor is a REFUSAL threshold, not a target: it exists so a truncated or half-written
 # body can never replace a working file. Keep it well below the live value.
+#
+# ── THIS SET IS NO LONGER MAINTAINED BY MEMORY (OPS-DECLARATION-SYNC-YAML-W1, 2026-08-10) ─────
+# It is still hand-written HERE on purpose — a separate config file would itself be a declaration
+# needing a sync, the recursion this script exists to end (see the note above). What changed is
+# that its COMPLETENESS is now DERIVED and ASSERTED against `ops/monitoring/monitoring-inventory.json`
+# by tests/unit/declaration-sync.test.ts: every inventory row that is a host-consumed,
+# non-executable, in-repo declaration MUST appear below, or the build fails. Adding a host config
+# without wiring it here is therefore no longer possible to do silently.
+#
+# That assertion found FIVE rows already missing — and only three of them were the YAML this wave
+# was named for. `venue-slo-tiers.json` and `OPS-SEED-ORCHESTRATOR-W1-baseline.json` are JSON and
+# had simply never been added, which is exactly why the fix is a derived-coverage assertion rather
+# than "add YAML support": a hand-maintained set drifts in whatever format nobody is thinking about.
 DECLARATIONS=(
   "monitoring-inventory.json|artifacts|40"
   "doc-host-path-claims.json|claims|1"
@@ -75,21 +88,57 @@ DECLARATIONS=(
   # the committed declaration must not itself be configured by a copy nobody keeps current.
   # `enforcement` is a string, so presence-only (0) — there is nothing to count.
   "sot-parity-config.json|enforcement|0"
+  # ── added by OPS-DECLARATION-SYNC-YAML-W1 ──
+  # The file whose 5-day rot motivated this: retired in the repo 2026-08-05, still live on the
+  # host 2026-08-10, because no sync path reached a .yaml. Live `rows` is 30; floor well below.
+  "website-drift-manifest.yaml|rows|20"
+  "postgres-cpu-autopilot-registry.yaml|classes|3"
+  "recommendation-drift-manifest.yaml|rows|2"
+  # JSON, and never synced — the two the "add YAML" framing would have walked straight past.
+  "venue-slo-tiers.json|majors|3"
+  # `baseline-data`: HASH_DRIFT on it is SEVERE because the baseline IS what "normal" means. Note
+  # the direction this establishes — a host-side regeneration that is not committed gets REVERTED
+  # within the hour. That is intended (committed is canonical, and network-posture.json already
+  # sets the precedent), but it means a legitimate incident-time re-baseline must be committed.
+  "OPS-SEED-ORCHESTRATOR-W1-baseline.json|by_venue_total_24h|3"
 )
 
 verdict() { echo "DECLARATION_SYNC_VERDICT=$1"; exit "$2"; }
 
 # Validate a candidate body. Refuses on anything it cannot positively confirm.
 # <path> <required-key> <min-count> -> 0 ok / 1 reject (reason on stdout)
+#
+# Format is chosen by EXTENSION, and the contract is identical for both: a mapping at the top
+# level, the required key present, and (when the floor is non-zero) a countable value at or above
+# it. YAML is a superset of JSON, so `yaml.safe_load` would parse both — but dispatching on the
+# extension keeps a malformed .json from being silently rescued by YAML's laxer grammar, which
+# would defeat the truncation guard this function exists to be.
 validate_body() {
   python3 - "$1" "$2" "$3" <<'PY'
-import json, sys
+import json, os, sys
 path, key, min_count = sys.argv[1], sys.argv[2], int(sys.argv[3])
+ext = os.path.splitext(path)[1].lower()
 try:
-    with open(path, encoding="utf-8") as fh:
-        doc = json.load(fh)
-except Exception as exc:                       # noqa: BLE001 - any parse failure is a refusal
-    print(f"does not parse as JSON: {exc}"); sys.exit(1)
+    raw = open(path, encoding="utf-8").read()
+except Exception as exc:                       # noqa: BLE001 - any read failure is a refusal
+    print(f"unreadable: {exc}"); sys.exit(1)
+if ext in (".yaml", ".yml"):
+    try:
+        import yaml
+    except ImportError:
+        # NOT a malformed body — we could not VERIFY it. Say so explicitly, because the loop turns
+        # this into FAILED (keep the working file + alert), and an operator reading "does not
+        # parse" would go looking for a corrupt file that is perfectly fine.
+        print("PyYAML unavailable — cannot verify a YAML declaration"); sys.exit(1)
+    try:
+        doc = yaml.safe_load(raw)
+    except Exception as exc:                    # noqa: BLE001
+        print(f"does not parse as YAML: {exc}"); sys.exit(1)
+else:
+    try:
+        doc = json.loads(raw)
+    except Exception as exc:                    # noqa: BLE001
+        print(f"does not parse as JSON: {exc}"); sys.exit(1)
 if not isinstance(doc, dict):
     print("top level is not an object"); sys.exit(1)
 if key not in doc:
@@ -102,6 +151,18 @@ if min_count > 0:
         print(f"{key!r} has {len(val)} entries, below the refusal floor of {min_count}"); sys.exit(1)
 sys.exit(0)
 PY
+}
+
+# True when any declared file needs a YAML parser. Drives the fail-closed preflight below: a
+# missing PyYAML must be INDETERMINATE ("verified nothing") rather than a per-file FAILED, or a
+# host without the module reports N specific refusals for one missing dependency.
+declares_yaml() {
+  local d name
+  for d in "${DECLARATIONS[@]}"; do
+    IFS='|' read -r name _ _ <<< "$d"
+    case "$name" in *.yaml|*.yml) return 0 ;; esac
+  done
+  return 1
 }
 
 # A body that shrank by more than half is a truncation signature, not an edit.
@@ -150,6 +211,30 @@ self_test() {
   validate_body "$tmp/empty.json"     artifacts 40 >/dev/null 2>&1; ck 'empty body is REFUSED'            "$?" 1
   validate_body "$tmp/thin.json"      artifacts  0 >/dev/null 2>&1; ck 'presence-only skips the count'    "$?" 0
 
+  # ── YAML, both directions (OPS-DECLARATION-SYNC-YAML-W1) ──
+  # The seam this wave added is the format branch, so it is the one thing a hermetic self-test
+  # would otherwise never execute. Fixtures mirror the JSON cases exactly.
+  printf 'rows:\n%s' "$(printf '  - {id: r}\n%.0s' $(seq 1 25))" > "$tmp/good.yaml"
+  printf 'rows:\n  - {id: r}\n'                                   > "$tmp/thin.yaml"
+  printf 'classes:\n  - a\n'                                      > "$tmp/otherkey.yaml"
+  printf 'rows:\n  - {id: r\n   bad indent: [\n'                   > "$tmp/broken.yaml"
+  printf -- '- a\n- b\n'                                           > "$tmp/seq.yaml"
+  : > "$tmp/empty.yaml"
+
+  validate_body "$tmp/good.yaml"     rows 20 >/dev/null 2>&1; ck 'a full YAML body validates'          "$?" 0
+  validate_body "$tmp/thin.yaml"     rows 20 >/dev/null 2>&1; ck 'below-floor YAML is REFUSED'         "$?" 1
+  validate_body "$tmp/otherkey.yaml" rows 20 >/dev/null 2>&1; ck 'missing key in YAML is REFUSED'      "$?" 1
+  validate_body "$tmp/broken.yaml"   rows 20 >/dev/null 2>&1; ck 'unparseable YAML is REFUSED'         "$?" 1
+  validate_body "$tmp/seq.yaml"      rows 20 >/dev/null 2>&1; ck 'YAML sequence at top is REFUSED'     "$?" 1
+  validate_body "$tmp/empty.yaml"    rows 20 >/dev/null 2>&1; ck 'empty YAML is REFUSED'               "$?" 1
+  validate_body "$tmp/good.yaml"     rows  0 >/dev/null 2>&1; ck 'YAML presence-only skips the count'  "$?" 0
+  # A .json body must NOT be rescued by YAML's laxer grammar — that is why we branch on extension
+  # rather than parsing everything with yaml.safe_load.
+  validate_body "$tmp/truncated.json" artifacts 0 >/dev/null 2>&1; ck 'truncated .json is not YAML-rescued' "$?" 1
+  # The set genuinely contains YAML, so the preflight predicate must say so — a hermetic suite that
+  # never evaluates it would let the runtime guard rot unnoticed.
+  declares_yaml; ck 'declares_yaml() sees the YAML rows' "$?" 0
+
   size_sane 100 100 >/dev/null 2>&1; ck 'same size is sane'                "$?" 0
   size_sane  60 100 >/dev/null 2>&1; ck 'a 40% shrink is sane'             "$?" 0
   size_sane  40 100 >/dev/null 2>&1; ck 'a >50% collapse is REFUSED'       "$?" 1
@@ -184,6 +269,12 @@ self_test() {
 # ── sync ────────────────────────────────────────────────────────────────────
 command -v curl   >/dev/null 2>&1 || verdict INDETERMINATE 3
 command -v python3 >/dev/null 2>&1 || verdict INDETERMINATE 3
+# Fail-closed on the YAML parser, and INDETERMINATE rather than FAILED: without it we cannot
+# verify those bodies at all, which is "verified nothing", not "found something wrong".
+if declares_yaml && ! python3 -c 'import yaml' >/dev/null 2>&1; then
+  echo "  ✗ PyYAML is unavailable but the declared set contains YAML — cannot verify those bodies"
+  verdict INDETERMINATE 3
+fi
 [ -d "$DEST_DIR" ] || { echo "  ✗ dest dir $DEST_DIR does not exist"; verdict INDETERMINATE 3; }
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/declsync.XXXXXX") || verdict INDETERMINATE 3
