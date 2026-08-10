@@ -47,6 +47,37 @@ function landingBullets(): string[] {
   )];
 }
 
+// ── Badges (PRICING-BADGES-LIMITED-TIME-W1) ──
+//
+// Badges were OUTSIDE this gate's scan set until now, and that was a hole rather than a
+// decision: a pill asserts something about the product in exactly the way a bullet does. It is
+// how "MOST POPULAR" sat on the Pro card while Pro was the LEAST-subscribed paid plan — an
+// unevidenced claim on the highest-intent surface the product has, passing every gate.
+//
+// Same two-surface rule as the bullets, for the same reason (a single-surface assumption once
+// missed 28 of 29 occurrences), and each extractor gets its own vacuity guard: an extractor that
+// silently stops matching would turn "no unvouched badge" into a green that proves nothing.
+
+/** Rendered badge text from the function-rendered checkout cards. */
+function cardBadges(): string[] {
+  return [...renderPlanCards().matchAll(/<div class="pop-badge">([^<]{2,40})<\/div>/g)]
+    .map((m) => m[1].trim());
+}
+
+/**
+ * Rendered badge text from the baked landing artboards.
+ *
+ * Keyed on the pill's own absolutely-positioned signature rather than on its text, so a NEW
+ * badge string lands as an orphan instead of going unseen — which is the whole point.
+ */
+function landingBadges(): string[] {
+  const html = readFileSync(join(ROOT, 'landing/index.html'), 'utf8');
+  return [...new Set(
+    [...html.matchAll(/<div style="position:absolute;top:-11px;left:18px;[^"]*border-radius:999px;[^"]*">([^<]{2,40})<\/div>/g)]
+      .map((m) => m[1].trim()),
+  )];
+}
+
 describe('every declared tier claim has RESOLVABLE evidence', () => {
   it('the registry is non-empty (vacuity guard)', () => {
     // An empty registry would make every "is this bullet covered" assertion below trivially
@@ -98,6 +129,30 @@ describe('every RENDERED tier bullet is covered by a claim — both surfaces (A9
   it('landing/index.html: no tier bullet asserts something unvouched-for', () => {
     const orphans = landingBullets().filter((b) => claimFor(b) === null);
     expect(orphans, 'unvouched-for claim on the landing pricing cards').toEqual([]);
+  });
+
+  it('the badge extractors yield badges at all (vacuity guard, both surfaces)', () => {
+    // Without this, a markup change that stopped either regex matching would report a green
+    // "no unvouched badge" over an empty set — the exact shape of a dark guard.
+    expect(cardBadges().length, 'checkout cards yielded no badges').toBeGreaterThanOrEqual(2);
+    expect(landingBadges().length, 'landing artboards yielded no badges').toBeGreaterThanOrEqual(2);
+  });
+
+  it('no rendered BADGE asserts something unvouched-for — both surfaces', () => {
+    const orphans = [...new Set([...cardBadges(), ...landingBadges()])]
+      .filter((b) => claimFor(b) === null);
+    expect(
+      orphans,
+      'a pricing-card badge is vouched for by no TIER_CLAIMS row. A badge is public copy '
+      + 'asserting a fact about the product — "MOST POPULAR" rode the Pro card while Pro was '
+      + 'the least-subscribed paid plan. Add a row naming what makes it true, or drop the badge.',
+    ).toEqual([]);
+  });
+
+  it('the two surfaces render the SAME badge set — no per-surface drift', () => {
+    // This wave exists because they did not: "MOST POPULAR" on the checkout cards vs "POPULAR"
+    // on the landing artboards, one badge, two words, for months.
+    expect([...cardBadges()].sort()).toEqual([...landingBadges()].sort());
   });
 
   it('REGRESSION LOCK: the three removed claims would each be rejected', () => {

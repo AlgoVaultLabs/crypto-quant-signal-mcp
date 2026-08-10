@@ -20,6 +20,8 @@ import {
   planPrepayMonthlyEquivalent,
   planPrepaySavingsPct,
   planHasSixMonth,
+  planBadge,
+  planIsEmphasised,
   type PaidPlanId,
 } from './plans.js';
 
@@ -105,8 +107,20 @@ export function renderSignupFlowTailwind(): string {
 //   1. The prepay TOTAL is always shown next to the effective monthly rate. Leading with
 //      "$6.65/mo" for something that bills $39.90 once every six months is the misleading framing.
 //   2. The monthly option stays visible and one click away — never buried, never a dark pattern.
-//   3. No countdown, no "limited time", no fake scarcity. These are STANDING prices (R-C) and the
-//      saving is a computed fact.
+//   3. No countdown and no FAKE scarcity. The saving is a computed fact.
+//
+//      ⚠️ AMENDED 2026-08-10 by PRICING-BADGES-LIMITED-TIME-W1, and the amendment is narrow.
+//      This rule used to read "no 'limited time'" and called both prepay prices STANDING (R-C).
+//      Pro's $129/6mo is no longer standing: the architect ruled it a limited-time price (Mr.1,
+//      2026-08-10), superseding A-3 of PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1. Starter's
+//      $39.90 IS still standing and carries no urgency framing at all.
+//
+//      What the rule protected survives intact, because the ban was never on the WORDS — it was
+//      on claiming an urgency the price does not have. So: the `LIMITED TIME` badge is real (a
+//      ruled price change is coming), it names no end date because none has been set, and there
+//      is still no countdown, no "ends soon", no "hurry" and no invented deadline anywhere. The
+//      gate in tests/unit/plan-cards.test.ts is re-pointed, never deleted — it now permits this
+//      one ruled badge string and keeps every other scarcity token banned.
 //
 // Enterprise carries no self-serve price at all: its CTA is replaced by ONE contact line beneath
 // the tier row (R4), so the card keeps its feature list without implying a checkout that does not
@@ -136,6 +150,29 @@ function planCtas(id: PaidPlanId, signupBase: string): string {
  * first. `planDailyCallsLabel` returns null for a plan with no daily cap, in which case the
  * second bullet is OMITTED rather than filled with a guess.
  */
+/**
+ * The badge pill, or '' when the plan is unbadged. PRICING-BADGES-LIMITED-TIME-W1.
+ *
+ * The string comes from `PLAN_BADGES` — hand-typing one here is the drift this wave retired
+ * (this file rendered "MOST POPULAR" while the landing artboards rendered "POPULAR", for the
+ * same badge on the same plan). Returns the empty string rather than a placeholder so an
+ * unbadged card renders no stray element.
+ */
+function badgePill(id: PaidPlanId): string {
+  const badge = planBadge(id);
+  return badge === null ? '' : `<div class="pop-badge">${badge}</div>
+      `;
+}
+
+/**
+ * The card's class attribute. `popular` is the EMPHASIS chrome and is now independent of the
+ * badge — see `PLAN_EMPHASIS`. Driving both off one flag is what would have dragged the
+ * highlight onto Starter when the pill moved.
+ */
+function planCardClass(id: PaidPlanId): string {
+  return planIsEmphasised(id) ? 'plan popular' : 'plan';
+}
+
 function allowanceBullets(id: PaidPlanId): string {
   const daily = planDailyCallsLabel(id);
   const monthly = `<li>${planCallsLabel(id)} calls/month</li>`;
@@ -153,8 +190,8 @@ export function renderPlanCards(signupBase = ''): string {
   const proCta = prepayBacked ? planCtas('pro', signupBase) : `<a class="btn" href="${signupBase}/signup?plan=pro">Subscribe to Pro</a>`;
 
   return `<div class="plans">
-    <div class="plan">
-      <h2>${PLANS.starter.label}</h2>
+    <div class="${planCardClass('starter')}">
+      ${badgePill('starter')}<h2>${PLANS.starter.label}</h2>
       ${starterPrice}
       <ul>
         ${allowanceBullets('starter')}
@@ -164,9 +201,8 @@ export function renderPlanCards(signupBase = ''): string {
       </ul>
       ${starterCta}
     </div>
-    <div class="plan popular">
-      <div class="pop-badge">MOST POPULAR</div>
-      <h2>${PLANS.pro.label}</h2>
+    <div class="${planCardClass('pro')}">
+      ${badgePill('pro')}<h2>${PLANS.pro.label}</h2>
       ${proPrice}
       <ul>
         ${allowanceBullets('pro')}

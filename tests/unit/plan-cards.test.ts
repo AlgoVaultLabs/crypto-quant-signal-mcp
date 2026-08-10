@@ -12,10 +12,16 @@
  * these tests cannot drift into re-encoding the prices they exist to check.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { renderPlanCards } from '../../src/lib/signup-flow.js';
 import { CONTACT_FALLBACK_EMAIL } from '../../src/lib/contact-page.js';
 import {
   PLANS,
+  PLAN_BADGES,
+  PLAN_EMPHASIS,
+  promoHasTerms,
+  proPromoLine,
   PREPAY_6MONTH_MONTHS as M,
   planPriceLabel,
   planCallsLabel,
@@ -94,11 +100,100 @@ describe('renderPlanCards — prepay-first, six-month term (R-C)', () => {
     expect(c).not.toContain('interval=year');
   });
 
-  it('carries NO scarcity language — Public-copy LAW', () => {
-    const c = renderPlanCards().toLowerCase();
-    for (const banned of ['limited time', 'hurry', 'act now', 'expires', 'countdown', 'only today', 'ends soon']) {
-      expect(c, banned).not.toContain(banned);
+  it('carries NO scarcity language — Public-copy LAW (one GUARDED exemption)', () => {
+    // RE-POINTED, NOT DELETED — PRICING-BADGES-LIMITED-TIME-W1 (Mr.1, 2026-08-10), superseding
+    // A-3 of PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1. Pro's $129/6mo is a limited-time price by
+    // owner intent, so `LIMITED TIME` is now a TRUE claim rather than manufactured urgency.
+    //
+    // The gate keeps its teeth by narrowing rather than widening: every other scarcity token
+    // stays banned outright, and the one permitted phrase is permitted ONLY as the exact badge
+    // string the SoT emits, in the badge element, exactly once. Deleting the assertion — or
+    // merely dropping 'limited time' from the banned list — would leave "limited time offer,
+    // ends soon!" free to appear in a price-sub line, which is the copy this LAW exists to stop.
+    const c = renderPlanCards();
+    const lower = c.toLowerCase();
+
+    for (const banned of ['hurry', 'act now', 'expires', 'countdown', 'only today', 'ends soon']) {
+      expect(lower, banned).not.toContain(banned);
     }
+
+    // The exemption is scoped to the badge, and its scope is asserted in both directions.
+    const occurrences = (lower.match(/limited time/g) ?? []).length;
+    expect(occurrences, 'the limited-time claim may appear ONCE, as the Pro badge').toBe(1);
+    expect(c, 'the ONLY permitted "limited time" is the SoT badge pill').toContain(
+      `<div class="pop-badge">${PLAN_BADGES.pro}</div>`,
+    );
+    expect(PLAN_BADGES.pro, 'the exempted string is the SoT badge, not a literal in this test')
+      .toBe('LIMITED TIME');
+
+    // No DATE, in any shape, may ship with the claim: PRO_PROMO.endsIso is deliberately null
+    // (architect-TBD), and a countdown is exactly what this gate was written to refuse.
+    expect(promoHasTerms(), 'promo terms are architect-TBD — nothing may render a deadline').toBe(false);
+    expect(c).not.toMatch(/\b\d{1,2} days? (?:left|remaining)\b/i);
+    expect(c).not.toMatch(/\bends \d/i);
+  });
+
+  it('the badge on each card comes from the SoT, never a literal', () => {
+    // AC2. The two surfaces disagreed before this wave ("MOST POPULAR" here vs "POPULAR" on the
+    // landing artboards); this is what stops that recurring.
+    const c = renderPlanCards();
+    expect(c).toContain(`<div class="pop-badge">${PLAN_BADGES.starter}</div>`);
+    expect(c).toContain(`<div class="pop-badge">${PLAN_BADGES.pro}</div>`);
+    expect((c.match(/pop-badge/g) ?? []).length, 'exactly one badge per card').toBe(2);
+    // The retired literal must not come back on any card.
+    expect(c).not.toContain('MOST POPULAR');
+  });
+
+  it('EMPHASIS is decoupled from the badge — POPULAR moved, the highlight did not', () => {
+    // The `popular` CLASS is the accent-border/gradient chrome, and it stays on Pro by ruling.
+    // Driving both off one flag is precisely what would have dragged it onto Starter.
+    const c = renderPlanCards();
+    expect(PLAN_EMPHASIS).toBe('pro');
+
+    // Slice on the EXACT card-opening tags. `<div class="plan` alone also matches the `plans`
+    // grid wrapper, which would fold both cards into the "Starter" slice and make the negative
+    // assertion below fire on Pro's chrome.
+    const starterStart = c.indexOf('<div class="plan">');
+    const proStart = c.indexOf('<div class="plan popular">');
+    expect(starterStart, 'Starter renders the unemphasised card').toBeGreaterThan(-1);
+    expect(proStart, 'Pro renders the emphasised card, after Starter').toBeGreaterThan(starterStart);
+
+    const starterCard = c.slice(starterStart, proStart);
+    expect(starterCard, 'Starter carries POPULAR').toContain('>POPULAR<');
+    expect(starterCard, 'Starter is NOT the emphasised card').not.toContain('popular');
+
+    const proCard = c.slice(proStart);
+    expect(proCard, 'Pro keeps the emphasis chrome').toContain('class="plan popular"');
+    expect(proCard, 'Pro carries LIMITED TIME').toContain('>LIMITED TIME<');
+    expect(proCard, 'the badge did not stay on Pro').not.toContain('>POPULAR<');
+  });
+});
+
+describe('the limited-time supporting line is ONE sentence, not three copies (AC3)', () => {
+  // The prose surfaces are static files with no renderer, so they cannot interpolate
+  // `proPromoLine()` at build time — but they CAN be pinned to it, which is the same guarantee
+  // arriving a different way: the sentence and its $129 come from the plan SoT, and a price move
+  // that leaves either surface behind fails here instead of shipping a contradiction.
+  const norm = (s: string) => s.replace(/&mdash;/g, '—').replace(/\s+/g, ' ');
+
+  it('README.md carries it verbatim', () => {
+    const md = readFileSync(join(__dirname, '..', '..', 'README.md'), 'utf8');
+    expect(norm(md)).toContain(proPromoLine());
+  });
+
+  it('the docs pricing partial carries it verbatim', () => {
+    const html = readFileSync(
+      join(__dirname, '..', '..', 'docs-src/partials/pricing.html'), 'utf8');
+    expect(norm(html)).toContain(proPromoLine());
+  });
+
+  it('states NO end date anywhere — the terms are architect-TBD', () => {
+    // PRO_PROMO.endsIso is null by ruling. A sentence that grew a deadline would be the
+    // fabricated-urgency failure the public-copy LAW exists to stop, and would also be the
+    // JSON-LD `priceValidUntil` we deliberately do not ship.
+    expect(proPromoLine()).not.toMatch(/\b(until|through|by)\s+\w+\s+\d/i);
+    expect(proPromoLine()).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(promoHasTerms()).toBe(false);
   });
 });
 

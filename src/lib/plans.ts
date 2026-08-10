@@ -342,6 +342,109 @@ export function subscriptionBreakEvenCalls(
   return Math.round(PLANS[plan].priceUsdMonthly / perCallUsd);
 }
 
+// ── Plan-card badges + the Pro promo marker (PRICING-BADGES-LIMITED-TIME-W1) ──
+//
+// WHY THIS IS A RECORD AND NOT TWO STRING LITERALS. Before this wave the badge was derived
+// TWICE and agreed with itself nowhere: `signup-flow.ts:renderPlanCards` hard-typed
+// "MOST POPULAR" while both `landing/index.html` artboards hard-typed "POPULAR" — the same
+// badge, on the same plan, in two different words, on the two surfaces a buyer compares. That
+// is the single-derivation rule's exact failure mode, and it is why moving the badge is a SoT
+// change rather than a find-and-replace. Architect ruling (Mr.1, 2026-08-10) settles the string
+// at `POPULAR`; every renderer projects from here and hand-typing one is a gate failure.
+//
+// A plan may carry NO badge — hence `Partial`. `undefined` is "this card is unbadged", never a
+// placeholder to be filled with something plausible.
+
+/** The badge vocabulary. A union, so a renderer cannot invent a third pill. */
+export type PlanBadge = 'POPULAR' | 'LIMITED TIME';
+
+/**
+ * Which badge each plan carries. THE one derivation.
+ *
+ * `starter: 'POPULAR'` is a TRUTH CLAIM, not a nudge — 3 of the 4 live subscriptions are
+ * Starter (measured 2026-08-10; see the `starter-popular-badge` claim below). It moved off Pro
+ * in this wave because it had never been true of Pro.
+ */
+export const PLAN_BADGES: Readonly<Partial<Record<PaidPlanId, PlanBadge>>> = {
+  starter: 'POPULAR',
+  pro: 'LIMITED TIME',
+};
+
+/** The badge a plan renders, or null when it is unbadged. Never hand-type the string. */
+export function planBadge(id: PaidPlanId): PlanBadge | null {
+  return PLAN_BADGES[id] ?? null;
+}
+
+/**
+ * Which card carries the VISUAL EMPHASIS (accent border, gradient, lift).
+ *
+ * DELIBERATELY DECOUPLED FROM THE BADGE, and that separation is the point of this constant.
+ * Both renderers previously drove the pill AND the chrome off one `popular` boolean, so moving
+ * the pill would have silently moved the highlight with it. They answer different questions —
+ * "which plan do most people buy" vs "which card should the eye land on" — and after this wave
+ * they have different answers (architect ruling, Mr.1 2026-08-10: emphasis stays on Pro, which
+ * is the card carrying the limited-time price).
+ */
+export const PLAN_EMPHASIS: PaidPlanId = 'pro';
+
+/** True when this plan's card renders the emphasised chrome. */
+export function planIsEmphasised(id: PaidPlanId): boolean {
+  return id === PLAN_EMPHASIS;
+}
+
+/**
+ * A limited-time price, as a MARKER rather than a countdown.
+ *
+ * 🛑 `endsIso` and `listPriceUsd` are BOTH deliberately `null`, and that is a declared state,
+ * not an unfinished one. The architect ruled the Pro six-month price limited-time on 2026-08-10
+ * and ruled the end date and the post-expiry list price TBD in the same breath — so this module
+ * must be able to say "the promo is real and its terms are not yet decided" without fabricating
+ * either. A date invented here would reach the buyer as a countdown and JSON-LD as an
+ * `Offer.priceValidUntil`, which is why neither surface renders one today.
+ *
+ * These two nulls are the declared hook for `PRICING-PRO-PROMO-EXPIRY-W{NEXT}`, which fills
+ * them and ships auto-expiry: the badge self-drops and checkout flips to the list price once
+ * `endsIso` passes. Until then `promoHasTerms()` is false everywhere and nothing downstream may
+ * branch on a date it does not have.
+ *
+ * Buyers inside the window are GRANDFATHERED at $129/6mo. That is Stripe's own behaviour, not
+ * something this codebase implements: a subscription bills the Price object attached to its
+ * subscription item, and moving it requires an explicit `items[0][price]` update. Verified
+ * read-only 2026-08-10 against live Stripe — all 6 subscriptions pin a Price id, and the
+ * $129 six-month Price (`Pro 6-Month`) is active and distinct from the $49 monthly one.
+ */
+export interface PlanPromo {
+  readonly planId: PaidPlanId;
+  /** ISO-8601 instant the promo ends, or null while the architect has not set one. */
+  readonly endsIso: string | null;
+  /** USD the price reverts to at expiry, or null while the architect has not set one. */
+  readonly listPriceUsd: number | null;
+}
+
+export const PRO_PROMO: PlanPromo = {
+  planId: 'pro',
+  endsIso: null,
+  listPriceUsd: null,
+};
+
+/** True once the promo's terms exist. False today, BY RULING — the expiry wave flips it. */
+export function promoHasTerms(promo: PlanPromo = PRO_PROMO): boolean {
+  return promo.endsIso !== null && promo.listPriceUsd !== null;
+}
+
+/**
+ * The ONE supporting sentence for the limited-time claim, for prose surfaces (docs, README).
+ *
+ * Derived from the plan SoT, so the price in the sentence cannot drift from the price on the
+ * card. It states NO end date — `promoHasTerms()` is false — and it must not gain one here
+ * without the architect setting `endsIso`.
+ */
+export function proPromoLine(): string {
+  const price = planPrepayPriceLabel(PRO_PROMO.planId, PREPAY_6MONTH_MONTHS);
+  return `${PLANS[PRO_PROMO.planId].label} 6-month is currently ${price} — limited-time pricing; `
+    + 'subscribe now and renewals keep your price.';
+}
+
 // ── Tier-claim evidence registry (CONTACT-FORM-AND-SUPPORT-CLAIM-SWEEP-W1) ──
 //
 // THE GENERATOR FIX, mandated by CLAUDE.md after the THIRD instance of one bug class in a day:
@@ -430,6 +533,54 @@ export const TIER_CLAIMS: readonly TierClaim[] = [
   // the REGRESSION LOCK list in tests/unit/tier-claim-evidence.test.ts so reintroducing it
   // lands as an orphan and fails the build. The charge model itself is UNCHANGED — every
   // verdict is still one metered call; see src/lib/feature-registry.ts (`quota.unit`).
+
+  // ── Card BADGES (PRICING-BADGES-LIMITED-TIME-W1) ──
+  //
+  // Badges were outside this registry until now, which was a hole rather than a decision: a
+  // pill is public copy asserting something about the product in exactly the way a bullet is,
+  // and "MOST POPULAR" sat on the Pro card while Pro was the LEAST-subscribed paid plan. The
+  // gate's scan set is widened to the rendered badge in the same commit, so these two rows are
+  // exercised rather than decorative — a registry nothing checks is the failure mode this file
+  // already learned once.
+  //
+  // Both are `contractual` because neither is projectable from a symbol. A `sot` row pointing
+  // at `PLAN_BADGES` would be CIRCULAR — the record says POPULAR because someone typed POPULAR
+  // — and circular evidence is worse than none: it reads green while vouching for nothing.
+  {
+    id: 'starter-popular-badge',
+    match: /^POPULAR$/,
+    evidence: {
+      kind: 'contractual',
+      approvedBy: 'Mr.1 (2026-08-10)',
+      note:
+        'MEASURED, not asserted: 3 of the 4 live paid subscriptions are Starter (1 Pro). '
+        + 'Verified 2026-08-10 from two independent sources that agree — subscriber_profiles '
+        + 'on signal-1 (starter 3 / pro 1, status=active) and the live Stripe subscription list '
+        + '(3 on the $9.99 Starter price, 1 on the $49 Pro price). The badge moved off Pro in '
+        + 'this wave because it had never been true of Pro. Re-measure before restating it: a '
+        + 'distribution claim goes stale silently as customers arrive.',
+    },
+  },
+  {
+    id: 'pro-limited-time-badge',
+    match: /^LIMITED TIME$/,
+    evidence: {
+      kind: 'contractual',
+      approvedBy: 'Mr.1 (2026-08-10)',
+      note:
+        'Pro 6-month $129 is limited-time by owner intent. End date + post-expiry list price '
+        + 'TBD by the owner, deliberately unset (see PRO_PROMO — both nulls are declared, not '
+        // "$129 for the six-month term", never "$129/6mo" — the bare-numeric-divisor gate in
+        // tests/plans.test.ts scans this module's CODE (string literals included, comments not),
+        // and a price shorthand carrying a slash is indistinguishable from a divisor to it.
+        + 'missing). Buyers in the window are grandfathered at $129 for the six-month term: '
+        + 'Stripe bills the Price '
+        + 'attached to the subscription item and moving it needs an explicit items[0][price] '
+        + 'update, verified read-only 2026-08-10 against live Stripe. No countdown and no '
+        + 'Offer.priceValidUntil ships until a real date exists. Expiry wave: '
+        + 'PRICING-PRO-PROMO-EXPIRY-W{NEXT}.',
+    },
+  },
 ];
 
 /** The claim covering a rendered bullet, or null when nothing vouches for it. */

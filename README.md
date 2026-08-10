@@ -248,6 +248,8 @@ Two meters per paid tier, monthly and daily, enforced independently: a call is r
 
 **Subscriptions:** Sign up at [api.algovault.com/signup](https://api.algovault.com/signup). Starter unlocks 10,000 calls/mo (up to 1,000/day) for $9.99/mo, or $39.90 for six months prepaid — add `?interval=6month` to pick the prepay term. API key delivered instantly after checkout.
 
+Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewals keep your price.
+
 **x402 micropayments:** AI agents pay per HTTP call with USDC on [Base](https://www.base.org) — no signup, no API key, no billing. The payment receipt is the credential. See [x402.org](https://x402.org).
 
 ---
