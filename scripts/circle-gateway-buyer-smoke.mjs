@@ -18,11 +18,19 @@
  * header and `pay().transaction` is EMPTY. The settlement id is Circle's transfer id, which appears
  * a moment later via searchTransfers(). This script polls for it.
  *
- * HOLD IS FREE. get_trade_signal (and its get_trade_call alias) return a *free* result on a HOLD
- * verdict — the server skips the settle, so there is NO charge and NO settlement id. That is not a
- * failure of the flip. If BTC/1h is a HOLD at smoke time, re-run (verdicts are market-dependent),
- * or set SMOKE_TOOL=get_market_regime (always charges $0.02) to force a settlement for the R4
- * seller-credit check.
+ * EVERY VERDICT SETTLES, HOLD INCLUDED — since PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 CH5
+ * (`fdaf659`, live on prod 2026-08-09 08:32 UTC). Both rails used to carry their own copy of a
+ * `verdict !== 'HOLD'` settle guard; neither does now (src/index.ts + src/lib/x402-http-routes.ts),
+ * so a HOLD is a chargeable call like any other and this script asserts the settlement on EVERY
+ * verdict. There is no longer any verdict for which "HTTP 200 and no settlement id" is an EXPECTED
+ * outcome, so it is never explained by a HOLD and never a reason to re-roll — investigate it. (It
+ * can still be a timing miss: settle is fire-and-forget and Circle batches, which is why the tail
+ * branch below warns and hands you a poll command instead of asserting a hard failure at 3 min.)
+ *
+ * The retired path left a fingerprint worth knowing when you read old rows: a pre-CH5 HOLD
+ * CLAIMED the nonce and then never moved the money, so it persists as
+ * `processed_x402_payments.settlement_state='CLAIMED_UNSETTLED'`. All 7 x402 `get_trade_signal`
+ * calls ever made are exactly that (measured 2026-08-10). They are history, not a live defect.
  *
  * ── RUN ─────────────────────────────────────────────────────────────────────────────────────
  *   Put the buyer key OUTSIDE any git repo (mode 600):
@@ -53,7 +61,12 @@ const BODY = JSON.parse(process.env.SMOKE_BODY || '{"coin":"BTC","timeframe":"1h
 const URL = `https://api.algovault.com/x402/${TOOL}`;
 const DEPOSIT_USDC = process.env.DEPOSIT_USDC || '1';
 const CREDIT_BUDGET_MS = Number(process.env.DEPOSIT_CREDIT_BUDGET_MIN || 40) * 60_000;
-const HOLD_WAIVING_TOOLS = new Set(['get_trade_signal', 'get_trade_call']);
+// Tools whose response carries a `.call` verdict. `/x402/get_trade_call` is a paid ALIAS route
+// that delegates to get_trade_signal's handler (x402-http-routes.ts:335), so BOTH return the
+// trade-call shape. This is a DISPLAY set — it decides what the `verdict` line prints, and waives
+// nothing. (Its predecessor, HOLD_WAIVING_TOOLS, named the same two tools but skipped the
+// settlement assertion on a HOLD; retired by OPS-X402-SMOKE-HOLD-WAIVER-RETIRE-W1.)
+const VERDICT_BEARING_TOOLS = new Set(['get_trade_signal', 'get_trade_call']);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const usd = (atomic) => (Number(atomic) / 1e6).toFixed(6);
@@ -195,24 +208,17 @@ async function main() {
     process.exit(1);
   }
 
-  const verdict = TOOL === 'get_trade_signal' ? (pay.data && pay.data.call) : 'PAID';
+  // Keying this on get_trade_signal ALONE printed `verdict: PAID` for a SMOKE_TOOL=get_trade_call
+  // run that had in fact returned HOLD — and is why the old waiver could never fire for
+  // get_trade_call despite naming it. Both alias spellings now report their real verdict.
+  const verdict = VERDICT_BEARING_TOOLS.has(TOOL) ? (pay.data && pay.data.call) : 'PAID';
   line();
   console.log(`HTTP status   : ${pay.status}`);
   console.log(`verdict       : ${verdict ?? '(n/a)'}`);
 
-  // ── HOLD → this run exits before the settlement check (LEGACY WAIVER — see below) ──
-  if (HOLD_WAIVING_TOOLS.has(TOOL) && verdict === 'HOLD') {
-    console.log('result        : HOLD → this run exited before the settlement check.');
-    console.log('\n⚠ STALE WAIVER, not a failure of the flip. PRICING-FLAT CH5 (2026-08-08) made every');
-    console.log('  verdict settle on the x402 rail, HOLD included, so this branch no longer describes a');
-    console.log('  no-charge path — it just skips the R4 seller-credit assertion. Control flow left as-is');
-    console.log('  deliberately (out of this wave\'s scope); retiring HOLD_WAIVING_TOOLS is a follow-up.');
-    console.log('  For a chargeable settlement, re-run (verdict is market-dependent) OR:  SMOKE_TOOL=get_market_regime node scripts/circle-gateway-buyer-smoke.mjs');
-    line();
-    process.exit(0);
-  }
-
-  // ── chargeable → find the settlement id via searchTransfers (pay().transaction is empty on prod) ──
+  // NO WAIVER. Every verdict settles since CH5, so the run always proceeds to the settlement
+  // assertion below — a HOLD is a chargeable call and must produce a settlement id like any other.
+  // ── find the settlement id via searchTransfers (pay().transaction is empty on prod) ──
   console.log('settle model  : fire-and-forget server-side → settlement id arrives via searchTransfers, not the HTTP response.');
   let settlement = null;
   const findDeadline = Date.now() + 3 * 60_000;
@@ -240,6 +246,8 @@ async function main() {
   }
 
   console.log('⚠ HTTP 200 and buyer debited, but no transfer record surfaced within 3 min.');
+  console.log(`  NB verdict was ${verdict ?? '(n/a)'} — since CH5 that is NOT an explanation: every verdict settles.`);
+  console.log('  Either the settle is still in flight (async + Circle batching), or something is wrong. Poll before concluding.');
   console.log(`  Settle is async; check shortly:  node -e "import('@circle-fin/x402-batching/client').then(async m => { const c=new m.GatewayClient({chain:'optimism',privateKey:process.env.BUYER_PRIVATE_KEY}); console.log((await c.searchTransfers({from:c.address})).transfers.slice(0,3)); })"`);
   process.exit(0);
 }
