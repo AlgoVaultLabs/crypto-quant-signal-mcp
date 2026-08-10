@@ -5,6 +5,14 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0] - 2026-08-10
+
+### Changed
+- Every verdict counts against your allowance, on both the MCP and HTTP rails.
+- New call ladder: Free 200/month plus 100/day · Starter 10,000/month plus 1,000/day · Pro 100,000/month plus 10,000/day.
+- 6-month prepay replaces annual. Starter is $39.90 (~$6.65/mo, 33% off monthly) and Pro is $129 (~$21.50/mo, 56% off monthly). Choose it at checkout with `?interval=6month`. Annual ($79 / $299) was retired on 2026-08-09; `?interval=year` redirects to the 6-month checkout.
+- A daily limit now refuses with the hours until it resets, not a monthly figure.
+
 ## [1.26.0] - 2026-08-06
 
 ### Added
