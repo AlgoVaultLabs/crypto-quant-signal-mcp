@@ -112,3 +112,68 @@ describe('every RENDERED tier bullet is covered by a claim — both surfaces (A9
     }
   });
 });
+
+/**
+ * RELEASE-6MONTH-COPY-CORRECTION-W1 — the THIRD surface: README's pricing table.
+ *
+ * WHY THIS EXISTS. The `| Support | Community | Email | Priority | Dedicated |` row shipped on
+ * npm for months asserting deliverables that do not exist — the same class this gate was built
+ * for. It survived because the gate scanned `renderPlanCards()` and `landing/index.html` and
+ * nothing else, while README.md is the most-read public surface the package ships.
+ *
+ * WHY NOT `claimFor()` DIRECTLY. TIER_CLAIMS `match` regexes are written against RENDERED BULLET
+ * text ("10,000 calls/month"), not table cells ("10,000/mo") or row labels ("Monthly calls").
+ * Measured: every legitimate row is unvouched under a naive cell scan, so reusing `claimFor` here
+ * would report red on day one and be disabled within a week. Instead the table is gated by an
+ * explicit ROW REGISTRY: a row may exist only if it is declared below. Adding a row is therefore
+ * a deliberate act that forces the author to justify it — which is exactly the property the
+ * Support row bypassed.
+ */
+const README_PRICING_ROWS: readonly string[] = [
+  'Exchanges',
+  'Assets',
+  'Asset classes',
+  'Timeframes',
+  'Funding arb results',
+  'Track record',
+  'Monthly calls',
+  'Daily calls',
+  'Price',
+];
+
+function readmePricingRowLabels(): string[] {
+  const md = readFileSync(join(ROOT, 'README.md'), 'utf8');
+  const table = md.match(/\n\| Feature \| Free \|[\s\S]*?\n\n/);
+  if (!table) return [];
+  return table[0]
+    .split('\n')
+    .filter((l) => l.startsWith('|') && !/^\|[-\s|]+\|$/.test(l))
+    .slice(1) // drop the header row
+    .map((l) => l.split('|')[1].replace(/<[^>]*>/g, '').trim())
+    .filter(Boolean);
+}
+
+describe("README pricing table: no row asserts an unregistered deliverable (A9, third surface)", () => {
+  it('the table is found and yields rows at all (vacuity guard)', () => {
+    // Without this, a renamed header would make every assertion below vacuously true — the exact
+    // failure mode that let the Support row survive two gates.
+    expect(readmePricingRowLabels().length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('every rendered row label is registered', () => {
+    const orphans = readmePricingRowLabels().filter((l) => !README_PRICING_ROWS.includes(l));
+    expect(
+      orphans,
+      'a README pricing-table row is not in README_PRICING_ROWS. Register it here only if the '
+      + 'deliverable actually exists (name the code path or SoT symbol in the PR) — or delete the '
+      + 'row. "Support: Email / Priority / Dedicated" shipped for months as public copy for '
+      + 'deliverables that do not exist; that is what this registry prevents.',
+    ).toEqual([]);
+  });
+
+  it('the registry stays honest: no support-tier row may be registered', () => {
+    // A belt-and-braces assertion: even a future edit that ADDS 'Support' to the registry fails,
+    // because the deliverable is architect-ruled nonexistent, not merely undocumented.
+    expect(README_PRICING_ROWS.map((r) => r.toLowerCase())).not.toContain('support');
+  });
+});
