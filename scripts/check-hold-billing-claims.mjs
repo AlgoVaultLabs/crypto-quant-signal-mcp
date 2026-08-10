@@ -78,10 +78,34 @@ const GUARDED = [
   { literal: '<!-- retired: HOLDs are free --><p>Every verdict counts, HOLD included.</p>', reason: 'check-mcp-client-copy.mjs must-NOT-fire fixture proving its comment-stripping works' },
 ];
 
+/**
+ * THIS FILE, excluded from its own scan — and the reason it is a path and not exact strings.
+ *
+ * Every claim this gate must catch is written out here twice: once as a `--self-test` must-fire
+ * fixture and once as a pattern NAME (`hold-then-free`). Once the gate is tracked, it flags
+ * itself 11 times — the ban-line-matching-its-own-literal false positive, which this repo has
+ * hit before. Exact-string rows would work but would have to be maintained in lockstep with the
+ * fixtures, so adding a must-fire case would mean adding an exemption for it: the corpus that
+ * proves the gate works would be the corpus that erodes it.
+ *
+ * A path exclusion is safe HERE and nowhere else: these literals are a test corpus and a pattern
+ * vocabulary, and no operator can ever read them. The `--self-test` is what covers this file, and
+ * the assertion below pins the exclusion at exactly one path so it cannot silently widen.
+ */
+const SELF_REL = 'scripts/check-hold-billing-claims.mjs';
+
 /** Files whose literals are scanned. Tracked sources only — never a working-tree walk. */
 function sourceFiles() {
   const out = execFileSync('git', ['ls-files', '--', 'src', 'scripts'], { cwd: ROOT, encoding: 'utf8' });
-  return out.split('\n').filter((p) => /\.(ts|mts|cts|mjs|cjs|js)$/.test(p) && !/\.d\.ts$/.test(p));
+  const all = out.split('\n').filter((p) => /\.(ts|mts|cts|mjs|cjs|js)$/.test(p) && !/\.d\.ts$/.test(p));
+  const kept = all.filter((p) => p !== SELF_REL);
+  // The exclusion is exactly one file, and that file must actually be tracked — otherwise a
+  // rename would silently turn the self-exclusion into "scan everything and fail forever", or
+  // (worse) a typo'd path would leave the gate scanning itself with nobody noticing why.
+  if (all.length - kept.length !== 1) {
+    throw new Error(`self-exclusion matched ${all.length - kept.length} files, expected exactly 1 (${SELF_REL} moved?)`);
+  }
+  return kept;
 }
 
 /**
@@ -185,6 +209,12 @@ function selfTest() {
   });
   // Vacuity: WE build this corpus, so empty means the test built nothing. REFUSE.
   check('corpus-nonempty', () => mustFire.length >= 5 && mustNotFire.length >= 5);
+  // The enumeration seam itself — hermetic fixtures are blind to exactly what they replace, and
+  // this is the seam that decides WHAT gets scanned. It must exclude this file and nothing else.
+  check('self-exclusion-is-exactly-this-file', () => {
+    const files = sourceFiles(); // throws if the exclusion stops matching exactly one path
+    return files.length > 50 && !files.includes(SELF_REL) && files.includes('src/lib/call-class.ts');
+  });
 
   console.error(`SELF-TEST: ${failed === 0 ? 'PASS' : 'FAIL'} (${pass} passed, ${failed} failed)`);
   if (failed > 0) { console.log(`${GATE}=FAIL`); process.exit(1); }
