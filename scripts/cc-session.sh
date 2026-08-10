@@ -34,8 +34,10 @@
 set -euo pipefail
 
 # --- config ---
-PORT_BASE=3100                 # avoids server 3000 / facilitator 4022 / landing 5500
-PORT_RANGE=400                 # candidate window 3100..3499
+# PORT_BASE/PORT_RANGE removed by OPS-WORKTREE-HOOK-PORT-PARITY-W1 R2b: the window belongs to
+# the ONE derivation in scripts/lib/alloc-port.sh, which the WorktreeCreate hook also calls.
+# Two copies of the window is how the hook ended up allocating from the same range with a
+# different hash input — see that file's header for the measured divergence.
 # WT_SUBDIR removed by OPS-WORKTREE-ROOT-CONFINEMENT-W2 R3a: it placed worktrees INSIDE the
 # repo, which is the nesting shape behind the vitest-discovery pathology (1779 discovered
 # test files vs 298 real). Placement now comes from worktree_roots.worktree_root in the SoT.
@@ -155,29 +157,18 @@ slugify() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9._-'
 }
 
-port_in_use() {
-  local p="$1"
-  if command -v nc >/dev/null 2>&1; then
-    nc -z -w1 127.0.0.1 "$p" >/dev/null 2>&1
-  elif command -v lsof >/dev/null 2>&1; then
-    lsof -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1
-  else
-    return 1   # cannot check → assume free
-  fi
-}
-
-# deterministic base port from task name, bumped past any in-use port
+# Deterministic base port from task name, bumped past any in-use port.
+#
+# DELEGATED, not implemented here (OPS-WORKTREE-HOOK-PORT-PARITY-W1 R2b). The
+# `WorktreeCreate` hook needs the same answer, and it had a second implementation that hashed
+# the DESTINATION PATH instead of the task — so `cc-session.sh port <task>`, documented below
+# as "the deterministic port a task would use" and called by the SessionStart bootstrap, could
+# not reproduce a port the hook wrote. One derivation, in scripts/lib/alloc-port.sh.
+#
+# Resolved from CC_SELF_DIR for the reason stated there: `clean` iterates primaries that have
+# no scripts/lib/ at all, and this script knows where its own lib is.
 alloc_port() {
-  local task="$1" h p tries=0
-  h=$(printf '%s' "$task" | cksum | awk '{print $1}')
-  p=$(( PORT_BASE + (h % PORT_RANGE) ))
-  while port_in_use "$p"; do
-    p=$(( p + 1 ))
-    [ "$p" -ge $(( PORT_BASE + PORT_RANGE )) ] && p="$PORT_BASE"
-    tries=$(( tries + 1 ))
-    [ "$tries" -ge 50 ] && break
-  done
-  printf '%s\n' "$p"
+  bash "$CC_SELF_DIR/lib/alloc-port.sh" "$1"
 }
 
 # true (0) iff $1 is the MAIN checkout (its git-dir == the shared common-dir)
@@ -395,8 +386,10 @@ cmd_new() {
   for f in .env .env.local; do
     if [ -f "$f" ]; then cp "$f" "$wt/$f"; echo "cc-session: copied $f" >&2; fi
   done
-  port=$(alloc_port "$task")
-  if ! grep -qs '^PORT=' "$wt/.env.local" 2>/dev/null; then
+  # Fail-soft (R2b): a missing/unrunnable helper must cost the PORT, never the worktree that
+  # was just created. `set -e` would otherwise abort here with the worktree already on disk.
+  port=$(alloc_port "$task" || true)
+  if [ -n "$port" ] && ! grep -qs '^PORT=' "$wt/.env.local" 2>/dev/null; then
     printf 'PORT=%s\n' "$port" >> "$wt/.env.local"
     echo "cc-session: assigned PORT=$port → $wt/.env.local" >&2
   fi
