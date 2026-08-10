@@ -29,6 +29,25 @@
  * mainnet.base.org caps eth_getLogs at a 10,000-block range, so we anchor the search block from
  * the row's `created_at` (settle time ≈ on-chain time) via a head-timestamp 2s estimate and scan
  * a ±RANGE window (< 10k). No web3 WRITE deps (Data-Integrity LAW) — viem read client only.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🛑 THIS IS A HISTORICAL TOOL AND IT IS BASE-ONLY ON PURPOSE. DO NOT MAKE IT THE FORWARD PATH.
+ * (OPS-X402-SETTLEMENT-CLASSIFY-PER-RAIL-W1, 2026-08-10.)
+ *
+ * It is not scheduled and never has been — measured that day: 0 crontab entries, 0 systemd
+ * timers, 0 `package.json` scripts. It ran once, against rows that predate payer attribution, and
+ * every one of those rows is genuinely Base/CDP. For THAT job, Base-only is correct.
+ *
+ * The obvious-looking follow-up — "Circle Gateway settles on OP Mainnet, so teach this scanner a
+ * second chain" — is a LANE fix and was rejected after probing. It would require a chain object,
+ * an RPC env, an asset address and a log signature PER RAIL, i.e. a new branch for every rail
+ * added, forever: the same defect class as the hardcoded `RAIL_BASE_USDC` that
+ * OPS-X402-RAIL-DERIVE-FROM-NETWORK-W1 removed from the claim sites hours earlier.
+ *
+ * The forward path instead records the outcome where it is already known for EVERY rail with no
+ * rail-specific fact at all — `settleX402Async` → `recordSettlementOutcome()` in
+ * `src/lib/x402-idempotency-store.ts`. A new rail changes nothing there and nothing here.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { createPublicClient, http, parseAbiItem } from 'viem';
 import { runScript } from '../lib/script-lifecycle.js';

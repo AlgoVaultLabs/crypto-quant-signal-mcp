@@ -24,7 +24,13 @@ import { declareBazaarRoute } from './x402-bazaar.js';
 import { FEATURE_REGISTRY, getFeature } from './feature-registry.js';
 // Diagnostics only (verify-failure logging). ONE payer extractor across the codebase — the HTTP
 // route already uses this for wallet attribution; a second copy here would be free to drift.
-import { extractPayerWallet, railForRequirement } from './x402-idempotency-store.js';
+import {
+  extractPayerWallet,
+  extractPaymentNonce,
+  railForRequirement,
+  recordSettlementOutcome,
+} from './x402-idempotency-store.js';
+import { isOperatorWallet } from './x402-operator-wallets.js';
 import {
   GATEWAY_EIP712_DOMAIN_NAME,
   gatewayRequirementsCarryDomain,
@@ -548,6 +554,16 @@ export async function verifyX402Payment(
 /**
  * Settle a verified payment asynchronously. Call after responding to the client.
  * Logs success/failure for reconciliation — does not throw.
+ *
+ * OPS-X402-SETTLEMENT-CLASSIFY-PER-RAIL-W1 — this is also where `processed_x402_payments`
+ * LEARNS that the money moved. The rail hands us the authoritative outcome here; before this
+ * wave it went into the log line below and nowhere else, so every row stayed at its insert-time
+ * `CLAIMED_UNSETTLED` and **no row had ever reached `SETTLED`** (measured 2026-08-10: 17 + 3
+ * OPERATOR, zero SETTLED). The alternative — reconstructing it later by scanning each rail's
+ * chain — needs a chain, an RPC, an asset address and a log signature PER RAIL. Recording it
+ * here needs none of those, which is the whole point: a new rail changes nothing in this path.
+ *
+ * Still fire-and-forget, still never throws, still strictly after the client's response.
  */
 export function settleX402Async(settlement: { paymentPayload: unknown; requirements: unknown }): void {
   if (!resourceServer) return;
@@ -560,7 +576,20 @@ export function settleX402Async(settlement: { paymentPayload: unknown; requireme
     .then((result) => {
       if (result.success) {
         console.log(`x402 settled: tx=${result.transaction} payer=${result.payer}`);
+        // The row's key must be derived EXACTLY as `tryClaimPayment` derived it — same function,
+        // same payload. `result.payer` is the facilitator's rendering of the same address and is
+        // NOT interchangeable: a case/checksum difference would match zero rows and fail silently.
+        const payer = extractPayerWallet(settlement.paymentPayload) ?? '';
+        const nonce = extractPaymentNonce(settlement.paymentPayload) ?? '';
+        // `isOperatorWallet` keeps the OPERATOR class the historical classifier established, so
+        // our own test payments never inflate settled external revenue.
+        const outcome = isOperatorWallet(payer) ? 'OPERATOR' : 'SETTLED';
+        // Fire-and-forget by design; a promotion failure must never surface to the buyer, whose
+        // response was sent long ago. The store logs and returns 'ERROR' rather than throwing.
+        void recordSettlementOutcome(nonce, payer, outcome);
       } else {
+        // A failed settle leaves the row at CLAIMED_UNSETTLED, which is already the honest value:
+        // the nonce was claimed and the money did not move. Nothing to write.
         console.error(`x402 settle failed: ${result.errorReason} — ${result.errorMessage}`);
       }
     })

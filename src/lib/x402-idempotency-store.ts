@@ -290,6 +290,66 @@ export async function tryClaimPayment(
   }
 }
 
+/**
+ * FORWARD PROMOTION — record what the rail told us, at the moment it told us.
+ * (OPS-X402-SETTLEMENT-CLASSIFY-PER-RAIL-W1)
+ *
+ * WHY THIS EXISTS, AND WHY IT IS NOT AN ON-CHAIN SCAN. `settleX402Async` already receives the
+ * authoritative outcome — `result.success` / `result.payer` — from the rail itself, and until now
+ * threw it into a `console.log`. Everything the historical classifier reconstructs by scanning a
+ * chain is already in hand here, for EVERY rail, by construction. Measured 2026-08-10: **zero rows
+ * had ever reached `SETTLED`** (17 `CLAIMED_UNSETTLED`, 3 `OPERATOR` set by a one-shot June
+ * backfill), i.e. 100% of real settlements read as "the money never moved".
+ *
+ * Teaching the scanner a second chain would need a per-rail chain object, RPC env, asset address
+ * and log signature — a new branch per rail, forever. That is the SAME defect class as the
+ * hardcoded `RAIL_BASE_USDC` this file retired hours earlier. **This function contains no
+ * rail-specific fact at all**, which is precisely what makes it the generator fix: adding a rail
+ * requires no change here.
+ *
+ * FORWARD-ONLY, and the `WHERE` is load-bearing. The insert path's `DO NOTHING` is documented
+ * above as what keeps promotion durable; this is the other half. `settlement_state` may only move
+ * CLAIMED_UNSETTLED → SETTLED/OPERATOR, never back, so a late or duplicated settle callback can
+ * never un-settle money that did move.
+ *
+ * THE KEY MUST BE DERIVED EXACTLY AS THE CLAIM DERIVED IT. `payerWallet` here is
+ * `extractPayerWallet(paymentPayload) ?? ''` — the same call, on the same payload, that
+ * `tryClaimPayment` used to write the row. The facilitator's `result.payer` is NOT
+ * interchangeable: a differently-cased or checksummed address would match zero rows and fail
+ * silently, which is the quietest possible way for this to not work.
+ *
+ * NEVER THROWS. It runs after the response is already sent; a DB fault degrades to a log line.
+ */
+export async function recordSettlementOutcome(
+  nonce: string,
+  payerWallet: string,
+  outcome: 'SETTLED' | 'OPERATOR',
+): Promise<'PROMOTED' | 'NOT_FOUND' | 'ERROR'> {
+  if (!nonce) return 'NOT_FOUND';
+  try {
+    ensureProcessedX402PaymentsSchema();
+    const rows = await dbQuery<{ nonce: string }>(
+      `UPDATE processed_x402_payments SET settlement_state = ?
+        WHERE nonce = ? AND payer_wallet = ? AND settlement_state = ?
+        RETURNING nonce`,
+      [outcome, nonce, payerWallet, CLAIM_INITIAL_SETTLEMENT_STATE],
+    );
+    if (rows.length > 0) {
+      console.log(`[x402-idempotency] settlement promoted → ${outcome} (nonce=${nonce})`);
+      return 'PROMOTED';
+    }
+    // Already promoted, or no matching claim. Both are benign and neither is an error: a repeated
+    // settle callback is idempotent by the WHERE clause above.
+    return 'NOT_FOUND';
+  } catch (err) {
+    console.error(
+      `[x402-idempotency] recordSettlementOutcome DB error for nonce=${nonce} — row stays ${CLAIM_INITIAL_SETTLEMENT_STATE}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return 'ERROR';
+  }
+}
+
 /** Count of claimed payments (test/observability). */
 export async function getClaimedPaymentCount(): Promise<number> {
   ensureProcessedX402PaymentsSchema();
