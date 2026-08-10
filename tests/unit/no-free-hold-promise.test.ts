@@ -182,4 +182,28 @@ describe('no ORPHANED numerical claim on the pricing surface (survives the HOLD-
     const apiSrc = readFileSync(join(ROOT, 'src/index.ts'), 'utf8');
     expect(apiSrc, '/api/performance-public must still serve hold_rate').toContain('hold_rate,');
   });
+
+  /**
+   * A COMMENT THAT SHIPS IS PAGE CONTENT.
+   *
+   * The /track-record stats line is built inside a browser-script TEMPLATE LITERAL in
+   * src/index.ts, so every byte of that literal — comments included — is served in the page
+   * source. This wave's first attempt put a tombstone comment there NAMING the stat it had just
+   * retired, which put the phrase straight back onto the public page: the live AC grep returned 2
+   * occurrences on a page that was supposed to have zero, and the only reason it was caught is
+   * that the AC was measured against the LIVE page rather than against the diff.
+   *
+   * Both halves are asserted because they fail independently: the rendered line must carry the
+   * three surviving stats and stop, and the served literal must not name the retired one anywhere.
+   */
+  it('the served track-record stats line has exactly 3 stats, and the literal never names the 4th', () => {
+    const src = readFileSync(join(ROOT, 'src/index.ts'), 'utf8');
+    // The line ends after the third stat — no fourth concatenation.
+    expect(src).toContain("' · PFE Win Rate: ' + pct(s.overall.pfeWinRate);");
+    // The label form only ever existed in that served line.
+    expect(src, 'a served template literal must not name the retired stat').not.toContain('HOLD Rate: ');
+    // And the hydration hook must be gone with it, not stranded.
+    const evalBlock = src.slice(src.indexOf("getElementById('eval-indicator')"));
+    expect(evalBlock.slice(0, 600)).not.toMatch(/holdRate|totalHolds/);
+  });
 });

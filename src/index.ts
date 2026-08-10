@@ -4682,16 +4682,20 @@ function renderAll() {
     }
   }
 
-  // Evaluated indicator.
-  // HOLD Rate was REMOVED from this line 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1 (architect
-  // ruling: with the pricing cards silent on HOLD, a prominent HOLD Rate is an orphaned
-  // concept). The three remaining numbers stay mutually coherent WITHOUT it — HOLDs are not
-  // in the tracked ledger, so Trade Calls / Evaluated / PFE Win Rate never referenced the
-  // HOLD denominator. The hold_rate FIELD is UNCHANGED on /api/performance-public: this
-  // removed rendered copy, not data. (No backticks in this comment — it lives INSIDE the
-  // dashboard's browser-script template literal, where a backtick terminates the string.)
-  // Do not re-add the stat here — see the same wave's tombstones in
-  // scripts/snapshot-landing-manifest.json and ops/monitoring/website-drift-manifest.yaml.
+  // Evaluated indicator. The fourth stat that used to sit on this line was RETIRED 2026-08-10
+  // by HOLD-DEEMPHASIS-SWEEP-W1 on architect ruling; the three that remain are mutually
+  // coherent without it. Do not re-add it here.
+  //
+  // TWO CONSTRAINTS ON THIS COMMENT, both learned the hard way in the same wave:
+  //   1. NO BACKTICKS — this text lives inside the dashboard's browser-script template
+  //      literal, where a backtick terminates the string (tsc: TS1005).
+  //   2. It must not NAME the retired stat. Everything in this literal is SERVED to the
+  //      browser, so a tombstone naming the thing it retired puts that phrase straight back
+  //      into the public page source — the wave's own live grep caught exactly that, twice.
+  //      A comment that ships is page content, not a code comment.
+  // Full rationale lives where it cannot leak: the tombstones in
+  // scripts/snapshot-landing-manifest.json and ops/monitoring/website-drift-manifest.yaml,
+  // and the inverted assertions in tests/unit/no-free-hold-promise.test.ts.
   var evalEl = document.getElementById('eval-indicator');
   if (evalEl) {
     evalEl.textContent = 'Trade Calls: ' + (s.overall.totalCalls||0).toLocaleString() + ' · Evaluated: ' + (s.overall.totalEvaluated||0).toLocaleString() + ' · PFE Win Rate: ' + pct(s.overall.pfeWinRate);
