@@ -486,7 +486,7 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "6100ac59a1ecfe01a2bf7ac7f4fecf6eb48bac6d62681238803167bb8cb5b52a",
+      "sha256": "7af1fb24590ed4a883ca2b27ba2087c26e2881ed79654777c73866e1d47b84c8",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
@@ -915,7 +915,7 @@
       "schedule": "43 5 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "69cd905c3641cc3ed049107427542d1b385f6de6ddbc95b5a32613dd16bab1d2",
+      "sha256": "38236cad33cd590cbf0890cace6c1cdac70b5fc787f6e80c6710440086d357ba",
       "owner_wave": "SIGNAL-CLOSEDBAR-SHADOW-W1",
       "notes": "Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
     },
@@ -1014,7 +1014,7 @@
       "schedule": null,
       "invoked_by": "operator (manual, from a developer checkout)",
       "install_state": "installed",
-      "sha256": "4babde829a321782181903e3678be5d4817d37c7c83de02f4d006dc4e9debaa3",
+      "sha256": "c014ac9e8040445d65a4c7698c9340eb51a433248a50861cc3c1f919ba9fdb7a",
       "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
       "notes": "SHA-pinned deploy primitive. Runs on the OPERATOR's machine, not on a host — hence installed_at is empty and host/host_path are n-a rather than invented; it is listed so the registry records the tool that governs deploys, and REGISTRY_PARITY has nothing to assert for it. Refuses any ref that is not an ancestor of origin/main, materializes git archive <sha>, swaps per manifest entry (never whole-directory — /opt/algovault-bot holds a 171M .venv the units execute), sets ownership at the destination including the .bak copy, and stamps DEPLOYED_SHA + DEPLOYED_MANIFEST.sha256. Generic: 7 substantive /opt services share the class it closes; rollout is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT}."
     },

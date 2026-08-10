@@ -31,15 +31,55 @@ const sha256 = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
 /** Rows whose artifact lives in THIS repo (a `repo` field names a different owner). */
 const ownedHere = (r) => !r.repo;
 
+/**
+ * WIDENED 2026-08-10 by OPS-MONITORING-PATHSIGNORE-PARITY-W1 — 8 rows -> 54 of 58.
+ *
+ * `row.sha256` is the ONE canonical hash, and `monitoring-inventory-reconcile.py`'s HASH_DRIFT
+ * check compares the LIVE HOST FILE against it — labelling that field `"repo"` in its own output.
+ * So the whole host-parity chain is:
+ *
+ *     committed repo file  --[THIS TEST]-->  row.sha256  --[HASH_DRIFT, daily]-->  live host file
+ *
+ * The middle link was never asserted. That made `row.sha256` an unanchored number, and HASH_DRIFT
+ * a comparison against a value that might match neither side — which is exactly what happened:
+ * `website-drift-manifest.yaml`'s row recorded a hash matching NEITHER the host copy nor the
+ * committed one, so `HOMEPAGE_HOLD_RATE_DTRF_BAND` sat retired-in-repo but live-on-host for 5 days
+ * and the drift signal that should have caught it was indistinguishable from noise.
+ * (HOLD-DEEMPHASIS-SWEEP-W1, 2026-08-10.)
+ *
+ * THE DEFECT WAS THE SCAN SET, NOT THE ASSERTION. This test already made the right comparison and
+ * PASSED — over 8 of 58 rows, because `!r.installed_at` skipped 39 (that field is the multi-host
+ * consumer registry, so the predicate silently narrowed a universal invariant to the shared
+ * primitives its authoring wave happened to care about) and `r.repo_resident` skipped 13 more.
+ * Widening it caught 3 real, previously-invisible violations on the first run.
+ *
+ * The exclusions that REMAIN are structural — derived from the data, never a maintained list, so
+ * an artifact cannot be quietly dropped from coverage by adding its name somewhere:
+ *   - `repo` names another repo   -> the file is not in this checkout, so it cannot be hashed here
+ *   - `artifact` is `external:…`  -> same, marked explicitly
+ *   - no `sha256`                 -> only the inventory's OWN row, which cannot contain its own
+ *                                    hash; SOT_PARITY covers that file instead
+ * `repo_resident` is deliberately NOT an exclusion any more: those artifacts are consumed from the
+ * host's git checkout, so HASH_DRIFT rightly skips them — which makes THIS the only assertion that
+ * can keep their recorded hash honest, not a reason to skip them too.
+ */
+const hashableHere = (r) =>
+  Boolean(r.sha256) && ownedHere(r) && !String(r.artifact ?? '').startsWith('external:');
+
+/** The floor is the point of this test. See COVERAGE_FLOOR below. */
+const COVERAGE_FLOOR = 50;
+
 test('every registry row committed here matches its ONE canonical sha256', () => {
   const mismatches = [];
+  let checked = 0;
   for (const r of rows) {
-    if (!r.installed_at || !r.sha256 || !ownedHere(r) || r.repo_resident) continue;
+    if (!hashableHere(r)) continue;
     const p = path.join(REPO, r.artifact);
     if (!existsSync(p)) {
       mismatches.push(`${r.id}: artifact missing at ${r.artifact}`);
       continue;
     }
+    checked += 1;
     const actual = sha256(p);
     if (actual !== r.sha256) {
       mismatches.push(
@@ -51,9 +91,52 @@ test('every registry row committed here matches its ONE canonical sha256', () =>
   assert.deepEqual(
     mismatches,
     [],
-    'A shared primitive changed without its canonical hash being re-recorded. Every installation ' +
-      'listed in `installed_at` is asserted against that ONE hash, so a stale row silently ' +
-      'disarms REGISTRY_PARITY on every host:\n  ' + mismatches.join('\n  '),
+    'An inventory artifact changed without its canonical hash being re-recorded. HASH_DRIFT and ' +
+      'REGISTRY_PARITY both compare the live host file against that ONE hash, so a stale row ' +
+      'silently disarms them on every host. Re-stamp it in the SAME commit as the edit:\n  ' +
+      mismatches.join('\n  '),
+  );
+  // POSITIVE output: a count, not just an absence. Silence here used to mean "8 rows agreed".
+  console.log(`  monitoring-inventory hash parity: ${checked} rows checked, 0 mismatched`);
+});
+
+test('the hash check covers the WHOLE inventory, not the slice one wave cared about', () => {
+  // THE GENERATOR FIX, and the reason this test exists as a separate assertion: the bug above was
+  // never a wrong comparison, it was a PASSING comparison over 14% of the rows. A zero-mismatch
+  // result is only meaningful alongside the breadth it was computed over, so the breadth is
+  // asserted too — a future predicate change that re-narrows the scan set fails HERE rather than
+  // reporting green over a handful of rows for months.
+  const hashable = rows.filter(hashableHere);
+  assert.ok(
+    hashable.length >= COVERAGE_FLOOR,
+    `hash-parity coverage collapsed to ${hashable.length} rows (floor ${COVERAGE_FLOOR}). Either ` +
+      'the inventory shrank, or a predicate change re-narrowed the scan set — which is the exact ' +
+      'defect OPS-MONITORING-PATHSIGNORE-PARITY-W1 retired. Raise the floor when rows are added; ' +
+      'never lower it to make a change pass.',
+  );
+  // A FLOOR, never equality: rows get added, and pinning the count would make that a build break.
+  // But the excluded set must stay SMALL and explainable, or the floor is satisfied while coverage
+  // rots — so the complement is bounded too, and every exclusion must be structural.
+  const excluded = rows.filter((r) => !hashableHere(r));
+  for (const r of excluded) {
+    const why = !r.sha256
+      ? 'no sha256 (self-referential inventory row)'
+      : r.repo
+        ? `owned by repo=${r.repo}`
+        : 'external: artifact';
+    assert.ok(
+      !r.sha256 || r.repo || String(r.artifact ?? '').startsWith('external:'),
+      `${r.id} is excluded from hash parity for no structural reason (${why})`,
+    );
+  }
+  assert.ok(
+    excluded.length <= 6,
+    `${excluded.length} rows are excluded from hash parity — that set must stay small and ` +
+      'structural. Growth here means coverage is being lost quietly.',
+  );
+  console.log(
+    `  hash-parity scan set: ${hashable.length} of ${rows.length} rows ` +
+      `(${excluded.length} structurally excluded)`,
   );
 });
 
