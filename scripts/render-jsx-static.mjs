@@ -205,10 +205,11 @@ function injectLiveDataPricingTagline(html) {
   // Q-W14: SimplePricing tagline 3 placeholder values
   // Mr.1 fix-forward 2026-05-11: % moved INSIDE span (was outside, causing double-% when JS
   // setField populates with formatted "98.8%" string). Same pattern as Q-W7-1 PFE WR fix.
-  // 98.8% big in tagline (single occurrence in SimplePricing render)
-  html = html.replace(/>98\.8%</, '><span data-tr-field="hold_rate">98.8%</span><');
-  // Tagline body paragraph: "We reject 98.8% of scans"
-  html = html.replace(/We reject 98\.8% of scans/, 'We reject <span data-tr-field="hold_rate">98.8%</span> of scans');
+  // RETIRED 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1: the two hold_rate span injections
+  // (SimplePricing tagline + "We reject 98.8% of scans") were DEAD — the homepage HOLD
+  // box was removed 2026-08-05 by PRICING-MONTHLY-PATH-AND-CARD-CLEANUP-W1, so neither
+  // literal has existed in the canvas since. tests/unit/no-free-hold-promise.test.ts
+  // already asserts landing/index.html carries ZERO hold_rate spans.
   // "90.2%+ Merkle-verified accuracy on 80,059+ signals" — % stays outside span here because
   // track-record-proxy.js formats pfe_wr as "90.2%" but the literal in canvas is "90.2%+" (with
   // trailing PLUS sign indicating "or higher"). Strip the trailing + or move it. Going with %+

@@ -2099,7 +2099,7 @@ cfg = gate_api.Configuration(
         </tbody>
       </table>
 
-      <p class="text-gray-400 text-sm mb-8">The engine returns HOLD on <span data-tr-field="hold_rate">99.2%</span> of scans &mdash; it calls only when multiple indicators align. Every verdict counts against your allowance, HOLD included: knowing when <em>not</em> to trade is the other half of the product, and it costs the same to compute. The two meters are independent &mdash; a call is refused when either the monthly or the daily allowance is exhausted, and the daily one resets at 00:00 UTC.</p>
+      <p class="text-gray-400 text-sm mb-8">Quota is counted per call, regardless of verdict. The two meters are independent &mdash; a call is refused when either the monthly or the daily allowance is exhausted, and the daily one resets at 00:00 UTC.</p>
 
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">What happens after you subscribe</h3>
@@ -2200,16 +2200,6 @@ cfg = gate_api.Configuration(
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
             x402 is an open protocol for machine-to-machine micropayments. Your agent pays per API call with USDC on Base &mdash; no signup, no API key, no subscription. The agent signs an ERC-3009 authorization, the server verifies it on-chain, and the call proceeds. It's the native payment rail for autonomous agents that don't have credit cards.
-          </div>
-        </details>
-
-        <details class="bg-navy-700 border border-white/5 rounded-xl group">
-          <summary class="px-5 py-3.5 text-white text-sm font-medium cursor-pointer list-none flex items-center justify-between">
-            What is the HOLD Rate?
-            <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
-          </summary>
-          <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            HOLD Rate is the percentage of scans where the engine declines to issue a BUY or SELL call. At <span data-tr-field="hold_rate">99.2%</span>, the engine is highly selective &mdash; it calls only when multiple indicators align.
           </div>
         </details>
 

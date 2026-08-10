@@ -107,7 +107,7 @@ looks like three unrelated canaries rather than "you ran the generators out of o
   subscription quota and the x402 rail, HOLD included (ruling R-A). This one IS blocklist-enforced
   at severity HIGH (`free-hold-promise` in `ops/brand-forbidden-phrases.json`), and it is the
   expensive mistake to make: roughly 99% of verdicts are holds, so "HOLDs are free" misstates
-  almost the entire bill. The correct phrasing is "every verdict counts, HOLD included".
+  almost the entire bill. The correct phrasing is "quota is counted per call, regardless of verdict" (HOLD-DEEMPHASIS-SWEEP-W1, 2026-08-10: the older "every verdict counts, HOLD included" phrasing was retired from every public surface — do not reintroduce it).
 - **Numbers get a `data-tr-field` span**, not a literal. A bare figure rots; a span hydrates from
   `/api/performance-public` and its baked value is refreshed at deploy.
 - **Build Rule 9** (Design.md §10): ≤20 words per sentence, no "powerful/seamless/robust/

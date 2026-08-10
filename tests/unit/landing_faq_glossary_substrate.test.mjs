@@ -139,12 +139,30 @@ test('faq.html FAQPage JSON-LD first 3 entries are the M6 beats', () => {
   );
 });
 
-test('glossary.html DefinedTermSet has ≥16 terms (was 15, +1 AOE)', () => {
+// RE-BASELINED 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1: 16 -> 15.
+// The "HOLD rate" DefinedTerm was DELETED on architect ruling (Q1) — JSON-LD node + rendered
+// <article> + its live span, as one unit, so structured data and rendered text cannot diverge.
+// A floor is the right shape here (the set grows as terms are added) but a floor still has to be
+// lowered when a term is deliberately retired, and lowering it is the honest act: leaving 16 would
+// have forced someone to re-add a term nobody wants. Paired with a NEGATIVE assertion below so the
+// reduction is pinned on BOTH sides — the count did not merely drop, it dropped for this reason.
+test('glossary.html DefinedTermSet has ≥15 terms (was 16 before the HOLD-rate retirement)', () => {
   const m = GLO.match(/<script\s+type="application\/ld\+json"[^>]*data-algovault-jsonld="DefinedTermSet"[^>]*>\s*([\s\S]*?)<\/script>/);
   assert.ok(m, 'DefinedTermSet JSON-LD block not found');
   const data = JSON.parse(m[1]);
   const n = (data.hasDefinedTerm || []).length;
-  assert.ok(n >= 16, `DefinedTermSet hasDefinedTerm has ${n}, expected ≥16`);
+  assert.ok(n >= 15, `DefinedTermSet hasDefinedTerm has ${n}, expected ≥15`);
+});
+
+test('glossary.html carries NO "HOLD rate" term — JSON-LD and rendered, both gone', () => {
+  const m = GLO.match(/<script\s+type="application\/ld\+json"[^>]*data-algovault-jsonld="DefinedTermSet"[^>]*>\s*([\s\S]*?)<\/script>/);
+  const data = JSON.parse(m[1]);
+  const names = (data.hasDefinedTerm || []).map((t) => t.name);
+  assert.ok(!names.includes('HOLD rate'), 'HOLD rate DefinedTerm was retired — do not re-add it here');
+  // The rendered half must go with it: a JSON-LD term with no article (or the reverse) is the
+  // structured-data/rendered divergence the architect ruled against.
+  assert.ok(!/id="hold-rate"/.test(GLO), 'rendered HOLD rate <article> must be gone too');
+  assert.ok(!/data-tr-field="hold_rate"/.test(GLO), 'the live hold_rate span must be gone too');
 });
 
 test('glossary.html DefinedTermSet first entry is AOE (alphabetical "A")', () => {

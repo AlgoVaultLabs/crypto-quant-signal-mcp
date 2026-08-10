@@ -107,6 +107,11 @@ describe('every RENDERED tier bullet is covered by a claim — both surfaces (A9
       'Email support', 'Priority support', 'Dedicated support',
       '$0.015/call overage', '$0.01/call overage', 'HOLD calls always free',
       'SLA guarantee',
+      // HOLD-DEEMPHASIS-SWEEP-W1 (2026-08-10): the `all-verdicts-count` row retired with
+      // this bullet. NOT re-pointed at the replacement docs sentence — this gate scans
+      // rendered BULLETS (renderPlanCards + landing/index.html), and the replacement is
+      // docs prose that claimFor() never sees.
+      'Every verdict counts, including HOLD',
     ]) {
       expect(claimFor(dead), `"${dead}" must NOT be vouched for by any claim`).toBeNull();
     }

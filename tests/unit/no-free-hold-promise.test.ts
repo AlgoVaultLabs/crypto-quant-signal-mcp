@@ -157,11 +157,14 @@ describe('no ORPHANED numerical claim on the pricing surface (survives the HOLD-
     expect(count('data-tr-field="call_count"')).toBe(6);
   });
 
-  it('every page still in the dtrf-hold-rate manifest row carries its hold_rate span', () => {
-    // Mirrors scripts/snapshot-landing-manifest.json `dtrf-hold-rate`.apply_to_files, from which
-    // `landing/index.html` was removed in the same commit as the box. If a wave deletes one of
-    // the REMAINING spans, the injector reports a silent zero-match at every deploy — 1 row of 30
-    // is 3.3%, far below the >=50% catastrophic gate, so the build stays GREEN and the page rots.
+  // INVERTED 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1. This test used to assert the PRESENCE of a
+  // hold_rate span on all six pages the `dtrf-hold-rate` injector row named. The architect removed
+  // the rendered HOLD Rate stat from every public surface, so the row was retired in the SAME
+  // COMMIT as the spans (the firewall). The assertion is kept and inverted rather than deleted:
+  // deleting it would let a future wave re-add a span with no injector row (a hardcoded number
+  // that silently rots) or re-add the row with no span (a permanent EXTRACT_NONE, i.e. a dark
+  // guard). Both halves must come back together or neither may.
+  it('the dtrf-hold-rate row and every span it named are BOTH gone — no half-removal', () => {
     const files = [
       'README.md', 'docs-src/partials/faq.html', 'docs-src/partials/pricing.html',
       'landing/docs.html', 'landing/faq.html', 'landing/glossary.html',
@@ -169,11 +172,14 @@ describe('no ORPHANED numerical claim on the pricing surface (survives the HOLD-
     expect(files.length).toBe(6); // vacuity guard
     for (const f of files) {
       const src = readFileSync(join(ROOT, f), 'utf8');
-      expect(src, `${f} lost its hold_rate injection hook`).toContain('data-tr-field="hold_rate"');
+      expect(src, `${f} still carries a hold_rate span whose injector row was retired`)
+        .not.toContain('data-tr-field="hold_rate"');
     }
-    // The row must not still name a file that no longer carries the span.
     const manifest = readFileSync(join(ROOT, 'scripts/snapshot-landing-manifest.json'), 'utf8');
     const row = JSON.parse(manifest).claims.find((r: { id: string }) => r.id === 'dtrf-hold-rate');
-    expect(row.apply_to_files).toEqual(files);
+    expect(row, 'the dtrf-hold-rate row must be retired, not left to zero-match').toBeUndefined();
+    // The API field is deliberately UNTOUCHED — this wave removed copy, not data.
+    const apiSrc = readFileSync(join(ROOT, 'src/index.ts'), 'utf8');
+    expect(apiSrc, '/api/performance-public must still serve hold_rate').toContain('hold_rate,');
   });
 });

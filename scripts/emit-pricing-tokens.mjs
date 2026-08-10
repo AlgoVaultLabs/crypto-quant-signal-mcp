@@ -69,7 +69,7 @@ const tokens = {
   pro_prepay_savings_pct: String(planPrepaySavingsPct('pro', M) ?? ''),
   prepay_months: String(M),
   /** R-A stated once. A tutorial that needs the sentence must not re-word it. */
-  flat_billing: 'Every successful verdict counts against your allowance, HOLD included.',
+  flat_billing: 'Quota is counted per call, regardless of verdict.',
   enterprise: 'Custom volume — contact us',
 };
 

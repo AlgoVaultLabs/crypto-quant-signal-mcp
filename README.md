@@ -112,7 +112,7 @@ The `_algovault` block makes outputs composable: downstream risk and backtest to
      scripts/snapshot-landing-data.mjs at npm-publish + Hetzner-deploy. Do NOT hand-edit the
      numbers; edit "What's new" by hand. Wired by OPS-NPM-README-SINGLE-SOT-W1 (2026-05-31). -->
 <p align="center">
-  <strong><span data-tr-field="pfe_wr">91.7%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">134,276</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">50</span> on-chain batches</strong> · <strong><span data-tr-field="hold_rate">99.2%</span> HOLD rate</strong> <!-- SNAPSHOT-LINE -->
+  <strong><span data-tr-field="pfe_wr">91.7%</span> PFE Win Rate</strong> · <strong><span data-tr-field="total_calls">134,276</span> trade calls</strong> · <strong><span data-tr-field="merkle_batches">50</span> on-chain batches</strong> <!-- SNAPSHOT-LINE -->
 </p>
 
 <p align="center">
@@ -231,7 +231,7 @@ Single-prompt wrappers over 1–3 tool calls — regime gating, multi-timeframe 
 
 Quota-only tiers. Every tier gets all venues, all assets, all timeframes — you pay for call volume, nothing else.
 
-Two meters per paid tier, monthly and daily, enforced independently: a call is refused when either is exhausted, and the daily window is a UTC calendar day resetting at 00:00 UTC. Every successful verdict counts against them, HOLD included — knowing when *not* to trade is the other half of the product, and it costs the same to compute.
+Two meters per paid tier, monthly and daily, enforced independently: a call is refused when either is exhausted, and the daily window is a UTC calendar day resetting at 00:00 UTC. Quota is counted per call, regardless of verdict.
 
 | Feature | Free | Starter ($9.99/mo · $39.90/6mo) | Pro ($49/mo · $129/6mo) | Enterprise (contact us) | x402 (per call) |
 |---------|------|-------------------|-------------|---------------------|-----------------|
@@ -254,7 +254,7 @@ Two meters per paid tier, monthly and daily, enforced independently: a call is r
 
 ## What's new in v1.27.0
 
-- **🧮 Every verdict counts.** Your allowance covers every call the engine answers, on both the MCP and HTTP rails.
+- **🧮 Counted per call.** Your allowance covers every call the engine answers, on both the MCP and HTTP rails.
 - **📶 A new call ladder.** Free: 200/month plus 100/day. Starter: 10,000/month plus 1,000/day. Pro: 100,000/month plus 10,000/day.
 - **💳 6-month prepay replaces annual.** Starter is **$39.90** (~$6.65/mo, 33% off monthly) and Pro is **$129** (~$21.50/mo, 56% off monthly). Pick it at [signup](https://api.algovault.com/signup) with `?interval=6month`. Enterprise remains contact-us.
 - **⏱️ Daily limits say when they reset.** Hit a daily cap and the refusal tells you the hours remaining, not a monthly figure.

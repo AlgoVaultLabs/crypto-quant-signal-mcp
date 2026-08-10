@@ -36,8 +36,27 @@ const CANARY = join(REPO, 'ops', 'cron', 'checkout-parity.sh');
 const CONF = join(REPO, 'ops', 'deploy', 'checkout-parity.conf');
 const MANIFEST = join(REPO, 'scripts', 'snapshot-landing-manifest.json');
 
-/** The regression this wave exists for: the three targets no static `allow` glob ever covered. */
-const LEAKED = ['docs-src/template.html', 'docs-src/partials/faq.html', 'docs-src/partials/pricing.html'];
+/**
+ * The regression this wave exists for: the targets no static `allow` glob ever covered.
+ *
+ * NARROWED 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1, and the narrowing is the POINT of deriving
+ * this set rather than hand-writing it. `docs-src/partials/faq.html` and
+ * `docs-src/partials/pricing.html` were named by exactly ONE manifest row — `dtrf-hold-rate` —
+ * which retired with the rendered HOLD Rate stat. The injector therefore no longer writes those
+ * two files, so they must NOT stay in the parity allowlist: an allowlist entry for a path nothing
+ * dirties is a hole that would silently excuse a real foreign edit there.
+ *
+ * They are kept here as a NEGATIVE assertion below rather than deleted, so that re-adding a
+ * docs-src injector row without re-deriving the allowlist fails instead of passing quietly.
+ * `docs-src/template.html` still has a live row and stays POSITIVE.
+ */
+const LEAKED = ['docs-src/template.html'];
+
+/** Named by `dtrf-hold-rate` alone; must LEAVE the derived set now that the row is retired. */
+const DERIVED_OUT_AFTER_HOLD_RETIREMENT = [
+  'docs-src/partials/faq.html',
+  'docs-src/partials/pricing.html',
+];
 
 /** Run the helper and return its stdout path list + the single stderr verdict token. */
 function derive(manifestPath: string): { paths: string[]; token: string; code: number } {
@@ -95,11 +114,29 @@ function fixtureService(claims: unknown[]): { dir: string; cleanup: () => void }
 }
 
 describe('injector target set — derived from the manifest that declares it', () => {
-  it('covers the three docs-src paths the hand-written allowlist never did', () => {
+  it('covers the docs-src paths the hand-written allowlist never did', () => {
     const { paths, token, code } = derive(MANIFEST);
     expect(token).toBe('PASS');
     expect(code).toBe(0);
     for (const p of LEAKED) expect(paths, `${p} must be derived`).toContain(p);
+  });
+
+  it('DROPS a path whose only manifest row retired — the allowlist narrows with the injector', () => {
+    // The two-way half of the proof. HOLD-DEEMPHASIS-SWEEP-W1 retired `dtrf-hold-rate`, the sole
+    // row naming these files. A derived allowlist must shrink here; a hand-written one would have
+    // kept excusing foreign edits to files the injector no longer touches. If a future wave
+    // re-adds a docs-src injector row, this fails and forces the allowlist to be re-derived
+    // together with it.
+    const { paths } = derive(MANIFEST);
+    const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+    for (const p of DERIVED_OUT_AFTER_HOLD_RETIREMENT) {
+      const rows = manifest.claims.filter(
+        (r: { apply_to_files?: string[] }) => (r.apply_to_files ?? []).includes(p),
+      );
+      // Guard the guard: this only asserts absence while NO row claims the path.
+      expect(rows, `${p} regained a manifest row — re-derive the allowlist`).toHaveLength(0);
+      expect(paths, `${p} must NOT be derived once its only row retired`).not.toContain(p);
+    }
   });
 
   it('is non-empty and has not silently collapsed', () => {

@@ -1,5 +1,5 @@
 {
-  "_comment": "OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25) snapshot manifest. Architect-ratified at Plan-Mode R1. Defines per-claim find/replace rules applied to landing/*.html on every Hetzner deploy. Script: scripts/snapshot-landing-data.mjs. Adding a new claim = manifest row, no code change.",
+  "_comment": "OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25) snapshot manifest. Architect-ratified at Plan-Mode R1. Defines per-claim find/replace rules applied to landing/*.html on every Hetzner deploy. Script: scripts/snapshot-landing-data.mjs. Adding a new claim = manifest row, no code change. RETIREMENT LOG — dtrf-hold-rate (hold_rate span injector, 6 files) was retired 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1, in the SAME COMMIT as the spans it wrote. The rendered HOLD Rate stat left every public surface on architect ruling; a row kept without its spans zero-matches forever (1 row of 30 = 3.3%, far under the >=50% catastrophic gate, so the build stays GREEN while the guard is dark). /api/performance-public still serves hold_rate — this removed copy, not data. Re-publishing a hold-rate figure requires re-adding BOTH the span and this row.",
   "sot_endpoints": {
     "performance": "https://api.algovault.com/api/performance-public",
     "merkle": "https://api.algovault.com/api/merkle-batches"
@@ -87,24 +87,6 @@
       "format": "integer",
       "apply_to_files": [
         "landing/index.html"
-      ],
-      "replace_all": true
-    },
-    {
-      "id": "dtrf-hold-rate",
-      "find_pattern": "(data-tr-field=\"hold_rate\"[^>]*>)[^<]+(<)",
-      "replace_template": "$1{value}%$2",
-      "sot": "performance",
-      "accessor": "hold_rate",
-      "format": "float_1dp",
-      "_note": "NOT monotonic — a HOLD rate can fall, so this is never FLOOR-coerced. The replace_template writes the % INSIDE the span, which is the contract every span must match: a span holding a bare number FOLLOWED by a literal % bakes into '99.2%%'. That shipped to the npm README twice (91.6%%, 99.1%%) and was 'fixed' both times by deleting the inner % — the wrong side, which re-arms on the next inject. Guarded by scripts/check-live-numeric-claims.mjs (OPS-DOCS-HOLDRATE-LIVE-W1). Partials added by OPS-JSONLD-PFE-PROPERTYVALUE-MANAGE-W1: landing/docs.html is GENERATED from docs-src/partials/*, so injecting only the generated page leaves the generator's input stale and the next build_docs re-emits the old value. Inject the source AND the output, or neither holds.",
-      "apply_to_files": [
-        "README.md",
-        "docs-src/partials/faq.html",
-        "docs-src/partials/pricing.html",
-        "landing/docs.html",
-        "landing/faq.html",
-        "landing/glossary.html"
       ],
       "replace_all": true
     },

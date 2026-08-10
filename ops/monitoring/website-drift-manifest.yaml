@@ -200,24 +200,18 @@ rows:
   # /docs still carries a hold-rate claim; DOCS_HOLD_RATE_DTRF_BAND below is unaffected.
 
   # ============================ /docs ============================
-  # Added by OPS-DOCS-HOLDRATE-LIVE-W1 (SEC-12). /docs carried NO drift row at all while publicly
-  # stating a HOLD rate of "~84%" against a live SoT of 99.2% — an entire public page unmonitored.
-  # BAND, never FLOOR: a HOLD rate can legitimately fall, so FLOOR would suppress the real signal
-  # (the monotonic-FLOOR coercion belongs to counters that only grow, e.g. batch_count).
-  # Not EXACT either: the page literal is refreshed by the 00:39 UTC injector while the SoT moves
-  # continuously, so EXACT would fire on normal bake lag rather than on drift.
-
-  - alert_id: DOCS_HOLD_RATE_DTRF_BAND
-    page_url: https://algovault.com/docs
-    claim_pattern: 'data-tr-field="hold_rate"[^>]*>([0-9.]+)%'
-    extract_method: regex_first_match
-    transform: float(match)
-    sot_endpoint: https://api.algovault.com/api/performance-public
-    sot_jq: .hold_rate
-    tolerance_type: BAND
-    tolerance_value: 3
-    tg_fires: true
-    recommended_wave: OPS-LANDING-COPY-REFRESH-W{NEXT}
+  # DOCS_HOLD_RATE_DTRF_BAND — RETIRED 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1, and retired in the
+  # SAME COMMIT as the span it watched (the firewall: a span deleted with its row still live goes
+  # EXTRACT_NONE on the next run). The rendered HOLD Rate stat was removed from every public
+  # surface on architect ruling, so `data-tr-field="hold_rate"` no longer appears on
+  # https://algovault.com/docs — nor on /, /faq, /glossary or the npm README.
+  # Left in place this row would NOT have failed: a non-matching claim_pattern logs EXTRACT_NONE,
+  # increments extract_failures and `continue`s, and extract_failures only ever reaches a summary
+  # log line, never an alert. It would have become a silently dark guard, indistinguishable from a
+  # healthy one — the same reasoning that deleted HOMEPAGE_HOLD_RATE_DTRF_BAND above.
+  # THE UNDERLYING DATA IS UNCHANGED: `/api/performance-public` still serves `hold_rate`, and this
+  # wave removed rendered copy only. If a future wave re-publishes a hold-rate figure it must
+  # re-add BOTH the span and a row here, or it ships an unmonitored public number.
 
   # ============================ /track-record ============================
 

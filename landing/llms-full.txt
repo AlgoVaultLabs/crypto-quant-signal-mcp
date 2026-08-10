@@ -122,11 +122,9 @@ Answer-shaped guides for the most-asked AI-agent crypto-trading questions (GEO-C
 | Enterprise | Contact us | Custom volume — https://algovault.com/contact | Custom | Custom |
 | x402 pay-per-call | $0.01–$0.02/call | All assets, all 11 timeframes, no signup/key | Unlimited (pay per call) | Unlimited |
 
-Both meters are enforced independently: a call is refused when EITHER the monthly or the daily allowance is exhausted, and the daily window is a UTC calendar day resetting at 00:00 UTC. Every successful verdict counts against them, HOLD included.
+Both meters are enforced independently: a call is refused when EITHER the monthly or the daily allowance is exhausted, and the daily window is a UTC calendar day resetting at 00:00 UTC. Quota is counted per call, regardless of verdict.
 
 **Track-record coverage:** the public dashboard shows 10 of 11 timeframes (3m + 5m–1d). The 3m row joined the public track record on 2026-05-19 after clearing the shadow-mode decision gates (PFE Win Rate 92.42% across 3,959 evaluated samples; gates ≥85% and ≥3,000). The 1m timeframe stays API-on-demand while its sample density accrues. Calls for 1m work fine; they just don't yet appear in the rolling-window PFE breakdown.
-
-**~98% HOLD rate. We only fire when we mean it.** Most signal tools always emit a verdict. AlgoVault rejects ~98% of scans as HOLD. That selectivity is why the rest have 89.4%+ Merkle-verified accuracy. (Live `hold_rate` at https://algovault.com/api/performance-public; snapshot 2026-04-27.)
 
 Sign up at https://api.algovault.com/signup?plan={starter|pro|enterprise}.
 
@@ -139,7 +137,7 @@ AlgoVault accepts **x402 pay-per-call micropayments** — your agent pays per ca
 - `scan_funding_arb` — $0.01/call
 - `get_trade_call` — $0.02/call
 - `get_market_regime` — $0.02/call
-- 200 free calls/month first (across all tools, up to 100/day); then pay per call. Every verdict counts, HOLD included.
+- 200 free calls/month first (across all tools, up to 100/day); then pay per call. Quota is counted per call, regardless of verdict.
 
 Docs: https://algovault.com/docs#x402 · x402 spec: https://x402.org
 

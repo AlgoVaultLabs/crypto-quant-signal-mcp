@@ -421,15 +421,15 @@ export const TIER_CLAIMS: readonly TierClaim[] = [
     match: /^Up to [\d,]+ calls\/day$/,
     evidence: { kind: 'sot', ref: 'src/lib/plans.ts#PLANS' },
   },
-  {
-    // R-A. The evidence is the DECLARATION, not a tool branch: the charge model lives in
-    // `feature-registry.ts` (`quota.unit`) and is projected through `call-class.ts`
-    // (`BILLING_AXIS_BY_QUOTA_UNIT`), so a registry row that re-exempted HOLD would break
-    // this claim's evidence rather than quietly contradicting the copy.
-    id: 'all-verdicts-count',
-    match: /^Every verdict counts, including HOLD$/,
-    evidence: { kind: 'code', ref: 'src/lib/feature-registry.ts' },
-  },
+  // RETIRED 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1: `all-verdicts-count`, which vouched
+  // for the bullet /^Every verdict counts, including HOLD$/. The bullet was removed from
+  // every pricing card and marketing surface on architect ruling ("a verdict is a verdict"),
+  // so the row had no rendered bullet left to vouch for. It is NOT re-pointed at the docs
+  // sentence: this gate's scan set is renderPlanCards() + landing/index.html bullets, and
+  // the replacement copy is docs PROSE, which claimFor() never sees. The bullet is pinned in
+  // the REGRESSION LOCK list in tests/unit/tier-claim-evidence.test.ts so reintroducing it
+  // lands as an orphan and fails the build. The charge model itself is UNCHANGED — every
+  // verdict is still one metered call; see src/lib/feature-registry.ts (`quota.unit`).
 ];
 
 /** The claim covering a rendered bullet, or null when nothing vouches for it. */

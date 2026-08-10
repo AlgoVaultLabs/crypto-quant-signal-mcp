@@ -128,7 +128,12 @@ describe('LANDING-CONVERSION-TRUST-W1 — trust band, verify link, free-start, C
     expect(count('Up to 100 calls/day')).toBe(2);
     expect(count('Up to 1,000 calls/day')).toBe(2);
     expect(count('Up to 10,000 calls/day')).toBe(2);
-    expect(count('Every verdict counts, including HOLD')).toBe(6);
+    // HOLD-DEEMPHASIS-SWEEP-W1 (2026-08-10) removed this bullet from all 6 sites (3 cards x
+    // 2 artboards) on architect ruling "a verdict is a verdict": a pricing card enumerates no
+    // outcomes. The charge model is UNCHANGED — every verdict is still one metered call — and
+    // the mechanics now live in exactly two places, /docs and the knowledge bundle. Asserted
+    // at 0 rather than deleted so a copy wave that reintroduces the bullet fails here.
+    expect(count('Every verdict counts, including HOLD')).toBe(0);
     expect(count('or $9.99/mo billed monthly')).toBe(2);
     expect(count('or $49/mo billed monthly')).toBe(2);
     // Enterprise: no self-serve price, no CTA, ONE contact line per artboard.

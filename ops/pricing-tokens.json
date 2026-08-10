@@ -23,7 +23,7 @@
     "pro_prepay_effective": "$21.50",
     "pro_prepay_savings_pct": "56",
     "prepay_months": "6",
-    "flat_billing": "Every successful verdict counts against your allowance, HOLD included.",
+    "flat_billing": "Quota is counted per call, regardless of verdict.",
     "enterprise": "Custom volume — contact us"
   }
 }

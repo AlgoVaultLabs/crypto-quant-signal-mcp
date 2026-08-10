@@ -63,7 +63,7 @@
     {
       "id": "free-hold-promise",
       "pattern": "\\bHOLDs?\\b\\s*(?:verdicts?\\s*)?(?:are|is)\\s+(?:always\\s+)?free\\b|\\bfree\\s+HOLDs?\\b|\\bHOLDs?\\b[^.\\n]{0,25}\\bnever\\s+charged\\b|\\bHOLDs?\\b[^.\\n]{0,20}\\b(?:do\\s*not|don'?t)\\s+count\\b",
-      "correction": "every verdict counts against your quota, HOLD included",
+      "correction": "quota is counted per call, regardless of verdict",
       "severity": "high",
       "reason": "Flat billing (R-A): every successful verdict is one metered call on BOTH rails. 'HOLD is free' was true until 2026-08-09 and is now a pricing misstatement \u2014 the most expensive kind, because ~99% of verdicts ARE holds.",
       "ratified": "PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 R-A (Mr.1, 2026-08-07)"

@@ -4682,13 +4682,19 @@ function renderAll() {
     }
   }
 
-  // Evaluated indicator (with HOLD rate)
+  // Evaluated indicator.
+  // HOLD Rate was REMOVED from this line 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1 (architect
+  // ruling: with the pricing cards silent on HOLD, a prominent HOLD Rate is an orphaned
+  // concept). The three remaining numbers stay mutually coherent WITHOUT it — HOLDs are not
+  // in the tracked ledger, so Trade Calls / Evaluated / PFE Win Rate never referenced the
+  // HOLD denominator. The hold_rate FIELD is UNCHANGED on /api/performance-public: this
+  // removed rendered copy, not data. (No backticks in this comment — it lives INSIDE the
+  // dashboard's browser-script template literal, where a backtick terminates the string.)
+  // Do not re-add the stat here — see the same wave's tombstones in
+  // scripts/snapshot-landing-manifest.json and ops/monitoring/website-drift-manifest.yaml.
   var evalEl = document.getElementById('eval-indicator');
   if (evalEl) {
-    var th = d.totalHolds || 0;
-    var totalGenerated = (s.overall.totalCalls||0) + th;
-    var holdRate = totalGenerated > 0 ? ((th / totalGenerated) * 100).toFixed(0) + '%' : '—';
-    evalEl.textContent = 'Trade Calls: ' + (s.overall.totalCalls||0).toLocaleString() + ' · Evaluated: ' + (s.overall.totalEvaluated||0).toLocaleString() + ' · PFE Win Rate: ' + pct(s.overall.pfeWinRate) + ' · HOLD Rate: ' + holdRate;
+    evalEl.textContent = 'Trade Calls: ' + (s.overall.totalCalls||0).toLocaleString() + ' · Evaluated: ' + (s.overall.totalEvaluated||0).toLocaleString() + ' · PFE Win Rate: ' + pct(s.overall.pfeWinRate);
   }
 
   // P1-TRACK-RECORD-LEADERBOARD-W1: the 3 fixed per-segment hydration blocks
@@ -4915,7 +4921,7 @@ function getSignupPageHtml(): string {
 <main class="page-main">
 <div class="container">
   <h1>AlgoVault Subscriptions</h1>
-  <div class="subtitle">Free tier includes all assets and all 11 timeframes &mdash; capped at 200 calls/month and 100 per UTC day. Every verdict counts, HOLD included. Upgrade for higher limits and unlimited funding-arb results.</div>
+  <div class="subtitle">Free tier includes all assets and all 11 timeframes &mdash; capped at 200 calls/month and 100 per UTC day. Upgrade for higher limits and unlimited funding-arb results.</div>
   <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px;flex-wrap:wrap">
     ${EXCHANGES.map(e => '<span style="color:#8b949e;font-size:12px;font-weight:600">' + e.label + '</span>').join('<span style="color:#6e7681">&middot;</span>')}
   </div>

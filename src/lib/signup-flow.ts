@@ -158,7 +158,6 @@ export function renderPlanCards(signupBase = ''): string {
       ${starterPrice}
       <ul>
         ${allowanceBullets('starter')}
-        <li>Every verdict counts, including HOLD</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>
@@ -171,7 +170,6 @@ export function renderPlanCards(signupBase = ''): string {
       ${proPrice}
       <ul>
         ${allowanceBullets('pro')}
-        <li>Every verdict counts, including HOLD</li>
         <li><span data-tr-field="exchange_count">${EXCHANGE_COUNT}</span> exchanges</li>
         <li>All assets (crypto + TradFi)</li>
         <li>All timeframes (1m to 1d)</li>

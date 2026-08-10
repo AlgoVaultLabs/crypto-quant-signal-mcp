@@ -159,7 +159,7 @@ never silence a healthy venue.
 | signal | where | meaning |
 |---|---|---|
 | `emit_suppressions` daily rows | prod postgres | the rate is real, per venue |
-| `hold_rate` | `/api/performance-public` | should rise; it is BAND-alerted (tol 3pp, TG-firing) |
+| `hold_rate` | `/api/performance-public` | should rise; NO LONGER ALERTED — `DOCS_HOLD_RATE_DTRF_BAND` was retired 2026-08-10 by HOLD-DEEMPHASIS-SWEEP-W1 with the rendered stat. The API field is unchanged; watch it manually |
 | `totalCalls` | `/api/performance-public` | must keep rising — a DECREASE is a Data Integrity event |
 | `HOMEPAGE_HOLD_RATE_DTRF_BAND` | `website-drift-manifest.yaml:159` | may fire on a >3pp hold-rate move — expected, not a defect |
 | new S2 rows | `signals` | should trend toward zero for freshly emitted signals |
