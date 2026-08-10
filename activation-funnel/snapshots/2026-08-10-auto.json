@@ -1,0 +1,132 @@
+{
+  "generated_at": "2026-08-10T10:14:12.717Z",
+  "window": {
+    "from": "2026-07-27T10:14:11.509Z",
+    "to": "2026-08-10T10:14:11.509Z"
+  },
+  "sessions": {
+    "total": 33,
+    "unique_ips": 33,
+    "new_in_window": 33
+  },
+  "funnel": {
+    "install": 1261,
+    "first_call": 33,
+    "second_call": 25,
+    "fifth_plus_call": 22,
+    "first_non_hold_verdict": 19,
+    "track_record_viewed": 30,
+    "landing_cta_clicked": 6,
+    "paid_upgrade": 0,
+    "mcp_tools_list": 507,
+    "quota_hit_soft": 9,
+    "quota_hit_hard": 9,
+    "quota_hit_block": 18,
+    "upgrade_cta_clicked": 0,
+    "stripe_checkout_started": 165,
+    "tg_bot_start": 9,
+    "tg_bot_first_command": 2,
+    "tg_bot_watchlist_add": null,
+    "tg_bot_quota_hit": 2,
+    "tg_bot_upgrade_clicked": null
+  },
+  "paid_upgrade_detail": {
+    "stripe_tier_sessions": 0,
+    "x402_settled_wallets": 0,
+    "unit_note": "stripe_tier_sessions counts SESSIONS (agent_sessions.tiers_seen, windowed on first_seen epoch-ms); x402_settled_wallets counts DISTINCT EXTERNAL PAYER WALLETS whose payment SETTLED (processed_x402_payments, windowed on created_at, operator self-settlement excluded). The two share no join key, so paid_upgrade is their sum, not a single population. Base/USDC rail only — OKX a2mcp settlements are not in this ledger."
+  },
+  "conversion": {
+    "install_to_first_call": 0.026169706582077717,
+    "first_to_second": 0.7575757575757576,
+    "second_to_fifth": 0.88,
+    "fifth_to_paid": 0
+  },
+  "stage_retentions": {
+    "install_to_mcp_tools_list": 0.4020618556701031,
+    "mcp_tools_list_to_first_call": 0.0650887573964497,
+    "first_call_to_quota_hit_soft": 0.2727272727272727,
+    "quota_hit_soft_to_quota_hit_hard": 1,
+    "quota_hit_hard_to_quota_hit_block": null,
+    "quota_hit_block_to_upgrade_cta_clicked": 0,
+    "upgrade_cta_clicked_to_stripe_checkout_started": null,
+    "stripe_checkout_started_to_paid_upgrade": 0,
+    "paid_upgrade_to_tg_bot_start": null,
+    "tg_bot_start_to_tg_bot_first_command": 0.2222222222222222,
+    "tg_bot_first_command_to_tg_bot_watchlist_add": null,
+    "tg_bot_watchlist_add_to_tg_bot_quota_hit": null,
+    "tg_bot_quota_hit_to_tg_bot_upgrade_clicked": null
+  },
+  "stage_ratio_anomalies": [
+    {
+      "from": "quota_hit_hard",
+      "to": "quota_hit_block",
+      "from_count": 9,
+      "to_count": 18,
+      "ratio": 2,
+      "reason": "quota_hit_block exceeds quota_hit_hard, so these stages are not sequential — a session can reach quota_hit_block without ever emitting quota_hit_hard. Not a retention; reported here instead."
+    }
+  ],
+  "weakest_stage_transition": {
+    "from": "quota_hit_block",
+    "to": "upgrade_cta_clicked",
+    "retention": 0
+  },
+  "stick_rate": 0.7575757575757576,
+  "time_to_first_call_ms": {
+    "p50": 191609023,
+    "p90": 831022624.8000002
+  },
+  "tool_call_distribution": {
+    "get_trade_signal": 54,
+    "get_market_regime": 3648,
+    "scan_funding_arb": 73,
+    "other": 85149
+  },
+  "hold_rate_get_trade_signal": 1,
+  "tier_cohort_sizes": {
+    "free": 66,
+    "starter": 0,
+    "pro": 0,
+    "enterprise": 0,
+    "x402": 0
+  },
+  "by_source": [
+    {
+      "source": "unknown",
+      "connects": 698,
+      "deterministic": 0,
+      "first_call": 28,
+      "conversion": 0
+    },
+    {
+      "source": "claude",
+      "connects": 52,
+      "deterministic": 0,
+      "first_call": 3,
+      "conversion": 0
+    },
+    {
+      "source": "docs",
+      "connects": 1,
+      "deterministic": 1,
+      "first_call": 0,
+      "conversion": 0
+    }
+  ],
+  "identity_coverage": {
+    "identified": 2,
+    "fallback": 749,
+    "anonymous": 0,
+    "coverage_pct": 0.002663115845539281
+  },
+  "by_authenticity": {
+    "raw_denominator": 751,
+    "human_denominator": 268,
+    "automated_count": 483,
+    "human_first_call_pct": 0.033582089552238806
+  },
+  "warnings": [
+    "unknown license_tier 'internal' in request_log — ignored",
+    "bot SQLite watchlists count failed: Command failed: sqlite3 -readonly /var/lib/algovault-bot/state.db \"SELECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-07-27T10:14:11.509Z' AND created_at <= '2026-08-10T10:14:11.509Z';\"\nError: in prepare, no such column: created_at\n  ECT COUNT(DISTINCT chat_id) FROM watchlists WHERE created_at >= '2026-07-27T10\n                                      error here ---^\n"
+  ]
+}
