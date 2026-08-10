@@ -200,11 +200,14 @@ async function main() {
   console.log(`HTTP status   : ${pay.status}`);
   console.log(`verdict       : ${verdict ?? '(n/a)'}`);
 
-  // ── HOLD → free, no settlement (expected, not a failure) ──
+  // ── HOLD → this run exits before the settlement check (LEGACY WAIVER — see below) ──
   if (HOLD_WAIVING_TOOLS.has(TOOL) && verdict === 'HOLD') {
-    console.log('result        : HOLD → the server returns this FREE (no charge, no settlement id).');
-    console.log('\nℹ NOT a failure of the flip. To force a chargeable settlement for the R4 seller-credit');
-    console.log('  check, re-run (verdict is market-dependent) OR:  SMOKE_TOOL=get_market_regime node scripts/circle-gateway-buyer-smoke.mjs');
+    console.log('result        : HOLD → this run exited before the settlement check.');
+    console.log('\n⚠ STALE WAIVER, not a failure of the flip. PRICING-FLAT CH5 (2026-08-08) made every');
+    console.log('  verdict settle on the x402 rail, HOLD included, so this branch no longer describes a');
+    console.log('  no-charge path — it just skips the R4 seller-credit assertion. Control flow left as-is');
+    console.log('  deliberately (out of this wave\'s scope); retiring HOLD_WAIVING_TOOLS is a follow-up.');
+    console.log('  For a chargeable settlement, re-run (verdict is market-dependent) OR:  SMOKE_TOOL=get_market_regime node scripts/circle-gateway-buyer-smoke.mjs');
     line();
     process.exit(0);
   }

@@ -73,6 +73,51 @@ export const BILLING_AXIS_BY_QUOTA_UNIT: Record<QuotaUnit, BillingAxis> = {
 export const FLAT_BILLING_CUTOVER_ISO = '2026-08-08T00:00:00.000Z';
 export const FLAT_BILLING_CUTOVER_MS = Date.parse(FLAT_BILLING_CUTOVER_ISO);
 
+/** The cutover as a bare `YYYY-MM-DD`, for copy. DERIVED — never a second date literal. */
+export const FLAT_BILLING_CUTOVER_DATE = FLAT_BILLING_CUTOVER_ISO.slice(0, 10);
+
+/** A class's display strings. `emoji` is a structural marker, never decoration (CLAUDE.md). */
+export interface BillingClassLabel {
+  readonly emoji: string;
+  /** Human-readable class name. No emoji, no trailing punctuation. */
+  readonly label: string;
+}
+
+/**
+ * THE display vocabulary for `CallClass` — the ONE source every operator surface renders from
+ * (OPS-OPERATOR-SURFACES-HOLD-RETIRE-W1 R3). The digest, the funnel dashboard and the scoreboard
+ * all project from here; a hand-typed class label anywhere else is the write-side/monitor-side
+ * pair that CLAUDE.md's single-derivation rule exists to prevent.
+ *
+ * WHY IT LIVES BELOW THE CUTOVER CONSTANTS and not beside `BILLING_AXIS_BY_QUOTA_UNIT`: the
+ * `free_hold` label states the boundary date, and it DERIVES it rather than repeating it. A
+ * second `2026-08-08` literal is exactly the drift this module was built to make impossible.
+ *
+ * On `free_hold` specifically — it is a BOUNDED HISTORICAL class, and its label says so. Post
+ * cutover no HOLD is unbilled on any rail, so no operator surface may describe HOLD as free for
+ * a current window (Mr.1 ruling, 2026-08-10). The rows it names still exist and are still true
+ * of the era they were written in; re-labelling them would restate what the dashboards reported.
+ */
+export const BILLING_CLASS_LABELS: Readonly<Record<CallClass, BillingClassLabel>> = Object.freeze({
+  billable: Object.freeze({ emoji: '💰', label: 'Metered calls' }),
+  free_hold: Object.freeze({
+    emoji: '🗄',
+    label: `Unbilled HOLD (pre-${FLAT_BILLING_CUTOVER_DATE}, legacy)`,
+  }),
+  unmetered: Object.freeze({ emoji: '🔎', label: 'Unmetered (rate-limited)' }),
+  internal: Object.freeze({ emoji: '🔁', label: 'Internal (algovault-bot)' }),
+  unclassified: Object.freeze({ emoji: '❓', label: 'Unclassified' }),
+});
+
+/**
+ * Render a class label. `withEmoji` off for surfaces that carry their own glyph column.
+ * Consumers call THIS (or read `.label`) — they never re-type the string.
+ */
+export function classLabel(cls: CallClass, withEmoji = true): string {
+  const l = BILLING_CLASS_LABELS[cls];
+  return withEmoji ? `${l.emoji} ${l.label}` : l.label;
+}
+
 /**
  * FROZEN HISTORICAL FACT — the tools that were verdict-billable BEFORE the cutover.
  *

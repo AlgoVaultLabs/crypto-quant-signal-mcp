@@ -34,12 +34,24 @@
  * The raw `tier=internal` polling count is NOT shown here (it's the bot's alert-engine noise,
  * covered by the bot's own digest); `totalCallsInternal` stays in the payload, unrendered.
  *
- * OPS-TOP-IP-FORENSICS-W1 (2026-07-31) — the block now LEADS with the billable decomposition:
- *   💰 Billable / 🆓 Free-by-design HOLD / 🔎 Unmetered / ❓ Unclassified, all projected from the
- * ONE derivation in call-class.ts (which itself derives from FEATURE_REGISTRY's quota model —
- * no parallel literal). `Total Agent Calls` is PRESERVED unchanged beside them (add before you
- * remove) but is now annotated as a VOLUME figure: it counts every logged dispatch including
- * free-by-design HOLDs, so it is not a demand number.
+ * OPS-TOP-IP-FORENSICS-W1 (2026-07-31) — the block carries a billing decomposition, projected
+ * from the ONE derivation in call-class.ts (which itself derives from FEATURE_REGISTRY's quota
+ * model — no parallel literal).
+ *
+ * OPS-OPERATOR-SURFACES-HOLD-RETIRE-W1 (2026-08-10) — the taxonomy, and why it changed.
+ * `Total Agent Calls` now LEADS and the class lines beneath PARTITION it exactly:
+ *   💰 Metered calls · 🔎 Unmetered · 🔁 Internal · [❓ Unclassified] · [🗄 legacy unbilled HOLD]
+ * Every label comes from `BILLING_CLASS_LABELS`; none is typed here.
+ *
+ * The old `🆓 Free-by-design HOLD` line and the `(all traffic incl. free HOLD)` annotation are
+ * GONE. Since the flat-billing cutover (2026-08-08) every verdict is a metered call, HOLD
+ * included, so for any 24h window that bucket is structurally zero — a permanently-empty line
+ * asserting HOLD is free. No operator surface may make that claim for post-cutover traffic
+ * (Mr.1 ruling, 2026-08-10). The dimension is NOT deleted: it renders, under a date-bounded
+ * legacy label, whenever a window actually reaches back past the cutover and the count is > 0.
+ *
+ * The two conditional lines are ordered last so the steady-state render is stable: on the
+ * healthy post-cutover path neither appears, and the block is exactly four lines.
  *
  * Why: the 2026-07-31 digest read `Total Agent Calls 3080 · Raw API clients 2955 (top IP 91.6%)`
  * and was read as one caller making ~2,707 unmetered calls. Forensics found the metering fully
@@ -55,6 +67,8 @@
  * the four new lines entirely, so a digest fired during the rollout window (before the
  * /analytics deploy lands) renders exactly the prior layout instead of throwing.
  */
+import { classLabel } from './call-class.js';
+
 export function formatAgentActivity(a: Record<string, unknown>): string {
   const num = (v: unknown, fallback: number | string = '—'): number | string =>
     typeof v === 'number' ? v : fallback;
@@ -116,23 +130,32 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
   const cc = (a.callClasses ?? null) as Record<string, unknown> | null;
   const ccPresent = !!cc && typeof cc.billable === 'number';
   const unclassified = ccPresent && typeof cc!.unclassified === 'number' ? (cc!.unclassified as number) : 0;
+  // The bounded historical class. Post-cutover windows contain none, so the line is OMITTED
+  // rather than rendered as a permanent zero under a label that asserts HOLD is free.
+  const legacyFreeHold = ccPresent && typeof cc!.freeHold === 'number' ? (cc!.freeHold as number) : 0;
+  // `internal` uses the SAME value `totalAgentCalls` folds in, so the partition below is exact
+  // by construction rather than by coincidence — a stale/missing bot contributes 0 to both.
+  const internalCalls = tgFresh ? asNum(tgBot!.calls_total) : 0;
   const classLines = !ccPresent
     ? []
     : [
-        `• 💰 Billable calls — Last 24h: ${num(cc!.billable)}   (${num(cc!.billableSessions)} sessions)`,
-        `• 🆓 Free-by-design HOLD — Last 24h: ${num(cc!.freeHold)}`,
-        `• 🔎 Unmetered (rate-limited) — Last 24h: ${num(cc!.unmetered)}`,
+        `• ${classLabel('billable')} — Last 24h: ${num(cc!.billable)}   (${num(cc!.billableSessions)} sessions)`,
+        `• ${classLabel('unmetered')} — Last 24h: ${num(cc!.unmetered)}`,
+        `• ${classLabel('internal')} — Last 24h: ${internalCalls}`,
         // An unregistered tool_name must be VISIBLE, never folded into another class.
-        ...(unclassified > 0 ? [`• ❓ Unclassified — Last 24h: ${unclassified}`] : []),
+        ...(unclassified > 0 ? [`• ${classLabel('unclassified')} — Last 24h: ${unclassified}`] : []),
+        // Only ever non-zero for a window reaching back past the cutover.
+        ...(legacyFreeHold > 0 ? [`• ${classLabel('free_hold')} — Last 24h: ${legacyFreeHold}`] : []),
       ];
 
   return [
     '🤖 *Agent Activity (24h)*',
+    // The headline leads, and the class lines beneath it PARTITION it exactly:
+    // billable + unmetered + unclassified + legacy-free-hold (= external) + internal = Total.
+    // Pinned by the body-sum assertion in tests/call-class.test.ts, which parses this render
+    // rather than trusting the inputs.
+    `• Total Agent Calls: ${totalAgentCalls}`,
     ...classLines,
-    // Add-before-remove: the pre-existing series is preserved unchanged alongside the new
-    // breakdown so nobody loses continuity. NB it counts every logged dispatch — billable AND
-    // free-by-design HOLD AND internal — so it is a VOLUME figure, not a demand figure.
-    `• Total Agent Calls: ${totalAgentCalls}${ccPresent ? '   (all traffic incl. free HOLD)' : ''}`,
     `• 🟢 Recognized clients: ${num(genuine.free)}`,
     // "top client", not "top IP": rawConcentration groups by session_id (analytics.ts), which
     // equals the ipHash only for callers that send no X-AlgoVault-Track-Token.

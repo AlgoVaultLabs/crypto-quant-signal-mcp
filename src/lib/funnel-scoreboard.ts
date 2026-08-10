@@ -35,6 +35,8 @@ import { classifySource, mediumForSource, type AttributionSource } from './attri
 // OPS-X402-WALLET-ATTRIBUTION-W1: operator self-settle wallets are excluded from the distinct-
 // paying-wallet CONVERSION metric (instrumentation_artifact); operator display is truncated.
 import { externalPayerSql, truncateWallet } from './x402-operator-wallets.js';
+// The cutover date is DERIVED, never a second literal (single-derivation rule).
+import { FLAT_BILLING_CUTOVER_DATE } from './call-class.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WINDOWS_DAYS = [7, 14, 30, 90] as const;
@@ -650,7 +652,10 @@ export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   const stages: FunnelStage[] = [
     { key: 'connections', label: 'Connections', sublabel: 'Reach · MCP / API', count: connections },
     { key: 'activated', label: 'Activated', sublabel: 'Value · made ≥1 call', count: activated },
-    { key: 'quota_crossing', label: 'Quota-crossing', sublabel: 'PQL · hit 90%+/100% cap', count: quotaCross },
+    // Flat billing (2026-08-08) meters every verdict, so a caller reaches a wall on volume alone.
+    // `quota_hit_block.meta.limit` discriminates WHICH wall fired — 'daily' (pacing, lifts at
+    // midnight) vs 'monthly' (budget, retry in days). They convert differently.
+    { key: 'quota_crossing', label: 'Quota-crossing', sublabel: 'PQL · hit the daily or monthly wall', count: quotaCross },
     { key: 'paid_x402', label: 'Paid', sublabel: 'Conversion · distinct paying wallets', count: paidWalletsX402 },
   ];
   const benches = [FUNNEL_BENCHMARKS.agent_conn_to_activated, FUNNEL_BENCHMARKS.agent_activated_to_quota, FUNNEL_BENCHMARKS.agent_quota_to_paid];
@@ -698,9 +703,16 @@ export interface HoldUpside {
   caveat: string;
 }
 
-/** HOLD-monetization upside — EXTERNAL agent calls only (is_bot_internal=false; NEVER the 36M
- *  lifetime counter, which request_log doesn't hold). HOLD/trade from request_log.verdict;
- *  null-verdict (chat/search/regime) excluded from the split. Upside = a LABELED projection. */
+/** HOLD volume + per-price revenue sensitivity — EXTERNAL agent calls only (is_bot_internal=
+ *  false; NEVER the 36M lifetime counter, which request_log doesn't hold). HOLD/trade from
+ *  request_log.verdict; null-verdict (chat/search/regime) excluded from the split.
+ *
+ *  The `upside` array predates the flat-billing cutover, when HOLD verdicts were unbilled and
+ *  the projection really was foregone revenue. Since 2026-08-08 every verdict is one metered
+ *  call, so the SAME three numbers now read as a sensitivity: what this window's HOLD volume is
+ *  worth at each per-call price. The computation is unchanged and the field name is kept (a
+ *  rename would break the dashboard's client-side reader for no measurement gain); what changed
+ *  is the copy that frames it. See OPS-OPERATOR-SURFACES-HOLD-RETIRE-W1. */
 export async function getHoldUpside(window: FunnelWindow, deps: ScoreboardDeps = defaultScoreboardDeps): Promise<HoldUpside> {
   const nowMs = deps.now();
   const iso = windowIso(window, nowMs);
@@ -718,7 +730,7 @@ export async function getHoldUpside(window: FunnelWindow, deps: ScoreboardDeps =
   return {
     window, external_calls: externalCalls, hold_calls: holdCalls, trade_calls: tradeCalls, non_verdict_calls: nonVerdict,
     active_agents: activeAgents, avg_calls_per_active_agent: avg, hold_rate: holdRate, upside,
-    caveat: 'External agent calls only (internal seed/scan excluded; request_log ≠ the 36M lifetime counter). Non-verdict calls (chat/search/regime) excluded from the HOLD/trade split. Estimate only — HOLDs stay free until you decide otherwise.',
+    caveat: `External agent calls only (internal seed/scan excluded; request_log ≠ the 36M lifetime counter). Non-verdict calls (chat/search/regime) excluded from the HOLD/trade split. Since ${FLAT_BILLING_CUTOVER_DATE} every verdict is one metered call, HOLD included — the per-price columns are a revenue-sensitivity projection, not a backlog of foregone revenue.`,
   };
 }
 
