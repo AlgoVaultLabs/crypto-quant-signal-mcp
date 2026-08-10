@@ -94,7 +94,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.26.0",
+    "version": "1.27.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -243,7 +243,6 @@ Two meters per paid tier, monthly and daily, enforced independently: a call is r
 | Track record | Full access | Full access | Full access | Full access | Full access |
 | Monthly calls | 200/mo | 10,000/mo | 100,000/mo | Custom volume — contact us | Unlimited |
 | Daily calls | 100/day | 1,000/day | 10,000/day | Custom volume — contact us | Unlimited |
-| Support | Community | Email | Priority | Dedicated | — |
 | Price | $0 | $9.99/mo or $39.90/6mo | $49/mo or $129/6mo | Contact us | $0.01–0.05/call |
 
 
@@ -253,9 +252,16 @@ Two meters per paid tier, monthly and daily, enforced independently: a call is r
 
 ---
 
-## What's new in v1.26.0
+## What's new in v1.27.0
 
-- **💳 Annual plans — prepay a year, save up to 49%.** Starter is **$79/yr** (~$6.58/mo) and Pro is **$299/yr** (~$24.92/mo). Monthly pricing is unchanged — pick annual at [signup](https://api.algovault.com/signup) via `?interval=year`. Enterprise remains contact-us.
+- **🧮 Every verdict counts.** Your allowance covers every call the engine answers, on both the MCP and HTTP rails.
+- **📶 A new call ladder.** Free: 200/month plus 100/day. Starter: 10,000/month plus 1,000/day. Pro: 100,000/month plus 10,000/day.
+- **💳 6-month prepay replaces annual.** Starter is **$39.90** (~$6.65/mo, 33% off monthly) and Pro is **$129** (~$21.50/mo, 56% off monthly). Pick it at [signup](https://api.algovault.com/signup) with `?interval=6month`. Enterprise remains contact-us.
+- **⏱️ Daily limits say when they reset.** Hit a daily cap and the refusal tells you the hours remaining, not a monthly figure.
+
+### v1.26.0 highlights (recap)
+
+- **💳 Annual plans — prepay a year, save up to 49%.** Starter was **$79/yr** (~$6.58/mo) and Pro was **$299/yr** (~$24.92/mo). **Superseded: annual was retired on 2026-08-09 and replaced by 6-month prepay (see v1.27.0); `?interval=year` now redirects to the 6-month checkout, so existing links still work.**
 
 ### v1.25.0 highlights (recap)
 
@@ -266,10 +272,6 @@ Two meters per paid tier, monthly and daily, enforced independently: a call is r
 
 > New optional parameter — MCP clients cache `tools/list` at session start. Toggle the connector off/on (or restart the MCP connection) to see `minLiquidityUsd`.
 
-### v1.24.0 highlights (recap)
-
-- **🌐 Three new exchanges: WhiteBIT, BitMart, XT.** AlgoVault's signal engine spans more perpetual-futures venues. Point any tool at the new venues via the `exchange` parameter.
-- **🔌 New venue integration pages.** Per-venue connect guides at [algovault.com/integrations](https://algovault.com/integrations).
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
