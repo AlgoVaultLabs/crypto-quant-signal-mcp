@@ -586,7 +586,10 @@ export function settleX402Async(settlement: { paymentPayload: unknown; requireme
         const outcome = isOperatorWallet(payer) ? 'OPERATOR' : 'SETTLED';
         // Fire-and-forget by design; a promotion failure must never surface to the buyer, whose
         // response was sent long ago. The store logs and returns 'ERROR' rather than throwing.
-        void recordSettlementOutcome(nonce, payer, outcome);
+        // `result.transaction` is the rail's OWN settlement id — the join key whose absence made
+        // the 2026-08-10 Gateway rows unreconcilable (one Circle transfer id, two rows, no map).
+        // Recorded so an established positive is auditable against the rail forever after.
+        void recordSettlementOutcome(nonce, payer, outcome, result.transaction);
       } else {
         // A failed settle leaves the row at CLAIMED_UNSETTLED, which is already the honest value:
         // the nonce was claimed and the money did not move. Nothing to write.

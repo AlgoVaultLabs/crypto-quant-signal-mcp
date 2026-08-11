@@ -49,15 +49,22 @@ import type { SettlementClass } from '../scripts/backfill-x402-payer-wallet.js';
 
 /**
  * A new claim is UNVERIFIED by construction. `tryClaimPayment` runs when a buyer PRESENTS an
- * authorization; nothing at that moment has checked the chain, so the honest initial state is
- * "claimed, not settled". Only the on-chain scan may promote it
- * (`backfill-x402-payer-wallet.ts --classify --execute`).
+ * authorization; nothing at that moment has established anything, so the honest initial state is
+ * "claimed, outcome not yet known".
  *
- * Consequence worth stating rather than discovering: any consumer counting only SETTLED rows reads
- * ZERO until a scan runs. That is the truthful reading, not a regression — the first-ever scan
- * (REVENUE-METER-TRUTH-W1 CH2) measured SETTLED=0 across all 18 historical rows.
+ * OPS-X402-SETTLEMENT-BACKFILL-W1 changed this from `CLAIMED_UNSETTLED` to `CLAIMED_PENDING`, and
+ * the reason is the whole wave: the old value was ALSO the classifier's verdict for "we looked and
+ * the money never moved". A row therefore could not say whether anything had ever examined it — so
+ * 15 established negatives and 2 never-examined rows were indistinguishable, and a reconciliation
+ * request read as 17 unresolved rows when only 2 were. Same zero-vs-unknown defect
+ * `OPS-ZERO-VS-UNKNOWN-W3` removed from this file's `tryClaimPayment` return.
+ *
+ * Promotion now happens at SETTLE time (`recordSettlementOutcome`, since
+ * OPS-X402-SETTLEMENT-CLASSIFY-PER-RAIL-W1), not from an on-chain scan — which for the Circle
+ * Gateway rail is impossible anyway: measured 2026-08-10, the seller EOA holds 0 USDC on OP with
+ * zero inbound transfers, because Circle credits the seller inside its own ledger.
  */
-const CLAIM_INITIAL_SETTLEMENT_STATE: SettlementClass = 'CLAIMED_UNSETTLED';
+const CLAIM_INITIAL_SETTLEMENT_STATE: SettlementClass = 'CLAIMED_PENDING';
 
 /** Rail written when a caller does not declare one — never guessed on their behalf. */
 export const RAIL_UNKNOWN = 'unknown';
@@ -138,6 +145,7 @@ const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
     payer_wallet TEXT NOT NULL DEFAULT '',
     settlement_state TEXT NOT NULL DEFAULT '${CLAIM_INITIAL_SETTLEMENT_STATE}',
     rail TEXT NOT NULL DEFAULT '${RAIL_UNKNOWN}',
+    settlement_ref TEXT,
     created_at ${process.env.DATABASE_URL ? 'TIMESTAMPTZ' : 'TIMESTAMP'} DEFAULT ${process.env.DATABASE_URL ? 'now()' : "(datetime('now'))"},
     PRIMARY KEY (payer_wallet, nonce)
   );
@@ -147,7 +155,18 @@ const CREATE_PROCESSED_X402_PAYMENTS_SQL = `
   ${process.env.DATABASE_URL ? 'ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS payer_wallet TEXT;' : ''}
   ${process.env.DATABASE_URL ? `ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS settlement_state TEXT NOT NULL DEFAULT '${CLAIM_INITIAL_SETTLEMENT_STATE}';` : ''}
   ${process.env.DATABASE_URL ? `ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS rail TEXT NOT NULL DEFAULT '${RAIL_UNKNOWN}';` : ''}
+  ${process.env.DATABASE_URL ? 'ALTER TABLE processed_x402_payments ADD COLUMN IF NOT EXISTS settlement_ref TEXT;' : ''}
 `;
+// OPS-X402-SETTLEMENT-BACKFILL-W1: `settlement_ref` is the rail's OWN identifier for the
+// settlement (`result.transaction`), and it is NULLABLE on purpose — NULL means "the rail gave us
+// no reference", which is a fact, not a blank to be filled with ''.
+//
+// WHY IT EXISTS. Without it we record a STATE we cannot audit. That is not hypothetical: on
+// 2026-08-10 two Gateway payments settled, and reconciling them was IMPOSSIBLE — one Circle
+// transfer id, two rows, and no join key between them. On-chain reconstruction does not rescue it
+// either, because Circle credits the seller inside its own ledger (measured: seller EOA holds 0
+// USDC on OP, zero inbound transfers, with the same query returning 312 transfers in 20 blocks).
+// A SETTLED row without a reference is an assertion nobody can ever check.
 // OPS-X402-WALLET-ATTRIBUTION-W1: `payer_wallet` is additive + nullable (nonce stays the PK /
 // idempotency key). Fresh DBs (SQLite tests + fresh PG) get it via CREATE TABLE; an EXISTING PG
 // table self-heals via the PG-only `ADD COLUMN IF NOT EXISTS` (SQLite has no such clause, but its
@@ -324,15 +343,21 @@ export async function recordSettlementOutcome(
   nonce: string,
   payerWallet: string,
   outcome: 'SETTLED' | 'OPERATOR',
+  // OPS-X402-SETTLEMENT-BACKFILL-W1: the rail's own settlement identifier (`result.transaction`).
+  // Additive TRAILING optional, same contract as `payerWallet`/`rail` on the insert. Absent or
+  // blank ⇒ NULL, never '': "the rail gave no reference" is a fact and must not be laundered into
+  // an empty string that reads like a recorded one.
+  settlementRef?: string,
 ): Promise<'PROMOTED' | 'NOT_FOUND' | 'ERROR'> {
   if (!nonce) return 'NOT_FOUND';
   try {
     ensureProcessedX402PaymentsSchema();
+    const ref = typeof settlementRef === 'string' && settlementRef.trim() !== '' ? settlementRef : null;
     const rows = await dbQuery<{ nonce: string }>(
-      `UPDATE processed_x402_payments SET settlement_state = ?
+      `UPDATE processed_x402_payments SET settlement_state = ?, settlement_ref = ?
         WHERE nonce = ? AND payer_wallet = ? AND settlement_state = ?
         RETURNING nonce`,
-      [outcome, nonce, payerWallet, CLAIM_INITIAL_SETTLEMENT_STATE],
+      [outcome, ref, nonce, payerWallet, CLAIM_INITIAL_SETTLEMENT_STATE],
     );
     if (rows.length > 0) {
       console.log(`[x402-idempotency] settlement promoted → ${outcome} (nonce=${nonce})`);

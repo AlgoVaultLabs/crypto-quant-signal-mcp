@@ -78,8 +78,25 @@ export function estimateBlock(headBlock: bigint, headTs: number, targetEpoch: nu
   return est > 0n ? est : 1n;
 }
 
-/** REVENUE-METER-TRUTH-W1 CH2 — settlement state of one claim row. */
-export type SettlementClass = 'SETTLED' | 'CLAIMED_UNSETTLED' | 'OPERATOR' | 'UNRESOLVABLE';
+/**
+ * REVENUE-METER-TRUTH-W1 CH2 — settlement state of one claim row.
+ *
+ * `CLAIMED_PENDING` added by OPS-X402-SETTLEMENT-BACKFILL-W1, and the split is the point.
+ * `CLAIMED_UNSETTLED` used to be BOTH the insert-time default ("nothing has looked yet") AND this
+ * classifier's established negative ("we looked on-chain and the money never moved"). Two
+ * different facts wearing one label: it is why 17 rows read as unreconciled when only 2 were, and
+ * it left no reader able to tell "no evidence yet" from "evidence of no payment".
+ *
+ * That is the SAME defect `OPS-ZERO-VS-UNKNOWN-W3` removed from `tryClaimPayment`, where a boolean
+ * could not separate "already claimed" from "DB fault" — second occurrence in this column family,
+ * so it is fixed at the vocabulary rather than at a call site.
+ *
+ *   CLAIMED_PENDING    — claimed; nothing has established an outcome yet. THE INSERT DEFAULT.
+ *   CLAIMED_UNSETTLED  — we LOOKED and the money did not move. Only `classifySettlement` writes it.
+ *   SETTLED / OPERATOR — established positive; carries a `settlement_ref` when the rail gave one.
+ *   UNRESOLVABLE       — we could not look (RPC error, unusable timestamp).
+ */
+export type SettlementClass = 'SETTLED' | 'CLAIMED_PENDING' | 'CLAIMED_UNSETTLED' | 'OPERATOR' | 'UNRESOLVABLE';
 
 /**
  * Classify one row from its on-chain `AuthorizationUsed` lookup. Pure — the viem call stays in
@@ -127,7 +144,11 @@ async function main(): Promise<void> {
 
   let filled = 0;
   let unresolved = 0;
-  const tally: Record<SettlementClass, number> = { SETTLED: 0, CLAIMED_UNSETTLED: 0, OPERATOR: 0, UNRESOLVABLE: 0 };
+  // `CLAIMED_PENDING` is present for exhaustiveness and stays 0 by construction: this classifier
+  // only ever emits an ESTABLISHED verdict (it looked), never "nothing has looked yet". A non-zero
+  // count here would mean the vocabulary leaked into the scanner. tsc caught its absence the
+  // moment the union grew, which is the whole reason the tally is a `Record<SettlementClass, …>`.
+  const tally: Record<SettlementClass, number> = { SETTLED: 0, CLAIMED_PENDING: 0, CLAIMED_UNSETTLED: 0, OPERATOR: 0, UNRESOLVABLE: 0 };
   for (const row of rows) {
     const epoch = Math.floor(new Date(row.created_at as string).getTime() / 1000);
     let wallet: string | null = null;

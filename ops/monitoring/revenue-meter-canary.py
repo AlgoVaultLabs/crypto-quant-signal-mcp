@@ -246,15 +246,29 @@ def build_divergence_query(grace_minutes):
     )
 
 
+# OPS-X402-SETTLEMENT-BACKFILL-W1: the NON-TERMINAL settlement states. A claim past the grace
+# period in any of these has no established outcome, which is exactly what meter (c) alarms on.
+#
+# BOTH are listed, and listing both is load-bearing. That wave split the vocabulary —
+# `CLAIMED_PENDING` is now the insert-time default ("nothing has looked yet") while
+# `CLAIMED_UNSETTLED` keeps only the classifier's established negative ("we looked, money did not
+# move"). Had this query been left keyed on `CLAIMED_UNSETTLED` alone, every NEW claim would have
+# been written under a token it does not match and **this alarm would have gone silently dark** —
+# reading 0 forever while unsettled claims accumulated. Counting the union can only over-count,
+# never under-count, which is the correct direction for a revenue-integrity alarm.
+UNSETTLED_STATES = ("CLAIMED_PENDING", "CLAIMED_UNSETTLED")
+
+
 def build_unsettled_query(watermark, grace_days):
     """Meter (c). Excludes the four empty-`payer_wallet` rows: they are unattributable ON CHAIN
     by construction (SEC-49 writes '' when no payer can be extracted), so they can never be
     classified and would breach forever. They also inflate COUNT(DISTINCT payer_wallet) to 3 when
     there are 2 real payers.
     """
+    states = ", ".join("'" + s + "'" for s in UNSETTLED_STATES)
     return (
         "SELECT count(*) FROM processed_x402_payments "
-        "WHERE settlement_state = 'CLAIMED_UNSETTLED' "
+        "WHERE settlement_state IN (" + states + ") "
         "AND trim(payer_wallet) <> '' "
         "AND created_at > TIMESTAMPTZ '" + watermark + "' "
         "AND created_at < now() - interval '" + str(int(grace_days)) + " days'"
@@ -744,6 +758,14 @@ def self_test():
     check("meter (a) carries the grace interval", built and "interval '15 minutes'" in qa)
     check("meter (c) is WATERMARKED, not an age-only threshold",
           built and UNSETTLED_WATERMARK in qc and "created_at >" in qc)
+    # OPS-X402-SETTLEMENT-BACKFILL-W1 — the anti-dark assertion. The vocabulary split moved the
+    # insert-time default to CLAIMED_PENDING; a query keyed on CLAIMED_UNSETTLED alone would match
+    # no NEW claim ever again and this alarm would read 0 forever while claims piled up. Narrowing
+    # it back must fail HERE rather than in six months' silence.
+    check("meter (c) counts EVERY non-terminal state (else it goes dark on new claims)",
+          built and all(("'" + s + "'") in qc for s in UNSETTLED_STATES))
+    check("meter (c) does NOT count a terminal state as unsettled",
+          built and "'SETTLED'" not in qc.replace("'CLAIMED_UNSETTLED'", "") and "'OPERATOR'" not in qc)
     check("meter (c) excludes the unattributable empty-payer rows",
           built and "trim(payer_wallet) <> ''" in qc)
 

@@ -209,7 +209,7 @@ describe('tryClaimPayment — three outcomes × row writes (W4 Step 0B)', () => 
   const n = (h: string) => (h + '0'.repeat(66)).slice(0, 66);
   const WALLET = '0xaaa0000000000000000000000000000000000aaa';
 
-  it('CLAIMED writes exactly one row, CLAIMED_UNSETTLED, with the declared rail', async () => {
+  it('CLAIMED writes exactly one row, CLAIMED_PENDING, with the declared rail', async () => {
     const { dbQuery } = await import('../src/lib/performance-db.js');
     const { RAIL_BASE_USDC } = await import('../src/lib/x402-idempotency-store.js');
     expect(await store.tryClaimPayment(n('0xc1'), 'get_trade_signal', '20000', WALLET, RAIL_BASE_USDC)).toBe('CLAIMED');
@@ -219,7 +219,14 @@ describe('tryClaimPayment — three outcomes × row writes (W4 Step 0B)', () => 
     expect(rows).toHaveLength(1);
     // A claim is unverified at insert. If this ever reads SETTLED here, the meter is lying again
     // in the original direction — booking revenue nothing has checked.
-    expect(rows[0].settlement_state).toBe('CLAIMED_UNSETTLED');
+    //
+    // OPS-X402-SETTLEMENT-BACKFILL-W1 changed the expected token from `CLAIMED_UNSETTLED` to
+    // `CLAIMED_PENDING`, deliberately. The old value doubled as the on-chain classifier's verdict
+    // for "we looked and the money never moved", so an insert was asserting a finding nothing had
+    // made — which is what left 15 established negatives and 2 never-examined rows
+    // indistinguishable. The insert must NOT be able to write the established negative.
+    expect(rows[0].settlement_state).toBe('CLAIMED_PENDING');
+    expect(rows[0].settlement_state).not.toBe('CLAIMED_UNSETTLED');
     expect(rows[0].rail).toBe('base-usdc');
   });
 

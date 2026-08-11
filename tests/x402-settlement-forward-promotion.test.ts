@@ -33,6 +33,16 @@ async function stateOf(nonce: string, payer: string): Promise<string | undefined
   return rows[0]?.settlement_state;
 }
 
+/** Read a row's settlement_ref back. `null` is meaningful: the rail gave no reference. */
+async function refOf(nonce: string, payer: string): Promise<string | null | undefined> {
+  const { dbQuery } = await import('../src/lib/performance-db.js');
+  const rows = await dbQuery<{ settlement_ref: string | null }>(
+    'SELECT settlement_ref FROM processed_x402_payments WHERE nonce = ? AND payer_wallet = ?',
+    [nonce, payer],
+  );
+  return rows[0]?.settlement_ref;
+}
+
 beforeEach(async () => {
   delete process.env.DATABASE_URL; // SQLite path
   tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cqs-x402settle-'));
@@ -58,12 +68,20 @@ afterEach(async () => {
 const PAYER = '0x7da6de194fed97fb745137faddde5699afe37a45'; // the real Gateway buyer, lowercased
 
 describe('recordSettlementOutcome — a claim is promoted when the rail says the money moved', () => {
-  it('CLAIMED_UNSETTLED → SETTLED, and the row actually changes', async () => {
+  it('CLAIMED_PENDING → SETTLED, and the row actually changes', async () => {
     expect(await store.tryClaimPayment('0xN1', 'get_trade_signal', '20000', PAYER, 'op-gateway-usdc')).toBe('CLAIMED');
-    expect(await stateOf('0xN1', PAYER)).toBe('CLAIMED_UNSETTLED');
+    // OPS-X402-SETTLEMENT-BACKFILL-W1: a fresh claim is PENDING ("nothing has looked"), NOT
+    // CLAIMED_UNSETTLED ("we looked and the money never moved"). Two facts, two tokens.
+    expect(await stateOf('0xN1', PAYER)).toBe('CLAIMED_PENDING');
 
     expect(await store.recordSettlementOutcome('0xN1', PAYER, 'SETTLED')).toBe('PROMOTED');
     expect(await stateOf('0xN1', PAYER)).toBe('SETTLED');
+  });
+
+  it('an insert NEVER writes the established-negative token', async () => {
+    // The whole vocabulary split: only `classifySettlement` may assert "the money did not move".
+    await store.tryClaimPayment('0xN1b', 'get_trade_signal', '20000', PAYER, 'base-usdc');
+    expect(await stateOf('0xN1b', PAYER)).not.toBe('CLAIMED_UNSETTLED');
   });
 
   it('classifies an operator wallet as OPERATOR, not settled external revenue', async () => {
@@ -106,13 +124,43 @@ describe('recordSettlementOutcome — the KEY must be derived exactly as the cla
     expect(checksummed).not.toBe(PAYER); // guard: the fixture must actually differ
     expect(await store.recordSettlementOutcome('0xN6', checksummed, 'SETTLED')).toBe('NOT_FOUND');
     // ...and the real row is untouched, which is the silent failure this test exists to expose.
-    expect(await stateOf('0xN6', PAYER)).toBe('CLAIMED_UNSETTLED');
+    expect(await stateOf('0xN6', PAYER)).toBe('CLAIMED_PENDING');
   });
 
   it('an unattributable payer round-trips as the EMPTY STRING (SEC-49), not NULL', async () => {
     await store.tryClaimPayment('0xN7', 'get_trade_signal', '20000', undefined, 'base-usdc');
     expect(await store.recordSettlementOutcome('0xN7', '', 'SETTLED')).toBe('PROMOTED');
     expect(await stateOf('0xN7', '')).toBe('SETTLED');
+  });
+});
+
+describe('settlement_ref — an established positive must be AUDITABLE against the rail', () => {
+  // Its absence is why the 2026-08-10 Gateway rows could not be reconciled: one Circle transfer
+  // id, two rows, and no key mapping either to the other.
+  it('persists the rail\'s own settlement id alongside the state', async () => {
+    await store.tryClaimPayment('0xREF1', 'get_trade_signal', '20000', PAYER, 'op-gateway-usdc');
+    await store.recordSettlementOutcome('0xREF1', PAYER, 'SETTLED', '1dc4ae9d-dc02-4219-9707-90b232a1c5d8');
+    expect(await stateOf('0xREF1', PAYER)).toBe('SETTLED');
+    expect(await refOf('0xREF1', PAYER)).toBe('1dc4ae9d-dc02-4219-9707-90b232a1c5d8');
+  });
+
+  it('records NULL — never the empty string — when the rail gives no reference', async () => {
+    // '' would read like a recorded reference. NULL says "the rail gave us nothing", which is a
+    // fact worth keeping distinct — the same zero-vs-unknown discipline as the state column.
+    for (const [nonce, ref] of [['0xREF2', undefined], ['0xREF3', ''], ['0xREF4', '   ']] as const) {
+      await store.tryClaimPayment(nonce, 'get_trade_signal', '20000', PAYER, 'base-usdc');
+      await store.recordSettlementOutcome(nonce, PAYER, 'SETTLED', ref);
+      expect(await stateOf(nonce, PAYER)).toBe('SETTLED');
+      expect(await refOf(nonce, PAYER), `${nonce} must be NULL, not ''`).toBeNull();
+    }
+  });
+
+  it('the settle path passes result.transaction through as the reference', () => {
+    const src = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'x402.ts'), 'utf8');
+    const code = src.replace(/(^|[^:])\/\/[^\n]*/g, '$1 ').replace(/\/\*[\s\S]*?\*\//g, ' ');
+    const fn = code.slice(code.indexOf('export function settleX402Async'));
+    const body = fn.slice(0, fn.indexOf('\n}\n') + 1);
+    expect(body).toMatch(/recordSettlementOutcome\([^)]*result\.transaction/);
   });
 });
 
