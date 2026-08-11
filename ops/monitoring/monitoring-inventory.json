@@ -1029,7 +1029,7 @@
      "schedule": null,
      "invoked_by": "operator (manual, from a developer checkout)",
      "install_state": "installed",
-     "sha256": "e2077c148bfa5ac830193e9e5db19481a701dd0ddde61693ba3b8c9bfcf36e48",
+     "sha256": "205c027c7d889658a0de06e8ff73452ba39de43c69491808b1becfa5a157b0cf",
      "owner_wave": "OPS-AOE-SEND-TELEGRAM-REPARITY-W1",
      "repo_resident": true,
      "notes": "Installs a monitoring artifact to EVERY host its installed_at registry names, resolving each label through scripts/data/boot-critical-units.json (the existing label->{address} SoT - deliberately NOT a new registry, because a duplicated fact goes stale). Runs on the OPERATOR's machine, so host/host_path are n-a rather than invented, same shape as host-deploy-primitive. NO CRON MAY EVER CALL IT: it moves executable code, and an unattended privileged install is what CLAUDE.md forbids - this is the human-invoked, reviewed path. Dry run by default; --apply required. Refuses unless the repo file already matches the row's canonical sha256, so it cannot plant the drift HASH_DRIFT exists to catch. Exists because installed_at was DECLARATIVE ONLY: REGISTRY_PARITY could report a missed consumer but nothing ever read the registry to install, so 'update the primitive everywhere' stayed an act of memory and send_telegram.sh diverged twice."
