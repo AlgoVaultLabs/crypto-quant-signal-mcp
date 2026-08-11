@@ -398,10 +398,77 @@ describe.skipIf(SKIP)('DASH-EXTERNAL-ONLY-W1 — dashboard filter excludes is_bo
     ).toBe(d((s) => s.externalGenuine.paid));
 
     // Session-side split exists and is bounded by the paid-session total.
+    //
+    // TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1: these two assertions are deliberately left
+    // WEAK, and the reason is recorded because it is the whole lesson of that wave. The rows
+    // above carry NO sessionId, so both session deltas are 0 — and `>= 0` plus `<= paidSessions`
+    // are both satisfied by 0. This test therefore passed for the entire period in which every
+    // settled x402 payment on prod wrote `session_id = NULL`. The property that would have
+    // caught it is the one directly below, which supplies a session id and demands a NON-ZERO
+    // session count. Do NOT strengthen these two in place: their subject is the rail SPLIT
+    // (does subscription + x402 stay within the total), not session presence.
     expect(d((s) => s.externalGenuine.paidSubscriptionSessions)).toBeGreaterThanOrEqual(0);
     expect(
       d((s) => s.externalGenuine.paidSubscriptionSessions) + d((s) => s.externalGenuine.paidX402Sessions),
     ).toBeLessThanOrEqual(d((s) => s.externalGenuine.paidSessions));
+  });
+
+  /**
+   * TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 (2026-08-11) — AC5.
+   *
+   * ONE definition, projected by BOTH dimensions: a session is Paid iff it contains >= 1 paid
+   * call (subscription key or settled x402) in the window. The 2026-08-11 digest rendered
+   * `Paid: 2 (x402/a2mcp 2)` calls against `Paid: 0` sessions for the same 24h window because
+   * the paid HTTP rail stamped no session id (fixed at the emit site in x402-http-routes.ts;
+   * that fix is pinned end-to-end in tests/x402-paid-path.test.ts, which drives the REAL route).
+   *
+   * What this adds is the READ-side half: given a paid call that DOES carry a session, the two
+   * dimensions of one payload must agree. Both are read from the SAME getUsageStats() result,
+   * so a future divergence between the two queries fails here regardless of which one moved.
+   */
+  it('a paid call with a session makes the SAME payload report >=1 paid session (calls/sessions agree)', async () => {
+    type Paid = {
+      externalGenuine: { paid: number; paidX402: number; paidSessions: number; paidX402Sessions: number };
+    };
+    const pre = (await getUsageStats()) as unknown as Paid;
+
+    // Exactly what the fixed x402 route now emits: tier x402 + a resolved session id.
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'x402', responseTimeMs: 10, sessionId: 'TESTSESS_W1_x402' });
+    await new Promise((r) => setTimeout(r, 120));
+
+    const post = (await getUsageStats()) as unknown as Paid;
+    const d = (f: (s: Paid) => number) => f(post) - f(pre);
+
+    expect(d((s) => s.externalGenuine.paid), 'the CALLS dimension must see it').toBe(1);
+    expect(d((s) => s.externalGenuine.paidX402)).toBe(1);
+    expect(d((s) => s.externalGenuine.paidSessions), 'the SESSIONS dimension must see the same call').toBeGreaterThanOrEqual(1);
+    expect(d((s) => s.externalGenuine.paidX402Sessions)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('PROVEN ABLE TO FAIL — breaking either dimension independently breaks the agreement', async () => {
+    type Paid = { externalGenuine: { paid: number; paidSessions: number } };
+    const g = async () => (await getUsageStats()) as unknown as Paid;
+
+    // (a) Break the SESSIONS dimension: a paid call with NO session id — byte-for-byte the row
+    // the x402 rail wrote for all 20 of its historical payments. Calls sees it, sessions cannot.
+    const preA = await g();
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'x402', responseTimeMs: 10 });
+    await new Promise((r) => setTimeout(r, 120));
+    const postA = await g();
+    expect(postA.externalGenuine.paid - preA.externalGenuine.paid).toBe(1);
+    expect(
+      postA.externalGenuine.paidSessions - preA.externalGenuine.paidSessions,
+      'a NULL session_id is invisible to the sessions rollup — this IS the reported bug',
+    ).toBe(0);
+
+    // (b) Break the CALLS dimension: a session-bearing call on a non-paid tier. Sessions-side
+    // paid must not move either, or "paid" would mean two different things per dimension.
+    const preB = await g();
+    logRequest({ toolName: SPLIT_TOOL, licenseTier: 'free', responseTimeMs: 10, sessionId: 'TESTSESS_W1_free' });
+    await new Promise((r) => setTimeout(r, 120));
+    const postB = await g();
+    expect(postB.externalGenuine.paid - preB.externalGenuine.paid).toBe(0);
+    expect(postB.externalGenuine.paidSessions - preB.externalGenuine.paidSessions).toBe(0);
   });
 
   // ── OPS-CLIENT-ATTRIBUTION-W1: durable client attribution (user_agent + client_name) ──

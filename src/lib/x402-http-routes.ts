@@ -37,6 +37,7 @@ import { encodePaymentRequiredHeader } from '@x402/core/http';
 import { resolveLicense, requestContext } from './license.js';
 import { hashIp, logRequest } from './analytics.js';
 import { clientIp } from './client-ip.js';
+import { resolveSessionIdentity } from './track-token.js';
 // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1 (Q2=A): classify EVERY external path,
 // including paid x402/a2mcp, via the ONE canonical classifier — no second isbot impl.
 import { classifyTraffic } from './traffic-classifier.js';
@@ -490,6 +491,25 @@ export function mountX402HttpRoutes(app: Express): string[] {
       }
 
       const ipHash = clientIpHash(req);
+      // TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 (2026-08-11) — resolve the session id from
+      // the ONE shared derivation (`track-token.ts`), the same one the MCP rail projects through
+      // `resolveSessionCorrelationId`. Precedence: track-token ?? ipHash ?? uuid.
+      //
+      // This site passed a literal `sessionId: undefined` to BOTH the ALS store and the
+      // logRequest below — the only `requestContext.run` in the estate that resolved no session
+      // — so every paid HTTP call wrote `request_log.session_id = NULL`. Measured 2026-08-11:
+      // ALL 20 x402 rows ever written, 2026-06-30 → 2026-08-10, carry NULL. The read side
+      // counts paid CALLS with no session predicate but paid SESSIONS with
+      // `session_id IS NOT NULL`, so the 2026-08-11 digest truthfully reported
+      // `Paid: 2 (x402/a2mcp 2)` calls against `Paid: 0` sessions for the same window.
+      //
+      // The fix is HERE and not in the rollup: `COUNT(DISTINCT COALESCE(session_id, ip_hash))`
+      // would have been a SECOND derivation of caller identity living in SQL, drifting from the
+      // resolver every other rail already shares — and it would have papered over a NULL that is
+      // also wrong for the funnel, for concentration, and for cohort stitching. Note the ipHash
+      // was computed one line above and passed all along, so the resolver's own `?? ipHash`
+      // fallback yields exactly the id this row should always have carried.
+      const sessionId = resolveSessionIdentity(req.headers as Record<string, unknown>, ipHash).id;
       // OPS-ANALYTICS-GENUINE-VS-AUTOMATED-SPLIT-W1: classify this paid request ONCE.
       // A settled x402/a2mcp call is a real tool call (hadRealToolCall:true) and never
       // internal-tier. Stored in the ALS for any in-handler logRequest AND passed
@@ -504,7 +524,7 @@ export function mountX402HttpRoutes(app: Express): string[] {
       });
       try {
         const result = await requestContext.run(
-          { license, sessionId: undefined, ipHash, isAutomated: authenticity.is_automated },
+          { license, sessionId, ipHash, isAutomated: authenticity.is_automated },
           () => callCoreHandler(tool, input, license),
         );
 
@@ -526,7 +546,8 @@ export function mountX402HttpRoutes(app: Express): string[] {
         // Analytics parity (data flywheel) — fire-and-forget.
         try {
           logRequest({
-            sessionId: undefined,
+            // Explicit, like `isAutomated` below: this runs after run() resolves, outside the ALS.
+            sessionId,
             toolName: tool,
             asset: typeof input.coin === 'string' ? (input.coin as string) : undefined,
             timeframe: typeof input.timeframe === 'string' ? (input.timeframe as string) : undefined,

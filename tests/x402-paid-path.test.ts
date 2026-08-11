@@ -94,6 +94,8 @@ function setProof(requirement: Record<string, unknown>, nonce: string) {
  */
 let nextVerdict: 'BUY' | 'SELL' | 'HOLD' = 'BUY';
 let settleCalls = 0;
+/** Every `logRequest` entry this route emitted, in order (see the analytics mock below). */
+let loggedRequests: Record<string, unknown>[] = [];
 
 /** Settle is fire-and-forget AFTER res.json(), so give the server a tick before asserting. */
 const settleTick = () => new Promise((r) => setTimeout(r, 60));
@@ -122,6 +124,7 @@ beforeEach(async () => {
   nextSettlement = null;
   nextVerdict = 'BUY';
   settleCalls = 0;
+  loggedRequests = [];
 
   vi.resetModules();
   const { closeDb } = await import('../src/lib/performance-db.js');
@@ -181,8 +184,14 @@ beforeEach(async () => {
   vi.doMock('../src/tools/get-market-regime.js', () => ({
     getMarketRegime: () => ({ regime: 'RANGING', confidence: 50, coin: 'BTC' }),
   }));
-  // Quiet analytics.
-  vi.doMock('../src/lib/analytics.js', () => ({ hashIp: () => 'h', logRequest: () => {} }));
+  // Analytics stays out of the DB, but logRequest is RECORDED rather than discarded:
+  // TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 needs the emitted row to be assertable, and a
+  // no-op mock is precisely what let this route write `session_id: NULL` for 20 consecutive
+  // settled payments with a green suite.
+  vi.doMock('../src/lib/analytics.js', () => ({
+    hashIp: () => 'h',
+    logRequest: (e: Record<string, unknown>) => { loggedRequests.push(e); },
+  }));
 
   const express = (await import('express')).default;
   const { initX402 } = await import('../src/lib/x402.js');
@@ -505,5 +514,74 @@ describe('R3 — every verdict settles, HOLD included (R-A); errors never do', (
     expect(res.status).toBe(200);
     await settleTick();
     expect(settleCalls).toBe(1);
+  });
+});
+
+/**
+ * TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 (2026-08-11) — the paid rail must stamp a
+ * session id, and this is the seam that proves it.
+ *
+ * Root cause it guards: `x402-http-routes.ts` passed a literal `sessionId: undefined` to both
+ * the ALS store and `logRequest`, so every settled payment wrote `request_log.session_id = NULL`
+ * — measured on prod, ALL 20 x402 rows ever written (2026-06-30 → 2026-08-10). The read side
+ * counts paid CALLS with no session predicate and paid SESSIONS with `session_id IS NOT NULL`,
+ * so the digest reported 2 paid calls and 0 paid sessions for the same window.
+ *
+ * Asserted HERE rather than only on the /analytics rollup because the rollup fixture supplies
+ * its own session id — it replaces the exact seam that broke, and would stay green through a
+ * revert of the fix. This drives the REAL route.
+ */
+describe('paid rail stamps a session id — the calls/sessions dimensions must agree', () => {
+  it('a settled call logs a NON-NULL session id, falling back to the ipHash', async () => {
+    setProof(req(0.02), freshNonce());
+    expect((await post('get_trade_signal', { coin: 'BTC', timeframe: '4h' })).status).toBe(200);
+
+    expect(loggedRequests, 'no logRequest captured — every assertion below would be vacuous').toHaveLength(1);
+    const row = loggedRequests[0];
+    expect(row.licenseTier).toBe('x402');
+    // The bug, stated as the assertion that would have caught it.
+    expect(row.sessionId, 'a NULL session_id makes a paid call invisible to the paid-SESSIONS rollup').not.toBeUndefined();
+    expect(row.sessionId).not.toBeNull();
+    expect(row.sessionId).not.toBe('');
+    // Precedence: no track token on this request ⇒ the id IS the ipHash (mocked to 'h'),
+    // which is the same fallback the MCP rail uses — one derivation, not two.
+    expect(row.sessionId).toBe('h');
+    expect(row.ipHash).toBe('h');
+  });
+
+  it('an X-AlgoVault-Track-Token wins over the ipHash — same precedence as the MCP rail', async () => {
+    setProof(req(0.02), freshNonce());
+    const res = await fetch(`${baseUrl}/x402/get_trade_signal`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-payment': 'present',
+        'X-AlgoVault-Track-Token': 'chan-paid-rail-w1',
+      },
+      body: JSON.stringify({ coin: 'BTC', timeframe: '4h' }),
+    });
+    expect(res.status).toBe(200);
+    expect(loggedRequests).toHaveLength(1);
+    // Token beats ipHash, so a tagged paid caller stitches across requests instead of
+    // collapsing into its NAT'd ip bucket.
+    expect(loggedRequests[0].sessionId).toBe('chan-paid-rail-w1');
+    expect(loggedRequests[0].ipHash).toBe('h');
+  });
+
+  it('EVERY payable route stamps one — not just the one route a spot-check would sample', async () => {
+    const routes: Array<[string, Record<string, unknown>]> = [
+      ['get_trade_signal', { coin: 'BTC', timeframe: '4h' }],
+      ['get_market_regime', { coin: 'BTC', timeframe: '1h' }],
+      ['scan_funding_arb', {}],
+      ['scan_trade_calls', {}],
+    ];
+    for (const [tool, body] of routes) {
+      loggedRequests = [];
+      setProof(req(0.02), freshNonce());
+      const res = await post(tool, body);
+      expect(res.status, `${tool} did not serve — the session assertion would be vacuous`).toBe(200);
+      expect(loggedRequests, `${tool} logged no request`).toHaveLength(1);
+      expect(loggedRequests[0].sessionId, `${tool} logged a NULL session id`).toBe('h');
+    }
   });
 });
