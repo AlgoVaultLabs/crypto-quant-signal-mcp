@@ -136,11 +136,29 @@ describe('call-class — SQL predicates encode the SAME rule as callClassFor', (
  * so a mislabelled, dropped or double-counted bucket fails even when every input is correct.
  */
 describe('formatAgentActivity — the rendered body partitions the headline', () => {
-  /** Parse the render: the headline and every `— Last 24h:` bucket beneath it. */
+  /**
+   * Parse the render: the headline, every `— Last 24h:` bucket beneath it, and the internal
+   * count — which TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 moved OUT of the bucket list.
+   *
+   * `🔁 Internal (algovault-bot) — Last 24h: N` was deleted because the `🔁 TG bot: N (Watch …)`
+   * row renders the same N from the same expression with more detail. The partition is therefore
+   * re-anchored to `metered + unmetered [+ unclassified] [+ legacy] + TG-bot-row == Total`: the
+   * internal term is still READ OUT OF THE RENDER, just from a different row, so the sum stays a
+   * property of the text and not of the inputs. Re-adding the deleted row makes the internal
+   * count appear on BOTH sides and the sum fails by double-count — which is the point.
+   */
   const partitionOf = (body: string) => {
-    const total = Number(body.match(/• Total Agent Calls: (\d+)/)![1]);
-    const buckets = [...body.matchAll(/^• (.+?) — Last 24h: (\d+)/gm)].map((m) => ({ label: m[1], n: Number(m[2]) }));
-    return { total, buckets, sum: buckets.reduce((a, b) => a + b.n, 0) };
+    // Scope every match to the Agent Activity block: the Sessions block mirrors the
+    // `• 🔁 TG bot: ` prefix for SUBSCRIBERS, and an unscoped read would take 38 for 253.
+    const activity = body.split('👥 *Sessions (24h)*')[0];
+    const total = Number(activity.match(/• Total Agent Calls: (\d+)/)![1]);
+    const buckets = [...activity.matchAll(/^• (.+?) — Last 24h: (\d+)/gm)].map((m) => ({ label: m[1], n: Number(m[2]) }));
+    // Anchored on the `(Watch ` suffix, which only the calls row carries. A stale bot renders
+    // `— (metrics stale)` and a missing one omits the row: both → 0, exactly what the headline
+    // folds in, so absence reads as zero rather than as an unparseable body.
+    const tgRow = activity.match(/^• 🔁 TG bot: (\d+)   \(Watch /m);
+    const internal = tgRow ? Number(tgRow[1]) : 0;
+    return { total, buckets, internal, sum: buckets.reduce((a, b) => a + b.n, 0) + internal };
   };
 
   /** The live 2026-08-10 shape — a POST-cutover 24h window. freeHold is structurally 0. */
@@ -162,14 +180,25 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
     callClasses: { billable: 132, freeHold: 2819, unmetered: 4, unclassified: 0, billableSessions: 4, last7d: { billable: 300, freeHold: 9000 } },
   };
 
-  it('post-cutover: the class block is exactly metered · unmetered · internal', () => {
+  it('post-cutover: the class block is exactly metered · unmetered, then ONE blank line', () => {
     const lines = formatAgentActivity(post).split('\n');
     expect(lines[0]).toBe('🤖 *Agent Activity (24h)*');
     expect(lines[1]).toBe('• Total Agent Calls: 616');
     expect(lines[2]).toBe('• 💰 Metered calls — Last 24h: 363   (6 sessions)');
     expect(lines[3]).toBe('• 🔎 Unmetered (rate-limited) — Last 24h: 0');
-    expect(lines[4]).toBe('• 🔁 Internal (algovault-bot) — Last 24h: 253');
+    // The separator that splits the section into call buckets / client rows.
+    expect(lines[4]).toBe('');
     expect(lines[5]).toBe('• 🟢 Recognized clients: 357');
+    // EXACTLY one — a second blank line reads as the end of the section in Telegram.
+    expect(lines[6]).not.toBe('');
+  });
+
+  it('post-cutover: the Internal row is gone, and its count is still on the TG bot row', () => {
+    const out = formatAgentActivity(post);
+    expect(out).not.toContain('Internal (algovault-bot)');
+    // Deleted as a DUPLICATE, not as a dropped dimension: the same 253, with the split.
+    expect(out).toContain('• 🔁 TG bot: 253   (Watch 1 · Scanwatch 250 · Scan 2)');
+    expect(partitionOf(out).internal).toBe(253);
   });
 
   it('post-cutover: the body asserts nothing about HOLD being free', () => {
@@ -183,21 +212,68 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
     expect(out).not.toContain('Unbilled HOLD');
   });
 
-  it('the rendered buckets sum to the rendered headline (post-cutover)', () => {
-    const { total, buckets, sum } = partitionOf(formatAgentActivity(post));
-    expect(buckets.length, 'no buckets parsed — the assertion would be vacuous').toBeGreaterThanOrEqual(3);
+  it('the rendered buckets + the TG bot row sum to the rendered headline (post-cutover)', () => {
+    const { total, buckets, internal, sum } = partitionOf(formatAgentActivity(post));
+    expect(buckets.length, 'no buckets parsed — the assertion would be vacuous').toBeGreaterThanOrEqual(2);
+    // Vacuity guard on the RE-ANCHORED term specifically: if the TG bot row ever stops being
+    // parsed, `internal` silently reads 0 and this whole property degrades to a sum over the
+    // two remaining buckets that happens to hold only when the bot is dark.
+    expect(internal, 'the internal term was not parsed out of the TG bot row').toBe(253);
     expect(total).toBe(616);
-    expect(sum).toBe(total);
+    expect(sum).toBe(total); // 363 + 0 + 253
   });
 
-  it('the rendered buckets sum to the rendered headline (pre-cutover, legacy line present)', () => {
+  it('the rendered buckets + the TG bot row sum to the rendered headline (pre-cutover, legacy line present)', () => {
     const out = formatAgentActivity(pre);
     // The historical dimension is NOT deleted — it renders, date-bounded, when non-empty.
     expect(out).toContain(`• 🗄 Unbilled HOLD (pre-${FLAT_BILLING_CUTOVER_DATE}, legacy) — Last 24h: 2819`);
-    const { total, buckets, sum } = partitionOf(out);
-    expect(buckets.length).toBe(4); // metered · unmetered · internal · legacy
+    const { total, buckets, internal, sum } = partitionOf(out);
+    expect(buckets.length).toBe(3); // metered · unmetered · legacy — internal has no row of its own
+    expect(internal).toBe(125);
     expect(total).toBe(3080);
-    expect(sum).toBe(total); // 132 + 4 + 125 + 2819
+    expect(sum).toBe(total); // 132 + 4 + 2819 + 125
+  });
+
+  /**
+   * PROVEN ABLE TO FAIL, both ways — the guard-consequence half of
+   * TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1. Both mutate the RENDERED TEXT rather than the
+   * inputs, and that is forced rather than stylistic: the renderer folds `tgBot.calls_total`
+   * into the headline AND the TG bot row from one expression, so any input-side mutation moves
+   * both sides of the equation equally and the sum stays exact by construction. A property that
+   * cannot be broken from the inputs can only be proven breakable from the text.
+   */
+  it('the sum property FAILS if the deleted Internal row is reintroduced (double-count)', () => {
+    const out = formatAgentActivity(post);
+    const reintroduced = out.replace(
+      '• 🔎 Unmetered (rate-limited) — Last 24h: 0',
+      '• 🔎 Unmetered (rate-limited) — Last 24h: 0\n• 🔁 Internal (algovault-bot) — Last 24h: 253',
+    );
+    expect(reintroduced, 'the mutation did not apply — the assertion below would be vacuous').not.toBe(out);
+    const { total, buckets, sum } = partitionOf(reintroduced);
+    expect(buckets.length).toBe(3); // the row IS parsed as a bucket…
+    expect(sum).toBe(869); // …so 253 is counted twice: 363 + 0 + 253 + 253
+    expect(sum).not.toBe(total);
+  });
+
+  it('the sum property FAILS if the TG bot row carries a count that breaks the partition', () => {
+    const out = formatAgentActivity(post);
+    const broken = out.replace('• 🔁 TG bot: 253   (Watch', '• 🔁 TG bot: 252   (Watch');
+    expect(broken, 'the mutation did not apply — the assertion below would be vacuous').not.toBe(out);
+    const { total, internal, sum } = partitionOf(broken);
+    expect(internal).toBe(252);
+    expect(sum).toBe(615);
+    expect(sum).not.toBe(total);
+  });
+
+  it('a stale or missing TG bot contributes 0 to BOTH the headline and the parsed partition', () => {
+    // The re-anchored term must degrade exactly as the headline does, or the sum property
+    // would start failing on the very fail-open path the renderer was built to survive.
+    for (const tgBot of [{ present: true, stale: true, calls_total: 99, subscribers: 99 }, undefined]) {
+      const { total, internal, sum } = partitionOf(formatAgentActivity({ ...post, tgBot }));
+      expect(internal).toBe(0);
+      expect(total).toBe(363); // 357 + 6 + 0, no bot contribution
+      expect(sum).toBe(total);
+    }
   });
 
   it('every rendered class label comes from BILLING_CLASS_LABELS, none hand-typed', () => {

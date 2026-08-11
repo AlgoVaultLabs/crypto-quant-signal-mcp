@@ -42,6 +42,7 @@
  * `Total Agent Calls` now LEADS and the class lines beneath PARTITION it exactly:
  *   💰 Metered calls · 🔎 Unmetered · 🔁 Internal · [❓ Unclassified] · [🗄 legacy unbilled HOLD]
  * Every label comes from `BILLING_CLASS_LABELS`; none is typed here.
+ * (🔁 Internal has since lost its line — see TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 below.)
  *
  * The old `🆓 Free-by-design HOLD` line and the `(all traffic incl. free HOLD)` annotation are
  * GONE. Since the flat-billing cutover (2026-08-08) every verdict is a metered call, HOLD
@@ -52,6 +53,18 @@
  *
  * The two conditional lines are ordered last so the steady-state render is stable: on the
  * healthy post-cutover path neither appears, and the block is exactly four lines.
+ *
+ * TG-DIGEST-INTERNAL-ROW-AND-PAID-SESSION-W1 (2026-08-11) — the 🔁 Internal row is DELETED, and the
+ * class block now ends in a blank line, so the section reads as two blocks:
+ *   call buckets   💰 Metered · 🔎 Unmetered · [❓ Unclassified] · [🗄 legacy unbilled HOLD]
+ *   client rows    🟢 Recognized · 🔌 Raw API · 💳 Paid · 🔁 TG bot · Top assets
+ * `🔁 Internal (algovault-bot) — Last 24h: N` rendered the SAME N as the 🔁 TG bot row two lines
+ * below it, from the same expression, only without the per-command split — a duplicate under a
+ * second name, which is how a reader ends up double-counting a partition. The class survives as
+ * a TERM of that partition: the sum assertion reads its count out of the TG bot row, so deleting
+ * the line cost the body no verifiability (and adding it back now FAILS the sum, by double-count).
+ * `BILLING_CLASS_LABELS.internal` stays defined — `CallClass` includes it and `classifyCall`
+ * still returns it; the map is total by type. It simply has no renderer here any more.
  *
  * Why: the 2026-07-31 digest read `Total Agent Calls 3080 · Raw API clients 2955 (top IP 91.6%)`
  * and was read as one caller making ~2,707 unmetered calls. Forensics found the metering fully
@@ -133,27 +146,33 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
   // The bounded historical class. Post-cutover windows contain none, so the line is OMITTED
   // rather than rendered as a permanent zero under a label that asserts HOLD is free.
   const legacyFreeHold = ccPresent && typeof cc!.freeHold === 'number' ? (cc!.freeHold as number) : 0;
-  // `internal` uses the SAME value `totalAgentCalls` folds in, so the partition below is exact
-  // by construction rather than by coincidence — a stale/missing bot contributes 0 to both.
-  const internalCalls = tgFresh ? asNum(tgBot!.calls_total) : 0;
+  // The `internal` class has NO line of its own: the 🔁 TG bot row below already renders the
+  // very same number — `tgFresh ? tgBot.calls_total : 0`, the value the headline folds in — and
+  // breaks it down per command. Two rows, one derivation, one of them strictly less informative.
+  // The class is NOT dropped from the partition: the sum assertion reads its count out of that
+  // TG bot row, so the decomposition stays verifiable against the rendered headline.
   const classLines = !ccPresent
     ? []
     : [
         `• ${classLabel('billable')} — Last 24h: ${num(cc!.billable)}   (${num(cc!.billableSessions)} sessions)`,
         `• ${classLabel('unmetered')} — Last 24h: ${num(cc!.unmetered)}`,
-        `• ${classLabel('internal')} — Last 24h: ${internalCalls}`,
         // An unregistered tool_name must be VISIBLE, never folded into another class.
         ...(unclassified > 0 ? [`• ${classLabel('unclassified')} — Last 24h: ${unclassified}`] : []),
         // Only ever non-zero for a window reaching back past the cutover.
         ...(legacyFreeHold > 0 ? [`• ${classLabel('free_hold')} — Last 24h: ${legacyFreeHold}`] : []),
+        // Block separator: call buckets above, client/session rows below. It belongs to THIS
+        // array rather than the return literal so the no-`callClasses` rollout path still
+        // degrades to EXACTLY the prior layout instead of gaining a stray blank line.
+        '',
       ];
 
   return [
     '🤖 *Agent Activity (24h)*',
     // The headline leads, and the class lines beneath it PARTITION it exactly:
     // billable + unmetered + unclassified + legacy-free-hold (= external) + internal = Total.
-    // Pinned by the body-sum assertion in tests/call-class.test.ts, which parses this render
-    // rather than trusting the inputs.
+    // `internal` is the one term with no line of its own — it is carried by the 🔁 TG bot row
+    // further down, which is where the body-sum assertion in tests/call-class.test.ts reads it
+    // from. That assertion parses THIS render rather than trusting the inputs.
     `• Total Agent Calls: ${totalAgentCalls}`,
     ...classLines,
     `• 🟢 Recognized clients: ${num(genuine.free)}`,
