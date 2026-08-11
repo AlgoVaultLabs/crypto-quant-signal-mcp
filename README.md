@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.AlgoVaultFi%2Fcrypto-quant-signal-mcp.svg)](https://mcptoplist.com/server/io.github.AlgoVaultFi%2Fcrypto-quant-signal-mcp)
+
 <p align="center">
   <a href="https://algovault.com">
     <img src="https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/main/logo.png" alt="AlgoVault" width="120" />
