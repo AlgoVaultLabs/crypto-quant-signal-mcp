@@ -1102,6 +1102,13 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/revenue-meter-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/revenue-meter-canary.py",
+          "schedule": "53 * * * *"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": "53 * * * *",
       "invoked_by": "crontab:root",

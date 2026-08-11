@@ -50,7 +50,13 @@ INVENTORY=${INSTALL_ARTIFACT_INVENTORY:-$REPO/ops/monitoring/monitoring-inventor
 HOSTS_SOT=${INSTALL_ARTIFACT_HOSTS_SOT:-$REPO/scripts/data/boot-critical-units.json}
 SSH_KEY=${INSTALL_ARTIFACT_SSH_KEY:-$HOME/.ssh/algovault_deploy}
 SSH_OPTS=${INSTALL_ARTIFACT_SSH_OPTS:--o StrictHostKeyChecking=no -o ConnectTimeout=12}
-WAVE=${INSTALL_ARTIFACT_WAVE:-OPS-AOE-SEND-TELEGRAM-REPARITY-W1}
+# The label stamped into the timestamped backup filename, i.e. the RECOVERY RECORD's stated
+# reason. It defaulted to this script's OWN authoring wave, so every later install silently
+# claimed to have been made by OPS-AOE-SEND-TELEGRAM-REPARITY-W1 — measured 2026-08-11, when
+# OPS-X402-SETTLEMENT-BACKFILL-W1 installed the revenue-meter canary and its backup came out
+# labelled with that unrelated wave. A backup exists so a human can answer "what changed here and
+# why"; a false reason is worse than no reason. `MANUAL` is honest when the caller says nothing.
+WAVE=${INSTALL_ARTIFACT_WAVE:-MANUAL}
 
 verdict() { echo "INSTALL_MONITORING_ARTIFACT_VERDICT=$1"; exit "$2"; }
 say() { printf '%s\n' "$*"; }
