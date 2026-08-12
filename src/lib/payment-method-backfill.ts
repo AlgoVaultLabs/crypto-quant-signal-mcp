@@ -91,6 +91,13 @@ export async function backfillPaymentMethodAttribution(
   let successWritten = 0;
   let failureCandidates = 0;
   let failureWritten = 0;
+  // A customer can have SEVERAL charges. In execute mode the first one fills the profile and
+  // the rest stop matching the pending query, so writes are naturally per-customer — but a
+  // DRY RUN writes nothing, so every charge keeps matching and the candidate count would
+  // over-report (measured: 7 charges vs 4 real profiles). A reader comparing a dry-run's 7 to
+  // an execute's 4 would reasonably conclude 3 rows failed silently. They did not; the two
+  // numbers were counting different things. This set makes both modes count PROFILES.
+  const seenCustomers = new Set<string>();
 
   for (const charge of charges.slice(0, limit)) {
     const chargeId = str(charge?.id);
@@ -136,6 +143,8 @@ export async function backfillPaymentMethodAttribution(
       [customerId],
     );
     if (pending.length === 0) continue;
+    if (seenCustomers.has(customerId)) continue;   // already counted/filled this profile
+    seenCustomers.add(customerId);
     successCandidates++;
     if (execute) {
       // `RETURNING` is not decoration: `dbQuery` runs `.all()`, and better-sqlite3 THROWS
