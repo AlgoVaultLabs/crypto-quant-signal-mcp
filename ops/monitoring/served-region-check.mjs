@@ -123,8 +123,17 @@ export function extractRegion(html, start, end) {
   return { marked: true, inner };
 }
 
-/** The page set the repo says MUST carry this region. Derived — never an array literal. */
-export function derivePageSet(regionName, root = REPO_ROOT) {
+/**
+ * The page set the repo says MUST carry this region. Derived — never an array literal.
+ *
+ * `origin` is threaded through rather than defaulted here: stamping the default origin at
+ * derivation time made the caller's `origin` option a SILENT NO-OP (runCheck's `p.url ?? …` found
+ * a url already present and never recomputed it). That is the "a flag that quietly does nothing
+ * is worse than no flag" class, and it is not cosmetic — it made the force-fire smoke pass
+ * vacuously against a deliberately wrong origin, i.e. it defeated the one check that proves this
+ * guard can fire at all. Found 2026-08-12 by running that smoke on the host.
+ */
+export function derivePageSet(regionName, root = REPO_ROOT, origin = 'https://algovault.com') {
   const cfg = REGIONS[regionName];
   if (!cfg) throw new Error(`unknown region ${regionName}`);
   const landing = path.join(root, 'landing');
@@ -133,7 +142,7 @@ export function derivePageSet(regionName, root = REPO_ROOT) {
     const relFromLanding = path.relative(landing, file);
     const html = fs.readFileSync(file, 'utf8');
     if (!cfg.shouldCarry(html, relFromLanding)) continue;
-    out.push({ rel: path.relative(root, file), relFromLanding, url: urlForPage(relFromLanding) });
+    out.push({ rel: path.relative(root, file), relFromLanding, url: urlForPage(relFromLanding, origin) });
   }
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
 }
@@ -226,7 +235,7 @@ export async function runCheck(opts = {}) {
   const cfg = REGIONS[regionName];
   if (!cfg) return { verdict: 'INDETERMINATE', reason: `unknown region '${regionName}'`, pagesChecked: 0, pagesExpected: 0, drifted: [], missingMarker: [], fetchFailed: [], transport: 'none' };
 
-  const pages = (injectedPages ?? derivePageSet(regionName, root)).map((p) => ({
+  const pages = (injectedPages ?? derivePageSet(regionName, root, origin)).map((p) => ({
     ...p,
     url: p.url ?? urlForPage(p.relFromLanding, origin),
   }));
@@ -341,6 +350,13 @@ export async function selfTest(log = console.log) {
   ck('nav page set non-empty', navPages.length > 0, true);
   ck('analytics page set non-empty', anaPages.length > 0, true);
   ck('analytics set is a superset of nav', navPages.every((p) => anaPages.some((q) => q.rel === p.rel)), true);
+  // The origin override must REACH the derived urls. It did not once, which made the force-fire
+  // smoke pass against a deliberately wrong origin — a dead flag defeating the fire-proof itself.
+  ck(
+    'origin override reaches the derived set (not a dead flag)',
+    derivePageSet('nav', REPO_ROOT, 'https://example.test').every((p) => p.url.startsWith('https://example.test/')),
+    true,
+  );
 
   const canonical = 'CANON';
   const okHtml = `<html>${NAV_START}\n${canonical}\n${NAV_END}</html>`;

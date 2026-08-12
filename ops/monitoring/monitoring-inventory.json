@@ -730,7 +730,7 @@
       "invoked_by": "ops/cron/nav-drift-canary.sh + ops/cron/analytics-drift-canary.sh",
       "install_state": "installed",
       "repo_resident": true,
-      "sha256": "3ce7904dbb10c014ac91740e9511a410d05d03121a0002c3ace7da623752e0c9",
+      "sha256": "4be9c7f49afba19afd2939ff387d082a2e9ad5ef6e16a7166012cbe38379bb0c",
       "alert_ids": [],
       "owner_wave": "OPS-DRIFT-CANARY-INVOCATION-FIX-W1",
       "consumed_by": [

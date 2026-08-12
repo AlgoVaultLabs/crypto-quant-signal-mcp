@@ -112,6 +112,20 @@ describe('derived page set (a hardcoded array must fail)', () => {
     }
   });
 
+  /**
+   * Regression: `origin` was a SILENT NO-OP for the derived path — derivePageSet stamped the
+   * default origin, so runCheck's `p.url ?? …` never recomputed it. It was caught only by running
+   * the force-fire smoke on the host against a deliberately wrong origin and watching it PASS,
+   * which is the fire-proof defeating itself. A dead option on a guard is worse than no option.
+   */
+  it('the origin override reaches every derived URL (a dead flag must fail)', () => {
+    for (const region of ['nav', 'analytics'] as const) {
+      const pages = derivePageSet(region, ROOT, 'https://example.test');
+      expect(pages.length).toBeGreaterThan(0);
+      for (const p of pages) expect(p.url.startsWith('https://example.test/')).toBe(true);
+    }
+  });
+
   it('URL derivation handles index, nested and nested-index', () => {
     expect(urlForPage('index.html')).toBe('https://algovault.com/');
     expect(urlForPage('verify.html')).toBe('https://algovault.com/verify');
