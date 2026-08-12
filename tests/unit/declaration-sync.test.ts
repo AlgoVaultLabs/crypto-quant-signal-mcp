@@ -14,9 +14,15 @@
  * `--self-test`, which this file also runs — a gate whose own logic is broken must never be
  * allowed to report on a corpus.
  */
-import { describe, it, expect } from 'vitest';
+import {
+  describe, it, expect, beforeAll, afterAll,
+} from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import {
+  readFileSync, existsSync, statSync, mkdtempSync, mkdirSync, writeFileSync,
+  chmodSync, rmSync, readdirSync, symlinkSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -323,5 +329,230 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
         + `${exempt} structurally exempt of ${rows.length} inventory rows`,
     );
     expect(declared.length).toBeGreaterThanOrEqual(required.length);
+  });
+});
+
+/**
+ * OPS-MONITORING-INVENTORY-RESTORE-W1 R3 — a sync that CANNOT RUN must be as audible as one that
+ * failed.
+ *
+ * The script was fail-closed per ROW (every non-200, parse failure, key/floor refusal and size
+ * collapse alerts) but not per PROCESS: each precondition below exited INDETERMINATE 3 without
+ * ever calling alert(), so the sync could be completely dead while nothing paged. Exit code and
+ * token are unchanged; what these assert is that the verdict is now DELIVERED.
+ *
+ * The dispatching spec named FOUR preconditions. There are FIVE — `mktemp -d` is the one it did
+ * not list, and it is the realistic one: a full or read-only /tmp stops the sync dead.
+ */
+describe('R3 — every precondition that ends the run ALERTS before exiting 3', () => {
+  const TMP = mkdtempSync(path.join(tmpdir(), 'declsync-r3-'));
+  const TG = path.join(TMP, 'tg.sh');
+  const RECORD = path.join(TMP, 'tg.out');
+  const DEST = path.join(TMP, 'dest');
+
+  beforeAll(() => {
+    mkdirSync(DEST, { recursive: true });
+    // A recording stand-in for send_telegram.sh. The wrapper still OWNS severity, cooldown and
+    // DRY_RUN — this only proves the consumer reaches it, and with what.
+    writeFileSync(TG, `#!/bin/sh\ncat >> "${RECORD}"\necho "TG-CALL id=$1 sev=$2" >> "${RECORD}"\n`);
+    chmodSync(TG, 0o755);
+  });
+  afterAll(() => rmSync(TMP, { recursive: true, force: true }));
+
+  /** A real PATH minus exactly ONE binary — the honest simulation of "it is not installed". */
+  function pathWithout(binary: string): string {
+    const dir = path.join(TMP, `path-no-${binary}`);
+    mkdirSync(dir, { recursive: true });
+    for (const src of ['/usr/bin', '/bin', '/usr/sbin', '/sbin']) {
+      if (!existsSync(src)) continue;
+      for (const entry of readdirSync(src)) {
+        if (entry === binary) continue;
+        const link = path.join(dir, entry);
+        if (!existsSync(link)) {
+          try { symlinkSync(path.join(src, entry), link); } catch { /* dup/perm — harmless */ }
+        }
+      }
+    }
+    return dir;
+  }
+
+  function attempt(env: Record<string, string>): { out: string; code: number; calls: number; sev: string } {
+    writeFileSync(RECORD, '');
+    let out = ''; let code = 0;
+    try {
+      out = execFileSync('bash', [SCRIPT], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ALGOVAULT_TG_TEST_INERT: '1',
+          DECLARATION_SYNC_TG: TG,
+          DECLARATION_SYNC_LOG: path.join(TMP, 'log'),
+          DECLARATION_SYNC_HEARTBEAT: path.join(TMP, 'hb'),
+          DECLARATION_SYNC_DEST_DIR: DEST,
+          ...env,
+        },
+      });
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string; status?: number };
+      out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+      code = err.status ?? 1;
+    }
+    const rec = existsSync(RECORD) ? readFileSync(RECORD, 'utf8') : '';
+    return {
+      out,
+      code,
+      calls: (rec.match(/TG-CALL/g) ?? []).length,
+      sev: /TG-CALL id=\S+ sev=(\S+)/.exec(rec)?.[1] ?? '',
+    };
+  }
+
+  // Each case is (label, env that breaks exactly one precondition, the phrase the body must carry).
+  const CASES: [string, () => Record<string, string>, string][] = [
+    ['curl missing', () => ({ PATH: pathWithout('curl') }), 'curl is not installed'],
+    ['python3 missing', () => ({ PATH: pathWithout('python3') }), 'python3 is not installed'],
+    ['dest dir absent', () => ({ DECLARATION_SYNC_DEST_DIR: path.join(TMP, 'nope') }), 'does not exist'],
+    ['mktemp fails', () => ({ TMPDIR: path.join(TMP, 'nope') }), 'cannot create a work dir'],
+  ];
+
+  for (const [label, envFor, phrase] of CASES) {
+    it(`${label} -> INDETERMINATE 3 AND an alert`, () => {
+      const r = attempt(envFor());
+      expect(r.out, 'the terminal token is the contract, never the bare exit code')
+        .toContain('DECLARATION_SYNC_VERDICT=INDETERMINATE');
+      expect(r.code, 'INDETERMINATE is 3 — the token-law default for this gate').toBe(3);
+      expect(r.calls, `${label} exited silently — this is the whole defect R3 closes`).toBe(1);
+      expect(r.sev, 'severity is the wrapper contract, not a local invention').toBe('CRITICAL_PERSISTENT');
+      expect(r.out).toContain(phrase);
+    });
+  }
+
+  // PyYAML is the 5th path and needs a python3 that imports everything EXCEPT yaml.
+  it('PyYAML missing -> INDETERMINATE 3 AND an alert', () => {
+    const dir = path.join(TMP, 'path-no-yaml');
+    mkdirSync(dir, { recursive: true });
+    const realPy = execFileSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).trim();
+    const shim = path.join(dir, 'python3');
+    writeFileSync(shim, `#!/bin/sh\nif [ "$1" = "-c" ]; then case "$2" in *yaml*) exit 1;; esac; fi\nexec ${realPy} "$@"\n`);
+    chmodSync(shim, 0o755);
+    const r = attempt({ PATH: `${dir}:${process.env.PATH}` });
+    expect(r.out).toContain('DECLARATION_SYNC_VERDICT=INDETERMINATE');
+    expect(r.code).toBe(3);
+    expect(r.calls).toBe(1);
+    expect(r.sev).toBe('CRITICAL_PERSISTENT');
+    expect(r.out).toContain('PyYAML is unavailable');
+  });
+
+  it('stamps the ATTEMPT heartbeat BEFORE the precondition that ends the run', () => {
+    // The ordering IS the feature. Stamped after the preconditions, an INDETERMINATE exit would be
+    // indistinguishable from a cron that never fired — and telling those apart is the entire point
+    // of R4's liveness check downstream.
+    const r = attempt({ DECLARATION_SYNC_DEST_DIR: path.join(TMP, 'nope') });
+    expect(r.code).toBe(3);
+    const hb = readFileSync(path.join(TMP, 'hb'), 'utf8');
+    expect(hb, 'no attempt_at — a dead-on-arrival run must still record that it attempted')
+      .toMatch(/attempt_at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
+    expect(hb, 'the terminal verdict must be recorded too, or wedged reads as never-ran')
+      .toContain('verdict=INDETERMINATE');
+  });
+
+  it('the --self-test writes NEITHER the heartbeat NOR the log (it must stay hermetic)', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'declsync-hermetic-'));
+    const hb = path.join(dir, 'hb');
+    const log = path.join(dir, 'log');
+    execFileSync('bash', [SCRIPT, '--self-test'], {
+      encoding: 'utf8',
+      env: { ...process.env, DECLARATION_SYNC_HEARTBEAT: hb, DECLARATION_SYNC_LOG: log },
+    });
+    expect(existsSync(hb), 'the hermetic suite must never stamp a liveness heartbeat').toBe(false);
+    expect(existsSync(log), 'the hermetic suite must never write the operational log').toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+/**
+ * R3 — the LOG destination is DECLARED in the committed file.
+ *
+ * Before this wave the only record of a run went wherever the crontab redirect happened to send
+ * stdout: an UNCOMMITTED destination, so the committed script described none of its own history.
+ */
+describe('R3 — LOG= is declared, matching the sibling convention', () => {
+  const SIBLINGS = [
+    'ops/monitoring/stripe-webhook-events-canary.sh',
+    'ops/monitoring/closedbar-w1-liveness.sh',
+    'ops/monitoring/send_telegram.sh',
+  ];
+
+  it('declares a LOG= under /var/log, in the shape its siblings use', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    const m = /^LOG=.*$/m.exec(src);
+    expect(m, 'no LOG= line — the sync\'s history would live only in an uncommitted crontab redirect')
+      .toBeTruthy();
+    expect(m![0]).toMatch(/^LOG=\$\{DECLARATION_SYNC_LOG:-\/var\/log\/[a-z0-9.-]+\.log\}$/);
+  });
+
+  it('the siblings it claims to match really do declare one (no vacuous convention)', () => {
+    // A convention asserted against zero real examples is not a convention. If these siblings ever
+    // drop their LOG=, this claim must fail rather than quietly become decoration.
+    for (const rel of SIBLINGS) {
+      const src = readFileSync(path.join(ROOT, rel), 'utf8');
+      expect(/^LOG=/m.test(src), `${rel} no longer declares a LOG=`).toBe(true);
+    }
+  });
+
+  it('the declared path is the one both crontabs already redirect to', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    expect(src).toContain('LOG=${DECLARATION_SYNC_LOG:-/var/log/declaration-sync.log}');
+  });
+});
+
+/**
+ * OPS-MONITORING-INVENTORY-RESTORE-W1 R4/R6 — the reconciler's own `--self-test` is invoked by
+ * NOTHING.
+ *
+ * Measured at e82f888: no test and no workflow ran `monitoring-inventory-reconcile.py --self-test`,
+ * so its ~150 assertions — including every SOT_PARITY and SYNC_LIVENESS case — only ever ran when
+ * a human remembered to. A suite nobody runs is the dark-guard class this estate has been bitten
+ * by repeatedly, one level up: not a guard that cannot fire, but a guard whose own tests cannot.
+ */
+describe('the reconciler self-test actually runs in CI', () => {
+  const RECONCILER = path.join(ROOT, 'ops/monitoring/monitoring-inventory-reconcile.py');
+
+  it('passes, and reports a non-vacuous check count', () => {
+    let out = '';
+    try {
+      out = execFileSync('python3', [RECONCILER, '--self-test'], { encoding: 'utf8' });
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string };
+      throw new Error(`reconciler --self-test FAILED:\n${err.stdout ?? ''}${err.stderr ?? ''}`);
+    }
+    const m = /SELF_TEST (PASS|FAIL) checks=(\d+) failures=(\d+)/.exec(out);
+    expect(m, 'no terminal SELF_TEST summary line').toBeTruthy();
+    expect(m![1]).toBe('PASS');
+    expect(Number(m![3])).toBe(0);
+    // A vacuity floor, not an exact count: the suite grows, and pinning the number would make
+    // every added assertion a failing test.
+    expect(Number(m![2]), 'the suite reported suspiciously few checks').toBeGreaterThan(100);
+  });
+
+  it('SYNC_LIVENESS is wired into the drift set and the positive per-run output', () => {
+    const src = readFileSync(RECONCILER, 'utf8');
+    // Registered as a real finding key, not merely defined.
+    expect(src).toMatch(/"SYNC_LIVENESS": \(sync_liveness_result or \{\}\)\.get\("findings"/);
+    // In the drift set: a stopped sync is operator-action-required, not a standing report.
+    const driftBlock = /drift_keys = \(([\s\S]*?)\)\n/.exec(src);
+    expect(driftBlock, 'could not locate drift_keys').toBeTruthy();
+    expect(driftBlock![1]).toContain('SYNC_LIVENESS');
+    // Positive output on EVERY run — silence must never be the pass signal.
+    expect(src).toContain('log(f"SYNC_LIVENESS {row[\'host\']} {row[\'verdict\']} ');
+  });
+
+  it('the liveness bound is DERIVED, never a hardcoded literal', () => {
+    const src = readFileSync(RECONCILER, 'utf8');
+    expect(src).toContain('bound = cadence * SYNC_LIVENESS_MISSED_CYCLES');
+    // The multiplier is a declared policy constant (like PENDING_STALE_DAYS); the BOUND is not.
+    expect(src).toMatch(/SYNC_LIVENESS_MISSED_CYCLES = max\(1, int\(os\.environ\.get\(/);
+    // And the derivation must genuinely read the schedule — proven end-to-end by the Python
+    // suite's "the derived bound TRACKS the schedule" case, which fails if this becomes a literal.
+    expect(src).toContain('def derive_cadence_minutes(expr)');
   });
 });

@@ -36,7 +36,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "4c0048b8a40253f140dfc87f385ba9f6ddb226460735935f76488a2378d1ecd5",
+      "sha256": "9261a71576a06973d06d32b22a6cc086d4c57387a89e943a6816f62e8fb1d4c2",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT"
       ],
@@ -65,7 +65,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "de277a76a9fe8fa4f4616be1dcd0478ce7e61854ee8b8f3f0f81e48f4fcb6bf0",
+      "sha256": "b5c0672d880b0e5626b3eb4493ef56b29012644a42321d6e9cbc5b7d1cf6f352",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -508,6 +508,13 @@
       "kind": "executable",
       "host": "204.168.185.24",
       "host_path": "/opt/algovault-monitoring/directional-label-freshness.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/directional-label-freshness.py",
+          "schedule": "41 6 * * *"
+        }
+      ],
       "criticality": "load-bearing",
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
