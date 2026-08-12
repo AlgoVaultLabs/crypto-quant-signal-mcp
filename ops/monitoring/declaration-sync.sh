@@ -63,6 +63,32 @@ ALERT_ID=MONITORING_DECLARATION_SYNC_FAILED
 RECOMMENDED_WAVE='OPS-MONITORING-DECLARATION-SYNC-W{NEXT}'
 BACKUP_REASON=${DECLARATION_SYNC_BACKUP_REASON:-MONITORING-INVENTORY-HOST-SYNC-W1}
 
+# ── DURABLE HISTORY (OPS-MONITORING-INVENTORY-RESTORE-W1) ────────────────────────────────────
+# Until this wave the only record of a run was wherever the crontab redirect happened to send
+# stdout — an UNCOMMITTED destination, so the committed file described none of its own history.
+# The path here matches what both hosts' crontabs already redirect to, so nothing moves.
+#
+# We do NOT tee the per-row body into it. `closedbar-w1-liveness.sh:78` paid for that lesson:
+# the cron line already redirects stdout here, so tee-ing wrote every line TWICE. Instead the
+# body stays on stdout (one writer, one copy) and only two STRUCTURED bookend records are
+# appended directly — a START and the terminal verdict — which are what make the file
+# self-describing if the redirect is ever removed or the script is run by hand.
+LOG=${DECLARATION_SYNC_LOG:-/var/log/declaration-sync.log}
+
+# Attempt heartbeat, consumed by monitoring-inventory-reconcile.py's SYNC_LIVENESS check.
+# /var/lib, NOT $DEST_DIR: a file under the monitoring dir with no inventory row is exactly what
+# ORPHAN exists to catch, and the existing snapshot-landing-heartbeat
+# (ops/cron/snapshot-landing-daily.sh:49) already established /var/lib as the heartbeat home.
+HEARTBEAT=${DECLARATION_SYNC_HEARTBEAT:-/var/lib/algovault-monitoring/declaration-sync-heartbeat}
+
+# Set by self_test(). The hermetic suite must never touch /var/log or /var/lib, and must never
+# alert — its INDETERMINATE is a TEST failure, not an operational one.
+IN_SELF_TEST=0
+
+# Fail-soft on every side of it: an unwritable log or heartbeat must cost the RECORD, never the
+# sync. `|| true` is load-bearing for the same reason send_telegram.sh:31 documents.
+log_line() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$LOG" 2>/dev/null || true; }
+
 # ── WHICH HOST GETS WHICH DECLARATION (OPS-DECLARATION-SYNC-YAML-W1) ─────────────────────────
 # Resolution mirrors monitoring-inventory-reconcile.py EXACTLY — same variable, same default — so
 # there is ONE host-label convention in this directory rather than a second dialect. aoe-1's cron
@@ -135,7 +161,31 @@ DECLARATIONS=(
   "OPS-SEED-ORCHESTRATOR-W1-baseline.json|by_venue_total_24h|3|signal-1"
 )
 
-verdict() { echo "DECLARATION_SYNC_VERDICT=$1"; exit "$2"; }
+# Exactly one terminal token on stdout, plus — outside the hermetic suite — a durable record in
+# BOTH the log and the heartbeat. The heartbeat's verdict half is what separates "cron never
+# fired" (no attempt_at at all, or a stale one) from "fired and wedged" (fresh attempt_at, no
+# verdict= or a FAILED/INDETERMINATE one). Recording only the attempt would collapse those two.
+verdict() {
+  if [ "$IN_SELF_TEST" -eq 0 ]; then
+    log_line "DECLARATION_SYNC_VERDICT=$1 exit=$2"
+    { printf 'verdict=%s\nverdict_at=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$HEARTBEAT"; } 2>/dev/null || true
+  fi
+  echo "DECLARATION_SYNC_VERDICT=$1"
+  exit "$2"
+}
+
+# ATTEMPT recency, stamped at job START and BEFORE any conditional work — CLAUDE.md: "Producer
+# liveness pages on ATTEMPT recency (heartbeat stamped at job START, fail-soft, before
+# conditional work), NOT output recency". Output recency is unusable here by construction: the
+# sync only REWRITES a declaration whose hash changed (see the UNCHANGED `continue` below), so a
+# perfectly healthy run on a stable declaration set touches nothing and advances no mtime. A
+# bound built on declaration mtime would therefore fire on healthy hosts, forever.
+stamp_attempt() {
+  [ "$IN_SELF_TEST" -eq 0 ] || return 0
+  mkdir -p "$(dirname "$HEARTBEAT")" 2>/dev/null || true
+  { printf 'attempt_at=%s\nhost_labels=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$HOST_LABELS" > "$HEARTBEAT"; } 2>/dev/null || true
+}
 
 # Validate a candidate body. Refuses on anything it cannot positively confirm.
 # <path> <required-key> <min-count> -> 0 ok / 1 reject (reason on stdout)
@@ -218,8 +268,30 @@ alert() {   # <body>
     | "$TG" "$ALERT_ID" CRITICAL_PERSISTENT - || true
 }
 
+# ── A SYNC THAT CANNOT RUN IS OPERATIONALLY IDENTICAL TO ONE THAT FAILED ─────────────────────
+# (OPS-MONITORING-INVENTORY-RESTORE-W1 R3.) This script was fail-closed PER ROW — every non-200,
+# parse failure, key/floor refusal, size collapse and post-swap mismatch alerts — but NOT per
+# PROCESS: every precondition below exited INDETERMINATE 3 without ever calling alert(), so the
+# sync could be completely dead and nothing would page. Only the row-level half was audible.
+#
+# The exit code is unchanged (3, the token-law default) and so is the token; what changes is that
+# the verdict is now DELIVERED. Severity, cooldown, DRY_RUN and fail-open stay owned by
+# send_telegram.sh — CLAUDE.md forbids a consumer re-implementing them, and alert() already
+# routes through the wrapper.
+die_indeterminate() {   # <one-line reason> [detail…]
+  echo "  ✗ $1"
+  alert "The sync could not run at all: $1
+
+Nothing was fetched and nothing was written, so every declaration on this host is now as stale as
+its last successful run. The checks that read them keep running against that stale copy.
+
+${2:-}"
+  verdict INDETERMINATE 3
+}
+
 # ── --self-test: hermetic. No network, no /opt, no TG. Vacuity-guarded ──────
 self_test() {
+  IN_SELF_TEST=1
   local fails=0 checks=0
   local tmp; tmp=$(mktemp -d "${TMPDIR:-/tmp}/declsync.XXXXXX") || return 3
   # BSD mktemp does not substitute XXXXXX unless it is TERMINAL, so the template ends there and
@@ -321,17 +393,27 @@ self_test() {
 [ "${1:-}" = "--self-test" ] && self_test
 
 # ── sync ────────────────────────────────────────────────────────────────────
-command -v curl   >/dev/null 2>&1 || verdict INDETERMINATE 3
-command -v python3 >/dev/null 2>&1 || verdict INDETERMINATE 3
+# BEFORE any conditional work, and before the preconditions that can end the run: the heartbeat
+# records that this host ATTEMPTED, which is the only thing that distinguishes a dead cron from a
+# wedged run. Stamping it after the preconditions would make an INDETERMINATE exit look exactly
+# like a cron that never fired.
+stamp_attempt
+log_line "START declaration-sync labels=$HOST_LABELS declared=${#DECLARATIONS[@]} base=$BASE_URL"
+
+command -v curl   >/dev/null 2>&1 || die_indeterminate "curl is not installed — no declaration can be fetched"
+command -v python3 >/dev/null 2>&1 || die_indeterminate "python3 is not installed — no declaration body can be validated"
 # Fail-closed on the YAML parser, and INDETERMINATE rather than FAILED: without it we cannot
 # verify those bodies at all, which is "verified nothing", not "found something wrong".
 if declares_yaml && ! python3 -c 'import yaml' >/dev/null 2>&1; then
-  echo "  ✗ PyYAML is unavailable but the declared set contains YAML — cannot verify those bodies"
-  verdict INDETERMINATE 3
+  die_indeterminate "PyYAML is unavailable but the declared set contains YAML — cannot verify those bodies" \
+    "Install it with: apt-get install -y python3-yaml"
 fi
-[ -d "$DEST_DIR" ] || { echo "  ✗ dest dir $DEST_DIR does not exist"; verdict INDETERMINATE 3; }
+[ -d "$DEST_DIR" ] || die_indeterminate "dest dir $DEST_DIR does not exist"
 
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/declsync.XXXXXX") || verdict INDETERMINATE 3
+# The 5th silent exit, and the one the dispatching spec's "four preconditions" did not list. It
+# is not hypothetical: BSD/GNU mktemp both fail here on a full or read-only /tmp, and without an
+# alert a host whose /tmp filled up syncs nothing, forever, at a green-looking exit code.
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/declsync.XXXXXX") || die_indeterminate "cannot create a work dir under ${TMPDIR:-/tmp} — check free space and permissions"
 # shellcheck disable=SC2064
 trap "rm -rf '$WORK'" EXIT
 

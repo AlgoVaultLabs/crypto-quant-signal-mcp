@@ -78,7 +78,7 @@ import re
 import socket
 import subprocess
 import sys
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -125,6 +125,24 @@ RECOMMENDED_WAVE = "OPS-MONITORING-INVENTORY-RESTORE-W{NEXT}"
 AUDIT_DOC_REF = "audits/OPS-MONITORING-INVENTORY-PARITY-W1-endpoint-truth.md"
 CONSECUTIVE_TO_PAGE = 3
 PENDING_STALE_DAYS = 30
+
+# ── SYNC_LIVENESS (OPS-MONITORING-INVENTORY-RESTORE-W1) ──────────────────────────────────────
+# DARK only notices if the crontab LINE disappears; it cannot tell a line that is present and
+# never completing from a healthy one. SOT_PARITY would notice the downstream symptom, but ships
+# `report`, so it never pages. This check closes that: it asserts POSITIVELY that the sync
+# attempted, within a bound DERIVED from its own inventory schedule.
+SYNC_LIVENESS_ROW_ID = "declaration-sync"
+# The heartbeat is written by declaration-sync.sh at job START. It lives in /var/lib and NOT in
+# MONITORING_DIR, because a file under the monitoring dir with no inventory row is precisely what
+# ORPHAN exists to catch — and ops/cron/snapshot-landing-daily.sh already made /var/lib the
+# heartbeat home for the same reason.
+SYNC_HEARTBEAT_PATH = os.environ.get(
+    "DECLARATION_SYNC_HEARTBEAT", "/var/lib/algovault-monitoring/declaration-sync-heartbeat")
+# The BOUND is derived (cadence × this). Only the MULTIPLIER is a declared policy constant, the
+# same shape as CONSECUTIVE_TO_PAGE and PENDING_STALE_DAYS above. 2 = one wholly missed cycle
+# must not fire, two must — a single missed hourly run is a blip (a slow fetch, a reboot), while
+# two consecutive is the shape of an actual stop.
+SYNC_LIVENESS_MISSED_CYCLES = max(1, int(os.environ.get("SYNC_LIVENESS_MISSED_CYCLES", "2")))
 
 # ORPHAN scan exclusions. Runtime state, caches, operator backups and — critically —
 # `autopilot-pg-creds` (mode 600), which must never be proposed for commit.
@@ -224,6 +242,42 @@ def host_backups():
     except Exception as exc:
         log(f"HOST_BACKUPS_FAILED: {type(exc).__name__}: {exc} — fail-open")
         return None
+
+
+def host_sync_heartbeat(path=None):
+    """declaration-sync.sh's attempt heartbeat as {key: value}. None on ANY failure — absent,
+    unreadable, empty. The caller renders None as COULD_NOT_COMPARE, never as a pass: a heartbeat
+    we could not read is not evidence that the sync ran.
+
+    A THIRD listing beside host_listing()/host_backups() for the same reason those two are
+    separate — this file lives outside MONITORING_DIR, so neither scan can see it.
+    """
+    p = path or SYNC_HEARTBEAT_PATH
+    if _on_host():
+        try:
+            text = Path(p).read_text(encoding="utf-8")
+        except OSError as exc:
+            log(f"SYNC_HEARTBEAT_UNREADABLE(local): {exc} — fail-open, NOT a pass")
+            return None
+    else:
+        cmd = ["ssh", "-i", SSH_KEY, "-o", "ConnectTimeout=15", "-o", "BatchMode=yes", SSH_TARGET,
+               f"cat {p}"]
+        try:
+            r = _run(cmd)
+            if r.returncode != 0:
+                log(f"SYNC_HEARTBEAT_UNREADABLE(ssh rc={r.returncode}): "
+                    f"{r.stderr.strip()[:160]} — fail-open, NOT a pass")
+                return None
+            text = r.stdout
+        except Exception as exc:
+            log(f"SYNC_HEARTBEAT_UNREADABLE(ssh): {type(exc).__name__}: {exc} — fail-open")
+            return None
+    out = {}
+    for line in text.splitlines():
+        k, sep, v = line.partition("=")
+        if sep:
+            out[k.strip()] = v.strip()
+    return out or None
 
 
 # ─────────── host ownership (multi-host: evaluate only what THIS instance owns) ───────────
@@ -411,6 +465,120 @@ def check_no_backup(rows, backups, labels=None):
             if not any(b.startswith(base + ".") or b.startswith(base) and ".bak" in b for b in backups):
                 out.append({"id": r["id"], "host": e.get("host"), "artifact": base})
     return out
+
+
+def derive_cadence_minutes(expr):
+    """Longest legitimate gap between two consecutive fires of a cron expression, in minutes.
+    None when it cannot be derived — the caller then reports COULD_NOT_COMPARE rather than
+    inventing a bound, because a guessed bound is the "confident ALARM" instrument defect.
+
+    The MAXIMUM gap, not the minimum: a liveness bound has to tolerate the longest quiet period
+    the schedule legitimately produces. `33 * * * *` -> 60. `*/15 * * * *` -> 15. `13,43 * * * *`
+    -> 30. A day/month/dow restriction (`39 8 * * 2`) returns None: the gap is then a function of
+    the calendar, and this check has no consumer that needs it.
+    """
+    if not isinstance(expr, str):
+        return None
+    text = expr.strip()
+    if text.startswith("@"):
+        text = _CRON_MACROS.get(text.lower(), "")
+    fields = text.split()
+    if len(fields) != 5:
+        return None
+    if fields[2] != "*" or fields[3] != "*" or fields[4] != "*":
+        return None
+    minutes = expand_minute_field(fields[0])
+    hours = expand_minute_field(fields[1], 23)
+    if not minutes or not hours:
+        return None
+    fires = sorted(h * 60 + m for h in hours for m in minutes)
+    # Wrap-around: the gap from the last fire of one day to the first of the next.
+    gaps = [b - a for a, b in zip(fires, fires[1:])] + [fires[0] + 1440 - fires[-1]]
+    return max(gaps)
+
+
+def _parse_stamp(text):
+    """`2026-08-12T07:33:01Z` -> aware datetime. None on anything else."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        return datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def check_sync_liveness(rows, heartbeat, labels=None, now=None):
+    """Is declaration-sync ATTEMPTING on this host, within a bound derived from its own schedule?
+
+    Three verdicts, and the third is not a pass:
+      LIVE               attempted within cadence x SYNC_LIVENESS_MISSED_CYCLES
+      STALE              attempted, but longer ago than that            -> drift finding
+      COULD_NOT_COMPARE  no row / no schedule / underivable cadence / no or unparseable
+                         heartbeat                                      -> REPORTED, never a pass
+
+    ATTEMPT recency, never OUTPUT recency, and the distinction is load-bearing rather than
+    stylistic: declaration-sync.sh only rewrites a declaration whose hash CHANGED, so a healthy
+    run against a stable declaration set writes nothing and advances no mtime. A bound built on
+    the declarations' own freshness would fire on every healthy host whose configs simply had not
+    changed lately. CLAUDE.md states this generally — "Producer liveness pages on ATTEMPT
+    recency (heartbeat stamped at job START, fail-soft, before conditional work), NOT output
+    recency" — and this is that rule's second substrate.
+
+    Absent heartbeat REPORTS rather than drifting, deliberately: a host upgraded before its first
+    post-install sync would otherwise page for three days for having done nothing wrong. What
+    makes that safe rather than decorative is that the installing wave proves the heartbeat exists
+    on every host before it closes, so afterwards "absent" means deleted or rebuilt.
+    """
+    labels = labels if labels is not None else HOST_LABELS
+    now = now or datetime.now(timezone.utc)
+    probed, findings = [], []
+    row = next((r for r in rows if r.get("id") == SYNC_LIVENESS_ROW_ID), None)
+    host = sorted(labels)[0] if labels else "unknown"
+
+    def out(verdict, detail, **kw):
+        r = {"host": host, "verdict": verdict, "detail": detail, **kw}
+        probed.append(r)
+        return r
+
+    if row is None:
+        out("COULD_NOT_COMPARE",
+            f"no inventory row with id {SYNC_LIVENESS_ROW_ID!r} is owned by this instance")
+        return {"probed": probed, "findings": findings}
+    schedule = schedule_for(row, labels)
+    cadence = derive_cadence_minutes(schedule)
+    if cadence is None:
+        out("COULD_NOT_COMPARE", f"cannot derive a cadence from schedule {schedule!r}",
+            schedule=schedule)
+        return {"probed": probed, "findings": findings}
+    bound = cadence * SYNC_LIVENESS_MISSED_CYCLES
+    if not heartbeat:
+        out("COULD_NOT_COMPARE", f"heartbeat unreadable or absent at {SYNC_HEARTBEAT_PATH}",
+            schedule=schedule, cadence_minutes=cadence, bound_minutes=bound,
+            cycles=SYNC_LIVENESS_MISSED_CYCLES)
+        return {"probed": probed, "findings": findings}
+    stamp = _parse_stamp(heartbeat.get("attempt_at"))
+    if stamp is None:
+        out("COULD_NOT_COMPARE",
+            f"heartbeat carries no parseable attempt_at ({heartbeat.get('attempt_at')!r})",
+            schedule=schedule, cadence_minutes=cadence, bound_minutes=bound,
+            cycles=SYNC_LIVENESS_MISSED_CYCLES)
+        return {"probed": probed, "findings": findings}
+
+    age = int((now - stamp).total_seconds() // 60)
+    common = {"schedule": schedule, "cadence_minutes": cadence, "bound_minutes": bound,
+              "cycles": SYNC_LIVENESS_MISSED_CYCLES, "age_minutes": age,
+              "last_verdict": heartbeat.get("verdict", "-"),
+              "window": f"last {bound}m ({SYNC_LIVENESS_MISSED_CYCLES} x {cadence}m cycle)"}
+    if age > bound:
+        r = out("STALE",
+                f"last attempt {age}m ago exceeds the {bound}m bound derived from {schedule!r}",
+                **common)
+        findings.append({k: r[k] for k in
+                         ("host", "verdict", "detail", "age_minutes", "bound_minutes",
+                          "cadence_minutes", "cycles", "last_verdict")})
+    else:
+        out("LIVE", f"last attempt {age}m ago, within the {bound}m bound", **common)
+    return {"probed": probed, "findings": findings}
 
 
 def load_doc_path_claims(path=None):
@@ -672,7 +840,11 @@ def load_boundary_rule():
         return None
 
 
-def _expand_minute_term(term):
+def _expand_minute_term(term, ceiling=59):
+    """`ceiling` DEFAULTS to 59, so every existing caller — and the cross-language parity test
+    pinning this to check-monitoring-schedules.mjs — is byte-for-byte unaffected. SYNC_LIVENESS
+    passes 23 to expand an HOUR field under identical Vixie semantics, rather than adding a second
+    cron expander beside this one for the same job to drift away from."""
     parts = term.split("/")
     if len(parts) > 2:
         return None
@@ -685,27 +857,27 @@ def _expand_minute_term(term):
         if step < 1:
             return None
     if range_part == "*":
-        lo, hi = 0, 59
+        lo, hi = 0, ceiling
     elif range_part.isdigit():
         lo = int(range_part)
-        # Vixie: `A/S` means `A-59/S`; a bare `A` is the single value A.
-        hi = 59 if len(parts) == 2 else lo
+        # Vixie: `A/S` means `A-<ceiling>/S`; a bare `A` is the single value A.
+        hi = ceiling if len(parts) == 2 else lo
     else:
         m = re.fullmatch(r"(\d+)-(\d+)", range_part)
         if not m:
             return None
         lo, hi = int(m.group(1)), int(m.group(2))
-    if lo < 0 or hi > 59 or lo > hi:
+    if lo < 0 or hi > ceiling or lo > hi:
         return None
     return list(range(lo, hi + 1, step)) or None
 
 
-def expand_minute_field(field):
+def expand_minute_field(field, ceiling=59):
     if not isinstance(field, str) or not field.strip():
         return None
     minutes = set()
     for term in field.split(","):
-        got = _expand_minute_term(term.strip())
+        got = _expand_minute_term(term.strip(), ceiling)
         if got is None:
             return None
         minutes.update(got)
@@ -1111,7 +1283,8 @@ def check_cert_expiry_floor(cert_dir=None, floor_days=None, now=None):
 # ─────────── main ───────────
 
 def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
-             doc_claims_result=None, sot_parity_result=None, cf_results=None):
+             doc_claims_result=None, sot_parity_result=None, cf_results=None,
+             sync_liveness_result=None):
     """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known.
 
     `posture_result` and `doc_claims_result` are passed in rather than computed here so each probe
@@ -1133,6 +1306,7 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
         "CERT_EXPIRY_FLOOR": (cf_results or {}).get("cert", {}).get("findings", []),
         "DOC_PATH_CLAIM": (doc_claims_result or {}).get("findings", []),
         "SOT_PARITY": (sot_parity_result or {}).get("findings", []),
+        "SYNC_LIVENESS": (sync_liveness_result or {}).get("findings", []),
         "DIVERGENT_COPY": divergent_copy_findings(rows),
     }
 
@@ -1190,12 +1364,17 @@ def main(check_mode=False):
     doc_claims_result = check_doc_path_claims(doc_claims, HOST_LABELS)
     sot_cfg = load_sot_parity_config()
     sot_parity_result = check_sot_parity(INVENTORY_PATH, sot_cfg, HOST_LABELS)
+    sync_liveness_result = check_sync_liveness(owned, host_sync_heartbeat(), HOST_LABELS)
 
     f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result,
-                 doc_claims_result, sot_parity_result, cf_results)
+                 doc_claims_result, sot_parity_result, cf_results, sync_liveness_result)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
+    # SYNC_LIVENESS *is* a drift key: a sync that has stopped attempting is operator-action-
+    # required, and it is the one condition every other check here is downstream of. Only its
+    # STALE verdict produces a finding — COULD_NOT_COMPARE reports and never pages.
     drift_keys = ("HASH_DRIFT", "ORPHAN", "DARK", "SCHEDULE_DRIFT", "PENDING_STALE",
-                  "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT", "DOC_PATH_CLAIM")
+                  "REGISTRY_PARITY", "NO_BACKUP", "POSTURE_DRIFT", "DOC_PATH_CLAIM",
+                  "SYNC_LIVENESS")
     # SOT_PARITY ships REPORT-FIRST (ops/monitoring/sot-parity-config.json `enforcement`). A sync
     # a few minutes behind a just-merged commit is not an incident, and a check that pages on
     # transient lag is muted or deleted within a week — the severity-ladder lesson. It joins the
@@ -1244,6 +1423,16 @@ def main(check_mode=False):
             log(f"SOT_PARITY {row['host']} {row['verdict']} "
                 f"local={row.get('local_sha256', '-')[:16]} sot={row.get('sot_sha256', '-')[:16]} "
                 f"mode={(sot_cfg or {}).get('enforcement', 'report')} — {row['detail']}")
+        # POSITIVE per-run liveness accounting: the measured staleness, the DERIVED bound and the
+        # schedule it came from, on EVERY run and in every verdict. Printing only on STALE would
+        # make silence the pass signal — the exact shape this check exists to break, and the one
+        # that let a sync's health be inferred from its downstream symptoms instead of measured.
+        for row in sync_liveness_result.get("probed", []):
+            log(f"SYNC_LIVENESS {row['host']} {row['verdict']} "
+                f"age={row.get('age_minutes', '-')}m bound={row.get('bound_minutes', '-')}m "
+                f"cadence={row.get('cadence_minutes', '-')}m cycles={row.get('cycles', '-')} "
+                f"schedule={row.get('schedule', '-')!r} last_verdict={row.get('last_verdict', '-')} "
+                f"window={row.get('window', '-')!r} — {row['detail']}")
         deferred_claims = doc_claims_result.get("deferred", [])
         if deferred_claims:
             log(f"DOC_PATH_CLAIM_DEFERRED to other instances: "
@@ -1722,6 +1911,91 @@ def self_test():
            len(check_cert_expiry_floor(floor_days=99999)["findings"]), len(live["checked"]))
         ck("cert: positive per-cert output carries days_left",
            all("days_left" in r for r in live["checked"]), True)
+
+    # ── SYNC_LIVENESS (OPS-MONITORING-INVENTORY-RESTORE-W1) ──
+    _SYNC_ROWS = [{"id": "declaration-sync", "artifact": "ops/monitoring/declaration-sync.sh",
+                   "host": "204.168.185.24", "install_state": "installed",
+                   "schedule": "33 * * * *",
+                   "installed_at": [{"host": "signal-1", "path": "/opt/x/declaration-sync.sh",
+                                     "schedule": "33 * * * *"},
+                                    {"host": "aoe-1", "path": "/opt/x/declaration-sync.sh",
+                                     "schedule": "27 * * * *"}]}]
+    _NOW = datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
+
+    def _hb(minutes_ago, verdict="UNCHANGED"):
+        stamp = (_NOW - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"attempt_at": stamp, "verdict": verdict}
+
+    def _live(hb, labels={"signal-1"}, rows=None):
+        return check_sync_liveness(rows if rows is not None else _SYNC_ROWS, hb, labels, _NOW)
+
+    # Read the first probed row through a SENTINEL, never `["probed"][0][k]`. CLAUDE.md: "an
+    # assertion that RAISES is not an assertion" — indexing directly turns a broken subject into
+    # an IndexError that ABORTS the suite, which reads as a crash rather than the FAIL it is.
+    # Measured while proving these very assertions can fail: deleting the LIVE output line (the
+    # exact regression the positive-output assertion exists to catch) killed the run instead of
+    # reporting, so every later check went unevaluated too.
+    def _p0(result, key):
+        rows_ = (result or {}).get("probed") or []
+        return rows_[0].get(key, "<missing>") if rows_ else "<no probed row>"
+
+    # The BOUND IS DERIVED, and the proof is that a DIFFERENT schedule yields a DIFFERENT bound.
+    # A hardcoded literal would pass a single-schedule assertion, so one schedule can never be
+    # enough evidence — this is the assertion that would fail if someone replaced the derivation
+    # with a constant.
+    ck("liveness: cadence derived hourly", derive_cadence_minutes("33 * * * *"), 60)
+    ck("liveness: cadence derived quarter-hourly", derive_cadence_minutes("*/15 * * * *"), 15)
+    ck("liveness: cadence derived twice-hourly", derive_cadence_minutes("13,43 * * * *"), 30)
+    ck("liveness: cadence derived 4-hourly (hour field expands too)",
+       derive_cadence_minutes("33 */4 * * *"), 240)
+    ck("liveness: @hourly macro resolves", derive_cadence_minutes("@hourly"), 60)
+    ck("liveness: a day-of-week schedule is NOT guessed at",
+       derive_cadence_minutes("39 8 * * 2"), None)
+    ck("liveness: garbage is NOT guessed at", derive_cadence_minutes("not a cron"), None)
+    ck("liveness: the derived bound TRACKS the schedule, never a literal",
+       [_p0(_live(_hb(90)), "bound_minutes"),
+        _p0(_live(_hb(90), rows=[{**_SYNC_ROWS[0], "installed_at": None,
+                                  "schedule": "*/15 * * * *"}]), "bound_minutes")],
+       [120, 30])
+    # Same age, opposite verdicts, decided ONLY by the schedule — the bound is load-bearing.
+    ck("liveness: 90m old is LIVE on an hourly sync", _p0(_live(_hb(90)), "verdict"), "LIVE")
+    ck("liveness: 90m old is STALE on a quarter-hourly sync",
+       _p0(_live(_hb(90), rows=[{**_SYNC_ROWS[0], "installed_at": None,
+                                 "schedule": "*/15 * * * *"}]), "verdict"), "STALE")
+    ck("liveness: one missed cycle does NOT fire", _p0(_live(_hb(61)), "verdict"), "LIVE")
+    ck("liveness: two missed cycles DO fire", _p0(_live(_hb(121)), "verdict"), "STALE")
+    ck("liveness: STALE produces a drift finding", len(_live(_hb(121))["findings"]), 1)
+    ck("liveness: LIVE produces NO finding", len(_live(_hb(30))["findings"]), 0)
+    # The per-host bound comes from the per-host registry entry, not the row's top-level schedule.
+    ck("liveness: aoe-1 resolves its OWN schedule from installed_at",
+       _p0(_live(_hb(30), {"aoe-1"}), "schedule"), "27 * * * *")
+    # Every not-a-pass path, and each must REPORT rather than silently pass or silently page.
+    ck("liveness: absent heartbeat -> COULD_NOT_COMPARE, never a pass",
+       _p0(_live(None), "verdict"), "COULD_NOT_COMPARE")
+    ck("liveness: absent heartbeat does NOT page (bootstrap safety)", len(_live(None)["findings"]), 0)
+    ck("liveness: unparseable attempt_at -> COULD_NOT_COMPARE",
+       _p0(_live({"attempt_at": "yesterday"}), "verdict"), "COULD_NOT_COMPARE")
+    ck("liveness: heartbeat with no attempt_at -> COULD_NOT_COMPARE",
+       _p0(_live({"verdict": "SYNCED"}), "verdict"), "COULD_NOT_COMPARE")
+    ck("liveness: no owned declaration-sync row -> COULD_NOT_COMPARE",
+       _p0(_live(_hb(30), rows=[]), "verdict"), "COULD_NOT_COMPARE")
+    ck("liveness: underivable schedule -> COULD_NOT_COMPARE",
+       _p0(_live(_hb(30), rows=[{**_SYNC_ROWS[0], "installed_at": None,
+                                 "schedule": "39 8 * * 2"}]), "verdict"), "COULD_NOT_COMPARE")
+    # POSITIVE output on EVERY run: silence must never be the pass signal.
+    ck("liveness: every verdict carries a probed row, including the passes",
+       [len(_live(h)["probed"]) for h in (_hb(30), _hb(121), None)], [1, 1, 1])
+    ck("liveness: a LIVE row still reports its measured age + derived bound",
+       [_p0(_live(_hb(30)), k) != "<missing>" and _p0(_live(_hb(30)), k) != "<no probed row>"
+        for k in ("age_minutes", "bound_minutes", "window")], [True, True, True])
+    ck("liveness: the window label is explicit about n and cadence",
+       _p0(_live(_hb(30)), "window"), "last 120m (2 x 60m cycle)")
+    ck("liveness: the last terminal verdict is carried, so wedged != never-ran",
+       _p0(_live(_hb(30, "INDETERMINATE")), "last_verdict"), "INDETERMINATE")
+    # The parity-pinned expander must be UNCHANGED at its default ceiling.
+    ck("liveness: parameterising the expander did not move its default",
+       [expand_minute_field("*/15"), expand_minute_field("33"), expand_minute_field("13,43")],
+       [[0, 15, 30, 45], [33], [13, 43]])
 
     for f_ in failures:
         log(f"SELF_TEST_FAIL: {f_}")
