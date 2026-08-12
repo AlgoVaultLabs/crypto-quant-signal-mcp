@@ -31,14 +31,26 @@
  * the local-only classes REPORT, with a numeric promotion criterion in the config. Wiring claims
  * are resolved by IMPORTING check-canaries-wired.mjs's findInvocations — never re-implemented.
  *
+ * THE CORPUS IS A SET (META-CLAUDEMD-VERIFIER-CORPUS-SET-W1, 2026-08-12). CLAUDE.md was split into
+ * a router plus six trigger-read rule bodies under `Claude files/rules/`. The parts are DECLARED in
+ * ops/claudemd-claim-config.json at `_corpus_enumeration.in[CLAUDE.md].parts` — an explicit ordered
+ * list, never a glob — extracted per part and MERGED, deduped by claimId. Three properties make the
+ * split provably lossless: claimId carries no location, extraction is heading-agnostic, and every
+ * `Claude files/…` path contains a space so the router's own links mint no claims. Absent `parts`,
+ * behaviour is byte-for-byte the old single-path one. `vaultDir` stays anchored on the CLAUDE.md
+ * entry; a listed part missing on disk is INDETERMINATE, never a pass.
+ *
  * Usage:
  *   node scripts/check-claudemd-claims.mjs --self-test   # two-directional, vacuity-guarded
  *   node scripts/check-claudemd-claims.mjs --check       # verify (default). CI: lock-mode.
  *   node scripts/check-claudemd-claims.mjs --sync        # regenerate the lock from the corpus
  *   node scripts/check-claudemd-claims.mjs --measure     # R1 corpus measurement, incl. strip A/B
  *   node scripts/check-claudemd-claims.mjs --probe-hosts # with --check: read-only host probes
+ *   node scripts/check-claudemd-claims.mjs --baseline <f> # LOCAL: live claim set vs a recorded
+ *                                                         # pre-split baseline. Own token.
  *
- * Verdict: exactly one terminal `CLAUDEMD_CLAIMS_VERDICT=PASS|FAIL|INDETERMINATE`.
+ * Verdict: exactly one terminal `CLAUDEMD_CLAIMS_VERDICT=PASS|FAIL|INDETERMINATE`
+ * (`--baseline` emits `CLAUDEMD_BASELINE_VERDICT=` instead — a different gate, a different token).
  * Exit: 0 = PASS · 1 = FAIL · 3 = INDETERMINATE (token-law default for a new gate).
  * FAIL-CLOSED: missing/invalid config, missing lock (in CI), unreadable corpus (when required),
  * or a vacuous extraction (0 claims from a non-empty corpus) is INDETERMINATE and blocks.
@@ -60,7 +72,13 @@ const CONFIG_PATH = join(ROOT, 'ops', 'claudemd-claim-config.json');
 // to prove anything would be a test nobody dares run.
 const LOCK_PATH = process.env.ALGOVAULT_CLAUDEMD_LOCK || join(ROOT, 'ops', 'claudemd-claims.lock.json');
 const DEFAULT_CORPUS = join(homedir(), 'My Drive', 'Obsidian Vault', 'AlgoVault MCP', 'CLAUDE.md');
-const CORPUS_PATH = process.env.ALGOVAULT_CLAUDEMD_CORPUS || DEFAULT_CORPUS;
+const CORPUS_ENV = 'ALGOVAULT_CLAUDEMD_CORPUS';
+// A NARROW seam: it names WHICH FILES form the corpus and nothing else. The rejected alternative
+// was an ALGOVAULT_CLAUDEMD_CONFIG override, which would also have exposed the severity ladder —
+// a strictly broader risk class, and the ladder must never become settable. Same reasoning as
+// narrow-token-over-wide-scope. No committed invocation sets this; it exists so the missing-part
+// refusal can be proven END-TO-END through the real CLI rather than only in-process.
+const PARTS_ENV = 'ALGOVAULT_CLAUDEMD_CORPUS_PARTS';
 
 const argv = process.argv.slice(2);
 
@@ -141,11 +159,188 @@ export function validateConfig(cfg) {
   if (!cfg.freshness_promotion.reason || !cfg.freshness_promotion.owner) {
     throw new Error('freshness_promotion needs both a reason and an owning follow-up wave');
   }
+  // ── corpus PARTS (META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 R2) ───────────────────────────────────
+  // `parts` is a declaration WE author, so a malformed one is VACUITY and must refuse — the same
+  // argument as the exemption rows, and the same law as "a vacuity guard belongs where the corpus
+  // is CONSTRUCTED". ABSENT is not malformed: it is the single-path fallback, and it is the
+  // regression bar. Every rule below is structural on purpose; the alternative is prose, and a
+  // rule that lives only in prose gets "fixed" by a future wave enforcing the contract.
+  const corpusEntry = corpusEntryOf(cfg);
+  if (corpusEntry && 'parts' in corpusEntry) {
+    const parts = corpusEntry.parts;
+    if (!Array.isArray(parts) || !parts.length) {
+      throw new Error('_corpus_enumeration.in[CLAUDE.md].parts must be a NON-EMPTY array — an empty declaration is vacuity, not "this corpus has no parts"; delete the key to fall back to single-path');
+    }
+    if (!parts.every((p) => typeof p === 'string' && p.trim())) {
+      throw new Error('every corpus part must be a non-empty string path');
+    }
+    if (parts[0] !== corpusEntry.corpus) {
+      throw new Error(`corpus parts[0] is "${parts[0]}" but must be the anchor "${corpusEntry.corpus}" — vaultDir, and therefore every vault-path/absence-vault/home-path claim, resolves against dirname(anchor)`);
+    }
+    for (const p of parts) {
+      if (/[*?[\]]/.test(p)) {
+        throw new Error(`corpus part "${p}" contains glob metacharacters — parts are an EXPLICIT list so that adding one is a reviewed act; see _parts_semantics`);
+      }
+      if (/^_ORIGINAL-CLAUDE-md-/.test(basename(p))) {
+        throw new Error(`corpus part "${p}" is the frozen pre-split snapshot — listing it would resurrect superseded claims as prescriptive and the claim set could never shrink; see _parts_semantics`);
+      }
+    }
+    if (new Set(parts).size !== parts.length) throw new Error('corpus parts contains a duplicate path');
+    if (!corpusEntry._parts_semantics) {
+      throw new Error('_corpus_enumeration.in[CLAUDE.md] declares `parts` but no `_parts_semantics` — write the reason ON the key, or a future wave deletes what it cannot explain');
+    }
+  }
   return cfg;
+}
+
+/** The `_corpus_enumeration.in` row for the CLAUDE.md corpus, or undefined. */
+export function corpusEntryOf(cfg) {
+  return (cfg?._corpus_enumeration?.in || []).find((e) => e && e.corpus === 'CLAUDE.md');
 }
 
 export function loadConfig() {
   return validateConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')));
+}
+
+// ── corpus resolution (META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 R3) ───────────────
+//
+// The corpus is a SET. On 2026-08-12 the vault CLAUDE.md was split into a router plus six
+// trigger-read rule bodies; the verifier still read ONE hardcoded path, so it saw 17 of 114 claims
+// and reported the other 97 as STALE_DROPPED — a "report" severity — while printing PASS. A gate
+// that verifies 15% of its corpus and passes is the dark-guard class this file exists to retire.
+//
+// This is a FUNCTION and not a module-level const on purpose: a const is resolved once at import,
+// so no self-test scenario can drive a second corpus in the same process. That is precisely the
+// seam the old design could not test, and R4's scenarios all depend on re-resolving.
+
+/**
+ * Resolve the corpus to ONE anchor plus an ORDERED part list.
+ *
+ * `vaultDir` is ALWAYS `dirname(anchor)` and never `dirname(part)`. Measured: 4 of the 15
+ * `vault-path` claims and all 3 `home-path` claims now live in `Claude files/rules/*`, so rebasing
+ * on the part being read produces 11 spurious `vault-path MISSING` firings.
+ *
+ * @returns {{anchor:string, parts:string[], vaultDir:string, source:string, error?:undefined}
+ *          |{error:string}}
+ */
+export function resolveCorpus(cfg, env = process.env) {
+  const single = env[CORPUS_ENV];
+  const many = env[PARTS_ENV];
+  // No silent precedence: two declarations with no defined order is exactly the ambiguity that
+  // makes a gate unfalsifiable. Refuse, fail-closed.
+  if (single && many) {
+    return { error: `${CORPUS_ENV} and ${PARTS_ENV} are both set — two corpus declarations with no defined precedence. Unset one.` };
+  }
+  // The single-file seam keeps its exact meaning: THAT ONE FILE ONLY. Every existing fixture-driven
+  // test depends on it, and so does the pre-split baseline measurement.
+  if (single) return { anchor: single, parts: [single], vaultDir: dirname(single), source: 'env-single' };
+  if (many) {
+    const list = many.split(/[:\n]/).map((s) => s.trim()).filter(Boolean);
+    if (!list.length) return { error: `${PARTS_ENV} is set but names no path — a declaration we author, so empty is vacuity rather than "no parts"` };
+    return { anchor: list[0], parts: list, vaultDir: dirname(list[0]), source: 'env-parts' };
+  }
+  const anchor = DEFAULT_CORPUS;
+  const vaultDir = dirname(anchor);
+  const declared = corpusEntryOf(cfg)?.parts;
+  // ABSENT `parts` ⇒ today's single-path behaviour, byte for byte. This is the regression bar.
+  if (!Array.isArray(declared) || !declared.length) return { anchor, parts: [anchor], vaultDir, source: 'default-single' };
+  return { anchor, parts: declared.map((p) => join(vaultDir, p)), vaultDir, source: 'config-parts' };
+}
+
+/**
+ * Read every part. A listed part we cannot read is INDETERMINATE, never a pass: it is input we were
+ * HANDED and could not parse, which is the fail-closed side of the vacuity law — and distinct from
+ * an unreachable ANCHOR, which means "no corpus in this world" (CI) and keeps its lock-mode path.
+ */
+export function readCorpusParts(paths) {
+  const parts = [], missing = [];
+  for (const p of paths) {
+    let text;
+    try { text = readFileSync(p, 'utf8'); } catch { missing.push(p); continue; }
+    parts.push({ path: p, name: basename(p), text, sha: createHash('sha256').update(text).digest('hex') });
+  }
+  return { parts, missing };
+}
+
+/**
+ * The manual's own top-level sections. EXACTLY ONE part — the anchor — may carry them.
+ * Prefix-matched: the live headings are `## Precedence (THE LAW)` etc.
+ */
+const MANUAL_ANCHOR_SECTIONS = ['## Precedence', '## FACTUALITY', '## Execution flow', '## Never'];
+
+/**
+ * Parts that are a SECOND COPY OF THE WHOLE MANUAL rather than a fragment of it.
+ *
+ * The filename guard in validateConfig refuses `_ORIGINAL-CLAUDE-md-*` by NAME; this refuses the
+ * same defect STRUCTURALLY, so a renamed or re-dated snapshot cannot slip in.
+ *
+ * ── TWO REJECTED FORMS, AND WHY, BECAUSE THE OBVIOUS ONES ARE BOTH WRONG ────────────────────
+ * (a) "one part's TEXT contains another's" — MEASURED, and it does not fire on the real case: the
+ *     live snapshot is not a substring of any part (CLAUDE.md gained a Rule Router; every rule
+ *     body gained a header), so the guard would have advertised coverage it did not have.
+ * (b) "some part contributes ZERO unique claim ids" — measured clean TODAY (each real part
+ *     contributes 2..26 unique ids; adding the snapshot drives every part to 0). REJECTED anyway,
+ *     and this is the important one: the moment a live part EDITS a claim, the snapshot starts
+ *     contributing the SUPERSEDED id as a unique one, so the signal disappears exactly when the
+ *     harm begins. A guard that fires while harmless and goes silent once dangerous is worse than
+ *     none — it is the dark-guard class wearing a green tick.
+ *
+ * What is used instead is a structural invariant that does NOT decay: a rule BODY never carries
+ * the manual's top-level LAW sections, and a full manual always does. Measured 2026-08-12: anchor
+ * 4/4, frozen snapshot 4/4, all six rule bodies 0/4. Threshold-free, and it keeps firing after the
+ * snapshot diverges — which is the only property that matters here.
+ */
+export function duplicateManualParts(parts, anchorName) {
+  const bad = [];
+  const seenSha = new Map();
+  for (const p of parts) {
+    // Byte-identical parts under two names: exact, free, and no heuristic.
+    if (seenSha.has(p.sha)) bad.push({ part: p.path, why: `byte-identical to ${seenSha.get(p.sha)}`, sections: [] });
+    else seenSha.set(p.sha, p.path);
+    if (p.name === anchorName) continue;
+    const hits = MANUAL_ANCHOR_SECTIONS.filter((s) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm').test(p.text));
+    // >= 2 so that one incidental heading in a rule body cannot refuse the whole gate.
+    if (hits.length >= 2) bad.push({ part: p.path, why: `carries the manual's own top-level sections (${hits.join(', ')}) — this is a SECOND FULL MANUAL, not a fragment`, sections: hits });
+  }
+  return bad;
+}
+
+/**
+ * Extract over every part and MERGE into one claim list, deduped by `claimId`: a claim asserted in
+ * two parts is ONE claim. Measured on the live corpus — 135 raw claims across 7 parts collapse to
+ * 114 ids, so 21 are genuine cross-part restatements and the dedupe is load-bearing, not cosmetic.
+ *
+ * `part` is stamped as LOCATION and is treated exactly like `line`: it makes findings readable and
+ * it is excluded from `claimId` and stripped by `buildLock`. If it entered identity, relocating a
+ * rule would change every id — which is the very thing this wave proves does not happen.
+ * First occurrence wins, so a deduped claim reports the EARLIEST part in the declared order; that
+ * is stable because parts are an explicit ordered list rather than a glob.
+ */
+export function extractCorpusClaims(parts, cfg, opts = {}) {
+  const claims = [];
+  const stats = { spans: 0, skipped: 0, blocks: 0, lines: 0, parts: [] };
+  for (const part of parts) {
+    const ex = extractClaims(part.text, cfg, opts);
+    stats.spans += ex.stats.spans;
+    stats.skipped += ex.stats.skipped;
+    stats.blocks += ex.stats.blocks;
+    stats.lines += part.text.split('\n').length;
+    stats.parts.push({ name: part.name, claims: ex.claims.length, spans: ex.stats.spans, blocks: ex.stats.blocks });
+    for (const c of ex.claims) claims.push({ ...c, part: part.name });
+  }
+  const seen = new Map();
+  for (const c of claims) {
+    const id = claimId(c);
+    if (!seen.has(id)) seen.set(id, c);
+  }
+  return { claims: [...seen.values()], rawCount: claims.length, stats };
+}
+
+/** Provenance over a SET: a digest of the ordered per-part hashes. Never compared to anything. */
+export function corpusProvenance(parts) {
+  const h = createHash('sha256');
+  for (const p of parts) h.update(`${p.sha}  ${p.name}\n`);
+  return h.digest('hex');
 }
 
 // ── extraction ────────────────────────────────────────────────────────────────
@@ -307,11 +502,17 @@ export function makeContext(cfg, { vaultDir } = {}) {
   const invRows = inventory && Array.isArray(inventory.artifacts) ? inventory.artifacts : [];
   let docClaims = null;
   try { docClaims = JSON.parse(fileText('ops/monitoring/doc-host-path-claims.json') || 'null'); } catch { docClaims = null; }
+  // ANCHORED on the CLAUDE.md entry, never on whichever part is being read — see resolveCorpus.
+  // `vaultReachable` now follows the SAME directory as `vaultDir`: it used to key off the module
+  // const regardless of the override, so a caller could relocate vaultDir and still be told the
+  // old one was reachable. That mattered the moment parts arrived.
+  const resolved = resolveCorpus(cfg);
+  const dir = vaultDir ?? (resolved.error ? dirname(DEFAULT_CORPUS) : resolved.vaultDir);
   return {
     trackedSet, basenames, fileText, invRows, docClaims,
     refs: (gatePath) => findInvocations(gatePath, invokers),
-    vaultDir: vaultDir ?? dirname(CORPUS_PATH),
-    vaultReachable: existsSync(dirname(CORPUS_PATH)),
+    vaultDir: dir,
+    vaultReachable: existsSync(dir),
   };
 }
 
@@ -639,8 +840,8 @@ export function verifiedIdsInLock(lockPath = LOCK_PATH) {
   } catch { return new Set(); }
 }
 
-export function buildLock(rawText, cfg) {
-  const { claims } = extractClaims(rawText, cfg);
+export function buildLock(parts, cfg) {
+  const { claims } = extractCorpusClaims(parts, cfg);
   const trackedSet = new Set(tracked());
   const refs = remoteRefs();
   // MEASURED 2026-08-08 (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH1, §F6): without this, `--sync`
@@ -669,7 +870,10 @@ export function buildLock(rawText, cfg) {
       // re-extracts and always has correct line numbers for its messages; in CI the corpus is
       // UNREACHABLE by design, so a locked line number is a pointer into a file CI cannot open —
       // authoritative-looking, uncheckable, and stale by however much prose has moved since.
-      const { line: _line, ...rest } = c;
+      // `part` is DROPPED for exactly the same reason and by the same law: it is LOCATION, not
+      // identity. Locking it would make relocating a rule rewrite the lock — the opposite of what
+      // this wave proves, and it would re-introduce prose-sensitivity through a new door.
+      const { line: _line, part: _part, ...rest } = c;
       if (c.class !== 'repo-path' || !missingSet.has(c.value)) return rest;
       const ref = inFlightBy.get(c.value);
       // A claim this lock already recorded as VERIFIED never gets downgraded — see wasVerified.
@@ -686,9 +890,10 @@ export function buildLock(rawText, cfg) {
     .sort((a, b) => (claimId(a) < claimId(b) ? -1 : claimId(a) > claimId(b) ? 1 : 0));
   return {
     _comment: 'GENERATED by scripts/check-claudemd-claims.mjs --sync from the vault CLAUDE.md. Identifiers only — the manual’s prose never enters this repo. Do not hand-edit; --check fails on any divergence from a fresh extraction. Freshness is CLAIM-SET equality (see claimId): an edit that touches no claim does not invalidate this lock.',
-    _extracted_from_corpus_sha256_semantics: 'PROVENANCE, not freshness. It records the corpus state this claim set was extracted from — it is NOT a live hash of the current CLAUDE.md and must never be compared against one. Keying freshness on a whole-file hash is exactly the defect OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1 retired: the corpus is shared and concurrently edited (measured: three distinct shas in ~12 minutes), so a container hash makes every unrelated prose edit a false invalidation.',
-    extracted_from_corpus_sha256: createHash('sha256').update(rawText).digest('hex'),
-    corpus_lines: rawText.split('\n').length,
+    _extracted_from_corpus_sha256_semantics: 'PROVENANCE, not freshness. It records the corpus state this claim set was extracted from — it is NOT a live hash of the current CLAUDE.md and must never be compared against one. Keying freshness on a whole-file hash is exactly the defect OPS-CLAUDEMD-CLAIM-PUBLISH-PRECONDITION-W1 retired: the corpus is shared and concurrently edited (measured: three distinct shas in ~12 minutes), so a container hash makes every unrelated prose edit a false invalidation. Since META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 the corpus is a SET, so this is a digest over the ORDERED per-part hashes rather than one file hash — still provenance, still never compared.',
+    extracted_from_corpus_sha256: corpusProvenance(parts),
+    corpus_parts: parts.map((p) => p.name),
+    corpus_lines: parts.reduce((n, p) => n + p.text.split('\n').length, 0),
     claims: lockClaims,
   };
 }
@@ -698,8 +903,12 @@ export function buildLock(rawText, cfg) {
 function printFinding(kind, claim, result, corpusLineText) {
   // `line` exists only on freshly-extracted claims. Lock-sourced claims (CI) carry none by
   // design — see buildLock — so say that plainly rather than printing "Lundefined", which reads
-  // like a bug in the gate.
-  const loc = claim.line ? `CLAUDE.md L${claim.line}` : 'CLAUDE.md (line: re-run locally)';
+  // like a bug in the gate. Since the corpus became a SET, the PART must be named too: `line` is
+  // per-part, so "CLAUDE.md L340" for a claim that actually lives in verification-gates.md is a
+  // confident pointer at the wrong file — the authoritative-looking-and-false shape this manual
+  // records three times over.
+  const where = claim.part || 'CLAUDE.md';
+  const loc = claim.line ? `${where} L${claim.line}` : `${where} (line: re-run locally)`;
   // THIRD [object Object] site, and the one a human actually reads: `codes.join('/')` calls the
   // object default too, so a finding printed `exit [object Object]/[object Object]`. Same defect as
   // claimId's, same single canonical renderer.
@@ -816,17 +1025,38 @@ function readLock(path) {
 }
 
 function runCheck(cfg, { probeHosts = false } = {}) {
-  const ctx = makeContext(cfg);
-  const corpusReadable = existsSync(CORPUS_PATH);
-  let claims, freshLock = null, corpusLines = null, stats = null;
+  const corpus = resolveCorpus(cfg);
+  if (corpus.error) return { verdict: 'INDETERMINATE', why: corpus.error };
+  const ctx = makeContext(cfg, { vaultDir: corpus.vaultDir });
+  // The ANCHOR decides which world we are in. Unreachable anchor ⇒ the corpus does not exist here
+  // at all (CI, by design) ⇒ lock-mode, unchanged. Anchor present but a listed PART missing is a
+  // different fact entirely: the corpus exists and is INCOMPLETE. Collapsing the two is what would
+  // let a deleted rule file read as a clean pass.
+  const corpusReadable = existsSync(corpus.anchor);
+  let claims, freshLock = null, linesByPart = null, stats = null;
 
   if (corpusReadable) {
-    const rawText = readFileSync(CORPUS_PATH, 'utf8');
-    corpusLines = rawText.split('\n');
-    if (!rawText.trim()) return { verdict: 'INDETERMINATE', why: `corpus at ${CORPUS_PATH} is empty` };
-    const ex = extractClaims(rawText, cfg);
+    const { parts, missing } = readCorpusParts(corpus.parts);
+    if (missing.length) {
+      return {
+        verdict: 'INDETERMINATE',
+        why: `corpus part(s) declared but unreadable: ${missing.join(', ')} — input we were HANDED and could not read is fail-closed, never a pass. Restore the file, or correct _corpus_enumeration.in[CLAUDE.md].parts in ops/claudemd-claim-config.json.`,
+      };
+    }
+    const dupes = duplicateManualParts(parts, basename(corpus.anchor));
+    if (dupes.length) {
+      return {
+        verdict: 'INDETERMINATE',
+        why: `corpus part ${dupes[0].part} ${dupes[0].why}. Claims would be counted from a duplicate corpus, and a frozen copy resurrects superseded claims as prescriptive; see _parts_semantics.`,
+      };
+    }
+    if (!parts.some((p) => p.text.trim())) {
+      return { verdict: 'INDETERMINATE', why: `every one of the ${parts.length} corpus part(s) under ${corpus.vaultDir} is empty` };
+    }
+    linesByPart = new Map(parts.map((p) => [p.name, p.text.split('\n')]));
+    const ex = extractCorpusClaims(parts, cfg);
     stats = ex.stats;
-    freshLock = buildLock(rawText, cfg);
+    freshLock = buildLock(parts, cfg);
     // The in-flight markers are DERIVED during buildLock (it can see remote refs). Carry them onto
     // the fresh claim set so the local run and CI's lock-only run reach the SAME verdict — a gate
     // that passes locally and fails in CI teaches people to distrust it.
@@ -878,8 +1108,12 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     const added = [...freshIds].filter((x) => !lockIds.has(x));
     const removed = [...lockIds].filter((x) => !freshIds.has(x));
     const stale = classifyStaleness(added, removed, freshLock.claims, cfg);
-    console.log(`corpus: ${CORPUS_PATH} (reachable; ${corpusLines.length} lines, ${stats.blocks} correction blocks stripped) — ${
-      stale.length ? `lock STALE (+${added.length}/-${removed.length}), reported below` : `lock fresh (${lockIds.size} claim ids)`}`);
+    // Name every part and its claim count. A merged corpus that printed only a total would hide
+    // exactly the failure this wave retires: a part contributing ZERO because it silently moved.
+    console.log(`corpus: ${corpus.parts.length} part(s) under ${corpus.vaultDir} [${corpus.source}] — ${
+      stats.lines} lines, ${stats.blocks} correction blocks stripped, ${ex.rawCount} claims → ${claimIdSet(ex.claims).length} after dedupe`);
+    for (const p of stats.parts) console.log(`  · ${String(p.claims).padStart(3)} claims  ${p.name}`);
+    console.log(`  ${stale.length ? `lock STALE (+${added.length}/-${removed.length}), reported below` : `lock fresh (${lockIds.size} claim ids)`}`);
     printStaleness(stale, cfg);
     appendFreshnessLedger(stale, added.length, removed.length);
     // The committed lock is the MEMORY of what was once verified, and it is what separates the two
@@ -912,6 +1146,10 @@ function runCheck(cfg, { probeHosts = false } = {}) {
 
   if (!claims.length) return { verdict: 'INDETERMINATE', why: 'zero claims extracted — vacuous run refuses to report a pass' };
 
+  // Resolve a claim's source line IN ITS OWN PART. One flat line array indexed by a per-part line
+  // number is the confident-wrong-answer shape: it always returns SOME line, just not the claim's.
+  const claimLineText = (claim) => linesByPart?.get(claim.part || 'CLAUDE.md')?.[claim.line - 1];
+
   let blockFails = 0, reports = 0, ok = 0, unreachable = 0, unprobed = 0;
   for (const claim of claims) {
     if (claim.class === 'host-path' && probeHosts) {
@@ -921,7 +1159,7 @@ function runCheck(cfg, { probeHosts = false } = {}) {
         ok++; continue;
       } catch {
         reports++;
-        printFinding('⚠', claim, { status: 'REVIEW', detail: 'not found on signal host (read-only probe; may live on another host)' }, corpusLines?.[claim.line - 1]);
+        printFinding('⚠', claim, { status: 'REVIEW', detail: 'not found on signal host (read-only probe; may live on another host)' }, claimLineText(claim));
         continue;
       }
     }
@@ -931,10 +1169,10 @@ function runCheck(cfg, { probeHosts = false } = {}) {
     if (result.status === 'UNPROBED') { unprobed++; continue; }
     if (isBlocking(claim, result, cfg)) {
       blockFails++;
-      printFinding('✖', claim, result, corpusLines?.[claim.line - 1]);
+      printFinding('✖', claim, result, claimLineText(claim));
     } else {
       reports++;
-      printFinding('⚠', claim, result, corpusLines?.[claim.line - 1]);
+      printFinding('⚠', claim, result, claimLineText(claim));
     }
   }
   console.log(`\nclaims: ${claims.length} verified — ${ok} OK · ${blockFails} blocking · ${reports} report-only · ${unreachable} unreachable (local-only class in CI) · ${unprobed} unprobed (host)`);
@@ -959,21 +1197,90 @@ function runCheck(cfg, { probeHosts = false } = {}) {
 // ── measure (R1, reproducible) ────────────────────────────────────────────────
 
 function runMeasure(cfg) {
-  if (!existsSync(CORPUS_PATH)) { console.error('corpus unreachable — --measure needs the vault'); process.exit(3); }
-  const rawText = readFileSync(CORPUS_PATH, 'utf8');
-  const ctx = makeContext(cfg);
+  const corpus = resolveCorpus(cfg);
+  if (corpus.error) { console.error(corpus.error); process.exit(3); }
+  const { parts, missing } = readCorpusParts(corpus.parts);
+  if (missing.length) { console.error(`corpus part(s) unreadable: ${missing.join(', ')} — --measure needs the whole set`); process.exit(3); }
+  if (!parts.length) { console.error('corpus unreachable — --measure needs the vault'); process.exit(3); }
+  const ctx = makeContext(cfg, { vaultDir: corpus.vaultDir });
+  console.log(`corpus: ${parts.length} part(s) under ${corpus.vaultDir} [${corpus.source}]`);
   for (const stripOn of [false, true]) {
-    const { claims, stats } = extractClaims(rawText, cfg, { stripCorrections: stripOn });
+    const { claims, stats, rawCount } = extractCorpusClaims(parts, cfg, { stripCorrections: stripOn });
     let fires = 0;
     const list = [];
     for (const c of claims) {
       const r = verifyClaim(c, ctx, cfg);
-      if (r.status !== 'OK' && r.status !== 'UNREACHABLE' && r.status !== 'UNPROBED') { fires++; list.push(`${c.class} L${c.line} ${c.value} → ${r.status}`); }
+      if (r.status !== 'OK' && r.status !== 'UNREACHABLE' && r.status !== 'UNPROBED') { fires++; list.push(`${c.class} ${c.part} L${c.line} ${c.value} → ${r.status}`); }
     }
-    console.log(`\nstrip=${stripOn}: spans=${stats.spans} claims=${claims.length} would-fire=${fires}`);
+    console.log(`\nstrip=${stripOn}: spans=${stats.spans} raw=${rawCount} claims=${claims.length} would-fire=${fires}`);
+    for (const p of stats.parts) console.log(`   · ${String(p.claims).padStart(3)} claims  ${String(p.spans).padStart(4)} spans  ${p.name}`);
     for (const l of list) console.log('   ' + l);
   }
-  console.log(`\ncorrection blocks: ${findCorrectionBlocks(rawText).length}; corpus sha ${createHash('sha256').update(rawText).digest('hex').slice(0, 16)}…`);
+  console.log(`\ncorrection blocks: ${parts.reduce((n, p) => n + findCorrectionBlocks(p.text).length, 0)}; corpus provenance ${corpusProvenance(parts).slice(0, 16)}…`);
+}
+
+// ── baseline equality (LOCAL-only gate, META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 R3b) ─────────────
+
+/**
+ * Compare the LIVE merged claim-id set against a recorded pre-split baseline.
+ *
+ * WHY THIS IS ITS OWN MODE AND ITS OWN TOKEN. The regression bar — "the 7-part corpus reproduces
+ * the pre-split claim set exactly" — cannot be asserted inside `--self-test`, because that runs in
+ * CI (deploy.yml) where the vault is unreachable BY DESIGN. Copying the private corpus into a
+ * fixture is not a hypothetical mistake: it is recorded in tests/unit/claudemd-claim-precondition
+ * .test.ts, where an earlier cut passed locally and failed the pre-deploy gate with ENOENT on
+ * `/home/runner/My Drive/…`.
+ *
+ * So it is a local gate — and a local gate that can fail open MUST emit a distinguishable verdict.
+ * `exit 0` may never encode both "baseline equal" and "vault unreachable, so nothing was ever
+ * compared": that is the dark-guard shape this repo has now recorded five times. Hence
+ * CLAUDEMD_BASELINE_VERDICT, with the token-law default codes for a NEW gate (0/1/3).
+ */
+function runBaseline(cfg, baselinePath) {
+  if (!baselinePath) return { verdict: 'INDETERMINATE', why: '--baseline needs a path to the recorded baseline JSON' };
+  let baseline;
+  try { baseline = JSON.parse(readFileSync(baselinePath, 'utf8')); } catch (e) {
+    return { verdict: 'INDETERMINATE', why: `baseline unreadable at ${baselinePath}: ${e.message}` };
+  }
+  const recorded = baseline?.claim_ids;
+  // WE author the baseline, so an empty or absent id list is VACUITY — a defect in the artifact,
+  // never "the corpus asserts nothing". Refuse rather than compare against nothing and pass.
+  if (!Array.isArray(recorded) || !recorded.length) {
+    return { verdict: 'INDETERMINATE', why: `baseline at ${baselinePath} carries no claim_ids — an empty baseline would make this comparison vacuous, and a vacuous comparison must never report a pass` };
+  }
+  const corpus = resolveCorpus(cfg);
+  if (corpus.error) return { verdict: 'INDETERMINATE', why: corpus.error };
+  if (!existsSync(corpus.anchor)) {
+    return { verdict: 'INDETERMINATE', why: `corpus anchor unreachable at ${corpus.anchor} — the live claim set was NEVER COMPARED. This is the outcome that must not be confused with equality.` };
+  }
+  const { parts, missing } = readCorpusParts(corpus.parts);
+  if (missing.length) return { verdict: 'INDETERMINATE', why: `corpus part(s) unreadable: ${missing.join(', ')} — comparison refused on an incomplete corpus` };
+  const live = claimIdSet(extractCorpusClaims(parts, cfg).claims);
+  const rec = new Set(recorded), liv = new Set(live);
+  const added = live.filter((x) => !rec.has(x));
+  const removed = recorded.filter((x) => !liv.has(x));
+
+  console.log(`baseline: ${baselinePath}`);
+  console.log(`  recorded ${recorded.length} claim ids · live ${live.length} across ${parts.length} part(s) [${corpus.source}]`);
+  // Explicit POSITIVE output on the snapshot too: "did not check" and "checked, matched" must not
+  // look identical. A silent skip is how a guard goes dark at a green exit code.
+  const snap = baseline.snapshot;
+  if (snap?.path && snap?.sha256) {
+    if (!existsSync(snap.path)) console.log(`  snapshot: NOT PRESENT at ${snap.path} — not compared (informational; the baseline id list is the subject of this gate)`);
+    else {
+      const liveSha = createHash('sha256').update(readFileSync(snap.path)).digest('hex');
+      console.log(`  snapshot: ${liveSha === snap.sha256 ? `sha MATCHES (${liveSha.slice(0, 12)}…)` : `sha DIFFERS — recorded ${snap.sha256.slice(0, 12)}… live ${liveSha.slice(0, 12)}…`}`);
+    }
+  }
+  for (const id of added) console.log(`  + ADDED (live, not in baseline)   ${id}`);
+  for (const id of removed) console.log(`  − REMOVED (baseline, not live)   ${id}`);
+  if (added.length || removed.length) {
+    return {
+      verdict: 'FAIL',
+      why: `claim set diverges from the pre-split baseline: +${added.length} / −${removed.length}. Do NOT run --sync to make this pass — a delta means the merge or the corpus split LOST or INVENTED something, and --sync would bake it into the committed lock permanently. Diff both directions above and halt.`,
+    };
+  }
+  return { verdict: 'PASS' };
 }
 
 // ── self-test ─────────────────────────────────────────────────────────────────
@@ -1178,16 +1485,219 @@ export function selfTest(cfg) {
   if (isBlocking({ class: 'repo-path', value: 'scripts/x.mjs', unpublished: true }, { status: 'OK' }, cfg)) {
     fails.push('an unpublished marker turned a satisfied claim into a failure');
   }
+
+  // ── META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 — THE CORPUS IS A SET ──────────────────────────────
+  //
+  // Every scenario below is CORPUS-INDEPENDENT on purpose. This suite runs in CI (deploy.yml),
+  // where the vault is unreachable BY DESIGN, and an earlier cut of the sibling suite copied the
+  // real corpus into a fixture, passed locally, and failed the pre-deploy gate with ENOENT on
+  // `/home/runner/My Drive/…`. The equality-against-the-real-baseline half therefore lives in
+  // `--baseline`, which is local and carries its own verdict token. See runBaseline.
+  //
+  // Fixtures are built by the REAL extractor from real fixture TEXT — never hand-written claim
+  // literals. Hand-written `codes: [2]` is exactly how the [object Object] id defect passed its
+  // own guard: a shape extractClaims has never emitted.
+  const mkPart = (name, text) => ({ path: join(FIXTURES, name), name, text, sha: createHash('sha256').update(text).digest('hex') });
+  const cleanText = fx('clean.md');
+  const liveText = fx('live-dead-path.md');
+
+  // AN ASSERTION THAT RAISES IS NOT AN ASSERTION. Every scenario below is wrapped, so a broken
+  // subject reports `SELF-TEST: FAIL (n)` instead of aborting the suite — the difference between
+  // "proven able to fail" and "crashes", which this manual records having conflated before.
+  const guard = (label, fn) => {
+    try { fn(); } catch (e) { fails.push(`${label} THREW instead of reporting: ${e && e.message}`); }
+  };
+
+  // (n1) THE REGRESSION BAR. With ONE part, the merge path must reproduce single-path extraction
+  // exactly — that is what "absent `parts` ⇒ today's behaviour" means, expressed so CI can check it.
+  guard('(n1) regression bar', () => { if (cleanText) {
+    const merged1 = extractCorpusClaims([mkPart('clean.md', cleanText)], cfg);
+    const legacy = extractClaims(cleanText, cfg);
+    if (!legacy.claims.length) fails.push('regression-bar fixture extracted NOTHING — the comparison would be vacuous');
+    else if (!sameClaimSet(merged1.claims, legacy.claims)) {
+      fails.push(`REGRESSION BAR: one-part merge does not reproduce single-path extraction (${claimIdSet(merged1.claims).length} vs ${claimIdSet(legacy.claims).length} ids)`);
+    }
+  } });
+
+  // (n2) MERGE = UNION. Three parts yield exactly the union of their per-part id sets.
+  guard('(n2) merge=union', () => { if (cleanText && liveText) {
+    const a = mkPart('a.md', 'The wiring canary lives at `scripts/check-canaries-wired.mjs`.\n');
+    const b = mkPart('b.md', 'Dependencies are declared in `package.json` at the repo root.\n');
+    const c = mkPart('c.md', 'The pre-push gate is `check_test_baseline.sh`.\n');
+    const union = new Set([a, b, c].flatMap((p) => claimIdSet(extractClaims(p.text, cfg).claims)));
+    const got = claimIdSet(extractCorpusClaims([a, b, c], cfg).claims);
+    if (!union.size) fails.push('merge fixture produced no claims — vacuous');
+    else if (got.length !== union.size || !got.every((id) => union.has(id))) {
+      fails.push(`MERGE: 3-part corpus is not the union of its parts (got ${got.length}, union ${union.size})`);
+    }
+  } });
+
+  // (n3) MOVE-INVARIANCE — the whole wave in miniature, where a failure costs nothing. Cut a block
+  // of lines OUT of a fixture into a second part; the claim set must be IDENTICAL. Extraction is
+  // line-local, so a split at a line boundary preserves every claim — and this is what proves that
+  // relocating a rule is lossless, mechanically, rather than by argument.
+  guard('(n3) move-invariance', () => { if (cleanText) {
+    const lines = cleanText.split('\n');
+    const cut = Math.floor(lines.length / 2);
+    const head = lines.slice(0, cut).join('\n') + '\n';
+    const tail = lines.slice(cut).join('\n');
+    // A fixture that stopped being a byte-exact split would make this pass for the wrong reason.
+    if (head + tail !== cleanText) fails.push('move-invariance fixture is not a byte-exact split — the scenario would prove nothing');
+    else {
+      const whole = extractCorpusClaims([mkPart('whole.md', cleanText)], cfg);
+      const moved = extractCorpusClaims([mkPart('head.md', head), mkPart('tail.md', tail)], cfg);
+      if (!whole.claims.length) fails.push('move-invariance fixture extracted nothing — vacuous');
+      else if (!sameClaimSet(whole.claims, moved.claims)) {
+        fails.push(`MOVE-INVARIANCE: splitting a fixture across two parts changed the claim set (${claimIdSet(whole.claims).length} → ${claimIdSet(moved.claims).length})`);
+      }
+    }
+  } });
+
+  // (n4) DEDUPE. The same claim asserted in two parts is ONE claim, and it reports the FIRST part.
+  guard('(n4) dedupe', () => {
+    const dupText = 'The wiring canary lives at `scripts/check-canaries-wired.mjs`.\n';
+    const one = extractCorpusClaims([mkPart('first.md', dupText)], cfg);
+    const two = extractCorpusClaims([mkPart('first.md', dupText), mkPart('second.md', dupText)], cfg);
+    if (!one.claims.length) fails.push('dedupe fixture extracted nothing — vacuous');
+    else {
+      if (two.claims.length !== one.claims.length) fails.push(`DEDUPE: the same claim in two parts produced ${two.claims.length} claims, expected ${one.claims.length}`);
+      if (two.rawCount !== one.rawCount * 2) fails.push('dedupe fixture did not actually restate the claim twice — the scenario is vacuous');
+      if (two.claims[0] && two.claims[0].part !== 'first.md') fails.push(`DEDUPE: deduped claim reports part "${two.claims[0].part}", expected the FIRST part`);
+    }
+  });
+
+  // (n5) MISSING PART ⇒ reported, never silently skipped. Asserted through BOTH paths: the env
+  // seam AND the config-driven resolution the seam replaces. A hermetic fixture is structurally
+  // blind to exactly what its own seam substitutes, so testing only through the seam would leave
+  // corpusEntryOf + join(vaultDir, …) — the code that runs in production — unexercised.
+  guard('(n5) missing part', () => {
+    const ghostAbs = join(FIXTURES, '__no-such-part__.md');
+    const { parts: got, missing } = readCorpusParts([join(FIXTURES, 'clean.md'), ghostAbs]);
+    if (!missing.includes(ghostAbs)) fails.push('MISSING PART: an absent part was not reported missing');
+    if (got.length !== 1) fails.push(`MISSING PART: expected the readable part to survive, got ${got.length}`);
+
+    const cfgGhost = JSON.parse(JSON.stringify(cfg));
+    const entry = corpusEntryOf(cfgGhost);
+    if (entry && Array.isArray(entry.parts)) {
+      const GHOST = 'Claude files/rules/__this-part-does-not-exist__.md';
+      entry.parts = [...entry.parts, GHOST];
+      const viaConfig = resolveCorpus(cfgGhost, {}); // {} ⇒ no env, so the CONFIG path is forced
+      if (viaConfig.source !== 'config-parts') fails.push(`config-driven resolution did not engage (source=${viaConfig.source})`);
+      if (viaConfig.parts[0] !== DEFAULT_CORPUS) fails.push('config-driven parts[0] is not the anchor');
+      if (!viaConfig.parts.every((p) => p.startsWith(viaConfig.vaultDir))) fails.push('config-driven parts did not resolve against dirname(anchor)');
+      const resolvedGhost = join(viaConfig.vaultDir, GHOST);
+      if (!readCorpusParts(viaConfig.parts).missing.includes(resolvedGhost)) {
+        fails.push('MISSING PART (config path): a genuinely absent declared part was not reported missing');
+      }
+    }
+  });
+
+  // (n6) vaultDir ANCHORING. A part in a SUBDIRECTORY must not move vaultDir — otherwise every
+  // vault-path and home-path claim rebases and the local-only classes go quietly wrong. Measured:
+  // pointing the corpus inside `Claude files/rules/` yields 11 spurious `vault-path MISSING`.
+  guard('(n6) vaultDir anchoring', () => {
+    const anchor = '/tmp/algovault-fixture-vault/CLAUDE.md';
+    const sub = '/tmp/algovault-fixture-vault/Claude files/rules/deep.md';
+    const r = resolveCorpus(cfg, { [PARTS_ENV]: `${anchor}:${sub}` });
+    if (r.error) fails.push(`vaultDir anchoring: resolveCorpus errored: ${r.error}`);
+    else {
+      if (r.vaultDir !== dirname(anchor)) fails.push(`vaultDir ANCHORING: got ${r.vaultDir}, expected ${dirname(anchor)}`);
+      if (r.vaultDir === dirname(sub)) fails.push('vaultDir ANCHORING: vaultDir followed the SUBDIRECTORY part — every vault-path claim would rebase');
+      if (r.parts.length !== 2) fails.push(`vaultDir anchoring fixture lost a part (${r.parts.length})`);
+    }
+    // …and the override must carry vaultReachable with it, or a caller can relocate vaultDir and
+    // still be told the OLD directory's reachability.
+    const ctxOverride = makeContext(cfg, { vaultDir: '/tmp' });
+    if (ctxOverride.vaultDir !== '/tmp') fails.push('makeContext ignored an explicit vaultDir override');
+    if (ctxOverride.vaultReachable !== existsSync('/tmp')) fails.push('vaultReachable did not follow the vaultDir override');
+    // Two corpus declarations with no defined precedence must REFUSE, not silently pick one.
+    const both = resolveCorpus(cfg, { [CORPUS_ENV]: '/a/x.md', [PARTS_ENV]: '/a/y.md' });
+    if (!both.error) fails.push('both corpus env seams set at once did not refuse — silent precedence');
+    // The single-file seam still means THAT ONE FILE ONLY; R1.3's baseline depends on it.
+    const single = resolveCorpus(cfg, { [CORPUS_ENV]: '/a/only.md' });
+    if (single.error || single.parts.length !== 1 || single.parts[0] !== '/a/only.md') {
+      fails.push('ALGOVAULT_CLAUDEMD_CORPUS no longer means exactly one file');
+    }
+  });
+
+  // (n7) `part` IS LOCATION, NEVER IDENTITY — the same law as `line`, and it must hold in BOTH the
+  // id and the lock. If it entered identity, relocating a rule would change every id, which is the
+  // precise thing this wave proves does not happen.
+  guard('(n7) part is location', () => {
+    if (claimId({ class: 'repo-path', value: 'scripts/x.mjs', part: 'a.md' })
+        !== claimId({ class: 'repo-path', value: 'scripts/x.mjs', part: 'verification-gates.md' })) {
+      fails.push('`part` leaked into claim identity — relocating a rule would rewrite every id');
+    }
+    if (cleanText) {
+      const lock = buildLock([mkPart('clean.md', cleanText)], cfg);
+      if (!lock.claims.length) fails.push('lock-shape fixture produced no lockable claims — vacuous');
+      for (const c of lock.claims) {
+        if ('part' in c) { fails.push(`the lock carries a \`part\` field (${claimId(c)}) — location must never be locked`); break; }
+        if ('line' in c) { fails.push(`the lock carries a \`line\` field (${claimId(c)})`); break; }
+      }
+      if (!/^[0-9a-f]{64}$/.test(String(lock.extracted_from_corpus_sha256))) fails.push('corpus provenance is not a sha256 digest');
+    }
+  });
+
+  // (n8) DUPLICATE-MANUAL REFUSAL — a renamed snapshot must be caught STRUCTURALLY, since the
+  // filename guard only knows `_ORIGINAL-CLAUDE-md-*`.
+  //
+  // The fixture is shaped like the REAL artefacts, which is the whole point: the previous cut of
+  // this scenario asserted byte-containment against a synthetic `outer ⊃ inner` pair, and it PASSED
+  // while the guard provably did not fire on the live snapshot. A fixture that can only exercise
+  // the easy case is the hermetic-seam blindness again — so the positive case here carries the
+  // manual's own top-level sections (what a full manual always has) and the negative cases are
+  // shaped like rule bodies (what a fragment always is).
+  guard('(n8) duplicate manual', () => {
+    const MANUAL = '# Manual\n\n## FACTUALITY (THE LAW)\n\nx\n\n## Precedence (THE LAW)\n\ny\n\n## Never\n\nz\n';
+    const BODY = '# Verification gate patterns\n\n> Trigger — read this file BEFORE writing code.\n\n- a rule about `scripts/check-canaries-wired.mjs`.\n';
+    const anchor = mkPart('CLAUDE.md', MANUAL);
+    const body = mkPart('verification-gates.md', BODY);
+    const renamedSnapshot = mkPart('rules-archive-2026.md', MANUAL);
+    if (duplicateManualParts([anchor, body], 'CLAUDE.md').length !== 0) {
+      fails.push('DUPLICATE-MANUAL: a legitimate anchor + rule body was wrongly refused');
+    }
+    const caught = duplicateManualParts([anchor, body, renamedSnapshot], 'CLAUDE.md');
+    if (!caught.some((d) => d.part.endsWith('rules-archive-2026.md'))) {
+      fails.push('DUPLICATE-MANUAL: a RENAMED full-manual snapshot was not refused — the filename guard is then the only control');
+    }
+    // …and byte-identical parts under two names, which is the same defect with no headings needed.
+    const twin = duplicateManualParts([anchor, body, mkPart('copy-of-body.md', BODY)], 'CLAUDE.md');
+    if (!twin.some((d) => /byte-identical/.test(d.why))) fails.push('DUPLICATE-MANUAL: two byte-identical parts were not refused');
+  });
+
   return fails;
+}
+
+/**
+ * What a corpus-independent pass does NOT cover.
+ *
+ * Q3(b): a green `--self-test` proves the MECHANISM, never the live corpus — the vault is
+ * unreachable in CI by design. Printing that explicitly is the difference between a reported pass
+ * and a silent one, and it is the same discipline as asserting positive per-row output rather than
+ * absence-of-alert.
+ */
+function announceSelfTestCoverage(cfg) {
+  const corpus = resolveCorpus(cfg);
+  const reachable = !corpus.error && existsSync(corpus.anchor);
+  console.log('  NOT verified by this suite (corpus-independent by design):');
+  console.log('    · equality of the LIVE claim set against the recorded pre-split baseline —');
+  console.log('      that is `--baseline <file>`, a LOCAL gate with its own CLAUDEMD_BASELINE_VERDICT token.');
+  console.log(`    · the local-only claim classes (vault-path, absence-vault, home-path) — corpus ${
+    reachable ? 'IS reachable here, so `--check` does verify them' : 'is UNREACHABLE here (CI), so `--check` reports them UNREACHABLE'}.`);
+  console.log('    · host-path truth, which is asserted on-host by the daily reconciler (DOC_PATH_CLAIM).');
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 const IS_MAIN = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
-function emit(verdict, why) {
+// `token` is a parameter because --baseline is a DIFFERENT gate answering a different question,
+// and two gates sharing one token name would make a caller unable to tell which one spoke. Exactly
+// one terminal token per invocation either way; the codes are this script's existing 0/1/3.
+function emit(verdict, why, token = 'CLAUDEMD_CLAIMS_VERDICT') {
   if (why) console.log(`\n${verdict === 'FAIL' ? '✖' : 'ℹ'} ${why}`);
-  console.log(`CLAUDEMD_CLAIMS_VERDICT=${verdict}`);
+  console.log(`${token}=${verdict}`);
   const warn = process.env.ALGOVAULT_CLAUDEMD_GATE === 'warn';
   const code = verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3;
   if (warn && code !== 0) {
@@ -1209,14 +1719,28 @@ if (IS_MAIN) {
   if (argv.includes('--self-test')) {
     const fails = selfTest(cfg);
     if (fails.length) { console.error('✖ claudemd-claims self-test FAILED:'); fails.forEach((f) => console.error('   - ' + f)); process.exit(1); }
-    console.log('✓ claudemd-claims self-test passed (dead prescriptive path fires; correction blocks do not; vacuity guarded both ways)');
+    console.log('✓ claudemd-claims self-test passed (dead prescriptive path fires; correction blocks do not; vacuity guarded both ways; corpus-set merge/move-invariance/dedupe/missing-part/anchoring proven)');
+    announceSelfTestCoverage(cfg);
     process.exit(0);
   }
   if (argv.includes('--measure')) { runMeasure(cfg); process.exit(0); }
+  if (argv.includes('--baseline')) {
+    const at = argv.indexOf('--baseline');
+    const { verdict, why } = runBaseline(cfg, argv[at + 1]);
+    emit(verdict, why, 'CLAUDEMD_BASELINE_VERDICT');
+  }
   if (argv.includes('--sync')) {
-    if (!existsSync(CORPUS_PATH)) emit('INDETERMINATE', `--sync needs the corpus; not found at ${CORPUS_PATH}`);
-    const rawText = readFileSync(CORPUS_PATH, 'utf8');
-    const lock = buildLock(rawText, cfg);
+    const corpus = resolveCorpus(cfg);
+    if (corpus.error) emit('INDETERMINATE', corpus.error);
+    if (!existsSync(corpus.anchor)) emit('INDETERMINATE', `--sync needs the corpus; anchor not found at ${corpus.anchor}`);
+    const { parts, missing } = readCorpusParts(corpus.parts);
+    // --sync writes the committed lock, so an INCOMPLETE corpus is the one thing it must never
+    // absorb: syncing 6 of 7 parts would silently drop the missing part's claims and bake the loss
+    // in — the exact failure this wave exists to make impossible.
+    if (missing.length) emit('INDETERMINATE', `--sync refuses an incomplete corpus; unreadable part(s): ${missing.join(', ')}`);
+    const dupes = duplicateManualParts(parts, basename(corpus.anchor));
+    if (dupes.length) emit('INDETERMINATE', `--sync refuses a duplicated corpus: ${dupes[0].part} ${dupes[0].why}`);
+    const lock = buildLock(parts, cfg);
     const next = JSON.stringify(lock, null, 2) + '\n';
     const prevRaw = existsSync(LOCK_PATH) ? readFileSync(LOCK_PATH, 'utf8') : null;
     const prevLock = prevRaw ? JSON.parse(prevRaw) : null;

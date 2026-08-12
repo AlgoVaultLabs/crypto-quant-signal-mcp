@@ -202,6 +202,135 @@ describe('freshness severity (OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH2)', ()
     expect(rows.find((r: any) => r.id === 'repo-path:gone.ts').direction).toBe('removed');
   });
 
+  /**
+   * META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 — the corpus is a SET.
+   *
+   * CORPUS-INDEPENDENT BY CONSTRUCTION: every case below builds its own parts in a tmpdir, so it
+   * passes on a CI runner where the vault does not exist. The equality-against-the-real-baseline
+   * half is `--baseline`, a LOCAL gate with its own token — see runBaseline for why it cannot live
+   * here (an earlier cut of the sibling suite copied the private corpus and failed the pre-deploy
+   * gate with ENOENT on `/home/runner/My Drive/…`).
+   */
+  describe('corpus set (META-CLAUDEMD-VERIFIER-CORPUS-SET-W1)', () => {
+    const PARTS_ENV = 'ALGOVAULT_CLAUDEMD_CORPUS_PARTS';
+
+    it('AC6: a declared part missing on disk is INDETERMINATE with exit 3 — never a pass', { timeout: 60_000 }, () => {
+      const anchor = F('CLAUDE.md');
+      writeFileSync(anchor, 'The gate `scripts/check-claudemd-claims.mjs` is the SoT.\n');
+      const absent = F('rules-that-were-deleted.md');
+      const { code, out } = run(['--check'], { [PARTS_ENV]: `${anchor}:${absent}` });
+      expect(tokensIn(out), out.slice(-1500)).toEqual(['CLAUDEMD_CLAIMS_VERDICT=INDETERMINATE']);
+      expect(code).toBe(3);
+      // The finding must NAME the part, or the operator cannot act on it.
+      expect(out).toContain(absent);
+      // …and it must be distinguishable from the empty-corpus case in words, not just in code.
+      expect(out).toMatch(/HANDED and could not read|fail-closed/);
+    });
+
+    it('AC6: --sync REFUSES an incomplete corpus rather than baking the loss into the lock', { timeout: 60_000 }, () => {
+      const anchor = F('CLAUDE.md');
+      writeFileSync(anchor, 'The gate `scripts/check-claudemd-claims.mjs` is the SoT.\n');
+      const { code, out } = run(['--sync'], { [PARTS_ENV]: `${anchor}:${F('gone.md')}`, ALGOVAULT_CLAUDEMD_LOCK: F('lock.json') });
+      expect(tokensIn(out), out.slice(-1500)).toEqual(['CLAUDEMD_CLAIMS_VERDICT=INDETERMINATE']);
+      expect(code).toBe(3);
+    });
+
+    it('refuses a SECOND FULL MANUAL among the parts, even under an innocent filename', { timeout: 60_000 }, () => {
+      // The filename guard only knows `_ORIGINAL-CLAUDE-md-*`; this is the structural control, and
+      // it is what catches a renamed or re-dated snapshot.
+      const anchor = F('CLAUDE.md');
+      const manual = '# Manual\n\n## FACTUALITY (THE LAW)\n\nx\n\n## Precedence (THE LAW)\n\ny\n';
+      writeFileSync(anchor, `${manual}\nThe gate \`scripts/check-claudemd-claims.mjs\` is the SoT.\n`);
+      const renamed = F('rules-archive-2026.md');
+      writeFileSync(renamed, manual);
+      const { code, out } = run(['--check'], { [PARTS_ENV]: `${anchor}:${renamed}` });
+      expect(tokensIn(out), out.slice(-1500)).toEqual(['CLAUDEMD_CLAIMS_VERDICT=INDETERMINATE']);
+      expect(code).toBe(3);
+      expect(out).toContain('SECOND FULL MANUAL');
+    });
+
+    it('refuses two corpus declarations at once instead of picking one silently', { timeout: 60_000 }, () => {
+      const anchor = F('CLAUDE.md');
+      writeFileSync(anchor, 'The gate `scripts/check-claudemd-claims.mjs` is the SoT.\n');
+      const { code, out } = run(['--check'], { ALGOVAULT_CLAUDEMD_CORPUS: anchor, [PARTS_ENV]: anchor });
+      expect(tokensIn(out), out.slice(-1500)).toEqual(['CLAUDEMD_CLAIMS_VERDICT=INDETERMINATE']);
+      expect(code).toBe(3);
+    });
+
+    it('--baseline distinguishes "equal" from "never compared" — its own token, and 3 on unreachable', { timeout: 60_000 }, () => {
+      // THE Q3(a) PROPERTY. exit 0 may never encode both "baseline equal" and "the vault was not
+      // there, so nothing was compared" — that is the dark-guard shape, and it is why this gate
+      // carries a token of its own rather than borrowing the claims one.
+      const baseline = F('baseline.json');
+      writeFileSync(baseline, JSON.stringify({ claim_ids: ['repo-path:scripts/x.mjs'] }));
+      const { code, out } = run(['--baseline', baseline], { ALGOVAULT_CLAUDEMD_CORPUS: F('no-such-corpus.md') });
+      expect(out).toContain('CLAUDEMD_BASELINE_VERDICT=INDETERMINATE');
+      expect(out, 'the claims token must not be emitted by the baseline gate').not.toContain('CLAUDEMD_CLAIMS_VERDICT=');
+      expect(code).toBe(3);
+      expect(out).toMatch(/NEVER COMPARED/);
+    });
+
+    it('--baseline refuses a baseline carrying no ids — a vacuous comparison is not a pass', { timeout: 60_000 }, () => {
+      const anchor = F('CLAUDE.md');
+      writeFileSync(anchor, 'The gate `scripts/check-claudemd-claims.mjs` is the SoT.\n');
+      const baseline = F('empty-baseline.json');
+      writeFileSync(baseline, JSON.stringify({ claim_ids: [] }));
+      const { code, out } = run(['--baseline', baseline], { ALGOVAULT_CLAUDEMD_CORPUS: anchor });
+      expect(out).toContain('CLAUDEMD_BASELINE_VERDICT=INDETERMINATE');
+      expect(code).toBe(3);
+    });
+
+    it('the config declares the parts explicitly: anchor first, no globs, never the frozen snapshot', async () => {
+      const m: any = await import(GATE);
+      const cfg = m.loadConfig();
+      const entry = m.corpusEntryOf(cfg);
+      expect(entry, 'the CLAUDE.md corpus row must exist').toBeTruthy();
+      expect(Array.isArray(entry.parts)).toBe(true);
+      expect(entry.parts.length).toBeGreaterThan(1);
+      expect(entry.parts[0], 'parts[0] anchors vaultDir for every vault-path claim').toBe('CLAUDE.md');
+      for (const p of entry.parts) {
+        expect(p, `part ${p} must not be a glob`).not.toMatch(/[*?[\]]/);
+        expect(p, `part ${p} must not be the frozen snapshot`).not.toMatch(/_ORIGINAL-CLAUDE-md-/);
+      }
+      expect(new Set(entry.parts).size).toBe(entry.parts.length);
+      // The reason lives ON the key: an exemption that survives only in prose gets "fixed" by a
+      // future wave enforcing the contract.
+      expect(entry._parts_semantics?.length ?? 0).toBeGreaterThan(200);
+    });
+
+    it('validateConfig refuses a malformed parts declaration — it is a config WE author', async () => {
+      const m: any = await import(GATE);
+      const base = m.loadConfig();
+      const mutate = (fn: (e: any) => void) => {
+        const c = JSON.parse(JSON.stringify(base));
+        fn(m.corpusEntryOf(c));
+        return () => m.validateConfig(c);
+      };
+      expect(mutate((e) => { e.parts = []; }), 'empty parts is vacuity, not "no parts"').toThrow();
+      expect(mutate((e) => { e.parts = ['Claude files/rules/x.md', 'CLAUDE.md']; }), 'anchor must be first').toThrow();
+      expect(mutate((e) => { e.parts = ['CLAUDE.md', 'Claude files/rules/*.md']; }), 'globs are refused').toThrow();
+      expect(mutate((e) => { e.parts = ['CLAUDE.md', 'Claude files/rules/_ORIGINAL-CLAUDE-md-2026-08-12.md']; }), 'the snapshot is refused by name').toThrow();
+      expect(mutate((e) => { delete e._parts_semantics; }), 'parts without a recorded reason').toThrow();
+      expect(mutate(() => {}), 'the committed config itself must remain valid').not.toThrow();
+    });
+
+    it('`part` is LOCATION, never identity: it changes no claim id and never enters the lock', async () => {
+      const m: any = await import(GATE);
+      expect(m.claimId({ class: 'repo-path', value: 'scripts/x.mjs', part: 'CLAUDE.md' }))
+        .toBe(m.claimId({ class: 'repo-path', value: 'scripts/x.mjs', part: 'verification-gates.md' }));
+      // …and the merged extraction is the union, deduped — a claim in two parts is ONE claim.
+      const cfg = m.loadConfig();
+      const mk = (name: string, text: string) => ({ path: `/fixture/${name}`, name, text, sha: 'x'.repeat(64) });
+      const text = 'The wiring canary lives at `scripts/check-canaries-wired.mjs`.\n';
+      const once = m.extractCorpusClaims([mk('a.md', text)], cfg);
+      const twice = m.extractCorpusClaims([mk('a.md', text), mk('b.md', text)], cfg);
+      expect(once.claims.length).toBeGreaterThan(0);
+      expect(twice.claims.length).toBe(once.claims.length);
+      expect(twice.rawCount).toBe(once.rawCount * 2);
+      expect(twice.claims[0].part).toBe('a.md');
+    });
+  });
+
   it('the config declares every severity with a reason, and the promotion criterion is time-bound', async () => {
     const m: any = await import(GATE);
     const cfg = m.loadConfig();

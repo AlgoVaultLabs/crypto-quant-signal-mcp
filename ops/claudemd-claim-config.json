@@ -98,7 +98,21 @@
     "_doc": "OPS-CLAIM-VERIFIER-COVERAGE-W1 R1 — every PRESCRIPTIVE doc assessed for inclusion, with the measured firing rate that decided it. Historical sources (status.md, Old Status/**, audits/**, and any _( … )_ note) are excluded by definition: their entries are past-tense by design and must never be 'corrected' to match present reality.",
     "_measured_2026_08_02": "W1's `_( … )_` correction convention does NOT generalise — ZERO correction blocks in EVERY sibling corpus measured. So the strip is a no-op there, and the dominant false-positive class is entirely different: CROSS-REPO and EXTERNAL artifacts (a TS repo's doc citing capabilities.py, an upstream registry's openapi.yaml, another host process's env var). That is why no sibling corpus inherits CLAUDE.md's blocking classes on the strength of W1's measurement.",
     "in": [
-      { "corpus": "CLAUDE.md", "state": "verified (blocking classes live)", "reason": "The prescriptive SoT every wave spec derives from. Measured 0 FPs on blocking classes (W1), re-confirmed here." }
+      {
+        "corpus": "CLAUDE.md",
+        "state": "verified (blocking classes live)",
+        "reason": "The prescriptive SoT every wave spec derives from. Measured 0 FPs on blocking classes (W1), re-confirmed here.",
+        "parts": [
+          "CLAUDE.md",
+          "Claude files/rules/plan-mode-probes.md",
+          "Claude files/rules/deploy-and-infra.md",
+          "Claude files/rules/git-and-worktrees.md",
+          "Claude files/rules/monitoring-and-recovery.md",
+          "Claude files/rules/build-and-runtime.md",
+          "Claude files/rules/verification-gates.md"
+        ],
+        "_parts_semantics": "META-CLAUDEMD-VERIFIER-CORPUS-SET-W1, 2026-08-12. (1) These are FRAGMENTS OF ONE CORPUS, not sibling corpora, and that distinction is load-bearing: `promotion_criterion` below requires a SIBLING corpus to carry its own zero-FP measurement before it may block, while a byte-preserving MOVE cannot change an FP profile by construction. Treating the parts as siblings would wrongly gate the manual's own rule bodies behind a 30-run measurement. Measured at the split: 114 claim ids before, 114 after, 0 added / 0 removed — and re-measured after WI-CONSOLIDATE-032 appended 60 rule lines, still 114/0/0. (2) EXPLICIT LIST, NEVER A GLOB — and the reason is TEMPORAL, not arithmetic. `Claude files/rules/_ORIGINAL-CLAUDE-md-2026-08-12.md` is the FROZEN pre-split snapshot; a glob over that directory would absorb it, and the first time a live part edits a claim the snapshot would resurrect the SUPERSEDED claim as if still prescribed, so the claim set could never SHRINK and the gate would verify a historical document as prescription — the same law the `_( … )_` correction-block stripper already encodes. (Measured 2026-08-12: including the snapshot TODAY adds 0 ids, because dedupe by claimId absorbs a byte-identical duplicate — so the intuitive 'a glob would double every claim' is FALSE and is deliberately NOT the reason recorded here.) A list makes adding a part a reviewed act. (3) parts[0] MUST be the anchor `CLAUDE.md`: `vaultDir` — and therefore every `vault-path`, `absence-vault` and `home-path` claim — resolves against `dirname(anchor)`, never against the directory of whichever part is being read. Measured: pointing the corpus inside `Claude files/rules/` produces 11 spurious `vault-path MISSING` firings. (4) Structurally enforced by validateConfig (non-empty, anchor-first, no globs, never the snapshot, no duplicates) and at read time by a superset-part refusal — a rule that lives only in prose gets 'fixed' by a future wave enforcing the contract."
+      }
     ],
     "out": [
       { "corpus": "Claude files/monitoring-runbook.md", "state": "duplications DELETED; not added as a verified corpus", "reason": "Measured: after R2 removed its stale restatements, every remaining machine-checkable mention is a runtime state dir, a cache dir, a mode-600 SECRET (autopilot-pg-creds — which the reconciler's own ORPHAN scan excludes as 'must never be proposed for commit'), or a cross-repo path — a ~100% FP profile for the coverage rule. The artifacts that DO matter already have monitoring-inventory rows plus DOC_PATH_CLAIM existence checks. Verifying it would be a gate that cries wolf; deleting the duplication is the durable fix and shrinks what can drift." },
