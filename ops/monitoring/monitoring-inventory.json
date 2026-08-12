@@ -678,14 +678,21 @@
       "criticality": "advisory",
       "schedule": "39 8 * * 2",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
-      "sha256": "67cc4386e2f3dfcee3d6e6e1f270db4a24ab0327e1b102d872779710231ed7d1",
+      "install_state": "installed",
+      "sha256": "6b8b9c66a76971192043470436f9f30e1167d3c24620c81194f081cba076d959",
       "alert_ids": [
         "NAV_REGION_DRIFT"
       ],
       "owner_wave": "NAV-PLATFORM-GENERATOR-W1",
-      "notes": "BLOCKED, not neglected — the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_nav.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_nav --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
-      "pending_since": "2026-07-12"
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/nav-drift-canary.sh",
+          "schedule": "39 8 * * 2"
+        }
+      ],
+      "consumes": "ops/monitoring/served-region-check.mjs",
+      "notes": "UNBLOCKED 2026-08-12 by OPS-DRIFT-CANARY-INVOCATION-FIX-W1, which also CORRECTS this row's own prior root cause: of its three claims, two were wrong and the third was INVERTED. (1) 'the host checkout has the file but no node_modules' — irrelevant. build_nav.mjs imports only node: builtins and its transitive chain is entirely relative. The real host blocker is that dist/ is gitignored, and the host checkout's dist/ is a stale 2026-04-10 artifact carrying no lib/site-nav.js at all. (2) 'the prod image does not ship scripts/' — narrower than stated: the image ships 3 files under scripts/ (fetchers/, funnel-by-channel.mjs, refresh-knowledge-pages.mjs); what is absent is build_nav.mjs specifically. (3) 'its fail-open branch swallows rc=1 and exits 0' — INVERTED, and this is the consequential one. Line 41 read `[ \"$RC\" -ne 1 ]`, which swallows everything EXCEPT rc=1, while node's MODULE_NOT_FOUND throw exits exactly 1. Re-measured on signal-1 2026-08-12 under ALGOVAULT_TG_TEST_INERT=1: the canary reached its DRIFT branch and invoked send_telegram.sh, logging `DRIFT: served nav region out of sync with the model. ... Cannot find module '/app/scripts/build_nav.mjs'`. It was therefore never a dark guard — installed, it would have FALSE-PAGED every Tuesday with a body blaming a host-side HTML edit for a missing module. THE DEEPER DEFECT, which no invocation fix inside the container could reach: this canary's subject is the SERVED HTML, and Caddy serves the landing pages from the host webroot /var/www/algovault, not /app — and 10 of the 36 nav pages are absent from the image entirely. It now consumes the shared served-page checker ops/monitoring/served-region-check.mjs, which FETCHES each served page (the shape ops/cron/docs-drift-canary.sh already proved) and byte-compares it to the ONE canonical render (dist/lib/site-nav.js renderSiteNav(), reached over docker exec because the host dist/ is unusable). The page set is DERIVED from the repo's NAV:START-bearing files — 36 today, all verified HTTP 200 — never a hardcoded array. It emits SERVED_REGION_VERDICT=PASS|FAIL|INDETERMINATE (exit 0/1/3) and a cannot-check outcome ESCALATES rather than exiting 0. Coverage note: the PRIMARY gate (build_nav --check) already runs in deploy.yml, prepublishOnly and tests/build-nav.test.ts, so the unique coverage is post-deploy webroot mutation — real, not hypothetical: ops/cron/snapshot-landing-daily.sh runs `cp landing/*.html /var/www/algovault/` daily at 00:39 UTC."
     },
     {
       "id": "analytics-drift-canary",
@@ -696,14 +703,41 @@
       "criticality": "advisory",
       "schedule": "9 7 * * 4",
       "invoked_by": "crontab:root",
-      "install_state": "pending",
-      "sha256": "ac4bb1bac4cf1f03e96a853b84ba1c46d08a06d95acd860593037639e43d8e80",
+      "install_state": "installed",
+      "sha256": "e6e2b2578ab2bf159084051d8c03df830bc7e72a004b1a7afb0c098a2b1d91f7",
       "alert_ids": [
         "ANALYTICS_REGION_DRIFT"
       ],
       "owner_wave": "OPS-ANALYTICS-TAG-SINGLE-SOURCE-W1",
-      "notes": "BLOCKED, not neglected — the root cause of the 'MANUAL_PENDING forever' status is that this canary CANNOT RUN. It invokes `docker exec <app-ctr> node scripts/build_analytics.mjs` but the prod image does not ship scripts/ (MODULE_NOT_FOUND); the host checkout has the file but no node_modules, so the host-side invocation fails too. Both paths live-probed 2026-07-28. Worse, the script's own fail-open branch swallows rc=1 and exits 0, so an install would LOOK healthy while being structurally incapable of ever firing. Installed and rolled back within this wave once the A3 'prove it fires' rider exposed it. UNBLOCK: fix the invocation path. FOLLOW-UP: OPS-DRIFT-CANARY-INVOCATION-FIX-W{NEXT}. Coverage note: the PRIMARY gate (build_analytics --check) does run in CI, so the uncovered path is host-side manual HTML edits only.",
-      "pending_since": "2026-07-15"
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/analytics-drift-canary.sh",
+          "schedule": "9 7 * * 4"
+        }
+      ],
+      "consumes": "ops/monitoring/served-region-check.mjs",
+      "notes": "UNBLOCKED 2026-08-12 by OPS-DRIFT-CANARY-INVOCATION-FIX-W1. Same defect and the same three corrections as the nav-drift-canary row above, verbatim in cause: (1) 'no node_modules' is irrelevant (build_analytics.mjs imports only node: builtins); the real host blocker is that dist/ is gitignored and the host checkout's dist/ is a stale 2026-04-10 artifact. (2) the image DOES ship 3 files under scripts/; what is absent is build_analytics.mjs specifically. (3) 'swallows rc=1' is INVERTED — `[ \"$RC\" -ne 1 ]` swallows everything EXCEPT rc=1, and node's MODULE_NOT_FOUND exits exactly 1. Re-measured on signal-1 2026-08-12 under ALGOVAULT_TG_TEST_INERT=1: this canary reached its DRIFT branch and invoked send_telegram.sh, logging `DRIFT: served analytics region out of sync ... Cannot find module '/app/scripts/build_analytics.mjs'`. Installed, it would have FALSE-PAGED every Thursday, not gone dark. THE DEEPER DEFECT is the same: the subject is the SERVED HTML, which Caddy serves from /var/www/algovault, while 24 of the 54 marked pages are Express-served from the in-image copy — neither reachable by an in-container build_analytics run. It now consumes the shared served-page checker ops/monitoring/served-region-check.mjs, byte-comparing each served region against the ONE canonical render (dist/lib/analytics-snippet.js renderAnalyticsSnippet()). Coverage is TOTAL per build_analytics's own law — every non-excluded landing content page, 54 today, all verified HTTP 200, DERIVED not hardcoded (`_design/` and `_templates/` are the only exclusions). Emits SERVED_REGION_VERDICT=PASS|FAIL|INDETERMINATE (exit 0/1/3); a cannot-check outcome ESCALATES. A page missing its analytics tag is a page whose traffic is not being measured, which is why missing-marker is kept distinct from drifted rather than collapsed."
+    },
+    {
+      "id": "served-region-check",
+      "artifact": "ops/monitoring/served-region-check.mjs",
+      "kind": "library",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/monitoring/served-region-check.mjs",
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "ops/cron/nav-drift-canary.sh + ops/cron/analytics-drift-canary.sh",
+      "install_state": "installed",
+      "sha256": "3ce7904dbb10c014ac91740e9511a410d05d03121a0002c3ace7da623752e0c9",
+      "alert_ids": [],
+      "owner_wave": "OPS-DRIFT-CANARY-INVOCATION-FIX-W1",
+      "consumed_by": [
+        "ops/cron/nav-drift-canary.sh",
+        "ops/cron/analytics-drift-canary.sh"
+      ],
+      "notes": "THE ONE served-page region checker, consumed by both region drift canaries; a third region canary inherits the shape rather than adding a third copy. Retires the class 'a canary that inspects the BUILT artifact when its stated subject is the SERVED artifact' — see the nav-drift-canary and analytics-drift-canary rows for the measured defect and the inverted root cause it corrects. PLACEMENT: host_path is the REPO CHECKOUT, not /opt/algovault-monitoring, following the ops/cron/snapshot-landing-daily.sh precedent — it must read $REPO/landing/** to DERIVE its page set, so installing a second copy under /opt/algovault-monitoring would add a third sha256 to keep in sync without removing the cross-tree dependency. It therefore ships with the deploy's `git pull` and needs no installer step; HASH_DRIFT compares it against the same checkout the deploy materialises, and ops/cron/checkout-parity.sh already asserts that checkout is a clean ancestor of origin/main. NO own schedule: it is a library invoked by its two consumers, so the DARK check (which reads only rows carrying a schedule) correctly does not apply. Contract: exactly one terminal SERVED_REGION_VERDICT=PASS|FAIL|INDETERMINATE line, exit 0/1/3 (3 = the token-law default for a new gate); callers gate on the TOKEN, never the exit code. Zero pages checked and any unfetchable page are both INDETERMINATE, never a clean PASS. `--self-test` covers 19 checks including the artifacts its own injectable seams bypass (URL derivation, region extraction, the docker argv) and the token->exit-code mapping itself. Pinned by tests/unit/served-region-check.test.ts, which recomputes the derived page set independently so a hardcoded array fails.",
+      "verification": "node ops/monitoring/served-region-check.mjs --self-test && node ops/monitoring/served-region-check.mjs --region=nav"
     },
     {
       "id": "docs-drift-canary",
