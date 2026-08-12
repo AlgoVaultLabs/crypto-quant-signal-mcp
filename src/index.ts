@@ -2591,6 +2591,52 @@ async function startHttp() {
       }
     });
 
+    // PAY-RAIL-DASHBOARD-W1 (R3): the live rail topology + its metrics.
+    //
+    // 🛑 The metrics come from a DIRECT call to `getPaymentMethodReport()` — the SAME function
+    // the route above calls. Two callers, ONE derivation. The spec's first draft said "fetched
+    // from R6's endpoint", which would have had this process issue an HTTP request to itself:
+    // re-authenticating against its own admin gate and able to stall on its own event loop, to
+    // obtain an object that is one function call away.
+    //
+    // The topology answers a question the requested shorthand gets wrong. "x402: Base/Circle"
+    // asserts Circle settles on Base mainnet; it does not — `eip155:8453` is deliberately
+    // absent from the Gateway allowlist because registering it would REPLACE the CDP scheme
+    // and silently reroute Base settlement. One row per registered scheme makes that visible.
+    app.get('/dashboard/api/payment-rails', async (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const {
+          resolvePaymentRails, defaultRailTopologyConfig, buildRailsPayload, observedFromReport,
+        } = await import('./lib/payment-rail-topology.js');
+
+        // Metrics are BEST-EFFORT and their absence is REPORTED, never defaulted. The whole
+        // degradation contract lives in `buildRailsPayload`, which is pure and unit-tested —
+        // this handler stays a thin shell over it (AC12 is proven there, not asserted here).
+        let report: Awaited<ReturnType<typeof import('./lib/payment-method-report.js').getPaymentMethodReport>> | null = null;
+        let metricsError: string | null = null;
+        try {
+          const { getPaymentMethodReport } = await import('./lib/payment-method-report.js');
+          report = await getPaymentMethodReport();
+        } catch (mErr) {
+          metricsError = mErr instanceof Error ? mErr.message : String(mErr);
+          console.error(`[/dashboard/api/payment-rails] metrics unavailable (topology still served): ${metricsError}`);
+        }
+
+        const rails = resolvePaymentRails(defaultRailTopologyConfig(observedFromReport(report)));
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.json(buildRailsPayload({
+          rails, report, metricsError, generatedAt: new Date().toISOString(),
+        }));
+      } catch (err) {
+        console.error(`[/dashboard/api/payment-rails] internal error: ${err instanceof Error ? err.message : err}`);
+        res.status(500).json({ error: 'Failed to resolve payment rails' });
+      }
+    });
+
     // HTML shell — cookie-gated EXACTLY like /dashboard (anonymous → 401; ?key= sets
     // the session cookie then redirects). The served HTML embeds no data; it fetches
     // the gated JSON above via a same-origin XHR carrying the admin cookie.
@@ -3995,6 +4041,18 @@ function getDashboardHtml(): string {
       <tbody id="skills-rows"></tbody>
     </table>
   </div>
+  <!-- PAY-RAIL-DASHBOARD-W1: SHELL ONLY. Every value below arrives by XHR from
+       /dashboard/api/payment-rails — no data is embedded in this HTML, matching
+       /dashboard/funnel. AC3 greps this raw markup and requires zero data anchors. -->
+  <div class="section">
+    <h2>Payment Rails &middot; <span id="rails-summary" style="color:#8b949e;font-size:12px;text-transform:none;letter-spacing:0">loading...</span></h2>
+    <table>
+      <thead><tr><th>Rail</th><th>Scheme</th><th>Facilitator</th><th>Network(s)</th><th>Status</th><th>Source</th></tr></thead>
+      <tbody id="rails-rows"></tbody>
+    </table>
+    <div id="rails-observed" style="margin-top:12px;color:#8b949e;font-size:12px"></div>
+    <div id="rails-calibration" style="margin-top:8px;color:#8b949e;font-size:12px"></div>
+  </div>
   <div class="refresh">Auto-refreshes every 30s &middot; <span id="updated"></span></div>
 </div>
 <script>
@@ -4054,6 +4112,93 @@ async function loadSkills() {
       '<tr><td colspan="5" style="color:#f85149">Failed to load skills analytics: ' + e.message + '</td></tr>';
   }
 }
+// PAY-RAIL-DASHBOARD-W1: renders ONLY what the API returns.
+// 🛑 No brand or network name appears in this function. Every label — including whether a
+// network is testnet — arrives from /dashboard/api/payment-rails, which derives it from
+// circle-gateway.ts / x402.ts / okx-a2mcp-config.ts. A literal here would be the drift this
+// panel exists to retire, and a guard test enforces it.
+async function loadRails() {
+  try {
+    const r = await fetch('/dashboard/api/payment-rails', { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const rows = (d.rails || []).map(function (x) {
+      // A network renders its CAIP-2 id ALWAYS, with the human label alongside. The id is the
+      // authoritative value; the label is a convenience that may be missing for a new network.
+      const nets = (x.networks || []).length
+        ? x.networks.map(function (n) {
+          // isTestnet === null means NOT ESTABLISHED — never silently shown as mainnet.
+          const tag = n.isTestnet === true
+            ? '<span style="color:#d29922">testnet</span>'
+            : n.isTestnet === false
+              ? '<span style="color:#3fb950">mainnet</span>'
+              : '<span style="color:#8b949e">unverified</span>';
+          const label = escSlug(n.label) === escSlug(n.caip2) ? '' : escSlug(n.label) + ' ';
+          return label + '<code>' + escSlug(n.caip2) + '</code> ' + tag;
+        }).join('<br>')
+        : '<span style="color:#6e7681">n/a</span>';
+      const status = x.status === 'live'
+        ? '<span style="color:#3fb950">live</span>'
+        : '<span style="color:#8b949e">dark</span>' + (x.darkReason ? '<br><span style="color:#6e7681;font-size:11px">' + escSlug(x.darkReason) + '</span>' : '');
+      return '<tr>'
+        + '<td>' + escSlug(x.rail) + '</td>'
+        + '<td>' + (x.scheme ? '<code>' + escSlug(x.scheme) + '</code>' : '<span style="color:#6e7681">&mdash;</span>') + '</td>'
+        + '<td>' + (x.facilitator ? escSlug(x.facilitator) : '<span style="color:#6e7681">&mdash;</span>') + '</td>'
+        + '<td>' + nets + '</td>'
+        + '<td>' + status + '</td>'
+        + '<td style="color:#6e7681;font-size:11px"><code>' + escSlug(x.source) + '</code></td>'
+        + '</tr>';
+    }).join('');
+    document.getElementById('rails-rows').innerHTML = rows
+      || '<tr><td colspan="6" style="color:#8b949e">No rails resolved</td></tr>';
+    document.getElementById('rails-summary').textContent =
+      (d.rails || []).length + ' rail rows &middot; topology probed ' + escSlug(d.topology_probed_at || '?');
+
+    // ── Observed methods ──────────────────────────────────────────────────────────────
+    // 🛑 The wording is load-bearing: these are brands that have TRANSACTED. The Payment
+    // Method Configuration is structurally silent on card brands, so "absent" here means NO
+    // OBSERVED VOLUME and NOT "unconfigured" — the opposite claim would be false about the
+    // exact brand this work was opened for.
+    const obs = document.getElementById('rails-observed');
+    if (!d.metrics || d.metrics.available !== true) {
+      // Never zeros. A confident zero from an instrument that could not read its subject is
+      // indistinguishable from a healthy reading.
+      obs.innerHTML = '<span style="color:#d29922">&#9888; metrics unavailable &mdash; topology shown, volumes NOT read.</span> '
+        + '<span style="color:#6e7681">' + escSlug((d.metrics && d.metrics.reason) || 'unknown reason') + '</span>';
+      document.getElementById('rails-calibration').innerHTML =
+        '<span style="color:#d29922">calibration state unavailable (metrics not read)</span>';
+      return;
+    }
+    const stripe = (d.rails || []).filter(function (x) { return x.observed; })[0];
+    if (stripe && stripe.observed) {
+      const o = stripe.observed;
+      const fmt = function (arr) {
+        return arr.length
+          ? arr.map(function (b) { return (b.name === null ? '(none recorded)' : escSlug(b.name)) + ' n=' + b.n; }).join(' &middot; ')
+          : 'no observed volume';
+      };
+      obs.innerHTML = '<b>Observed</b> (' + escSlug(o.window) + '): brands &mdash; ' + fmt(o.brands)
+        + ' &middot; method types &mdash; ' + fmt(o.methodTypes)
+        + '<br><span style="color:#6e7681">Reflects OBSERVED transactions only. A brand absent here has no observed volume; it is NOT a statement that the brand is unconfigured.</span>';
+    } else {
+      obs.innerHTML = '<span style="color:#8b949e">no observed payment data yet</span>';
+    }
+
+    // ── Calibration ───────────────────────────────────────────────────────────────────
+    const c = d.calibration;
+    const cal = document.getElementById('rails-calibration');
+    if (!c) { cal.innerHTML = '<span style="color:#8b949e">calibration state unavailable</span>'; return; }
+    cal.innerHTML = '<b>Decline-rate calibration</b> (' + escSlug(c.window) + '): '
+      + '<b>' + c.n + ' / ' + c.threshold + '</b> observed payments &middot; state '
+      + (c.state === 'ACTIVE' ? '<span style="color:#3fb950">ACTIVE</span>' : '<span style="color:#d29922">INERT</span>')
+      + ' &middot; ' + c.nToThreshold + ' to threshold'
+      + '<br><span style="color:#6e7681">Threshold source: ' + escSlug(c.thresholdSource) + '. ' + escSlug(c.canaryAttribution) + '</span>';
+  } catch (e) {
+    document.getElementById('rails-rows').innerHTML =
+      '<tr><td colspan="6" style="color:#f85149">Failed to load payment rails: ' + e.message + '</td></tr>';
+    document.getElementById('rails-summary').textContent = 'unavailable';
+  }
+}
 async function load() {
   try {
     const r = await fetch('/analytics', { credentials: 'same-origin' });
@@ -4100,6 +4245,8 @@ async function load() {
     // Kick off skills section load in parallel — independent endpoint, won't
     // block the main render even on slow DB query.
     loadSkills();
+    // PAY-RAIL-DASHBOARD-W1: rides the existing 30s load() loop — adds NO setInterval.
+    loadRails();
   } catch(e) { document.getElementById('loading').textContent = 'Failed to load: ' + e.message; }
 }
 load();

@@ -108,6 +108,20 @@ const ALLOWED_GATEWAY_NETWORKS: readonly string[] = [
 ];
 
 /**
+ * READ-ONLY view of the allowlist, for the operator rail-topology panel
+ * (PAY-RAIL-DASHBOARD-W1). Exported so the panel PROJECTS this list rather than restating it:
+ * a second copy is the drift class that wave exists to retire, and it would keep rendering
+ * "Base/Circle" long after this array said otherwise.
+ *
+ * Deliberately an accessor over the existing const, not a second declaration — and it changes
+ * NOTHING about registration. Adding or removing a network here still belongs to this module
+ * alone; the panel only reports what it finds.
+ */
+export function gatewayAllowedNetworks(): readonly string[] {
+  return ALLOWED_GATEWAY_NETWORKS;
+}
+
+/**
  * Hard invariant: the Gateway scheme MUST NOT register on the same CAIP-2 network as the CDP
  * `exact` scheme. A collision would replace the CDP scheme and reroute Base settlement — a
  * capital-path failure with no error and no log.

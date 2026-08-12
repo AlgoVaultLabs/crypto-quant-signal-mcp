@@ -81,6 +81,19 @@ export interface PaymentMethodWindowReport {
   successes: SuccessAggregate;
   failures: FailureAggregate;
   decline_rate_by_brand: BrandDeclineRate[];
+  /**
+   * Observed population in this window: converted customers + distinct failed payments.
+   *
+   * Computed HERE, once, because TWO consumers need it — this report's own endpoint and
+   * `/dashboard/api/payment-rails` (PAY-RAIL-DASHBOARD-W1 R2b). Deriving it again in the
+   * caller would be two expressions of one quantity, in a panel whose entire job is to report
+   * that quantity honestly.
+   *
+   * This is the DASHBOARD's population figure. The decline canary computes the same quantity
+   * independently, in its own process, against the same tables — they agree by construction of
+   * the query, not by shared code. See `CalibrationState.canaryAttribution`.
+   */
+  population_n: number;
 }
 
 export interface PaymentMethodReport {
@@ -197,6 +210,7 @@ export async function getPaymentMethodReport(): Promise<PaymentMethodReport> {
         successes,
         failures,
         decline_rate_by_brand: computeDeclineRates(successes.by_brand, failures.by_brand),
+        population_n: successes.total_n + failures.distinct_payment_intents,
       };
     }),
   );

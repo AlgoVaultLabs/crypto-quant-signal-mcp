@@ -58,6 +58,20 @@ const CAIP2: Record<string, string> = {
 };
 const CAIP2_NETWORK = CAIP2[NETWORK] || 'eip155:8453';
 
+/**
+ * READ-ONLY: the CAIP-2 network the CDP `exact` scheme registers on (see the `srv.register`
+ * call below). Exported for the operator rail-topology panel (PAY-RAIL-DASHBOARD-W1) so the
+ * panel PROJECTS this value instead of re-deriving it from `X402_NETWORK` + the CAIP2 map —
+ * two derivations of one fact drift, and this particular fact decides where money settles.
+ *
+ * This is also the network `circle-gateway.ts` refuses to let the Gateway scheme collide with,
+ * which is exactly why the panel must show the real mapping rather than the "Base/Circle"
+ * shorthand: Circle does NOT settle here.
+ */
+export function cdpExactNetwork(): string {
+  return CAIP2_NETWORK;
+}
+
 // USDC contract addresses
 const USDC_ADDRESS: Record<string, string> = {
   'eip155:8453': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
