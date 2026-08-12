@@ -131,7 +131,7 @@ describe('resolvePreConversionBridge — confidence + projection', () => {
   });
 });
 
-describe('buildSubscriberProfile — INSERT carries the 5 bridge columns (25 params)', () => {
+describe('buildSubscriberProfile — INSERT carries the 5 bridge columns (29 params)', () => {
   it('appends bridge columns; empty deps → bridge_confidence none', async () => {
     const runs: Array<{ sql: string; params: unknown[] }> = [];
     await buildSubscriberProfile(
@@ -142,18 +142,23 @@ describe('buildSubscriberProfile — INSERT carries the 5 bridge columns (25 par
     expect(runs).toHaveLength(1);
     expect(runs[0].sql).toMatch(/pre_conversion_calls/);
     expect(runs[0].sql).toMatch(/bridge_confidence = EXCLUDED\.bridge_confidence/);
-    // 18 base + 5 bridge + 2 interval (OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 CH2, migration 027).
+    // 18 base + 5 bridge + 2 interval (OPS-STRIPE-SUBSCRIPTION-TRUTH-W1 CH2, migration 027)
+    // + 4 payment-method (PAY-UNIONPAY-ATTRIBUTION-W1 R2).
     // This arity assertion is the contract between the column list, the VALUES placeholders and
-    // the bind order — it is what caught CH2's widening, which is exactly its job. Keep it
-    // pinned to a literal: a count derived from the SQL would agree with itself and prove
-    // nothing.
-    expect(runs[0].params).toHaveLength(25);
+    // the bind order — it is what caught CH2's widening, and it caught this wave's too, which is
+    // exactly its job. Keep it pinned to a literal: a count derived from the SQL would agree
+    // with itself and prove nothing.
+    expect(runs[0].params).toHaveLength(29);
     expect(runs[0].params[0]).toBe('cus_Z');            // customer_id still first
     expect(runs[0].params[22]).toBe('none');            // bridge_confidence — position UNCHANGED
-    // The two new binds are APPENDED, so no pre-existing position shifted. This session carries
+    // Every new bind is APPENDED, so no pre-existing position ever shifts. This session carries
     // no billing_interval metadata, so the honest answer is `unknown` and the rate is a REFUSAL.
     expect(runs[0].params[23]).toBe('unknown');         // billing_interval
     expect(runs[0].params[24]).toBeNull();              // monthly_rate_usd — null, never 0
+    // The 4 payment-method binds. These deps inject no `resolvePaymentMethod`, so the dimension
+    // is unresolved — and unresolved must be NULL, never a fabricated default. A guessed brand
+    // is a wrong brand that looks plausible and would poison the decline rate.
+    expect(runs[0].params.slice(25)).toEqual([null, null, null, null]);
   });
 });
 

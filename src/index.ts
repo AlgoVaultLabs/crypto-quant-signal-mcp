@@ -1587,6 +1587,56 @@ async function startHttp() {
           await handleSubscriptionUpdated(event);
           break;
         }
+        case 'payment_intent.payment_failed':
+        case 'charge.failed':
+        case 'invoice.payment_failed': {
+          // PAY-UNIONPAY-ATTRIBUTION-W1 (R4a) — the decline record. Before this wave the repo
+          // held ZERO payment-method facts, so "why did this user's card fail" was not a hard
+          // question but an unanswerable one. These three events are what make a success rate
+          // computable at all: without failures there is no denominator.
+          //
+          // `payment_intent.payment_failed` is PRIMARY — on our `mode: 'subscription'` flow a
+          // FIRST-payment failure lands there, while `invoice.payment_failed` only fires on a
+          // renewal (measured: 3 / 1 / 0 respectively over Stripe's 30-day event window).
+          //
+          // Idempotency BEFORE the side-effect, same shape as every case above, reusing the
+          // ONE `tryClaimEvent` claim rather than adding a second.
+          const isNewFailure = await tryClaimEvent({
+            event_id: event.id,
+            event_type: event.type,
+            customer_email: null,
+            metadata: { source: event.type },
+          });
+          if (!isNewFailure) {
+            console.log(`Stripe webhook: duplicate ${event.type} (event ${event.id}) — already processed`);
+            // 200, never 500 — a non-2xx makes Stripe retry harder against an event we have
+            // already fully processed.
+            return res.json({ received: true, status: 'duplicate' });
+          }
+          try {
+            const { buildPaymentFailureRow, recordPaymentFailure } = await import('./lib/stripe-payment-failures-store.js');
+            const row = buildPaymentFailureRow(event);
+            if (!row) {
+              console.warn(`Stripe webhook: ${event.type} with unmappable payload (event ${event.id}) — no failure row written`);
+            } else {
+              await recordPaymentFailure(row);
+              // Success-path log per CLAUDE.md's load-bearing-side-effect rule. `outcome_type`
+              // is echoed because `blocked` is the Radar tell — the field that answers, from
+              // the data, a question Stripe exposes no rules API to ask.
+              console.log(
+                `Stripe webhook: recorded ${event.type} pi=${row.paymentIntentId ?? '-'} ` +
+                `brand=${row.cardBrand ?? '-'} country=${row.cardCountry ?? '-'} ` +
+                `decline=${row.declineCode ?? '-'} outcome=${row.outcomeType ?? '-'}`,
+              );
+            }
+          } catch (failErr) {
+            // Fail-open: the claim is already durable, so a write failure costs THIS row and
+            // nothing else. Returning non-2xx would make Stripe retry an event we have claimed
+            // and would never re-record anyway.
+            console.error('Stripe webhook: payment-failure record failed (fail-open):', failErr instanceof Error ? failErr.message : failErr);
+          }
+          break;
+        }
         default:
           console.log(`Stripe webhook: unhandled event ${event.type}`);
       }
@@ -2514,6 +2564,30 @@ async function startHttp() {
       } catch (err) {
         console.error(`[/dashboard/api/funnel-scoreboard] internal error: ${err instanceof Error ? err.message : err}`);
         res.status(500).json({ error: 'Failed to compute funnel scoreboard' });
+      }
+    });
+
+    // PAY-UNIONPAY-ATTRIBUTION-W1 (R6): payment-method attribution — which method converted,
+    // which declined, and why. Admin-gated like every /dashboard/api/* endpoint, so it is an
+    // OPERATOR surface and NOT public copy: this repo names zero card brands on any
+    // user-visible page and adding one is a separate, explicitly-approved decision.
+    //
+    // Every rate ships with its own `n` and the payload carries `rate_definition`, because
+    // the numerator and denominator are different units (distinct failed payments vs
+    // converted customers) and a bare percentage here would invite comparison against
+    // issuer authorization benchmarks it is not one of.
+    app.get('/dashboard/api/payment-methods', async (req, res) => {
+      if (!isAdminAuthorized(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      try {
+        const { getPaymentMethodReport } = await import('./lib/payment-method-report.js');
+        const report = await getPaymentMethodReport();
+        res.setHeader('Cache-Control', 'no-store');
+        res.json(report);
+      } catch (err) {
+        console.error(`[/dashboard/api/payment-methods] internal error: ${err instanceof Error ? err.message : err}`);
+        res.status(500).json({ error: 'Failed to compute payment-method report' });
       }
     });
 

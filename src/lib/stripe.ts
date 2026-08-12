@@ -13,6 +13,10 @@ import { sendWelcomeEmail, maskEmail } from './email.js';
 import { sendAlert } from './telegram.js';
 import { recordIndeterminate } from './indeterminate-counter.js';
 import type { PaidPlanId, BillingInterval } from './plans.js';
+// PAY-UNIONPAY-ATTRIBUTION-W1: the ONE derivation of the payment-method dimension. Imported
+// here rather than re-implemented so the webhook write path and the admin read path can never
+// disagree about which brand a charge was (single-derivation rule).
+import { resolvePaymentMethodAttribution, type PaymentMethodAttribution } from './payment-method-attribution.js';
 // The RECORD vocabulary, which is wider than the billing one: it retains 'year' for rows
 // sold before R-C retired annual, plus 'unknown'. Type-only, so no import cycle.
 import type { StoredBillingInterval } from './subscriber-attribution.js';
@@ -905,6 +909,72 @@ export async function handleSubscriptionUpdated(event: any): Promise<void> {
     status: asSubscriptionStatus(subscription?.status),
     subscriptionId: typeof subscription?.id === 'string' ? subscription.id : null,
   }, 'customer.subscription.updated');
+}
+
+// ── Payment-method attribution (PAY-UNIONPAY-ATTRIBUTION-W1 / R3) ──
+
+/**
+ * Fetch the payment-method dimension for a completed Checkout Session or a Subscription.
+ *
+ * ⚠️ **The obvious path does not exist for our flow.** Every Checkout Session this repo
+ * creates is `mode: 'subscription'` (`stripe.ts` line ~401, the only `checkout.sessions.create`
+ * in the tree), and on a subscription session `payment_intent` is **null** — Stripe bills
+ * through an Invoice instead. So `session.payment_intent → latest_charge` silently resolves to
+ * nothing for 100% of real traffic. The card data hangs off the INVOICE. Three ordered
+ * attempts, most-informative first:
+ *
+ *   1. `session.payment_intent`  → PI → `latest_charge.payment_method_details`  (one-off mode)
+ *   2. `session.invoice`         → Invoice → PI → `latest_charge…`              (OUR flow)
+ *   3. `session.subscription`    → Subscription → `default_payment_method`      (last resort)
+ *
+ * A CHARGE is preferred over a PaymentMethod because only the charge carries
+ * `payment_method_details.card.country` and `.funding` — the issuer-country field that makes
+ * the mainland-China cohort visible at all. A bare PaymentMethod would give us brand and
+ * nothing else, which is why it is the fallback rather than the first try.
+ *
+ * Fail-open by contract: returns `null` on any error. This runs inside the fire-and-forget
+ * profiler, and an enrichment miss must never cost the profile row.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchPaymentMethodForSession(sessionOrSubscription: any): Promise<PaymentMethodAttribution | null> {
+  const client = getStripeClient();
+  if (!client) return null;
+  const src = sessionOrSubscription;
+  if (!src || typeof src !== 'object') return null;
+
+  const idOf = (v: unknown): string | null =>
+    typeof v === 'string' ? v : (typeof (v as { id?: unknown })?.id === 'string' ? (v as { id: string }).id : null);
+
+  try {
+    // (1) direct PaymentIntent — non-subscription sessions only.
+    const piId = idOf(src.payment_intent);
+    if (piId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pi: any = await client.paymentIntents.retrieve(piId, { expand: ['latest_charge'] });
+      if (pi?.latest_charge) return resolvePaymentMethodAttribution(pi.latest_charge);
+    }
+
+    // (2) via the Invoice — THE path for `mode: 'subscription'`.
+    const invoiceId = idOf(src.invoice) ?? idOf(src.latest_invoice);
+    if (invoiceId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const inv: any = await client.invoices.retrieve(invoiceId, { expand: ['payment_intent.latest_charge'] });
+      const charge = inv?.payment_intent?.latest_charge;
+      if (charge) return resolvePaymentMethodAttribution(charge);
+    }
+
+    // (3) the subscription's default payment method — brand only, no issuer country.
+    const subId = idOf(src.subscription) ?? (typeof src.object === 'string' && src.object === 'subscription' ? idOf(src) : null);
+    if (subId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sub: any = await client.subscriptions.retrieve(subId, { expand: ['default_payment_method'] });
+      if (sub?.default_payment_method) return resolvePaymentMethodAttribution(sub.default_payment_method);
+    }
+  } catch (err) {
+    console.warn('[fetchPaymentMethodForSession] fail-open:', err instanceof Error ? err.message : err);
+    return null;
+  }
+  return null;
 }
 
 // ── Helpers ──

@@ -431,6 +431,30 @@
       "owner_wave": "OPS-STRIPE-WEBHOOK-EVENTS-W1"
     },
     {
+      "id": "payment-decline-canary",
+      "artifact": "ops/monitoring/payment-decline-canary.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/payment-decline-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/payment-decline-canary.py",
+          "schedule": "53 7 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "53 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "ae0f7c31a1bbaa339eef2c7c8b4d9fcf530aa57773ac5fb460e101acad4cfc19",
+      "alert_ids": [
+        "PAYMENT_DECLINE_DRIFT"
+      ],
+      "owner_wave": "PAY-UNIONPAY-ATTRIBUTION-W1",
+      "notes": "Small-n decline detector. Measured population at install: 10 charges lifetime, 1 failure, 4 subscriber rows — so a percentage would be an anecdote and a single-sample alarm is forbidden. TWO predicates: below MIN_N=20 only an ABSOLUTE FLOOR (>=3 distinct failed payments/7d) is live and the verdict is PASS carrying the observed n; at or above MIN_N the rate predicate activates with the floor still armed. Below MIN_N it is PASS, never INDETERMINATE — the WORLD builds this corpus, so empty is a fact, not a verification failure; the inverse would leave it permanently indeterminate, i.e. decoration. Every run appends its observed n to /var/lib/algovault-payment-decline/observations.jsonl so the MIN_N crossing RATE is measured rather than guessed at the decision. DECLINE_RATE_PCT_MAX=40 is an UNCALIBRATED PLACEHOLDER that structurally cannot fire below MIN_N: no honest calibration exists at n=10, and no published UnionPay cross-border benchmark exists to borrow. Whoever is present at the first MIN_N crossing owns calibrating it from the ledger. Verdict token PAYMENT_DECLINE_VERDICT= maps PASS=0/FAIL=1/INDETERMINATE=3; 3 is the token-law default for a NEW gate and must NOT be aligned to check-stripe-webhook-events.mjs's 2, which means a different thing in a different script."
+    },
+    {
       "id": "check-stripe-webhook-events",
       "artifact": "ops/monitoring/check-stripe-webhook-events.mjs",
       "kind": "executable",
@@ -440,9 +464,10 @@
       "schedule": null,
       "invoked_by": "called-by:stripe-webhook-events-canary",
       "install_state": "installed",
-      "sha256": "4917b1b655b709f5a764f6438c56eb3e9963f77d0b0a8f59d5474baaf3555893",
+      "sha256": "ff772ae7351941fe9303c7e226081b042143c20dcfed2ef913429b280dbfc1f1",
       "alert_ids": [],
-      "owner_wave": "OPS-STRIPE-WEBHOOK-EVENTS-W1"
+      "owner_wave": "OPS-STRIPE-WEBHOOK-EVENTS-W1",
+      "notes": "EXPECTED widened 6 -> 9 by PAY-UNIONPAY-ATTRIBUTION-W1 (R4b): charge.failed, invoice.payment_failed, payment_intent.payment_failed joined the src/index.ts switch and were subscribed on the live endpoint in the same wave. Its SIBLING stripe-webhook-events-canary.sh was NOT touched and keeps its own sha256 — the wrapper carries no event list and no count literal (the count is derived from EXPECTED.length), so it had nothing to go stale. The dispatching spec's 'update 4 repo files / 2 sha256 rows' over-counted on both: only the two .mjs copies carry the data, and only this row's hash moves."
     },
     {
       "id": "funnel-leak-detector",

@@ -449,9 +449,16 @@ describe('buildSubscriberProfile — the upsert carries the two new columns', ()
     expect(runs[0].sql).toMatch(/billing_interval,\s*monthly_rate_usd/);
     expect(runs[0].sql).toMatch(/billing_interval = EXCLUDED\.billing_interval/);
     expect(runs[0].sql).toMatch(/monthly_rate_usd = EXCLUDED\.monthly_rate_usd/);
-    // Bound LAST, after the five bridge params — order is the contract with the column list.
-    expect(runs[0].params.at(-2)).toBe('year');
-    expect(runs[0].params.at(-1)).toBe(79 / 12);
+    // Bound after the five bridge params — order is the contract with the column list.
+    // PAY-UNIONPAY-ATTRIBUTION-W1 appended 4 payment-method binds AFTER these two, so they are
+    // no longer the tail. Indexed from the FRONT now: a `.at(-2)` here would silently re-point
+    // at whichever columns a future wave appends, and keep passing while asserting the wrong
+    // thing — the same false-green shape this file's arity test exists to prevent.
+    expect(runs[0].params[23]).toBe('year');          // billing_interval
+    expect(runs[0].params[24]).toBe(79 / 12);         // monthly_rate_usd
+    // ...and the 4 appended payment-method binds are the new tail. No `resolvePaymentMethod`
+    // dep is injected here, so all four are NULL — unresolved is never defaulted.
+    expect(runs[0].params.slice(25)).toEqual([null, null, null, null]);
   });
 
   it('binds a placeholder for every column in the list — no silent arity drift', () => {

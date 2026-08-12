@@ -36,16 +36,25 @@ const ENDPOINT_URL = 'https://api.algovault.com/webhooks/stripe';
 // which is the more dangerous shape: a declaration nobody watched fail. Unsubscribing either of
 // those two in Stripe would have gone undetected indefinitely.
 //
-// It is now the full set of SIX, enumerated against the switch and against the live endpoint.
+// It is now the full set, enumerated against the switch and against the live endpoint.
 // If you add a `case` to that switch, add it here in the SAME commit — and remember there are
 // TWO byte-identical copies of this file (`ops/monitoring/` and `scripts/`).
+//
+// SIX → NINE by PAY-UNIONPAY-ATTRIBUTION-W1 (R4b), which added three FAILURE cases to the
+// switch. They belong here for the same reason the array exists at all: that wave's whole
+// deliverable is a measurable decline rate, and a decline rate whose failure events Stripe
+// was never configured to deliver would read as a flawless 0% — the most dangerous possible
+// value, because it looks like good news rather than like a broken instrument.
 const EXPECTED = [
+  'charge.failed',
   'charge.refunded',
   'checkout.session.completed',
   'customer.subscription.created',
   'customer.subscription.deleted',
   'customer.subscription.updated',
   'invoice.paid',
+  'invoice.payment_failed',
+  'payment_intent.payment_failed',
 ];
 
 const ALERT_ID = 'STRIPE_WEBHOOK_EVENT_DRIFT';

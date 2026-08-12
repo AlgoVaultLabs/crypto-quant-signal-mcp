@@ -122,3 +122,57 @@ describe('tryClaimEvent — durable', () => {
     expect(rows[0].session_id).toBeNull();
   });
 });
+
+// ── PAY-UNIONPAY-ATTRIBUTION-W1 (R8): the three failure event types ──────────────────────
+//
+// The wave added `payment_intent.payment_failed` (PRIMARY), `charge.failed` and
+// `invoice.payment_failed` to the webhook switch, each claiming through THIS same helper
+// BEFORE its side-effect and returning `status: 'duplicate'` on replay. The claim is shared,
+// so the property to pin here is that it holds for the new types too — most importantly that
+// the three do NOT collide with one another, since a single declined card genuinely fires two
+// of them and both must be claimable.
+const failureRow = (id: string, type: string) => ({
+  event_id: id,
+  event_type: type,
+  customer_email: null,
+  metadata: { source: type },
+});
+
+describe('tryClaimEvent — the three failure event types', () => {
+  for (const type of ['payment_intent.payment_failed', 'charge.failed', 'invoice.payment_failed']) {
+    it(`${type}: claims once, refuses the replay`, async () => {
+      expect(await tryClaimEvent(failureRow(`evt_${type}`, type))).toBe(true);
+      // The replay is what makes the handler return HTTP 200 + status:'duplicate' rather
+      // than re-writing a second failure row and inflating the decline count.
+      expect(await tryClaimEvent(failureRow(`evt_${type}`, type))).toBe(false);
+      expect(await getEventCount()).toBe(1);
+    });
+  }
+
+  it('ONE declined card firing TWO event types claims BOTH — they must not collide', async () => {
+    // Measured live: payment_intent.payment_failed = 3 vs charge.failed = 1 over the same
+    // window, so the two are not 1:1 and both rows carry information. Distinct event ids ⇒
+    // two independent claims. Collapsing them HERE would lose the "blocked before charge
+    // creation" vs "issuer declined the charge" distinction permanently; the dedup that
+    // protects the RATE happens at read time, over payment_intent_id.
+    expect(await tryClaimEvent(failureRow('evt_pi_fail', 'payment_intent.payment_failed'))).toBe(true);
+    expect(await tryClaimEvent(failureRow('evt_ch_fail', 'charge.failed'))).toBe(true);
+    expect(await getEventCount()).toBe(2);
+  });
+
+  it('concurrent redeliveries of one failure event yield exactly ONE winner', async () => {
+    const results = await Promise.all([
+      tryClaimEvent(failureRow('evt_pi_race', 'payment_intent.payment_failed')),
+      tryClaimEvent(failureRow('evt_pi_race', 'payment_intent.payment_failed')),
+      tryClaimEvent(failureRow('evt_pi_race', 'payment_intent.payment_failed')),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await getEventCount()).toBe(1);
+  });
+
+  it('a failure claim never goes through the fire-and-forget writer either', async () => {
+    vi.mocked(dbRun).mockClear();
+    await tryClaimEvent(failureRow('evt_pi_durable', 'payment_intent.payment_failed'));
+    expect(vi.mocked(dbRun)).not.toHaveBeenCalled();
+  });
+});

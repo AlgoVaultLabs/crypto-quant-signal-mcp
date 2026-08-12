@@ -18,6 +18,9 @@
 import { dbExec, dbRun, dbQuery } from './performance-db.js';
 import { getMonthlyQuota } from './license.js';
 import { PLANS, planMonthlyRateUsd, planPrepayMonthlyRateUsd, PREPAY_ANNUAL_MONTHS, type PaidPlanId, type BillingInterval } from './plans.js';
+// Type-only: the pure resolver module is a LEAF (no I/O, no imports of its own), so this
+// cannot introduce a cycle. PAY-UNIONPAY-ATTRIBUTION-W1.
+import type { PaymentMethodAttribution } from './payment-method-attribution.js';
 
 const PG = !!process.env.DATABASE_URL;
 const TS = PG ? 'TIMESTAMPTZ' : 'TIMESTAMP';
@@ -412,6 +415,55 @@ const SUBSCRIBER_INTERVAL_COLUMNS: { column: string; pgType: string; sqliteType:
   { column: 'monthly_rate_usd', pgType: 'NUMERIC(10,4)', sqliteType: 'REAL' },
 ];
 
+// Payment-method attribution columns (PAY-UNIONPAY-ATTRIBUTION-W1 / R2). Same dual-backend
+// shape as the two column sets above.
+//
+// 🛑 NO DEFAULTS, and that is deliberate. Every one of these is nullable with no fallback,
+// because a guessed brand is a wrong brand that looks entirely plausible — and it would
+// poison the exact decline rate this wave exists to measure. `NULL` reads as "we did not
+// establish this", which is the truth for every row that predates the wave.
+//
+// 🛑 NO PAN, last4, fingerprint or cardholder name. The column set IS the prohibition: there
+// is no column such a value could land in. See `payment-method-attribution.ts` for the
+// matching structural guarantee on the read side.
+const SUBSCRIBER_PAYMENT_METHOD_COLUMNS: { column: string; pgType: string; sqliteType: string }[] = [
+  { column: 'payment_method_type', pgType: 'TEXT', sqliteType: 'TEXT' },
+  { column: 'card_brand', pgType: 'TEXT', sqliteType: 'TEXT' },
+  { column: 'card_country', pgType: 'TEXT', sqliteType: 'TEXT' },
+  { column: 'card_funding', pgType: 'TEXT', sqliteType: 'TEXT' },
+];
+
+let _paymentMethodColumnsInit = false;
+/**
+ * Idempotently add the 4 payment-method attribution columns. PROD pre-applies them via SSH
+ * BEFORE the deploy, so this is a no-op there (the PG `IF NOT EXISTS` finds them present);
+ * tests (SQLite) add them on first call. Mirrors `ensureSubscriberIntervalColumns`.
+ */
+export async function ensureSubscriberPaymentMethodColumns(): Promise<void> {
+  if (_paymentMethodColumnsInit) return;
+  ensureSubscriberProfilesSchema();
+  if (PG) {
+    dbExec(
+      SUBSCRIBER_PAYMENT_METHOD_COLUMNS
+        .map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN IF NOT EXISTS ${c.column} ${c.pgType};`)
+        .join('\n'),
+    );
+  } else {
+    const rows = await dbQuery<{ name: string }>(`PRAGMA table_info(subscriber_profiles)`, []);
+    const existing = new Set(rows.map((r) => r.name));
+    const missing = SUBSCRIBER_PAYMENT_METHOD_COLUMNS.filter((c) => !existing.has(c.column));
+    if (missing.length > 0) {
+      dbExec(missing.map((c) => `ALTER TABLE subscriber_profiles ADD COLUMN ${c.column} ${c.sqliteType};`).join('\n'));
+    }
+  }
+  _paymentMethodColumnsInit = true;
+}
+
+/** Reset the payment-method-column-init latch — tests only. */
+export function _resetPaymentMethodColumnsInitForTest(): void {
+  _paymentMethodColumnsInit = false;
+}
+
 let _intervalColumnsInit = false;
 /**
  * Idempotently add the 2 interval columns. PROD pre-applies migration 027 via SSH BEFORE the
@@ -637,6 +689,25 @@ export interface ProfileDeps {
    * inject a full deps object.
    */
   ensureInterval?: () => Promise<void>;
+  /**
+   * Optional async hook ensuring the PAY-UNIONPAY-ATTRIBUTION-W1 payment-method columns exist.
+   * Same contract as `ensureBridge` / `ensureInterval`.
+   */
+  ensurePaymentMethod?: () => Promise<void>;
+  /**
+   * Resolve the payment-method dimension for a checkout session (PAY-UNIONPAY-ATTRIBUTION-W1).
+   *
+   * Injected rather than imported so this module keeps NO static dependency on `stripe.ts`,
+   * which already imports a type from here — a value import would close that into a runtime
+   * cycle. The default implementation below uses a dynamic import for the same reason.
+   *
+   * Unlike `resolveCardGeo` (which is declared here but wired NOWHERE, so card geo is never
+   * actually resolved in prod), this one IS on `defaultProfileDeps`. A dep that nothing
+   * provides is a dimension that silently stays null forever — precisely the failure mode
+   * this wave exists to retire, so it must not be reproduced by the wave that retires it.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolvePaymentMethod?: (session: any) => Promise<PaymentMethodAttribution | null>;
 }
 const defaultProfileDeps: ProfileDeps = {
   ensure: () => { ensureSubscriberProfilesSchema(); ensureSignupAttributionSchema(); },
@@ -644,6 +715,11 @@ const defaultProfileDeps: ProfileDeps = {
   run: dbRun,
   ensureBridge: ensureSubscriberBridgeColumns,
   ensureInterval: ensureSubscriberIntervalColumns,
+  ensurePaymentMethod: ensureSubscriberPaymentMethodColumns,
+  resolvePaymentMethod: async (session) => {
+    const { fetchPaymentMethodForSession } = await import('./stripe.js');
+    return fetchPaymentMethodForSession(session);
+  },
 };
 
 /**
@@ -667,6 +743,7 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
     deps.ensure();
     if (deps.ensureBridge) await deps.ensureBridge();
     if (deps.ensureInterval) await deps.ensureInterval();
+    if (deps.ensurePaymentMethod) await deps.ensurePaymentMethod();
 
     const clientReferenceId = asString(session?.client_reference_id);
     const email = asString(session?.customer_details?.email) ?? asString(session?.customer_email);
@@ -712,6 +789,18 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
       }
     }
 
+    // (3b) PAY-UNIONPAY-ATTRIBUTION-W1: payment-method dimension. Best-effort and fail-open
+    // — an enrichment failure must never cost us the profile row itself, and a null here is
+    // an honest "not established" rather than a defaulted guess.
+    let paymentMethod: PaymentMethodAttribution | null = null;
+    if (deps.resolvePaymentMethod) {
+      try {
+        paymentMethod = await deps.resolvePaymentMethod(session);
+      } catch (e) {
+        console.warn('[buildSubscriberProfile] payment-method enrich failed (fail-open):', e instanceof Error ? e.message : e);
+      }
+    }
+
     const nowEpoch = deps.nowEpoch ?? Math.floor(Date.now() / 1000);
     const p = assembleProfile(session, { attribution, hasOptin, hasUpgradeCta, cardCountry, riskLevel, convertedAtEpoch: nowEpoch });
 
@@ -729,8 +818,9 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
         (customer_id, email, name, subscription_id, tier, status, amount_usd, currency, channel, country, country_source,
          client_reference_id, signup_at, converted_at, latency_seconds, cold_subscribe, attribution_captured, risk_level,
          pre_conversion_calls, pre_conversion_sessions, time_to_first_call_s, peak_quota_pct, bridge_confidence,
-         billing_interval, monthly_rate_usd)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         billing_interval, monthly_rate_usd,
+         payment_method_type, card_brand, card_country, card_funding)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (customer_id) DO UPDATE SET
          email = EXCLUDED.email, name = EXCLUDED.name, subscription_id = EXCLUDED.subscription_id,
          tier = EXCLUDED.tier, status = EXCLUDED.status, amount_usd = EXCLUDED.amount_usd, currency = EXCLUDED.currency,
@@ -745,14 +835,24 @@ export async function buildSubscriberProfile(session: any, deps: ProfileDeps = d
          peak_quota_pct = EXCLUDED.peak_quota_pct,
          bridge_confidence = EXCLUDED.bridge_confidence,
          billing_interval = EXCLUDED.billing_interval,
-         monthly_rate_usd = EXCLUDED.monthly_rate_usd`,
+         monthly_rate_usd = EXCLUDED.monthly_rate_usd,
+         -- PAY-UNIONPAY-ATTRIBUTION-W1: COALESCE, never a bare EXCLUDED. The enrichment is
+         -- fail-open, so a re-profile whose Stripe lookup failed arrives with NULLs — and a
+         -- bare EXCLUDED would ERASE a brand we had already established. Data Integrity:
+         -- never reduce a fact to null as a side effect. A real value still overwrites.
+         payment_method_type = COALESCE(EXCLUDED.payment_method_type, subscriber_profiles.payment_method_type),
+         card_brand = COALESCE(EXCLUDED.card_brand, subscriber_profiles.card_brand),
+         card_country = COALESCE(EXCLUDED.card_country, subscriber_profiles.card_country),
+         card_funding = COALESCE(EXCLUDED.card_funding, subscriber_profiles.card_funding)`,
       p.customerId, p.email, p.name, p.subscriptionId, p.tier, p.status, p.amountUsd, p.currency, p.channel,
       p.country, p.countrySource, p.clientReferenceId, p.signupAt, p.convertedAt, p.latencySeconds,
       p.coldSubscribe, p.attributionCaptured, p.riskLevel,
       bridge.preConversionCalls, bridge.preConversionSessions, bridge.timeToFirstCallS, bridge.peakQuotaPct, bridge.bridgeConfidence,
       p.billingInterval, p.monthlyRateUsd,
+      paymentMethod?.methodType ?? null, paymentMethod?.cardBrand ?? null,
+      paymentMethod?.cardCountry ?? null, paymentMethod?.cardFunding ?? null,
     );
-    console.log(`[buildSubscriberProfile] profiled ${p.customerId} channel=${p.channel} country=${p.country ?? '?'}/${p.countrySource ?? '-'} cold=${p.coldSubscribe} captured=${p.attributionCaptured} bridge=${bridge.bridgeConfidence} calls=${bridge.preConversionCalls ?? '-'}`);
+    console.log(`[buildSubscriberProfile] profiled ${p.customerId} channel=${p.channel} country=${p.country ?? '?'}/${p.countrySource ?? '-'} cold=${p.coldSubscribe} captured=${p.attributionCaptured} bridge=${bridge.bridgeConfidence} calls=${bridge.preConversionCalls ?? '-'} pm=${paymentMethod?.methodType ?? '-'}/${paymentMethod?.cardBrand ?? '-'}/${paymentMethod?.cardCountry ?? '-'}`);
   } catch (err) {
     console.error('[buildSubscriberProfile] failed (fail-open):', err instanceof Error ? err.message : err);
   }
