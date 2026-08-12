@@ -354,6 +354,21 @@ describe('monitoring inventory rows', () => {
    * absence test would have forced deleting the correction to satisfy the test — the same defect
    * as a ban-grep that fires on its own explanatory docblock.
    */
+  /**
+   * Generator-level, not lane-level: this wave's own new row shipped WITHOUT `repo_resident` and
+   * was the only checkout-resident row missing it. `check_hash_drift` skips such rows on purpose
+   * — on the host, host_path IS the repo copy, so both sides of that comparison come from one
+   * checkout and reporting them in-sync is (its own docstring) "a lie by construction". Asserting
+   * it here makes the omission unwritable rather than merely noticed once.
+   */
+  it('every checkout-resident row declares repo_resident (HASH_DRIFT would otherwise lie)', () => {
+    const offenders = rows
+      .filter((r) => String(r.host_path ?? '').startsWith('/opt/crypto-quant-signal-mcp'))
+      .filter((r) => r.repo_resident !== true)
+      .map((r) => `${r.id} (${r.host_path})`);
+    expect(offenders).toEqual([]);
+  });
+
   it('the corrected notes record the inversion rather than repeating the false claim', () => {
     for (const a of ['ops/cron/nav-drift-canary.sh', 'ops/cron/analytics-drift-canary.sh']) {
       const notes = String(byArtifact(a).notes ?? '');
