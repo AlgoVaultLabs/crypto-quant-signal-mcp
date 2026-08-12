@@ -30,8 +30,14 @@
 #  * Refuses unless the repo file's sha256 already equals the row's canonical `sha256`. The row
 #    is what HASH_DRIFT and REGISTRY_PARITY compare against, so installing a file that disagrees
 #    with it would plant drift by construction. Re-stamp first, then install.
-#  * Timestamped backup before every overwrite (the convention NO_BACKUP asserts), and the
-#    installed bytes are verified against canonical AFTER the swap.
+#  * Timestamped backup on EVERY install, on both paths (the convention NO_BACKUP asserts):
+#    an overwrite is backed up BEFORE the swap, which is a real rollback point; a FIRST install has
+#    no prior revision, so it is stamped AFTER the swap and after verification — establishing the
+#    convention plus a restore point for the first unintended change. Backing up only on overwrite
+#    made every first install of a load-bearing artifact manufacture the NO_BACKUP finding it was
+#    supposed to satisfy (measured 2026-08-12 on `payment-decline-canary`).
+#  * The installed bytes are verified against canonical AFTER the swap and BEFORE any first-install
+#    stamp, so a failed install can never leave a `.bak` asserting a restore point that never was.
 #  * This is a human-invoked, reviewed install — NOT the unattended auto-install CLAUDE.md
 #    forbids. It moves executable code, which is exactly why no cron may ever call it.
 #
@@ -42,6 +48,10 @@
 #   install-monitoring-artifact.sh --self-test
 #   install-monitoring-artifact.sh <row-id>            # dry run: says exactly what it would do
 #   install-monitoring-artifact.sh <row-id> --apply
+#   install-monitoring-artifact.sh <row-id> --reinstall --apply
+#       re-install even when the host bytes are already canonical. The ONE use: producing a genuine
+#       backup for a row already sitting in NO_BACKUP, which the already-canonical skip otherwise
+#       makes unreachable BY THE MECHANISM. Never a substitute for placing a `.bak` by hand.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,6 +67,10 @@ SSH_OPTS=${INSTALL_ARTIFACT_SSH_OPTS:--o StrictHostKeyChecking=no -o ConnectTime
 # labelled with that unrelated wave. A backup exists so a human can answer "what changed here and
 # why"; a false reason is worse than no reason. `MANUAL` is honest when the caller says nothing.
 WAVE=${INSTALL_ARTIFACT_WAVE:-MANUAL}
+# Set HERE, beside WAVE, and not just before the install loop: both are baked into the backup
+# filename by build_remote_install, which the hermetic self-test and the unit tests call directly.
+# Left further down it was unbound under `set -u` for every sourced caller.
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 
 verdict() { echo "INSTALL_MONITORING_ARTIFACT_VERDICT=$1"; exit "$2"; }
 say() { printf '%s\n' "$*"; }
@@ -155,15 +169,39 @@ J
   hash_matches "$tmp/art" ""           >/dev/null 2>&1; ck 'absent canonical hash REFUSES' "$?" 1
   hash_matches "$tmp/absent" "$real"   >/dev/null 2>&1; ck 'absent artifact REFUSES'       "$?" 1
 
+  # ── the remote install script, exercised against a LOCAL temp dir (no host) ──
+  # This is the code path that moves executables to production and, until
+  # OPS-INSTALLER-FIRST-INSTALL-BACKUP-W1, the only one no test could reach.
+  local rt="$tmp/remote"; mkdir -p "$rt"
+  run_remote() {   # <dest> <src-bytes> -> stdout of the generated script
+    printf '%s' "$2" > "$rt/staged"
+    local canon; canon=$(sha256sum "$rt/staged" | cut -d' ' -f1)
+    build_remote_install "$1" "$rt/staged" "$canon" | sh 2>&1 | tail -1
+  }
+  # first install: dest absent -> exactly ONE .bak, and the note says so
+  rm -f "$rt"/art* ; out=$(run_remote "$rt/art" 'v1')
+  ck 'first install reports the first-install note' "${out##*note=}" 'first install — .bak stamped after the swap'
+  ck 'first install leaves exactly one .bak' "$(ls "$rt"/art.bak.* 2>/dev/null | wc -l | tr -d ' ')" 1
+  # overwrite: the PRE-swap backup must hold the OLD bytes, the dest the new
+  out=$(run_remote "$rt/art" 'v2')
+  ck 'overwrite reports the backup note' "${out##*note=}" "backup .bak.$WAVE-$STAMP"
+  ck 'overwrite left the NEW bytes at dest' "$(cat "$rt/art")" 'v2'
+  # a canonical mismatch must REFUSE and stamp nothing
+  rm -f "$rt"/art2* ; printf 'x' > "$rt/staged2"
+  local before; before=$(ls "$rt"/art2.bak.* 2>/dev/null | wc -l | tr -d ' ')
+  out=$(build_remote_install "$rt/art2" "$rt/staged2" 'deadbeef' | sh 2>&1 | tail -1)
+  ck 'sha mismatch REFUSES' "${out%% *}" 'SHA_MISMATCH'
+  ck 'sha mismatch stamps NO backup' "$(ls "$rt"/art2.bak.* 2>/dev/null | wc -l | tr -d ' ')" "$before"
+
   # Vacuity: WE built these corpora, so an empty one is a defect in the TEST.
   checks=$((checks+1))
-  [ "$checks" -ge 12 ] || { say "  ✗ self-test asserted almost nothing"; fails=$((fails+1)); }
+  [ "$checks" -ge 18 ] || { say "  ✗ self-test asserted almost nothing"; fails=$((fails+1)); }
 
   if [ "$fails" -ne 0 ]; then
     say "✗ install-monitoring-artifact self-test: $fails of $checks check(s) FAILED"
     verdict INDETERMINATE 3
   fi
-  say "✓ install-monitoring-artifact self-test: $checks checks passed (label resolution both ways, registry enumeration, canonical-hash precondition)"
+  say "✓ install-monitoring-artifact self-test: $checks checks passed (label resolution both ways, registry enumeration, canonical-hash precondition, remote-install backup paths)"
   verdict PASS 0
 }
 
@@ -180,11 +218,89 @@ hash_matches() {
   return 0
 }
 
+# ── THE REMOTE INSTALL SCRIPT, AS A PURE FUNCTION (OPS-INSTALLER-FIRST-INSTALL-BACKUP-W1) ────
+#
+# This body used to be an inline `ssh "…"` heredoc, which made it the ONE code path here that no
+# test could reach — `--self-test` is hermetic and never opens a connection. It moves executable
+# code to production hosts, so that was exactly backwards. It PRINTS the script instead of running
+# it, so the same text is what ssh receives and what a fixture executes against a temp dir: one
+# derivation, and a seam that cannot print a verdict.
+#
+# WHY A FIRST INSTALL IS ALSO STAMPED — ported verbatim in spirit from the sibling that already
+# solved it, ops/monitoring/declaration-sync.sh:462-490:
+#
+#   A first install has no prior revision to preserve — but skipping the backup entirely leaves the
+#   new row tripping NO_BACKUP until the file happens to change, which is a false alarm the
+#   installer itself manufactures. Measured 2026-08-12: `payment-decline-canary` was first-installed
+#   at 06:39:30Z and the reconciler reported NO_BACKUP for it with 26 sibling rows in scope on that
+#   host. So a prior file is backed up BEFORE the swap (a real rollback point), and a first install
+#   is stamped AFTER it. Only ever claim the one that actually happened.
+#
+# ORDERING IS THE SAFETY PROPERTY: the first-install stamp lands only after `install` succeeded AND
+# the installed bytes were verified against canonical. A backup of a failed install is worse than
+# none — it asserts a restore point that does not correspond to any real state. That verification
+# moved INSIDE this script for that reason; the caller still matches on the reported sha, which
+# answers a different question (did I receive the response I expected, or nothing at all).
+build_remote_install() {   # <dest> <staged-tmp> <canonical-sha> -> prints the remote script
+  cat <<REMOTE
+set -u
+d='$1'; t='$2'; canon='$3'
+first_install=1
+note='first install — .bak stamped after the swap'
+if [ -f "\$d" ]; then
+  first_install=0
+  cp -p "\$d" "\$d.bak.$WAVE-$STAMP" || { echo BACKUP_FAILED; exit 1; }
+  # GNU on the hosts, BSD on the operator's Mac. Without the fallback this line silently yields an
+  # empty mode locally, \`install -m ""\` fails, and the ONE path that exercises an overwrite could
+  # never be tested on the machine where every wave actually runs — 3rd BSD-portability trap in
+  # this gate layer after \`wc -l\` and \`mktemp XXXXXX\`.
+  m=\$(stat -c %a "\$d" 2>/dev/null || stat -f %Lp "\$d")
+  note='backup .bak.$WAVE-$STAMP'
+else
+  m=755
+fi
+install -m "\$m" "\$t" "\$d" || { echo INSTALL_FAILED; exit 1; }
+rm -f "\$t"
+h=\$(sha256sum "\$d" | cut -d' ' -f1)
+[ "\$h" = "\$canon" ] || { echo "SHA_MISMATCH \$h"; exit 1; }
+if [ "\$first_install" -eq 1 ]; then
+  # Best-effort, like the sibling at :488, and for the same reason: the install DID succeed and was
+  # verified, so reporting it as FAILED because a copy could not be written would be a worse lie
+  # than a missing stamp — which the reconciler catches on its own next run anyway. But say so.
+  cp -p "\$d" "\$d.bak.$WAVE-$STAMP" || note='first install — STAMP FAILED, NO_BACKUP will fire'
+fi
+echo "OK \$h mode=\$m note=\$note"
+REMOTE
+}
+
+# `return` succeeds only in a sourced context, so this probe is self-checking rather than a guess
+# about how we were invoked. When sourced, the pure functions above are defined and the imperative
+# body below is skipped — this is how the tests drive `build_remote_install` without an injection
+# point that could print a verdict. (CLAUDE.md's test-importable law, in shell; same idiom as
+# scripts/check-author-identity.sh:38-39 and scripts/check_test_baseline.sh:155.)
+if [ "${ALGOVAULT_INSTALL_ARTIFACT_SOURCED:-0}" != "1" ]; then
+  (return 0 2>/dev/null) && ALGOVAULT_INSTALL_ARTIFACT_SOURCED=1 || ALGOVAULT_INSTALL_ARTIFACT_SOURCED=0
+fi
+[ "$ALGOVAULT_INSTALL_ARTIFACT_SOURCED" = "1" ] && return 0 2>/dev/null
+
 [ "${1:-}" = "--self-test" ] && self_test
 
 ROW_ID=${1:-}
 APPLY=0
-[ "${2:-}" = "--apply" ] && APPLY=1
+# `--reinstall` exists for ONE case, and it is not a convenience: an artifact whose host bytes are
+# already canonical is SKIPPED at the already-canonical short-circuit below, so no swap happens and
+# no stamp is produced — which means a row already sitting in NO_BACKUP can never be cleared BY THE
+# MECHANISM. A hand-placed `.bak` would clear the alarm by asserting a restore point that never
+# existed, which is the exact class of lie the note discipline above exists to prevent. With this
+# flag the destination exists, so the run takes the ordinary OVERWRITE branch and produces a
+# genuine pre-swap backup of the current bytes, honestly labelled. It still requires --apply.
+REINSTALL=0
+for _a in "$@"; do
+  case "$_a" in
+    --apply)     APPLY=1 ;;
+    --reinstall) REINSTALL=1 ;;
+  esac
+done
 [ -n "$ROW_ID" ] || { say "usage: $(basename "$0") <inventory-row-id> [--apply] | --self-test"; verdict INDETERMINATE 3; }
 command -v python3   >/dev/null 2>&1 || verdict INDETERMINATE 3
 command -v sha256sum >/dev/null 2>&1 || verdict INDETERMINATE 3
@@ -212,7 +328,6 @@ say "$ROW_ID — $ARTIFACT"
 say "  canonical sha256: ${CANON:0:16}   mode: $([ "$APPLY" = 1 ] && echo APPLY || echo 'DRY RUN (pass --apply to act)')"
 hash_matches "$SRC" "$CANON" || verdict FAIL 1
 
-STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 ok=0; bad=0; skipped=0
 for t in "${TARGETS[@]}"; do
   case "$t" in __ARTIFACT__*|__ERR__*) continue ;; esac
@@ -223,31 +338,34 @@ for t in "${TARGETS[@]}"; do
   esac
 
   live=$(ssh -n -i "$SSH_KEY" $SSH_OPTS "root@$addr" "sha256sum '$dest' 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
-  if [ "$live" = "$CANON" ]; then
+  if [ "$live" = "$CANON" ] && [ "$REINSTALL" != 1 ]; then
     say "  · $label ($addr) — already canonical (${live:0:12})"
     skipped=$((skipped+1)); continue
   fi
-  say "  → $label ($addr) — live ${live:-absent} -> ${CANON:0:12}"
+  if [ "$live" = "$CANON" ]; then
+    say "  ↻ $label ($addr) — already canonical (${live:0:12}), --reinstall: re-installing to produce a backup"
+  else
+    say "  → $label ($addr) — live ${live:-absent} -> ${CANON:0:12}"
+  fi
   if [ "$APPLY" != 1 ]; then continue; fi
 
   if ! scp -q -i "$SSH_KEY" $SSH_OPTS "$SRC" "root@$addr:/tmp/.ima.$STAMP" 2>/dev/null; then
     say "    ✗ copy to $label failed"; bad=$((bad+1)); continue
   fi
-  # Backup BEFORE the swap, verify AFTER it. Mode is preserved from the existing file when there
-  # is one, so an install cannot silently drop the exec bit a cron depends on.
-  out=$(ssh -n -i "$SSH_KEY" $SSH_OPTS "root@$addr" "
-    set -u
-    d='$dest'; t='/tmp/.ima.$STAMP'
-    if [ -f \"\$d\" ]; then
-      cp -p \"\$d\" \"\$d.bak.$WAVE-$STAMP\" || { echo BACKUP_FAILED; exit 1; }
-      m=\$(stat -c %a \"\$d\")
-    else m=755; fi
-    install -m \"\$m\" \"\$t\" \"\$d\" || { echo INSTALL_FAILED; exit 1; }
-    rm -f \"\$t\"
-    echo \"OK \$(sha256sum \"\$d\" | cut -d' ' -f1) mode=\$m\"
-  " 2>&1 | tail -1)
+  # Backup BEFORE the swap on an overwrite, AFTER it on a first install, verify in between — see
+  # build_remote_install's header for why the ordering is the safety property. Mode is preserved
+  # from the existing file when there is one, so an install cannot silently drop the exec bit a
+  # cron depends on.
+  out=$(ssh -n -i "$SSH_KEY" $SSH_OPTS "root@$addr" \
+        "$(build_remote_install "$dest" "/tmp/.ima.$STAMP" "$CANON")" 2>&1 | tail -1)
   case "$out" in
-    "OK $CANON"*) say "    ✓ installed + verified (${out#OK }) · backup .bak.$WAVE-$STAMP"; ok=$((ok+1)) ;;
+    # The note is REPORTED, never assumed. The previous unconditional `· backup .bak.$WAVE-$STAMP`
+    # claimed a backup on the first-install path where none was taken — the same "claim what
+    # actually happened" rule the remote script's note exists to satisfy, broken at the last step.
+    "OK $CANON"*)
+      rest="${out#OK }"                 # "<sha> mode=<m> note=<text>"
+      say "    ✓ installed + verified (${rest%% note=*}) · ${rest#*note=}"
+      ok=$((ok+1)) ;;
     *)            say "    ✗ $label — $out"; bad=$((bad+1)) ;;
   esac
 done

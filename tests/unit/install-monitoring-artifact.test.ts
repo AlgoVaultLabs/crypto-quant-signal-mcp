@@ -19,10 +19,15 @@
  * assert into a claim the build can refute — which is the only durable answer to a wave blocking on
  * an unchecked premise.
  */
-import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import {
+  describe, it, expect, beforeEach, afterAll,
+} from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  readFileSync, existsSync, statSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -150,5 +155,164 @@ describe('the primitive is wired to the inventory it installs from', () => {
     // HASH_DRIFT and REGISTRY_PARITY compare the live host file against.
     const src = readFileSync(SCRIPT, 'utf8');
     expect(src).toMatch(/hash_matches "\$SRC" "\$CANON" \|\| verdict FAIL 1/);
+  });
+});
+
+/**
+ * OPS-INSTALLER-FIRST-INSTALL-BACKUP-W1 — the backup path, which NOTHING tested before.
+ *
+ * The install body lived inside an `ssh "…"` heredoc, so it was the one code path here that no
+ * test could reach: `--self-test` is hermetic and never opens a connection. It moves executable
+ * code to production hosts, which is exactly backwards. It is now a pure `build_remote_install`
+ * that PRINTS the remote script, so the same text ssh receives is what these fixtures execute
+ * against a temp dir — one derivation, and a seam that cannot print a verdict.
+ *
+ * The defect being pinned: backing up only on overwrite made every FIRST install of a
+ * `load-bearing` artifact manufacture the `NO_BACKUP` finding it was supposed to satisfy.
+ * Reproduced live on `payment-decline-canary` 2026-08-12, with 26 sibling rows in scope on
+ * signal-1 alone.
+ */
+describe('the remote install script — both backup paths, without a host', () => {
+  const TMP = mkdtempSync(path.join(tmpdir(), 'ima-remote-'));
+  let box = '';
+
+  beforeEach(() => {
+    box = mkdtempSync(path.join(TMP, 'case-'));
+  });
+  afterAll(() => rmSync(TMP, { recursive: true, force: true }));
+
+  /** Drive the REAL seam: source the script, print the remote text, run it through `sh`. */
+  function runRemote(dest: string, staged: string, canon: string, wave = 'TESTWAVE'): string {
+    const r = spawnSync(
+      'bash',
+      ['-c', `. "${SCRIPT}"; build_remote_install "${dest}" "${staged}" "${canon}" | sh 2>&1 | tail -1`],
+      { encoding: 'utf8', env: { ...process.env, INSTALL_ARTIFACT_WAVE: wave } },
+    );
+    return `${r.stdout ?? ''}${r.stderr ?? ''}`.trim();
+  }
+
+  function stage(bytes: string): { file: string; sha: string } {
+    const file = path.join(box, 'staged');
+    writeFileSync(file, bytes);
+    return { file, sha: createHash('sha256').update(bytes).digest('hex') };
+  }
+
+  const baks = (dest: string) => readdirSync(path.dirname(dest))
+    .filter((f) => f.startsWith(`${path.basename(dest)}.bak.`));
+
+  it('dest ABSENT -> install succeeds and leaves exactly one .bak', () => {
+    const dest = path.join(box, 'artifact.py');
+    const { file, sha } = stage('#!/usr/bin/env python3\nv1\n');
+    const out = runRemote(dest, file, sha);
+    expect(out, out).toContain(`OK ${sha}`);
+    expect(readFileSync(dest, 'utf8')).toContain('v1');
+    expect(baks(dest), 'a first install must still leave a restore point — this IS the defect')
+      .toHaveLength(1);
+  });
+
+  it('dest PRESENT -> the pre-swap backup holds the OLD bytes, dest holds the new', () => {
+    const dest = path.join(box, 'artifact.py');
+    writeFileSync(dest, 'OLD\n');
+    const { file, sha } = stage('NEW\n');
+    const out = runRemote(dest, file, sha);
+    expect(out, out).toContain(`OK ${sha}`);
+    expect(readFileSync(dest, 'utf8')).toBe('NEW\n');
+    const [bak] = baks(dest);
+    expect(bak, 'no backup was taken on the overwrite path').toBeTruthy();
+    expect(readFileSync(path.join(box, bak), 'utf8'), 'the backup must be the ROLLBACK point')
+      .toBe('OLD\n');
+  });
+
+  it('install FAILS on a first install -> no .bak is left behind', () => {
+    // An unwritable destination directory: `install` cannot succeed, so nothing may be stamped.
+    const dir = path.join(box, 'ro');
+    mkdirSync(dir);
+    const dest = path.join(dir, 'artifact.py');
+    const { file, sha } = stage('v1\n');
+    execFileSync('chmod', ['500', dir]);
+    try {
+      const out = runRemote(dest, file, sha);
+      expect(out).toContain('INSTALL_FAILED');
+      expect(existsSync(dest)).toBe(false);
+    } finally {
+      execFileSync('chmod', ['700', dir]);
+    }
+    expect(baks(dest), 'a backup of a failed install asserts a restore point that never existed')
+      .toHaveLength(0);
+  });
+
+  it('sha verification FAILS -> no .bak stamped, and the run refuses', () => {
+    const dest = path.join(box, 'artifact.py');
+    const { file } = stage('v1\n');
+    const out = runRemote(dest, file, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
+    expect(out).toMatch(/^SHA_MISMATCH /);
+    expect(baks(dest), 'the stamp must land AFTER verification, never before').toHaveLength(0);
+  });
+
+  it('the log note reports the path actually taken — first install != overwrite', () => {
+    const a = path.join(box, 'a.py');
+    const s1 = stage('v1\n');
+    const first = runRemote(a, s1.file, s1.sha);
+    const s2 = stage('v2\n');
+    const over = runRemote(a, s2.file, s2.sha);
+    expect(first).toContain('note=first install — .bak stamped after the swap');
+    expect(over).toMatch(/note=backup \.bak\.TESTWAVE-/);
+    expect(first).not.toBe(over);
+  });
+
+  it('sourcing the script does NOT run the installer — no verdict token is emitted', () => {
+    // A seam that can print a verdict is a bypass on the instrument every other check reports
+    // through. Same assertion the author-identity gate carries for the same reason.
+    const r = spawnSync('bash', ['-c', `. "${SCRIPT}"; echo SOURCED_OK`], { encoding: 'utf8' });
+    expect(r.stdout).toContain('SOURCED_OK');
+    expect(r.stdout).not.toContain('INSTALL_MONITORING_ARTIFACT_VERDICT=');
+  });
+});
+
+/**
+ * A hermetic seam is structurally blind to exactly what it replaces, so the REAL script's text is
+ * asserted directly too — the fixtures above run `build_remote_install`'s output, and would stay
+ * green if the live `ssh` call stopped using it.
+ */
+describe('the shipped script really uses the seam, and both installers agree', () => {
+  const SIBLING = path.join(ROOT, 'ops/monitoring/declaration-sync.sh');
+
+  it('the ssh call sends build_remote_install output — not a second inline copy', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    expect(src).toMatch(/ssh -n -i "\$SSH_KEY" \$SSH_OPTS[\s\S]{0,60}"\$\(build_remote_install /);
+    // The old inline heredoc must be gone, or there would be two derivations of one script.
+    expect(src).not.toMatch(/install -m \\"\\\$m\\" \\"\\\$t\\"/);
+  });
+
+  it('the first-install stamp is guarded on a flag and lands after verification', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    const body = /build_remote_install\(\)[\s\S]*?\nREMOTE\n/.exec(src)?.[0] ?? '';
+    expect(body, 'could not locate the generated remote script').toBeTruthy();
+    expect(body).toMatch(/first_install=1/);
+    expect(body).toMatch(/\[ "\\\$first_install" -eq 1 \]/);
+    const verifyAt = body.indexOf('SHA_MISMATCH');
+    const stampAt = body.indexOf('-eq 1 ]');
+    expect(verifyAt, 'no sha verification in the remote script').toBeGreaterThan(-1);
+    expect(stampAt, 'the first-install stamp must come AFTER the sha check').toBeGreaterThan(verifyAt);
+  });
+
+  it('no unconditional backup claim survives in the caller log line', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    // The old line claimed `· backup .bak.$WAVE-$STAMP` on BOTH paths, including the first
+    // install where no backup had been taken at all.
+    expect(src).not.toMatch(/installed \+ verified \([^)]*\) · backup \.bak\./);
+    expect(src).toMatch(/\$\{rest#\*note=\}/);
+  });
+
+  it('BOTH installers carry a flag-gated first-install stamp — divergence fails here', () => {
+    // The same false alarm was produced by two different installers and only one learned. This is
+    // what stops the third rediscovery.
+    for (const [name, file] of [['installer', SCRIPT], ['declaration-sync', SIBLING]] as const) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, `${name} lost its first_install flag`).toMatch(/first_install=1/);
+      expect(src, `${name} lost its flag-gated post-swap stamp`)
+        .toMatch(/first_install(\\)?" -eq 1 \]/);
+      expect(src, `${name} lost its paired note`).toMatch(/first install — \.bak stamped after the swap/);
+    }
   });
 });
