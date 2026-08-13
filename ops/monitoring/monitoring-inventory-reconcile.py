@@ -816,7 +816,28 @@ def sot_parity_streaks(prior_rows, current_verdict, now=None,
     """
     now = now or datetime.now(timezone.utc)
     prior = list(prior_rows or [])
-    seq = [r.get("verdict") for r in prior] + [current_verdict]
+
+    # ── COLLAPSE TO ONE ENTRY PER UTC DATE BEFORE DERIVING ANY STREAK ────────────────────────
+    # The criterion counts "30 consecutive DAILY runs", so a per-RUN streak is INFLATABLE: 30
+    # ad-hoc invocations in one afternoon would satisfy a 30-day criterion, and the instrument
+    # would be biasing precisely the quantity it exists to measure. Every verification run of
+    # this reconciler is such an invocation — including the one that shipped this code.
+    #
+    # Ties within a date resolve by DECLARED PRECEDENCE, never by row order: a load-bearing
+    # property must not be rented from the order rows happen to arrive in, so two runs on one
+    # date yield the same verdict whichever landed first. DRIFTED outranks COULD_NOT_COMPARE
+    # (a measured mismatch is worse than a failure to look); both outrank IN_SYNC, because a
+    # date carrying ANY non-IN_SYNC reading is not a clean date.
+    RANK = {"IN_SYNC": 0, "COULD_NOT_COMPARE": 1, "DRIFTED": 2}
+    by_date = {}
+    for r in prior + [{"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "verdict": current_verdict}]:
+        d = (r.get("at") or "")[:10]
+        v = r.get("verdict")
+        if not d or v not in RANK:
+            continue
+        if d not in by_date or RANK[v] > RANK[by_date[d]]:
+            by_date[d] = v
+    seq = [by_date[d] for d in sorted(by_date)]
 
     def trailing(match):
         n = 0
@@ -827,28 +848,28 @@ def sot_parity_streaks(prior_rows, current_verdict, now=None,
                 break
         return n
 
-    # Reset taxonomy over the window. A reset is any NON-IN_SYNC verdict; its reason is the
-    # verdict itself, which is exactly the distinction the taxonomy exists to preserve.
+    # Reset taxonomy over the window, derived from the SAME per-date collapse as the streak.
+    # "A reset" must mean one thing: counting resets per RUN while counting the streak per DAY
+    # would be two derivations of one quantity, and they drift the moment anyone re-runs the
+    # reconciler by hand. A reset is any non-IN_SYNC DATE; its reason is that date's verdict,
+    # which is exactly the distinction the taxonomy exists to preserve.
     cutoff = now - timedelta(days=window_days)
     resets = {"DRIFTED": 0, "COULD_NOT_COMPARE": 0}
     last_reset_at, last_reset_reason = None, None
-    for r in prior + [{"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "verdict": current_verdict}]:
-        v = r.get("verdict")
-        if v == "IN_SYNC" or v is None:
+    for d in sorted(by_date):
+        v = by_date[d]
+        if v == "IN_SYNC":
             continue
         last_reset_reason = v
-        last_reset_at = r.get("at")
-        stamp = _parse_stamp(r.get("at"))
+        last_reset_at = d
+        stamp = _parse_stamp(d + "T00:00:00Z")
         if stamp is None or stamp >= cutoff:
             resets[v] = resets.get(v, 0) + 1
 
     # Observable days: distinct UTC dates the instrument actually has a reading for. NOT elapsed
     # calendar days — a rate whose denominator counts days we never observed would understate the
     # reset frequency, and this number's only job is to make reachability honest.
-    days = {(r.get("at") or "")[:10] for r in prior}
-    days.add(now.strftime("%Y-%m-%d"))
-    days.discard("")
-    observable_days = len(days)
+    observable_days = len(by_date)
     total_resets = sum(resets.values())
 
     return {
@@ -2187,6 +2208,29 @@ def self_test():
            sc["last_reset_reason"], "COULD_NOT_COMPARE")
         ck("...counted separately in the taxonomy",
            (sc["resets_window"]["COULD_NOT_COMPARE"], sc["resets_window"]["DRIFTED"]), (1, 0))
+
+        # ── THE INSTRUMENT MUST NOT BIAS WHAT IT MEASURES ──
+        # The criterion counts DAILY runs, so a per-RUN streak would be inflatable by simply
+        # invoking the reconciler repeatedly — and every verification run, including the one
+        # that shipped this code, is such an invocation.
+        SAME_DAY = CLEAN + [mk("2026-08-13T06:57:00Z", "IN_SYNC"),
+                            mk("2026-08-13T09:12:00Z", "IN_SYNC"),
+                            mk("2026-08-13T11:40:00Z", "IN_SYNC")]
+        ck("ad-hoc same-day re-runs CANNOT inflate the streak (per-DATE, not per-run)",
+           sot_parity_streaks(SAME_DAY, "IN_SYNC", now=NOW)["in_sync"], 4)
+        ck("...and they cannot inflate the observable-day denominator either",
+           sot_parity_streaks(SAME_DAY, "IN_SYNC", now=NOW)["observable_days"], 4)
+        # A date carrying ANY non-IN_SYNC reading is not a clean date, whichever run landed first.
+        ck("a same-date DRIFTED beats an IN_SYNC by DECLARED precedence, not by row order",
+           (sot_parity_streaks(CLEAN + [mk("2026-08-13T06:57:00Z", "DRIFTED"),
+                                        mk("2026-08-13T09:00:00Z", "IN_SYNC")],
+                               "IN_SYNC", now=NOW)["in_sync"],
+            sot_parity_streaks(CLEAN + [mk("2026-08-13T06:57:00Z", "IN_SYNC"),
+                                        mk("2026-08-13T09:00:00Z", "DRIFTED")],
+                               "IN_SYNC", now=NOW)["in_sync"]), (0, 0))
+        ck("...and a same-day re-run cannot double-count a reset in the taxonomy",
+           sot_parity_streaks(CLEAN + [mk("2026-08-13T06:57:00Z", "DRIFTED")],
+                              "DRIFTED", now=NOW)["resets_window"]["DRIFTED"], 1)
 
         # The observed reset RATE — reachability as a LIVE metric, not a one-time calculation.
         MIXED = [mk("2026-08-10T06:57:00Z", "IN_SYNC"), mk("2026-08-11T06:57:00Z", "DRIFTED"),
