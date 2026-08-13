@@ -162,9 +162,26 @@ if [ ! -f "$SYSTEM_MAP_PATH" ]; then
 fi
 
 NOW=$(date +%s)
-# BSD stat (macOS) first; fallback to GNU stat (Linux CI). Per Plan Mode probe,
-# the workstation is macOS so BSD stat is the primary path.
-MAP_MTIME=$(stat -f %m "$SYSTEM_MAP_PATH" 2>/dev/null || stat -c %Y "$SYSTEM_MAP_PATH" 2>/dev/null || echo "0")
+# GNU first, then BSD — and the ORDER IS THE FIX, not a preference.
+#
+# The previous form tried `stat -f %m` first "because the workstation is macOS". On GNU coreutils
+# `-f` is NOT an unknown flag that cleanly fails through to the fallback — it is `--file-system`,
+# and the argument list is read as files to stat rather than as a BSD format string. Measured on a
+# live GNU box: the result reaching `MAP_MTIME` was NON-NUMERIC, so `$((NOW - MAP_MTIME))` was an
+# arithmetic error, and `set -e` turned that into an exit 1 with ZERO stdout — indistinguishable
+# from a BLOCK to any caller reading only the exit code. Measured 2026-08-13 on the Postgres lane:
+# EVERY BLOCK-expecting case died there, and four of them still reported PASS because their
+# harness read the code alone. (vitest.config.ts:93-98 named this platform difference correctly;
+# an earlier reading of this wave called that comment wrong because the `||` chain LOOKS portable.)
+#
+# `stat -c` is genuinely invalid on BSD, so this order fails through correctly in both directions.
+# The numeric guard then makes the class structurally impossible rather than merely fixed: a
+# non-numeric mtime can no longer reach the arithmetic, whatever a future stat does.
+MAP_MTIME=$(stat -c %Y "$SYSTEM_MAP_PATH" 2>/dev/null || stat -f %m "$SYSTEM_MAP_PATH" 2>/dev/null || echo "0")
+case "$MAP_MTIME" in
+  ''|*[!0-9]*) echo "[system-map gate] WARNING: unusable mtime for $SYSTEM_MAP_PATH ('$MAP_MTIME') — treating as epoch 0 (stale)." >&2
+               MAP_MTIME=0 ;;
+esac
 AGE=$((NOW - MAP_MTIME))
 
 if [ "$AGE" -le "$MAX_AGE_SEC" ]; then
