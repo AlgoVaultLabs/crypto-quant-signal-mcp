@@ -90,13 +90,12 @@ export default defineConfig({
       // git-hook block emitter (canonical runner is node:test; exclude from vitest so it
       // doesn't false-fail "No test suite found"). Same content-detection note as above.
       'tests/unit/hook-block.test.mjs',
-      // OPS-VITEST-MAIN-RED-FIX-W1: check-system-map.test.ts drives
-      // scripts/check_system_map.sh against throwaway temp git repos. It passes on
-      // macOS (local dev + the pre-push gate) but fails on ubuntu CI — a BSD-vs-GNU
-      // platform difference in the script's mtime/stat probe, unrelated to app code.
-      // Excluded from the CI vitest gate ONLY (still runs locally). TODO: make the
-      // script's mtime probe portable, then drop this exclusion.
-      ...(process.env.CI ? ['tests/unit/check-system-map.test.ts'] : []),
+      // (OPS-VITEST-MAIN-RED-FIX-W1's CI exclusion of check-system-map.test.ts is GONE.
+      // Its TODO stated its own condition — "make the script's mtime probe portable, then drop
+      // this exclusion" — and OPS-MAP-GATE-STAT-PORTABILITY-W1 did that. The diagnosis in that
+      // comment was CORRECT and was briefly retracted in error: GNU `stat -f` is --file-system,
+      // so the old `A || B` chain never fell through, poisoned MAP_MTIME with filesystem text and
+      // died in `$(( ))` under set -u. An exclusion is how a known bug survives; do not re-add it.)
     ],
   },
 });

@@ -92,10 +92,34 @@ function runGate(
     );
     return { exitCode: 0, stdout, stderr: '' };
   } catch (err) {
-    const e = err as { status?: number; stdout?: Buffer | string; stderr?: Buffer | string };
+    const e = err as {
+      status?: number | null; signal?: string | null; code?: string;
+      stdout?: Buffer | string; stderr?: Buffer | string; message?: string;
+    };
+    const out = e.stdout?.toString() ?? '';
+    // `e.status ?? 1` WOULD BE A FAIL-OPEN ENCODING — ported from
+    // check-system-map-stripping.test.ts, which learned it the expensive way. execFileSync throws
+    // with status=null/undefined when the process never ran or was killed, so collapsing that to 1
+    // makes "did not run" indistinguishable from "exited 1, i.e. BLOCKED" — and every case in this
+    // file that asserts exitCode 1 would then PASS against a process that never executed. That is
+    // exactly what hid the GNU stat bug: four ubuntu cases reported PASS while the gate was dying
+    // in its own mtime probe. One code, two meanings, in a harness.
+    // The two harnesses must not disagree about what a non-run means; a test asserts the shape.
+    if (e.status === null || e.status === undefined) {
+      throw new Error(
+        `gate did not produce an exit status (signal=${e.signal ?? 'none'}, code=${e.code ?? 'none'}): `
+        + `${e.message ?? ''}\nstdout: ${JSON.stringify(out)}\nstderr: ${JSON.stringify(e.stderr?.toString() ?? '')}`,
+      );
+    }
+    if (!out.trim()) {
+      throw new Error(
+        `gate exited ${e.status} with EMPTY stdout — no gate path does that.\n`
+        + `stderr: ${JSON.stringify(e.stderr?.toString() ?? '')}`,
+      );
+    }
     return {
-      exitCode: e.status ?? 1,
-      stdout: e.stdout?.toString() ?? '',
+      exitCode: e.status,
+      stdout: out,
       stderr: e.stderr?.toString() ?? '',
     };
   }

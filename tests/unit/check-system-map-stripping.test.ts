@@ -1,26 +1,29 @@
 /**
  * OPS-SYSTEM-MAP-GATE-COMMENT-STRIP-W1 — the gate must not match its own prose.
  *
- * WHY THIS IS A SEPARATE FILE FROM check-system-map.test.ts, and the correction that produced it.
- * `vitest.config.ts:93-99` excludes the whole of check-system-map.test.ts from CI, blaming "a
- * BSD-vs-GNU platform difference in the script's mtime/stat probe". Measured 2026-08-12, that
- * reason does not hold: check_system_map.sh's probe is ALREADY portable
- * (`stat -f %m … || stat -c %Y … || echo 0`), and the sibling harness sets mtime with Node's
- * `utimesSync`, which is platform-independent. Neither side carries the named defect — so the real
- * cause of the CI failure is unmeasured, and it cannot be measured from a branch because
- * deploy.yml runs `npm test` only on `push: branches: [main]`.
+ * WHY THIS IS A SEPARATE FILE FROM check-system-map.test.ts.
  *
- * Fixing the mtime logic is out of this wave's scope, so rather than churn the five legacy cases
- * on an unverified theory, the NEW pattern/stripping cases live here — outside the exclusion, so
- * they run in CI — and are built to depend on nothing environmental:
+ * ⚠️ THIS DOCBLOCK PREVIOUSLY CARRIED THREE FALSE CLAIMS, corrected here rather than deleted
+ * because each one caused a concrete wrong decision (OPS-MAP-GATE-STAT-PORTABILITY-W1):
  *
- *   · staleness is forced with SYSTEM_MAP_MAX_AGE_SEC=-1 (any age exceeds it), so no file mtime,
- *     no `utimesSync`, no clock, and no `stat` flavour is ever consulted;
- *   · `core.hooksPath=/dev/null` on the seed commit, so a developer's installed hooks cannot run
- *     inside the fixture repo.
+ *   1. "vitest.config.ts's stated reason does not hold — the probe is ALREADY portable." FALSE.
+ *      `stat -f %m … || stat -c %Y …` only LOOKS portable. On GNU coreutils `-f` is
+ *      `--file-system`: it errors on the format operand but SUCCEEDS on the file, printing
+ *      filesystem text to stdout and exiting 1 — so the `||` fallback ALSO runs and both outputs
+ *      land in one substitution. `$((NOW - MAP_MTIME))` then evaluated the bare word `File` as a
+ *      variable and `set -u` aborted: exit 1, EMPTY stdout. That comment was RIGHT; reading a
+ *      fallback chain is not measuring it.
+ *   2. "It cannot be measured from a branch — deploy.yml runs npm test only on push to main."
+ *      FALSE of the estate. `postgres-lane.yml` triggers on `branches: ['**']` and runs the suite
+ *      on ubuntu. It had already reported this failure on the branch push; the enumeration stopped
+ *      at the first workflow and the signal went unread, so a red reached main.
+ *   3. "SYSTEM_MAP_MAX_AGE_SEC=-1 means no stat flavour is ever consulted." FALSE — see the
+ *      corrected note at the env block below. The probe runs unconditionally.
  *
- * If this file does turn red on ubuntu, the honest move is to record the MEASURED error and add it
- * to the exclusion — not to claim CI coverage that was never observed.
+ * What was TRUE: splitting the pattern cases into a file the CI exclusion does not name made them
+ * run on ubuntu for the first time, where they immediately met the bug the exclusion had been
+ * hiding since it was filed. The split worked exactly as designed. The exclusion is now GONE
+ * (its TODO's own condition is satisfied), so both files guard the gate on both platforms.
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -71,8 +74,12 @@ function gate(dir: string, rel: string, content: string, env: Record<string, str
     env: {
       ...process.env,
       SYSTEM_MAP_PATH: path.join(dir, 'system-map.md'),
-      // Deterministic staleness: any age exceeds -1, so the gate always reaches its verdict
-      // without consulting a clock or a stat flavour.
+      // Deterministic staleness: any age exceeds -1, so the COMPARISON is decided without a clock.
+      // It does NOT avoid the stat probe — that runs unconditionally, before the comparison, which
+      // is precisely why every BLOCK-expecting case here died on ubuntu while the exit-0 cases
+      // passed. An earlier version of this comment claimed the probe was skipped; that false
+      // determinism claim sat next to the code it misdescribed and is how the bug was
+      // mis-diagnosed twice (OPS-MAP-GATE-STAT-PORTABILITY-W1).
       SYSTEM_MAP_MAX_AGE_SEC: '-1',
       ALGOVAULT_SKIP_MAP_CHECK: '',
       ...env,
@@ -208,6 +215,70 @@ describe('both escape hatches are countable', () => {
     const logs = [...src.matchAll(/([A-Za-z0-9_-]+\.log)/g)].map((m) => m[1]);
     expect([...new Set(logs)], 'a second log is a second thing to forget to read')
       .toEqual(['algovault-hook-skip.log']);
+  });
+});
+
+/**
+ * OPS-MAP-GATE-STAT-PORTABILITY-W1 — the mtime probe, on BOTH stat flavours.
+ *
+ * The other flavour is SIMULATED with a stub `stat` earlier on PATH, so neither case is a silent
+ * no-op on whichever platform happens to run the suite. That matters here specifically: this bug
+ * lived for months precisely because the only platform that exercised it was the one CI ran on,
+ * and the only platform developers ran was the one where it worked.
+ */
+describe('the mtime probe survives both stat flavours', () => {
+  /** Put a fake `stat` first on PATH that mimics the OTHER platform's behaviour. */
+  function withStubStat(dir: string, flavour: 'gnu' | 'bsd'): string {
+    const bin = path.join(dir, 'stubbin');
+    mkdirSync(bin, { recursive: true });
+    const body = flavour === 'gnu'
+      // GNU: -c works; -f is --file-system, so it prints filesystem text and exits 1 — the exact
+      // behaviour that poisoned the old chain.
+      ? '#!/bin/sh\ncase "$1" in\n  -c) shift; exec /usr/bin/env stat -f %m "$2" 2>/dev/null || exec /bin/stat -f %m "$2";;\n  -f) echo "  File: \\"$3\\""; echo "    ID: deadbeef Namelen: 255"; exit 1;;\nesac\nexit 2\n'
+      // BSD: -c is an illegal option (stderr, nothing on stdout); -f %m yields the mtime.
+      : '#!/bin/sh\ncase "$1" in\n  -c) echo "stat: illegal option -- c" >&2; exit 1;;\n  -f) shift; exec /usr/bin/stat -c %Y "$2";;\nesac\nexit 2\n';
+    writeFileSync(path.join(bin, 'stat'), body);
+    chmodSync(path.join(bin, 'stat'), 0o755);
+    return bin;
+  }
+
+  it('reaches a verdict with the OTHER flavour simulated — never exit 1 with empty stdout', () => {
+    const dir = repo();
+    const other = process.platform === 'darwin' ? 'gnu' : 'bsd';
+    const bin = withStubStat(dir, other);
+    // A real edge, so the gate must reach the BLOCK verdict rather than dying in the probe.
+    const r = gate(dir, 'src/real.ts', 'export const t = setInterval(f, 1);\n',
+      { PATH: `${bin}:${process.env.PATH}` });
+    // gate() itself throws on empty stdout, which IS the regression assertion: the old chain
+    // produced exit 1 with nothing on stdout under the simulated GNU stub.
+    expect(r.out, `no verdict reached with ${other} stat simulated`).toMatch(/system-map gate/);
+    expect([0, 1]).toContain(r.code);
+  });
+
+  it('a NON-INTEGER mtime BLOCKS with a named reason — never OK, never a silent 0', () => {
+    const dir = repo();
+    const bin = path.join(dir, 'badbin');
+    mkdirSync(bin, { recursive: true });
+    // Both forms "succeed" while printing garbage — the shape that must refuse, not assume.
+    writeFileSync(path.join(bin, 'stat'), '#!/bin/sh\necho "  File: nonsense"\nexit 0\n');
+    chmodSync(path.join(bin, 'stat'), 0o755);
+    const r = gate(dir, 'src/real.ts', 'export const t = setInterval(f, 1);\n',
+      { PATH: `${bin}:${process.env.PATH}` });
+    expect(r.code, 'an undeterminable mtime must REFUSE').toBe(1);
+    expect(r.out).toContain('could not read a numeric mtime');
+    expect(r.out, 'the refusal must name the reason, not masquerade as staleness')
+      .toContain('REFUSES rather than assuming');
+    expect(r.out, 'falling through to epoch 0 would block for the WRONG reason')
+      .not.toContain('STALE (max allowed');
+  });
+
+  it('detects the flavour ONCE and does not chain two stat forms', () => {
+    // The chain is the hazard, not the order: `A || B` presumes a failing command prints nothing,
+    // and GNU `stat -f` disproves that. Reordering only makes it happen to work today.
+    const src = readFileSync(GATE, 'utf8');
+    expect(src).toMatch(/if stat -c %Y \. >\/dev\/null 2>&1; then STAT_FLAVOUR=gnu/);
+    expect(src, 'a chained stat probe re-introduces the poisoning')
+      .not.toMatch(/stat -[cf] [^\n]*\|\|[^\n]*stat -[fc] /);
   });
 });
 

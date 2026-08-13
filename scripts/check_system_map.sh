@@ -174,13 +174,31 @@ NOW=$(date +%s)
 # harness read the code alone. (vitest.config.ts:93-98 named this platform difference correctly;
 # an earlier reading of this wave called that comment wrong because the `||` chain LOOKS portable.)
 #
-# `stat -c` is genuinely invalid on BSD, so this order fails through correctly in both directions.
-# The numeric guard then makes the class structurally impossible rather than merely fixed: a
-# non-numeric mtime can no longer reach the arithmetic, whatever a future stat does.
-MAP_MTIME=$(stat -c %Y "$SYSTEM_MAP_PATH" 2>/dev/null || stat -f %m "$SYSTEM_MAP_PATH" 2>/dev/null || echo "0")
+# SO THE CHAIN ITSELF IS THE HAZARD, not the flavour order. `A || B` presumes a failing command
+# prints nothing; GNU `stat -f` disproves that, and reordering only makes the same idiom happen to
+# work on today's two platforms — renting a load-bearing property from a tool's behaviour, which
+# this repo's build rules forbid outright. Detect the flavour ONCE, explicitly, and call only the
+# matching form. `stat -c` is genuinely invalid on BSD, so this probe is decisive in both
+# directions and nothing depends on what a failing stat happens to print.
+if stat -c %Y . >/dev/null 2>&1; then STAT_FLAVOUR=gnu; else STAT_FLAVOUR=bsd; fi
+map_mtime() {   # <path> -> epoch seconds on stdout, or nothing at all
+  if [ "$STAT_FLAVOUR" = gnu ]; then stat -c %Y "$1" 2>/dev/null
+  else                               stat -f %m "$1" 2>/dev/null; fi
+}
+MAP_MTIME=$(map_mtime "$SYSTEM_MAP_PATH" || true)
+
+# VALIDATE BEFORE ARITHMETIC, and BLOCK rather than assume. Falling through to 0 would make the map
+# look infinitely stale: it blocks, but for the wrong reason, and a wrong reason is how this bug
+# survived behind a CI exclusion for months. A gate that cannot determine freshness REFUSES and
+# says why — it never passes on an unreadable input, and it never invents a value.
 case "$MAP_MTIME" in
-  ''|*[!0-9]*) echo "[system-map gate] WARNING: unusable mtime for $SYSTEM_MAP_PATH ('$MAP_MTIME') — treating as epoch 0 (stale)." >&2
-               MAP_MTIME=0 ;;
+  ''|*[!0-9]*)
+    echo "[system-map gate] BLOCK: could not read a numeric mtime for $SYSTEM_MAP_PATH"
+    echo "  stat flavour detected: $STAT_FLAVOUR"
+    echo "  probe returned: '$(printf '%s' "$MAP_MTIME" | head -1)'"
+    echo "  Freshness is undeterminable, so this gate REFUSES rather than assuming stale or fresh."
+    echo "  Escape hatch:    ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (logged to the skip ledger)"
+    exit 1 ;;
 esac
 AGE=$((NOW - MAP_MTIME))
 
