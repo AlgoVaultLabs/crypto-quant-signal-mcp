@@ -99,7 +99,9 @@ const CSS = `
 /** Bar chart of the weekly series. Renders whatever is true — including a falling series. */
 function chart(weeks: CarryTrackerPublic['weeks']): string {
   if (weeks.length === 0) return '<p class="note">No weekly data available.</p>';
-  const W = 780; const H = 240; const padL = 52; const padB = 46; const padT = 16;
+  // padT clears the axis caption: ticks are right-aligned at x=padL-8 and the caption starts at
+  // x=4, so at padT=16 the top tick label ("7.2") and "bps / interval" occupied the same band.
+  const W = 780; const H = 250; const padL = 52; const padB = 46; const padT = 30;
   const vals = weeks.map((w) => toBps(w.lift_mean));
   const top = Math.max(...vals, 0) * 1.25 || 1;
   const bw = (W - padL - 12) / weeks.length;
@@ -123,7 +125,7 @@ function chart(weeks: CarryTrackerPublic['weeks']): string {
     <rect width="6" height="6" fill="#161b22"/><line x1="0" y1="0" x2="0" y2="6" stroke="#3fb950" stroke-width="3"/>
   </pattern></defs>
   ${ticks}${bars}
-  <text x="4" y="12" fill="#6e7681" font-size="11" font-family="inherit">bps / interval</text>
+  <text x="4" y="13" fill="#6e7681" font-size="11" font-family="inherit">bps / interval</text>
 </svg>`;
 }
 
