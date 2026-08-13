@@ -51,6 +51,31 @@ now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 say()  { printf '[worktree-create-hook] %s\n' "$*" >>"$LOG" 2>/dev/null
          printf '[worktree-create-hook] %s\n' "$*" >/dev/tty 2>/dev/null || true; }
 
+# ── mtime probe — the VALIDATED-FLAVOUR idiom, ported from scripts/check_system_map.sh:183-202
+# (OPS-MAP-GATE-STAT-PORTABILITY-W1). Same probe there and here; the port is deliberate and the
+# 2nd instance, so per the 3-example rule nothing is extracted yet — and when a 3rd appears the
+# extraction target is A TEST ASSERTING ALL COPIES AGREE, never a sourced runtime dependency.
+# Sourcing scripts/lib/hook-block.sh would violate its own design decision #1: a worktree
+# predating the lib fails to source it and breaks every operation there.
+#
+# WHY NOT a chained probe — one stat form falling back to the other on failure, in either
+# order. (The banned form is deliberately NOT quoted here: this file is itself the subject of
+# the ban-grep in AC2 and in tests/unit/check-system-map-stripping.test.ts, and a raw grep
+# cannot tell a MENTION from an OCCURRENCE. The same trap already fired once in that test.)
+# The chain presumes a FAILING stat prints nothing. GNU disproves that — `-f` is
+# `--file-system`, so `stat -f %m FILE`
+# errors on the `%m` operand, SUCCEEDS on the file, prints filesystem text to stdout, and exits
+# 1, so the fallback runs too and BOTH land in one substitution. Measured on coreutils 9.4:
+# the arithmetic then evaluates the bare word `File`, and under this script's `set -u` that is
+# `File: unbound variable` — a fatal abort at exit 127, BEFORE fail_open() can run, which in a
+# WorktreeCreate hook aborts worktree creation for the session. Detect the flavour ONCE,
+# explicitly, and call only the matching form.
+if stat -c %Y . >/dev/null 2>&1; then STAT_FLAVOUR=gnu; else STAT_FLAVOUR=bsd; fi
+hook_mtime() {   # <path> -> epoch seconds on stdout, or nothing at all
+  if [ "$STAT_FLAVOUR" = gnu ]; then stat -c %Y "$1" 2>/dev/null
+  else                               stat -f %m "$1" 2>/dev/null; fi
+}
+
 # ── 1. Read stdin ONCE, and record it verbatim ────────────────────────────────────────────
 # Q1: the hook is its own instrument. Unknown surfaces (Desktop, Cowork, isolation:worktree)
 # are answered by OBSERVATION rather than inference, so every fire records what fired it.
@@ -222,7 +247,18 @@ if git -C "$REPO_TOP" fetch origin --quiet >/dev/null 2>&1; then
 else
   FETCH_HEAD="$REPO_TOP/.git/FETCH_HEAD"
   AGE="unknown"
-  [ -f "$FETCH_HEAD" ] && AGE="$(( ( $(date +%s) - $(stat -f %m "$FETCH_HEAD" 2>/dev/null || echo 0) ) / 60 )) min"
+  # VALIDATE BEFORE ARITHMETIC — but DEGRADE, do not refuse. This is the deliberate divergence
+  # from check_system_map.sh, which BLOCKS on an unreadable mtime: that is a GATE, and a gate
+  # that cannot determine freshness must never pass. This is a human-readable age string in a
+  # hook, and refusing to create a worktree because a FETCH_HEAD mtime was unreadable would be
+  # a far worse outcome than a vague message. Same probe, opposite failure posture, because one
+  # is a gate and one is not. `unknown` is already the initialised value, so an unreadable
+  # probe simply leaves it alone and the session proceeds.
+  FETCH_HEAD_MTIME="$(hook_mtime "$FETCH_HEAD" || true)"
+  case "$FETCH_HEAD_MTIME" in
+    ''|*[!0-9]*) : ;;   # non-numeric or empty -> AGE stays "unknown", hook CONTINUES
+    *)           AGE="$(( ( $(date +%s) - FETCH_HEAD_MTIME ) / 60 )) min" ;;
+  esac
   say "fetch failed — proceeding on the CACHED ref (age: $AGE). Refusing to start a session offline is worse than a slightly stale base."
 fi
 BASE="$(git -C "$REPO_TOP" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
