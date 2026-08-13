@@ -801,6 +801,16 @@ def read_sot_parity_ledger(path=None, host=None, _open=None):
     return rows
 
 
+def is_adhoc_run():
+    """Is THIS invocation a hand-run rather than the scheduled daily reconcile?
+
+    Cron sets nothing, so the scheduled run is always authoritative. Only a human (or a wave's
+    verification step) sets this, and only to keep its own run out of a measurement it would
+    otherwise distort in either direction.
+    """
+    return os.environ.get("ALGOVAULT_SOT_PARITY_ADHOC", "0") == "1"
+
+
 def sot_parity_streaks(prior_rows, current_verdict, now=None,
                        target=SOT_PARITY_PROMOTION_TARGET_RUNS,
                        window_days=SOT_PARITY_TAXONOMY_WINDOW_DAYS):
@@ -828,9 +838,21 @@ def sot_parity_streaks(prior_rows, current_verdict, now=None,
     # date yield the same verdict whichever landed first. DRIFTED outranks COULD_NOT_COMPARE
     # (a measured mismatch is worse than a failure to look); both outrank IN_SYNC, because a
     # date carrying ANY non-IN_SYNC reading is not a clean date.
+    # AD-HOC RUNS ARE RECORDED BUT NEVER DERIVED FROM, and the bias they remove runs BOTH ways.
+    # The per-date collapse stops an ad-hoc run INFLATING the streak. It does not stop the
+    # opposite: an operator running this reconciler by hand minutes after merging an inventory
+    # change reads DRIFTED out of the ~65-min propagation window, which by the precedence above
+    # marks an otherwise-clean date dirty — and two such runs on consecutive dates would PAGE
+    # SOT_PARITY_SUSTAINED_DRIFT for a condition that never existed. A false page on a brand-new
+    # alert is how a guard gets muted in its first week. Cron sets nothing and is unaffected;
+    # ALGOVAULT_SOT_PARITY_ADHOC=1 marks the row, and a marked row stays in the ledger as
+    # forensics while contributing to no streak, no taxonomy and no denominator.
     RANK = {"IN_SYNC": 0, "COULD_NOT_COMPARE": 1, "DRIFTED": 2}
     by_date = {}
-    for r in prior + [{"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "verdict": current_verdict}]:
+    for r in prior + [{"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "verdict": current_verdict,
+                       "adhoc": is_adhoc_run()}]:
+        if r.get("adhoc"):
+            continue
         d = (r.get("at") or "")[:10]
         v = r.get("verdict")
         if not d or v not in RANK:
@@ -982,7 +1004,7 @@ def evaluate_sot_parity_streak(probed_rows, ledger_path=None, now=None, fire=Non
         log(render_sot_parity_streak(host, s))
 
         if s is not None:
-            append_sot_parity_observation({
+            entry = {
                 "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "host": host,
                 "verdict": verdict,
@@ -991,7 +1013,12 @@ def evaluate_sot_parity_streak(probed_rows, ledger_path=None, now=None, fire=Non
                 "streak": s["in_sync"],
                 # null when unbroken — the row records WHY a streak ended, not merely that it did.
                 "reset_reason": None if verdict == "IN_SYNC" else verdict,
-            }, ledger_path)
+            }
+            # Recorded, never derived from. Present only on hand-runs, so the scheduled daily
+            # row shape is unchanged and no reader has to special-case the common case.
+            if is_adhoc_run():
+                entry["adhoc"] = True
+            append_sot_parity_observation(entry, ledger_path)
 
         # Sustained-breach decision. Computed from the ledger-derived streak above; the counter
         # files are the mechanism, this derivation is the authority for the COUNT.
@@ -2231,6 +2258,23 @@ def self_test():
         ck("...and a same-day re-run cannot double-count a reset in the taxonomy",
            sot_parity_streaks(CLEAN + [mk("2026-08-13T06:57:00Z", "DRIFTED")],
                               "DRIFTED", now=NOW)["resets_window"]["DRIFTED"], 1)
+
+        # ...and the same protection in the OPPOSITE direction. A hand-run inside the ~65-min
+        # propagation window reads DRIFTED for a condition that never existed; two of those on
+        # consecutive dates would false-page a brand-new alert, which is how a guard gets muted
+        # in its first week. Cron sets nothing, so only a human can mark a row this way.
+        ADHOC_DIRTY = CLEAN + [dict(mk("2026-08-13T13:50:00Z", "DRIFTED"), adhoc=True)]
+        ck("an ad-hoc DRIFTED row cannot break a clean streak",
+           sot_parity_streaks(ADHOC_DIRTY, "IN_SYNC", now=NOW)["in_sync"], 4)
+        ck("...nor enter the reset taxonomy",
+           sot_parity_streaks(ADHOC_DIRTY, "IN_SYNC", now=NOW)["resets_window"]["DRIFTED"], 0)
+        ck("...nor the observable-day denominator",
+           sot_parity_streaks(ADHOC_DIRTY, "IN_SYNC", now=NOW)["observable_days"], 4)
+        ck("an ad-hoc IN_SYNC row cannot EXTEND a streak either — recorded, never derived from",
+           sot_parity_streaks(CLEAN + [dict(mk("2026-08-14T13:50:00Z", "IN_SYNC"), adhoc=True)],
+                              "IN_SYNC", now=NOW)["in_sync"], 4)
+        ck("cron sets nothing, so the scheduled run is authoritative by default",
+           is_adhoc_run(), False)
 
         # The observed reset RATE — reachability as a LIVE metric, not a one-time calculation.
         MIXED = [mk("2026-08-10T06:57:00Z", "IN_SYNC"), mk("2026-08-11T06:57:00Z", "DRIFTED"),
