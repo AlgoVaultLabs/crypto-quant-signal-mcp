@@ -1082,7 +1082,7 @@
       "schedule": null,
       "invoked_by": "operator (manual, from a developer checkout)",
       "install_state": "installed",
-      "sha256": "c014ac9e8040445d65a4c7698c9340eb51a433248a50861cc3c1f919ba9fdb7a",
+      "sha256": "434f77d7354d4e4ee5d50f7664af3a6e85f24aadce3a87a559b2d8eef14f527e",
       "owner_wave": "OPS-BOT-DEPLOY-PROVENANCE-W1",
       "notes": "SHA-pinned deploy primitive. Runs on the OPERATOR's machine, not on a host — hence installed_at is empty and host/host_path are n-a rather than invented; it is listed so the registry records the tool that governs deploys, and REGISTRY_PARITY has nothing to assert for it. Refuses any ref that is not an ancestor of origin/main, materializes git archive <sha>, swaps per manifest entry (never whole-directory — /opt/algovault-bot holds a 171M .venv the units execute), sets ownership at the destination including the .bak copy, and stamps DEPLOYED_SHA + DEPLOYED_MANIFEST.sha256. Generic: 7 substantive /opt services share the class it closes; rollout is OPS-HOST-DEPLOY-PROVENANCE-ROLLOUT-W{NEXT}."
     },

@@ -117,6 +117,19 @@ algovault.com {
     handle /api/merkle-batches {
         reverse_proxy localhost:3000
     }
+    # EDGE-CARRY-SCOREBOARD-W1 — the carry re-rank tracker, shipped DARK (noindex, no inbound
+    # links, absent from sitemap/llms.txt). BOTH blocks are required: the apex serves app routes
+    # from this explicit allowlist and everything else falls through to the static file_server
+    # below, so without them /carry-tracker 404s on algovault.com while working on
+    # api.algovault.com — the exact allowlist-gap class OPS-CADDY-ROUTE-PARITY-W1 exists for.
+    # The page's own live-refresh fetches /api/carry-tracker-public RELATIVELY, so the API block
+    # is load-bearing for the page, not merely for direct API callers.
+    handle /carry-tracker {
+        reverse_proxy localhost:3000
+    }
+    handle /api/carry-tracker-public {
+        reverse_proxy localhost:3000
+    }
     # OPS-CADDY-ROUTE-PARITY-W1 (2026-06-18): track-record-proxy.js hydrates the ERC-8004
     # agent-id badge via a RELATIVE fetch of /api/erc-8004-reputation; without this handle
     # it fell through to the static file_server below and 404'd on algovault.com (the span
