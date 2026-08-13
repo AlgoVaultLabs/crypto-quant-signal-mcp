@@ -1,0 +1,60 @@
+{
+  "wave": "EDGE-CARRY-SCOREBOARD-W1",
+  "endpoint": "/api/carry-tracker-public",
+  "snapshot_date": "2026-08-13",
+  "captured_at_utc": "2026-08-13",
+  "change_class": "NEW ENDPOINT — first snapshot; no prior contract to compare against",
+  "change_note": "Public-safe aggregates for the DARK /carry-tracker page. Serves the weekly paired lift of the HL carry re-ranker against the naive benchmark, live-forward since the 2026-07-21 flip. THE DEFINING PROPERTY: this endpoint computes NOTHING. Every figure is precomputed by src/research/carry/tracker_publish.py in the autonomous-optimizer repo, which imports the canonical readiness derivation (dedupe_paired + assess + stats.block_bootstrap_ci) verbatim and writes carry_tracker_weekly / carry_tracker_pooled; the endpoint is a SELECT plus the exported pure allow-list formatter formatCarryTrackerPublic() in src/lib/carry-tracker-public.ts. There is no in-process import path between Python and TypeScript, so precomputation is how 'the endpoint projects from the derivation, never re-derives it' is realised. A bootstrap, CI, mean or dedupe appearing in the TS module would fork the derivation and let this surface disagree with the flip bar about the same window. UNITS: lift_mean / ci_lb / ci_ub are PER-FUNDING-INTERVAL FRACTIONS (portfolio_net_carry_x2 = mean(|funding_rate|) - turnover cost, gate.realize_interval), rendered on the page in basis points and deliberately NOT annualised. DATA INTEGRITY: differences and interval counts only — portfolio_net_carry_x2 is a portfolio SCALAR and is INTERNAL, and no absolute value leaves here. The rows' window_start and computed_at columns are projected into `since` and `updated_at` rather than passed through; `since` therefore reports the PUBLISHER's stamped window (2026-07-21, the HL flip) and never readiness.LIVE_FORWARD_START (2026-07-05, the ranker go-live), which would misdate the entire claim by 16 days. The flip bar's own READY/WAIT status is deliberately NOT exposed: it is an internal gate token whose vocabulary reads as a recommendation.",
+  "source": "origin/main src/index.ts app.get('/api/carry-tracker-public') + src/lib/carry-tracker-public.ts formatCarryTrackerPublic(); captured from the live publisher output of 2026-08-13T08:20Z",
+  "allowed_keys": [
+    "pooled",
+    "scope",
+    "since",
+    "stale",
+    "updated_at",
+    "weeks"
+  ],
+  "weeks_value_keys": [
+    "iso_week",
+    "lift_mean",
+    "n",
+    "n_deviating",
+    "partial"
+  ],
+  "pooled_value_keys": [
+    "blocks",
+    "ci_lb",
+    "ci_ub",
+    "lift_mean",
+    "n",
+    "n_deviating"
+  ],
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "outcome_won",
+    "portfolio_net_carry",
+    "portfolio_net_carry_x2",
+    "net_carry",
+    "apr_at_pick",
+    "score",
+    "artifact_version",
+    "status",
+    "window_start",
+    "computed_at",
+    "reasons"
+  ],
+  "no_per_week_ci_note": "weeks[] carries NO ci_lb/ci_ub by design. block_bootstrap_ci resamples WHOLE ISO-week clusters, so a single week is one cluster and its interval is degenerate — a per-week band would be a confidence-shaped decoration with no sampling behind it. The CI belongs to the pooled object, which is what the pre-registered gate measures.",
+  "error_contract": "No error path. getCarryTrackerPublic() is fail-open by construction: a read error is caught, logged once, and returns an empty payload with weeks: [], pooled: null and stale: true, so the route always answers 200. The page then renders a LABELLED stale banner rather than a broken surface — a public trust page must not present a database blip as an outage of the thing it reports on.",
+  "cache_contract": {
+    "description": "5-minute in-process module cache plus Cache-Control: public, max-age=300. The underlying producer runs DAILY (01:43 UTC), so a 5-minute TTL is far tighter than the data's own cadence and exists to absorb page-refresh traffic, not to mask staleness.",
+    "ttl_seconds": 300,
+    "staleness_signal": "stale: true once the PRODUCER's computed_at is older than 26h (one full missed daily slot plus grace). Keyed on the producer's own stamp, never on render time."
+  },
+  "consumers": [
+    "src/lib/carry-tracker-page.ts — server-renders the page from the same getCarryTrackerPublic() call, then re-reads this endpoint client-side every 5 min so a tab left open cannot show yesterday's figures. The server render is the no-JS fallback.",
+    "Caddyfile apex — handle /api/carry-tracker-public (the page's live refresh fetches this path RELATIVELY, so the handle is load-bearing for the page, not only for direct API callers)"
+  ],
+  "drift_check_command": "curl -fsS https://algovault.com/api/carry-tracker-public | jq -e '(keys == [\"pooled\",\"scope\",\"since\",\"stale\",\"updated_at\",\"weeks\"]) and (.since == \"2026-07-21\") and (.scope == \"HL\") and ([.weeks[] | keys] | flatten | unique == [\"iso_week\",\"lift_mean\",\"n\",\"n_deviating\",\"partial\"]) and ((.pooled | keys) == [\"blocks\",\"ci_lb\",\"ci_ub\",\"lift_mean\",\"n\",\"n_deviating\"])' >/dev/null && ! curl -fsS https://algovault.com/api/carry-tracker-public | grep -qE 'portfolio_net_carry|outcome_(return_pct|price)|apr_at_pick|artifact_version'",
+  "dark_contract": "This endpoint and its page ship DARK: noindex, zero inbound links, and absent from landing/sitemap.xml, landing/llms.txt and landing/llms-full.txt. scripts/indexnow-ping.mjs submits ONLY the <loc> set parsed from sitemap.xml, so absence there also keeps the page out of IndexNow — verified by reading that producer, not assumed. Go-live is pre-registered on the W34 gate (weekly mean lift > 0 AND HL-pooled CI-lb over >= 5 ISO-week blocks > 0, re-checked ~2026-08-24) plus wording approval."
+}

@@ -214,6 +214,10 @@ function toolErrorContent(err: unknown): { content: { type: 'text'; text: string
 }
 import { renderSignupFlowDark, renderPlanCards, PLAN_CARDS_CSS } from './lib/signup-flow.js';
 import { renderContactPage, renderContactConfirmation, HONEYPOT_FIELD } from './lib/contact-page.js';
+// EDGE-CARRY-SCOREBOARD-W1 — DARK public surface (noindex, zero inbound links, absent from
+// sitemap.xml / llms.txt). Both read PRECOMPUTED aggregates; neither computes any statistic.
+import { getCarryTrackerPublic } from './lib/carry-tracker-public.js';
+import { getCarryTrackerPageHtml } from './lib/carry-tracker-page.js';
 import {
   accountPageHandler,
   accountPortalHandler,
@@ -2790,6 +2794,40 @@ async function startHttp() {
       res.json({ bands, generatedAt: new Date().toISOString() });
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch confidence bands' });
+    }
+  });
+
+  // ── EDGE-CARRY-SCOREBOARD-W1: carry re-rank tracker (DARK) ──
+  // Both routes are reachable only by direct URL this wave: no nav entry, no inbound link, and
+  // absent from sitemap.xml / llms.txt / llms-full.txt. They link live only when the
+  // pre-registered W34 gate clears and the wording is approved.
+  //
+  // NEITHER computes a statistic. Every figure is precomputed by the canonical readiness
+  // derivation in the autonomous-optimizer repo (`src/research/carry/tracker_publish.py`, which
+  // imports `dedupe_paired` + `assess` + `stats.block_bootstrap_ci` verbatim) and written to
+  // carry_tracker_weekly / carry_tracker_pooled. Adding a mean or a CI here would fork the
+  // derivation and let this page disagree with the flip bar about the same window.
+  //
+  // Caddy: the apex serves an explicit ALLOWLIST of `handle` blocks and falls through to a static
+  // file_server, so BOTH paths need their own handle block or they 404 on algovault.com while
+  // working on api.algovault.com.
+  app.get('/api/carry-tracker-public', async (_req, res) => {
+    // Fail-open by construction: getCarryTrackerPublic() never throws, returning an empty
+    // `stale: true` payload on a read error so the page renders its stale banner instead of a
+    // broken surface. A public trust page must not present a database blip as an outage of the
+    // thing it reports on.
+    const payload = await getCarryTrackerPublic();
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(payload);
+  });
+
+  app.get('/carry-tracker', async (_req, res) => {
+    try {
+      res.set('X-Robots-Tag', 'noindex');
+      res.send(await getCarryTrackerPageHtml());
+    } catch (err) {
+      console.warn('[carry-tracker] render failed:', err instanceof Error ? err.message : err);
+      res.status(500).send('Unavailable');
     }
   });
 

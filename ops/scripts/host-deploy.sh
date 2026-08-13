@@ -36,6 +36,14 @@ set -uo pipefail
 
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/algovault_deploy}
 REPO="" REF="origin/main" HOST="" DEST="" MANIFEST="" OWNER="" UNITS="" FORCE_UNMERGED=0 DRY_RUN=0
+# EDGE-CARRY-SCOREBOARD-W1: interpreter + module for the post-deploy import assertion. The
+# incumbent check below is inside the `pyproject.toml` dependency-sync branch and hardcodes
+# `import algovault_bot`, so a service that installs no package (algovault-carry runs off a
+# PYTHONPATH tree, not a pip install) got NO import post-condition at all — it could land files
+# and leave an unimportable tree behind a green deploy log, which is this script's own headline
+# failure mode with a different cause. Opt-in and empty by default, so the bot's invocation is
+# byte-for-byte unchanged.
+POST_CHECK_IMPORT="" POST_CHECK_PYTHON=""
 
 die() { echo "host-deploy: $*" >&2; exit 1; }
 say() { printf '[host-deploy] %s\n' "$*"; }
@@ -49,6 +57,8 @@ while [ $# -gt 0 ]; do
     --manifest) MANIFEST="$2"; shift 2;;
     --owner) OWNER="$2"; shift 2;;
     --units) UNITS="$2"; shift 2;;
+    --post-check-import) POST_CHECK_IMPORT="$2"; shift 2;;
+    --post-check-python) POST_CHECK_PYTHON="$2"; shift 2;;
     --force-unmerged) FORCE_UNMERGED=1; shift;;
     --dry-run) DRY_RUN=1; shift;;
     --self-test) shift; SELF_TEST=1;;
@@ -211,6 +221,21 @@ if echo "$mapfile_paths" | grep -qx 'pyproject.toml'; then
   ssh -i "$SSH_KEY" "$HOST" "cd '$DEST' && ./.venv/bin/python -c 'import algovault_bot' 2>&1 | tail -2" \
     && say "post-check: algovault_bot imports" \
     || die "post-check FAILED: algovault_bot does not import after deploy — investigate before trusting this deploy"
+fi
+
+# ── 5b. generic post-deploy import assertion (opt-in) ───────────────────────
+# Same post-condition as the bot's, lifted out of the pyproject branch so a service that
+# installs no package can still assert it. Runs with PYTHONPATH=$DEST because that is how a
+# non-installed tree is executed (algovault-carry: `PYTHONPATH=/opt/algovault-carry/pkg python
+# -m src.research.carry.hourly_scorer`). The interpreter is a flag rather than an assumption:
+# carry's venv lives BESIDE its deploy root, not inside it.
+if [ -n "$POST_CHECK_IMPORT" ]; then
+  PY="${POST_CHECK_PYTHON:-$DEST/.venv/bin/python}"
+  ssh -i "$SSH_KEY" "$HOST" "set -uo pipefail
+    [ -x '$PY' ] || { echo 'host-deploy: post-check interpreter $PY is not executable'; exit 1; }
+    cd '$DEST' && PYTHONPATH='$DEST' '$PY' -c 'import $POST_CHECK_IMPORT' 2>&1 | tail -3" \
+    && say "post-check: $POST_CHECK_IMPORT imports" \
+    || die "post-check FAILED: $POST_CHECK_IMPORT does not import after deploy — the tree is swapped in; investigate before trusting this deploy"
 fi
 
 # ── 6. L2: stamp WHAT is running, not just when ─────────────────────────────

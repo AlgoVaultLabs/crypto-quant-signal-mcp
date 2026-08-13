@@ -1,0 +1,82 @@
+# algovault-carry.manifest — EDGE-CARRY-SCOREBOARD-W1
+#
+# THE declared set of repo paths that constitute a deploy of the carry package to
+# /opt/algovault-carry/pkg on signal-1. Source repo: AlgoVaultLabs/autonomous-optimizer
+# (NOT this repo — ops/deploy/ is the ops home for host-placed services, same as
+# algovault-bot.manifest, whose source repo is algovault-bot).
+#
+# ── Why this file exists ────────────────────────────────────────────────────
+# Measured 2026-08-13: /opt/algovault-carry/pkg is NOT a git checkout
+# (`git rev-parse` → "not a repository"), carries no manifest and no SHA stamp. It is a
+# hand-placed tree of unknown provenance running four live crons — the hourly scorer (:07),
+# the paper tracker (03:47), the weekly retrain (Sun 04:37) and, from this wave, the public
+# tracker publisher (01:43). That is precisely the shape OPS-BOT-DEPLOY-PROVENANCE-W1 exists
+# to make impossible, and it blocked THIS wave: there was no sanctioned way to ship the
+# publisher, and rsyncing a working tree to a host is forbidden.
+#
+# ── How the deploy set was derived ──────────────────────────────────────────
+# From the IMPORT CLOSURE, not from what happens to be on the host. `src/research/carry`
+# reaches outside itself exactly three times:
+#   ..bdir.conventions (tier_of) · ..bdir.splits (Fold) · ..bdir.dataset (sha256_of)
+#   ...feedback.edge_stats (benjamini_hochberg)
+# The closure below was then diffed against the live host: 23 .py files on both sides,
+# ZERO orphans and ZERO additions. The set was already correct — it was simply undeclared.
+# Deploying the whole `src/feedback` package instead would ship 8 further modules
+# (edge_gate.py and friends) whose imports the carry venv does not carry.
+#
+# Format: one entry per line, `<verb> <path>  # reason`.
+#   deploy  — materialized from the commit and atomically swapped in
+#   ignore  — present on the host but deliberately NOT deployed
+#
+# NOTE: `pyproject.toml` is deliberately NOT a deploy path. host-deploy.sh gates its
+# dependency-sync + `import algovault_bot` post-condition on that entry, and both are
+# bot-specific; the carry venv is not an installed package but a PYTHONPATH tree
+# (`PYTHONPATH=/opt/algovault-carry/pkg python -m src.research.carry.<mod>`). The import
+# post-condition is preserved by passing `--post-check-import src.research.carry.tracker_publish`
+# instead, so this deploy still refuses to leave an unimportable tree behind.
+
+# ── deployed ────────────────────────────────────────────────────────────────
+deploy  src/__init__.py                    # package root on PYTHONPATH
+deploy  src/research/__init__.py           # ditto
+deploy  src/research/carry                 # THE package. Declared as a DIRECTORY on purpose:
+                                           # a hand-listed file set is the failure the bot
+                                           # manifest's own header records twice, and a new
+                                           # carry module missing from the list would simply
+                                           # never deploy — silently, with a green log.
+deploy  src/research/bdir/__init__.py      # import closure only — bdir's gate/model/run_killtest
+deploy  src/research/bdir/conventions.py   # are NOT imported by carry and are not shipped
+deploy  src/research/bdir/splits.py        #
+deploy  src/research/bdir/dataset.py       #
+deploy  src/feedback/__init__.py           # 15 bytes, """Package.""" — no transitive imports
+deploy  src/feedback/edge_stats.py         # benjamini_hochberg, imported by carry/gate.py
+
+# ── on the host, deliberately not deployed ──────────────────────────────────
+ignore  __pycache__                 # bytecode, regenerated on every fire. `ignore` matches
+                                    # inside deploy paths, so one entry covers all of them
+ignore  DEPLOYED_SHA                # provenance stamp written by host-deploy.sh
+ignore  DEPLOYED_AT                 # epoch stamp, ditto
+ignore  DEPLOYED_MANIFEST.sha256    # per-file lockfile written FROM THE COMMIT
+
+# ── outside --dest, therefore out of scope by construction ──────────────────
+# /opt/algovault-carry/.venv        — the interpreter the crons execute. It sits BESIDE pkg/,
+#                                     not inside it, so --dest=/opt/algovault-carry/pkg cannot
+#                                     reach it. (On algovault-bot the same directory IS inside
+#                                     the deploy root, which is why that manifest must name it.)
+# /opt/algovault-carry/artifact     — the SERVING model directory (v1..v6 + current.json),
+#                                     rewritten weekly by carry-retrain.sh. Note the repo also
+#                                     tracks src/research/carry/artifacts/carry-ranker-v1.* — a
+#                                     committed REFERENCE artifact that ships with the package
+#                                     directory above. It is inert: the scorer reads
+#                                     --artifact-dir, defaulting to /opt/algovault-carry/artifact,
+#                                     whose current.json points at v6. Never point --artifact-dir
+#                                     at pkg/src/research/carry/artifacts — it holds only v1 and
+#                                     no current.json, so load_artifact would silently fall back
+#                                     to a model six retrains stale.
+# /opt/algovault-carry/*.sh         — the three cron wrappers, host-authored, no repo ancestor.
+#                                     Wiring them to a repo is OPS-CARRY-CRON-WRAPPER-PROVENANCE-W{NEXT}.
+#
+# FOLLOW-UP, declared rather than discovered later: there is no daily parity canary for this
+# service. `ops/cron/bot-deploy-parity.sh` is hardcoded to the bot's dest/manifest, and
+# `checkout-parity.sh` only handles real git checkouts. This wave ships deploy-time provenance
+# (SHA stamp + per-file lockfile); the canary that verifies it daily is
+# OPS-CARRY-DEPLOY-PARITY-CANARY-W{NEXT}.
