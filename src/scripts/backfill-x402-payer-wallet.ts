@@ -189,16 +189,28 @@ async function main(): Promise<void> {
         // `dbQuery`, not `dbRun`, and that is DELIBERATE. `dbRun` is fire-and-forget on the PG
         // backend (returns void — nothing to await), and this is a one-shot script that exits as
         // soon as the loop ends, so a fire-and-forget write could be lost at process exit.
-        // `dbQuery` awaits the round-trip. The trade-off is that dbQuery routes through
-        // better-sqlite3's `.all()` on the SQLite backend, which REJECTS a non-returning statement
-        // ("This statement does not return data. Use run() instead") — acceptable only because
-        // this script is PG-ONLY by construction: it needs DATABASE_URL and BASE_RPC_URL against
-        // real prod rows. Recorded so the next reader does not "fix" this to dbRun and silently
-        // make the write droppable. _(Found 2026-08-05 REVENUE-METER-TRUTH-W4 Step 0B, when the
-        // new three-outcome test hit exactly that SQLite error using dbQuery for an UPDATE.)_
+        // `dbQuery` awaits the round-trip. _(Found 2026-08-05 REVENUE-METER-TRUTH-W4 Step 0B, when
+        // the three-outcome test hit the SQLite error below using dbQuery for an UPDATE.)_
+        //
+        // …AND THE TRADE-OFF THAT DECISION ACCEPTED IS NOT ACTUALLY FORCED. W4 read the choice as
+        // a binary — `dbQuery` (awaited, but better-sqlite3's `.all()` REJECTS a non-returning
+        // statement: "This statement does not return data. Use run() instead") vs `dbRun`
+        // (SQLite-clean, but droppable) — and accepted the rejection as the price of durability,
+        // on the grounds that this script is PG-ONLY by construction (it needs DATABASE_URL and
+        // BASE_RPC_URL against real prod rows).
+        //
+        // There is a third option that costs nothing: `RETURNING <col>`. It gives the statement
+        // result columns, so `.all()` is the CORRECT method on SQLite, and the write stays on the
+        // awaited, durable path. Identical syntax on both backends, identical semantics on PG.
+        // W4's warning still stands in full — do NOT "fix" this to `dbRun` — it simply no longer
+        // has to be paid for with a backend rejection.
+        //
+        // NOTE this does NOT make the write testable: the loop is not exported and needs a live
+        // Base RPC plus prod rows. The gain is that the trap is now structurally absent rather
+        // than merely documented. See skill `db-wrapper-update-delete-needs-returning-not-dbrun`.
         if (klass !== 'UNRESOLVABLE') {
           await dbQuery(
-            'UPDATE processed_x402_payments SET settlement_state = ? WHERE nonce = ? AND payer_wallet = ?',
+            'UPDATE processed_x402_payments SET settlement_state = ? WHERE nonce = ? AND payer_wallet = ? RETURNING nonce',
             [klass, row.nonce, row.payer_wallet ?? ''],
           );
         }
@@ -214,7 +226,10 @@ async function main(): Promise<void> {
     console.log(`  ${row.nonce.slice(0, 14)}… → ${wallet}${execute ? ' [UPDATED]' : ' [dry-run]'}`);
     if (execute) {
       // Idempotent: only fills a still-unattributed row (never overwrites a captured wallet).
-      await dbQuery(`UPDATE processed_x402_payments SET payer_wallet = ? WHERE nonce = ? AND ${UNATTRIBUTED_SQL}`, [wallet, row.nonce]);
+      // `RETURNING nonce` for the same reason as the settlement_state UPDATE above — see that
+      // comment: it keeps the write on the awaited `dbQuery` path AND makes the statement legal
+      // on the SQLite backend, instead of trading one for the other.
+      await dbQuery(`UPDATE processed_x402_payments SET payer_wallet = ? WHERE nonce = ? AND ${UNATTRIBUTED_SQL} RETURNING nonce`, [wallet, row.nonce]);
     }
     filled++;
   }
