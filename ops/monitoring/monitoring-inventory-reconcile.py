@@ -123,8 +123,50 @@ HOST_LABELS = {s.strip() for s in os.environ.get(
 ALERT_ID = "MONITORING_INVENTORY_DRIFT"
 RECOMMENDED_WAVE = "OPS-MONITORING-INVENTORY-RESTORE-W{NEXT}"
 AUDIT_DOC_REF = "audits/OPS-MONITORING-INVENTORY-PARITY-W1-endpoint-truth.md"
-CONSECUTIVE_TO_PAGE = 3
 PENDING_STALE_DAYS = 30
+
+# ── SOT_PARITY sustained-breach alerting (OPS-NUMERIC-PROBE-VALIDATION-W1 Part B) ─────────────
+# A DISTINCT alert id, not a reuse of ALERT_ID. send_telegram.sh cools down PER ALERT ID for 24h,
+# so riding MONITORING_INVENTORY_DRIFT would let an unrelated noisy HASH_DRIFT suppress this page.
+# Different meaning, different action, different cooldown.
+SOT_PARITY_ALERT_ID = "SOT_PARITY_SUSTAINED_DRIFT"
+# Template form, never a literal W<number> — send_telegram.sh resolves it at send time.
+SOT_PARITY_RECOMMENDED_WAVE = "OPS-MONITORING-SOT-PARITY-RESTORE-W{NEXT}"
+
+# ── THE ONE DECLARED THRESHOLD TABLE ─────────────────────────────────────────────────────────
+# Every sustained-breach threshold in this file lives HERE, keyed by (alert_id, condition).
+# Three thresholds scattered across three call sites is the next drift, and a threshold that
+# lives at its call site cannot be audited against the others.
+#
+# WHY THE SOT_PARITY NUMBERS DIFFER FROM EACH OTHER, and from the legacy 3:
+#   DRIFTED >= 2            One daily run can legitimately catch the propagation window
+#                           (sot-parity-config.json:14: ~5-min CDN TTL + up to the 60-min sync
+#                           interval). TWO consecutive DAILY runs cannot: >24h with ~24 hourly
+#                           sync opportunities in between is not lag, it is a sync not landing.
+#   COULD_NOT_COMPARE >= 3  A host that cannot verify its own declaration for 3 days is auditing
+#                           blind, and every other check here is downstream of that file. Slower
+#                           than DRIFTED because the transport is third-party and transient
+#                           failures are expected; faster than never, because silence is the
+#                           dark-guard shape this whole file exists to break.
+SUSTAINED_BREACH_THRESHOLDS = {
+    (ALERT_ID, None): 3,
+    (SOT_PARITY_ALERT_ID, "DRIFTED"): 2,
+    (SOT_PARITY_ALERT_ID, "COULD_NOT_COMPARE"): 3,
+}
+# DERIVED, never a second literal — build_body() and the legacy call site both read this name.
+CONSECUTIVE_TO_PAGE = SUSTAINED_BREACH_THRESHOLDS[(ALERT_ID, None)]
+
+# The streak ledger lives in /var/lib and NOT in MONITORING_DIR, for the same measured reason as
+# SYNC_HEARTBEAT_PATH below: a file under the monitoring dir with no inventory row is precisely
+# what ORPHAN exists to catch.
+SOT_PARITY_LEDGER_PATH = os.environ.get(
+    "SOT_PARITY_STREAK_LEDGER", "/var/lib/algovault-monitoring/sot-parity-streak.jsonl")
+# Window for the reset taxonomy and the observed reset RATE.
+SOT_PARITY_TAXONOMY_WINDOW_DAYS = 30
+# The promotion criterion this instrument measures the approach to. Read from the config at
+# runtime; this is only the fallback for an unreadable config, and it is NOT a policy knob —
+# changing the criterion is OPS-MONITORING-SOT-PARITY-PROMOTE-W{NEXT}'s job, not this file's.
+SOT_PARITY_PROMOTION_TARGET_RUNS = 30
 
 # ── SYNC_LIVENESS (OPS-MONITORING-INVENTORY-RESTORE-W1) ──────────────────────────────────────
 # DARK only notices if the crontab LINE disappears; it cannot tell a line that is present and
@@ -708,6 +750,247 @@ def check_sot_parity(inventory_path, config, labels=None, fetch=None, read_local
     return {"findings": [r], "probed": [r]}
 
 
+# ── SOT_PARITY reachability instrument (OPS-NUMERIC-PROBE-VALIDATION-W1 Part B) ──────────────
+#
+# sot-parity-config.json:12 sets promotion to `block` at 30 consecutive daily runs, on BOTH
+# hosts, IN_SYNC, with ZERO COULD_NOT_COMPARE — and NOTHING counted toward it. A promotion
+# criterion that ships with no instrument measuring its own approach cannot be evaluated; it can
+# only be waited on, which is how a guard sits in `report` forever and becomes decoration.
+#
+# This measures the approach. It changes no verdict, no threshold, and no enforcement mode.
+#
+# THE RESET TAXONOMY IS THE DELIVERABLE. DRIFTED and COULD_NOT_COMPARE reset the streak for
+# entirely different reasons and imply different fixes — one wants a PROPAGATING verdict, the
+# other wants fetch resilience. Collapsing them into "reset" throws away the whole finding.
+
+def read_sot_parity_ledger(path=None, host=None, _open=None):
+    """Prior ledger rows for THIS host, oldest first. Returns None when the ledger is UNREADABLE.
+
+    None and [] are deliberately distinct, and that distinction IS the fail-open contract:
+      []    the world has produced no rows yet (first run). A FACT, not a failure — the correct
+            verdict over it is a REPORTED zero, never silence.
+      None  we were handed a ledger and could not open or parse it. Indeterminate: it must
+            neither page nor suppress. A broken instrument is not evidence that the subject is
+            healthy, and it is not evidence that it is sick either.
+    Unparseable INDIVIDUAL lines are skipped rather than fatal — one torn append (a host killed
+    mid-write) must not blind the whole instrument.
+    """
+    p = Path(path or SOT_PARITY_LEDGER_PATH)
+    opener = _open or (lambda q: q.open("r", encoding="utf-8"))
+    if not p.exists():
+        return []
+    try:
+        with opener(p) as fh:
+            raw = fh.read().splitlines()
+    except Exception as exc:                                        # noqa: BLE001
+        log(f"SOT_PARITY_LEDGER_UNREADABLE: {exc} (path {p}) — neither paging nor suppressing")
+        return None
+    rows = []
+    for line in raw:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if host is None or row.get("host") == host:
+            rows.append(row)
+    return rows
+
+
+def sot_parity_streaks(prior_rows, current_verdict, now=None,
+                       target=SOT_PARITY_PROMOTION_TARGET_RUNS,
+                       window_days=SOT_PARITY_TAXONOMY_WINDOW_DAYS):
+    """THE ONE DERIVATION of every SOT_PARITY streak. Single-derivation rule, deliberately.
+
+    The per-run output line, the ledger row's `streak` field and the sustained-breach alert
+    decision ALL project from this one return value. None of them recomputes it. Two derivations
+    of one quantity drift to contradiction, and the bug then lives in whichever copy nobody is
+    watching.
+
+    `prior_rows` excludes the current run; `current_verdict` is folded in here so the caller
+    never has to decide whether "the streak" includes today.
+    """
+    now = now or datetime.now(timezone.utc)
+    prior = list(prior_rows or [])
+    seq = [r.get("verdict") for r in prior] + [current_verdict]
+
+    def trailing(match):
+        n = 0
+        for v in reversed(seq):
+            if v == match:
+                n += 1
+            else:
+                break
+        return n
+
+    # Reset taxonomy over the window. A reset is any NON-IN_SYNC verdict; its reason is the
+    # verdict itself, which is exactly the distinction the taxonomy exists to preserve.
+    cutoff = now - timedelta(days=window_days)
+    resets = {"DRIFTED": 0, "COULD_NOT_COMPARE": 0}
+    last_reset_at, last_reset_reason = None, None
+    for r in prior + [{"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "verdict": current_verdict}]:
+        v = r.get("verdict")
+        if v == "IN_SYNC" or v is None:
+            continue
+        last_reset_reason = v
+        last_reset_at = r.get("at")
+        stamp = _parse_stamp(r.get("at"))
+        if stamp is None or stamp >= cutoff:
+            resets[v] = resets.get(v, 0) + 1
+
+    # Observable days: distinct UTC dates the instrument actually has a reading for. NOT elapsed
+    # calendar days — a rate whose denominator counts days we never observed would understate the
+    # reset frequency, and this number's only job is to make reachability honest.
+    days = {(r.get("at") or "")[:10] for r in prior}
+    days.add(now.strftime("%Y-%m-%d"))
+    days.discard("")
+    observable_days = len(days)
+    total_resets = sum(resets.values())
+
+    return {
+        "in_sync": trailing("IN_SYNC"),
+        "drifted_consecutive": trailing("DRIFTED"),
+        "could_not_compare_consecutive": trailing("COULD_NOT_COMPARE"),
+        "last_reset_at": last_reset_at,
+        "last_reset_reason": last_reset_reason,
+        "resets_window": resets,
+        "window_days": window_days,
+        "observable_days": observable_days,
+        # Observed reset RATE — resets per observable day. Reachability stays a LIVE metric that
+        # keeps updating as the window grows, instead of a one-time calculation frozen in one
+        # status entry. A criterion needing `target` consecutive clean runs is only plausible if
+        # this rate is well below 1/target.
+        "reset_rate": (total_resets / observable_days) if observable_days else None,
+        "target": target,
+    }
+
+
+def render_sot_parity_streak(host, s):
+    """The B-R3 per-run line. EVERY run prints its streak — never silence.
+
+    A run that computed nothing must not look like a clean streak, so the indeterminate case
+    renders its own distinct line rather than a zero.
+    """
+    if s is None:
+        return (f"SOT_PARITY_STREAK {host} INDETERMINATE — ledger unreadable, streak not computed "
+                f"(this is NOT a clean streak, and it neither pages nor suppresses)")
+    resets = s["resets_window"]
+    rate = "n/a" if s["reset_rate"] is None else f"{s['reset_rate']:.2f}/day"
+    last = (f"{s['last_reset_at']} ({s['last_reset_reason']})"
+            if s["last_reset_at"] else "never")
+    return (f"SOT_PARITY_STREAK {host} {s['in_sync']}/{s['target']} · last reset {last} · "
+            f"resets_{s['window_days']}d: "
+            + " ".join(f"{k}={v}" for k, v in sorted(resets.items()))
+            + f" · observed reset rate {rate} over {s['observable_days']} observable day(s)")
+
+
+def build_sot_parity_body(host, condition, consecutive, s, row):
+    """Body for SOT_PARITY_SUSTAINED_DRIFT.
+
+    Carries the host, the consecutive count, the reset reason and BOTH sha prefixes. The Action
+    line is the TEMPLATE form — a literal W<number> is forbidden, because wave numbering moves and
+    a hardcoded one in a persisted artifact is wrong the moment it does. send_telegram.sh's
+    resolve_template() substitutes it at send time.
+    """
+    need = SUSTAINED_BREACH_THRESHOLDS[(SOT_PARITY_ALERT_ID, condition)]
+    why = ("a DRIFTED reading on two consecutive DAILY runs spans >24h with ~24 hourly sync "
+           "opportunities in between, so this is not propagation lag — the sync is not landing"
+           if condition == "DRIFTED" else
+           "a host that cannot verify its own declaration for three days is auditing blind, and "
+           "every other reconciler check is downstream of that file")
+    lines = [
+        f"🛑 {SOT_PARITY_ALERT_ID}",
+        f"Condition: {condition} on {consecutive} consecutive daily runs on {host} "
+        f"(threshold {need}) — {why}",
+        f"  host: {host}",
+        f"  consecutive {condition}: {consecutive}",
+        f"  reset reason: {s['last_reset_reason'] if s and s.get('last_reset_reason') else condition}",
+        f"  local sha256:  {(row.get('local_sha256') or '-')[:16]}",
+        f"  sot   sha256:  {(row.get('sot_sha256') or '-')[:16]}",
+        f"  detail: {row.get('detail', '-')}",
+    ]
+    if s:
+        lines.append(f"State: {render_sot_parity_streak(host, s)}")
+    lines += [
+        "Note: `enforcement` is still `report` — this alert READS the streak and changes no "
+        "verdict, no threshold and no enforcement mode.",
+        f"Action: dispatch {SOT_PARITY_RECOMMENDED_WAVE} via Cowork → Claude Code",
+        "Source log: /var/log/monitoring-inventory-reconcile.log",
+        f"Ledger: {SOT_PARITY_LEDGER_PATH}",
+    ]
+    return "\n".join(lines)
+
+
+def append_sot_parity_observation(row, path=None, _open=None):
+    """Append one row per reconciler run per host, so the criterion's approach is MEASURED.
+
+    Best-effort throughout: a ledger write must NEVER change the verdict — the same constraint
+    payment-decline-canary.py's append_observation() already states. An instrument that can break
+    its subject is worse than no instrument.
+    """
+    p = Path(path or SOT_PARITY_LEDGER_PATH)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        opener = _open or (lambda q: q.open("a", encoding="utf-8"))
+        with opener(p) as fh:
+            fh.write(json.dumps(row) + "\n")
+        return True
+    except Exception as exc:                                        # noqa: BLE001
+        log(f"SOT_PARITY_LEDGER_APPEND_FAILED (non-fatal, verdict unchanged): {exc}")
+        return False
+
+
+def evaluate_sot_parity_streak(probed_rows, ledger_path=None, now=None, fire=None):
+    """Ledger + per-run output + sustained-breach decision, for every host row this run probed.
+
+    Returns the list of (row, streaks) pairs it evaluated so the self-test can assert on them.
+    FAIL-OPEN: an unreadable ledger neither pages nor suppresses, and says so positively.
+    """
+    fire = fire if fire is not None else (lambda body: call_wrapper(body, SOT_PARITY_ALERT_ID))
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for row in probed_rows or []:
+        host = row.get("host", "unknown")
+        verdict = row.get("verdict")
+        prior = read_sot_parity_ledger(ledger_path, host=host)
+        s = None if prior is None else sot_parity_streaks(prior, verdict, now=now)
+        log(render_sot_parity_streak(host, s))
+
+        if s is not None:
+            append_sot_parity_observation({
+                "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "host": host,
+                "verdict": verdict,
+                "local_sha256": row.get("local_sha256"),
+                "sot_sha256": row.get("sot_sha256"),
+                "streak": s["in_sync"],
+                # null when unbroken — the row records WHY a streak ended, not merely that it did.
+                "reset_reason": None if verdict == "IN_SYNC" else verdict,
+            }, ledger_path)
+
+        # Sustained-breach decision. Computed from the ledger-derived streak above; the counter
+        # files are the mechanism, this derivation is the authority for the COUNT.
+        if s is not None and verdict in ("DRIFTED", "COULD_NOT_COMPARE"):
+            consecutive = (s["drifted_consecutive"] if verdict == "DRIFTED"
+                           else s["could_not_compare_consecutive"])
+            need = SUSTAINED_BREACH_THRESHOLDS[(SOT_PARITY_ALERT_ID, verdict)]
+            update_breach_streak(SOT_PARITY_ALERT_ID, True)
+            if consecutive >= need:
+                fire(build_sot_parity_body(host, verdict, consecutive, s, row))
+                log(f"ALERT_SENT {SOT_PARITY_ALERT_ID} host={host} {verdict} {consecutive}/{need}")
+            else:
+                log(f"SUSTAIN_PENDING: {SOT_PARITY_ALERT_ID} {host} {verdict} "
+                    f"{consecutive}/{need} — not paging yet")
+        elif s is not None:
+            update_breach_streak(SOT_PARITY_ALERT_ID, False)
+        out.append((row, s))
+    return out
+
+
 def check_doc_path_claims(claims, labels=None, exists=None):
     """docs -> host. Every host-path a prescriptive doc asserts is verified LOCALLY, on the host
     that owns it, by the daily run that is already there.
@@ -768,12 +1051,28 @@ def divergent_copy_findings(rows):
 
 # ─────────── alerting (all gates delegated to the wrapper — never re-implemented here) ───────────
 
-def breach_state_path():
-    return STATE_DIR / "monitoring-inventory-breach.count"
+def breach_state_path(alert_id=ALERT_ID):
+    """Per-alert consecutive-breach counter.
+
+    `MONITORING_INVENTORY_DRIFT` keeps its ORIGINAL filename. This is not cosmetic: the file is
+    live state on two hosts, and renaming it would silently reset a real breach streak to zero on
+    the next run — a guard quietly forgetting what it had already seen. Any OTHER alert id gets
+    the sibling's shape (`breach-streak-<id>.count`, website-drift-canary.py:195-199), so that a
+    3rd consumer makes extraction mechanical rather than a redesign.
+    """
+    if alert_id == ALERT_ID:
+        return STATE_DIR / "monitoring-inventory-breach.count"
+    return STATE_DIR / f"breach-streak-{alert_id}.count"
 
 
-def update_breach_streak(breached):
-    p = breach_state_path()
+def update_breach_streak(alert_id, breached):
+    """Advance/reset the consecutive-breach streak for `alert_id`; return the new streak.
+
+    Signature mirrors website-drift-canary.py's `update_breach_streak(alert_id, breached) -> int`
+    EXACTLY — 2nd keyed implementation, so nothing is extracted yet (3-example rule), but the two
+    shapes are now identical and a 3rd instance is a lift, not a redesign.
+    """
+    p = breach_state_path(alert_id)
     if not breached:
         try:
             p.unlink(missing_ok=True)
@@ -791,7 +1090,7 @@ def update_breach_streak(breached):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(str(streak))
     except OSError as exc:
-        log(f"BREACH_STATE_WRITE_FAILED: {exc}")
+        log(f"BREACH_STATE_WRITE_FAILED: {alert_id} {exc}")
     return streak
 
 
@@ -959,12 +1258,19 @@ def build_body(findings, streak):
     return "\n".join(lines)
 
 
-def call_wrapper(body):
+def call_wrapper(body, alert_id=ALERT_ID):
+    """Severity, cooldown, DRY_RUN and fail-open are the WRAPPER's job — never re-implemented here.
+
+    `alert_id` is a parameter because send_telegram.sh cools down PER ALERT ID: a second alert
+    with a different meaning and a different action needs its own cooldown, or an unrelated noisy
+    one suppresses it. CRITICAL_PERSISTENT is the only severity the wrapper fires on
+    (send_telegram.sh:102) — anything else is dropped as SUPPRESSED_SEVERITY.
+    """
     try:
-        subprocess.run([WRAPPER, ALERT_ID, "CRITICAL_PERSISTENT", "-"],
+        subprocess.run([WRAPPER, alert_id, "CRITICAL_PERSISTENT", "-"],
                        input=body, text=True, timeout=20, check=False)
     except Exception as exc:
-        log(f"FAILED_WRAPPER_CALL: {exc}")
+        log(f"FAILED_WRAPPER_CALL: {alert_id} {exc}")
 
 
 # ─────────── POSTURE_DRIFT (OPS-HOST-EXPOSURE-POSTURE-W1) ───────────
@@ -1323,7 +1629,7 @@ def main(check_mode=False):
         log(f"INVENTORY_LOAD_FAILED: {exc} (resolved path: {INVENTORY_PATH}) — the reconciler is "
             f"DARK; exit 0 (fail-open) but escalating")
         if not check_mode:
-            streak = update_breach_streak(True)
+            streak = update_breach_streak(ALERT_ID, True)
             log(f"BREACH_STREAK {streak}/{CONSECUTIVE_TO_PAGE} (cause: INVENTORY_LOAD_FAILED)")
             if streak >= CONSECUTIVE_TO_PAGE:
                 call_wrapper(
@@ -1423,6 +1729,11 @@ def main(check_mode=False):
             log(f"SOT_PARITY {row['host']} {row['verdict']} "
                 f"local={row.get('local_sha256', '-')[:16]} sot={row.get('sot_sha256', '-')[:16]} "
                 f"mode={(sot_cfg or {}).get('enforcement', 'report')} — {row['detail']}")
+        # The reachability instrument (OPS-NUMERIC-PROBE-VALIDATION-W1 Part B). Appends this run's
+        # row, prints the streak + reset taxonomy + observed reset rate, and pages ONLY on a
+        # SUSTAINED breach. It reads the streak; it changes no verdict and no enforcement mode —
+        # `drifted` above is already computed and is deliberately not touched here.
+        evaluate_sot_parity_streak(sot_parity_result.get("probed", []))
         # POSITIVE per-run liveness accounting: the measured staleness, the DERIVED bound and the
         # schedule it came from, on EVERY run and in every verdict. Printing only on STALE would
         # make silence the pass signal — the exact shape this check exists to break, and the one
@@ -1451,7 +1762,7 @@ def main(check_mode=False):
                 log(f"CF_CHECK_SKIPPED {k}: {json.dumps(sk)} — fail-open, NOT a pass")
         if backups is None:
             log("NO_BACKUP: SKIPPED — backup listing unavailable (fail-open, not a pass)")
-        streak = update_breach_streak(drifted)
+        streak = update_breach_streak(ALERT_ID, drifted)
         log(f"BREACH_STREAK {streak}/{CONSECUTIVE_TO_PAGE}")
         if drifted and streak >= CONSECUTIVE_TO_PAGE:
             call_wrapper(build_body(f, streak))
@@ -1816,6 +2127,202 @@ def self_test():
     ck("'report' does not promote", promotes({"enforcement": "report"}), False)
     ck("a typo'd mode fails SAFE (stays report-only)", promotes({"enforcement": "blocking"}), False)
     ck("an absent config fails SAFE (stays report-only)", promotes(None), False)
+
+    # ── SOT_PARITY reachability instrument (OPS-NUMERIC-PROBE-VALIDATION-W1 Part B) ──
+    #
+    # Ledger rows are real files in a TEMP dir, not a stubbed reader: the hermetic-self-test law
+    # says a suite is structurally blind to exactly what its own seam replaces, and the ledger's
+    # read/parse/append path is the whole mechanism here. STATE_DIR is repointed for the same
+    # reason — the counter files are asserted as FILES, not as a mocked return value.
+    import tempfile as _tempfile
+    import shutil as _shutil
+    _tmp = Path(_tempfile.mkdtemp(prefix="sot-parity-selftest-"))
+    _saved_state_dir = globals()["STATE_DIR"]
+    _n = [0]
+
+    def mk(at, v):
+        return {"at": at, "host": "h", "verdict": v}
+
+    def led(rows):
+        _n[0] += 1
+        p = _tmp / f"ledger-{_n[0]}.jsonl"
+        p.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        return p
+
+    def ck_safe(name, fn, want):
+        """AN ASSERTION THAT RAISES IS NOT AN ASSERTION.
+
+        Every check below whose subject can throw — a ledger append, an evaluate call, an index
+        into a result list, a read of a file the code under test was supposed to write — goes
+        through here. MEASURED while writing this suite: deliberately making
+        append_sot_parity_observation() raise aborted the whole run with a NotADirectoryError
+        traceback and printed NO `SELF_TEST` verdict line at all, silently converting "proven
+        able to fail" into "crashes". A broken subject must report FAIL, with the exception
+        named, so a verdict is always present.
+        """
+        try:
+            got = fn()
+        except Exception as exc:                                    # noqa: BLE001
+            got = f"RAISED {type(exc).__name__}: {exc}"
+        ck(name, got, want)
+
+    NOW = datetime(2026, 8, 13, 6, 57, 0, tzinfo=timezone.utc)
+    CLEAN = [mk("2026-08-10T06:57:00Z", "IN_SYNC"), mk("2026-08-11T06:57:00Z", "IN_SYNC"),
+             mk("2026-08-12T06:57:00Z", "IN_SYNC")]
+    try:
+        globals()["STATE_DIR"] = _tmp / "alert-state"
+
+        # ── the derivation: one function, three streaks, two reset reasons kept DISTINCT ──
+        ck("streak increments on IN_SYNC", sot_parity_streaks(CLEAN, "IN_SYNC", now=NOW)["in_sync"], 4)
+
+        sd = sot_parity_streaks(CLEAN, "DRIFTED", now=NOW)
+        ck("DRIFTED resets the IN_SYNC streak to 0", sd["in_sync"], 0)
+        ck("...recording DRIFTED as the reset reason", sd["last_reset_reason"], "DRIFTED")
+        ck("...counted under its OWN reason, never a bare 'reset'",
+           (sd["resets_window"]["DRIFTED"], sd["resets_window"]["COULD_NOT_COMPARE"]), (1, 0))
+
+        sc = sot_parity_streaks(CLEAN, "COULD_NOT_COMPARE", now=NOW)
+        ck("COULD_NOT_COMPARE also resets the streak to 0", sc["in_sync"], 0)
+        ck("...with its own reason — the two imply DIFFERENT fixes and must not collapse",
+           sc["last_reset_reason"], "COULD_NOT_COMPARE")
+        ck("...counted separately in the taxonomy",
+           (sc["resets_window"]["COULD_NOT_COMPARE"], sc["resets_window"]["DRIFTED"]), (1, 0))
+
+        # The observed reset RATE — reachability as a LIVE metric, not a one-time calculation.
+        MIXED = [mk("2026-08-10T06:57:00Z", "IN_SYNC"), mk("2026-08-11T06:57:00Z", "DRIFTED"),
+                 mk("2026-08-12T06:57:00Z", "IN_SYNC")]
+        sm = sot_parity_streaks(MIXED, "DRIFTED", now=NOW)
+        ck("reset rate = resets / OBSERVABLE days (not elapsed days)",
+           (sm["observable_days"], round(sm["reset_rate"], 4)), (4, 0.5))
+
+        # ── B-R3 the per-run line: count + taxonomy + rate, every run, never silence ──
+        line = render_sot_parity_streak("signal-1", sot_parity_streaks(CLEAN, "IN_SYNC", now=NOW))
+        ck("B-R3: the line carries the streak against its target", "4/30" in line, True)
+        ck("B-R3: ...and names BOTH reset reasons separately",
+           ("DRIFTED=" in line and "COULD_NOT_COMPARE=" in line), True)
+        ck("B-R3: ...and the observed reset rate", "/day" in line, True)
+
+        # ── AC15: one DRIFTED run is propagation lag; two consecutive is a sync not landing ──
+        ROW_D = {"host": "h", "verdict": "DRIFTED", "local_sha256": "a" * 64,
+                 "sot_sha256": "b" * 64, "detail": "not the committed one"}
+        fired = []
+        cap = lambda b: fired.append(b)                              # noqa: E731 — fixture seam
+        fired.clear()
+        evaluate_sot_parity_streak([ROW_D], ledger_path=led([mk("2026-08-12T06:57:00Z", "IN_SYNC")]),
+                                   now=NOW, fire=cap)
+        ck("AC15: ONE DRIFTED daily run does NOT page (it can be the propagation window)",
+           len(fired), 0)
+        fired.clear()
+        evaluate_sot_parity_streak([ROW_D], ledger_path=led([mk("2026-08-11T06:57:00Z", "IN_SYNC"),
+                                                             mk("2026-08-12T06:57:00Z", "DRIFTED")]),
+                                   now=NOW, fire=cap)
+        ck("AC15: TWO consecutive DRIFTED runs DO page", len(fired), 1)
+
+        # ── AC16: transient fetch failures are expected; three days blind is not ──
+        ROW_C = {"host": "h", "verdict": "COULD_NOT_COMPARE", "local_sha256": "a" * 64,
+                 "detail": "SoT unreachable"}
+        for n, want in ((1, 0), (2, 0), (3, 1)):
+            prior = [mk(f"2026-08-{9 + i:02d}T06:57:00Z", "COULD_NOT_COMPARE") for i in range(n - 1)]
+            fired.clear()
+            evaluate_sot_parity_streak([ROW_C], ledger_path=led(prior), now=NOW, fire=cap)
+            ck(f"AC16: {n} consecutive COULD_NOT_COMPARE -> {'PAGES' if want else 'does NOT page'}",
+               len(fired), want)
+
+        # ── AC20 / AC10 fail-open: an unreadable ledger must not page AND must not suppress ──
+        # A directory at the ledger path is a REAL unreadable ledger — no new seam invented for it.
+        dirled = _tmp / "a-directory.jsonl"
+        dirled.mkdir()
+        fired.clear()
+        res = []
+        ck_safe("AC20: evaluating against an unreadable ledger does not RAISE",
+                lambda: bool(res.extend(evaluate_sot_parity_streak(
+                    [ROW_D], ledger_path=dirled, now=NOW, fire=cap)) or True), True)
+        ck("AC20: an unreadable ledger does NOT page", len(fired), 0)
+        ck_safe("AC20: ...and does NOT suppress — no streak is computed at all",
+                lambda: res[0][1], None)
+        ck_safe("AC10: ...and the verdict the reconciler reports is UNTOUCHED by ledger failure",
+                lambda: res[0][0]["verdict"], "DRIFTED")
+        blind = render_sot_parity_streak("h", None)
+        ck("AC20: the indeterminate line says so positively", "INDETERMINATE" in blind, True)
+        ck("AC20: a run that computed NOTHING must not read as a clean streak",
+           ("0/30" in blind or "/30" in blind), False)
+
+        # An unwritable ledger: parent is an existing FILE, so mkdir(parents=True) genuinely fails.
+        blocker = _tmp / "blocker"
+        blocker.write_text("x", encoding="utf-8")
+        ck_safe("AC10: an unwritable ledger append fails SOFT (False, never raises)",
+                lambda: append_sot_parity_observation({"at": "x"},
+                                                      path=blocker / "sub" / "led.jsonl"), False)
+
+        # ── AC19: the RENDERED BODY, not just the action verdict ──
+        body = build_sot_parity_body("signal-1", "DRIFTED", 2,
+                                     sot_parity_streaks([mk("2026-08-12T06:57:00Z", "DRIFTED")],
+                                                        "DRIFTED", now=NOW), ROW_D)
+        ck("AC19: body carries the host", "signal-1" in body, True)
+        ck("AC19: body carries the consecutive count", "consecutive DRIFTED: 2" in body, True)
+        ck("AC19: body carries the reset reason", "reset reason: DRIFTED" in body, True)
+        ck("AC19: body carries BOTH sha prefixes", ("a" * 16 in body and "b" * 16 in body), True)
+        ck("AC19: body carries the TEMPLATED wave", SOT_PARITY_RECOMMENDED_WAVE in body, True)
+        # A literal W<number> in a PERSISTED artifact is wrong the moment wave numbering moves.
+        ck("AC19: body contains NO literal W<number>", len(re.findall(r"W[0-9]+", body)), 0)
+        ck("AC19: body states the measure-only constraint so the operator is not misled",
+           "changes no verdict" in body, True)
+
+        # ── AC17 + Q1.1: distinct ids, and the LEGACY counter is byte-for-byte unchanged ──
+        ck("AC17: the SOT_PARITY alert id is DISTINCT from the inventory drift id",
+           SOT_PARITY_ALERT_ID != ALERT_ID, True)
+        ck("AC17: ...so the wrapper's per-alert-id 24h cooldown cannot cross-suppress them",
+           breach_state_path(SOT_PARITY_ALERT_ID) != breach_state_path(ALERT_ID), True)
+        ck("Q1.1: the legacy alert id keeps its ORIGINAL state filename",
+           breach_state_path(ALERT_ID).name, "monitoring-inventory-breach.count")
+        ck("Q1.1: ...and it is still the DEFAULT argument, so today's call is unchanged",
+           breach_state_path().name, "monitoring-inventory-breach.count")
+        ck("Q1.1: a keyed id gets the sibling's shape, never the legacy name",
+           breach_state_path(SOT_PARITY_ALERT_ID).name,
+           f"breach-streak-{SOT_PARITY_ALERT_ID}.count")
+
+        # ...and the SEMANTICS end-to-end on the real file. Renaming this file on a live host
+        # would silently reset a real breach streak to zero — a guard quietly forgetting what it
+        # had already seen — so the filename is asserted, not asserted-in-prose.
+        globals()["STATE_DIR"] = _tmp / "legacy-state"
+        legacy = (_tmp / "legacy-state" / "monitoring-inventory-breach.count")
+        ck_safe("Q1.1: legacy streak advances 0->1->2 on consecutive breaches",
+                lambda: [update_breach_streak(ALERT_ID, True),
+                         update_breach_streak(ALERT_ID, True)], [1, 2])
+        ck_safe("Q1.1: ...writing exactly the legacy file", lambda: legacy.read_text().strip(), "2")
+        ck_safe("Q1.1: a non-breach CLEARS it — identical to pre-change semantics",
+                lambda: (update_breach_streak(ALERT_ID, False), legacy.exists()), (0, False))
+        # THE DRIFT CATCHER: if breach_state_path ever resolved a keyed id to the legacy path,
+        # the two streaks would share one counter and this assertion fails.
+        ck_safe("Q1.1: the keyed streak is INDEPENDENT of the legacy counter",
+                lambda: (update_breach_streak(SOT_PARITY_ALERT_ID, True), legacy.exists()),
+                (1, False))
+
+        # ── the threshold table is the ONE authority ──
+        ck("Q1.2: CONSECUTIVE_TO_PAGE is DERIVED from the table, not a second literal",
+           CONSECUTIVE_TO_PAGE, SUSTAINED_BREACH_THRESHOLDS[(ALERT_ID, None)])
+        ck("Q1.2: every sustained-breach threshold lives in the table",
+           sorted(SUSTAINED_BREACH_THRESHOLDS.values()), [2, 3, 3])
+
+        # ── the ledger ROW shape B-R2 declares ──
+        rowled = led([])
+        evaluate_sot_parity_streak([ROW_D], ledger_path=rowled, now=NOW, fire=cap)
+        written = [json.loads(x) for x in rowled.read_text().splitlines() if x.strip()]
+        ck("B-R2: one row appended per run per host", len(written), 1)
+        ck_safe("B-R2: the row carries every declared field",
+                lambda: sorted(written[0]),
+                ["at", "host", "local_sha256", "reset_reason", "sot_sha256", "streak", "verdict"])
+        ck_safe("B-R2: reset_reason names the verdict that broke the streak",
+                lambda: written[0]["reset_reason"], "DRIFTED")
+        insync_led = led([])
+        evaluate_sot_parity_streak([{"host": "h", "verdict": "IN_SYNC", "local_sha256": "a" * 64,
+                                     "sot_sha256": "a" * 64, "detail": "ok"}],
+                                   ledger_path=insync_led, now=NOW, fire=cap)
+        ck_safe("B-R2: reset_reason is null when the streak is UNBROKEN",
+                lambda: json.loads(insync_led.read_text().strip())["reset_reason"], None)
+    finally:
+        globals()["STATE_DIR"] = _saved_state_dir
+        _shutil.rmtree(_tmp, ignore_errors=True)
 
     # ── 11. off-:00 boundary predicate + the SCHEDULE_DRIFT BODY (OPS-MONITORING-SCHEDULE-SOT-W1)
     #
