@@ -24,18 +24,15 @@ export function getCandleBasis(): CandleBasis {
   return process.env.CANDLE_BASIS === 'closed' ? 'closed' : 'live';
 }
 
-/**
- * `CANDLE_BASIS_SHADOW_ENABLED` — whether to compute the closed-basis scores alongside
- * the live ones and persist the divergence. Default ON: the shadow window is the entire
- * deliverable of this wave, so it must not require an env var to exist to start working.
+/*
+ * `isCandleBasisShadowEnabled()` and its `CANDLE_BASIS_SHADOW_ENABLED` env var were removed
+ * by OPS-CANDLE-BASIS-SHADOW-DECOM-W1 along with the shadow they gated. It was an OFF-switch
+ * defaulting ON, which is why the write was live while the var was set nowhere — measured at
+ * decom: 0 occurrences in the host `.env`, 0 in `docker-compose.yml`, UNSET in the container.
+ * There was therefore no env residue to strip on the host.
  *
- * OFF-switch rather than default-deny, deliberately and in the opposite direction to
- * `getCandleBasis`: this flag cannot change the emitted verdict, it only governs extra
- * measurement work. The risk it manages is COST (it doubles the indicator pipeline, and
- * `scan_trade_calls` fans out across many assets), not correctness — so '0' or 'false'
- * turns it off and everything else leaves it on.
+ * `getCandleBasis()` above is a DIFFERENT flag and is deliberately untouched. It is
+ * default-DENY, it selects the basis that produces the EMITTED verdict, and
+ * `CANDLE_BASIS=closed` is the live production setting SIGNAL-CLOSEDBAR-FLIP-W1 shipped.
+ * Do not merge the two, and do not restore the deleted one by symmetry with it.
  */
-export function isCandleBasisShadowEnabled(): boolean {
-  const raw = process.env.CANDLE_BASIS_SHADOW_ENABLED;
-  return raw !== '0' && raw !== 'false';
-}

@@ -25,18 +25,9 @@ vi.mock('../../src/lib/performance-db.js', () => ({
   dbQuery: vi.fn().mockResolvedValue([]),
   dbExec: vi.fn().mockResolvedValue(undefined),
 }));
-// The shadow store is mocked so the ROW is observable: AC5/6/7 are claims about which
-// rows get written, and asserting on a swallowing fire-and-forget writer any other way
-// would be asserting on absence.
-vi.mock('../../src/lib/candle-basis-shadow.js', () => ({
-  recordCandleBasisShadow: vi.fn().mockResolvedValue(true),
-  _resetCandleBasisShadowEnsure: vi.fn(),
-}));
-
 import { getTradeSignal, computeIndicatorScores } from '../../src/tools/get-trade-call.js';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
-import { recordCandleBasisShadow } from '../../src/lib/candle-basis-shadow.js';
-import { getCandleBasis, isCandleBasisShadowEnabled } from '../../src/lib/candle-basis-flag.js';
+import { getCandleBasis } from '../../src/lib/candle-basis-flag.js';
 import { splitCandleWindow } from '../../src/lib/candle-window.js';
 import { resetLicenseCache, _resetCallTrackersForTest } from '../../src/lib/license.js';
 import { _setSnapshotForTest, _clearCache, _setScorerOverride } from '../../src/lib/cross-asset-grid.js';
@@ -83,7 +74,6 @@ const makeAdapter = (candles: Candle[]): ExchangeAdapter => ({
   getCurrentPrice: vi.fn().mockResolvedValue(2994),
 });
 
-const rowOf = (i = 0) => vi.mocked(recordCandleBasisShadow).mock.calls[i][0];
 
 describe('CH2 — closed-bar basis', () => {
   beforeEach(() => {
@@ -98,7 +88,6 @@ describe('CH2 — closed-bar basis', () => {
     _resetCallTrackersForTest();
     process.env.CQS_API_KEY = 'test-key';
     delete process.env.CANDLE_BASIS;
-    delete process.env.CANDLE_BASIS_SHADOW_ENABLED;
     _clearCache();
     _setScorerOverride(null);
     _setSnapshotForTest([]);
@@ -109,7 +98,6 @@ describe('CH2 — closed-bar basis', () => {
     _clearCache();
     _setScorerOverride(null);
     delete process.env.CANDLE_BASIS;
-    delete process.env.CANDLE_BASIS_SHADOW_ENABLED;
   });
 
   // ── AC4 — the flag itself ────────────────────────────────────────────────
@@ -132,16 +120,6 @@ describe('CH2 — closed-bar basis', () => {
       expect(getCandleBasis()).toBe('closed');
     });
 
-    it('CANDLE_BASIS_SHADOW_ENABLED defaults ON and is turned off only by 0/false', () => {
-      delete process.env.CANDLE_BASIS_SHADOW_ENABLED;
-      expect(isCandleBasisShadowEnabled()).toBe(true);
-      process.env.CANDLE_BASIS_SHADOW_ENABLED = '0';
-      expect(isCandleBasisShadowEnabled()).toBe(false);
-      process.env.CANDLE_BASIS_SHADOW_ENABLED = 'false';
-      expect(isCandleBasisShadowEnabled()).toBe(false);
-      process.env.CANDLE_BASIS_SHADOW_ENABLED = 'yes';
-      expect(isCandleBasisShadowEnabled()).toBe(true);
-    });
   });
 
   // ── AC2 — the property the whole wave exists to create ───────────────────
@@ -190,7 +168,11 @@ describe('CH2 — closed-bar basis', () => {
 
   // ── AC9 — REQUIRED_CANDLES boundary under both bases ─────────────────────
   describe('AC9 — REQUIRED_CANDLES boundary at 30 and 31', () => {
-    it('30 candles: live basis emits, closed basis has only 29 and cannot', async () => {
+    // OPS-CANDLE-BASIS-SHADOW-DECOM-W1 dropped the shadow-ROW assertions these cases carried.
+    // What survives is the window arithmetic and the LIVE emission, which is what the boundary
+    // was really about; the closed basis's own behaviour at the boundary is pinned by
+    // candle-basis-regime-wiring.test.ts "the guard follows the basis".
+    it('30 candles: the live basis emits, and the closed window is one short', async () => {
       const candles = makeCandles(30);
       const w = splitCandleWindow(candles, BAR_MS, NOW);
       expect(candles.length).toBe(30); // live: meets the bar
@@ -198,127 +180,48 @@ describe('CH2 — closed-bar basis', () => {
 
       vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
       const result = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-
-      // The live path is UNAFFECTED by the shadow branch throwing.
       expect(result.call).toBeDefined();
-      expect(recordCandleBasisShadow).toHaveBeenCalledTimes(1);
-      const row = rowOf();
-      expect(row.callClosed).toBeNull();
-      expect(row.errorClass).toBe('InsufficientCandlesError');
-      expect(row.nTotal).toBe(30);
-      expect(row.nClosed).toBe(29);
     });
 
-    it('31 candles: both bases derive', async () => {
+    it('31 candles: both bases have enough bars to derive', async () => {
       const candles = makeCandles(31);
       expect(splitCandleWindow(candles, BAR_MS, NOW).closed.length).toBe(30);
 
       vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
       const result = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-
       expect(result.call).toBeDefined();
-      const row = rowOf();
-      expect(row.callClosed).not.toBeNull();
-      expect(row.errorClass).toBeNull();
-      expect(row.nClosed).toBe(30);
-      expect(row.nTotal).toBe(31);
-    });
-  });
 
-  // ── AC6 — a throwing shadow branch never reaches the live path ───────────
-  describe('AC6 — closed-basis derivation throwing leaves the live response unaltered', () => {
-    it('emits the same envelope as with the shadow disabled, and records the error', async () => {
-      const candles = makeCandles(30); // forces the closed branch to throw
-
-      process.env.CANDLE_BASIS_SHADOW_ENABLED = '0';
-      vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
-      const withoutShadow = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-      expect(recordCandleBasisShadow).not.toHaveBeenCalled();
-
-      vi.clearAllMocks();
-      // R-A: both invocations charge now, so the meter must be reset or the two envelopes
-      // differ by `_algovault.quota.used` alone — see the note in AC5.
+      process.env.CANDLE_BASIS = 'closed';
       _resetCallTrackersForTest();
-      delete process.env.CANDLE_BASIS_SHADOW_ENABLED; // shadow ON ⇒ the branch runs and throws
       vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
-      const withShadow = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-
-      expect(withShadow).toEqual(withoutShadow);
-      expect(rowOf().errorClass).toBe('InsufficientCandlesError');
-      expect(rowOf().callClosed).toBeNull();
-    });
-  });
-
-  // ── AC5 — the off-switch really switches work off ────────────────────────
-  describe('AC5 — CANDLE_BASIS_SHADOW_ENABLED=0 does no second derivation and writes no row', () => {
-    it('writes no shadow row and leaves the response unchanged', async () => {
-      const candles = makeCandles(100);
-
-      vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
-      const on = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-      expect(recordCandleBasisShadow).toHaveBeenCalledTimes(1);
-
-      vi.clearAllMocks();
-      // PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A): both invocations are HOLDs, and a HOLD now
-      // CHARGES — so without this the second call's `_algovault.quota.used` is 2 against the
-      // first's 1 and the envelopes differ for a reason that has nothing to do with the shadow.
-      // Reset the meter rather than excluding the quota block: comparing the WHOLE envelope is
-      // the point of the assertion.
-      _resetCallTrackersForTest();
-      process.env.CANDLE_BASIS_SHADOW_ENABLED = '0';
-      vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
-      const off = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-
-      expect(recordCandleBasisShadow).not.toHaveBeenCalled();
-      expect(off).toEqual(on); // the emitted verdict never depended on the shadow
-    });
-  });
-
-  // ── AC7 — internal callers are excluded ──────────────────────────────────
-  describe('AC7 — a row is written for real callers and never for internal ones', () => {
-    it('writes for a non-internal call', async () => {
-      vi.mocked(getAdapter).mockReturnValue(makeAdapter(makeCandles(100)));
-      await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
-      expect(recordCandleBasisShadow).toHaveBeenCalledTimes(1);
-
-      const row = rowOf();
-      expect(row.coin).toBe('BTC');
-      expect(row.timeframe).toBe('1h');
-      expect(row.callLive).toBeDefined();
-      // Non-vacuity: the component scores really are captured, live vs closed, and they
-      // diverge — a row of nulls would satisfy a shape-only assertion.
-      expect(row.volScoreLive).toBe(-70);
-      expect(row.volScoreClosed).toBe(50);
-      expect(row.nTotal).toBe(100);
-      expect(row.nClosed).toBe(99);
-      expect(row.elapsedFraction).toBeCloseTo(0.1, 5);
-    });
-
-    it('writes nothing for an internal (grid-refresh) call', async () => {
-      vi.mocked(getAdapter).mockReturnValue(makeAdapter(makeCandles(100)));
-      await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE', internal: true });
-      expect(recordCandleBasisShadow).not.toHaveBeenCalled();
+      const closed = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
+      expect(closed.call).toBeDefined();
     });
   });
 
   // ── The venue-omits-the-partial-bar case ─────────────────────────────────
   describe('venue omits the in-progress bar', () => {
-    it('records a NULL elapsed_fraction and never drops a genuinely-closed newest bar', async () => {
+    // The shadow-row half of this case (a NULL elapsed_fraction column) went with the shadow.
+    // The splitCandleWindow property it also asserted is the durable one and is kept: a venue
+    // that returns only closed bars must not have its newest genuinely-closed bar dropped.
+    it('never drops a genuinely-closed newest bar, and both bases then agree', async () => {
       // Every bar closed: shift the series back one full interval.
       const candles = makeCandles(100).map((c) => ({ ...c, time: c.time - BAR_MS }));
       const w = splitCandleWindow(candles, BAR_MS, NOW);
       expect(w.partial).toBeNull();
       expect(w.closed.length).toBe(100);
 
+      // Both bases see the SAME window, so the emitted verdict must be identical.
       vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
-      await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
+      const live = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
 
-      const row = rowOf();
-      expect(row.elapsedFraction).toBeNull();
-      expect(row.nClosed).toBe(100);
-      expect(row.nTotal).toBe(100);
-      // Both bases see the same window, so the scores cannot diverge.
-      expect(row.volScoreLive).toBe(row.volScoreClosed);
+      process.env.CANDLE_BASIS = 'closed';
+      _resetCallTrackersForTest();
+      vi.mocked(getAdapter).mockReturnValue(makeAdapter(candles));
+      const closed = await getTradeSignal({ coin: 'BTC', timeframe: '1h', exchange: 'BINANCE' });
+
+      expect(closed.call).toBe(live.call);
+      expect(closed.confidence).toBe(live.confidence);
     });
   });
 });

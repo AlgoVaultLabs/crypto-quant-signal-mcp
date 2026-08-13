@@ -43,8 +43,7 @@ import { getR4Thresholds } from '../lib/r4-relax-flag.js';
 import { recordOiScoreShadow } from '../lib/oiscore-shadow.js';
 import { getOiScoreSource } from '../lib/oiscore-source-flag.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
-import { getCandleBasis, isCandleBasisShadowEnabled } from '../lib/candle-basis-flag.js';
-import { recordCandleBasisShadow } from '../lib/candle-basis-shadow.js';
+import { getCandleBasis } from '../lib/candle-basis-flag.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -571,7 +570,6 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   //    that guarantees ascending order (splitCandleWindow's documented precondition). ──
   //    Named `candleWindow`, never `window`, which would shadow the DOM global.
   const candleBasis = getCandleBasis();
-  const candleShadowEnabled = isCandleBasisShadowEnabled();
   const candleWindow = splitCandleWindow(candles, intervalMs, Date.now());
 
   // The window that gates EMISSION. `CANDLE_BASIS` unset ⇒ 'live' ⇒ this is `candles`
@@ -665,12 +663,14 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   };
   const liveBasisScores = computeIndicatorScores({ candles, ...indicatorInputs });
 
-  //    The closed pass is SHADOW work, so it is skipped entirely unless the shadow is on
-  //    or the closed basis is actually selected: `scan_trade_calls` / `/scan` fan this
-  //    function out across many assets, and this doubles the indicator pipeline.
+  //    The closed pass runs ONLY when the closed basis is actually selected. It used to
+  //    also run for the shadow (`candleShadowEnabled || …`); OPS-CANDLE-BASIS-SHADOW-DECOM-W1
+  //    removed the shadow, so the disjunct went with it. This derivation is NOT shadow work
+  //    and must never be deleted alongside one: under `CANDLE_BASIS=closed` — the live
+  //    production setting since SIGNAL-CLOSEDBAR-FLIP-W1 — `closedBasisScores` IS the
+  //    emitted verdict, selected 25 lines below.
   let closedBasisScores: IndicatorScores | null = null;
-  let closedBasisErrorClass: string | null = null;
-  if (candleShadowEnabled || candleBasis === 'closed') {
+  if (candleBasis === 'closed') {
     try {
       //  Dropping the in-progress bar reduces the count by ONE, so an asset sitting at
       //  exactly REQUIRED_CANDLES legitimately fails here. That must never reach the live
@@ -687,8 +687,18 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
         });
       }
       closedBasisScores = computeIndicatorScores({ candles: candleWindow.closed, ...indicatorInputs });
-    } catch (e) {
-      closedBasisErrorClass = e instanceof Error ? e.constructor.name : 'Error';
+    } catch {
+      //  Swallowed deliberately: `closedBasisScores` stays null and `emittedScores` below
+      //  falls back to the live basis. The error CLASS used to be captured here for the
+      //  shadow row's `error_class` column; with the shadow gone it had no reader, and a
+      //  write-only variable is the residue OPS-CANDLE-BASIS-SHADOW-DECOM-W1 exists to remove.
+      //
+      //  Precise scope, because the obvious reading is wrong: the InsufficientCandles branch
+      //  just above is UNREACHABLE under `CANDLE_BASIS=closed`, since the REQUIRED_CANDLES
+      //  guard higher up reads `emittedCandles` — which IS the closed window — and throws
+      //  first. It stays as a belt-and-braces isolation of the derivation; what this catch
+      //  actually still absorbs is a genuine `computeIndicatorScores` fault.
+      //  Pinned by candle-basis-regime-wiring.test.ts "the guard follows the basis".
     }
   }
 
@@ -792,41 +802,14 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     }).catch(() => {});
   }
 
-  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH2: candle-basis divergence log. Same contract as the
-  //    oiScore shadow above — fire-and-forget, try/catch-isolated, real (non-internal)
-  //    signals only, since internal scan cells never mature into Phase-E outcomes and
-  //    would swamp the denominator. INTERNAL data class: never leaves the database. ──
-  if (!input.internal && (candleShadowEnabled || candleBasis === 'closed')) {
-    // The live-basis verdict. Under the default basis the emitted `priceVerdict` already
-    // IS it, so the hot path does not derive it twice; only the (flip-wave) closed basis
-    // pays for a second derivation.
-    const liveBasisVerdict = candleBasis === 'closed'
-      ? deriveVerdict(liveBasisScores, gatesFor(liveBasisScores))
-      : priceVerdict;
-    const closedBasisVerdict = closedBasisScores
-      ? deriveVerdict(closedBasisScores, gatesFor(closedBasisScores))
-      : null;
-
-    void recordCandleBasisShadow({
-      coin,
-      exchange,
-      timeframe,
-      callLive: liveBasisVerdict.signal,
-      callClosed: closedBasisVerdict?.signal ?? null,
-      errorClass: closedBasisVerdict ? null : (closedBasisErrorClass ?? 'UnknownError'),
-      confLive: liveBasisVerdict.confidence,
-      confClosed: closedBasisVerdict?.confidence ?? null,
-      rawLive: liveBasisVerdict.rawScore,
-      rawClosed: closedBasisVerdict?.rawScore ?? null,
-      volScoreLive: liveBasisScores.volumeScore,
-      volScoreClosed: closedBasisScores?.volumeScore ?? null,
-      rsiScoreLive: liveBasisScores.rsiScore,
-      rsiScoreClosed: closedBasisScores?.rsiScore ?? null,
-      elapsedFraction: candleWindow.elapsedFraction,
-      nClosed: candleWindow.closed.length,
-      nTotal: candles.length,
-    }).catch(() => {});
-  }
+  // OPS-CANDLE-BASIS-SHADOW-DECOM-W1 removed the SIGNAL-CLOSEDBAR-SHADOW-W1 CH2 candle-basis
+  // divergence log that sat here. The candle-basis shadow TABLE had become write-only: both
+  // readers were retired by OPS-RECALIBRATE-HARNESS-RETIRE-W1 and the closed-bar arc is deferred, so
+  // it was a producer with no consumer accruing ~425K rows/day (5.42M rows / 1398 MB at
+  // removal). The block derived `liveBasisVerdict` + `closedBasisVerdict` PURELY to populate
+  // that row — neither fed the response — so it went whole. The closed-basis SCORES
+  // derivation above is a different thing and stays: it is the emitted verdict.
+  // A compact signed-raw histogram is archived in the private vault.
 
   // OPS-TRADE-CALL-CLUSTER-W1 CH5 (2026-05-28) — OPS-TRADE-CALL-CALIBRATION-AUDIT-W1
   // R3 confidence-bucket logger RETIRED. Code-side strip lands today; Hetzner-side

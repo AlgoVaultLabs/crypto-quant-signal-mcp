@@ -9,8 +9,7 @@ import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions
 import { fetchTradFiFundingByVenue, normalizeTo8h, computeTradFiFundingSentiment, buildFundingByVenue } from '../lib/tradfi-funding.js';
 import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
-import { getCandleBasis, isCandleBasisShadowEnabled } from '../lib/candle-basis-flag.js';
-import { recordCandleBasisShadow } from '../lib/candle-basis-shadow.js';
+import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
 import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
@@ -278,7 +277,6 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   //    `intervalMs` is the SAME value used for `startTime` above — one interval per
   //    call, so the fetch window and the bar split can never disagree.
   const candleBasis = getCandleBasis();
-  const candleShadowEnabled = isCandleBasisShadowEnabled();
   const candleWindow = splitCandleWindow(candles, intervalMs, Date.now());
   //    CANDLE_BASIS unset ⇒ 'live' ⇒ this IS `candles` ⇒ byte-identical to pre-wave.
   const emittedCandles = candleBasis === 'closed' ? candleWindow.closed : candles;
@@ -320,11 +318,14 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   //    selection cannot do that by accident. (Same shape as CH2.)
   const liveBasisIndicators = computeRegimeIndicators(candles);
 
-  //    The closed pass is SHADOW work, so it is skipped unless the shadow is on or the
-  //    closed basis is actually selected — it doubles the indicator pipeline.
+  //    The closed pass runs ONLY when the closed basis is actually selected. It used to also
+  //    run for the shadow (`candleShadowEnabled || …`); OPS-CANDLE-BASIS-SHADOW-DECOM-W1
+  //    removed the shadow, so the disjunct went with it. This derivation is NOT shadow work
+  //    and must never be deleted alongside one: under `CANDLE_BASIS=closed` — the live
+  //    production setting since SIGNAL-CLOSEDBAR-FLIP-W1 — `closedBasisIndicators` IS the
+  //    emitted regime, selected immediately below.
   let closedBasisIndicators: RegimeIndicators | null = null;
-  let closedBasisErrorClass: string | null = null;
-  if (candleShadowEnabled || candleBasis === 'closed') {
+  if (candleBasis === 'closed') {
     try {
       //  Dropping the in-progress bar reduces the count by ONE, so an asset sitting at
       //  exactly REQUIRED_CANDLES legitimately fails here. That must never reach the
@@ -341,8 +342,18 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
         });
       }
       closedBasisIndicators = computeRegimeIndicators(candleWindow.closed);
-    } catch (e) {
-      closedBasisErrorClass = e instanceof Error ? e.constructor.name : 'Error';
+    } catch {
+      //  Swallowed deliberately: `closedBasisIndicators` stays null and `emittedIndicators`
+      //  below falls back to the live basis. The error CLASS used to be captured here for the
+      //  shadow row's `error_class` column; with the shadow gone it had no reader, and a
+      //  write-only variable is the residue OPS-CANDLE-BASIS-SHADOW-DECOM-W1 exists to remove.
+      //
+      //  Precise scope, because the obvious reading is wrong: the InsufficientCandles branch
+      //  just above is UNREACHABLE under `CANDLE_BASIS=closed`, since the REQUIRED_CANDLES
+      //  guard higher up reads `emittedCandles` — which IS the closed window — and throws
+      //  first. It stays as a belt-and-braces isolation of the derivation; what this catch
+      //  actually still absorbs is a genuine `computeRegimeIndicators` fault.
+      //  Pinned by candle-basis-regime-wiring.test.ts "the guard follows the basis".
     }
   }
 
@@ -438,39 +449,13 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     suggestion += ' Underlying market closed — candles reflect capped synthetic pricing; treat regime as provisional until reopen.';
   }
 
-  // ── SIGNAL-CLOSEDBAR-SHADOW-W1 CH3: persist the basis divergence. Fire-and-forget and
-  //    doubly isolated (the store swallows, and this `void`s + `.catch()`es) so a shadow
-  //    write can NEVER affect the emitted regime. Skipped for internal callers, which are
-  //    seed/backfill traffic and would swamp the measurement.
-  if (license.tier !== 'internal' && (candleShadowEnabled || candleBasis === 'closed')) {
-    // Both sides project through the SAME `projectRegime`, so the recorded live verdict
-    // is the emitted one by construction rather than by a parallel re-derivation.
-    const liveProjection = candleBasis === 'closed'
-      ? projectRegime(liveBasisIndicators, currentPrice)
-      : { regime, confidence, pivotQuality, priceStructure };
-    const closedProjection = closedBasisIndicators
-      ? projectRegime(closedBasisIndicators, currentPrice)
-      : null;
-
-    void recordCandleBasisShadow({
-      tool: 'get_market_regime',
-      coin,
-      exchange,
-      timeframe,
-      callLive: liveProjection.regime,
-      callClosed: closedProjection?.regime ?? null,
-      errorClass: closedBasisErrorClass,
-      confLive: liveProjection.confidence,
-      confClosed: closedProjection?.confidence ?? null,
-      structureLive: liveProjection.priceStructure,
-      structureClosed: closedProjection?.priceStructure ?? null,
-      pivotQualityLive: liveProjection.pivotQuality,
-      pivotQualityClosed: closedProjection?.pivotQuality ?? null,
-      elapsedFraction: candleWindow.elapsedFraction,
-      nClosed: candleWindow.closed.length,
-      nTotal: candles.length,
-    }).catch(() => {});
-  }
+  // OPS-CANDLE-BASIS-SHADOW-DECOM-W1 removed the SIGNAL-CLOSEDBAR-SHADOW-W1 CH3 divergence
+  // write that sat here — the CH2 analogue in get-trade-call.ts went with it. See that file
+  // for the reasoning; in short, the candle-basis shadow TABLE had become write-only and was
+  // dropped, so the write that fed it went with it.
+  // The block derived `liveProjection` + `closedProjection` PURELY to populate the row, so it
+  // went whole; the closed-basis INDICATORS derivation above stays, because it is the emitted
+  // regime under CANDLE_BASIS=closed.
 
   // Upgrade hint: only for free tier
   const upgradeHint = getUpgradeHint(license, { used: quota.used, total: quota.total });
