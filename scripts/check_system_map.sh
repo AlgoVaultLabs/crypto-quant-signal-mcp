@@ -49,8 +49,32 @@ declare -a FILE_PATTERNS=(
 #     CANNOT fire on `git commit -m/-F` (the pre-commit hook runs before the message
 #     file is written), so `ALGOVAULT_SKIP_MAP_CHECK=1 git commit …` is the canonical
 #     bypass for scripted/agent commits.
+#
+# Both hatches are LEGITIMATE and both stay. What changes (OPS-SYSTEM-MAP-GATE-COMMENT-STRIP-W1)
+# is that they become COUNTABLE: until now a bypass left no trace anywhere, so "how often is this
+# gate bypassed?" was unanswerable, and a hatch reached for reflexively looked identical to one
+# reached for after genuine re-derivation.
+#
+# Writes to the EXISTING shared ledger (hook-block.sh's $GIT_COMMON_DIR/algovault-hook-skip.log)
+# in its established TSV shape — ONE log with an event column, never a second one to forget to
+# read. INLINED rather than sourcing scripts/lib/hook-block.sh, and that is deliberate: that
+# library's own design decision #1 forbids runtime dependence on it, because a worktree predating
+# it would fail to source and — under this script's `set -e` — block every commit there.
+# hook-block.sh:219-220 inlines this identical printf into its emitted block for the same reason.
+#
+# Best-effort throughout: a ledger that cannot be written must never change the verdict.
+map_gate_ledger() {   # <event>
+  local common
+  common=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd) || return 0
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" system-map \
+    "$(git rev-parse --show-toplevel 2>/dev/null || echo '?')" scripts/check_system_map.sh \
+    >>"$common/algovault-hook-skip.log" 2>/dev/null || true
+}
+
 if [ -n "${ALGOVAULT_SKIP_MAP_CHECK:-}" ]; then
-  echo "[system-map gate] OK — ALGOVAULT_SKIP_MAP_CHECK set; bypassing (documented escape hatch)."
+  map_gate_ledger MAP_CHECK_ENV_BYPASS || true
+  echo "[system-map gate] OK — ALGOVAULT_SKIP_MAP_CHECK set; bypassing (documented escape hatch, logged)."
   exit 0
 fi
 # (2) [skip-map-check] in the commit message — works for interactive/editor commits and
@@ -58,7 +82,8 @@ fi
 GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo "")
 if [ -n "$GIT_DIR" ] && [ -f "$GIT_DIR/COMMIT_EDITMSG" ] && \
    grep -q '\[skip-map-check\]' "$GIT_DIR/COMMIT_EDITMSG"; then
-  echo "[system-map gate] OK — [skip-map-check] in commit message; bypassing."
+  map_gate_ledger MAP_CHECK_MSG_BYPASS || true
+  echo "[system-map gate] OK — [skip-map-check] in commit message; bypassing (logged)."
   exit 0
 fi
 
@@ -83,9 +108,40 @@ DIFF=$(git diff --cached -- . \
   ':(exclude,glob)landing/**' \
   ':(exclude,glob)tests/**' \
   2>/dev/null || echo "")
+
+# ── Strip comments before matching (OPS-SYSTEM-MAP-GATE-COMMENT-STRIP-W1) ────────────────────
+# A MENTION IS NOT AN OCCURRENCE. Every pattern below is exactly the vocabulary a good comment
+# uses when explaining why a change does NOT do the thing, so this gate matched its own prose:
+# PAY-RAIL-DASHBOARD-W1 was blocked on "rides the existing 30s load() loop — adds NO setInterval",
+# and this gate had already blocked its own installer's comment block for the same reason
+# (install_system_map_hook.sh:47-52). The stripper also drops `+++ b/<path>` headers from
+# matching — they begin with '+', so a file NAMED after a pattern word tripped the gate too
+# (measured: src/guards/setInterval-guard.ts, whose only added line was `export const y = 2;`).
+#
+# NOT a bash stripper: shell-side comment handling in this repo is all `grep -vE '^[[:space:]]*#'`
+# — '#'-only, whole-line, and diff-unaware. It cannot preserve the +/- prefix column, cannot
+# switch language per hunk, and cannot see `//` or `--`. So this calls the shared node module,
+# whose semantics (language-aware + offset-preserving) are declared in its docblock.
+#
+# FAIL TOWARD NOISE, NEVER TOWARD SILENCE. If node is missing or the stripper errors we match the
+# UNSTRIPPED diff and say so. A stripping failure costs a false positive (annoying, visible, and
+# the operator has two documented hatches); skipping the check costs a false negative — an
+# unmapped edge ships and nothing ever says so. The explicit `if !` is load-bearing: this script
+# runs `set -euo pipefail`, so a bare command substitution on a failing node would ABORT here and
+# block the commit instead of falling back.
+SCAN="$DIFF"
+STRIPPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/strip-comments.mjs"
+if [ -n "$DIFF" ]; then
+  if ! SCAN=$(printf '%s' "$DIFF" | node "$STRIPPER" --diff 2>/dev/null); then
+    echo "[system-map gate] WARNING: comment stripper unavailable ($STRIPPER) —" >&2
+    echo "  matching the UNSTRIPPED diff. Comments mentioning a pattern may false-positive." >&2
+    SCAN="$DIFF"
+  fi
+fi
+
 HITS=()
 for pat in "${SIGNAL_PATTERNS[@]}"; do
-  match=$(echo "$DIFF" | grep -nE "$pat" || true)
+  match=$(echo "$SCAN" | grep -nE "$pat" || true)
   [ -n "$match" ] && HITS+=("pattern: $pat")
 done
 for pat in "${FILE_PATTERNS[@]}"; do
