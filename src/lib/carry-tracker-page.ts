@@ -63,6 +63,12 @@ const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const CSS = `
+  /* renderBrandFooter() styles itself with var(--line) / var(--fg-2) / var(--fg-3) but ships no
+     definitions, and neither does contact-page.ts — so the shared footer currently renders with
+     an undefined border colour on the function-rendered pages that host it. Defining the trio
+     here (same hex palette referral-pages.ts:54 uses, plus the --fg-2 even that block omits)
+     keeps the footer correct on this page without touching the shared module mid-wave. */
+  :root{--line:#30363d;--fg-2:#c9d1d9;--fg-3:#8b949e}
   *{box-sizing:border-box}
   body{margin:0;background:#0d1117;color:#e1e4e8;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
   .wrap{max-width:860px;margin:0 auto;padding:56px 24px 72px}
