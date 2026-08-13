@@ -76,6 +76,21 @@ test('every registry row committed here matches its ONE canonical sha256', () =>
     if (!hashableHere(r)) continue;
     const p = path.join(REPO, r.artifact);
     if (!existsSync(p)) {
+      // A RETIRED row may legitimately have had its artifact deleted — retirement can remove
+      // the file, and the reconciler already skips retired rows in check_hash_drift (its own
+      // self-test pins "retired rows are not hash-checked"). Asserting presence here would be
+      // STRICTER than the authority this test exists to keep honest, and would make deleting a
+      // retired artifact impossible without also deleting its row — which this file's
+      // zero-deletion policy forbids, since a retired row is how you prove something was
+      // intentionally stopped rather than silently lost.
+      //
+      // Scoped deliberately to MISSING-and-retired only: a retired row whose artifact is still
+      // present keeps its full hash assertion below, which is every incumbent retired row
+      // (equity-launch-readiness, equity-verdict-watch, shadow-cpu-gate-48h,
+      // seed-orchestrator-gate-48h, seed-orchestrator-baseline). So this removes no coverage
+      // that existed before it — the first retired row with a DELETED artifact arrived with
+      // OPS-RECALIBRATE-HARNESS-RETIRE-W1, which is why the case had never come up.
+      if (r.install_state === 'retired') continue;
       mismatches.push(`${r.id}: artifact missing at ${r.artifact}`);
       continue;
     }

@@ -12,6 +12,14 @@
     "unclassified": "present on host, owner unknown, decision required; reported EVERY run",
     "retired": "intentionally stopped, with evidence"
   },
+  "_decision_gate_semantics": {
+    "_why": "OPS-RECALIBRATE-HARNESS-RETIRE-W1 (R6). A DECISION GATE is an instrument built to answer ONE question ONCE — 'is there enough evidence to dispatch wave X yet?' — which fires a once-ever alert behind a marker file and then runs forever. From every other check in this file an ORPHANED gate and a HEALTHY one are byte-identical: installed, hashes match, schedule matches, exits 0. HASH_DRIFT / ORPHAN / DARK / SCHEDULE_DRIFT / NO_BACKUP all PASS on an orphan. Measured: closedbar-recalibrate-readiness was found because it paged; its sibling candle-basis-shadow-report had been orphaned SIX DAYS earlier by the identical mechanism and was found only because someone wrote the spec for the first one. Declaring the lifecycle is what makes the tenth instance announce itself instead of being found by accident.",
+    "decision_gate": "true on a row whose instrument exists to inform ONE decision. Consumed by ops/monitoring/decision-gate-orphan-canary.py, which reads ONLY rows carrying it.",
+    "once_ever_alert": "The alert id that fires exactly once, ever, behind a marker.",
+    "once_ever_marker": "Absolute host path of that marker — the FIRED-EVIDENCE LOCATOR, and the field the canary cannot work without: 'has the once-ever alert fired?' is otherwise prose, and a canary cannot evaluate prose. Take it from the code that WRITES the marker, never from a design note. Measured at this wave's R0: the retired harness's own config declared a `marker` path (/var/lib/algovault-monitoring/recalibrate-ready.fired) differing from the shell's actual one in BOTH directory and basename, read by nothing, and absent on the host.",
+    "retirement_trigger": "The condition that makes this gate orphaned, EVALUATED rather than read. Object {kind, match, note}; kind=status_md_entry greps the host-local status.md for `match`. An UNRECOGNISED kind is INDETERMINATE, never a silent skip — a skipped row looks exactly like a healthy one, which is the defect this block exists to retire.",
+    "_not_applicable_to": "The 48h one-shots (seed-orchestrator-gate-48h, shadow-cpu-gate-48h) were considered for backfill and DELIBERATELY EXCLUDED: they are transient `systemd-run --on-active=48h` timers with no once-ever alert and no marker file, so their retirement condition is an expired timer window rather than a taken decision. Inventing marker paths to pad this corpus would be fabrication."
+  },
   "schema_version": 2,
   "artifacts": [
     {
@@ -982,10 +990,24 @@
       "repo_resident": true,
       "schedule": "43 5 * * *",
       "invoked_by": "crontab:root",
-      "install_state": "installed",
+      "install_state": "retired",
+      "retired_at": "2026-08-13T12:46:25Z",
+      "retired_by": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
       "sha256": "38236cad33cd590cbf0890cace6c1cdac70b5fc787f6e80c6710440086d357ba",
       "owner_wave": "SIGNAL-CLOSEDBAR-SHADOW-W1",
-      "notes": "Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
+      "alert_ids": [
+        "CANDLE_BASIS_FLIP_READY",
+        "CANDLE_BASIS_SHADOW_STALLED"
+      ],
+      "decision_gate": true,
+      "once_ever_alert": "CANDLE_BASIS_FLIP_READY",
+      "once_ever_marker": "/var/lib/algovault-candle-basis/.flip-ready.fired",
+      "retirement_trigger": {
+        "kind": "status_md_entry",
+        "match": "SIGNAL-CLOSEDBAR-FLIP-W1",
+        "note": "The flip this gate exists to authorise. Once that wave is in status.md the question is answered and the gate can only ever return FLIP_READY again."
+      },
+      "notes": "RETIRED 2026-08-13 by OPS-RECALIBRATE-HARNESS-RETIRE-W1 — ORPHANED SINCE 2026-08-07, and nobody noticed for six days. Evidence: CANDLE_BASIS_FLIP_READY fired at 2026-08-07 05:43Z (/var/lib/algovault-candle-basis/.flip-ready.fired, mtime), and the flip it gated — SIGNAL-CLOSEDBAR-FLIP-W1, GREEN — landed 12:40Z THE SAME DAY. It kept running daily and kept reporting the same permanently-true verdict (state.json last_verdict `CANDLE_BASIS_FLIP_READY: n=5270672 days=13`), which is the definition of a gate that can no longer fail. It was found only because someone wrote the retirement spec for its sibling closedbar-recalibrate-readiness; that is precisely why decision-gate-orphan-canary now exists. Cron line removed from the live crontab at 12:46:25Z (244->242, delta exactly -2, backup /opt/algovault-monitoring/crontab.bak.OPS-RECALIBRATE-HARNESS-RETIRE-W1-20260813T124602Z). Host data at /var/lib/algovault-candle-basis/** DELIBERATELY LEFT IN PLACE — with the cron gone the directory is inert, and Data Integrity's default is not to delete what cannot be recovered. Row KEPT per this file's zero-deletion policy: a retired row is how you prove something was intentionally stopped rather than silently lost. NOTE for whoever reads this next: its SECOND alert, CANDLE_BASIS_SHADOW_STALLED, had a LIVE subject at retirement time (candle_basis_shadow was at 5,321,032 rows and still growing). It is not being re-homed because THIS WAVE removes the table's last reader — after it, candle_basis_shadow has only nightly-carry-labeler.ts's DELETE pruner. That is a producer with no consumer and it is a real open question, filed as OPS-CANDLE-BASIS-SHADOW-CONSUMER-AUDIT-W{NEXT}. Do not read this as 'the alarm was already redundant' — it became moot as a CONSEQUENCE of this wave, not before it. Original purpose follows. Daily read-only closed-bar divergence report. Runs FROM THE DEPLOY CHECKOUT (ops/cron/** is not in deploy.yml paths-ignore) — deliberately NOT copied into /opt/algovault-monitoring/, which would create a second copy that drifts on every deploy and trips HASH_DRIFT / DIVERGENT_COPY. Writes /var/lib/algovault-candle-basis/report-<date>.{md,json} + state.json. Alerts only on CANDLE_BASIS_FLIP_READY (once ever, .flip-ready.fired marker) and CANDLE_BASIS_SHADOW_STALLED (n not grown in 48h = a dark shadow write), both via the shared send_telegram.sh. seeded_tfs derived live from crontab -l, never transcribed."
     },
     {
       "id": "quota-exhaustion-canary",
@@ -1229,10 +1251,73 @@
       "repo_resident": true,
       "schedule": "24 * * * *",
       "invoked_by": "crontab:root",
-      "install_state": "installed",
+      "install_state": "retired",
+      "retired_at": "2026-08-13T12:46:25Z",
+      "retired_by": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
       "sha256": "89716f8eae15ead8dffef5a5d3d303c50c6ede1068f35330bb36906704c07aab",
       "owner_wave": "OPS-CLOSEDBAR-RECALIBRATE-READINESS-W1",
-      "notes": "Hourly readiness gate for OPS-CLOSEDBAR-RECALIBRATE-W{NEXT} — the instrument built BEFORE the decision. Wraps the READ-ONLY harness src/scripts/closedbar-recalibrate-readiness.ts, which runs INSIDE the app container (where DATABASE_URL is) and emits exactly one RECALIBRATE_READINESS_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3, fail closed). Every statistic is sliced per-TIMEFRAME AND per-VENUE: a venue-blind report is the F2 defect that made the flip's 87.8% floor rate a Binance/XRP proxy against a real 78.58% spanning 2.85%-78.58%. The methodology-boundary interval [2026-08-07T10:16:12Z -> 12:28:57Z] is re-read from status.md at runtime and EXCLUDED (349 signals sit inside it). Thresholds live in ops/closedbar-recalibrate-config.json with a reason per row, derived from measured accrual and from the backfill's own EVAL_CANDLES horizons — 1d is the binding term at ~3 emitted/day + 72h maturity, which is what sets distinct_utc_days=7. NOT_READY is the expected steady state until the coarse timeframes accrue and is logged, never paged; only RECALIBRATE_READY (once ever, behind a marker) and RECALIBRATE_ACCRUAL_STALLED (48h of no growth) alert. The config is COPYed into the image by the Dockerfile — without that the harness would fail loadConfig() inside the container and report INDETERMINATE forever."
+      "alert_ids": [
+        "RECALIBRATE_READY",
+        "RECALIBRATE_ACCRUAL_STALLED"
+      ],
+      "decision_gate": true,
+      "once_ever_alert": "RECALIBRATE_READY",
+      "once_ever_marker": "/var/lib/algovault-recalibrate/.recalibrate-ready.fired",
+      "retirement_trigger": {
+        "kind": "status_md_entry",
+        "match": "DECISION-CLOSEDBAR-ARC-DEFER-W1",
+        "note": "The decision this gate exists to inform. It DECLINED OPS-CLOSEDBAR-RECALIBRATE-W{NEXT} ('never written; do not write it'), so the question is answered and the gate can only ever return PASS again. A decline retires a decision gate exactly as a ship does — what ends the gate's life is that the decision was TAKEN, not which way it went."
+      },
+      "notes": "RETIRED 2026-08-13 by OPS-RECALIBRATE-HARNESS-RETIRE-W1 — its decision has been taken, so it can never return anything but PASS again. Evidence: RECALIBRATE_READY fired at 2026-08-13 00:24Z (/var/lib/algovault-recalibrate/.recalibrate-ready.fired, mtime; the key is CLASS-scoped with no date component, so it will not re-page), and DECISION-CLOSEDBAR-ARC-DEFER-W1 at 07:33Z DECLINED OPS-CLOSEDBAR-RECALIBRATE-W{NEXT} outright — status.md reads 'never written; do not write it'. Four consecutive post-alert log runs all read RECALIBRATE_READINESS_VERDICT=PASS. Cron line removed at 12:46:25Z (244->242, delta exactly -2, backup /opt/algovault-monitoring/crontab.bak.OPS-RECALIBRATE-HARNESS-RETIRE-W1-20260813T124602Z). Its OTHER alert, RECALIBRATE_ACCRUAL_STALLED, was NOT redundant and was RE-HOMED to the outcome-backfill-freshness row rather than deleted — R0 probe 3 enumerated all 61 rows of this file and found zero other coverage of outcome-backfill freshness. Seven daily reports plus state.json were preserved to the PRIVATE vault audits/ (sha256-verified, 8 files) before anything was touched; they carry per-venue PFE win rates for 15 venues, which is why they must never enter this repo's tracked audits/. Host data at /var/lib/algovault-recalibrate/** DELIBERATELY LEFT IN PLACE. Row KEPT per this file's zero-deletion policy. One live defect found and recorded rather than silently deleted with the file: ops/closedbar-recalibrate-config.json:55 declared \"marker\": \"/var/lib/algovault-monitoring/recalibrate-ready.fired\", which differs from the shell's actual marker in BOTH directory and basename, was read by nothing, and never existed on the host — a dead config field documenting the wrong path. Original purpose follows. Hourly readiness gate for OPS-CLOSEDBAR-RECALIBRATE-W{NEXT} — the instrument built BEFORE the decision. Wraps the READ-ONLY harness src/scripts/closedbar-recalibrate-readiness.ts, which runs INSIDE the app container (where DATABASE_URL is) and emits exactly one RECALIBRATE_READINESS_VERDICT=PASS|FAIL|INDETERMINATE (0/1/3, fail closed). Every statistic is sliced per-TIMEFRAME AND per-VENUE: a venue-blind report is the F2 defect that made the flip's 87.8% floor rate a Binance/XRP proxy against a real 78.58% spanning 2.85%-78.58%. The methodology-boundary interval [2026-08-07T10:16:12Z -> 12:28:57Z] is re-read from status.md at runtime and EXCLUDED (349 signals sit inside it). Thresholds live in ops/closedbar-recalibrate-config.json with a reason per row, derived from measured accrual and from the backfill's own EVAL_CANDLES horizons — 1d is the binding term at ~3 emitted/day + 72h maturity, which is what sets distinct_utc_days=7. NOT_READY is the expected steady state until the coarse timeframes accrue and is logged, never paged; only RECALIBRATE_READY (once ever, behind a marker) and RECALIBRATE_ACCRUAL_STALLED (48h of no growth) alert. The config is COPYed into the image by the Dockerfile — without that the harness would fail loadConfig() inside the container and report INDETERMINATE forever."
+    },
+    {
+      "id": "decision-gate-orphan-canary",
+      "artifact": "ops/monitoring/decision-gate-orphan-canary.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/decision-gate-orphan-canary.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/decision-gate-orphan-canary.py",
+          "schedule": "27 7 * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "27 7 * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "be1618c14f679ee8582a5a56087fe395cef432a7ad0285dc59e5e367c7c946e2",
+      "alert_ids": [
+        "DECISION_GATE_ORPHANED",
+        "DECISION_GATE_ORPHAN_SUSPECTED"
+      ],
+      "owner_wave": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
+      "notes": "THE GENERATOR FIX of OPS-RECALIBRATE-HARNESS-RETIRE-W1. Reads every row carrying decision_gate:true (see _decision_gate_semantics) and reports any whose once-ever alert has FIRED, whose retirement trigger is SATISFIED, and which is still `installed` — the state in which an instrument built to answer one question keeps running after the question is answered. Nothing else in this file can see that: HASH_DRIFT, ORPHAN, DARK, SCHEDULE_DRIFT and NO_BACKUP all PASS on an orphaned gate, because it is installed, hash-matching, on schedule and exiting 0. Two alert ids with DIFFERENT remedies, never one shared recommended_wave: DECISION_GATE_ORPHANED (decision on record -> retire it) and DECISION_GATE_ORPHAN_SUSPECTED (fired >14d ago with NO decision recorded -> decide or retire). The SUSPECTED branch is the one that would have caught candle-basis-shadow-report six days early with nobody having authored a retirement_trigger for it, which is the difference between detection and memory. An UNRECOGNISED retirement_trigger.kind is INDETERMINATE, never a silent skip — a skipped row looks exactly like a healthy one. RED-VERIFIED ON REAL ORPHANS, not synthetic ones: run #1 against the live inventory before the retirement reported both gates ORPHANED (marker ages 6.3d and 0.5d, DECISION_GATE_ORPHAN_VERDICT=FAIL); run #2 after the retirement reported 0. This is a RECURRENCE guard, NOT itself a decision gate — its subject is an open-ended class that keeps being instantiated, so `retired` would be false for it in the same way the book-liveness-canary row records for itself. Verdict token DECISION_GATE_ORPHAN_VERDICT= maps PASS=0/FAIL=0/INDETERMINATE=3; FAIL exits 0 because the alert is the action, and 3 is the token-law default for a NEW gate."
+    },
+    {
+      "id": "outcome-backfill-freshness",
+      "artifact": "ops/monitoring/outcome-backfill-freshness.py",
+      "kind": "executable",
+      "host": "signal-1",
+      "host_path": "/opt/algovault-monitoring/outcome-backfill-freshness.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/outcome-backfill-freshness.py",
+          "schedule": "13 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "13 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "e03cc64083b8fd9eb69f10ca58ec963c20e1f46724e3d8590d2d039c4fc90149",
+      "alert_ids": [
+        "OUTCOME_BACKFILL_STALLED"
+      ],
+      "owner_wave": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
+      "notes": "The RE-HOMED subject of RECALIBRATE_ACCRUAL_STALLED, which retired with closedbar-recalibrate-readiness. That alarm was NOT redundant: OPS-RECALIBRATE-HARNESS-RETIRE-W1's R0 probe 3 ENUMERATED all 61 rows of this file one by one — enumeration, not a keyword grep, because detection is strictly weaker than enumeration — and found ZERO other artifacts watching outcome-backfill freshness. Ruled out by READING each file rather than by its name: directional-label-freshness watches directional_labels (a different producer, the labeler); seed-coverage-canary asserts crontab seed lines (config-level, upstream of emission); closedbar-w1-liveness watches dispatch determinism; and the website-drift rows on /api/performance-public are MONOTONIC FLOOR checks, which fire on regression and are structurally blind to a plateau. Deleting the alarm would therefore have opened a silent hole in the series behind the public signal-performance resource. KEY: max(created_at) FILTER (WHERE pfe_return_pct IS NOT NULL) on `signals` — a producer-side monotonic high-water mark that advances ONLY when backfill-outcomes (crontab 2-59/3) writes, never a rendered artifact. The wave spec asked for 'the producer's own write timestamp'; there is no such column (signals carries outcome_price / outcome_return_pct / pfe_candles / pfe_price / pfe_return_pct and nothing recording WHEN), so the high-water mark is the honest substitute and is the shape directional-label-freshness already proves in production. Breach requires BOTH output stuck (lag > 12h) AND input flowing (>=1 signal emitted in the last 3h), so a legitimate seeding pause — seed-coverage-canary's subject, a different remedy — cannot page this. Threshold 12h calibrated against MEASURED live lag 2026-08-13 08:24Z: global 0.70h, per-tf 3m 0.70h / 5m 1.10h / 15m 3.40h / 30m 4.55h. That is ONE sample, not a series, so every run logs lag_h= to build the series a later wave can tighten from; carries a revisit row in `Claude files/defensive-reductions-to-revisit.md`. Pages after 2 consecutive hourly breaches (~13h detection vs the retired alarm's 48h). Reads as aoe_readonly, least privilege, via the host-bash psql pattern. Verdict token OUTCOME_BACKFILL_VERDICT= maps PASS=0/FAIL=0/INDETERMINATE=3. LIVE two-way proof at install: real clock -> lag 0.93h PASS; clock frozen +24h with the input window widened (declared seams only, no code mutation) -> lag 24.94h, day-1 breach held by the sustain gate, day-2 paged under ALGOVAULT_TG_TEST_INERT=1; back on the real clock -> PASS with the streak reset to 0."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

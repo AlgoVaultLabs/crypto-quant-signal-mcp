@@ -36,10 +36,22 @@ const REPO = join(HERE, '..');
 /** Artifacts that emit operator-facing alerts and therefore carry a recommended wave. */
 const SCANNED = [
   'ops/monitoring/closedbar-w1-liveness.sh',
-  'ops/cron/candle-basis-shadow-report.sh',
+  // OPS-RECALIBRATE-HARNESS-RETIRE-W1 removed 'ops/cron/candle-basis-shadow-report.sh' — the
+  // artifact was DELETED with its decision gate (orphaned since 2026-08-07; see its retired
+  // inventory row). A path here that no longer exists is skipped by existsSync below, so
+  // leaving it would be silent dead weight rather than a failure — exactly the quiet decay
+  // this list must not accumulate.
   'ops/cron/bot-deploy-parity.sh',
   'ops/cron/checkout-parity.sh',
 ];
+// SCOPE, stated so the next reader does not mistake this for full coverage: the list is SHELL
+// wrappers only. Every .py canary in ops/monitoring/ (payment-decline, revenue-meter,
+// webhook-delivery, quota-exhaustion, directional-label-freshness, and the two added by
+// OPS-RECALIBRATE-HARNESS-RETIRE-W1) sits outside it — Python docstrings are not
+// comment-prefixed, so stripComments() cannot strip them and LITERAL_WAVE_RE would fire on
+// every historical wave id cited in prose. Those two canaries assert BOTH of this gate's
+// properties in their own --self-test instead (templated W{NEXT}; one distinct wave per
+// remedy). Closing it centrally is OPS-ALERT-WAVE-GATE-PY-COVERAGE-W{NEXT}.
 
 const WAVE_RE = /\b(?:OPS|SIGNAL|RELEASE|DEV|TG|GEO)-[A-Z0-9-]*?-W(?:\{NEXT\}|\d+)/g;
 const LITERAL_WAVE_RE = /\b(?:OPS|SIGNAL|RELEASE|DEV|TG|GEO)-[A-Z0-9-]*?-W\d+\b/;
