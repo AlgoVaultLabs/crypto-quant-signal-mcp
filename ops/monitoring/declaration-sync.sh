@@ -90,11 +90,7 @@ IN_SELF_TEST=0
 log_line() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$LOG" 2>/dev/null || true; }
 
 # ── WHICH HOST GETS WHICH DECLARATION (OPS-DECLARATION-SYNC-YAML-W1) ─────────────────────────
-# Resolution mirrors monitoring-inventory-reconcile.py EXACTLY — same variable, same default — so
-# there is ONE host-label convention in this directory rather than a second dialect. aoe-1's cron
-# sets MONITORING_HOST_LABELS=aoe-1 for both scripts; the signal host takes the default.
-#
-# WHY SCOPING IS NOT OPTIONAL, measured the hard way in this wave: the first cut synced all ten
+# WHY SCOPING IS NOT OPTIONAL, measured the hard way in that wave: the first cut synced all ten
 # declarations to BOTH hosts on the theory that a few inert extra files were harmless next to the
 # risk of forking a shared primitive. The AOE reconciler disagreed within a minute —
 #   CHECK ORPHAN: BREACH ["OPS-SEED-ORCHESTRATOR-W1-baseline.json", …5 files]
@@ -102,7 +98,37 @@ log_line() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$LOG" 2>/dev/null || t
 # and an unregistered file on a host is exactly what ORPHAN exists to catch. Note this does NOT
 # fork the primitive: the SCRIPT stays byte-identical on both hosts and only its BEHAVIOUR branches
 # on the label, which is the same shape the reconciler already uses.
-HOST_LABELS=${MONITORING_HOST_LABELS:-signal-1,204.168.185.24}
+#
+# ── THERE IS DELIBERATELY NO DEFAULT IDENTITY (OPS-DECLARATION-SYNC-HOST-IDENTITY-W1) ─────────
+# This line used to give MONITORING_HOST_LABELS a DEFAULT naming A DIFFERENT PRODUCTION HOST —
+# the signal host's label and its literal address. (The value is described rather than quoted on
+# purpose: it must not reappear anywhere in this file, and a guard test greps for it.)
+# That cannot fail safely, and on 2026-08-13T14:04:01Z it did not:
+# a hand-run on aoe-1 without the env inherited signal-1's identity, so scope_applies() approved
+# every signal-1 row and the sync wrote five foreign declarations (plus five .bak siblings) onto
+# aoe-1, reporting `✓ SYNCED` for each. The 07:17 reconcile caught them as ORPHANs and paged.
+# The guard was never wrong — it was fed a false identity. Note this is the SECOND time these
+# exact five files have littered aoe-1; the block above is the first.
+#
+# So identity is now ASSERTED, never assumed, and the resolution FAILS TOWARD REFUSAL:
+#   1. MONITORING_HOST_LABELS — the explicit operator/cron path, unchanged.
+#   2. /etc/algovault-host-label — the host's own opaque label, asserted by the host itself.
+#   3. neither -> UNRESOLVED (empty) -> the precondition below REFUSES the whole run.
+# A peer host's label may NEVER be a fallback here, in any form. Refusing is correct even though
+# it means an unlabelled run stops working: such a run only ever "worked" by coincidence, on
+# exactly one of the two hosts.
+#
+# Extracted as a function rather than inlined so the hermetic self-test can assert the resolution
+# ORDER directly — a seam the suite replaces is otherwise the one thing it cannot see.
+HOST_IDENTITY_FILE=${DECLARATION_SYNC_IDENTITY_FILE:-/etc/algovault-host-label}
+
+resolve_host_labels() {   # <env value> <identity file> -> labels on stdout, empty when unresolved
+  if [ -n "${1:-}" ]; then printf '%s' "$1"; return 0; fi
+  [ -r "${2:-}" ] || return 0
+  tr -d '[:space:]' < "$2" 2>/dev/null || true
+}
+
+HOST_LABELS=$(resolve_host_labels "${MONITORING_HOST_LABELS:-}" "$HOST_IDENTITY_FILE")
 
 # True when $1 (a scope field) applies to this host. `*` = every host.
 scope_applies() {
@@ -338,7 +364,12 @@ self_test() {
   validate_body "$tmp/truncated.json" artifacts 0 >/dev/null 2>&1; ck 'truncated .json is not YAML-rescued' "$?" 1
   # The set genuinely contains YAML, so the preflight predicate must say so — a hermetic suite that
   # never evaluates it would let the runtime guard rot unnoticed.
-  declares_yaml; ck 'declares_yaml() sees the YAML rows' "$?" 0
+  # HOST_LABELS is set EXPLICITLY here rather than inherited. declares_yaml() is scope-aware, so
+  # its answer is a function of identity — and until OPS-DECLARATION-SYNC-HOST-IDENTITY-W1 this
+  # check silently rode the peer-host default, which meant it passed on any machine for the wrong
+  # reason. It asserts a property of the host that OWNS the YAML rows, so it must say so.
+  ( HOST_LABELS=signal-1; declares_yaml ); ck 'declares_yaml() sees the YAML rows (signal-1)' "$?" 0
+  ( HOST_LABELS=aoe-1;    declares_yaml ); ck 'declares_yaml() sees none for aoe-1'           "$?" 1
 
   size_sane 100 100 >/dev/null 2>&1; ck 'same size is sane'                "$?" 0
   size_sane  60 100 >/dev/null 2>&1; ck 'a 40% shrink is sane'             "$?" 0
@@ -363,12 +394,32 @@ self_test() {
 
   # scope_applies(): the seam that decides what a host installs, so assert it directly rather
   # than trusting it. A wrong answer here either starves a host or plants ORPHANs on it.
-  ( HOST_LABELS=signal-1,204.168.185.24
+  # The label pair below is deliberately OPAQUE and synthetic: this case asserts only that a `*`
+  # scope applies to a multi-label host, so WHICH labels appear is incidental, and a real host's
+  # identity written here would be a peer literal that a future author could mistake for a
+  # default (OPS-DECLARATION-SYNC-HOST-IDENTITY-W1).
+  ( HOST_LABELS=host-alpha,host-beta
     scope_applies '*'              ) >/dev/null 2>&1; ck 'scope * applies anywhere'          "$?" 0
+  # The trap that makes the identity precondition mandatory, pinned so it cannot be "simplified"
+  # into a rows-in-scope check: `*` never reads $HOST_LABELS, so it applies even to a host with
+  # NO identity at all. An unresolved host therefore still has five declarations in scope.
+  ( HOST_LABELS=; scope_applies '*' ) >/dev/null 2>&1; ck 'scope * applies even with NO identity' "$?" 0
   ( HOST_LABELS=signal-1; scope_applies 'signal-1' ) >/dev/null 2>&1; ck 'own label applies'  "$?" 0
   ( HOST_LABELS=aoe-1;    scope_applies 'signal-1' ) >/dev/null 2>&1; ck 'other label REFUSED' "$?" 1
   ( HOST_LABELS=aoe-1;    scope_applies 'signal-1,aoe-1' ) >/dev/null 2>&1; ck 'list matches'  "$?" 0
   ( HOST_LABELS=aoe-1;    scope_applies '' ) >/dev/null 2>&1; ck 'empty scope applies nowhere' "$?" 1
+  # resolve_host_labels(): the OTHER seam this suite would otherwise be blind to, and the one
+  # whose old default put five foreign files on aoe-1. Assert the ORDER, not just the outcome.
+  local idf="$tmp/host-label"
+  printf 'marker-label\n' > "$idf"
+  ck 'env WINS over the marker'            "$(resolve_host_labels 'env-label' "$idf")" 'env-label'
+  ck 'marker used when env is unset'       "$(resolve_host_labels '' "$idf")"          'marker-label'
+  ck 'marker whitespace is stripped'       "$(printf 'spaced\n\n' > "$idf"; resolve_host_labels '' "$idf")" 'spaced'
+  ck 'MISSING marker -> UNRESOLVED (empty)' "$(resolve_host_labels '' "$tmp/does-not-exist")" ''
+  ck 'EMPTY marker   -> UNRESOLVED (empty)' "$(: > "$idf"; resolve_host_labels '' "$idf")"     ''
+  # The whole point of the wave: with neither source, the answer is NOTHING — never a peer host.
+  ck 'no env + no marker -> UNRESOLVED'    "$(resolve_host_labels '' '')"              ''
+
   # Vacuity in the OTHER direction: on each real host at least one row must be in scope, or the
   # sync is a silent no-op there — the exact shape of failure this whole script exists to end.
   local n l
@@ -399,6 +450,25 @@ self_test() {
 # like a cron that never fired.
 stamp_attempt
 log_line "START declaration-sync labels=$HOST_LABELS declared=${#DECLARATIONS[@]} base=$BASE_URL"
+
+# THE FIRST PRECONDITION, because identity decides what every later step DOES. It runs after the
+# START record on purpose: an unresolved run must still leave `labels=` empty in the log, which is
+# the forensic line that identified the 2026-08-13 incident in the first place.
+#
+# This tests the IDENTITY, not how many rows are in scope, and the distinction is load-bearing:
+# scope_applies() returns 0 for a `*` scope WITHOUT EVER READING $HOST_LABELS, so an unresolved
+# host still has five `*`-scoped declarations "in scope" and a rows-in-scope check would sail
+# straight past it while writing files. Only an explicit emptiness test can catch this.
+[ -n "$HOST_LABELS" ] || die_indeterminate \
+  "this host has no identity — MONITORING_HOST_LABELS is unset and $HOST_IDENTITY_FILE is missing, unreadable or empty" \
+  "Nothing was written, deliberately. Without an identity this script cannot tell its own
+declarations from another host's, and guessing is what put five foreign files on aoe-1 on
+2026-08-13 (OPS-DECLARATION-SYNC-HOST-IDENTITY-W1).
+
+Fix EITHER by restoring the host's marker:
+  printf '<this-host-label>\\n' > $HOST_IDENTITY_FILE
+or, for a one-off run, by naming the host explicitly:
+  MONITORING_HOST_LABELS=<this-host-label> $0"
 
 command -v curl   >/dev/null 2>&1 || die_indeterminate "curl is not installed — no declaration can be fetched"
 command -v python3 >/dev/null 2>&1 || die_indeterminate "python3 is not installed — no declaration body can be validated"

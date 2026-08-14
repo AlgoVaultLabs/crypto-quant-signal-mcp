@@ -1639,7 +1639,20 @@ def check_cert_expiry_floor(cert_dir=None, floor_days=None, now=None):
 def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
              doc_claims_result=None, sot_parity_result=None, cf_results=None,
              sync_liveness_result=None):
-    """`rows` is the OWNED subset; ORPHAN alone needs the full set to know what is known.
+    """`rows` is the OWNED subset — every check here, ORPHAN included, is host-scoped BY DESIGN.
+
+    This docstring used to say "ORPHAN alone needs the full set to know what is known". That is
+    WRONG, and the correction is recorded rather than quietly swapped because acting on the old
+    wording would SUPPRESS a real finding. ORPHAN compares this host's ENTIRE monitoring directory
+    (`host_listing()`, which is not host-scoped) against the rows THIS host owns, so a file whose
+    row belongs to another host is correctly reported: on this box, nothing authorises it.
+    Widening `known` to every row would make ORPHAN blind to exactly that case.
+
+    Measured 2026-08-14 (OPS-ORPHAN-ALERT-DIAGNOSE-W1 -> OPS-DECLARATION-SYNC-HOST-IDENTITY-W1):
+    a mis-labelled `declaration-sync.sh` hand-run put five signal-1-scoped files on aoe-1.
+    signal-1 (owned=59/63) reported ORPHAN clean while aoe-1 (owned=11/63) reported the five —
+    same commit, same declaration sha, same binary, 20 minutes apart. That disagreement WAS the
+    diagnosis; a full-set `known` would have erased it. The five were real litter and were removed.
 
     `posture_result` and `doc_claims_result` are passed in rather than computed here so each probe
     runs EXACTLY once per invocation — its positive per-item rows and its findings are two

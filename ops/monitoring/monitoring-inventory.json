@@ -44,7 +44,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "0c3f9d080521c445304fb1f87f250010f62f7614dd86d48cd9078e281dade1b8",
+      "sha256": "7d00bafa4a15891f3770f52b3c1aab11ff564dabe5d832a4529504a31c3686ad",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT",
         "SOT_PARITY_SUSTAINED_DRIFT"
@@ -74,12 +74,42 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "b5c0672d880b0e5626b3eb4493ef56b29012644a42321d6e9cbc5b7d1cf6f352",
+      "sha256": "b3736bb64fa4dd848ae0a995602ede6939d5273d73f86c17c140d270bcb4166d",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
       "owner_wave": "OPS-MONITORING-INVENTORY-HOST-SYNC-W1",
       "notes": "Flows the committed DECLARATIONS to the hosts that read them. It exists because monitoring-inventory-reconcile.py resolves its checklist to a HOST-LOCAL sibling copy, while `ops/monitoring/**` is in deploy.yml's paths-ignore by design — so no deploy ever synced the file the reconciler actually reads, every edit needed a manual two-host push, and nothing detected a skipped one (measured 2026-08-05: repo 52 rows, both hosts 50, surfacing as a false ORPHAN on a healthy artifact). PULL, not a CI push: `gh secret list` has no aoe-1 credential and the AOE repo's deploy.yml is a stub, so a push would need a newly minted key AND would hand the prod root SSH key to a second workflow (SEC-04). The raw URL was verified byte-identical to `git show origin/main:<path>` from BOTH hosts. Syncs a DECLARED SET (inventory + doc-host-path-claims + network-posture + schedule-boundary-rule) because all four are the same shape — the other three had simply not drifted yet, and fixing one lane is the lane-fix-wearing-a-generator's-clothes class. DECLARATIONS ONLY: it moves .json and never an executable, which is why it does not weaken CLAUDE.md's no-auto-install rule. Fail-closed — a non-200, an unparseable body, a missing required key or a >50% size collapse REFUSES the write and keeps the working file, because a truncated declaration breaks every check at once. Emits one DECLARATION_SYNC_VERDICT= token; 0=SYNCED/UNCHANGED, 1=FAILED, 3=INDETERMINATE. Per-host schedules differ so each lands ≥24min before that host's reconciler (signal-1 :33, the measured least-contended canonical minute; aoe-1 :27, fully clear of its 5-min grid)."
+    },
+    {
+      "id": "host-identity-label",
+      "artifact": null,
+      "kind": "config",
+      "host": "204.168.185.24",
+      "host_path": "/etc/algovault-host-label",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/etc/algovault-host-label",
+          "install_state": "installed",
+          "installed_wave": "OPS-DECLARATION-SYNC-HOST-IDENTITY-W1"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/etc/algovault-host-label",
+          "install_state": "installed",
+          "installed_wave": "OPS-DECLARATION-SYNC-HOST-IDENTITY-W1"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": null,
+      "invoked_by": "called-by:declaration-sync",
+      "install_state": "installed",
+      "sha256": null,
+      "alert_ids": [],
+      "owner_wave": "OPS-DECLARATION-SYNC-HOST-IDENTITY-W1",
+      "sync_exempt_reason": "A per-host IDENTITY marker is the one declaration that must never be synced: declaration-sync.sh flows one committed body to every host, and shipping one identity to both boxes is precisely the impersonation this file exists to prevent. It is also the input declaration-sync.sh reads to decide what it may write, so syncing it would make the sync its own precondition — the recursion declaration-sync.sh:43-44 was written to end. Each host asserts its own label locally; there is no canonical body and therefore no `artifact` and no `sha256`.",
+      "notes": "Opaque host label, read by declaration-sync.sh as resolution step 2 (env MONITORING_HOST_LABELS -> this file -> REFUSE). Created by OPS-DECLARATION-SYNC-HOST-IDENTITY-W1 after a hand-run on aoe-1 without the env inherited a DEFAULT naming the signal host, bypassed scope_applies() and wrote five signal-1-scoped declarations plus five .bak siblings onto aoe-1 (2026-08-13T14:04:01Z); the 07:17 reconcile caught them as ORPHANs and paged. The default is deleted and unresolved identity now REFUSES with DECLARATION_SYNC_VERDICT=INDETERMINATE, exit 3, and an alert. Content is a bare label (`signal-1` / `aoe-1`) and NOTHING parseable — no address, no hostname (hostname is NOT the label: the hosts are `AlgoVault-MCP` and `algovault-aoe-permanent`). sha256 is deliberately null, which is also what keeps this row inert to REGISTRY_PARITY (skips null-sha rows) and NO_BACKUP (same), while ORPHAN/HASH_DRIFT never see it because it lives outside MONITORING_DIR. NOT a DECLARATIONS entry — see sync_exempt_reason. The second consumer, monitoring-inventory-reconcile.py:120-121, still carries the identical peer default and is deliberately NOT changed here: see OPS-HOST-LABEL-DEFAULT-SWEEP-W{NEXT}, which must first give the 35 legacy rows keyed on the literal address a `signal-1` label, or adopting this marker there would unown them and silence ORPHAN across all 35."
     },
     {
       "id": "sot-parity-config",

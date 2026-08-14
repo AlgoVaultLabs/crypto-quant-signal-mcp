@@ -389,6 +389,13 @@ describe('R3 — every precondition that ends the run ALERTS before exiting 3', 
           DECLARATION_SYNC_LOG: path.join(TMP, 'log'),
           DECLARATION_SYNC_HEARTBEAT: path.join(TMP, 'hb'),
           DECLARATION_SYNC_DEST_DIR: DEST,
+          // Identity became the FIRST precondition in OPS-DECLARATION-SYNC-HOST-IDENTITY-W1, so
+          // it is supplied here: every case below breaks exactly ONE precondition, and without
+          // this they would all short-circuit on identity instead of the one they name.
+          // The marker path is pinned to a NON-EXISTENT file so the suite stays hermetic — a dev
+          // box or a host carrying a real /etc/algovault-host-label must not change any result.
+          MONITORING_HOST_LABELS: 'signal-1',
+          DECLARATION_SYNC_IDENTITY_FILE: path.join(TMP, 'no-such-identity-marker'),
           ...env,
         },
       });
@@ -466,6 +473,88 @@ describe('R3 — every precondition that ends the run ALERTS before exiting 3', 
     expect(existsSync(hb), 'the hermetic suite must never stamp a liveness heartbeat').toBe(false);
     expect(existsSync(log), 'the hermetic suite must never write the operational log').toBe(false);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * OPS-DECLARATION-SYNC-HOST-IDENTITY-W1 — identity is ASSERTED, never assumed.
+   *
+   * The script used to default MONITORING_HOST_LABELS to a value naming the signal host. On
+   * 2026-08-13T14:04:01Z a hand-run on aoe-1 without the env inherited that identity, so
+   * scope_applies() approved every signal-1 row and the sync wrote five foreign declarations
+   * (plus five .bak siblings) onto aoe-1, reporting SYNCED for each. The 07:17 reconcile caught
+   * them as ORPHANs and paged. The guard was never wrong — it was fed a false identity.
+   *
+   * These cases pin the resolution ORDER and the refusal. They are hermetic: identity is decided
+   * before any fetch, so no case here reaches the network.
+   */
+  describe('identity resolution: env -> marker -> REFUSE', () => {
+    /** The labels a run actually resolved, read from the heartbeat it stamps at START. */
+    function resolvedLabels(): string {
+      const hb = readFileSync(path.join(TMP, 'hb'), 'utf8');
+      return /host_labels=(.*)/.exec(hb)?.[1] ?? '<no host_labels line>';
+    }
+
+    it('NO env and NO marker -> INDETERMINATE 3, an alert, and NOTHING written', () => {
+      const before = readdirSync(DEST).length;
+      const r = attempt({
+        MONITORING_HOST_LABELS: '',
+        DECLARATION_SYNC_IDENTITY_FILE: path.join(TMP, 'definitely-absent-marker'),
+      });
+      expect(r.out).toContain('DECLARATION_SYNC_VERDICT=INDETERMINATE');
+      expect(r.code, 'INDETERMINATE is 3 — the token-law default for this gate').toBe(3);
+      expect(r.out).toContain('this host has no identity');
+      expect(r.calls, 'a sync that cannot run is operationally identical to one that failed').toBe(1);
+      expect(r.sev).toBe('CRITICAL_PERSISTENT');
+      expect(readdirSync(DEST).length, 'a refusing run must not write a single declaration')
+        .toBe(before);
+      expect(resolvedLabels(), 'the START record must show the EMPTY identity — that log line is '
+        + 'what identified the 2026-08-13 incident').toBe('');
+    });
+
+    it('marker supplies the identity when the env is unset', () => {
+      const marker = path.join(TMP, 'marker-aoe');
+      writeFileSync(marker, 'aoe-1\n');
+      // PATH without curl stops the run at the NEXT precondition, which proves identity resolved
+      // (it did not refuse) while keeping the case hermetic.
+      const r = attempt({
+        MONITORING_HOST_LABELS: '',
+        DECLARATION_SYNC_IDENTITY_FILE: marker,
+        PATH: pathWithout('curl'),
+      });
+      expect(r.out, 'it got PAST identity to the next precondition').toContain('curl is not installed');
+      expect(r.out).not.toContain('this host has no identity');
+      expect(resolvedLabels()).toBe('aoe-1');
+    });
+
+    it('an explicit env WINS over the marker', () => {
+      const marker = path.join(TMP, 'marker-aoe2');
+      writeFileSync(marker, 'aoe-1\n');
+      const r = attempt({
+        MONITORING_HOST_LABELS: 'signal-1',
+        DECLARATION_SYNC_IDENTITY_FILE: marker,
+        PATH: pathWithout('curl'),
+      });
+      expect(r.out).toContain('curl is not installed');
+      expect(resolvedLabels(), 'env is resolution step 1 and must beat the marker').toBe('signal-1');
+    });
+
+    it('an EMPTY marker is unresolved, not an empty-string identity', () => {
+      const marker = path.join(TMP, 'marker-empty');
+      writeFileSync(marker, '\n  \n');
+      const r = attempt({ MONITORING_HOST_LABELS: '', DECLARATION_SYNC_IDENTITY_FILE: marker });
+      expect(r.code).toBe(3);
+      expect(r.out).toContain('this host has no identity');
+    });
+
+    it('no peer host label survives anywhere in the script, in any form', () => {
+      // AC5. Deliberately the WHOLE file, comments included: a peer literal quoted as history is
+      // still a peer literal a future author can copy back into a default. Measured before this
+      // wave: 2 occurrences — the default itself and a self-test fixture.
+      const src = readFileSync(SCRIPT, 'utf8');
+      expect(src, 'a peer host label must never reappear as a default').not.toMatch(/signal-1,204/);
+      expect(src, 'no host address literal belongs in this shared, PUBLIC script')
+        .not.toMatch(/204\.168|178\.104/);
+    });
   });
 });
 
