@@ -1,6 +1,13 @@
 // P0 VERDICT-WITH-RECEIPTS-W1: the additive, allow-listed inline-proof block.
 // Type-only import (erased at compile) — no runtime cycle with lib/receipts.ts.
 import type { Receipts } from './lib/receipts.js';
+// OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH1: the wall vocabulary is declared ONCE, in
+// `quota-notice.ts`, and imported here rather than re-spelled. Type-only (erased at compile), so
+// the mutual reference with that module — it imports `SuggestedX402` from this file — costs
+// nothing at runtime, exactly like the `Receipts` import above. A second `'daily' | 'monthly'`
+// union would silently split the funnel join that `meta.limit` feeds.
+import type { QuotaWall } from './lib/quota-notice.js';
+export type { QuotaWall };
 
 // ── Hyperliquid API Types ──
 
@@ -316,6 +323,45 @@ export interface QuotaState {
   total: number;
   remaining: number;
   resets_at: string;
+}
+
+// ── OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH1: the binding meter ──
+
+/**
+ * One meter's live reading. `resetAtMs` is the instant THIS meter rolls over — a rolling 30-day
+ * anchor for the monthly meter, the next 00:00 UTC for the daily one. They are not interchangeable
+ * and are deliberately carried per-meter rather than once per caller.
+ */
+export interface MeterReading {
+  used: number;
+  limit: number;
+  resetAtMs: number;
+}
+
+/**
+ * Which meter is closest to refusing, and how close — the ONE derivation every activation surface
+ * projects from (`bindingMeter()` in `lib/binding-meter.ts`).
+ *
+ * The free tier refuses on a rolling MONTHLY budget and a UTC-day DAILY pacing cap INDEPENDENTLY,
+ * so "how much is left" has no single answer until you say which wall you mean. Before this wave
+ * every pre-refusal surface assumed monthly, and a 100/day caller was told `remaining: 100` on the
+ * same envelope that refused them.
+ *
+ * `monthly` / `daily` carry the underlying pairs alongside the binding one, so no consumer has to
+ * re-derive the split and none can silently drop a meter. A meter that is not honestly metered
+ * (non-finite or non-positive limit — an unmetered `x402`/`internal` tier) is `null` here, never 0.
+ */
+export interface BindingMeterState {
+  /** The meter with the higher `used/limit`. Ties resolve to `monthly` — it does not clear at 00:00 UTC. */
+  binding: QuotaWall;
+  /** `used / limit` of the binding meter. May exceed 1 when a caller is over its wall. */
+  ratio: number;
+  used: number;
+  limit: number;
+  remaining: number;
+  resetAtMs: number;
+  monthly: MeterReading | null;
+  daily: MeterReading | null;
 }
 
 // ── Cross-asset grid (v1.9.0 L2/L4 activation patch) ──
