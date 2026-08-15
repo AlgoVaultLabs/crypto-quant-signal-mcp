@@ -25,7 +25,7 @@ import {
   type ScanTradeCallsResult,
   type ScanCallItem,
 } from '../lib/trade-call-scanner.js';
-import { checkQuota, trackCall, getRequestSessionId, monthResetAtMs, periodStartMs } from '../lib/license.js';
+import { checkQuota, trackCall, getRequestSessionId, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
 import { buildQuotaNoticeMessage, buildQuotaSuggestedAction, quotaNoticeFacts } from '../lib/quota-notice.js';
 import { formatScanReceipts, type ScanReceipts } from '../lib/receipts.js';
 import { getReceiptTrackRecord } from '../lib/receipts-track-record.js';
@@ -230,11 +230,26 @@ export async function runScanTradeCall(
     //     UNCONDITIONALLY — it advertised the rail even when no rail was live. It is now
     //     derived from the same context that decides whether `suggested_x402` is attached.
     //   • the message stated no usage figure and no reset date.
+    // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1-R2 CH3 (Fix 2): this surface passed NO `wall`, so
+    // it rendered the MONTHLY noun, the MONTHLY pair and the MONTHLY horizon to a caller refused by
+    // the DAILY meter — the exact three-wrong-facts class the `headline()` docblock in
+    // quota-notice.ts records costing a day and a half in production. It was still live here.
+    //
+    // The discriminator and its pair travel TOGETHER. A `wall` on its own would render the daily
+    // noun over the monthly numbers, which is a fourth way to be wrong rather than a fix — the same
+    // coupling `errors.ts` already enforces through its `isDaily` triple.
+    const isDailyWall = entry.limit === 'daily'
+      && typeof entry.daily_used === 'number'
+      && typeof entry.daily_total === 'number';
     const noticeCtx = {
       meter: 'calls' as const,
-      used: entry.used,
-      limit: entry.total,
-      resetAtMs: monthResetAtMs(license),
+      used: isDailyWall ? (entry.daily_used as number) : entry.used,
+      limit: isDailyWall ? (entry.daily_total as number) : entry.total,
+      wall: isDailyWall ? ('daily' as const) : ('monthly' as const),
+      // The reset instant belongs to the wall that refused. `utcDayResetAtMs()` is the same
+      // derivation the daily meter enforces against, so `resets_at` cannot disagree with the
+      // `retry_after_hours` rendered beside it.
+      resetAtMs: isDailyWall ? utcDayResetAtMs() : monthResetAtMs(license),
       periodStartMs: periodStartMs(license),
       referralCode: refCode,
       x402: suggestedX402,

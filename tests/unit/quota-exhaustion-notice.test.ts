@@ -382,3 +382,108 @@ describe('AC2 — at the cap, EVERY call is refused (HOLD and non-HOLD alike)', 
     }
   });
 });
+
+// ── OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1-R2 CH3 ────────────────────────────────────
+//
+// The recommendation divided a ONE-DAY numerator by a MULTI-DAY denominator: on a daily wall
+// `used`/`limit` are the daily pair (this module's own contract) while `periodStartMs` is, and
+// always was, the MONTHLY anchor, passed unconditionally by errors.ts. The error grew with how
+// deep into the rolling month the daily wall fired — and it pushed the notice toward the MORE
+// EXPENSIVE path for the caller most worth converting.
+describe('CH3 — recommendPath projects from ONE meter', () => {
+  const dailyCtx = (dailyUsed: number, periodStartMs: number): QuotaNoticeContext => ({
+    meter: 'calls',
+    used: dailyUsed,
+    limit: 100,
+    wall: 'daily',
+    resetAtMs: RESET_AT,
+    nowMs: NOW,
+    // The MONTHLY anchor — present, as errors.ts passes it, and irrelevant to a daily projection.
+    periodStartMs,
+    x402: LIVE_RAIL,
+  });
+
+  /** The live boundary, derived — never the literal 500. */
+  const breakEven = subscriptionBreakEvenCalls(LIVE_RAIL.primary.price_usd)!;
+  const dailyBoundary = Math.ceil(breakEven / 30);
+
+  it('the boundary is DERIVED from the plan + rail SoT, not hardcoded', () => {
+    expect(breakEven).toBeGreaterThan(0);
+    expect(Number.isFinite(breakEven)).toBe(true);
+  });
+
+  it('🎯 a 100/day caller walled on day 20 is recommended the SUBSCRIPTION', () => {
+    // The defect: 100 / 20 elapsed days * 30 = 150 < break-even => x402, the dearer option.
+    // Same meter: 100 * 30 = 3,000 >> break-even => subscription, genuinely ~6x cheaper.
+    expect(recommendPath(dailyCtx(100, NOW - 20 * DAY))).toBe('subscription');
+  });
+
+  it('...and the verdict no longer moves with how deep into the month the wall fired', () => {
+    // The tell-tale of the old arithmetic: identical daily burn, different answers by day.
+    const byDay = [1, 5, 10, 20, 29].map((d) => recommendPath(dailyCtx(100, NOW - d * DAY)));
+    expect(new Set(byDay).size).toBe(1);
+    expect(byDay[0]).toBe('subscription');
+  });
+
+  it('a genuinely low-volume daily caller still gets x402 — both arms stay reachable', () => {
+    expect(recommendPath(dailyCtx(dailyBoundary - 1, NOW - 3 * DAY))).toBe('x402');
+  });
+
+  it('pins BOTH sides of the live break-even boundary', () => {
+    // plans.ts warns the free-cap/break-even relationship is load-bearing and coincidental, so
+    // the boundary is pinned rather than assumed to sit anywhere in particular.
+    expect(recommendPath(dailyCtx(dailyBoundary, NOW - 3 * DAY))).toBe('subscription');
+    expect(recommendPath(dailyCtx(dailyBoundary - 1, NOW - 3 * DAY))).toBe('x402');
+  });
+
+  it('the MONTHLY arm is untouched — the anchor still drives it', () => {
+    const monthly = (used: number, periodStartMs: number): QuotaNoticeContext => ({
+      meter: 'calls', used, limit: FREE_MONTHLY_CALLS, wall: 'monthly',
+      resetAtMs: RESET_AT, nowMs: NOW, periodStartMs, x402: LIVE_RAIL,
+    });
+    // A burst caller (whole allowance in a day) leads subscription; a slow one leads x402.
+    expect(recommendPath(monthly(FREE_MONTHLY_CALLS, NOW - 1 * DAY))).toBe('subscription');
+    expect(recommendPath(monthly(20, NOW - 29 * DAY))).toBe('x402');
+  });
+
+  it('an ABSENT wall still takes the monthly path (default, unchanged)', () => {
+    const noWall: QuotaNoticeContext = {
+      meter: 'calls', used: 20, limit: FREE_MONTHLY_CALLS, resetAtMs: RESET_AT, nowMs: NOW,
+      periodStartMs: NOW - 29 * DAY, x402: LIVE_RAIL,
+    };
+    expect(recommendPath(noWall)).toBe('x402');
+  });
+
+  it('chat has one meter and is untouched — still subscription', () => {
+    const chat = buildChatQuotaNotice('free', { limit: 10, used: 10, resetAt: new Date(RESET_AT) });
+    expect(chat.code).toBe('CHAT_QUOTA_EXHAUSTED');
+    expect(chat.suggested_action.length).toBeGreaterThan(0);
+  });
+
+  it('no dark rail: with no live rail the subscription leads and x402 is never advertised', () => {
+    const noRail: QuotaNoticeContext = { ...dailyCtx(100, NOW - 20 * DAY), x402: undefined };
+    expect(recommendPath(noRail)).toBe('subscription');
+    expect(buildQuotaNoticeMessage(noRail)).not.toMatch(/x402/i);
+  });
+});
+
+describe('CH3 — the daily wall renders the daily noun, pair and 00:00 UTC horizon', () => {
+  const daily: QuotaNoticeContext = {
+    meter: 'calls', used: 100, limit: 100, wall: 'daily',
+    resetAtMs: NOW + 6 * 60 * 60 * 1000, nowMs: NOW, periodStartMs: NOW - 20 * DAY, x402: LIVE_RAIL,
+  };
+
+  it('the headline states the DAILY pair and the 00:00 UTC return', () => {
+    const msg = buildQuotaNoticeMessage(daily);
+    expect(msg).toContain('100/100');
+    expect(msg).toContain('00:00 UTC');
+    expect(msg).not.toMatch(/Access returns \d{4}-\d{2}-\d{2}/); // the monthly sentence
+  });
+
+  it('the facts carry retry_after_hours and limit=daily', () => {
+    const f = quotaNoticeFacts(daily);
+    expect(f.limit).toBe('daily');
+    expect(f.retry_after_hours).toBeGreaterThanOrEqual(0);
+    expect(f.recommended_path).toBe('subscription');
+  });
+});

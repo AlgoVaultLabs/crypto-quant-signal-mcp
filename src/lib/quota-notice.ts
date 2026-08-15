@@ -142,11 +142,35 @@ function utcDate(ms: number): string {
  * Above the break-even (plan price ÷ per-call price, both read live from their SoT) the
  * subscription is genuinely cheaper and leads; below it, pay-per-call leads. With no live
  * rail there is nothing to compare, so the subscription leads by default.
+ *
+ * 🛑 THE NUMERATOR AND THE DENOMINATOR MUST COME FROM THE SAME METER
+ * (OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1-R2 CH3).
+ *
+ * This module's contract is that on a daily wall `used`/`limit` are the DAILY pair — but
+ * `periodStartMs` is, and always was, the MONTHLY period anchor, passed unconditionally by
+ * `errors.ts`. So the daily arm divided a ONE-DAY numerator by a MULTI-DAY denominator, and the
+ * error grew with how deep into the monthly period the daily wall happened to fire.
+ *
+ * Measured consequence: a 100/day caller walled on day 20 of their rolling month projected
+ * `100 / 20 * 30 = 150`, under the break-even, so the notice led with **x402 — the more expensive
+ * path — for the caller most worth converting**. The honest projection is 3,000/mo, which clears
+ * the break-even by ~6x and is genuinely cheaper as a subscription.
+ *
+ * The daily arm needs no anchor at all: `used` IS the count spent inside one UTC day, so the
+ * window is one day by construction and the projection is `used * 30`. That keeps this module the
+ * documented LEAF it must stay — no `license.ts` import, no second reset instant threaded in — and
+ * it is a conservative LOWER bound, since a caller who spent `used` in six hours is not
+ * extrapolated upward. The monthly arm below is untouched, byte-for-byte.
  */
 export function recommendPath(ctx: QuotaNoticeContext): RecommendedPath {
   const perCall = ctx.x402?.primary?.price_usd;
   const breakEven = subscriptionBreakEvenCalls(perCall);
   if (breakEven === null) return 'subscription';
+  // DAILY wall — same meter on both sides, and deliberately ahead of the `periodStartMs` guard:
+  // that anchor is the monthly one and has no business in this arm even when it is present.
+  if (ctx.wall === 'daily') {
+    return ctx.used * 30 >= breakEven ? 'subscription' : 'x402';
+  }
   if (typeof ctx.periodStartMs !== 'number' || !Number.isFinite(ctx.periodStartMs)) return 'subscription';
   const now = ctx.nowMs ?? Date.now();
   const elapsedDays = Math.max(1, (now - ctx.periodStartMs) / DAY_MS);
