@@ -35,8 +35,25 @@
  *   R3  Postgres declares a stop budget >= the contract floor, so a future 10 GB-plus database
  *       cannot be SIGKILLed into crash recovery at reboot.
  *
- * `--host-check` additionally probes a live host over SSH (used by the scheduled run on the box,
- * not by CI, which has no credentials).
+ * WHAT IT DOES NOT ASSERT — and this gap is REAL, not an oversight to be patched here.
+ * Nothing above verifies that the hosts actually MATCH the contract. A `systemctl disable caddy`
+ * would pass every check in this file until the next reboot took the site down. The contract is
+ * checked for internal coherence; live effective enablement is checked by nobody, on no schedule.
+ *
+ * This docstring previously claimed `--host-check` "additionally probes a live host over SSH
+ * (used by the scheduled run on the box)". That flag was NEVER implemented — there is no argv
+ * handling for it — and there is no scheduled run on any box: measured 2026-08-15 by
+ * OPS-HOST-KERNEL-REBOOT-W2, zero cron/timer entries on either host, no monitoring-inventory row,
+ * and this script is not even present on aoe-1. The claim was referenced nowhere but itself, so
+ * nothing broke; it simply made the continuous half of the boot-survival guarantee look shipped.
+ *
+ * Do NOT "fix" this by adding `--host-check` here. CI runs this gate and CI must never hold prod
+ * SSH credentials. The live half belongs in a host-side scheduled canary of the same shape as
+ * ops/monitoring/kernel-staleness-canary.sh (committed ancestor + inventory row + verdict token +
+ * backup convention + per-host installed_at registry) — tracked as
+ * OPS-BOOT-READINESS-HOST-CANARY-W{NEXT}. Reading LIVE restart policies there also covers aoe-1,
+ * whose compose lives in another repo, without any cross-repo access (see the exemption note in
+ * scripts/data/boot-critical-units.json).
  *
  * Usage:
  *   node scripts/check-boot-readiness.mjs --self-test
