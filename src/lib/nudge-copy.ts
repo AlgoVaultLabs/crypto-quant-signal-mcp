@@ -66,9 +66,21 @@ export interface NudgeStats {
  * `used`/`total` are the live per-request quota counters (factual, not the
  * illustrative "80 of 100").
  */
-export function buildSoftNudge(ctx: { used: number; total: number } & NudgeStats): string {
+/**
+ * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2 — SANCTIONED SIDE-FIX (interface-preserved).
+ *
+ * `period` names the horizon the `used`/`total` pair belongs to. It DEFAULTS to `'this month'`, so
+ * every existing caller and every pre-wave test renders byte-identically and no signature moved.
+ *
+ * It exists because the pair is no longer always the monthly one: `getUpgradeHint` now fires on the
+ * BINDING meter, and at a daily wall the honest sentence is "80 of your 100 free calls today". The
+ * old fixed string would have said "this month" over daily numbers — a nudge naming the wrong reset
+ * horizon, which is precisely the defect `quota-notice.ts` records running in production for a day
+ * and a half. Leaving the noun hardcoded would have re-created it one field over.
+ */
+export function buildSoftNudge(ctx: { used: number; total: number; period?: string } & NudgeStats): string {
   return (
-    `You've used ${ctx.used} of your ${ctx.total} free calls this month. ` +
+    `You've used ${ctx.used} of your ${ctx.total} free calls ${ctx.period ?? 'this month'}. ` +
     `Verify the proof first: ${ctx.pfeWr}% PFE win rate across ${ctx.callCount}+ on-chain calls at ${TRACK_RECORD_URL}. ` +
     `Upgrade to keep scanning → ${upgradeOfferPhrase({ withMultiple: true })}: ${nudgeSignupUrl('soft')}`
   );

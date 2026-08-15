@@ -11,7 +11,7 @@ import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-gu
 import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
-import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
+import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
 import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, Candle } from '../types.js';
@@ -458,7 +458,13 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   // regime under CANDLE_BASIS=closed.
 
   // Upgrade hint: only for free tier
-  const upgradeHint = getUpgradeHint(license, { used: quota.used, total: quota.total });
+  // CH2: the daily pair travels with the monthly one — the hint fires on whichever binds.
+  const upgradeHint = getUpgradeHint(license, {
+    used: quota.used,
+    total: quota.total,
+    dailyUsed: quota.daily_used,
+    dailyTotal: quota.daily_total,
+  });
 
   // EXCHANGE-SHADOW-PROMOTE-W1 / C2: venue lifecycle status surfaced in every
   // tool response envelope. See parallel comment in get-trade-call.ts.
@@ -478,6 +484,11 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     tier: license.tier,
     currentUsage: quota.used,
     monthlyLimit: quota.total || getMonthlyQuota(license.tier),
+    // CH2: the DAILY pair + BOTH horizons, so the warning names the wall it is actually about.
+    dailyUsage: quota.daily_used,
+    dailyLimit: quota.daily_total,
+    monthlyResetAtMs: monthResetAtMs(license),
+    dailyResetAtMs: utcDayResetAtMs(),
     isBotInternal: license.tier === 'internal',
     upgradeUrl: DEFAULT_UPGRADE_URL,
     tool: 'get_market_regime', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
@@ -488,6 +499,9 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     used: quota.used,
     total: quota.total || getMonthlyQuota(license.tier),
     resetAtMs: monthResetAtMs(license),
+    dailyUsed: quota.daily_used,
+    dailyTotal: quota.daily_total,
+    dailyResetAtMs: utcDayResetAtMs(),
     isBotInternal: license.tier === 'internal',
   });
 

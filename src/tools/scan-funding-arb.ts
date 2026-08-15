@@ -1,5 +1,5 @@
 import { getAdapter, type ExchangeAdapter } from '../lib/exchange-adapter.js';
-import { getFundingArbLimit, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js';
+import { getFundingArbLimit, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
 import { TierLimitReachedError } from '../lib/errors.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
@@ -453,6 +453,9 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     totalResults: totalFound,
     used: quota.used,
     total: quota.total,
+    // CH2: the daily pair travels with the monthly one — the hint fires on whichever binds.
+    dailyUsed: quota.daily_used,
+    dailyTotal: quota.daily_total,
   });
 
   let meta: FundingArbResult['_algovault'] = {
@@ -467,6 +470,11 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     tier: license.tier,
     currentUsage: quota.used,
     monthlyLimit: quota.total || getMonthlyQuota(license.tier),
+    // CH2: the DAILY pair + BOTH horizons, so the warning names the wall it is actually about.
+    dailyUsage: quota.daily_used,
+    dailyLimit: quota.daily_total,
+    monthlyResetAtMs: monthResetAtMs(license),
+    dailyResetAtMs: utcDayResetAtMs(),
     isBotInternal: license.tier === 'internal',
     upgradeUrl: DEFAULT_UPGRADE_URL,
     tool: 'scan_funding_arb', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
@@ -477,6 +485,9 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     used: quota.used,
     total: quota.total || getMonthlyQuota(license.tier),
     resetAtMs: monthResetAtMs(license),
+    dailyUsed: quota.daily_used,
+    dailyTotal: quota.daily_total,
+    dailyResetAtMs: utcDayResetAtMs(),
     isBotInternal: license.tier === 'internal',
   });
 

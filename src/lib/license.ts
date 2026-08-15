@@ -19,6 +19,10 @@ import type { LicenseInfo, LicenseTier, SuggestedX402 } from '../types.js';
 // now the architect-approved CTA copy with LIVE track-record values + the single
 // SOFT_THRESHOLD source (shared with tier-warning's quota_hit_soft band).
 import { SOFT_THRESHOLD } from './activation-thresholds.js';
+// OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2: the one derivation of "which meter binds".
+// LEAF (type-only imports), so this consumer edge closes no cycle — the same reason
+// `quota-notice.ts` is safe to import from here.
+import { bindingMeter } from './binding-meter.js';
 import { getTrackRecord } from './track-record-snapshot.js';
 import { buildSoftNudge } from './nudge-copy.js';
 // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the 100% wall message moved to the one notice contract.
@@ -1232,7 +1236,18 @@ const UPGRADE_URL = 'https://api.algovault.com/signup?plan=starter&upgrade_from=
 
 export function getUpgradeHint(
   license: LicenseInfo,
-  context?: { used?: number; total?: number; cappedResults?: number; totalResults?: number },
+  context?: {
+    used?: number;
+    total?: number;
+    cappedResults?: number;
+    totalResults?: number;
+    /**
+     * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2 — the DAILY pair. Optional; absent ⇒ the hint
+     * fires on the monthly ratio exactly as before, with byte-identical copy.
+     */
+    dailyUsed?: number;
+    dailyTotal?: number;
+  },
 ): string | undefined {
   if (license.tier !== 'free') return undefined;
 
@@ -1247,10 +1262,30 @@ export function getUpgradeHint(
   // source shared with tier-warning's quota_hit_soft band — A1). Approved CTA
   // copy + LIVE track-record values; `upgrade_from=soft`.
   if (context?.used && context?.total) {
-    const pctUsed = context.used / context.total;
+    // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2: fire on the BINDING meter, and render THAT
+    // meter's pair with THAT meter's horizon. Before this, the hint divided by the monthly limit
+    // unconditionally — so the 100/day caller sat at 0.40 and was never nudged at all, on any call,
+    // right up to the wall.
+    const binding = bindingMeter(
+      { used: context.used, limit: context.total, resetAtMs: 0 },
+      typeof context.dailyTotal === 'number' && typeof context.dailyUsed === 'number'
+        ? { used: context.dailyUsed, limit: context.dailyTotal, resetAtMs: 0 }
+        : null,
+    );
+    // `bindingMeter` returns null only when NEITHER meter is honestly metered; the pre-wave
+    // expression is the correct fallback for that (and is unreachable given the `context.total`
+    // guard above, which is why it is a `??` and not a branch).
+    const pctUsed = binding?.ratio ?? context.used / context.total;
     if (pctUsed >= 1.0) return undefined; // Handled by the TIER_LIMIT_REACHED path
     if (pctUsed >= SOFT_THRESHOLD) {
-      return buildSoftNudge({ used: context.used, total: context.total, ...getTrackRecord() });
+      return buildSoftNudge({
+        used: binding?.used ?? context.used,
+        total: binding?.limit ?? context.total,
+        // The horizon noun travels WITH the pair. `'this month'` is the default in `buildSoftNudge`,
+        // so a monthly binding renders the pre-wave string byte-for-byte.
+        ...(binding?.binding === 'daily' ? { period: 'today' } : {}),
+        ...getTrackRecord(),
+      });
     }
   }
 

@@ -210,6 +210,20 @@ export interface TierWarning {
   tier: LicenseTier;
   suggested_upgrade_url: string;
   /**
+   * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2 — WHICH meter triggered this warning.
+   *
+   * `current_usage` / `monthly_limit` keep their long-standing meaning (the MONTHLY pair) because
+   * every existing consumer reads them that way. This field says which wall the `level` is
+   * actually about, and `resets_at` below states that wall's own horizon. The two are not
+   * interchangeable to a caller deciding whether to act: a daily wall clears at 00:00 UTC and
+   * they return on their own; a monthly one does not.
+   *
+   * Spread-on-presence: a caller with NO daily meter gets a warning byte-identical to pre-wave.
+   */
+  meter?: QuotaWall;
+  /** ISO instant the `meter` above rolls over. Present whenever `meter` is. */
+  resets_at?: string;
+  /**
    * FUNNEL-FIX-AGENT-X402-NUDGE-W1: on the HARD warning (approaching the wall), the additive
    * in-protocol x402 pay-per-call branch — a sibling to `suggested_upgrade_url` (the Stripe
    * path). Present only when `X402_NUDGE_ENABLED` is on, the level is `hard`, and a public
@@ -323,6 +337,24 @@ export interface QuotaState {
   total: number;
   remaining: number;
   resets_at: string;
+  /**
+   * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2 — the SECOND meter, and which of the two binds.
+   *
+   * The four fields above are the MONTHLY pair and are unchanged, byte-for-byte, for every caller.
+   * These two are spread-on-presence, so a caller with no daily meter sees the pre-wave shape
+   * exactly. Before this wave a 100/day caller read `remaining: 100` on the very envelope that
+   * refused them, because the block described the meter that was NOT about to refuse.
+   *
+   * `binding` names the meter closest to refusing (`bindingMeter()` — the one derivation).
+   */
+  daily?: {
+    used: number;
+    total: number;
+    remaining: number;
+    /** Next 00:00 UTC — a fact every caller can be told in advance, unlike the rolling monthly anchor. */
+    resets_at: string;
+  };
+  binding?: QuotaWall;
 }
 
 // ── OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH1: the binding meter ──

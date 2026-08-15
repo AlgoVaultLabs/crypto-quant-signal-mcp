@@ -4,7 +4,7 @@ import { getAdapter } from '../lib/exchange-adapter.js';
 // full EMA passes per signal on a path `scan_trade_calls` fans out across many assets.
 // The extraction surfaced it; the golden fixture proves removing it changed no output.
 import { rsi, ema, hurstExponent, detectSqueeze } from '../lib/indicators.js';
-import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs } from '../lib/license.js'
+import { canAccessCoin, canAccessTimeframe, freeGateMessage, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js'
 import type { TrackCallResult } from '../lib/license.js';
 import { recordSignal, recordFunding, getFundingZScore, recordHoldCount } from '../lib/performance-db.js';
 import { FUNDING_Z_WINDOW_DAYS } from '../lib/funding-window.js';
@@ -851,7 +851,15 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // discarded anyway). No longer suppressed on HOLD — a HOLD now consumes quota, so withholding
   // the nudge on exactly the verdict that spends their allowance would be the wrong silence.
   const upgradeHint = !input.internal
-    ? getUpgradeHint(license, { used: quota.used, total: quota.total })
+    ? getUpgradeHint(license, {
+        used: quota.used,
+        total: quota.total,
+        // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2: the daily pair `checkQuota` ALREADY
+        // returns. Without it the hint divides by the monthly limit, so a 100/day caller sits at
+        // 0.40 forever and is nudged on no call at all, right up to the wall.
+        dailyUsed: quota.daily_used,
+        dailyTotal: quota.daily_total,
+      })
     : undefined;
 
   // EXCHANGE-SHADOW-PROMOTE-W1 / C2: venue lifecycle status surfaced in every
@@ -877,6 +885,13 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       tier: license.tier,
       currentUsage: quota.used,
       monthlyLimit: quota.total || getMonthlyQuota(license.tier),
+      // CH2: the DAILY pair + BOTH horizons. The warning now fires on whichever meter binds, and
+      // names that meter's own reset instant — a warning naming the wrong horizon is the defect
+      // `quota-notice.ts` records running in production for a day and a half.
+      dailyUsage: quota.daily_used,
+      dailyLimit: quota.daily_total,
+      monthlyResetAtMs: monthResetAtMs(license),
+      dailyResetAtMs: utcDayResetAtMs(),
       isBotInternal: license.tier === 'internal',
       upgradeUrl: DEFAULT_UPGRADE_URL,
       tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: hard-warning suggested_x402 branch
@@ -888,6 +903,11 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       used: (charged ?? quota).used,
       total: (charged ?? quota).total || getMonthlyQuota(license.tier),
       resetAtMs: monthResetAtMs(license),
+      // CH2: the POST-CHARGE daily pair, from the same `charged ?? quota` read as the monthly one
+      // above — two reads would be two derivations and could disagree by one call.
+      dailyUsed: (charged ?? quota).daily_used,
+      dailyTotal: (charged ?? quota).daily_total,
+      dailyResetAtMs: utcDayResetAtMs(),
       isBotInternal: license.tier === 'internal',
     });
   }
