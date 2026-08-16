@@ -50,5 +50,14 @@
       "reason": "Same class, older naming (`_resetBinanceAdapterCaches`, `_setSnapshotForTest` siblings). Kept as a separate pattern rather than widened into the one above so a future rename does not silently exempt more than intended."
     }
   ],
-  "symbol_exemptions": []
+  "symbol_exemptions": [
+    {
+      "symbol": "QUOTA_SURFACES",
+      "reason": "OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH1. The quota-surface conformance registry is CI-FACING BY DESIGN: its consumers are scripts/check-quota-surface-conformance.mjs (through dist/) and tests/unit/quota-surface-conformance.test.ts. Zero src/ consumers is the INTENDED end state rather than a wiring gap — a build-time contract that src/ imported would become a runtime dependency. This is an explanation, not a suppression: the row is still printed and counted as `exempt` on every run, and only `dark` scores the promotion criterion."
+    },
+    {
+      "symbol": "CONFORMANCE_CRITERION",
+      "reason": "OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH1. The sentence every quota surface is judged against, held in code rather than in a wave document precisely so a later reader cannot widen it in prose. Asserted by tests/unit/quota-surface-conformance.test.ts; no src/ consumer by design, same rationale as QUOTA_SURFACES."
+    }
+  ]
 }

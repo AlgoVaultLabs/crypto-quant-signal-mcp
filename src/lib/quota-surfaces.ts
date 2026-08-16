@@ -1,0 +1,376 @@
+/**
+ * quota-surfaces.ts — OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH1. The registry of every surface
+ * that may emit a quota fact, and the criterion each one is judged against.
+ *
+ * THE CLASS THIS RETIRES. Across eight waves this arc fixed the SAME defect eleven times: a
+ * surface emits a quota fact while assuming the monthly meter. `bindingMeter()` (CH1 of
+ * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1) made the derivation SINGLE. It never made it
+ * MANDATORY — measured at `cf9cbb5`, the identifier `bindingMeter` appears in `src/` and
+ * `tests/` and in NO gate, manifest, canary or CI script anywhere in the repo. Nothing failed a
+ * build when a surface emitted a quota fact without going through it, which is why instances 9,
+ * 10 and 11 were found by reading PRODUCTION OUTPUT rather than by CI.
+ *
+ * CLAUDE.md: "Fix at the generator, not the lane. After the 3rd same-class fix the 4th MUST build
+ * a gate making the bug class structurally impossible." This registry plus
+ * `scripts/check-quota-surface-conformance.mjs` is that gate.
+ *
+ * WHY A REGISTRY AND NOT A SCAN ALONE. Two failure modes, and a source scan sees only the first:
+ *   STRUCTURAL — a surface emits a quota fact without routing through the single derivation.
+ *                Caught by the checker's orphan scan (check B): a call site no row covers FAILS.
+ *   INERT      — the surface routes correctly but its INPUT is `undefined` at run time, so the
+ *                field ships absent with a green suite. That is the R3 defect verbatim
+ *                (`withQuotaState(..., { dailyUsed: (charged ?? quota).daily_used })` where
+ *                `trackCall` returned no daily pair). Caught by the rendered-output assertion
+ *                (check A) in `tests/unit/quota-surface-conformance.test.ts`, which drives the
+ *                REAL exported tool path on a daily-walled caller — never a hand-built mirror of
+ *                the throw site, because a mirror embeds the very bug it is meant to catch.
+ *
+ * WHAT THIS GATE CANNOT SEE, stated so nobody claims otherwise: a database column that failed to
+ * materialise is invisible to both checks. The post-deploy live capture from a disposable bucket
+ * remains a standing requirement.
+ *
+ * LEAF. This module imports TYPES ONLY, for the same load-bearing reason `binding-meter.ts`
+ * documents: `license.ts` and `tier-warning.ts` are CONSUMERS of the modules named in these rows,
+ * so a value import would close a cycle. Leafness is asserted against this file's own import list
+ * by the conformance suite, so the property is checked rather than remembered.
+ */
+import type { QuotaWall } from '../types.js';
+
+/**
+ * THE CONFORMANCE CRITERION (ratified 2026-08-16, Q2).
+ *
+ * Stated here rather than in a wave document because a criterion that lives only in prose is what
+ * lets the next reader widen it. Note carefully what it does NOT say: it does not say "every field
+ * must be the binding meter's". `_algovault.quota.resets_at` is the MONTHLY meter's own reset,
+ * sitting beside `quota.daily.resets_at` and a `binding` label naming which one governs — nothing
+ * it emits is false, so it CONFORMS. Instances 9-12 are different in kind: a payload asserting the
+ * wrong horizon for the wall that ACTUALLY refused.
+ */
+export const CONFORMANCE_CRITERION =
+  'A surface CONFORMS when every fact it emits is true of the meter it names ' +
+  'AND the binding meter is identified.';
+
+/**
+ * The declared corpus boundary (ratified 2026-08-16, Q3).
+ *
+ * CALLER-FACING API/MCP PAYLOAD SURFACES. A corpus that also swept email, Telegram and the
+ * dashboard could never go green and would be abandoned — and a gate expected to be red is a gate
+ * nobody reads. Surfaces outside the boundary are recorded as `excluded` rows with a reason, never
+ * dropped in silence.
+ */
+export const CORPUS_BOUNDARY = 'caller-facing API/MCP payload surfaces';
+
+/**
+ * The emitting primitives the orphan scan triggers on.
+ *
+ * DERIVED AT STEP 0 FROM REAL CALL SITES, never from a spec's list — the dispatching spec named
+ * eleven instances and called that "a floor, not a ceiling", and the derived scan immediately
+ * found a twelfth (`webhook-api.ts`) that no wave document mentions.
+ *
+ * `key:*` entries trigger on literal key CONSTRUCTION in an object literal. The checker
+ * discriminates construction from TYPE DECLARATION structurally (`resets_at: string;` in
+ * `types.ts` declares the contract, it does not emit), and discriminates a caller's quota block
+ * from `feature-registry.ts`'s `quota: { unit, holdFree }` pricing descriptor by requiring the
+ * object to name `used`. Both discriminations are proven by fixtures in `--self-test`, because a
+ * structural rule nobody exercises is a structural rule that silently stops holding.
+ */
+export const QUOTA_PRIMITIVES = [
+  'new TierLimitReachedError',
+  'buildTierLimitPayload',
+  'quotaNoticeFacts',
+  'buildQuotaNoticeMessage',
+  'withQuotaState',
+  'bindingMeter',
+  'monthResetAtMs',
+  'utcDayResetAtMs',
+  'buildSuggestedX402',
+  'key:resets_at',
+  'key:retry_after_days',
+  'key:retry_after_hours',
+  'key:quota',
+] as const;
+
+export type QuotaPrimitive = (typeof QUOTA_PRIMITIVES)[number];
+
+/**
+ * `conforming`          — meets `CONFORMANCE_CRITERION`.
+ * `violation`           — emits a fact untrue of the meter that refused. The checker FAILS on these.
+ * `exempt-monthly-only` — genuinely single-metered, so "monthly" is not an assumption but a fact.
+ *                         A DECLARED exemption carrying a reason, never a silent omission.
+ * `deferred`            — a real violation whose fix is owned by a NAMED wave because closing it
+ *                         here would blow scope. Reported loudly on every run, and does NOT fail
+ *                         the build: this gate is wired into `prepublishOnly`, so a permanently-red
+ *                         verdict would block every publish — warn-mode by another name.
+ * `excluded`            — outside `CORPUS_BOUNDARY`. Recorded so the boundary is a decision.
+ */
+export type QuotaSurfaceStatus =
+  | 'conforming'
+  | 'violation'
+  | 'exempt-monthly-only'
+  | 'deferred'
+  | 'excluded';
+
+export interface QuotaSurface {
+  /** Stable id. Check A's renderer map is keyed on this, so a row with no renderer FAILS. */
+  id: string;
+  /** Repo-relative owning module. Check B's coverage key is (module, primitive). */
+  module: string;
+  /** Which primitives this surface is permitted to invoke. A call site outside any row's set fails. */
+  primitives: readonly QuotaPrimitive[];
+  /** The caller-visible fields this surface puts on the wire. */
+  emits: readonly string[];
+  status: QuotaSurfaceStatus;
+  /**
+   * Does this surface project its horizon/noun from the wall that actually refused?
+   * `null` for rows that emit no horizon at all (the derivation and horizon primitives).
+   */
+  meterAware: boolean | null;
+  /**
+   * Fields that MUST be present and NOT `undefined` when this surface renders for a DAILY-binding
+   * caller. Empty for rows check A does not drive. `undefined` and absent must BOTH fail — that is
+   * the exact shape of the R3 inert defect, where the field was wired and the value was not.
+   */
+  dailyRequiredFields: readonly string[];
+  /**
+   * Fields whose VALUE must equal the DAILY reset instant when the daily meter binds. Presence and
+   * correctness are different defects — instance 9's fields are all PRESENT and its horizon is
+   * wrong, while instance 10's horizon is fine and its fields are ABSENT. A single list could not
+   * express both, and collapsing them is how a gate ends up asserting the wrong thing about half
+   * its rows.
+   */
+  wallDerivedFields?: readonly string[];
+  /** Copy that must NOT appear on a daily wall (the x402 noun). `pattern` is a RegExp source. */
+  dailyForbiddenPattern?: { field: string; pattern: string };
+  /** REQUIRED on every non-`conforming` row. The checker refuses a config that omits it. */
+  reason?: string;
+  /** The wave that owes the fix. REQUIRED on `violation` and `deferred`. */
+  ownerWave?: string;
+}
+
+/**
+ * The wall discriminator has THREE existing spellings across four sites, and this registry renames
+ * none of them — a fourth spelling would be a second derivation of the thing this arc exists to
+ * derive once:
+ *
+ *   TrackCallResult.limit      'daily'|'monthly'|null   src/lib/license.ts     — meter layer
+ *   QuotaNoticeContext.wall    QuotaWall                src/lib/quota-notice.ts — notice ctx + ctor arg
+ *   TierLimitPayload.limit     'daily'|'monthly'        src/lib/errors.ts      — wire payload
+ *   _algovault.quota.binding   QuotaWall                src/lib/tier-warning.ts — success envelope
+ *
+ * `QuotaWall` is defined in `quota-notice.ts` and re-exported by `types.ts`; this module imports it
+ * from `types.js` to match `binding-meter.ts`, the leaf it is modelled on. `import type` erases at
+ * compile time, so neither path can form a cycle.
+ */
+export type QuotaSurfaceWall = QuotaWall;
+
+export const QUOTA_SURFACES: readonly QuotaSurface[] = [
+  // ── The single derivation and the two horizon primitives ────────────────────────────────────
+  {
+    id: 'derivation:binding-meter',
+    module: 'src/lib/binding-meter.ts',
+    primitives: ['bindingMeter'],
+    emits: [],
+    status: 'conforming',
+    meterAware: null,
+    dailyRequiredFields: [],
+  },
+  {
+    id: 'horizon:utc-day',
+    module: 'src/lib/utc-day.ts',
+    primitives: ['utcDayResetAtMs'],
+    emits: [],
+    status: 'conforming',
+    meterAware: null,
+    dailyRequiredFields: [],
+  },
+
+  // ── Shared renderers: they already project from the wall they are handed ────────────────────
+  {
+    id: 'notice:quota-notice',
+    module: 'src/lib/quota-notice.ts',
+    primitives: ['quotaNoticeFacts', 'buildQuotaNoticeMessage', 'key:resets_at', 'key:retry_after_days', 'key:retry_after_hours'],
+    emits: ['usage_display', 'resets_at', 'retry_after_days', 'retry_after_hours', 'limit', 'recommended_path'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: [],
+  },
+  {
+    id: 'payload:tier-limit',
+    module: 'src/lib/errors.ts',
+    primitives: ['buildTierLimitPayload', 'quotaNoticeFacts', 'buildQuotaNoticeMessage', 'key:resets_at', 'key:retry_after_days', 'key:retry_after_hours'],
+    emits: ['limit', 'resets_at', 'retry_after_days', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: [],
+  },
+  {
+    id: 'warning:tier-warning',
+    module: 'src/lib/tier-warning.ts',
+    primitives: ['withQuotaState', 'bindingMeter', 'buildSuggestedX402', 'key:resets_at', 'key:quota'],
+    emits: ['quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at', 'quota.daily', 'quota.binding'],
+    status: 'conforming',
+    meterAware: true,
+    // Q2: the top-level `resets_at` is the MONTHLY meter's own reset and is TRUE of the meter it
+    // names, with `daily` and `binding` beside it. Conforming, not instance 12.
+    dailyRequiredFields: ['quota.daily', 'quota.binding', 'quota.daily.resets_at'],
+  },
+  {
+    id: 'hint:upgrade-soft-nudge',
+    module: 'src/lib/license.ts',
+    primitives: ['bindingMeter', 'monthResetAtMs'],
+    emits: ['upgrade_hint'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: [],
+  },
+  {
+    id: 'serializer:tier-limit',
+    module: 'src/index.ts',
+    primitives: ['buildTierLimitPayload', 'buildSuggestedX402'],
+    emits: ['suggested_x402'],
+    status: 'conforming',
+    meterAware: true,
+    dailyRequiredFields: [],
+  },
+
+  // ── INSTANCE 13 — the scanner REFUSAL envelope's nested quota block ─────────────────────────
+  //
+  // This surface is the in-tree PRECEDENT for the instance-9 fix: its top-level horizon is
+  // `resetAtMs: isDailyWall ? utcDayResetAtMs() : monthResetAtMs(license)`, which is exactly the
+  // shape the four instance-9 sites must copy. That much is right, and it is why the dispatching
+  // spec cites it approvingly.
+  //
+  // Its NESTED `quota:` block is not. `entry = checkQuota(license)`, so `entry.used`/`entry.total`
+  // are the MONTHLY pair — and on a daily wall the block ships them beside `remaining: 0` and a
+  // DAILY `resets_at`, naming no meter at all. `remaining: 0` is FALSE of the monthly meter the
+  // pair names: that caller still has monthly headroom. Found by this gate's own detector, not by
+  // any wave document — the second such finding after instance 12, and the reason the spec's
+  // eleven were called a floor.
+  {
+    id: 'refusal:scan_trade_calls',
+    module: 'src/tools/scan-trade-calls.ts',
+    primitives: ['quotaNoticeFacts', 'buildQuotaNoticeMessage', 'monthResetAtMs', 'utcDayResetAtMs', 'buildSuggestedX402', 'key:resets_at', 'key:retry_after_days', 'key:quota'],
+    emits: ['resets_at', 'retry_after_days', 'usage_display', 'recommended_path', 'quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['resets_at', 'retry_after_days', 'quota.binding'],
+    wallDerivedFields: ['resets_at'],
+    reason: 'Instance 13. The top-level horizon IS wall-derived and is the precedent instance 9 must copy, but the nested `quota` block emits the MONTHLY pair beside `remaining: 0` and a wall-derived `resets_at`, identifying no meter — so `remaining: 0` is false of the meter the pair names.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+
+  // ── INSTANCE 9 — the refusal path: correct discriminator, unconditional monthly horizon ─────
+  {
+    id: 'refusal:get_trade_call',
+    module: 'src/tools/get-trade-call.ts',
+    primitives: ['new TierLimitReachedError', 'withQuotaState', 'monthResetAtMs', 'utcDayResetAtMs'],
+    emits: ['limit', 'resets_at', 'retry_after_days', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['limit', 'resets_at', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    wallDerivedFields: ['resets_at'],
+    reason: 'Instance 9. Passes `wall: quota.limit === "daily" ? "daily" : "monthly"` beside an UNCONDITIONAL `resetAtMs: monthResetAtMs(licenseForReset)`, so a caller walled for hours is told to return in 30 days.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+  {
+    id: 'refusal:get_market_regime',
+    module: 'src/tools/get-market-regime.ts',
+    primitives: ['new TierLimitReachedError', 'withQuotaState', 'monthResetAtMs', 'utcDayResetAtMs'],
+    emits: ['limit', 'resets_at', 'retry_after_days', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['limit', 'resets_at', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    wallDerivedFields: ['resets_at'],
+    reason: 'Instance 9. Same shape as `refusal:get_trade_call` — `wall` from `gate.limit`, horizon unconditionally monthly.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+  {
+    id: 'refusal:scan_funding_arb',
+    module: 'src/tools/scan-funding-arb.ts',
+    primitives: ['new TierLimitReachedError', 'withQuotaState', 'monthResetAtMs', 'utcDayResetAtMs'],
+    emits: ['limit', 'resets_at', 'retry_after_days', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['limit', 'resets_at', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    wallDerivedFields: ['resets_at'],
+    reason: 'Instance 9. Same shape as `refusal:get_trade_call`.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+  {
+    id: 'refusal:equity-tools',
+    module: 'src/lib/equities/equity-tool-formatters.ts',
+    primitives: ['new TierLimitReachedError', 'monthResetAtMs'],
+    emits: ['limit', 'resets_at', 'retry_after_days', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['limit', 'resets_at', 'retry_after_hours', 'daily_used', 'daily_limit'],
+    wallDerivedFields: ['resets_at'],
+    reason: 'Instance 9. `tierLimitError()` threads `wall` from `q.limit` beside an unconditional monthly horizon. Dark-retired behind EQUITY_TOOLS_ENABLED, but it shares the one notice contract and would inherit the defect the moment the flag flips.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+
+  // ── INSTANCE 10 — the scanner success envelope ──────────────────────────────────────────────
+  {
+    id: 'envelope:scan_trade_calls',
+    module: 'src/tools/scan-trade-calls.ts',
+    primitives: ['monthResetAtMs', 'key:quota', 'key:resets_at'],
+    emits: ['quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['quota.daily', 'quota.binding', 'quota.daily.resets_at'],
+    reason: 'Instance 10. Emits a 4-key `quota` block with `resets_at` from an unconditional `monthResetAtMs(license)` and NO `daily` / `binding` — unlike the three tools wired by the parent wave CH2.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+
+  // ── INSTANCE 11 — the x402 nudge noun ───────────────────────────────────────────────────────
+  {
+    id: 'nudge:x402',
+    module: 'src/lib/x402-nudge.ts',
+    primitives: ['buildSuggestedX402'],
+    emits: ['suggested_x402.instructions'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['suggested_x402.instructions'],
+    dailyForbiddenPattern: { field: 'suggested_x402.instructions', pattern: 'monthly' },
+    reason: 'Instance 11. `buildInstructions()` hardcodes "Free monthly quota reached." and `buildSuggestedX402` accepts no wall, so the noun contradicts a daily refusal on all three of its call sites.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+
+  // ── INSTANCE 12 — found by the DERIVED scan, named by no wave document ──────────────────────
+  {
+    id: 'envelope:webhook-api',
+    module: 'src/lib/webhook-api.ts',
+    primitives: ['key:quota'],
+    emits: ['quota.used', 'quota.total', 'quota.remaining'],
+    status: 'violation',
+    meterAware: false,
+    dailyRequiredFields: ['quota.used', 'quota.total', 'quota.remaining'],
+    reason: 'Instance 12, found by the Step-0 derived scan and named in no wave document — exactly what "the spec\'s eleven are a floor, not a ceiling" predicted. `/api/webhooks` POST and GET emit a 3-key `quota` block with NO `resets_at`, `daily` or `binding`, beside copy asserting "your MONTHLY call quota", while `checkQuotaByKey` walls EVERY tier on the daily meter. Its disposition is an open architect question: `checkQuotaByKey` returns `limit: null` on the allowed path, so this surface cannot name its wall without the daily-pair plumbing that OPS-WEBHOOK-QUOTA-METER-PARITY-W1 owns.',
+    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+  },
+
+  // ── Declared monthly-only exemption ─────────────────────────────────────────────────────────
+  {
+    id: 'notice:chat-wall',
+    module: 'src/lib/chat-rate-limit.ts',
+    primitives: ['quotaNoticeFacts', 'buildQuotaNoticeMessage', 'key:resets_at', 'key:retry_after_days'],
+    emits: ['message', 'retry_after_days', 'resets_at', 'suggested_action'],
+    status: 'exempt-monthly-only',
+    meterAware: null,
+    dailyRequiredFields: [],
+    reason: 'The chat meter is SINGLE — 10/month, no daily pacing cap — so `wall: "monthly"` is a fact about the tier rather than an assumption about the caller. `QuotaWall`\'s own docblock records that `"monthly"` is the only reachable value for `meter: "chat"`. This is a DECLARED exemption; if a daily chat cap is ever added, this row must flip to `violation` in the same wave.',
+  },
+
+  // ── Declared exclusion: outside CORPUS_BOUNDARY ─────────────────────────────────────────────
+  {
+    id: 'email:webhook-quota-paused',
+    module: 'src/lib/email.ts',
+    primitives: [],
+    emits: ['subject', 'body'],
+    status: 'excluded',
+    meterAware: false,
+    dailyRequiredFields: [],
+    reason: 'Excluded pending meter plumbing. Outside CORPUS_BOUNDARY (email, not an API/MCP payload) — but the copy IS false on the daily path, measured: `checkQuotaByKey` returns `limit: "daily"` for every tier, `webhook-delivery.ts` fires the notify on `!quota.allowed` REGARDLESS of `quota.limit`, and the owner is then mailed "monthly limit reached … resumes next month". TWO surfaces are wrong on that path, not one — this email and `webhook-delivery.ts`\'s `suggested_action: "owner monthly quota exhausted … until reset"`.',
+    ownerWave: 'OPS-WEBHOOK-QUOTA-METER-PARITY-W1',
+  },
+] as const;
