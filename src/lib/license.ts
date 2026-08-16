@@ -1151,9 +1151,28 @@ export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
   // usage, and `_algovault` surfaces the count long before anyone is walled.
   chargeDaily(key, clampUnits(units));
 
+  // OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2, WIRED in CH6 after the live post-deploy check.
+  //
+  // `chargeDaily` above advances the daily meter on EVERY call, but this function's return shape
+  // carried only the monthly pair. Every tool builds its envelope from THIS result
+  // (`withQuotaState(..., { dailyUsed: quota.daily_used })`), so it received `undefined` and
+  // `emitDaily` was false — `_algovault.quota` shipped WITHOUT `daily`/`binding` in production
+  // while every unit test passed, because those tests call `withQuotaState` directly WITH a pair.
+  // CH2 was deployed and INERT: the always-on block still told a caller pacing at the daily cap
+  // that they had the monthly remainder left, which is the precise defect the chapter names.
+  //
+  // A charging function that will not report what it charged forces every consumer to re-read the
+  // meter — the second derivation this wave exists to delete. Mirrors `checkQuota`'s rule exactly:
+  // REPORTING is unconditional on a finite cap; only REFUSING requires a walled tier. Read AFTER
+  // `chargeDaily` so the reported count matches the post-increment `used` beside it.
+  const dailyCap = getDailyCap(license.tier);
+  const dailyPair = Number.isFinite(dailyCap)
+    ? { daily_used: getDailyTracker(key).count, daily_total: dailyCap }
+    : {};
+
   // REFERRAL-LIGHT-W1 (C2): free tier draws monthly-then-bonus (atomic overflow).
   if (license.tier === 'free') {
-    return freeMeterCharge(key, tracker, quota, clampUnits(units));
+    return { ...freeMeterCharge(key, tracker, quota, clampUnits(units)), ...dailyPair };
   }
 
   tracker.count += clampUnits(units);
@@ -1162,7 +1181,7 @@ export function trackCall(license: LicenseInfo, units = 1): TrackCallResult {
   const remaining = Math.max(0, quota - tracker.count);
   const overage = Math.max(0, tracker.count - quota);
 
-  return { allowed: true, remaining, overage, used: tracker.count, total: quota };
+  return { allowed: true, remaining, overage, used: tracker.count, total: quota, ...dailyPair };
 }
 
 // ── Key-addressed quota meter (CALL-REGIME-WEBHOOK-LAYER-W1, 2026-05-29) ──

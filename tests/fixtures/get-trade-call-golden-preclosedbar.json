@@ -30,7 +30,14 @@
       "used": 1,
       "total": 200,
       "remaining": 199,
-      "resets_at": "2026-08-28T12:06:00.000Z"
+      "resets_at": "2026-08-28T12:06:00.000Z",
+      "daily": {
+        "used": 1,
+        "total": 100,
+        "remaining": 99,
+        "resets_at": "2026-07-30T00:00:00.000Z"
+      },
+      "binding": "daily"
     }
   },
   "_receipts": {

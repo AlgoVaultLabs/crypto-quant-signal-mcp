@@ -20,9 +20,11 @@ import {
   getMonthlyQuota,
   getDailyCap,
   utcDayKey,
+  utcDayResetAtMs,
   hoursUntilUtcDayReset,
   _resetCallTrackersForTest,
 } from '../../src/lib/license.js';
+import { withQuotaState } from '../../src/lib/tier-warning.js';
 import { FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, PLANS } from '../../src/lib/plans.js';
 import type { LicenseInfo } from '../../src/types.js';
 
@@ -195,5 +197,53 @@ describe('R-D — the period key is a UTC calendar day', () => {
     const lic = starter('s1');
     trackCall(lic, 3);
     expect(checkQuota(lic).daily_used).toBe(3);
+  });
+});
+
+/**
+ * OPS-QUOTA-BINDING-METER-AND-CONVERSION-W1 CH2 — WIRING, not formatting.
+ *
+ * CH2 reached production INERT. `_algovault.quota` carried no `daily` and no `binding` for ANY
+ * caller, keyed or keyless, because every tool builds its envelope from `trackCall()`'s result and
+ * `trackCall` did not return the daily pair it had just charged — so `withQuotaState` received
+ * `dailyUsed: undefined` and correctly omitted both fields.
+ *
+ * Every CH2 unit test passed throughout, and that is the lesson worth keeping: they call
+ * `withQuotaState` DIRECTLY with a pair, and `tests/unit/tier-warning.test.ts` additionally MOCKS
+ * `../../src/lib/license.js` — so its seam replaced the exact producer that was broken. A test
+ * asserting a formatter can never prove a caller feeds it. These assertions therefore run against
+ * the REAL license module and compose the two functions the way the tool call sites compose them.
+ */
+describe('CH2 wiring — the envelope is built from a producer that reports BOTH meters', () => {
+  it('trackCall REPORTS the daily meter it just charged', () => {
+    const r = trackCall(free('av_free_wire_1'));
+    expect(r.daily_used).toBe(1);
+    expect(r.daily_total).toBe(FREE_DAILY_CALLS);
+  });
+
+  it('the tool-shaped composition emits daily + binding — the exact live defect', () => {
+    const license = free('av_free_wire_2');
+    const q = trackCall(license); // precisely what every tool call site binds
+    const meta = withQuotaState({} as Parameters<typeof withQuotaState>[0], {
+      tier: 'free',
+      used: q.used,
+      total: q.total,
+      resetAtMs: Date.now() + 30 * 86_400_000,
+      dailyUsed: q.daily_used, // ← `undefined` before the fix ⇒ both fields silently dropped
+      dailyTotal: q.daily_total,
+      dailyResetAtMs: utcDayResetAtMs(),
+      isBotInternal: false,
+    });
+    expect(meta.quota?.daily).toBeDefined();
+    expect(meta.quota?.daily?.total).toBe(FREE_DAILY_CALLS);
+    // 1/100 daily beats 1/200 monthly, so the day-1 caller's binding meter is the daily one —
+    // which is the whole point of the chapter.
+    expect(meta.quota?.binding).toBe('daily');
+  });
+
+  it('an UNMETERED tier still gets no daily pair — the guard is the finite cap, not the tier', () => {
+    const r = trackCall({ tier: 'x402', key: 'x402_wire' } as LicenseInfo);
+    expect(r.daily_used).toBeUndefined();
+    expect(r.daily_total).toBeUndefined();
   });
 });
