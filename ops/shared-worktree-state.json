@@ -318,7 +318,14 @@
           "observed": [
             { "at": "2026-08-09", "violations": 35, "note": "baseline as recorded by W2 CH2" },
             { "at": "2026-08-10", "violations": 5, "note": "OPS-WORKTREE-ROOT-R2-PROMOTE-W1: -30 in one day, so the population IS healing; the waiting-period date was never the constraint" }
-          ]
+          ],
+          "instrument": {
+            "population": "R1_confinement violations — sibling worktrees placed outside the declared worktree_root, counted live per run and appended to observed[] at each decision point.",
+            "written_by": "scripts/check-worktree-root.mjs — the subject of this criterion.",
+            "grade": "D",
+            "reobserve": "Re-take the measurement now with `node scripts/check-worktree-root.mjs` and read the R1 count, or enumerate `git worktree list` and compare each path against worktree_roots.worktree_root. observed[] is a hand-recorded series of past samples, not the population: a past count cannot be recomputed once the worktrees have moved.",
+            "reason": "D, not B: the count is external world-state — where the checkouts physically sit — and it is not in git, so no commit re-derives a past value. D, not C: the gate READS placement, so a deliberate run cannot report a worktree outside the root without someone first creating one there; an extra sample is always TRUE and can only make the criterion harder to satisfy, never easier. Added by OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 CH1. This block is NESTED three levels deep, and it is the case that settled R1.4's discovery rule: excluding it for being nested would have been an accident of file layout rather than a principle, and would have handed every future criterion an escape hatch one indent deep."
+          }
         }
       },
       "R2_nesting": {

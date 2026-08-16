@@ -63,7 +63,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { assertPromotionBound } from './lib/promotion-bound.mjs';
+import { assertPromotionBound, assertInstrumentIndependence } from './lib/promotion-bound.mjs';
 import { tracked, invokerFiles, findInvocations } from './check-canaries-wired.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -141,6 +141,11 @@ export function validateConfig(cfg) {
   // assertion exists to retire, and a second copy is what goes stale.
   assertPromotionBound(cfg.report_class_promotion, 'report_class_promotion');
   assertPromotionBound(cfg.freshness_promotion, 'freshness_promotion');
+  // OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 R1.3 — independence is ORTHOGONAL to shape, so it is a
+  // second call rather than a widening of the one above. Both blocks must declare what population
+  // they measure, who writes it, and a grade that is not "subject-written AND manufacturable".
+  assertInstrumentIndependence(cfg.report_class_promotion, 'report_class_promotion');
+  assertInstrumentIndependence(cfg.freshness_promotion, 'freshness_promotion');
   // Every staleness severity is DECLARED with its own reason. A severity that lives only in code
   // gets "fixed" by a future wave enforcing the contract — the same argument as the exemption rows.
   const FRESHNESS_SEVERITIES = ['STALE_SYNCABLE', 'STALE_IN_FLIGHT', 'STALE_UNPUBLISHED', 'STALE_DROPPED'];

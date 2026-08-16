@@ -20,7 +20,15 @@
       "owner_wave": "OPS-GATE-STALENESS-PROMOTE-W{NEXT}",
       "_why": "Without a clock the numeric criterion may never fire and the guard reports forever. The review decides: promote to block, or accept REPORT permanently with a recorded reason."
     },
-    "_rate_telemetry": "EVERY run appends `STALE_COUNT <n>` with a UTC timestamp to the shared ledger, so the healing RATE is measured rather than guessed at the promotion decision."
+    "_rate_telemetry": "EVERY run appends `STALE_COUNT <n>` with a UTC timestamp to the shared ledger, so the healing RATE is measured rather than guessed at the promotion decision.",
+
+    "instrument": {
+      "population": "stale_worktree_count — the number of sibling checkouts running a gate script older than the shared hook block requires, sampled once per push and appended as a STALE_COUNT row.",
+      "written_by": "scripts/install_gate_staleness_hook.sh's inline pre-push block — the subject of this criterion.",
+      "grade": "D",
+      "reobserve": "Re-take the measurement now by pushing from any checkout and reading the block's `STALE_COUNT <n>` line, or by re-deriving the present count directly from the live fleet: enumerate `git worktree list` and compare each checkout's scripts/check_test_baseline.sh against the revision the shared block requires. The value is the fleet's state at an instant; a past sample cannot be recomputed, only re-taken for now.",
+      "reason": "D, not B: stale_worktree_count is external world-state — which of ~45 checkouts have rebased — and it lives nowhere in git, so there is no commit at which a past value is recomputable. D, not C: the block READS the fleet, so a deliberate run cannot report stale worktrees that do not exist without someone first creating them; an extra invocation adds a TRUE sample and can only ever make the criterion harder to satisfy, never easier. Added by OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 CH1, and this block is the reason grade D exists at all — the wave's original A/B/C taxonomy graded it INVALID for not being re-derivable, which would have HALTed a criterion that is in fact perfectly safe."
+    }
   },
 
   "transitional_content_fallback": {

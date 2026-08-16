@@ -28,7 +28,15 @@
     "escalate_after": "2026-11-30",
     "owner": "OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}",
     "reason": "Both bounds are required: a numeric bar alone can never fire on a clock, only when someone remembers, and CLAUDE.md records a REPORT-only guard left in place indefinitely as decoration with the same shape as a months-old MANUAL_PENDING. Past escalate_after, a still-REPORT class must be ESCALATED to the architect with its measured healing rate attached, not silently left in place. Date is 2026-11-30 rather than freshness_promotion's 2026-10-31 because this criterion was bounded on 2026-08-16, a later start — the two dates differ deliberately, not by drift.",
-    "criterion": "A report class promotes to block only after ≥30 consecutive --check runs (CI + local combined) with ZERO false positives in that class, counted from the gate's own printed per-claim output — a number that can be checked, not a vibe. The flip is a config edit owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; do not flip it inline."
+    "criterion": "A report class promotes to block only after ≥30 consecutive --check runs (CI + local combined) with ZERO false positives in that class, counted from the gate's own printed per-claim output — a number that can be checked, not a vibe. The flip is a config edit owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; do not flip it inline.",
+
+    "instrument": {
+      "population": "Per-claim REPORT-class results printed by each --check run, and the operator's false-positive adjudication of them.",
+      "written_by": "scripts/check-claudemd-claims.mjs — the subject of this criterion.",
+      "grade": "B",
+      "rederive": "Re-run `node scripts/check-claudemd-claims.mjs --check` at any commit and re-read the per-claim lines. Every REPORT class resolves a claim extracted from the CLAUDE.md corpus against `git ls-files` and the remote refs — both inputs this gate does not control and neither of which it writes. The printed output is a rendering of that resolution, not an accumulated tally, so the same per-claim verdicts are reproducible for any commit rather than only for the run that printed them.",
+      "reason": "B, not A: the printed output is produced by the subject. B, not C: nothing about a deliberate run changes what the corpus says or what git tracks, so an extra invocation cannot mint a false positive — it re-derives the same answer. The adjudication half is an operator judgement layered on top of that re-derivable base, which is why the criterion carries false_positives_allowed: 0 rather than trusting the raw count."
+    }
   },
 
   "_freshness_doc": "OPS-CLAUDEMD-CLAIM-FRESHNESS-SEVERITY-W1 CH2. A stale lock is BOOKKEEPING and REPORTS; the dangerous condition — a claim this lock recorded as VERIFIED whose path is now absent — still BLOCKS, and is now reachable WHILE the lock is stale, which it was not before. These four severities are DERIVED from buildLock's own three-state path marking, never re-derived. NOTE the distinct key: `report_class_promotion` above governs CLAIM CLASSES (repo-path, script-content, …) and is owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; `freshness_promotion` below governs STALENESS SEVERITY and is owned by OPS-CLAUDEMD-FRESHNESS-PROMOTE-W{NEXT}. Two criteria, two owners — do not collapse them.",
@@ -61,7 +69,15 @@
     "escalate_after": "2026-10-31",
     "owner": "OPS-CLAUDEMD-FRESHNESS-PROMOTE-W{NEXT}",
     "reason": "STALE_SYNCABLE is the only severity that could ever justify blocking again, since it is the only one the pusher can act on. Both bounds are required: a numeric bar alone can never fire if staleness does not heal, and CLAUDE.md records a guard sitting in REPORT indefinitely as decoration with the same shape as a months-old MANUAL_PENDING.",
-    "criterion": "Promote STALE_SYNCABLE back to block only after ≥20 consecutive --check runs recording zero STALE_SYNCABLE rows, measured from the shared $GIT_COMMON_DIR/algovault-claudemd-freshness.log ledger this gate appends on every run — a rate, not a guess. Past escalate_after, a still-REPORT gate must be ESCALATED to the architect with the measured healing rate attached, not silently left in place. STALE_IN_FLIGHT / STALE_UNPUBLISHED / STALE_DROPPED are NOT promotion candidates: none of them is the pusher's to fix."
+    "criterion": "Promote STALE_SYNCABLE back to block only after ≥20 consecutive --check runs recording zero STALE_SYNCABLE rows, measured from the shared $GIT_COMMON_DIR/algovault-claudemd-freshness.log ledger this gate appends on every run — a rate, not a guess. Past escalate_after, a still-REPORT gate must be ESCALATED to the architect with the measured healing rate attached, not silently left in place. STALE_IN_FLIGHT / STALE_UNPUBLISHED / STALE_DROPPED are NOT promotion candidates: none of them is the pusher's to fix.",
+
+    "instrument": {
+      "population": "STALE_SYNCABLE rows in $GIT_COMMON_DIR/algovault-claudemd-freshness.log, one set per --check run.",
+      "written_by": "scripts/check-claudemd-claims.mjs — the subject of this criterion.",
+      "grade": "B",
+      "rederive": "Re-run `node scripts/check-claudemd-claims.mjs --check` at any commit. STALE_SYNCABLE is a pure function of two inputs this gate does not control: the extracted claim set from the CLAUDE.md corpus, and the committed identifier lock ops/claudemd-claims.lock.json resolved against `git ls-files`. The freshness ledger is a CACHE of that comparison's history, never its source — the verdict for any given commit can be recomputed from the corpus and the lock alone.",
+      "reason": "B, not A: this gate does write the ledger the criterion counts from. B, not C: the count is not manufacturable in the way a verdict log is, because STALE_SYNCABLE is recomputed from the corpus and the lock on every run rather than accumulated — a deliberate run reproduces whatever the tracked inputs already imply and cannot invent a stale row. Re-pointing this criterion at the re-derivation instead of the ledger is OPS-CLAUDEMD-FRESHNESS-PROMOTE-W{NEXT}'s call, not this wave's."
+    }
   },
 
   "absence_markers": ["DOES NOT EXIST", "does not exist", "never built", "NEVER built", "retired by", "retired 2", "— retired", "RETIRED"],
