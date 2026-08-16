@@ -60,7 +60,7 @@ describe('TierLimitReachedError', () => {
     expect(err.message).toContain('Access returns 2026-08-07 (5 days)');
     expect(err.message.toLowerCase()).toContain('refer a friend');
     expect(err.message).toContain('500 bonus calls');
-    expect(err.message).toContain('Create your free account for a referral link'); // keyless path
+    expect(err.message).toContain('Claim a free key — one call, no email. Your usage carries over, so nothing resets.'); // keyless path (QCA-R2 CH2)
     expect(err.message).toContain(`${PLANS.starter.label} — ${planCallsLabel('starter')} calls/month`); // upgrade retained
     expect(err.message).toContain('signup?plan=starter&upgrade_from=limit');
     expect(err.message).not.toContain('unlimited');

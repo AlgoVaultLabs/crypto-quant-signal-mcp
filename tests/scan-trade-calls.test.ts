@@ -181,7 +181,7 @@ describe('runScanTradeCall — exhausted-tier entry block', () => {
     // REFERRAL-INPRODUCT-NUDGE-W1: the wall keeps the referral arm (keyless here → the
     // get-your-link path) + the structured referral_hint.
     expect(r.message.toLowerCase()).toContain('refer a friend');
-    expect(r.message).toContain('Create your free account for a referral link');
+    expect(r.message).toContain('Claim a free key — one call, no email. Your usage carries over, so nothing resets.'); // QCA-R2 CH2: the claim offer replaced the signup ask
     expect(r.message).not.toContain('unlimited');
     expect(r.referral_hint.from).toBe('limit');
     expect(r.referral_hint.link_or_path).toContain('upgrade_from=limit_referral');

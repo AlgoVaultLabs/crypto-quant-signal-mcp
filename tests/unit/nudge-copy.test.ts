@@ -107,9 +107,9 @@ describe('buildLimitMessage (100% limit) — the ONE exhaustion notice', () => {
     );
   });
 
-  it('KEYLESS: renders the get-your-link free-signup path (never a fake link)', () => {
+  it('KEYLESS: renders the CLAIM offer (QCA-R2 CH2 — the old signup ask minted a fresh allowance)', () => {
     expect(limit(null)).toBe(
-      `${headline}\n${upgradeLine}\n${offer} Create your free account for a referral link → ${referralSignupUrl('limit')}`,
+      `${headline}\n${upgradeLine}\n${offer} Claim a free key — one call, no email. Your usage carries over, so nothing resets. → https://api.algovault.com/api/start-free`,
     );
   });
 
@@ -241,7 +241,8 @@ describe('copy-rule guards', () => {
   it('referral copy carries the bonus number from SoT + a give-get/get-your-link target', () => {
     for (const m of referralCopy) {
       expect(m).toContain(BONUS);
-      expect(m).toMatch(/algovault\.com\/join\?ref=|signup\?upgrade_from=/);
+      // QCA-R2 CH2: the keyless target is now the one-call claim endpoint.
+      expect(m).toMatch(/algovault\.com\/join\?ref=|signup\?upgrade_from=|api\/start-free/);
     }
   });
 });
