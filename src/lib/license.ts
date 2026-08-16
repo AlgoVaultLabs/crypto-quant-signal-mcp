@@ -415,7 +415,14 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
   // an UNKNOWN av_free_ key default-denies to keyless free.
   if (key.startsWith(FREE_KEY_PREFIX)) {
     const fk = await lookupFreeKey(key);
-    return fk ? { tier: 'free', key } : { tier: 'free', key: null };
+    if (!fk) return { tier: 'free', key: null };
+    // OPS-QUOTA-CLAIM-ALIAS-W1 CH1: the adopted bucket is resolved HERE, on the async path that
+    // can afford a DB read, and carried on the license so `deriveTrackerKey` stays lookup-free.
+    // Spread-on-presence: a key with no `bucket_key` yields a license object with no `bucketKey`,
+    // byte-identical to pre-wave for every key issued before this column existed.
+    return fk.bucket_key
+      ? { tier: 'free', key, bucketKey: fk.bucket_key }
+      : { tier: 'free', key };
   }
 
   // Try Stripe validation (cached, 5-min TTL)
@@ -666,9 +673,40 @@ let bonusLoaded = false;
  */
 function deriveTrackerKey(license: LicenseInfo): string {
   if (license.tier === 'free') {
+    // OPS-QUOTA-CLAIM-ALIAS-W1 CH1 — a CLAIMED key charges the bucket it ADOPTED.
+    //
+    // One live counter per identity. Not a copy: there is no second row to keep in step, so a
+    // caller at 100/200 who claims has 100 remaining IN TOTAL, not 100 keyed AND 100 keyless. That
+    // 2x hole is invisible to a wall-only test — at 200/200 both rows are walled and it ships.
+    //
+    // 🛑 LOOKUP-FREE, deliberately. `bucketKey` is resolved on the ASYNC path and carried on the
+    // license; consulting the key store here would put a cache miss on the hot path, and a miss
+    // would fall through to `license.key` — a fresh allowance, the very hole this closes. The sync
+    // (stdio) path is safe from the other direction for the same reason: a cache miss there yields
+    // `key: null`, so the caller lands on `free:${ipHash}` — the same row the alias points at.
+    if (license.bucketKey) return license.bucketKey;
     return license.key || `free:${getRequestIpHash() || 'anon'}`;
   }
   return license.key || 'unknown';
+}
+
+/**
+ * The tracker key for an arbitrary free-tier api key — the ONE derivation the bonus meter shares
+ * with the quota meter (OPS-QUOTA-CLAIM-ALIAS-W1 CH1).
+ *
+ * `grantReferralBonus` is called with the raw `av_free_…` key by `referral-accrual.ts`, while a
+ * claimed key SPENDS under its adopted bucket. Granting under one and consuming under the other
+ * strands the bonus: the caller is told "you both get bonus calls" and never receives them —
+ * precisely the promise-that-never-arrives class `quota-notice.ts` documents avoiding on the chat
+ * wall. Routing both through this function keeps identity orthogonal to allowance on BOTH meters,
+ * not only the one this wave set out to fix.
+ *
+ * Cache-only and synchronous by design: it runs on the grant path, and an unresolvable key simply
+ * meters by itself, which is the pre-wave behaviour.
+ */
+export function resolveBonusTrackerKey(apiKey: string): string {
+  if (!apiKey.startsWith(FREE_KEY_PREFIX)) return apiKey;
+  return lookupFreeKeyCached(apiKey)?.bucket_key || apiKey;
 }
 
 /** In-memory referral bonus for a tracker key (0 if none). Portal/test reader. */
@@ -693,8 +731,16 @@ function consumeBonusUnits(trackerKey: string, needed: number): boolean {
  * visible to the very next call in this process. Returns the new total.
  */
 export async function grantReferralBonus(trackerKey: string, calls: number, sourceCode?: string | null): Promise<number> {
-  const total = await grantBonus(trackerKey, calls, sourceCode);
-  bonusRemaining.set(trackerKey, total);
+  // OPS-QUOTA-CLAIM-ALIAS-W1 CH1 — grant into the SAME bucket that will spend it.
+  //
+  // Callers hand this the raw `av_free_…` key (`referral-accrual.ts`, both sites), but a CLAIMED
+  // key consumes its bonus under the bucket it adopted. Granting under the key and consuming under
+  // the bucket strands the grant silently — the caller is promised bonus calls and never receives
+  // one. Resolving here rather than at each call site keeps it a single derivation, and is a no-op
+  // for every key without an adopted bucket.
+  const resolved = resolveBonusTrackerKey(trackerKey);
+  const total = await grantBonus(resolved, calls, sourceCode);
+  bonusRemaining.set(resolved, total);
   return total;
 }
 

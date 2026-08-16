@@ -711,6 +711,18 @@ export interface LicenseInfo {
    * A consumer MUST NOT treat this as a tier decision; it means "ask again".
    */
   indeterminate?: true;
+  /**
+   * OPS-QUOTA-CLAIM-ALIAS-W1 CH1 (ADDITIVE, optional — every existing construction stays valid).
+   * The `free:<ip_hash>` quota bucket this key ADOPTS. Set only on a claimed ephemeral key, and
+   * only on the ASYNC resolution path; absent means "meter by `key`", which is the pre-wave
+   * behaviour every existing free and paid key keeps byte-for-byte.
+   *
+   * It exists so `deriveTrackerKey` can stay LOOKUP-FREE. That function is synchronous and runs on
+   * every metered call; making it consult the key store would put a cache miss on the hot path,
+   * and a miss there would silently fall back to metering by `key` — a fresh allowance, which is
+   * the exact hole this wave closes.
+   */
+  bucketKey?: string;
 }
 
 // ── x402 Types ──
