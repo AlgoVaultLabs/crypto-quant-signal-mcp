@@ -57,7 +57,7 @@ describe('formatAgentActivity — 💳 Paid line splits by payment rail', () => 
       ...base,
       externalGenuine: { ...base.externalGenuine, paidSubscription: 162, paidX402: 0 },
     });
-    expect(out).toContain('• 💳 Paid: 162   (subscription 162 · x402/a2mcp 0)');
+    expect(out).toContain('• 💳 Paid: 162   API/MCP Calls (subscription 162 · x402/a2mcp 0)');
   });
 
   it('renders the per-rail breakdown on the sessions line', () => {
@@ -88,7 +88,7 @@ describe('formatAgentActivity — 💳 Paid line splits by payment rail', () => 
       ...base,
       externalGenuine: { ...base.externalGenuine, paid: 10, paidSubscription: 6, paidX402: 2 },
     });
-    expect(out).toContain('• 💳 Paid: 10   (subscription 6 · x402/a2mcp 2 · other 2)');
+    expect(out).toContain('• 💳 Paid: 10   API/MCP Calls (subscription 6 · x402/a2mcp 2 · other 2)');
   });
 
   it('omits the "other" segment when the rails reconcile exactly', () => {
@@ -96,7 +96,7 @@ describe('formatAgentActivity — 💳 Paid line splits by payment rail', () => 
       ...base,
       externalGenuine: { ...base.externalGenuine, paid: 8, paidSubscription: 6, paidX402: 2 },
     });
-    expect(out).toContain('• 💳 Paid: 8   (subscription 6 · x402/a2mcp 2)');
+    expect(out).toContain('• 💳 Paid: 8   API/MCP Calls (subscription 6 · x402/a2mcp 2)');
     expect(out).not.toContain('other');
   });
 
@@ -122,7 +122,7 @@ describe('formatAgentActivity — 💳 Paid line splits by payment rail', () => 
       rawConcentration: { top1_pct: 0 },
       topAssetsGenuine: [],
     });
-    expect(out).toContain('• 💳 Paid: 0   (subscription 0 · x402/a2mcp 0)');
+    expect(out).toContain('• 💳 Paid: 0   API/MCP Calls (subscription 0 · x402/a2mcp 0)');
   });
 
   it('stays inside the Telegram 4096-char message budget', () => {

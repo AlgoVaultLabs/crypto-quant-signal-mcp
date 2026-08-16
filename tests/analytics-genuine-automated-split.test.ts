@@ -29,10 +29,14 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
       [
         '🤖 *Agent Activity (24h)*',
         '• Total Agent Calls: 1069', // 100 + 965 + 4 (no TG bot in this payload)
+        // OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1: assets ride with the headline; the channel
+        // rows form their own group below it.
+        '• Top assets (24h): BTC, ETH, SOL',
+        '',
         '• 🟢 Recognized clients: 100',
         '• 🔌 Raw API clients: 965   (top client 22.5%)',
-        '• 💳 Paid: 4', // OPS-DIGEST-PAID-RAIL-SPLIT-W1: bare total — no rail split in this payload
-        '• Top assets (24h): BTC, ETH, SOL',
+        // Unit stated: this row counts DIRECT API/MCP calls and excludes bot traffic.
+        '• 💳 Paid: 4   API/MCP Calls', // bare total — no rail split in this payload
         '',
         '👥 *Sessions (24h)*',
         '• Total Unique Sessions: 98', // 55 + 40 + 3
@@ -89,7 +93,10 @@ describe('formatAgentActivity — digest renderer golden output (channel labels)
     expect(out).toContain('• 🔌 Raw API clients: 0   (top client 0%)');
     // OPS-DIGEST-PAID-RAIL-SPLIT-W1: calls AND sessions lines both render the bare zero
     // total (this payload carries no rail split) — count them so the two stay distinguishable.
-    expect(out.split('\n').filter((l) => l === '• 💳 Paid: 0')).toHaveLength(2);
+    // The calls row carries the unit label; the sessions row (which counts sessions, not
+    // calls) deliberately does not. Assert BOTH so the two stay distinguishable.
+    expect(out.split('\n').filter((l) => l === '• 💳 Paid: 0   API/MCP Calls')).toHaveLength(1);
+    expect(out.split('\n').filter((l) => l === '• 💳 Paid: 0')).toHaveLength(1);
     expect(out).toContain('• Top assets (24h): —');
   });
 });

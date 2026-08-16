@@ -152,13 +152,18 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
     // `• 🔁 TG bot: ` prefix for SUBSCRIBERS, and an unscoped read would take 38 for 253.
     const activity = body.split('👥 *Sessions (24h)*')[0];
     const total = Number(activity.match(/• Total Agent Calls: (\d+)/)![1]);
+    // Still parsed, for the label check and the date-bounded legacy row — but no longer the
+    // basis of the sum (see the re-anchor note above the describe).
     const buckets = [...activity.matchAll(/^• (.+?) — Last 24h: (\d+)/gm)].map((m) => ({ label: m[1], n: Number(m[2]) }));
+    const recognized = Number(activity.match(/^• 🟢 Recognized clients: (\d+)/m)![1]);
+    const raw = Number(activity.match(/^• 🔌 Raw API clients: (\d+)/m)![1]);
+    const paid = Number(activity.match(/^• 💳 Paid: (\d+)/m)![1]);
     // Anchored on the `(Watch ` suffix, which only the calls row carries. A stale bot renders
     // `— (metrics stale)` and a missing one omits the row: both → 0, exactly what the headline
     // folds in, so absence reads as zero rather than as an unparseable body.
     const tgRow = activity.match(/^• 🔁 TG bot: (\d+)   \(Watch /m);
     const internal = tgRow ? Number(tgRow[1]) : 0;
-    return { total, buckets, internal, sum: buckets.reduce((a, b) => a + b.n, 0) + internal };
+    return { total, buckets, recognized, raw, paid, internal, sum: recognized + raw + paid + internal };
   };
 
   /** The live 2026-08-10 shape — a POST-cutover 24h window. freeHold is structurally 0. */
@@ -180,17 +185,21 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
     callClasses: { billable: 132, freeHold: 2819, unmetered: 4, unclassified: 0, billableSessions: 4, last7d: { billable: 300, freeHold: 9000 } },
   };
 
-  it('post-cutover: the class block is exactly metered · unmetered, then ONE blank line', () => {
+  it('post-cutover: headline + assets, then the client rows, then the TG bot group', () => {
     const lines = formatAgentActivity(post).split('\n');
     expect(lines[0]).toBe('🤖 *Agent Activity (24h)*');
     expect(lines[1]).toBe('• Total Agent Calls: 616');
-    expect(lines[2]).toBe('• 💰 Metered calls — Last 24h: 363   (6 sessions)');
-    expect(lines[3]).toBe('• 🔎 Unmetered (rate-limited) — Last 24h: 0');
-    // The separator that splits the section into call buckets / client rows.
-    expect(lines[4]).toBe('');
-    expect(lines[5]).toBe('• 🟢 Recognized clients: 357');
+    expect(lines[2]).toBe('• Top assets (24h): —');
+    // The separator that splits headline/assets from the client rows.
+    expect(lines[3]).toBe('');
+    expect(lines[4]).toBe('• 🟢 Recognized clients: 357');
     // EXACTLY one — a second blank line reads as the end of the section in Telegram.
-    expect(lines[6]).not.toBe('');
+    expect(lines[5]).not.toBe('');
+    // The 💰 Metered / 🔎 Unmetered rows are RETIRED. Post the flat-billing cutover every
+    // QuotaUnit maps to `always`, so `billable` was Recognized + Raw + Paid rendered a second
+    // time, and `unmetered` covers rate-limited tools only (1 row in 7 days, measured).
+    expect(lines).not.toContain('• 💰 Metered calls — Last 24h: 363   (6 sessions)');
+    expect(formatAgentActivity(post)).not.toContain('Unmetered (rate-limited)');
   });
 
   it('post-cutover: the Internal row is gone, and its count is still on the TG bot row', () => {
@@ -212,26 +221,24 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
     expect(out).not.toContain('Unbilled HOLD');
   });
 
-  it('the rendered buckets + the TG bot row sum to the rendered headline (post-cutover)', () => {
-    const { total, buckets, internal, sum } = partitionOf(formatAgentActivity(post));
-    expect(buckets.length, 'no buckets parsed — the assertion would be vacuous').toBeGreaterThanOrEqual(2);
-    // Vacuity guard on the RE-ANCHORED term specifically: if the TG bot row ever stops being
-    // parsed, `internal` silently reads 0 and this whole property degrades to a sum over the
-    // two remaining buckets that happens to hold only when the bot is dark.
-    expect(internal, 'the internal term was not parsed out of the TG bot row').toBe(253);
+  it('the rendered client rows + the TG bot row sum to the rendered headline (post-cutover)', () => {
+    const { total, recognized, raw, paid, internal, sum } = partitionOf(formatAgentActivity(post));
+    // Vacuity guard on every parsed term: if any row stops being parsed it silently reads 0
+    // and the property degrades to a sum that happens to hold for this fixture only.
+    expect([recognized, raw, paid, internal], 'a term was not parsed out of the render').toEqual([357, 6, 0, 253]);
     expect(total).toBe(616);
-    expect(sum).toBe(total); // 363 + 0 + 253
+    expect(sum).toBe(total); // 357 + 6 + 0 + 253
   });
 
-  it('the rendered buckets + the TG bot row sum to the rendered headline (pre-cutover, legacy line present)', () => {
+  it('the rendered client rows + the TG bot row sum to the rendered headline (pre-cutover, legacy line present)', () => {
     const out = formatAgentActivity(pre);
     // The historical dimension is NOT deleted — it renders, date-bounded, when non-empty.
     expect(out).toContain(`• 🗄 Unbilled HOLD (pre-${FLAT_BILLING_CUTOVER_DATE}, legacy) — Last 24h: 2819`);
     const { total, buckets, internal, sum } = partitionOf(out);
-    expect(buckets.length).toBe(3); // metered · unmetered · legacy — internal has no row of its own
+    expect(buckets.length).toBe(1); // only the legacy row survives as a `— Last 24h:` bucket
     expect(internal).toBe(125);
     expect(total).toBe(3080);
-    expect(sum).toBe(total); // 132 + 4 + 2819 + 125
+    expect(sum).toBe(total); // 0 + 2955 + 0 + 125 — the client axis, which spans the legacy rows
   });
 
   /**
@@ -242,16 +249,18 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
    * both sides of the equation equally and the sum stays exact by construction. A property that
    * cannot be broken from the inputs can only be proven breakable from the text.
    */
-  it('the sum property FAILS if the deleted Internal row is reintroduced (double-count)', () => {
+  it('the sum property FAILS if a client row drifts from the headline', () => {
+    // OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1: the previous form of this test reintroduced the
+    // deleted `🔁 Internal (algovault-bot)` bucket row and asserted the double-count. That
+    // hazard retired WITH the bucket rows — nothing is parsed as a bucket any more, so the
+    // mutation would be a no-op and the test would prove nothing. The property it defends is
+    // unchanged (the rendered rows must partition the rendered headline); only the row that
+    // can break it has moved, so the mutation moves with it.
     const out = formatAgentActivity(post);
-    const reintroduced = out.replace(
-      '• 🔎 Unmetered (rate-limited) — Last 24h: 0',
-      '• 🔎 Unmetered (rate-limited) — Last 24h: 0\n• 🔁 Internal (algovault-bot) — Last 24h: 253',
-    );
-    expect(reintroduced, 'the mutation did not apply — the assertion below would be vacuous').not.toBe(out);
-    const { total, buckets, sum } = partitionOf(reintroduced);
-    expect(buckets.length).toBe(3); // the row IS parsed as a bucket…
-    expect(sum).toBe(869); // …so 253 is counted twice: 363 + 0 + 253 + 253
+    const broken = out.replace('• 🟢 Recognized clients: 357', '• 🟢 Recognized clients: 356');
+    expect(broken, 'the mutation did not apply — the assertion below would be vacuous').not.toBe(out);
+    const { total, sum } = partitionOf(broken);
+    expect(sum).toBe(615);
     expect(sum).not.toBe(total);
   });
 
@@ -289,7 +298,11 @@ describe('formatAgentActivity — the rendered body partitions the headline', ()
   it('surfaces a non-zero unclassified remainder instead of hiding it, and keeps the sum exact', () => {
     // Take the 7 out of billable so the class decomposition still totals the external count.
     const out = formatAgentActivity({ ...post, callClasses: { ...post.callClasses, billable: 356, unclassified: 7 } });
+    // An unregistered tool_name stays VISIBLE even though its sibling class rows retired —
+    // that row is a defect signal, not a routine counter, so it earns its space when non-zero.
     expect(out).toContain('• ❓ Unclassified — Last 24h: 7');
+    // It sits on the CLASS axis, while the sum is now over the CLIENT axis, so a remainder
+    // appearing must not perturb the partition.
     const { total, sum } = partitionOf(out);
     expect(sum).toBe(total);
   });

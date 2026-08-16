@@ -81,11 +81,15 @@ describe('formatAgentActivity — 🔁 TG bot line', () => {
       [
         '🤖 *Agent Activity (24h)*',
         '• Total Agent Calls: 455', // 5 + 427 + 0 + 23 (TG bot folded in)
+        '• Top assets (24h): BTC',
+        '',
         '• 🟢 Recognized clients: 5',
         '• 🔌 Raw API clients: 427   (top client 19.4%)',
-        '• 💳 Paid: 0', // OPS-DIGEST-PAID-RAIL-SPLIT-W1: bare total — this payload carries no rail split
+        '• 💳 Paid: 0   API/MCP Calls', // bare total — this payload carries no rail split
+        '',
+        // The TG bot is its own group: it is a different metering domain from the rows above
+        // (delivered alerts, not API/MCP calls), and the annotations attach to it.
         '• 🔁 TG bot: 23   (Watch 19 · Scanwatch 3 · Scan 1)',
-        '• Top assets (24h): BTC',
         '',
         '👥 *Sessions (24h)*',
         '• Total Unique Sessions: 54', // 5 + 28 + 0 + 21 (TG bot subscribers folded in)
@@ -121,5 +125,77 @@ describe('formatAgentActivity — 🔁 TG bot line', () => {
     expect(out).toContain('• Total Unique Sessions: 33'); // 5 + 28 + 0
     expect(out).toContain('👥 *Sessions (24h)*');
     expect(out.length).toBeLessThanOrEqual(4096);
+  });
+});
+
+// ── OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1: the two annotation rows ─────────────
+
+describe('formatAgentActivity — TG bot annotations', () => {
+  // Same shape as the sibling block's fixture; redeclared because that one is describe-scoped.
+  const base = {
+    externalGenuine: { free: 5, paid: 0, freeSessions: 5, paidSessions: 0 },
+    externalAutomated: { total: 427, sessions: 28 },
+    rawConcentration: { top1_pct: 19.4 },
+    topAssetsGenuine: [{ asset: 'BTC', calls: 5 }],
+  };
+  const fresh = {
+    present: true, stale: false, calls_total: 298, calls_watch: 11,
+    calls_scanwatch: 287, calls_scan: 0, subscribers: 46,
+  };
+
+  it('renders the tier split and the walled state under the TG bot row', () => {
+    const out = formatAgentActivity({
+      ...base,
+      tgBot: { ...fresh, calls_paid_linked: 205, walled_now: 3, walled_silent: 0 },
+    });
+    expect(out).toContain('• 🔁 TG bot: 298   (Watch 11 · Scanwatch 287 · Scan 0)');
+    expect(out).toContain('  ↳ 💳 paid-linked 205 · free 93');
+    expect(out).toContain('  ↳ 🚧 3 walled now (notified 3 · silent 0)');
+  });
+
+  it('the annotations are INDENTED continuations, never `•` channel rows', () => {
+    // The block headline is asserted to equal the sum of its `•` rows. Neither a tier split
+    // of an existing row nor a point-in-time walled count is a new channel, so promoting
+    // either to a bullet would double-count the first and inject a non-call into the second.
+    const out = formatAgentActivity({
+      ...base,
+      tgBot: { ...fresh, calls_paid_linked: 205, walled_now: 3, walled_silent: 0 },
+    });
+    for (const line of out.split('\n').filter((l) => l.includes('paid-linked') || l.includes('walled now'))) {
+      expect(line.startsWith('  ↳ '), `"${line}" must be an indented continuation`).toBe(true);
+    }
+    // …and the headline still equals the sum of the bullet rows only.
+    const activity = out.split('👥 *Sessions (24h)*')[0];
+    const total = Number(activity.match(/• Total Agent Calls: (\d+)/)![1]);
+    expect(total).toBe(5 + 427 + 0 + 298);
+  });
+
+  it('silent > 0 is renderable — it is the seam-defect signal, not a healthy state', () => {
+    const out = formatAgentActivity({
+      ...base,
+      tgBot: { ...fresh, calls_paid_linked: 205, walled_now: 3, walled_silent: 2 },
+    });
+    expect(out).toContain('  ↳ 🚧 3 walled now (notified 1 · silent 2)');
+  });
+
+  it('a bot that predates the widened bridge OMITS the annotations rather than claiming zero', () => {
+    // `?? 0` would render "no paying subscriber used the bot" and "nobody is walled" as
+    // confident facts on a row that simply has no value yet. Absent must stay absent.
+    const out = formatAgentActivity({ ...base, tgBot: fresh });
+    expect(out).toContain('• 🔁 TG bot: 298   (Watch 11 · Scanwatch 287 · Scan 0)');
+    expect(out).not.toContain('paid-linked');
+    expect(out).not.toContain('walled now');
+  });
+
+  it('a STALE bridge row omits both annotations — neither is a 24h counter', () => {
+    const out = formatAgentActivity({
+      ...base,
+      tgBot: { ...fresh, stale: true, calls_paid_linked: 205, walled_now: 3, walled_silent: 0 },
+    });
+    expect(out).toContain('• 🔁 TG bot: — (metrics stale)');
+    expect(out).not.toContain('paid-linked');
+    // A "walled NOW" claim from a >26h-old row would be the freshness defect this repo has
+    // already recorded five times: a rendered artifact standing in for a live producer.
+    expect(out).not.toContain('walled now');
   });
 });

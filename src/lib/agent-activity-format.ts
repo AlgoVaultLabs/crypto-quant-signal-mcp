@@ -90,12 +90,13 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
   // present (a digest fired before the /analytics deploy lands degrades to the bare
   // total). An unreconciled remainder surfaces as `other N` rather than vanishing —
   // a paid tier that is neither rail must be visible, not silently dropped.
-  const railSuffix = (total: unknown, subscription: unknown, x402: unknown): string => {
+  const asNumEarly = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  const railSuffix = (total: unknown, subscription: unknown, x402: unknown, gap = '   '): string => {
     if (typeof subscription !== 'number' || typeof x402 !== 'number') return '';
     const parts = [`subscription ${subscription}`, `x402/a2mcp ${x402}`];
     const other = typeof total === 'number' ? total - subscription - x402 : 0;
     if (other > 0) parts.push(`other ${other}`);
-    return `   (${parts.join(' · ')})`;
+    return `${gap}(${parts.join(' · ')})`;
   };
   const automated = (a.externalAutomated ?? {}) as Record<string, unknown>;
   // Concentration re-scoped to the Raw bucket; fall back to the legacy all-external field.
@@ -118,6 +119,29 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
     : tgStale
       ? '• 🔁 TG bot: — (metrics stale)'
       : `• 🔁 TG bot: ${num(tgBot!.calls_total)}   (Watch ${num(tgBot!.calls_watch)} · Scanwatch ${num(tgBot!.calls_scanwatch)} · Scan ${num(tgBot!.calls_scan)})`;
+  // OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1: two annotations under the TG bot row.
+  //  ↳ tier split — 💳 Paid counts API/MCP calls only, and bot traffic authenticates as
+  //    `tier:'internal'`, so a paying subscriber's alerts can never appear there. Rendering
+  //    `Paid: 0` beside 205 alerts delivered to paying users reads as "no paying customer was
+  //    active", the inverse of the fact. Shown HERE, in the bot's own unit (delivered alerts),
+  //    rather than folded into Paid — those are different quantities and adding them is what
+  //    METERING-DIVERGENCE.md exists to forbid.
+  //  ↳ walled — how many free subscribers are behind the bot's 100-alert wall RIGHT NOW, and
+  //    how many of those were never told. `silent > 0` is by definition a seam defect
+  //    (BOT-QUOTA-REFUSAL-SEAM-W1); in a healthy system it is always 0.
+  // Both omit on a stale row: neither is a 24h counter, so a stale bridge must not render a
+  // "now" claim.
+  const tgPaidLinked = tgPresent && typeof tgBot!.calls_paid_linked === 'number' ? (tgBot!.calls_paid_linked as number) : null;
+  const tgTierLine =
+    !tgPresent || tgStale || tgPaidLinked === null
+      ? null
+      : `  ↳ 💳 paid-linked ${num(tgPaidLinked)} · free ${num(Math.max(0, asNumEarly(tgBot!.calls_total) - tgPaidLinked))}`;
+  const tgWalled = tgPresent && typeof tgBot!.walled_now === 'number' ? (tgBot!.walled_now as number) : null;
+  const tgWalledSilent = tgPresent && typeof tgBot!.walled_silent === 'number' ? (tgBot!.walled_silent as number) : 0;
+  const tgWalledLine =
+    !tgPresent || tgStale || tgWalled === null
+      ? null
+      : `  ↳ 🚧 ${num(tgWalled)} walled now (notified ${num(tgWalled - tgWalledSilent)} · silent ${num(tgWalledSilent)})`;
   const tgSessionsLine = !tgPresent
     ? null
     : tgStale
@@ -154,16 +178,16 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
   const classLines = !ccPresent
     ? []
     : [
-        `• ${classLabel('billable')} — Last 24h: ${num(cc!.billable)}   (${num(cc!.billableSessions)} sessions)`,
-        `• ${classLabel('unmetered')} — Last 24h: ${num(cc!.unmetered)}`,
-        // An unregistered tool_name must be VISIBLE, never folded into another class.
+        // OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1 (2026-08-16): the `billable` and `unmetered`
+        // rows are RETIRED from the render. After the 2026-08-08 flat-billing cutover every
+        // QuotaUnit maps to `always` (call-class.ts), so `billable` equals Recognized + Raw +
+        // Paid exactly — the same number printed twice — and `unmetered` covers only
+        // rate-limited tools, measured at 1 row in 7 days. The classes are still COMPUTED and
+        // still partition the headline; they simply no longer earn two permanent rows.
+        // An unregistered tool_name must remain VISIBLE, never folded into another class.
         ...(unclassified > 0 ? [`• ${classLabel('unclassified')} — Last 24h: ${unclassified}`] : []),
         // Only ever non-zero for a window reaching back past the cutover.
         ...(legacyFreeHold > 0 ? [`• ${classLabel('free_hold')} — Last 24h: ${legacyFreeHold}`] : []),
-        // Block separator: call buckets above, client/session rows below. It belongs to THIS
-        // array rather than the return literal so the no-`callClasses` rollout path still
-        // degrades to EXACTLY the prior layout instead of gaining a stray blank line.
-        '',
       ];
 
   return [
@@ -174,14 +198,21 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
     // further down, which is where the body-sum assertion in tests/call-class.test.ts reads it
     // from. That assertion parses THIS render rather than trusting the inputs.
     `• Total Agent Calls: ${totalAgentCalls}`,
+    `• Top assets (24h): ${assetList}`,
+    '',
     ...classLines,
     `• 🟢 Recognized clients: ${num(genuine.free)}`,
     // "top client", not "top IP": rawConcentration groups by session_id (analytics.ts), which
     // equals the ipHash only for callers that send no X-AlgoVault-Track-Token.
     `• 🔌 Raw API clients: ${num(automated.total)}   (top client ${num(rawConc.top1_pct)}%)`,
-    `• 💳 Paid: ${num(genuine.paid)}${railSuffix(genuine.paid, genuine.paidSubscription, genuine.paidX402)}`,
-    ...(tgCallsLine ? [tgCallsLine] : []),
-    `• Top assets (24h): ${assetList}`,
+    // "API/MCP Calls" is load-bearing, not decoration: this row counts DIRECT API/MCP requests
+    // and structurally excludes bot traffic (`is_bot_internal = false`), so an unlabelled
+    // `Paid: 0` invites the reading "no paying customer was active" on a day when paying
+    // subscribers took 205 alerts through the bot. The unit is now stated.
+    `• 💳 Paid: ${num(genuine.paid)}   API/MCP Calls${railSuffix(genuine.paid, genuine.paidSubscription, genuine.paidX402, ' ')}`,
+    ...(tgCallsLine ? ['', tgCallsLine] : []),
+    ...(tgTierLine ? [tgTierLine] : []),
+    ...(tgWalledLine ? [tgWalledLine] : []),
     '',
     '👥 *Sessions (24h)*',
     `• Total Unique Sessions: ${totalUniqueSessions}`,

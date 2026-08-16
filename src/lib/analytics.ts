@@ -154,6 +154,10 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
       blocked_subscribers INTEGER NOT NULL DEFAULT 0,
       watchlist_entries INTEGER NOT NULL DEFAULT 0,
       quota_exhausted_notices INTEGER NOT NULL DEFAULT 0,
+      -- OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1 (2026-08-16)
+      calls_paid_linked INTEGER NOT NULL DEFAULT 0,
+      walled_now INTEGER NOT NULL DEFAULT 0,
+      walled_silent INTEGER NOT NULL DEFAULT 0,
       generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );`
   : `CREATE TABLE IF NOT EXISTS bot_daily_metrics (
@@ -168,6 +172,10 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
       blocked_subscribers INTEGER NOT NULL DEFAULT 0,
       watchlist_entries INTEGER NOT NULL DEFAULT 0,
       quota_exhausted_notices INTEGER NOT NULL DEFAULT 0,
+      -- OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1 (2026-08-16)
+      calls_paid_linked INTEGER NOT NULL DEFAULT 0,
+      walled_now INTEGER NOT NULL DEFAULT 0,
+      walled_silent INTEGER NOT NULL DEFAULT 0,
       generated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );`;
 
@@ -204,6 +212,9 @@ export function deriveTgBot(
         calls_scanwatch?: unknown;
         calls_scan?: unknown;
         subscribers?: unknown;
+        calls_paid_linked?: unknown;
+        walled_now?: unknown;
+        walled_silent?: unknown;
         metric_date?: unknown;
         generated_at?: unknown;
       }
@@ -221,6 +232,19 @@ export function deriveTgBot(
     calls_scanwatch: Number(row.calls_scanwatch ?? 0),
     calls_scan: Number(row.calls_scan ?? 0),
     subscribers: Number(row.subscribers ?? 0),
+    // OPS-DIGEST-TGBOT-TIER-AND-WALLED-W1. `?? 0` is WRONG for these three: a bridge row
+    // written by a bot that predates the widened upsert has no value, and 0 would render as
+    // the confident claim "no paying subscriber used the bot" / "nobody is walled". Absent
+    // stays absent, and the renderer omits the annotation rather than asserting a zero.
+    ...(row.calls_paid_linked === undefined || row.calls_paid_linked === null
+      ? {}
+      : { calls_paid_linked: Number(row.calls_paid_linked) }),
+    ...(row.walled_now === undefined || row.walled_now === null
+      ? {}
+      : { walled_now: Number(row.walled_now) }),
+    ...(row.walled_silent === undefined || row.walled_silent === null
+      ? {}
+      : { walled_silent: Number(row.walled_silent) }),
     metric_date: stampStr(row.metric_date, true),
     generated_at: stampStr(row.generated_at, false),
   };
@@ -778,7 +802,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       calls_scan: string;
       subscribers: string;
       generated_at: string;
-    }>('SELECT metric_date, calls_total, calls_watch, calls_scanwatch, calls_scan, subscribers, generated_at FROM bot_daily_metrics ORDER BY metric_date DESC LIMIT 1', []),
+    }>('SELECT metric_date, calls_total, calls_watch, calls_scanwatch, calls_scan, subscribers, calls_paid_linked, walled_now, walled_silent, generated_at FROM bot_daily_metrics ORDER BY metric_date DESC LIMIT 1', []),
     // OPS-DIGEST-PAID-RAIL-SPLIT-W1: 💳 Paid split by payment RAIL, so the digest stops
     // labelling Stripe-subscription traffic as "x402 / a2mcp". Same window + same
     // is_bot_internal filter as `genuinePaid24h`, so the two rails sum to `paid` unless a
