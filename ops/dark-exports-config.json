@@ -37,7 +37,15 @@
       "out of 23 new exports on a real wave — a rate that does not need a fortnight of",
       "observation to judge. Every run appends its count to the ledger, so the flip decision",
       "reads a series rather than a guess."
-    ]
+    ],
+
+    "instrument": {
+      "population": "Dark exports in TRACKED SOURCE, per run — the unexplained exported symbols themselves, not the log rows that record how many there were.",
+      "written_by": "scripts/check-new-dark-exports.mjs",
+      "grade": "B",
+      "rederive": "Re-run `node scripts/check-new-dark-exports.mjs` at any commit. The dark-export set is derived from tracked source — exported symbols resolved against their consumers — so the count for any commit is recomputable from the tree alone. `.git/algovault-dark-exports.log` is the CACHE of that series, never the population: deleting it would lose the history but not a single fact about any commit.",
+      "reason": "B, not A: the gate writes the ledger the flip decision reads. B, not C: the number is a property of tracked source, so a deliberate run recomputes whatever the tree already contains and cannot manufacture an unexplained export without someone first committing one. Added by OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 CH1 — this block was one of THREE promotion criteria that wave's own spec did not know existed, found only because R1.4 discovers the set by scanning ops/*.json instead of trusting a list."
+    }
   },
   "ledger": ".git/algovault-dark-exports.log",
   "name_exemptions": [

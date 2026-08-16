@@ -59,7 +59,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
-import { assertPromotionBound } from './lib/promotion-bound.mjs';
+import { assertPromotionBound, assertInstrumentIndependence } from './lib/promotion-bound.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -141,6 +141,12 @@ export function loadConfig(path = CONFIG_PATH) {
   // Structured + asserted here so the block is ENFORCED rather than decorative; the shared
   // assertion means the next promotion block added to this config cannot ship without a bound.
   assertPromotionBound(cfg.mode2_promotion, 'mode2_promotion');
+  // OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 R1.3 — a second, SHAPE-AGNOSTIC call rather than a
+  // widening of the one above: independence is orthogonal to shape, and the shared bound assertion
+  // deliberately covers only the {runs_required, escalate_after} shape. This block is grade D —
+  // its population is live fleet state, which a deliberate run can add a TRUE sample to but never
+  // manufacture a violation in.
+  assertInstrumentIndependence(cfg.mode2_promotion, 'mode2_promotion');
   return cfg;
 }
 
