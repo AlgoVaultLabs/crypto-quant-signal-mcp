@@ -25,6 +25,9 @@
   "report_class_promotion": {
     "runs_required": 30,
     "false_positives_allowed": 0,
+    "escalate_after": "2026-11-30",
+    "owner": "OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}",
+    "reason": "Both bounds are required: a numeric bar alone can never fire on a clock, only when someone remembers, and CLAUDE.md records a REPORT-only guard left in place indefinitely as decoration with the same shape as a months-old MANUAL_PENDING. Past escalate_after, a still-REPORT class must be ESCALATED to the architect with its measured healing rate attached, not silently left in place. Date is 2026-11-30 rather than freshness_promotion's 2026-10-31 because this criterion was bounded on 2026-08-16, a later start — the two dates differ deliberately, not by drift.",
     "criterion": "A report class promotes to block only after ≥30 consecutive --check runs (CI + local combined) with ZERO false positives in that class, counted from the gate's own printed per-claim output — a number that can be checked, not a vibe. The flip is a config edit owned by OPS-CLAUDEMD-CLAIM-PROMOTE-W{NEXT}; do not flip it inline."
   },
 

@@ -59,6 +59,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
+import { assertPromotionBound } from './lib/promotion-bound.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -135,6 +136,11 @@ export function loadConfig(path = CONFIG_PATH) {
       throw new Error('every union_safe_paths row needs BOTH `path` and `reason` (an exemption in prose alone gets "fixed" later)');
     }
   }
+  // Mode 2's promotion criterion lived in a prose STRING (_mode2_promotion_criterion) until
+  // OPS-AUTHOR-IDENTITY-PROMOTE-W1 R4c — unreachable by any assertion, and therefore dateless.
+  // Structured + asserted here so the block is ENFORCED rather than decorative; the shared
+  // assertion means the next promotion block added to this config cannot ship without a bound.
+  assertPromotionBound(cfg.mode2_promotion, 'mode2_promotion');
   return cfg;
 }
 

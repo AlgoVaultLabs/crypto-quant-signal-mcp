@@ -163,9 +163,14 @@ describe('session-drift config', () => {
 
   it('ships mode 2 as REPORT with a numeric promotion criterion', () => {
     const cfg = JSON.parse(readFileSync(CONFIG, 'utf8'));
+    // NOTE for OPS-CC-DRIFT-MODE2-PROMOTE-W{NEXT}: this line is the forward dependency of that
+    // wave. Flipping mode 2 to block MUST update it — a red test here is expected, not a defect.
     expect(cfg.mode2_enforcement).toBe('report');
-    // A criterion the operator can check, not a vibe.
-    expect(cfg._mode2_promotion_criterion).toMatch(/\d+/);
+    // A criterion the operator can check, not a vibe. Migrated from the prose string
+    // `_mode2_promotion_criterion` to the structured block by OPS-AUTHOR-IDENTITY-PROMOTE-W1 R4c:
+    // the prose copy was the duplicated fact that requirement exists to retire, and leaving it
+    // load-bearing on this assertion would have made it HARDER to remove later, not easier.
+    expect(cfg.mode2_promotion.criterion).toMatch(/\d+/);
   });
 });
 

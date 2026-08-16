@@ -20,7 +20,13 @@
   "_merged_ref_stale_days_reason": "R1 measured 20+ of 43 remote branches already merged-but-live, aged 2 days to 4 months, so 14d flags ~15 on the first run. That backlog is real and is reported ONCE as a list; mode 3 never blocks a push, and deletion stays a human act (OPS-TEST-GATE-RECONCILE-W1's two deletions were operator-ruled).",
 
   "mode2_enforcement": "report",
-  "_mode2_promotion_criterion": "REPORT → BLOCK only after 30 consecutive real pushes with ZERO mode-2 false positives, counted by the operator from the gate's own output — a number that can be checked, not a vibe. Until then a worktree overlap is information, never a block. Flip is owned by OPS-CC-DRIFT-MODE2-PROMOTE-W{NEXT}; do not flip it here.",
+  "mode2_promotion": {
+    "runs_required": 30,
+    "escalate_after": "2026-11-30",
+    "owner": "OPS-CC-DRIFT-MODE2-PROMOTE-W{NEXT}",
+    "reason": "Both bounds are required: a numeric bar alone can never fire on a clock, only when someone remembers — and this criterion had NO date at all until OPS-AUTHOR-IDENTITY-PROMOTE-W1, because it lived in a prose STRING (_mode2_promotion_criterion) that no assertion could reach. That is the exact shape of a REPORT-only guard becoming permanent by default. Past escalate_after, mode 2 still in REPORT must be ESCALATED to the architect with its measured false-positive rate attached, not silently left in place. Date matches report_class_promotion's 2026-11-30 because both were bounded on 2026-08-16; freshness_promotion's 2026-10-31 differs deliberately, being bounded earlier.",
+    "criterion": "REPORT → BLOCK only after 30 consecutive real pushes with ZERO mode-2 false positives, counted by the operator from the gate's own output — a number that can be checked, not a vibe. Until then a worktree overlap is information, never a block. Flip is owned by OPS-CC-DRIFT-MODE2-PROMOTE-W{NEXT}; do not flip it here."
+  },
 
   "_tracked_only_note": "Mode 2 considers TRACKED paths only (committed diff vs merge-base + tracked modifications; untracked '??' entries dropped at source). R1: that single decision took the false-positive rate from 174/435 to 2/28 with no exclusion list at all, and both survivors were genuine. The dominant noise source was `node_modules` surfacing as UNTRACKED in 19 worktrees — .gitignore's `node_modules/` pattern does not match a SYMLINK, which is the known worktree symlink trap. Excluding local artifacts by name would have been an ever-growing list; excluding untracked paths by construction is the generator-level fix."
 }

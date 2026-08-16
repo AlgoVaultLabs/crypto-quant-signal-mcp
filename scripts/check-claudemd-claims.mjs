@@ -63,6 +63,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { assertPromotionBound } from './lib/promotion-bound.mjs';
 import { tracked, invokerFiles, findInvocations } from './check-canaries-wired.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -134,9 +135,12 @@ export function validateConfig(cfg) {
   for (const row of cfg.exemptions) {
     if (!row.reason || typeof row.reason !== 'string') throw new Error(`exemption row ${JSON.stringify(row.value)} has no reason`);
   }
-  if (typeof cfg.report_class_promotion.runs_required !== 'number') {
-    throw new Error('report_class_promotion.runs_required must be numeric — a promotion criterion is a number that can be checked, not a vibe');
-  }
+  // Both promotion blocks go through the SHARED assertion (OPS-AUTHOR-IDENTITY-PROMOTE-W1 R4b).
+  // Single derivation: the inline checks that used to live here and below are gone, not merely
+  // supplemented — leaving one beside the shared call would reproduce the duplication the shared
+  // assertion exists to retire, and a second copy is what goes stale.
+  assertPromotionBound(cfg.report_class_promotion, 'report_class_promotion');
+  assertPromotionBound(cfg.freshness_promotion, 'freshness_promotion');
   // Every staleness severity is DECLARED with its own reason. A severity that lives only in code
   // gets "fixed" by a future wave enforcing the contract — the same argument as the exemption rows.
   const FRESHNESS_SEVERITIES = ['STALE_SYNCABLE', 'STALE_IN_FLIGHT', 'STALE_UNPUBLISHED', 'STALE_DROPPED'];
@@ -148,17 +152,8 @@ export function validateConfig(cfg) {
     // block would bypass the promotion criterion below, which is the whole control.
     if (row.ship !== 'report') throw new Error(`freshness_severity row ${severity} must ship 'report' — promotion is owned by ${cfg.freshness_promotion?.owner ?? 'the freshness_promotion criterion'}, not an inline edit`);
   }
-  // A promotion criterion needs a TIME BOUND, not just a numeric one: a numeric bar alone can never
-  // fire if staleness does not heal, and a guard permanently stuck in REPORT is decoration.
-  if (typeof cfg.freshness_promotion.runs_required !== 'number') {
-    throw new Error('freshness_promotion.runs_required must be numeric');
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(cfg.freshness_promotion.escalate_after || ''))) {
-    throw new Error('freshness_promotion.escalate_after must be a YYYY-MM-DD calendar bound — a numeric criterion with no deadline is how a REPORT-only guard becomes permanent');
-  }
-  if (!cfg.freshness_promotion.reason || !cfg.freshness_promotion.owner) {
-    throw new Error('freshness_promotion needs both a reason and an owning follow-up wave');
-  }
+  // (freshness_promotion's bound checks moved to the shared assertPromotionBound call above —
+  //  see OPS-AUTHOR-IDENTITY-PROMOTE-W1 R4b. Deliberately not restated here.)
   // ── corpus PARTS (META-CLAUDEMD-VERIFIER-CORPUS-SET-W1 R2) ───────────────────────────────────
   // `parts` is a declaration WE author, so a malformed one is VACUITY and must refuse — the same
   // argument as the exemption rows, and the same law as "a vacuity guard belongs where the corpus
