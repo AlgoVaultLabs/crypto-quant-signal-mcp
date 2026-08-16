@@ -139,36 +139,92 @@ author_identity_reason() {
 # These are pure functions so the hermetic self-test can drive them against temp ledgers. The
 # gate body never calls them, and `--measure-promotion` returns before the gate body runs.
 
-# author_identity_count_window <ledger-path> <measure-from-ts>
-#   -> "<rows_total>\t<rows_before>\t<rows_in_window>\t<fail_in_window>"
-# ISO-8601 Z timestamps sort lexicographically, so a string compare IS a time compare here.
-author_identity_count_window() {
-  local ledger="${1:-}" from="${2:-}"
-  [ -n "$ledger" ] && [ -f "$ledger" ] && [ -r "$ledger" ] || return 1
-  [ -n "$from" ] || return 2
-  awk -F'\t' -v from="$from" '
-    { total++ }
-    $1 < from { before++; next }
-    { inwin++; if ($2 == "FAIL") fail++ }
-    END { printf "%d\t%d\t%d\t%d", total+0, before+0, inwin+0, fail+0 }
-  ' "$ledger"
+# author_identity_bucket_commits <from-epoch> <allowed-list> <oos-list>   [reads TSV on STDIN]
+#
+#   stdin  : "<sha>\t<author-email>\t<committer-epoch>" per line — `git log --all --format=...`
+#   stdout : COUNTS  <total> <before> <in_window> <oos> <in_scope> <refused>
+#            OOS     <email> <n>     one line per DECLARED out-of-scope identity, zeros included
+#            REFUSED <email> <n>     one line per refusing identity
+#
+# ── WHY EPOCH SECONDS AND NEVER AN ISO STRING ────────────────────────────────────────────────
+# `git log --format=%cI` renders each commit in ITS OWN timezone offset. A lexicographic compare
+# against a Z-suffixed bound therefore mis-buckets every non-UTC commit, and it does so silently,
+# with a number that looks entirely reasonable. Measured on this repo at spec time: string
+# bucketing reported 21 in-window violations and BLOCKED; epoch bucketing over the identical
+# window reported 0 and READY. The 21 were all commits stamped +08:00 whose real instants were
+# BEFORE the boundary — `2026-08-09T18:51:09+08:00` is 10:51:09Z, 39 minutes earlier than a
+# boundary it string-sorts after. That is a measurement artifact read as signal, which is the
+# same failure mode as the calibration rows that HALTed the previous wave. Use %ct. Always.
+#
+# Pure: reads stdin, shells out to nothing. The self-test drives it with fixture TSV, and the
+# REAL `git log` invocation is asserted separately — a hermetic test is structurally blind to
+# exactly the seam it replaces.
+author_identity_bucket_commits() {
+  from="${1:-}" allowed="${2:-}" oos="${3:-}"
+  case "$from" in ''|*[!0-9]*) return 2 ;; esac
+  awk -F'\t' -v from="$from" -v allowed="$allowed" -v oos="$oos" '
+    BEGIN {
+      n = split(allowed, A, " "); for (i = 1; i <= n; i++) if (A[i] != "") AL[A[i]] = 1;
+      m = split(oos, O, " ");     for (i = 1; i <= m; i++) if (O[i] != "") { OS[O[i]] = 1; OC[O[i]] = 0 }
+    }
+    NF >= 3 {
+      total++;
+      if ($3 + 0 < from + 0) { before++; next }
+      inwin++;
+      if ($2 in OS) { oosn++; OC[$2]++; next }
+      inscope++;
+      if (!($2 in AL)) { refused++; RC[$2]++ }
+    }
+    END {
+      printf "COUNTS %d %d %d %d %d %d\n", total+0, before+0, inwin+0, oosn+0, inscope+0, refused+0;
+      # Report EVERY declared exclusion, including the zeros: an exclusion that is not reported is
+      # indistinguishable from a bug, and a zero is the case most likely to be silently wrong.
+      for (e in OC) printf "OOS %s %d\n", e, OC[e];
+      for (e in RC) printf "REFUSED %s %d\n", e, RC[e];
+    }
+  '
 }
 
-# author_identity_promotion_verdict <fail_in_window> <rows_in_window> <max_violations> <min_rows>
+# author_identity_count_indeterminate <ledger-path> <measure-from-ts> -> "<n>"
+#
+# The ONE bar that git history cannot answer. Git records commits, not verdicts, so an
+# INDETERMINATE rate is invisible to the primary population — and it is the failure mode that
+# matters most under BLOCK, because ALGOVAULT_AUTHOR_IDENTITY=warn downgrades only a FAIL and
+# leaves an INDETERMINATE refusing the commit with no per-invocation escape. This is a declared
+# SECONDARY population (see instrument.reason), never the violation count.
+# ISO-8601 Z timestamps sort lexicographically, so a string compare IS a time compare here — the
+# ledger writes Z exclusively, unlike git, which is why this one may compare strings.
+author_identity_count_indeterminate() {
+  ledger="${1:-}" from="${2:-}"
+  [ -n "$ledger" ] && [ -f "$ledger" ] && [ -r "$ledger" ] || return 1
+  [ -n "$from" ] || return 2
+  awk -F'\t' -v from="$from" '$1 >= from && $2 == "INDETERMINATE" { n++ } END { printf "%d", n+0 }' "$ledger"
+}
+
+# author_identity_promotion_verdict <refused> <in_scope> <max_violations> <min_commits>
+#                                   [<indeterminate> <max_indeterminate>]
 # Order matters: the SAMPLE FLOOR is checked before the violation count. Too few observations is
 # "we have not looked", which is INDETERMINATE — never READY, and never BLOCKED either.
+# The indeterminate bar is checked LAST and only when supplied, so a caller that does not measure
+# it (the hermetic fixtures) keeps the original four-argument contract.
 author_identity_promotion_verdict() {
-  local fail="${1:-}" rows="${2:-}" maxv="${3:-}" minr="${4:-}" v
+  local refused="${1:-}" inscope="${2:-}" maxv="${3:-}" minc="${4:-}" indet="${5:-}" maxi="${6:-}" v
   # Validate each value SEPARATELY. Do not build one delimited string and match a bracket
   # expression against it: inside a `case` pattern an unescaped `|` is the ALTERNATION separator
   # even within [...], so `*[!0-9|]*` silently parses as two broken patterns and the guard never
   # fires. The self-test caught exactly that here — a non-numeric input reached `[ -gt ]` and
   # returned READY on an integer-expression error.
-  for v in "$fail" "$rows" "$maxv" "$minr"; do
+  for v in "$refused" "$inscope" "$maxv" "$minc"; do
     case "$v" in ''|*[!0-9]*) printf 'INDETERMINATE'; return ;; esac
   done
-  if [ "$rows" -lt "$minr" ]; then printf 'INDETERMINATE'; return; fi
-  if [ "$fail" -gt "$maxv" ]; then printf 'BLOCKED'; return; fi
+  if [ "$inscope" -lt "$minc" ]; then printf 'INDETERMINATE'; return; fi
+  if [ "$refused" -gt "$maxv" ]; then printf 'BLOCKED'; return; fi
+  if [ -n "$indet" ] || [ -n "$maxi" ]; then
+    for v in "$indet" "$maxi"; do
+      case "$v" in ''|*[!0-9]*) printf 'INDETERMINATE'; return ;; esac
+    done
+    if [ "$indet" -gt "$maxi" ]; then printf 'BLOCKED'; return; fi
+  fi
   printf 'READY'
 }
 
@@ -192,9 +248,16 @@ author_identity_promotion_exit_code() {
 # single `if` it replaced cost. Both branches return BEFORE the gate body.
 case "${1:-}" in
 --measure-promotion)
-  # Reads promotion.{measure_from,min_rows_in_window,max_violations} and counts in-window FAIL
-  # rows. Prints the FOUR counts — never a bare verdict, because "0 violations" means nothing
-  # without the window it was measured over and the sample size that filled it.
+  # OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 CH2 R2.2 — the violation count is computed FROM GIT
+  # HISTORY. The ledger is read for exactly one thing, the INDETERMINATE rate, which git cannot
+  # see; it is never consulted for the violation count.
+  #
+  # This flag creates no commit and appends no ledger row, so running it CANNOT MOVE ANY COUNT IT
+  # REPORTS. That is the whole point: under the old ledger instrument, a deliberate run could and
+  # did write the FAIL row that blocked promotion.
+  #
+  # Prints SIX counts — never a bare verdict, because "0 violations" means nothing without the
+  # window it was measured over, the sample that filled it, and what was excluded from both.
   REPO_ROOT_MP="$(git rev-parse --show-toplevel 2>/dev/null || printf '')"
   if [ -z "$REPO_ROOT_MP" ]; then
     printf '✖ measure-promotion: not inside a git repository.\n' >&2
@@ -207,33 +270,58 @@ case "${1:-}" in
     printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
   fi
   FROM_MP="$(jq -r '.promotion.measure_from // ""' "$ALLOWLIST_MP" 2>/dev/null)"
-  MINR_MP="$(jq -r '.promotion.min_rows_in_window // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  MINC_MP="$(jq -r '.promotion.min_commits_in_window // ""' "$ALLOWLIST_MP" 2>/dev/null)"
   MAXV_MP="$(jq -r '.promotion.max_violations // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  MAXI_MP="$(jq -r '.promotion.max_indeterminate_in_window // ""' "$ALLOWLIST_MP" 2>/dev/null)"
   MODE_MP="$(jq -r '.promotion.mode // ""' "$ALLOWLIST_MP" 2>/dev/null)"
   NB_MP="$(jq -r '.promotion.not_before // ""' "$ALLOWLIST_MP" 2>/dev/null)"
-  printf 'promotion.mode               : %s\n' "${MODE_MP:-(unset)}"
-  printf 'promotion.not_before         : %s   (today %s)\n' "${NB_MP:-(unset)}" "$(date -u +%Y-%m-%d)"
-  printf 'promotion.measure_from       : %s\n' "${FROM_MP:-(unset)}"
-  printf 'promotion.min_rows_in_window : %s\n' "${MINR_MP:-(unset)}"
-  printf 'promotion.max_violations     : %s\n' "${MAXV_MP:-(unset)}"
-  printf 'ledger                       : %s\n' "$LEDGER_MP"
-  if ! COUNTS_MP="$(author_identity_count_window "$LEDGER_MP" "$FROM_MP")"; then
-    printf '✖ measure-promotion: ledger missing/unreadable, or measure_from unset. An ABSENT measurement is not a clean one.\n' >&2
+  ALLOWED_MP="$(jq -r '[.allowed[].email] | join(" ")' "$ALLOWLIST_MP" 2>/dev/null)"
+  OOS_MP="$(jq -r '[(.out_of_scope_identities // [])[].email] | join(" ")' "$ALLOWLIST_MP" 2>/dev/null)"
+  # measure_from is an ISO-8601 Z instant in config and an EPOCH everywhere it is compared.
+  # Convert ONCE, here, so no comparison downstream can accidentally be lexicographic.
+  FROMEPOCH_MP="$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$FROM_MP" +%s 2>/dev/null \
+                  || date -u -d "$FROM_MP" +%s 2>/dev/null || printf '')"
+  printf 'promotion.mode                 : %s\n' "${MODE_MP:-(unset)}"
+  printf 'promotion.not_before           : %s   (today %s)\n' "${NB_MP:-(unset)}" "$(date -u +%Y-%m-%d)"
+  printf 'promotion.measure_from         : %s   (epoch %s)\n' "${FROM_MP:-(unset)}" "${FROMEPOCH_MP:-?}"
+  printf 'promotion.min_commits_in_window: %s\n' "${MINC_MP:-(unset)}"
+  printf 'promotion.max_violations       : %s\n' "${MAXV_MP:-(unset)}"
+  printf 'promotion.max_indeterminate    : %s\n' "${MAXI_MP:-(unset)}"
+  printf 'primary population             : git log --all (commits) — NOT the ledger\n'
+  printf 'secondary population           : %s   (INDETERMINATE rate only)\n' "$LEDGER_MP"
+  if [ -z "$FROMEPOCH_MP" ] || [ -z "$ALLOWED_MP" ]; then
+    printf '✖ measure-promotion: measure_from unparseable or allowed[] empty. WE author this file, so that is our defect, not a fact about the world.\n' >&2
     printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
   fi
-  TOT_MP="$(printf '%s' "$COUNTS_MP" | cut -f1)"
-  BEF_MP="$(printf '%s' "$COUNTS_MP" | cut -f2)"
-  WIN_MP="$(printf '%s' "$COUNTS_MP" | cut -f3)"
-  FAIL_MP="$(printf '%s' "$COUNTS_MP" | cut -f4)"
-  printf 'rows_total                   : %s\n' "$TOT_MP"
-  printf 'rows_before_measure_from     : %s   (calibration — excluded by design)\n' "$BEF_MP"
-  printf 'rows_in_window               : %s   (floor %s)\n' "$WIN_MP" "${MINR_MP:-?}"
-  printf 'FAIL_in_window               : %s   (max %s)\n' "$FAIL_MP" "${MAXV_MP:-?}"
-  VERDICT_MP="$(author_identity_promotion_verdict "$FAIL_MP" "$WIN_MP" "$MAXV_MP" "$MINR_MP")"
-  if [ "$VERDICT_MP" = "BLOCKED" ]; then
-    printf '\nViolating rows in window:\n' >&2
-    awk -F'\t' -v from="$FROM_MP" '$1 >= from && $2 == "FAIL" { printf "  %s | %s | %s\n", $1, $3, $4 }' "$LEDGER_MP" >&2
+  BUCKET_MP="$(git log --all --format='%H%x09%ae%x09%ct' 2>/dev/null \
+               | sort -u -k1,1 \
+               | author_identity_bucket_commits "$FROMEPOCH_MP" "$ALLOWED_MP" "$OOS_MP")" || BUCKET_MP=''
+  COUNTS_MP="$(printf '%s\n' "$BUCKET_MP" | awk '$1=="COUNTS"{print; exit}')"
+  if [ -z "$COUNTS_MP" ]; then
+    printf '✖ measure-promotion: could not bucket git history. An ABSENT measurement is not a clean one.\n' >&2
+    printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
   fi
+  TOT_MP="$(printf '%s' "$COUNTS_MP"  | awk '{print $2}')"
+  BEF_MP="$(printf '%s' "$COUNTS_MP"  | awk '{print $3}')"
+  WIN_MP="$(printf '%s' "$COUNTS_MP"  | awk '{print $4}')"
+  OOS_N_MP="$(printf '%s' "$COUNTS_MP" | awk '{print $5}')"
+  INS_MP="$(printf '%s' "$COUNTS_MP"  | awk '{print $6}')"
+  REF_MP="$(printf '%s' "$COUNTS_MP"  | awk '{print $7}')"
+  printf 'commits_total_all_refs         : %s\n' "$TOT_MP"
+  printf 'commits_before_measure_from    : %s\n' "$BEF_MP"
+  printf 'commits_in_window              : %s\n' "$WIN_MP"
+  printf '  in_window_out_of_scope       : %s\n' "$OOS_N_MP"
+  printf '%s\n' "$BUCKET_MP" | awk '$1=="OOS"{ printf "      %-44s %s\n", $2, $3 }' | sort
+  printf '  in_window_in_scope           : %s   (floor %s)\n' "$INS_MP" "${MINC_MP:-?}"
+  printf '  in_window_would_be_refused   : %s   (bar %s)\n' "$REF_MP" "${MAXV_MP:-?}"
+  printf '%s\n' "$BUCKET_MP" | awk '$1=="REFUSED"{ printf "      %-44s %s\n", $2, $3 }' | sort
+  # The one bar git cannot answer. A missing ledger is not a clean ledger.
+  if ! INDET_MP="$(author_identity_count_indeterminate "$LEDGER_MP" "$FROM_MP")"; then
+    printf '✖ measure-promotion: ledger missing/unreadable, so the INDETERMINATE rate is unknown.\n' >&2
+    printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
+  fi
+  printf '  ledger_indeterminate_in_window: %s   (bar %s, secondary population)\n' "$INDET_MP" "${MAXI_MP:-?}"
+  VERDICT_MP="$(author_identity_promotion_verdict "$REF_MP" "$INS_MP" "$MAXV_MP" "$MINC_MP" "$INDET_MP" "$MAXI_MP")"
   printf 'PROMOTION_MEASURE_VERDICT=%s\n' "$VERDICT_MP"
   exit "$(author_identity_promotion_exit_code "$VERDICT_MP")"
   ;;
@@ -321,31 +409,91 @@ case "${1:-}" in
     i=0; while [ "$i" -lt "$nf" ]; do
       printf '2026-08-11T00:00:00Z\tFAIL\t/tmp/repo\tbad@y.com\n' >>"$p"; i=$((i+1)); done
   }
-  CUT='2026-08-09T11:30:00Z'
+  CUT='2026-08-09T11:07:26Z'
+  CUTEPOCH=1786273646            # == CUT, converted once; every commit compare is integer
+  AL='good@x.com'
+  OS='ci@algovault.com'
 
-  # counting: calibration rows before the cut are EXCLUDED, and are not silently deleted either
+  # ── the git-history bucketer (OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1 CH2 R2.2) ─────────────
+  # Fed fixture TSV in the SAME shape `git log --all --format='%H%x09%ae%x09%ct'` emits.
+  bucket() { printf '%s' "$1" | author_identity_bucket_commits "$CUTEPOCH" "$AL" "$OS" | awk '$1=="COUNTS"{printf "%s|%s|%s|%s|%s|%s",$2,$3,$4,$5,$6,$7}'; }
+  TSV_BASIC="$(printf 'a\t%s\t%s\nb\t%s\t%s\nc\t%s\t%s\n' \
+    "$AL" $((CUTEPOCH-3600)) "$AL" $((CUTEPOCH+60)) "$OS" $((CUTEPOCH+120)))"
+  # total|before|in_window|out_of_scope|in_scope|refused
+  ok bkt-basic "$(bucket "$TSV_BASIC")" '3|1|2|1|1|0'
+
+  # the boundary is INCLUSIVE (>=), so a commit exactly ON measure_from is IN the window
+  ok bkt-inclusive "$(bucket "$(printf 'a\t%s\t%s\n' "$AL" "$CUTEPOCH")")" '1|0|1|0|1|0'
+
+  # an identity in NEITHER list is a VIOLATION, and stays in the denominator
+  ok bkt-unlisted "$(bucket "$(printf 'a\t%s\t%s\nb\tnobody@example.invalid\t%s\n' \
+    "$AL" $((CUTEPOCH+60)) $((CUTEPOCH+90)))")" '2|0|2|0|2|1'
+
+  # out-of-scope is subtracted from BOTH numerator and denominator, never counted as a violation
+  ok bkt-oos-both "$(bucket "$(printf 'a\t%s\t%s\n' "$OS" $((CUTEPOCH+60)))")" '1|0|1|1|0|0'
+
+  # EVERY declared exclusion is reported, INCLUDING a zero — an unreported exclusion is
+  # indistinguishable from a bug, and the zero is the case most likely to be silently wrong
+  ok bkt-reports-zero "$(printf 'a\t%s\t%s\n' "$AL" $((CUTEPOCH+60)) \
+    | author_identity_bucket_commits "$CUTEPOCH" "$AL" "$OS" | awk -v e="$OS" '$1=="OOS"&&$2==e{print $3}')" 0
+  # ...and a refusing identity is named, not merely counted
+  ok bkt-names-refuser "$(printf 'a\tnobody@example.invalid\t%s\n' $((CUTEPOCH+60)) \
+    | author_identity_bucket_commits "$CUTEPOCH" "$AL" "$OS" | awk '$1=="REFUSED"{print $2}')" 'nobody@example.invalid'
+
+  # THE EPOCH REGRESSION. A +08:00 commit 10 minutes BEFORE the bound renders as 18:xx and
+  # string-sorts AFTER it. On the live repo that artifact turned 0 violations into 21 and READY
+  # into BLOCKED. Bucketing on %ct keeps it before the bound, where it belongs.
+  ok bkt-epoch-not-string "$(bucket "$(printf 'a\ttest@test.local\t%s\n' $((CUTEPOCH-600)))")" '1|1|0|0|0|0'
+  ok bkt-nonnum-from "$(author_identity_bucket_commits 'not-an-epoch' "$AL" "$OS" </dev/null >/dev/null 2>&1; printf '%s' $?)" 2
+
+  # ── the ledger-side INDETERMINATE bar (R2.5): the one thing git history cannot see ───────────
   mkledger "$TD/l1" 40 0 7
-  ok win-counts "$(author_identity_count_window "$TD/l1" "$CUT" | tr '\t' '|')" '47|7|40|0'
+  ok indet-none "$(author_identity_count_indeterminate "$TD/l1" "$CUT")" 0
+  printf '2026-08-11T00:00:00Z\tINDETERMINATE\t/tmp/repo\t?\n' >>"$TD/l1"
+  ok indet-one "$(author_identity_count_indeterminate "$TD/l1" "$CUT")" 1
+  author_identity_count_indeterminate "$TD/nope" "$CUT" >/dev/null 2>&1; ok indet-missing-ledger "$?" 1
+  author_identity_count_indeterminate "$TD/l1" ''     >/dev/null 2>&1; ok indet-no-from "$?" 2
 
+  # ── the verdict function ─────────────────────────────────────────────────────────────────────
   # clean window at or above the floor => READY
   ok win-ready "$(author_identity_promotion_verdict 0 40 0 30)" READY
-  # a REAL in-window FAIL => BLOCKED (this is the case the whole flag exists to catch)
-  mkledger "$TD/l2" 40 2 7
-  C2="$(author_identity_count_window "$TD/l2" "$CUT")"
-  ok win-fail-counts "$(printf '%s' "$C2" | tr '\t' '|')" '49|7|42|2'
-  ok win-blocked "$(author_identity_promotion_verdict "$(printf '%s' "$C2" | cut -f4)" "$(printf '%s' "$C2" | cut -f3)" 0 30)" BLOCKED
+  # a REAL in-window violation => BLOCKED (this is the case the whole flag exists to catch)
+  ok win-blocked "$(author_identity_promotion_verdict 2 42 0 30)" BLOCKED
   # under the sample floor => INDETERMINATE, never READY: an empty window is a free pass
-  mkledger "$TD/l3" 5 0 7
-  C3="$(author_identity_count_window "$TD/l3" "$CUT")"
-  ok win-floor "$(author_identity_promotion_verdict "$(printf '%s' "$C3" | cut -f4)" "$(printf '%s' "$C3" | cut -f3)" 0 30)" INDETERMINATE
+  ok win-floor "$(author_identity_promotion_verdict 0 5 0 30)" INDETERMINATE
   ok win-empty "$(author_identity_promotion_verdict 0 0 0 30)" INDETERMINATE
-  # floor is checked BEFORE violations: a tiny window with a FAIL is still "we have not looked"
+  # floor is checked BEFORE violations: a tiny window with a violation is still "we have not looked"
   ok win-floor-beats-fail "$(author_identity_promotion_verdict 2 5 0 30)" INDETERMINATE
   # non-numeric / missing config values must never fall through to READY
   ok win-nonnum "$(author_identity_promotion_verdict 0 40 '' 30)" INDETERMINATE
   ok win-garbage "$(author_identity_promotion_verdict x 40 0 30)" INDETERMINATE
-  author_identity_count_window "$TD/nope" "$CUT" >/dev/null 2>&1; ok win-missing-ledger "$?" 1
-  author_identity_count_window "$TD/l1" '' >/dev/null 2>&1;       ok win-no-from "$?" 2
+  # the INDETERMINATE bar blocks even when git history is spotless, and a garbage bar never passes
+  ok win-indet-blocks "$(author_identity_promotion_verdict 0 40 0 30 1 0)" BLOCKED
+  ok win-indet-ok     "$(author_identity_promotion_verdict 0 40 0 30 0 0)" READY
+  ok win-indet-nonnum "$(author_identity_promotion_verdict 0 40 0 30 x 0)" INDETERMINATE
+
+  # ── THE SEAM THIS HERMETIC SUITE OTHERWISE REPLACES ─────────────────────────────────────────
+  # Every assertion above feeds the bucketer fixture TSV, so the one thing no scenario exercises
+  # is the REAL `git log` invocation that produces it — and a format string is exactly the kind of
+  # thing that rots silently. Assert the literal shipped in the flag body: three tab-separated
+  # fields, author email, and COMMITTER EPOCH (%ct), never %cI.
+  #
+  # The greps EXCLUDE the self-test's own assertion lines. Without that, each one matches the
+  # literal it carries and counts itself — a ban-line satisfying its own ban is the classic dead
+  # canary, and it reads as a healthy 0 becoming a mysterious 1.
+  SELF_SRC="${ALGOVAULT_AUTHOR_IDENTITY_SELF_SRC:-$0}"
+  if [ -r "$SELF_SRC" ]; then
+    # Anchored to the EXECUTABLE lines, not the file: the same literals legitimately appear in a
+    # comment and in a printf label, so a file-wide count asserts a number nobody can reason about.
+    seamsrc() { grep -v '^  *ok seam-' "$SELF_SRC"; }
+    ok seam-git-format "$(seamsrc | grep -c "BUCKET_MP=\"\$(git log --all --format='%H%x09%ae%x09%ct'")" 1
+    ok seam-no-iso-format "$(seamsrc | grep -c "format='%H%x09%ae%x09%cI'")" 0
+    ok seam-reads-min-commits "$(seamsrc | grep -c "jq -r '\.promotion\.min_commits_in_window")" 1
+    ok seam-no-stale-min-rows "$(seamsrc | grep -c "jq -r '\.promotion\.min_rows_in_window")" 0
+    # ...and the exclusion itself must not be vacuous: if it ever filtered the WHOLE file the four
+    # assertions above would all read 0 and two of them would pass for the wrong reason.
+    ok seam-filter-not-vacuous "$([ "$(seamsrc | wc -l | tr -d ' ')" -gt 300 ] && printf yes || printf no)" yes
+  fi
   # token -> exit code mapping for the promotion verdict, asserted directly
   ok pmap-ready   "$(author_identity_promotion_exit_code READY)" 0
   ok pmap-blocked "$(author_identity_promotion_exit_code BLOCKED)" 1
