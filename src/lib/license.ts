@@ -656,6 +656,36 @@ function getDailyTracker(key: string): DailyTracker {
   return t;
 }
 
+/**
+ * PRICING-BOT-DELIVERY-METERING-W1 CH2 — the ONLY export this wave adds to this module.
+ *
+ * Read the EPISODE KEYS a tracker is currently in: the monthly window's start instant and the UTC
+ * day. `checkQuotaByKey` already returns used/total/remaining/limit, so those are not duplicated
+ * here — this covers the two fields it does not carry, which the bot needs to scope its
+ * "notify once per exhaustion episode" state to the right window (the same window-keyed shape
+ * BOT-QUOTA-REFUSAL-SEAM-W1 uses for the free tier).
+ *
+ * STRICTLY READ-ONLY, and deliberately NOT `getCallTracker`/`getDailyTracker`: both of those
+ * CREATE an entry as a side effect, so exposing them would let a read materialise a tracker for a
+ * key that has never been charged. This reads the maps directly and answers `null` for absent —
+ * absent means "no episode yet", which is a fact, not a zero.
+ */
+export function getTrackerEpisode(trackerKey: string): {
+  periodStart: string | null;
+  dailyDay: string | null;
+} {
+  const call = callTrackers.get(trackerKey);
+  const daily = dailyTrackers.get(trackerKey);
+  const today = utcDayKey();
+  return {
+    // An expired window is reported as absent rather than as its stale start: the next charge
+    // resets it, so reporting the old instant would name an episode that is already over.
+    periodStart:
+      call && Date.now() - call.periodStart <= MONTH_MS ? new Date(call.periodStart).toISOString() : null,
+    dailyDay: daily && daily.day === today ? daily.day : null,
+  };
+}
+
 // ── REFERRAL-LIGHT-W1 (C2): referee bonus-calls meter ──
 // In-memory map mirrors the quota_usage pattern — seeded from referral_bonus at
 // initQuotaDb, kept current by write-through persist on consume + the
