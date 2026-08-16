@@ -128,10 +128,116 @@ author_identity_reason() {
     "$path" 2>/dev/null
 }
 
+# ── PROMOTION MEASUREMENT (OPS-AUTHOR-IDENTITY-PROMOTE-W1) ──────────────────────────────────
+# The ledger contains its own CALIBRATION: the wave that built this guard proved it could fail,
+# and proving a guard can fail necessarily writes FAIL rows. Measuring max_violations over the
+# WHOLE ledger therefore counts the wrong population, and since those rows never age out the
+# criterion could never be satisfied — in perpetuity. promotion.measure_from cuts the calibration
+# out of the population without touching the instrument, and min_rows_in_window stops an empty
+# window from being a free pass.
+#
+# These are pure functions so the hermetic self-test can drive them against temp ledgers. The
+# gate body never calls them, and `--measure-promotion` returns before the gate body runs.
+
+# author_identity_count_window <ledger-path> <measure-from-ts>
+#   -> "<rows_total>\t<rows_before>\t<rows_in_window>\t<fail_in_window>"
+# ISO-8601 Z timestamps sort lexicographically, so a string compare IS a time compare here.
+author_identity_count_window() {
+  local ledger="${1:-}" from="${2:-}"
+  [ -n "$ledger" ] && [ -f "$ledger" ] && [ -r "$ledger" ] || return 1
+  [ -n "$from" ] || return 2
+  awk -F'\t' -v from="$from" '
+    { total++ }
+    $1 < from { before++; next }
+    { inwin++; if ($2 == "FAIL") fail++ }
+    END { printf "%d\t%d\t%d\t%d", total+0, before+0, inwin+0, fail+0 }
+  ' "$ledger"
+}
+
+# author_identity_promotion_verdict <fail_in_window> <rows_in_window> <max_violations> <min_rows>
+# Order matters: the SAMPLE FLOOR is checked before the violation count. Too few observations is
+# "we have not looked", which is INDETERMINATE — never READY, and never BLOCKED either.
+author_identity_promotion_verdict() {
+  local fail="${1:-}" rows="${2:-}" maxv="${3:-}" minr="${4:-}" v
+  # Validate each value SEPARATELY. Do not build one delimited string and match a bracket
+  # expression against it: inside a `case` pattern an unescaped `|` is the ALTERNATION separator
+  # even within [...], so `*[!0-9|]*` silently parses as two broken patterns and the guard never
+  # fires. The self-test caught exactly that here — a non-numeric input reached `[ -gt ]` and
+  # returned READY on an integer-expression error.
+  for v in "$fail" "$rows" "$maxv" "$minr"; do
+    case "$v" in ''|*[!0-9]*) printf 'INDETERMINATE'; return ;; esac
+  done
+  if [ "$rows" -lt "$minr" ]; then printf 'INDETERMINATE'; return; fi
+  if [ "$fail" -gt "$maxv" ]; then printf 'BLOCKED'; return; fi
+  printf 'READY'
+}
+
+# author_identity_promotion_exit_code <verdict> -> 0 READY / 1 BLOCKED / 3 INDETERMINATE.
+# Same token-law shape as author_identity_exit_code, and asserted the same way: a re-coded
+# mapping with a correct token is a green suite over a broken gate.
+author_identity_promotion_exit_code() {
+  case "${1:-}" in
+    READY)   printf '0' ;;
+    BLOCKED) printf '1' ;;
+    *)       printf '3' ;;
+  esac
+}
+
 [ "$ALGOVAULT_AUTHOR_IDENTITY_SOURCED" = "1" ] && return 0 2>/dev/null
 
-# ══ SELF-TEST ═══════════════════════════════════════════════════════════════════════════════
-if [ "${1:-}" = "--self-test" ]; then
+# ══ NON-GATE FLAGS ══════════════════════════════════════════════════════════════════════════
+# ONE dispatch for every non-gate flag, deliberately: this file is on the SHARED pre-commit path
+# that governs every linked worktree, so a second `if` here would be a second string compare on
+# every commit in the repo. A `case` with two branches costs the commit path exactly what the
+# single `if` it replaced cost. Both branches return BEFORE the gate body.
+case "${1:-}" in
+--measure-promotion)
+  # Reads promotion.{measure_from,min_rows_in_window,max_violations} and counts in-window FAIL
+  # rows. Prints the FOUR counts — never a bare verdict, because "0 violations" means nothing
+  # without the window it was measured over and the sample size that filled it.
+  REPO_ROOT_MP="$(git rev-parse --show-toplevel 2>/dev/null || printf '')"
+  if [ -z "$REPO_ROOT_MP" ]; then
+    printf '✖ measure-promotion: not inside a git repository.\n' >&2
+    printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
+  fi
+  ALLOWLIST_MP="$REPO_ROOT_MP/ops/author-identity-allowlist.json"
+  LEDGER_MP="$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd)/algovault-author-identity.log"
+  if ! command -v jq >/dev/null 2>&1 || [ ! -f "$ALLOWLIST_MP" ]; then
+    printf '✖ measure-promotion: jq missing or allowlist unreadable at %s\n' "$ALLOWLIST_MP" >&2
+    printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
+  fi
+  FROM_MP="$(jq -r '.promotion.measure_from // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  MINR_MP="$(jq -r '.promotion.min_rows_in_window // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  MAXV_MP="$(jq -r '.promotion.max_violations // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  MODE_MP="$(jq -r '.promotion.mode // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  NB_MP="$(jq -r '.promotion.not_before // ""' "$ALLOWLIST_MP" 2>/dev/null)"
+  printf 'promotion.mode               : %s\n' "${MODE_MP:-(unset)}"
+  printf 'promotion.not_before         : %s   (today %s)\n' "${NB_MP:-(unset)}" "$(date -u +%Y-%m-%d)"
+  printf 'promotion.measure_from       : %s\n' "${FROM_MP:-(unset)}"
+  printf 'promotion.min_rows_in_window : %s\n' "${MINR_MP:-(unset)}"
+  printf 'promotion.max_violations     : %s\n' "${MAXV_MP:-(unset)}"
+  printf 'ledger                       : %s\n' "$LEDGER_MP"
+  if ! COUNTS_MP="$(author_identity_count_window "$LEDGER_MP" "$FROM_MP")"; then
+    printf '✖ measure-promotion: ledger missing/unreadable, or measure_from unset. An ABSENT measurement is not a clean one.\n' >&2
+    printf 'PROMOTION_MEASURE_VERDICT=INDETERMINATE\n'; exit 3
+  fi
+  TOT_MP="$(printf '%s' "$COUNTS_MP" | cut -f1)"
+  BEF_MP="$(printf '%s' "$COUNTS_MP" | cut -f2)"
+  WIN_MP="$(printf '%s' "$COUNTS_MP" | cut -f3)"
+  FAIL_MP="$(printf '%s' "$COUNTS_MP" | cut -f4)"
+  printf 'rows_total                   : %s\n' "$TOT_MP"
+  printf 'rows_before_measure_from     : %s   (calibration — excluded by design)\n' "$BEF_MP"
+  printf 'rows_in_window               : %s   (floor %s)\n' "$WIN_MP" "${MINR_MP:-?}"
+  printf 'FAIL_in_window               : %s   (max %s)\n' "$FAIL_MP" "${MAXV_MP:-?}"
+  VERDICT_MP="$(author_identity_promotion_verdict "$FAIL_MP" "$WIN_MP" "$MAXV_MP" "$MINR_MP")"
+  if [ "$VERDICT_MP" = "BLOCKED" ]; then
+    printf '\nViolating rows in window:\n' >&2
+    awk -F'\t' -v from="$FROM_MP" '$1 >= from && $2 == "FAIL" { printf "  %s | %s | %s\n", $1, $3, $4 }' "$LEDGER_MP" >&2
+  fi
+  printf 'PROMOTION_MEASURE_VERDICT=%s\n' "$VERDICT_MP"
+  exit "$(author_identity_promotion_exit_code "$VERDICT_MP")"
+  ;;
+--self-test)
   PASSED=0; FAILED=0
   # Assertions must never RAISE. An assertion that aborts the suite silently converts
   # "proven able to fail" into "crashes", and the run reads as tooling breakage, not a verdict.
@@ -203,6 +309,49 @@ if [ "${1:-}" = "--self-test" ]; then
   ok map-indet "$(author_identity_exit_code INDETERMINATE)" 3
   ok map-junk  "$(author_identity_exit_code wat)" 3
 
+  # (6) PROMOTION MEASUREMENT — two-way, against REAL ledger files this test builds.
+  # Fixtures use the real 4-field row shape the gate body emits, never a hand-invented one.
+  mkledger() { # mkledger <path> <n_pass_in_window> <n_fail_in_window> <n_calibration_before>
+    local p="$1" np="$2" nf="$3" nb="$4" i
+    : >"$p"
+    i=0; while [ "$i" -lt "$nb" ]; do
+      printf '2026-08-09T10:55:51Z\tFAIL\t/tmp/calib\ttest@test.local\n' >>"$p"; i=$((i+1)); done
+    i=0; while [ "$i" -lt "$np" ]; do
+      printf '2026-08-10T00:00:00Z\tPASS\t/tmp/repo\tgood@x.com\n' >>"$p"; i=$((i+1)); done
+    i=0; while [ "$i" -lt "$nf" ]; do
+      printf '2026-08-11T00:00:00Z\tFAIL\t/tmp/repo\tbad@y.com\n' >>"$p"; i=$((i+1)); done
+  }
+  CUT='2026-08-09T11:30:00Z'
+
+  # counting: calibration rows before the cut are EXCLUDED, and are not silently deleted either
+  mkledger "$TD/l1" 40 0 7
+  ok win-counts "$(author_identity_count_window "$TD/l1" "$CUT" | tr '\t' '|')" '47|7|40|0'
+
+  # clean window at or above the floor => READY
+  ok win-ready "$(author_identity_promotion_verdict 0 40 0 30)" READY
+  # a REAL in-window FAIL => BLOCKED (this is the case the whole flag exists to catch)
+  mkledger "$TD/l2" 40 2 7
+  C2="$(author_identity_count_window "$TD/l2" "$CUT")"
+  ok win-fail-counts "$(printf '%s' "$C2" | tr '\t' '|')" '49|7|42|2'
+  ok win-blocked "$(author_identity_promotion_verdict "$(printf '%s' "$C2" | cut -f4)" "$(printf '%s' "$C2" | cut -f3)" 0 30)" BLOCKED
+  # under the sample floor => INDETERMINATE, never READY: an empty window is a free pass
+  mkledger "$TD/l3" 5 0 7
+  C3="$(author_identity_count_window "$TD/l3" "$CUT")"
+  ok win-floor "$(author_identity_promotion_verdict "$(printf '%s' "$C3" | cut -f4)" "$(printf '%s' "$C3" | cut -f3)" 0 30)" INDETERMINATE
+  ok win-empty "$(author_identity_promotion_verdict 0 0 0 30)" INDETERMINATE
+  # floor is checked BEFORE violations: a tiny window with a FAIL is still "we have not looked"
+  ok win-floor-beats-fail "$(author_identity_promotion_verdict 2 5 0 30)" INDETERMINATE
+  # non-numeric / missing config values must never fall through to READY
+  ok win-nonnum "$(author_identity_promotion_verdict 0 40 '' 30)" INDETERMINATE
+  ok win-garbage "$(author_identity_promotion_verdict x 40 0 30)" INDETERMINATE
+  author_identity_count_window "$TD/nope" "$CUT" >/dev/null 2>&1; ok win-missing-ledger "$?" 1
+  author_identity_count_window "$TD/l1" '' >/dev/null 2>&1;       ok win-no-from "$?" 2
+  # token -> exit code mapping for the promotion verdict, asserted directly
+  ok pmap-ready   "$(author_identity_promotion_exit_code READY)" 0
+  ok pmap-blocked "$(author_identity_promotion_exit_code BLOCKED)" 1
+  ok pmap-indet   "$(author_identity_promotion_exit_code INDETERMINATE)" 3
+  ok pmap-junk    "$(author_identity_promotion_exit_code wat)" 3
+
   # VACUITY GUARD: in --self-test WE build the corpus, so an empty one means the test built
   # nothing — a defect in the test. REFUSE. (At runtime the WORLD builds the corpus, so empty
   # there is a fact, not vacuity. Empty-vs-unparseable is the line, not empty-vs-non-empty.)
@@ -214,7 +363,8 @@ if [ "${1:-}" = "--self-test" ]; then
   printf 'SELF-TEST: %d passed, %d failed (%d assertions)\n' "$PASSED" "$FAILED" "$TOTAL"
   if [ "$FAILED" -gt 0 ]; then printf 'AUTHOR_IDENTITY_VERDICT=FAIL\n'; exit "$(author_identity_exit_code FAIL)"; fi
   printf 'AUTHOR_IDENTITY_VERDICT=PASS\n'; exit "$(author_identity_exit_code PASS)"
-fi
+  ;;
+esac
 
 # ══ GATE BODY ═══════════════════════════════════════════════════════════════════════════════
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || printf '')"
