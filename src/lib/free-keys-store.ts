@@ -33,10 +33,45 @@ const FREE_KEYS_DDL = `
   CREATE INDEX IF NOT EXISTS idx_free_keys_email ON free_keys (email);
 `;
 
+/**
+ * OPS-QUOTA-CLAIM-ALIAS-W1 CH1 — the ADOPTED bucket.
+ *
+ * `bucket_key` is the `free:v2:<hex>` row this key ADOPTS. It is the whole wave in one column:
+ * a key carrying one charges that row instead of minting its own, so claiming a key changes WHO
+ * the caller is and never HOW MUCH they get.
+ *
+ * NULLABLE, and that is load-bearing rather than convenient — every key issued before this wave,
+ * and every paid key, has no `bucket_key` and therefore resolves byte-identically to today.
+ *
+ * Added out-of-band rather than in FREE_KEYS_DDL because `CREATE TABLE IF NOT EXISTS` is a NO-OP
+ * on an existing table: shipping the column inside the DDL would create it on fresh databases
+ * and silently skip every deployed one. PG takes native `ADD COLUMN IF NOT EXISTS`; SQLite has
+ * none (a syntax error, verified 3.37), so it takes the `PRAGMA table_info` pre-check — the exact
+ * idiom `ensureQuotaDailyColumns` already uses in license.ts.
+ */
+async function ensureBucketKeyColumn(): Promise<void> {
+  try {
+    if (PG) {
+      dbExec('ALTER TABLE free_keys ADD COLUMN IF NOT EXISTS bucket_key TEXT;');
+    } else {
+      const rows = await dbQuery<{ name: string }>('PRAGMA table_info(free_keys)', []);
+      if (!new Set(rows.map((r) => r.name)).has('bucket_key')) {
+        dbExec('ALTER TABLE free_keys ADD COLUMN bucket_key TEXT;');
+      }
+    }
+  } catch {
+    // A key store we cannot extend must not take issuance down. Without the column a mint simply
+    // records no bucket, which is the pre-wave behaviour — degraded, never wrong.
+  }
+}
+
 let _initialized = false;
 export function ensureFreeKeysSchema(): void {
   if (_initialized) return;
   dbExec(FREE_KEYS_DDL);
+  // Fire-and-forget: `dbExec` is already fire-and-forget on PG, and every read of `bucket_key`
+  // tolerates its absence (the column is optional on FreeKeyRow).
+  void ensureBucketKeyColumn();
   _initialized = true;
 }
 /** Test seam (module-level-cache reset idiom). */
@@ -48,6 +83,26 @@ export interface FreeKeyRow {
   api_key: string;
   email: string | null;
   ref_code: string | null;
+  /**
+   * OPS-QUOTA-CLAIM-ALIAS-W1 CH1 — the `free:v2:<hex>` bucket this key ADOPTS, or null/absent for
+   * every key issued before this wave. Optional so an older cached row, or a store whose column
+   * add failed, degrades to the pre-wave path rather than throwing on a live metering read.
+   */
+  bucket_key?: string | null;
+}
+
+/**
+ * The ONLY shape a bucket key may take: a keyless free bucket, `free:<ip_hash>`.
+ *
+ * This is what makes key→key adoption impossible BY CONSTRUCTION rather than merely refused.
+ * With 5 mints per ipHash per hour, chained claims are reachable, and adopting a previously
+ * claimed key would let a caller launder an allowance through generations of keys.
+ */
+const BUCKET_KEY_RE = /^free:[A-Za-z0-9:_-]{1,128}$/;
+
+/** True iff `v` is a well-formed keyless-bucket key. Exported for the CH1 assertions. */
+export function isAdoptableBucketKey(v: unknown): v is string {
+  return typeof v === 'string' && BUCKET_KEY_RE.test(v) && !v.startsWith(`free:${FREE_KEY_PREFIX}`);
 }
 
 interface CacheEntry {
@@ -111,8 +166,10 @@ export async function lookupFreeKey(key: string): Promise<FreeKeyRow | null> {
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.row;
   ensureFreeKeysSchema();
+  // `bucket_key` is selected here and NOWHERE else on the read path: the sync cache-only lookup
+  // serves whatever this query cached, so one SELECT feeds both paths and they cannot disagree.
   const rows = await dbQuery<FreeKeyRow>(
-    'SELECT api_key, email, ref_code FROM free_keys WHERE api_key = ?',
+    'SELECT api_key, email, ref_code, bucket_key FROM free_keys WHERE api_key = ?',
     [key],
   );
   const row = rows.length > 0 ? rows[0] : null;
@@ -213,8 +270,21 @@ export async function mintEphemeralKey(refCode?: string | null, ipHash?: string 
   if (!claimEphemeralMintSlot(identity)) throw new EphemeralMintQuotaError(identity);
   await expireIdleEphemeralKeys().catch(() => { /* never block issuance on a reap */ });
   const apiKey = generateFreeKey();
-  dbRun('INSERT INTO free_keys (api_key, email, ref_code) VALUES (?, ?, ?)', apiKey, null, refCode ?? null);
-  cacheSet(apiKey, { api_key: apiKey, email: null, ref_code: refCode ?? null });
+
+  // OPS-QUOTA-CLAIM-ALIAS-W1 CH1 — ADOPT the caller's bucket rather than minting a fresh one.
+  //
+  // Before this, the mint wrote only `free_keys`, so the new key's tracker started at zero on BOTH
+  // meters and a walled caller who followed our own exhaustion-notice CTA received a brand-new
+  // 200/mo + 100/day allowance, five times an hour. The wall advertised its own bypass.
+  //
+  // `identity` is the SAME `hashIp(clientIp(req))` the request context is seeded from, so
+  // `free:${identity}` names the exact row the caller has been charging — no join, no lookup, no
+  // second derivation to drift. It is shape-checked rather than trusted: only a `free:` bucket is
+  // adoptable, which is what makes key→key laundering impossible by construction.
+  const bucketKey = isAdoptableBucketKey(`free:${identity}`) ? `free:${identity}` : null;
+  dbRun('INSERT INTO free_keys (api_key, email, ref_code, bucket_key) VALUES (?, ?, ?, ?)',
+        apiKey, null, refCode ?? null, bucketKey);
+  cacheSet(apiKey, { api_key: apiKey, email: null, ref_code: refCode ?? null, bucket_key: bucketKey });
   return apiKey;
 }
 
