@@ -95,7 +95,9 @@ describe('the free-tier exhaustion notice (buildQuotaNoticeMessage)', () => {
     expect(msg).toContain('Access returns 2026-08-24 (22 days)');
     expect(msg).toContain('Starter');
     expect(msg).toContain('signup?plan=starter&upgrade_from=limit');
-    expect(msg).toContain('Create your free account for a referral link'); // keyless path
+    // QCA-R2 CH2: the keyless ask is the CLAIM offer — the old signup path minted a fresh
+    // allowance until CH1 made claiming adopt the caller's bucket.
+    expect(msg).toContain('Claim a free key — one call, no email. Your usage carries over, so nothing resets.'); // keyless path
     expect(msg.toLowerCase()).toContain('refer a friend');
     expect(msg).not.toContain('unlimited');
   });

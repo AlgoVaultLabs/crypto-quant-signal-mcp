@@ -33,7 +33,7 @@ import { PLANS, DEFAULT_UPGRADE_PLAN, planCallsLabel, subscriptionBreakEvenCalls
 // LEAF, not `license.ts` — see the module note above on why that import would cycle. This is the
 // SAME derivation the daily meter enforces against, which is the point of extracting it.
 import { hoursUntilUtcDayReset } from './utc-day.js';
-import { nudgeSignupUrl, referralSignupUrl } from './nudge-copy.js';
+import { nudgeSignupUrl } from './nudge-copy.js';
 import { shareLink, bonusCallsLabel } from './referral-constants.js';
 import type { SuggestedX402 } from '../types.js';
 
@@ -264,13 +264,47 @@ function x402Line(x402: SuggestedX402, lead: boolean): string {
  * offer reads identically whoever hits the wall; only the link differs. A keyless caller must
  * be told what the link is FOR before being asked to sign up for one.
  */
-function referralLine(referralCode: string | null | undefined): string {
+/**
+ * The one-call claim endpoint. Rendered as a bare URL per the link-not-inline convention this
+ * module already follows — a link cannot go stale the way an inlined figure can.
+ *
+ * It is the API route, not the `/signup` page, because this arm is read by an AGENT: the caller
+ * at a keyless wall has no account, no email and no browser. The old ask sent them to a human
+ * signup form, which is why it converted nobody.
+ */
+const CLAIM_URL = 'https://api.algovault.com/api/start-free';
+
+/**
+ * The free arm — the claim offer, and the referral offer stated for the wall that actually fired.
+ *
+ * OPS-QUOTA-CLAIM-ALIAS-W1-R2 CH2, two fixes that share one root:
+ *
+ * 1. The keyless ask used to be "Create your free account for a referral link". Until CH1 that was
+ *    worse than useless — the account it pointed at MINTED A FRESH ALLOWANCE, so the wall
+ *    advertised its own bypass. CH1 made claiming adopt the caller's bucket, so the offer can now
+ *    be made honestly, and it says plainly that usage carries over.
+ *
+ * 2. `Keep going free: … you both get N bonus calls.` renders on EVERY call-meter wall, and at a
+ *    DAILY wall it is false: bonuses are a MONTHLY grant, and `checkQuota`'s daily branch never
+ *    consults `bonusRemaining` ("pacing is not budget"). A caller walled for the next few hours was
+ *    being offered relief that cannot arrive before the wall lifts on its own — the
+ *    promise-that-never-arrives class this module already documents avoiding on the chat wall, live
+ *    on the wall a heavy caller hits first and most often.
+ *
+ * Both branch on `wall`, the SAME discriminator `headline()` projects from. That is deliberate: the
+ * header records that assembling a sentence from parts which each independently assume the monthly
+ * meter is exactly how three facts went wrong at once. There is no second meter test here.
+ */
+function referralLine(referralCode: string | null | undefined, wall: QuotaWall): string {
   const bonus = bonusCallsLabel();
-  const offer = `Keep going free: refer a friend — you both get ${bonus} bonus calls.`;
+  const offer = wall === 'daily'
+    // Names the meter the bonus actually credits, so the offer stays true at a wall it cannot lift.
+    ? `Refer a friend — you both get ${bonus} bonus calls toward your monthly allowance.`
+    : `Keep going free: refer a friend — you both get ${bonus} bonus calls.`;
   if (referralCode) {
     return `${offer} Your link: ${shareLink(referralCode, 'algovault.com')}`;
   }
-  return `${offer} Create your free account for a referral link → ${referralSignupUrl('limit')}`;
+  return `${offer} Claim a free key — one call, no email. Your usage carries over, so nothing resets. → ${CLAIM_URL}`;
 }
 
 /**
@@ -301,7 +335,8 @@ export function buildQuotaNoticeMessage(ctx: QuotaNoticeContext): string {
     lines.push(subscriptionLine('calls', true));
     if (ctx.x402) lines.push(x402Line(ctx.x402, false));
   }
-  lines.push(referralLine(ctx.referralCode));
+  // CH2: the referral arm projects from the SAME `f.limit` the headline used — one discriminator.
+  lines.push(referralLine(ctx.referralCode, f.limit));
   return lines.join('\n');
 }
 

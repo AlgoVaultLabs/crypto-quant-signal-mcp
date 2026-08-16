@@ -35,6 +35,7 @@ import {
 import { isAdoptableBucketKey, FREE_KEY_PREFIX } from '../../src/lib/free-keys-store.js';
 import { FREE_MONTHLY_CALLS, FREE_DAILY_CALLS } from '../../src/lib/plans.js';
 import type { LicenseInfo } from '../../src/types.js';
+import { startFree } from '../../src/lib/deferred-signup.js';
 
 const BUCKET = 'free:v2:a11a5000c0ffee01';
 /** A CLAIMED ephemeral key: it carries the bucket it adopted. */
@@ -194,5 +195,59 @@ describe('the bonus meter shares the derivation — a grant lands where it will 
   it('a free key with no cached row resolves to itself (cache-miss ⇒ pre-wave behaviour)', () => {
     const k = 'av_free_uncached000000000000';
     expect(resolveBonusTrackerKey(k)).toBe(k);
+  });
+});
+
+// ── OPS-QUOTA-CLAIM-ALIAS-W1-R2 CH2 — the claim event ───────────────────────────────────
+//
+// The shared-IP cost was ACCEPTED, not dismissed: callers behind CGNAT / corporate NAT / VPN share
+// an `ip_hash`, so they share a bucket once claimed. Accepted costs still have to be MEASURED, and
+// `inherited_usage` is the measurement — a claim inheriting 0 is a fresh visitor, one inheriting
+// 180 is a caller adopting a stranger's spend. It is also CH5's missing producer.
+describe('CH2 — the claim event records what was inherited', () => {
+  const baseDeps = () => {
+    const claims: Array<{ inheritedFrom: string | null; inheritedUsage: number | null }> = [];
+    return {
+      claims,
+      deps: {
+        mintEphemeral: async () => 'av_free_minted00000000000000',
+        recordAttribution: () => { /* not under test */ },
+        getSignal: async () => ({ asset: 'BTC', timeframe: '1h', verdict: 'HOLD', confidence: 37 }),
+        merge: async () => 'av_free_minted00000000000000',
+        recordClaim: (i: { inheritedFrom: string | null; inheritedUsage: number | null }) => { claims.push(i); },
+        bucketUsage: () => 42,
+      },
+    };
+  };
+
+  it('🎯 records inherited_from and inherited_usage for a claim with an ip_hash', async () => {
+    const { claims, deps } = baseDeps();
+    await startFree({ ip_hash: 'v2:a11a5000c0ffee01' }, deps);
+    expect(claims).toHaveLength(1);
+    expect(claims[0].inheritedFrom).toBe('free:v2:a11a5000c0ffee01');
+    expect(claims[0].inheritedUsage).toBe(42);
+  });
+
+  it('a claim with NO ip_hash records nulls rather than inventing a bucket', async () => {
+    const { claims, deps } = baseDeps();
+    await startFree({}, deps);
+    expect(claims[0]).toEqual({ inheritedFrom: null, inheritedUsage: null });
+  });
+
+  it('the source is ALWAYS the ip_hash bucket — never the key just minted', async () => {
+    const { claims, deps } = baseDeps();
+    await startFree({ ip_hash: 'v2:deadbeefdeadbeef' }, deps);
+    expect(claims[0].inheritedFrom).not.toContain('av_free_');
+    expect(claims[0].inheritedFrom!.startsWith('free:')).toBe(true);
+  });
+
+  it('the event is FAIL-OPEN — a broken recorder never costs the caller their key', async () => {
+    const { deps } = baseDeps();
+    const res = await startFree({ ip_hash: 'v2:abc' }, {
+      ...deps,
+      recordClaim: () => { throw new Error('funnel down'); },
+    });
+    expect(res.key).toBe('av_free_minted00000000000000');
+    expect(res.ephemeral).toBe(true);
   });
 });

@@ -11,6 +11,9 @@
 import { mintEphemeralKey, mergeEphemeralIntoEmail } from './free-keys-store.js';
 import { recordSignupAttribution } from './subscriber-attribution.js';
 import { getGridSnapshot } from './cross-asset-grid.js';
+// CH2: the claim event. `license.ts` is FROZEN this wave — imported for reads, never edited.
+import { recordFunnelEvent } from './performance-db.js';
+import { checkQuotaByKey, getRequestSessionId } from './license.js';
 
 export interface StartFreeAttribution {
   src?: string | null;
@@ -42,6 +45,18 @@ export interface DeferredSignupDeps {
   recordAttribution: (input: Parameters<typeof recordSignupAttribution>[0]) => void;
   getSignal: () => Promise<StartFreeSignal>;
   merge: (ephemeralKey: string, email: string, ref?: string | null) => Promise<string>;
+  /**
+   * OPS-QUOTA-CLAIM-ALIAS-W1-R2 CH2 — the claim event.
+   *
+   * Two jobs. It gives CH5's owed claim-rate stage a producer, and it keeps the shared-IP cost the
+   * architect ACCEPTED (callers behind CGNAT / corporate NAT / VPN share an `ip_hash`, so they
+   * share a bucket once claimed) MEASURED rather than argued. `inherited_usage` is what that costs
+   * in practice: a claim inheriting 0 is a fresh visitor; one inheriting 180 is a caller adopting a
+   * stranger's spend. If it bites, the fix is a better bucket key — never a threshold.
+   */
+  recordClaim: (input: { inheritedFrom: string | null; inheritedUsage: number | null }) => void;
+  /** Usage already on the bucket being adopted, at claim time. Null when it cannot be read. */
+  bucketUsage: (bucketKey: string) => number | null;
 }
 
 /**
@@ -69,6 +84,16 @@ export const defaultDeferredSignupDeps: DeferredSignupDeps = {
   recordAttribution: (input) => recordSignupAttribution(input),
   getSignal: defaultGetSignal,
   merge: (ephemeralKey, email, ref) => mergeEphemeralIntoEmail(ephemeralKey, email, ref),
+  // Reads only — `license.ts` is frozen this wave and is imported, never edited.
+  recordClaim: ({ inheritedFrom, inheritedUsage }) => recordFunnelEvent({
+    eventType: 'free_key_claimed',
+    sessionId: getRequestSessionId() ?? null,
+    licenseTier: 'free',
+    meta: { inherited_from: inheritedFrom, inherited_usage: inheritedUsage },
+  }),
+  bucketUsage: (bucketKey) => {
+    try { return checkQuotaByKey(bucketKey, 'free').used; } catch { return null; }
+  },
 };
 
 /** Issue an ephemeral key + a real signal, no email. Attribution stamped (client_reference_id = the key). */
@@ -92,6 +117,19 @@ export async function startFree(
       userAgent: attr.user_agent ?? null,
     });
   } catch { /* attribution is best-effort — never block issuance */ }
+  // OPS-QUOTA-CLAIM-ALIAS-W1-R2 CH2 — record WHAT the claim inherited, at claim time.
+  //
+  // Read BEFORE the caller spends anything under the new key, so the figure is the bucket's
+  // pre-claim state rather than a number already moving. `ip_hash` is the only source: adoption is
+  // always from the caller's own keyless bucket, never from a previously claimed key. Fail-open —
+  // a measurement must never cost someone their key.
+  try {
+    const inheritedFrom = attr.ip_hash ? `free:${attr.ip_hash}` : null;
+    deps.recordClaim({
+      inheritedFrom,
+      inheritedUsage: inheritedFrom ? deps.bucketUsage(inheritedFrom) : null,
+    });
+  } catch { /* instrumentation is best-effort — never block issuance */ }
   let signal: StartFreeSignal | null = null;
   let signal_error: string | undefined;
   try { signal = await deps.getSignal(); }

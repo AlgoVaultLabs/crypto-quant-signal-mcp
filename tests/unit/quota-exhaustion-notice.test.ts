@@ -21,6 +21,9 @@ import {
 import { buildChatQuotaNotice } from '../../src/lib/chat-rate-limit.js';
 import { withQuotaState } from '../../src/lib/tier-warning.js';
 import { PLANS, subscriptionBreakEvenCalls, FREE_MONTHLY_CALLS } from '../../src/lib/plans.js';
+import { bonusCallsLabel } from '../../src/lib/referral-constants.js';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { getMonthlyQuota } from '../../src/lib/license.js';
 import type { SuggestedX402, AlgoVaultMeta } from '../../src/types.js';
 
@@ -485,5 +488,127 @@ describe('CH3 — the daily wall renders the daily noun, pair and 00:00 UTC hori
     expect(f.limit).toBe('daily');
     expect(f.retry_after_hours).toBeGreaterThanOrEqual(0);
     expect(f.recommended_path).toBe('subscription');
+  });
+});
+
+// ── OPS-QUOTA-CLAIM-ALIAS-W1-R2 CH2 ─────────────────────────────────────────────────────
+//
+// Two caller-facing fixes, one root: a sentence that assumed the monthly meter.
+//   1. the keyless ask pointed at a signup that (pre-CH1) MINTED A FRESH ALLOWANCE;
+//   2. the referral offer promised bonus calls on a DAILY wall, which bonuses cannot lift.
+describe('CH2 — the claim offer and the wall-correct referral wording', () => {
+  const BONUS = bonusCallsLabel();
+  const CLAIM_LINE = 'Claim a free key — one call, no email. Your usage carries over, so nothing resets.';
+  const MONTHLY_OFFER = `Keep going free: refer a friend — you both get ${BONUS} bonus calls.`;
+  const DAILY_OFFER = `Refer a friend — you both get ${BONUS} bonus calls toward your monthly allowance.`;
+
+  const wall = (w: 'daily' | 'monthly', referralCode: string | null): QuotaNoticeContext => ({
+    meter: 'calls',
+    used: w === 'daily' ? 100 : FREE_MONTHLY_CALLS,
+    limit: w === 'daily' ? 100 : FREE_MONTHLY_CALLS,
+    wall: w,
+    resetAtMs: RESET_AT,
+    nowMs: NOW,
+    periodStartMs: NOW - 20 * DAY,
+    referralCode,
+  });
+
+  it('vacuity guard — the bonus label is real, so the offer assertions are not comparing empties', () => {
+    expect(BONUS.length).toBeGreaterThan(0);
+    expect(MONTHLY_OFFER).not.toBe(DAILY_OFFER);
+  });
+
+  it('🎯 the claim line renders on the keyless DAILY wall, verbatim, with the URL separate', () => {
+    const msg = buildQuotaNoticeMessage(wall('daily', null));
+    expect(msg).toContain(CLAIM_LINE);
+    expect(msg).toContain('https://api.algovault.com/api/start-free');
+    // link-not-inline: the URL follows the prose behind an arrow, never embedded mid-sentence.
+    expect(msg).toContain(`${CLAIM_LINE} → https://api.algovault.com/api/start-free`);
+  });
+
+  it('🎯 the claim line renders on the keyless MONTHLY wall too', () => {
+    expect(buildQuotaNoticeMessage(wall('monthly', null))).toContain(CLAIM_LINE);
+  });
+
+  it('the retired signup ask is gone from every wall', () => {
+    for (const w of ['daily', 'monthly'] as const) {
+      expect(buildQuotaNoticeMessage(wall(w, null))).not.toContain('Create your free account');
+    }
+  });
+
+  it('🎯 a DAILY wall names the meter the bonus actually credits', () => {
+    // Bonuses are a MONTHLY grant — checkQuota's daily branch never reads bonusRemaining. Offering
+    // unqualified "bonus calls" to a caller walled for the next few hours promises relief that
+    // cannot arrive before the wall lifts on its own.
+    const msg = buildQuotaNoticeMessage(wall('daily', null));
+    expect(msg).toContain(DAILY_OFFER);
+    expect(msg).not.toContain(MONTHLY_OFFER);
+  });
+
+  it('🎯 the MONTHLY wall keeps the pre-wave wording, byte-identical', () => {
+    const msg = buildQuotaNoticeMessage(wall('monthly', null));
+    expect(msg).toContain(MONTHLY_OFFER);
+    expect(msg).not.toContain('toward your monthly allowance');
+  });
+
+  it('the branch projects from ctx.wall — an ABSENT wall takes the monthly wording', () => {
+    const noWall: QuotaNoticeContext = { ...wall('monthly', null), wall: undefined };
+    expect(buildQuotaNoticeMessage(noWall)).toContain(MONTHLY_OFFER);
+  });
+
+  it('KEYED callers keep their own link on both walls, and never see the claim ask', () => {
+    for (const w of ['daily', 'monthly'] as const) {
+      const msg = buildQuotaNoticeMessage(wall(w, 'HKZXS3VO'));
+      expect(msg).toContain('Your link:');
+      expect(msg).not.toContain(CLAIM_LINE);
+    }
+    // ...and the keyed line still carries the wall-correct offer.
+    expect(buildQuotaNoticeMessage(wall('daily', 'HKZXS3VO'))).toContain(DAILY_OFFER);
+    expect(buildQuotaNoticeMessage(wall('monthly', 'HKZXS3VO'))).toContain(MONTHLY_OFFER);
+  });
+
+  it('N derives from bonusCallsLabel(), never hand-typed', () => {
+    const msg = buildQuotaNoticeMessage(wall('daily', null));
+    expect(msg).toContain(`you both get ${BONUS} bonus calls`);
+  });
+
+  it('no price literal is introduced by this arm', () => {
+    const msg = buildQuotaNoticeMessage(wall('daily', null));
+    const referral = msg.split('\n').find((l) => l.includes('Refer a friend')) ?? '';
+    expect(referral).not.toMatch(/\$\d/);
+  });
+});
+
+describe('CH2 — the retired PRIMARY copy variant appears NOWHERE in the build', () => {
+  const root = resolve(__dirname, '..', '..');
+
+  /**
+   * Files under `src/` containing `needle`.
+   *
+   * `git grep -l` exits **1** when it finds nothing — which is the PASSING case here — and
+   * `execFileSync` throws on any non-zero exit. Treating that throw as a failure would invert the
+   * test; swallowing every throw would make it vacuous, because a mistyped needle also finds
+   * nothing. So exit 1 means "clean", exit 0 means "found", and anything else re-throws.
+   */
+  const filesContaining = (needle: string): string[] => {
+    try {
+      const out = execFileSync('git', ['grep', '-l', '-F', needle, '--', 'src/'],
+        { cwd: root, encoding: 'utf8' });
+      return out.split('\n').filter(Boolean);
+    } catch (err) {
+      if ((err as { status?: number }).status === 1) return [];
+      throw err;
+    }
+  };
+
+  it('the search itself works — a string that IS in src/ is found (positive control)', () => {
+    // Without this, a typo in the needle below would make the ban vacuously true forever.
+    expect(filesContaining('Claim a free key').length).toBeGreaterThan(0);
+  });
+
+  it('no source file contains the probe-3-retired wording', () => {
+    // Probe 3 answered `daily: no`, which retired the PRIMARY line. A variant that survives in the
+    // tree is one a later wave can ship by accident.
+    expect(filesContaining('referrals then earn bonus calls')).toEqual([]);
   });
 });
