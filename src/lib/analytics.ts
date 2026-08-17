@@ -158,6 +158,10 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
       calls_paid_linked INTEGER NOT NULL DEFAULT 0,
       walled_now INTEGER NOT NULL DEFAULT 0,
       walled_silent INTEGER NOT NULL DEFAULT 0,
+      -- PRICING-BOT-DELIVERY-METERING-W1 CH6e
+      plan_units_debited INTEGER NOT NULL DEFAULT 0,
+      outbox_pending INTEGER NOT NULL DEFAULT 0,
+      walled_paid_now INTEGER NOT NULL DEFAULT 0,
       generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );`
   : `CREATE TABLE IF NOT EXISTS bot_daily_metrics (
@@ -176,6 +180,10 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
       calls_paid_linked INTEGER NOT NULL DEFAULT 0,
       walled_now INTEGER NOT NULL DEFAULT 0,
       walled_silent INTEGER NOT NULL DEFAULT 0,
+      -- PRICING-BOT-DELIVERY-METERING-W1 CH6e
+      plan_units_debited INTEGER NOT NULL DEFAULT 0,
+      outbox_pending INTEGER NOT NULL DEFAULT 0,
+      walled_paid_now INTEGER NOT NULL DEFAULT 0,
       generated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );`;
 
@@ -215,6 +223,9 @@ export function deriveTgBot(
         calls_paid_linked?: unknown;
         walled_now?: unknown;
         walled_silent?: unknown;
+        plan_units_debited?: unknown;
+        outbox_pending?: unknown;
+        walled_paid_now?: unknown;
         metric_date?: unknown;
         generated_at?: unknown;
       }
@@ -245,6 +256,17 @@ export function deriveTgBot(
     ...(row.walled_silent === undefined || row.walled_silent === null
       ? {}
       : { walled_silent: Number(row.walled_silent) }),
+    // CH6e — same absent-is-not-zero discipline: a bot predating the widened upsert has no value,
+    // and `?? 0` would render "nothing queued" as a confident fact about a missing measurement.
+    ...(row.plan_units_debited === undefined || row.plan_units_debited === null
+      ? {}
+      : { plan_units_debited: Number(row.plan_units_debited) }),
+    ...(row.outbox_pending === undefined || row.outbox_pending === null
+      ? {}
+      : { outbox_pending: Number(row.outbox_pending) }),
+    ...(row.walled_paid_now === undefined || row.walled_paid_now === null
+      ? {}
+      : { walled_paid_now: Number(row.walled_paid_now) }),
     metric_date: stampStr(row.metric_date, true),
     generated_at: stampStr(row.generated_at, false),
   };
@@ -802,7 +824,7 @@ export async function getUsageStats(): Promise<Record<string, unknown>> {
       calls_scan: string;
       subscribers: string;
       generated_at: string;
-    }>('SELECT metric_date, calls_total, calls_watch, calls_scanwatch, calls_scan, subscribers, calls_paid_linked, walled_now, walled_silent, generated_at FROM bot_daily_metrics ORDER BY metric_date DESC LIMIT 1', []),
+    }>('SELECT metric_date, calls_total, calls_watch, calls_scanwatch, calls_scan, subscribers, calls_paid_linked, walled_now, walled_silent, plan_units_debited, outbox_pending, walled_paid_now, generated_at FROM bot_daily_metrics ORDER BY metric_date DESC LIMIT 1', []),
     // OPS-DIGEST-PAID-RAIL-SPLIT-W1: 💳 Paid split by payment RAIL, so the digest stops
     // labelling Stripe-subscription traffic as "x402 / a2mcp". Same window + same
     // is_bot_internal filter as `genuinePaid24h`, so the two rails sum to `paid` unless a

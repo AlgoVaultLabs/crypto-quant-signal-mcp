@@ -138,6 +138,16 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
       : `  ↳ 💳 paid-linked ${num(tgPaidLinked)} · free ${num(Math.max(0, asNumEarly(tgBot!.calls_total) - tgPaidLinked))}`;
   const tgWalled = tgPresent && typeof tgBot!.walled_now === 'number' ? (tgBot!.walled_now as number) : null;
   const tgWalledSilent = tgPresent && typeof tgBot!.walled_silent === 'number' ? (tgBot!.walled_silent as number) : 0;
+  // PRICING-BOT-DELIVERY-METERING-W1 CH6e — the plan-metering rail's health, as an indented
+  // annotation (never a `•` row: the block headline is asserted to equal the sum of its bullets,
+  // and a debit is not an agent call). `outbox_pending` is the one that matters — a queue that
+  // stops draining is revenue quietly not being charged, invisible everywhere else.
+  const tgDebited = tgPresent && typeof tgBot!.plan_units_debited === 'number' ? (tgBot!.plan_units_debited as number) : null;
+  const tgQueued = tgPresent && typeof tgBot!.outbox_pending === 'number' ? (tgBot!.outbox_pending as number) : null;
+  const tgPlanLine =
+    !tgPresent || tgStale || tgDebited === null
+      ? null
+      : `  ↳ 💳 plan-debited ${num(tgDebited)} units · ⏳ ${num(tgQueued ?? 0)} queued`;
   const tgWalledLine =
     !tgPresent || tgStale || tgWalled === null
       ? null
@@ -212,6 +222,7 @@ export function formatAgentActivity(a: Record<string, unknown>): string {
     `• 💳 Paid: ${num(genuine.paid)}   API/MCP Calls${railSuffix(genuine.paid, genuine.paidSubscription, genuine.paidX402, ' ')}`,
     ...(tgCallsLine ? ['', tgCallsLine] : []),
     ...(tgTierLine ? [tgTierLine] : []),
+    ...(tgPlanLine ? [tgPlanLine] : []),
     ...(tgWalledLine ? [tgWalledLine] : []),
     '',
     '👥 *Sessions (24h)*',

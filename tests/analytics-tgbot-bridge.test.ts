@@ -199,3 +199,53 @@ describe('formatAgentActivity — TG bot annotations', () => {
     expect(out).not.toContain('walled now');
   });
 });
+
+// ── PRICING-BOT-DELIVERY-METERING-W1 CH6e: the plan-metering annotation ──────
+
+describe('formatAgentActivity — plan-debit annotation', () => {
+  const base2 = {
+    externalGenuine: { free: 5, paid: 0, freeSessions: 5, paidSessions: 0 },
+    externalAutomated: { total: 427, sessions: 28 },
+    rawConcentration: { top1_pct: 19.4 },
+    topAssetsGenuine: [{ asset: 'BTC' }],
+  };
+  const fresh = {
+    present: true, stale: false, calls_total: 298, calls_watch: 11,
+    calls_scanwatch: 287, calls_scan: 0, subscribers: 46,
+  };
+
+  it('renders debited units and the queue depth', () => {
+    const out = formatAgentActivity({
+      ...base2,
+      tgBot: { ...fresh, plan_units_debited: 214, outbox_pending: 3, walled_paid_now: 0 },
+    });
+    expect(out).toContain('  ↳ 💳 plan-debited 214 units · ⏳ 3 queued');
+  });
+
+  it('a bot predating the widened bridge OMITS it rather than claiming zero', () => {
+    // `?? 0` would render "nothing queued" as a confident fact about a missing measurement —
+    // a stalled outbox is revenue quietly not being charged, so a false zero is the worst answer.
+    const out = formatAgentActivity({ ...base2, tgBot: fresh });
+    expect(out).not.toContain('plan-debited');
+  });
+
+  it('a STALE bridge row omits it — a queue depth is a NOW claim', () => {
+    const out = formatAgentActivity({
+      ...base2,
+      tgBot: { ...fresh, stale: true, plan_units_debited: 214, outbox_pending: 3 },
+    });
+    expect(out).not.toContain('plan-debited');
+  });
+
+  it('it is an indented continuation, so the block total still sums over bullets only', () => {
+    const out = formatAgentActivity({
+      ...base2,
+      tgBot: { ...fresh, plan_units_debited: 214, outbox_pending: 3 },
+    });
+    for (const line of out.split('\n').filter((l) => l.includes('plan-debited'))) {
+      expect(line.startsWith('  ↳ ')).toBe(true);
+    }
+    const activity = out.split('👥 *Sessions (24h)*')[0];
+    expect(Number(activity.match(/• Total Agent Calls: (\d+)/)![1])).toBe(5 + 427 + 0 + 298);
+  });
+});
