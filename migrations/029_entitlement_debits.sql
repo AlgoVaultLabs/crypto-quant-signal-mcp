@@ -37,3 +37,21 @@ CREATE TABLE IF NOT EXISTS entitlement_debits (
 CREATE INDEX IF NOT EXISTS idx_entitlement_debits_tracker ON entitlement_debits (tracker_key, charged_at);
 -- Per-channel consumption over time — the operator/data-flywheel query.
 CREATE INDEX IF NOT EXISTS idx_entitlement_debits_channel ON entitlement_debits (channel, charged_at);
+
+-- ⚠️ GRANTS ARE PART OF THE MIGRATION, not an afterthought.
+--
+-- Learned the hard way on the first live drain: the table was created by the bootstrap superuser
+-- (`algovault`), but the server connects as the least-privilege role `algovault_app`, which had no
+-- privilege on a brand-new table. Every debit came back
+-- `permission denied for table entitlement_debits` → tryClaimOnce INDETERMINATE → nothing charged.
+--
+-- The system failed CLOSED exactly as designed (no charge on an unknown claim, rows left pending
+-- for retry, zero customer impact), which is the only reason this was a 20-minute diagnosis rather
+-- than a silent double-charge. But a CREATE TABLE without its GRANT is a table the application
+-- cannot use, and `CREATE TABLE IF NOT EXISTS` in the app's own lazy DDL cannot fix it either —
+-- that path runs as the same unprivileged role.
+--
+-- Privileges mirror the sibling meter table `quota_usage` exactly: full DML for the app role,
+-- read-only for the autopilot/monitoring role. Nothing broader.
+GRANT SELECT, INSERT, UPDATE, DELETE ON entitlement_debits TO algovault_app;
+GRANT SELECT ON entitlement_debits TO algovault_autopilot;
