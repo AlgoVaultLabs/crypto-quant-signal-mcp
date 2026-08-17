@@ -482,6 +482,12 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     : checkQuota(input.license || { tier: 'free', key: null });
   if (!quota.allowed) {
     const licenseForReset = input.license || { tier: 'free' as const, key: null };
+    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 9): ONE discriminator, read once and
+    // used for BOTH the `wall` noun and the horizon underneath it. Before this, `wall` was derived
+    // correctly right here while `resetAtMs` stayed unconditionally monthly — so an agent branching
+    // on `resets_at`, the field `quota-notice.ts` documents as "Machines branch on this", was told
+    // to come back in 30 days for a wall that lifts at the next 00:00 UTC.
+    const isDailyWall = quota.limit === 'daily';
     throw new TierLimitReachedError({
       currentUsage: quota.used,
       monthlyLimit: quota.total,
@@ -489,14 +495,19 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
       // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the reset INSTANT (retry_after_days is derived from it),
       // plus the period anchor so the notice can rank subscription vs x402 by measured burn rate.
-      resetAtMs: monthResetAtMs(licenseForReset),
+      // The instant belongs to the wall that REFUSED — `utcDayResetAtMs()` is the same derivation
+      // the daily meter enforces against, so `resets_at` cannot disagree with the
+      // `retry_after_hours` rendered beside it. Shape copied verbatim from scan-trade-calls.ts,
+      // which has had it right since the parent wave's CH3; deriving it a second way here would be
+      // exactly the second meter test this arc exists to retire.
+      resetAtMs: isDailyWall ? utcDayResetAtMs() : monthResetAtMs(licenseForReset),
       periodStartMs: periodStartMs(licenseForReset),
       referralCode: referralCodeForKey(licenseForReset.key),
       tool: 'get_trade_call', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch,
       // CH1: the wall discriminator + the DAILY pair travel WITH the refusal. Passing
       // `quota.limit` alone would let a daily wall render the monthly numbers again, which is the
       // defect this closes — so the three move together, from the ONE `checkQuota` result.
-      wall: quota.limit === 'daily' ? 'daily' : 'monthly',
+      wall: isDailyWall ? 'daily' : 'monthly',
       dailyUsed: quota.daily_used,
       dailyLimit: quota.daily_total,
     });

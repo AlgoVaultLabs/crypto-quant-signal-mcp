@@ -308,7 +308,7 @@ export function registerWebhookRoutes(app: Express): void {
         ok: true,
         subscription: serializeSubscription(sub, { includeSecret: true }),
         quota: { used: quota.used, total: quota.total, remaining: quota.remaining },
-        note: 'Store `secret` now — it is shown only once. Each delivered event draws down your monthly call quota.',
+        note: 'Store `secret` now — it is shown only once. Each delivered event draws down your call quota.',
         ...(scanDigestReminder ? { scan_digest_reminder: scanDigestReminder } : {}),
         ...(upgradeHint ? { upgrade_hint: upgradeHint } : {}),
       });

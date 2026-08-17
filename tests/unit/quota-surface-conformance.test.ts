@@ -97,7 +97,11 @@ const RENDERERS: Record<string, () => Promise<Record<string, unknown>>> = {
     return (await runScanTradeCall({}, lic)) as unknown as Record<string, unknown>;
   },
   'nudge:x402': async () => {
-    const sx = buildSuggestedX402('get_trade_call', BAZAAR_ENV);
+    // This whole suite renders a DAILY-BINDING caller, so the nudge is driven with the daily wall —
+    // the case instance 11 got wrong. Passing 'monthly' here would make the fixture agree with the
+    // bug and the assertion vacuous, which is the trap `daily-refusal-contract.test.ts`'s own
+    // hand-built `refusalFor()` fell into: it mirrored the throw site including its defect.
+    const sx = buildSuggestedX402('get_trade_call', 'daily', BAZAAR_ENV);
     expect(sx, 'the nudge fixture must produce a live rail').toBeTruthy();
     return { suggested_x402: sx } as Record<string, unknown>;
   },

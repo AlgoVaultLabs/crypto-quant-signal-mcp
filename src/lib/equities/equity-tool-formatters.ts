@@ -9,7 +9,7 @@
  * call (like get_market_regime — regime has no HOLD). QUOTA-CONSISTENCY-COUNT-
  * ALL-W1 (2026-06-08, Q2=B).
  */
-import { trackCall, checkQuota, monthResetAtMs, periodStartMs } from '../license.js';
+import { trackCall, checkQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../license.js';
 import { TierLimitReachedError } from '../errors.js';
 import { referralCodeForKey } from '../referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
 import { PKG_VERSION } from '../pkg-version.js';
@@ -100,6 +100,9 @@ function tierLimitError(
   q: { used: number; total: number; limit?: 'daily' | 'monthly' | null; daily_used?: number; daily_total?: number },
   tool: string,
 ): TierLimitReachedError {
+  // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 9): ONE discriminator for both the `wall`
+  // noun and the horizon under it. See the fuller note at the same site in get-trade-call.ts.
+  const isDailyWall = q.limit === 'daily';
   return new TierLimitReachedError({
     currentUsage: q.used,
     monthlyLimit: q.total,
@@ -108,13 +111,13 @@ function tierLimitError(
     // OPS-QUOTA-EXHAUSTION-NOTICE-W1: the reset INSTANT (retry_after_days derives from it) plus
     // the period anchor. Equity tools are dark-retired behind EQUITY_TOOLS_ENABLED, but they
     // share the one notice contract so they inherit the fix if the flag ever flips.
-    resetAtMs: monthResetAtMs(license),
+    resetAtMs: isDailyWall ? utcDayResetAtMs() : monthResetAtMs(license),
     periodStartMs: periodStartMs(license),
     referralCode: referralCodeForKey(license.key),
     // FUNNEL-FIX-AGENT-X402-NUDGE-W1: equities are HELD (no suggested_x402 today) — but passing
     // the tool means they AUTO-JOIN the x402 nudge the moment EQUITY_PUBLIC_COPY_HOLD flips.
     tool,
-    wall: q.limit === 'daily' ? 'daily' : 'monthly',
+    wall: isDailyWall ? 'daily' : 'monthly',
     dailyUsed: q.daily_used,
     dailyLimit: q.daily_total,
   });

@@ -23,7 +23,7 @@ const BAZAAR_ONLY_ENV: Record<string, string | undefined> = {
 
 describe('buildSuggestedX402 — Bazaar rail', () => {
   it('offers the Bazaar (Base/USDC) rail for get_trade_call at its own /x402 route + registry price', () => {
-    const sx = buildSuggestedX402('get_trade_call', BAZAAR_ONLY_ENV);
+    const sx = buildSuggestedX402('get_trade_call', 'monthly', BAZAAR_ONLY_ENV);
     expect(sx).toBeDefined();
     expect(sx!.tool).toBe('get_trade_call');
     expect(sx!.primary.rail).toBe('x402_bazaar');
@@ -50,7 +50,7 @@ const BOTH_RAILS_ENV: Record<string, string | undefined> = {
 
 describe('buildSuggestedX402 — okx.ai A2MCP alternative rail', () => {
   it('adds okx a2mcp (X Layer/USDT0) as alternatives[0] when live; Bazaar stays primary (Q2)', () => {
-    const sx = buildSuggestedX402('get_trade_call', BOTH_RAILS_ENV);
+    const sx = buildSuggestedX402('get_trade_call', 'monthly', BOTH_RAILS_ENV);
     expect(sx).toBeDefined();
     expect(sx!.primary.rail).toBe('x402_bazaar'); // broadest agent rail first
     expect(sx!.alternatives).toHaveLength(1);
@@ -64,13 +64,13 @@ describe('buildSuggestedX402 — okx.ai A2MCP alternative rail', () => {
   });
 
   it('does NOT surface okx when OKX_AI_ENABLED is off (dark rail never offered)', () => {
-    const sx = buildSuggestedX402('get_trade_call', BAZAAR_ONLY_ENV);
+    const sx = buildSuggestedX402('get_trade_call', 'monthly', BAZAAR_ONLY_ENV);
     expect(sx!.alternatives).toEqual([]);
   });
 
   it('does NOT surface okx in stub mode (enabled but creds missing — not a real settle rail)', () => {
     const stubEnv = { ...BAZAAR_ONLY_ENV, OKX_AI_ENABLED: 'true' }; // no OKX creds ⇒ stub
-    const sx = buildSuggestedX402('get_trade_call', stubEnv);
+    const sx = buildSuggestedX402('get_trade_call', 'monthly', stubEnv);
     expect(sx!.alternatives).toEqual([]);
   });
 });
@@ -78,25 +78,25 @@ describe('buildSuggestedX402 — okx.ai A2MCP alternative rail', () => {
 describe('buildSuggestedX402 — HELD tools + default-deny (Q5)', () => {
   it('never surfaces a HELD equity tool while EQUITY_PUBLIC_COPY_HOLD (even though it is x402-payable)', () => {
     // Bazaar live + get_equity_call has channels.httpX402=true, but it is on the equity public-copy HOLD.
-    expect(buildSuggestedX402('get_equity_call', BOTH_RAILS_ENV)).toBeUndefined();
-    expect(buildSuggestedX402('get_equity_regime', BOTH_RAILS_ENV)).toBeUndefined();
+    expect(buildSuggestedX402('get_equity_call', 'monthly', BOTH_RAILS_ENV)).toBeUndefined();
+    expect(buildSuggestedX402('get_equity_regime', 'monthly', BOTH_RAILS_ENV)).toBeUndefined();
   });
 
   it('returns undefined for an unpriced tool (knowledge tools: x402=null)', () => {
-    expect(buildSuggestedX402('chat_knowledge', BOTH_RAILS_ENV)).toBeUndefined();
-    expect(buildSuggestedX402('search_knowledge', BOTH_RAILS_ENV)).toBeUndefined();
+    expect(buildSuggestedX402('chat_knowledge', 'monthly', BOTH_RAILS_ENV)).toBeUndefined();
+    expect(buildSuggestedX402('search_knowledge', 'monthly', BOTH_RAILS_ENV)).toBeUndefined();
   });
 
   it('returns undefined for an unknown tool', () => {
-    expect(buildSuggestedX402('does_not_exist', BOTH_RAILS_ENV)).toBeUndefined();
+    expect(buildSuggestedX402('does_not_exist', 'monthly', BOTH_RAILS_ENV)).toBeUndefined();
   });
 
   it('default-deny: no live rail (Bazaar off, okx off) ⇒ undefined ⇒ envelope unchanged', () => {
-    expect(buildSuggestedX402('get_trade_call', {})).toBeUndefined();
+    expect(buildSuggestedX402('get_trade_call', 'monthly', {})).toBeUndefined();
   });
 
   it('resolves an alias to its canonical route (get_trade_signal → get_trade_call)', () => {
-    const sx = buildSuggestedX402('get_trade_signal', BAZAAR_ONLY_ENV);
+    const sx = buildSuggestedX402('get_trade_signal', 'monthly', BAZAAR_ONLY_ENV);
     expect(sx!.tool).toBe('get_trade_call');
     expect(sx!.primary.url).toBe('https://api.algovault.com/x402/get_trade_call');
   });
@@ -107,12 +107,12 @@ describe('buildSuggestedX402 — rail-agnostic (AC2/R4) + per-tool single-deriva
     const okxLive = { ...BAZAAR_ONLY_ENV, OKX_AI_ENABLED: 'true', OKX_API_KEY: 'k', OKX_SECRET_KEY: 's', OKX_PASSPHRASE: 'p', OKX_A2MCP_PAYTO: '0xp' };
     const okxOff = { ...okxLive, OKX_AI_ENABLED: 'false' };
     // same fn, same tool — only the SoT flag differs
-    expect(buildSuggestedX402('get_trade_call', okxLive)!.alternatives.map((r) => r.rail)).toEqual(['okx_a2mcp']);
-    expect(buildSuggestedX402('get_trade_call', okxOff)!.alternatives).toEqual([]);
+    expect(buildSuggestedX402('get_trade_call', 'monthly', okxLive)!.alternatives.map((r) => r.rail)).toEqual(['okx_a2mcp']);
+    expect(buildSuggestedX402('get_trade_call', 'monthly', okxOff)!.alternatives).toEqual([]);
   });
 
   it('Q3/Q6: route + price are per-tool from the SoT — scan_funding_arb is $0.01 at its own route', () => {
-    const sx = buildSuggestedX402('scan_funding_arb', BAZAAR_ONLY_ENV);
+    const sx = buildSuggestedX402('scan_funding_arb', 'monthly', BAZAAR_ONLY_ENV);
     expect(sx!.primary.url).toBe('https://api.algovault.com/x402/scan_funding_arb');
     expect(sx!.primary.price_usd).toBe(0.01); // NOT 0.02 — proves price interpolates from TOOL_PRICING
     expect(sx!.instructions).toContain('$0.01');
@@ -120,7 +120,7 @@ describe('buildSuggestedX402 — rail-agnostic (AC2/R4) + per-tool single-deriva
   });
 
   it('Q3: get_market_regime points at its OWN canonical /x402 route', () => {
-    const sx = buildSuggestedX402('get_market_regime', BAZAAR_ONLY_ENV);
+    const sx = buildSuggestedX402('get_market_regime', 'monthly', BAZAAR_ONLY_ENV);
     expect(sx!.primary.url).toBe('https://api.algovault.com/x402/get_market_regime');
   });
 });
@@ -133,5 +133,56 @@ describe('isX402NudgeEnabled', () => {
     expect(isX402NudgeEnabled({})).toBe(false);
     expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: 'false' })).toBe(false);
     expect(isX402NudgeEnabled({ X402_NUDGE_ENABLED: '0' })).toBe(false);
+  });
+});
+
+// ── OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11) ────────────────────────────────────
+describe('the nudge noun follows the wall it is attached to', () => {
+  it('renders the DAILY noun on a daily wall and the MONTHLY noun on a monthly one', () => {
+    const daily = buildSuggestedX402('get_trade_call', 'daily', BAZAAR_ONLY_ENV)!;
+    const monthly = buildSuggestedX402('get_trade_call', 'monthly', BAZAAR_ONLY_ENV)!;
+    expect(daily.instructions).toMatch(/^Free daily quota reached\./);
+    expect(monthly.instructions).toMatch(/^Free monthly quota reached\./);
+    // THE REGRESSION, NAMED: production told an agent walled for hours that its MONTHLY quota was
+    // gone. A daily nudge must never speak of a month.
+    expect(daily.instructions).not.toMatch(/month/i);
+  });
+
+  it('leaves the MONTHLY string byte-identical to pre-wave', () => {
+    // The monthly path is the one every existing consumer sees; this wave must move zero bytes on
+    // it. Pinned as a literal rather than a shape, because "looks the same" is what a diff is for.
+    const sx = buildSuggestedX402('get_trade_call', 'monthly', BAZAAR_ONLY_ENV)!;
+    expect(sx.instructions).toBe(
+      'Free monthly quota reached. Pay per call with your own wallet — no signup: POST to the '
+      + 'x402 route below (HTTP 402 → sign ERC-3009 → resend with x-payment). $0.02 per call.',
+    );
+  });
+
+  it('THE STRUCTURAL LOCK: `wall` is REQUIRED, so a call site that forgets it fails to COMPILE', () => {
+    // AC (ratified): assert this by compiling, never by review. An OPTIONAL `wall` defaulting to
+    // 'monthly' would let a future call site silently re-introduce instance 11; a REQUIRED one makes
+    // tsc name the offender. `tsconfig.json` excludes tests/, so this compiles the fixture against
+    // the real declaration explicitly rather than relying on the repo typecheck to cover it.
+    const ts = require('node:child_process');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'x402wall.'));
+    const file = path.join(dir, 'probe.ts');
+    fs.writeFileSync(file, [
+      `import { buildSuggestedX402 } from '${path.resolve('src/lib/x402-nudge.ts').replace(/\.ts$/, '.js')}';`,
+      `buildSuggestedX402('get_trade_call');`,
+    ].join('\n'));
+    let out = '';
+    try {
+      ts.execFileSync('npx', ['tsc', '--noEmit', '--skipLibCheck', '--module', 'node16',
+        '--moduleResolution', 'node16', '--target', 'ES2022', file], { encoding: 'utf8', stdio: 'pipe' });
+    } catch (e: unknown) {
+      out = String((e as { stdout?: string }).stdout ?? '');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    expect(out, 'omitting `wall` must be a COMPILE error, not a silent monthly default')
+      .toMatch(/Expected 2-3 arguments, but got 1|expects at least 2 arguments/);
   });
 });

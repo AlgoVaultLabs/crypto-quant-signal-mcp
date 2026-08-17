@@ -220,19 +220,23 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   // `quota_hit_block` funnel event — this tool never emitted it before.
   const gate = checkQuota(license);
   if (!gate.allowed) {
+    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 9): ONE discriminator for both the
+    // `wall` noun and the horizon under it. See the fuller note at the same site in
+    // get-trade-call.ts; the shape is scan-trade-calls.ts's, reused verbatim.
+    const isDailyWall = gate.limit === 'daily';
     throw new TierLimitReachedError({
       currentUsage: gate.used,
       monthlyLimit: gate.total,
       tier: license.tier,
       suggestedUpgradeUrl: 'https://api.algovault.com/signup?plan=starter&utm_source=mcp_tool&utm_campaign=tier_limit_reached',
-      resetAtMs: monthResetAtMs(license),
+      resetAtMs: isDailyWall ? utcDayResetAtMs() : monthResetAtMs(license),
       periodStartMs: periodStartMs(license),
       referralCode: referralCodeForKey(license.key),
       tool: 'get_market_regime', // FUNNEL-FIX-AGENT-X402-NUDGE-W1: enables the suggested_x402 branch
       // CH1: the wall discriminator + the DAILY pair travel WITH the refusal. Passing
       // `limit` alone would let a daily wall render the monthly numbers again, which is the
       // defect this closes — so the three move together, from the ONE `checkQuota` result.
-      wall: gate.limit === 'daily' ? 'daily' : 'monthly',
+      wall: isDailyWall ? 'daily' : 'monthly',
       dailyUsed: gate.daily_used,
       dailyLimit: gate.daily_total,
     });

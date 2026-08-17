@@ -1,0 +1,12 @@
+--- /tmp/monthly.BEFORE.json	2026-08-17 14:24:54
++++ /tmp/monthly.AFTER.json	2026-08-17 14:24:36
+@@ -23,7 +23,8 @@
+     "quota": {
+       "used": 200,
+       "total": 200,
+-      "remaining": 0
++      "remaining": 0,
++      "binding": "monthly"
+     },
+     "usage_display": "200/200",
+     "retry_after_days": 30,

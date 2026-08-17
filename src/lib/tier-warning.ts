@@ -171,7 +171,14 @@ export function computeTierWarning(ctx: TierWarningContext): TierWarning | undef
   // x402 branch (dark behind X402_NUDGE_ENABLED). buildSuggestedX402 returns undefined for a
   // HELD tool / no live public rail, so this stays default-deny + byte-identical when off.
   if (level === 'hard' && ctx.tool && isX402NudgeEnabled(ctx.env)) {
-    const sx = buildSuggestedX402(ctx.tool, ctx.env);
+    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11), the ONLY line this wave changes in
+    // this file: pass the binding meter this function has ALREADY derived. A hard warning fires at
+    // >=0.90 of whichever meter BINDS, so a caller at 92/100 DAILY was handed a nudge reading
+    // "Free monthly quota reached". `binding.binding`, NOT `warning.meter`: the latter is populated
+    // only when a daily meter exists and is `undefined` for a monthly-only caller, whereas
+    // `bindingMeter()` always names a wall. Passing the optional field would have re-introduced an
+    // implicit default — the exact shape a REQUIRED parameter exists to forbid.
+    const sx = buildSuggestedX402(ctx.tool, binding.binding, ctx.env);
     if (sx) warning.suggested_x402 = sx;
   }
   return warning;

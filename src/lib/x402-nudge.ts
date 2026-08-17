@@ -39,7 +39,7 @@ import {
   A2MCP_PREFIX,
 } from './okx-a2mcp-config.js';
 import { isHeldFromPublicSurfaces } from './equities/equity-hold.js';
-import type { SuggestedX402, X402Rail } from '../types.js';
+import type { QuotaWall, SuggestedX402, X402Rail } from '../types.js';
 
 type NudgeEnv = Record<string, string | undefined>;
 
@@ -65,10 +65,20 @@ export function isX402NudgeEnabled(env: NudgeEnv = process.env): boolean {
   return v === '1' || v === 'true';
 }
 
-/** Agent-relayable copy; price interpolated from the SoT (NEVER hardcoded — scan_funding_arb is $0.01). */
-function buildInstructions(priceUsd: number): string {
+/**
+ * Agent-relayable copy; price interpolated from the SoT (NEVER hardcoded — scan_funding_arb is $0.01).
+ *
+ * OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11): the noun follows the wall it is
+ * attached to. This string said "Free monthly quota reached." UNCONDITIONALLY, so an agent refused
+ * by the DAILY meter — a wall that lifts at the next 00:00 UTC — read a sentence naming the monthly
+ * one, on the very payload whose `limit` field said `daily`. The two nouns are exactly the pair
+ * `METER_COPY` already carries in `quota-notice.ts` (`Free monthly quota` / `Free daily quota`), so
+ * the nudge cannot invent a third phrasing for a wall the notice beside it already names.
+ */
+function buildInstructions(priceUsd: number, wall: QuotaWall): string {
+  const noun = wall === 'daily' ? 'Free daily quota' : 'Free monthly quota';
   return (
-    'Free monthly quota reached. Pay per call with your own wallet — no signup: POST to the ' +
+    `${noun} reached. Pay per call with your own wallet — no signup: POST to the ` +
     `x402 route below (HTTP 402 → sign ERC-3009 → resend with x-payment). $${priceUsd} per call.`
   );
 }
@@ -76,8 +86,14 @@ function buildInstructions(priceUsd: number): string {
 /**
  * The in-protocol x402 rail(s) for the tool an agent just called, or `undefined` when no
  * public (non-HELD) x402 rail is live (default-deny ⇒ the envelope stays unchanged).
+ *
+ * `wall` is REQUIRED and deliberately NOT optional (OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2,
+ * ratified). An optional parameter defaulting to `'monthly'` would let a call site forget it and
+ * silently render the wrong noun — which is the defect being fixed, re-armed. Required, `tsc` names
+ * every call site that omits it, and `x402-nudge-wall.test.ts` asserts that a dropped argument is a
+ * COMPILE error rather than a runtime surprise.
  */
-export function buildSuggestedX402(toolNameOrAlias: string, env: NudgeEnv = process.env): SuggestedX402 | undefined {
+export function buildSuggestedX402(toolNameOrAlias: string, wall: QuotaWall, env: NudgeEnv = process.env): SuggestedX402 | undefined {
   const feat = getFeature(toolNameOrAlias);
   if (!feat || !feat.x402) return undefined; // unknown or unpriced (knowledge tools) ⇒ no rail
   // HELD tools (equities while EQUITY_PUBLIC_COPY_HOLD) are never surfaced on this public
@@ -119,5 +135,5 @@ export function buildSuggestedX402(toolNameOrAlias: string, env: NudgeEnv = proc
 
   if (rails.length === 0) return undefined; // no live public rail ⇒ default-deny
   const [primary, ...alternatives] = rails;
-  return { tool: feat.name, instructions: buildInstructions(price), primary, alternatives };
+  return { tool: feat.name, instructions: buildInstructions(price, wall), primary, alternatives };
 }

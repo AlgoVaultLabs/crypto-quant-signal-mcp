@@ -201,7 +201,10 @@ function toolErrorContent(err: unknown): { content: { type: 'text'; text: string
     // checkout). Derived from the feature-registry channels{} SoT + live rail predicates; omitted
     // (envelope byte-identical) when X402_NUDGE_ENABLED is off, no public rail is live, or the
     // tool is HELD. The allow-list formatter (buildTierLimitPayload) is the single wire shape.
-    const suggestedX402 = isX402NudgeEnabled() && err.tool ? buildSuggestedX402(err.tool) : undefined;
+    // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 11): `err.limit` IS the wall that
+    // refused — the error already carries it, so the nudge's noun projects from the very value
+    // the payload's `limit` field renders. No second meter test, nothing new to keep in sync.
+    const suggestedX402 = isX402NudgeEnabled() && err.tool ? buildSuggestedX402(err.tool, err.limit) : undefined;
     const payload = buildTierLimitPayload(err, { suggestedX402 });
     return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
   }

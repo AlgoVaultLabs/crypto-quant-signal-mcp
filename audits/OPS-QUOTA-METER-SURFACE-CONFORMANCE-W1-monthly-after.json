@@ -1,0 +1,44 @@
+{
+  "refusal_payload": {
+    "code": "TIER_LIMIT_REACHED",
+    "error_code": "TIER_LIMIT_REACHED",
+    "current_usage": 200,
+    "monthly_limit": 200,
+    "tier": "free",
+    "suggested_upgrade_url": "https://api.algovault.com/signup?plan=starter&upgrade_from=limit",
+    "retry_after_days": 397,
+    "usage_display": "200/200",
+    "recommended_path": "subscription",
+    "limit": "monthly",
+    "referral_hint": {
+      "cta": "Create a free account to get your referral link — you both get 500 bonus calls",
+      "link_or_path": "https://api.algovault.com/signup?upgrade_from=limit_referral",
+      "bonus_calls": 500,
+      "from": "limit"
+    }
+  },
+  "scan_refusal": {
+    "error": "quota_exhausted",
+    "code": "TIER_LIMIT_REACHED",
+    "quota": {
+      "used": 200,
+      "total": 200,
+      "remaining": 0,
+      "binding": "monthly"
+    },
+    "usage_display": "200/200",
+    "retry_after_days": 30,
+    "recommended_path": "subscription",
+    "referral_hint": {
+      "cta": "Refer a friend — you both get 500 bonus calls",
+      "link_or_path": "https://algovault.com/join?ref=JUDI5PC6",
+      "bonus_calls": 500,
+      "from": "limit"
+    },
+    "_algovault": {
+      "tool": "scan_trade_calls",
+      "version": "1.27.0",
+      "session_id": null
+    }
+  }
+}
