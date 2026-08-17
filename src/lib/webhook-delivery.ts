@@ -18,7 +18,7 @@
 import crypto from 'crypto';
 import { Agent } from 'undici';
 import { PKG_VERSION } from './pkg-version.js';
-import { checkQuotaByKey, trackCallByKey } from './license.js';
+import { consumeEntitlement, readEntitlement } from './entitlement.js';
 import { resolveAndAssertEgress, EgressBlockedError, type ResolveEgressOpts, type PinnedAddress } from './webhook-ssrf.js';
 import type { LicenseTier } from '../types.js';
 import type { ScanCallItem } from './trade-call-scanner.js';
@@ -440,7 +440,15 @@ export async function deliverOne(
   // OWNER's monthly call quota exactly like a pull call. If exhausted, PAUSE —
   // leave the delivery 'pending' (no attempt, no failure) so it resumes on the
   // next monthly reset / tier upgrade. No Telegram (background pause is silent).
-  const quota = checkQuotaByKey(sub.owner_key, sub.tier as LicenseTier);
+  // PRICING-BOT-DELIVERY-METERING-W1 CH2e: the gate and the charge below both moved onto
+  // `consumeEntitlement`. Net behaviour change for webhooks is REPLAY-SAFETY ONLY — before this,
+  // `trackCallByKey` had no idempotency key, so a redelivery of the same `delivery.id` charged the
+  // owner twice. Everything else here is deliberately untouched: the retry/backoff, the SSRF
+  // ordering, the `quotaUnits` rule, the notify behaviour and the PAUSE semantics.
+  //
+  // The gate READS here (no claim, no charge) because a paused delivery must be retryable with the
+  // same key after a reset — claiming on a refusal would burn the key.
+  const quota = readEntitlement(sub.owner_key, sub.tier as LicenseTier, 'webhook');
   if (!quota.allowed) {
     // OPS-WEBHOOK-SUBSCRIBER-NOTIFY-W1 CH4 (D4): the pause used to be SILENT — the
     // suggested_action below was returned to nobody. Tell the owner, once per
@@ -523,7 +531,20 @@ export async function deliverOne(
         await markDelivery(delivery.id, 'delivered', { attempts, responseCode: status });
         await recordDeliverySuccess(sub.id);
         // Charge the owner's monthly quota for the delivered event (scan_digest = N).
-        trackCallByKey(sub.owner_key, sub.tier as LicenseTier, quotaUnits);
+        // CH2e: idempotency key is `webhook:<delivery.id>` — the natural per-delivery key already
+        // in hand. A redelivery of the same id now returns ALREADY_CHARGED instead of charging a
+        // second time. Awaited so the claim is settled before we report the delivery.
+        //
+        // The charge still happens ONLY on a 2xx, and INDETERMINATE is deliberately NOT special-
+        // cased here: the event WAS delivered, so the delivery is 'delivered' either way. A
+        // metering fault must not retract a successful delivery or re-POST to the subscriber.
+        await consumeEntitlement({
+          trackerKey: sub.owner_key,
+          tier: sub.tier as LicenseTier,
+          channel: 'webhook',
+          units: quotaUnits,
+          idempotencyKey: `webhook:${delivery.id}`,
+        });
         return { deliveryId: delivery.id, status: 'delivered', attempts, responseCode: status, subscriptionDisabled: false };
       }
     } catch (err) {
