@@ -51,6 +51,32 @@ export const CONFORMANCE_CRITERION =
   'AND the binding meter is identified.';
 
 /**
+ * THE TWO WORKED READINGS — kept beside the rule because a criterion is only worth having if it
+ * can be shown to REJECT something, and these two look superficially alike.
+ *
+ * ADMITTED — `_algovault.quota` (`tier-warning.ts`, Q2). A COMPOSITE: each sub-object belongs to
+ * exactly one meter (`quota.used`/`total`/`remaining`/`resets_at` are all the MONTHLY meter's;
+ * `quota.daily.*` are all the DAILY meter's) and `quota.binding` names which governs. Every fact is
+ * true of the meter it names. CONFORMS.
+ *   Residual, recorded rather than fixed: a naive consumer reading `resets_at` and ignoring
+ *   `binding` still sees ~30 days. Real — but the alternative moves a live payload field and voids
+ *   the predecessor wave's PROVEN byte-identity guarantee on those four keys. WIS, not a payload change.
+ *
+ * REJECTED — `scan_trade_calls`' refusal `quota` block (Q6, instance 13). One FLAT object holding
+ * two meters' facts plus a false one: `used`/`total` are the MONTHLY pair, `resets_at` is the DAILY
+ * instant mixed in beside them, and `remaining: 0` is FALSE of the pair it sits next to — that
+ * caller still has monthly headroom. Nothing names which meter governs. VIOLATION.
+ *   Note precisely why "remaining: 0 means refused, not monthly-remaining" does not rescue it:
+ *   `remaining` means "remaining on THIS pair" everywhere else in the family
+ *   (`_algovault.quota.remaining`, `quota.daily.remaining`). One name, two meanings, is the
+ *   single-derivation violation this whole arc exists to retire.
+ */
+export const CRITERION_WORKED_EXAMPLES = {
+  admitted: 'warning:tier-warning — composite, one meter per sub-object, binding named',
+  rejected: 'refusal:scan_trade_calls — flat, two meters mixed, `remaining` false of its own pair',
+} as const;
+
+/**
  * The declared corpus boundary (ratified 2026-08-16, Q3).
  *
  * CALLER-FACING API/MCP PAYLOAD SURFACES. A corpus that also swept email, Telegram and the
@@ -145,6 +171,24 @@ export interface QuotaSurface {
   reason?: string;
   /** The wave that owes the fix. REQUIRED on `violation` and `deferred`. */
   ownerWave?: string;
+  /**
+   * REQUIRED on `deferred` (Q5-green, ratified 2026-08-16). The STRUCTURAL blocker that makes the
+   * fix out of scope here, expressed as a probe the checker can re-run every time.
+   *
+   * This is what makes a deferral SELF-EXPIRING rather than warn-mode wearing a reason string. The
+   * checker asserts `absentPattern` is still ABSENT from `symbol`'s body; the moment the blocker is
+   * lifted the pattern appears, the excuse is void, and the gate turns RED. "A conditional approval
+   * is a gate, not a preference" — so the condition is machine-checked, not remembered.
+   */
+  deferredBlocker?: { file: string; symbol: string; absentPattern: string; description: string };
+  /**
+   * REQUIRED on `deferred`. The field set this surface emits TODAY, sorted.
+   *
+   * A deferral is permission to leave a KNOWN shape unfixed — never permission for that shape to
+   * drift. If the row's `quota` block gains or loses a key, the fingerprint moves and the gate
+   * FAILS, forcing the deferral to be re-ratified against what the surface now actually emits.
+   */
+  emittedFingerprint?: readonly string[];
 }
 
 /**
@@ -336,17 +380,35 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
     ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
   },
 
-  // ── INSTANCE 12 — found by the DERIVED scan, named by no wave document ──────────────────────
+  // ── INSTANCE 12 — found by the DERIVED scan, named by no wave document. DEFERRED, self-expiring ──
+  //
+  // WHY THIS IS DEFERRED AND INSTANCE 11 WAS NOT (ratified 2026-08-16, Q5). Instance 11's cause was
+  // ONE LINE in a file a spec had over-frozen — deferring that would have been an UNBOUNDED known
+  // violation whose only blocker was a list saying "frozen", i.e. warn-mode. This one's cause is
+  // STRUCTURAL and sits outside any ratified scope: `checkQuotaByKey` returns `limit: null` on the
+  // ALLOWED path, so this surface cannot name its wall at all without the daily-pair plumbing that
+  // OPS-WEBHOOK-QUOTA-METER-PARITY-W1 owns. Deferring a structurally-blocked row with a named owner
+  // differs in KIND from deferring a one-line fix.
+  //
+  // And the deferral expires by itself: `deferredBlocker` is re-probed on every run, so the moment
+  // `checkQuotaByKey` returns a daily pair the excuse is void and this gate turns RED.
   {
     id: 'envelope:webhook-api',
     module: 'src/lib/webhook-api.ts',
     primitives: ['key:quota'],
     emits: ['quota.used', 'quota.total', 'quota.remaining'],
-    status: 'violation',
+    status: 'deferred',
     meterAware: false,
     dailyRequiredFields: ['quota.used', 'quota.total', 'quota.remaining'],
-    reason: 'Instance 12, found by the Step-0 derived scan and named in no wave document — exactly what "the spec\'s eleven are a floor, not a ceiling" predicted. `/api/webhooks` POST and GET emit a 3-key `quota` block with NO `resets_at`, `daily` or `binding`, beside copy asserting "your MONTHLY call quota", while `checkQuotaByKey` walls EVERY tier on the daily meter. Its disposition is an open architect question: `checkQuotaByKey` returns `limit: null` on the allowed path, so this surface cannot name its wall without the daily-pair plumbing that OPS-WEBHOOK-QUOTA-METER-PARITY-W1 owns.',
-    ownerWave: 'OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1',
+    reason: 'Instance 12, found by the Step-0 derived scan and named in no wave document — exactly what "the spec\'s eleven are a floor, not a ceiling" predicted. `/api/webhooks` POST and GET emit a 3-key `quota` block with NO `resets_at`, `daily` or `binding`, while `checkQuotaByKey` walls EVERY tier on the daily meter. Structurally blocked here: the surface reads the ALLOWED path, where `checkQuotaByKey` reports `limit: null`, so there is no wall to name and no daily pair to emit. CH2 deletes the false word "monthly" from the adjacent note; the missing FIELDS are the owner wave\'s.',
+    ownerWave: 'OPS-WEBHOOK-QUOTA-METER-PARITY-W1',
+    deferredBlocker: {
+      file: 'src/lib/license.ts',
+      symbol: 'checkQuotaByKey',
+      absentPattern: 'daily_used',
+      description: '`checkQuotaByKey` returns `limit: "daily"` when it refuses but NO `daily_used`/`daily_total` pair on any path, so a caller of the allowed path cannot render a daily meter. When this function starts returning `daily_used`, the blocker is lifted and this row must be fixed, not re-deferred.',
+    },
+    emittedFingerprint: ['remaining', 'total', 'used'],
   },
 
   // ── Declared monthly-only exemption ─────────────────────────────────────────────────────────

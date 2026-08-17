@@ -308,8 +308,101 @@ export function validateRegistry(surfaces) {
     if ((s.status === 'violation' || s.status === 'deferred') && !s.ownerWave) {
       return `${s.id}: status "${s.status}" requires an ownerWave — a violation with no owner is a silence`;
     }
+    // Q5-green: a deferral with no machine-checkable expiry IS warn-mode. Both fields are
+    // mandatory, and a row omitting either makes the registry UNLOADABLE rather than lenient.
+    if (s.status === 'deferred') {
+      const b = s.deferredBlocker;
+      if (!b || !b.file || !b.symbol || !b.absentPattern || typeof b.description !== 'string' || b.description.length < 25) {
+        return `${s.id}: status "deferred" requires deferredBlocker {file,symbol,absentPattern,description>=25} — a deferral with no re-probeable blocker cannot expire, and a deferral that cannot expire is warn-mode`;
+      }
+      if (!Array.isArray(s.emittedFingerprint) || s.emittedFingerprint.length === 0) {
+        return `${s.id}: status "deferred" requires a non-empty emittedFingerprint — a deferral is permission to leave a KNOWN shape unfixed, never permission for it to drift`;
+      }
+    }
   }
   return null;
+}
+
+/**
+ * The top-level key set of every `quota: { … }` object literal in a module, sorted + de-duplicated.
+ *
+ * Brace-BALANCED, not regex-terminated: `quota: { daily: { … } }` nests, and a lazy `\}` would stop
+ * at the inner brace and silently fingerprint half the block.
+ */
+export function quotaBlockFingerprint(src) {
+  const keys = new Set();
+  const re = /\bquota\s*:\s*\{/g;
+  let m;
+  while ((m = re.exec(src))) {
+    let depth = 1, i = re.lastIndex;
+    const start = i;
+    while (i < src.length && depth > 0) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') depth--;
+      i++;
+    }
+    let d = 0, cur = '';
+    const parts = [];
+    for (const c of src.slice(start, i - 1)) {
+      if ('{[('.includes(c)) d++;
+      else if ('}])'.includes(c)) d--;
+      if (c === ',' && d === 0) { parts.push(cur); cur = ''; } else cur += c;
+    }
+    parts.push(cur);
+    for (const p of parts) {
+      const k = p.match(/^\s*([A-Za-z_$][\w$]*)\s*:/);
+      if (k) keys.add(k[1]);
+    }
+  }
+  return [...keys].sort();
+}
+
+/** A named function's body, brace-balanced. `null` when the symbol is gone. */
+export function symbolBody(src, symbol) {
+  const m = new RegExp(`function\\s+${symbol}\\s*\\(`).exec(src);
+  if (!m) return null;
+  let i = src.indexOf('{', m.index + m[0].length);
+  if (i < 0) return null;
+  let depth = 1;
+  const start = ++i;
+  while (i < src.length && depth > 0) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') depth--;
+    i++;
+  }
+  return src.slice(start, i - 1);
+}
+
+/**
+ * Check D — deferred-row integrity: the half that makes a deferral SELF-EXPIRING.
+ *
+ * Two ways a deferral goes stale, both of which must be LOUD. The blocker is lifted, so the excuse
+ * is void and the row must be FIXED rather than re-deferred. Or the surface's emitted shape moved,
+ * so the deferral now covers something nobody ratified. Without this, `deferred` is just a reason
+ * string in front of an unbounded known violation — which is the thing Q1 rejected.
+ */
+export function deferredIntegrity(surfaces, corpus) {
+  const out = [];
+  for (const s of surfaces.filter((r) => r.status === 'deferred')) {
+    const braw = corpus.get(s.deferredBlocker.file);
+    if (braw === undefined) {
+      out.push({ file: s.deferredBlocker.file, check: 'D', detector: 'blocker', why: `${s.id}: blocker file is not in the corpus — the deferral can no longer be verified` });
+    } else {
+      const body = symbolBody(strip(braw), s.deferredBlocker.symbol);
+      if (body === null) {
+        out.push({ file: s.deferredBlocker.file, check: 'D', detector: 'blocker', why: `${s.id}: blocker symbol ${s.deferredBlocker.symbol}() no longer exists — re-derive the deferral or fix the row` });
+      } else if (new RegExp(s.deferredBlocker.absentPattern).test(body)) {
+        out.push({ file: s.deferredBlocker.file, check: 'D', detector: 'blocker', why: `${s.id}: blocker REMOVED — /${s.deferredBlocker.absentPattern}/ now appears in ${s.deferredBlocker.symbol}(). The deferral's excuse is void; FIX ${s.id} (owner: ${s.ownerWave}), do not re-defer` });
+      }
+    }
+    const mraw = corpus.get(s.module);
+    const fp = quotaBlockFingerprint(strip(mraw ?? ''));
+    const want = [...s.emittedFingerprint].sort();
+    if (JSON.stringify(fp) !== JSON.stringify(want)) {
+      out.push({ file: s.module, check: 'D', detector: 'fingerprint', why: `${s.id}: emitted shape MOVED — ratified [${want.join(',')}], now [${fp.join(',')}]. A deferral covers the shape it was granted against; re-ratify it` });
+    }
+  }
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -381,12 +474,19 @@ export function evaluate(surfaces, corpus) {
     return { verdict: 'INDETERMINATE', why: `corpus of ${corpus.size} files yielded ZERO emitting primitives — the detector set is broken, not the tree` };
   }
 
-  const violations = [...orphans, ...mismatches, ...confirmed, ...stale];
+  // Q5-green, the ratified PASS condition. PASS = zero violations OUTSIDE the declared deferred set
+  // AND every deferred row's blocker still verifiably PRESENT AND every deferred fingerprint
+  // UNCHANGED. `expired` carries the last two, and it is a VIOLATION class — not a report — because
+  // a deferral whose condition has lapsed is exactly the unbounded known-violation this gate exists
+  // to make impossible.
+  const expired = deferredIntegrity(surfaces, corpus);
+  const violations = [...orphans, ...mismatches, ...confirmed, ...stale, ...expired];
   return {
     verdict: violations.length ? 'FAIL' : 'PASS',
     violations, deferredHits, scanned, corpusSize: corpus.size,
     rows: surfaces.length,
-    counts: { orphans: orphans.length, mismatches: mismatches.length, confirmed: confirmed.length, stale: stale.length },
+    counts: { orphans: orphans.length, mismatches: mismatches.length, confirmed: confirmed.length, stale: stale.length, expired: expired.length },
+    deferredRows: surfaces.filter((s) => s.status === 'deferred').length,
     exempt: surfaces.filter((s) => s.status === 'exempt-monthly-only' || s.status === 'excluded'),
   };
 }
@@ -447,14 +547,49 @@ async function selfTest() {
     if (r.verdict !== 'FAIL') return `got ${r.verdict} — declaring a violation must never silence it`;
     return r.counts.confirmed === 1 ? null : `expected confirmed=1, got ${r.counts.confirmed}`;
   });
-  check('dirty source declared DEFERRED ⇒ PASS, reported loudly with its owner', () => {
-    const r = evaluate(
-      [ROW({ status: 'deferred', reason: 'owned by a named follow-up wave, out of scope here', ownerWave: 'OPS-OWNER-W1' })],
-      one('const m = { quota: { used: 1, total: 2 } };'),
-    );
-    if (r.verdict !== 'PASS') return `got ${r.verdict} — a deferred row must not block prepublishOnly forever`;
+  // ── Q5-green: a deferral is only legitimate while it is SELF-EXPIRING ─────────────────────────
+  //
+  // These four fixtures are the difference between `deferred` and warn-mode. The first proves a
+  // live deferral passes and reports; the next two prove it turns RED the moment either half of its
+  // condition lapses; the fourth proves a deferral cannot even be DECLARED without an expiry.
+  const MOD = 'const m = { quota: { used: 1, total: 2 } };';
+  const BLOCKED = 'export function probeFn(a) { return { allowed: true, limit: null }; }';
+  const LIFTED = 'export function probeFn(a) { return { allowed: true, limit: null, daily_used: 3 }; }';
+  const two = (mod, blk) => new Map([['src/f.ts', mod], ['src/b.ts', blk]]);
+  const DEFERRED = (over = {}) => ROW({
+    status: 'deferred',
+    reason: 'owned by a named follow-up wave; structurally blocked and out of scope here',
+    ownerWave: 'OPS-OWNER-W1',
+    deferredBlocker: { file: 'src/b.ts', symbol: 'probeFn', absentPattern: 'daily_used', description: 'while probeFn cannot report a daily pair, this surface has no wall to name and cannot be fixed' },
+    emittedFingerprint: ['total', 'used'],
+    ...over,
+  });
+
+  check('dirty source declared DEFERRED, blocker PRESENT ⇒ PASS, reported loudly with its owner', () => {
+    const r = evaluate([DEFERRED()], two(MOD, BLOCKED));
+    if (r.verdict !== 'PASS') return `got ${r.verdict} — a live deferral must not block prepublishOnly forever`;
     return r.deferredHits.length === 1 && r.deferredHits[0].ownerWave === 'OPS-OWNER-W1'
       ? null : 'deferred hit not reported with its owner';
+  });
+  check('deferred row whose blocker is GONE ⇒ FAIL (the deferral self-expires)', () => {
+    const r = evaluate([DEFERRED()], two(MOD, LIFTED));
+    if (r.verdict !== 'FAIL') return `got ${r.verdict} — a lifted blocker must void the excuse, not extend it`;
+    return r.violations.some((v) => v.check === 'D' && v.detector === 'blocker' && /blocker REMOVED/.test(v.why))
+      ? null : `expected a check-D blocker violation, got ${JSON.stringify(r.violations)}`;
+  });
+  check('deferred row whose emitted fingerprint MOVED ⇒ FAIL', () => {
+    const r = evaluate([DEFERRED()], two('const m = { quota: { used: 1, total: 2, remaining: 0 } };', BLOCKED));
+    if (r.verdict !== 'FAIL') return `got ${r.verdict} — a deferral covers the shape it was granted against`;
+    return r.violations.some((v) => v.check === 'D' && v.detector === 'fingerprint' && /MOVED/.test(v.why))
+      ? null : `expected a check-D fingerprint violation, got ${JSON.stringify(r.violations)}`;
+  });
+  check('deferred row with NO blocker/fingerprint ⇒ INDETERMINATE (registry unloadable)', () => {
+    const r = evaluate(
+      [ROW({ status: 'deferred', reason: 'a reason string with no machine-checkable expiry at all', ownerWave: 'OPS-OWNER-W1' })],
+      two(MOD, BLOCKED),
+    );
+    return r.verdict === 'INDETERMINATE' && /deferredBlocker/.test(r.why || '')
+      ? null : `got ${r.verdict} (${r.why}) — a deferral that cannot expire must make the registry unloadable`;
   });
 
   // ── the INERT shape check A owns, asserted here as a registry contract ────────────────────
@@ -608,7 +743,7 @@ async function main() {
   // like a clean one.
   const c = r.counts;
   console.log(`[quota-surfaces] registry=${r.rows} rows · corpus=${r.corpusSize} src files · ${r.scanned} emit a quota fact`);
-  console.log(`[quota-surfaces] orphans=${c.orphans} declared-conforming-but-dirty=${c.mismatches} confirmed-violations=${c.confirmed} stale-rows=${c.stale} deferred=${r.deferredHits.length}`);
+  console.log(`[quota-surfaces] orphans=${c.orphans} declared-conforming-but-dirty=${c.mismatches} confirmed-violations=${c.confirmed} stale-rows=${c.stale} expired-deferrals=${c.expired} deferred-rows=${r.deferredRows} (hits=${r.deferredHits.length})`);
   for (const e of r.exempt) console.log(`  · ${e.status} ${e.id} (${e.module}) — ${e.reason.slice(0, 110)}…`);
   for (const d of r.deferredHits) console.log(`  · deferred ${d.file} [${d.detector}] → owned by ${d.ownerWave} — ${d.why}`);
 
