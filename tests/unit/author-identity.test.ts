@@ -217,9 +217,14 @@ describe('ops/author-identity-allowlist.json — the shipped config', () => {
     }
   });
 
-  it('ships REPORT-first with BOTH promotion criteria, never collapsed into one', () => {
+  // Was "ships REPORT-first with BOTH promotion criteria, never collapsed into one". REPORT-first
+  // was the shipping posture from OPS-GIT-IDENTITY-CANONICALIZE-W1 until
+  // OPS-AUTHOR-IDENTITY-PROMOTE-W2 flipped it. The criteria themselves are what this test is
+  // really for, and they survive the flip verbatim as the record of what it was gated on — so the
+  // assertion moves with the contract instead of being deleted with it.
+  it('ships in BLOCK mode with every promotion criterion still intact, never collapsed into one', () => {
     const cfg = JSON.parse(execFileSync('cat', [LIVE_ALLOWLIST], { encoding: 'utf8' }));
-    expect(cfg.promotion.mode).toBe('report');
+    expect(cfg.promotion.mode).toBe('block');
     expect(cfg.promotion.max_violations).toBe(0);
     expect(cfg.promotion.not_before).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(typeof cfg.promotion.owner).toBe('string');
@@ -468,9 +473,45 @@ describe('author-identity config — CH2 shape', () => {
     expect(i.written_by).toMatch(/git/i);
   });
 
-  it('AC2.10 — promotion.mode is still report; the flip is W2', () => {
-    expect(cfg().promotion.mode).toBe('report');
+  // Was "AC2.10 — promotion.mode is still report; the flip is W2". W2 has now happened, so the
+  // assertion inverts: `owner` is unchanged but its meaning has, from "who OWES the flip" to "who
+  // PERFORMED it", which is why W2 deliberately left it byte-identical rather than retargeting it
+  // at a demotion wave that does not exist.
+  it('is PROMOTED to block by W2, and owner records who performed the flip', () => {
+    expect(cfg().promotion.mode).toBe('block');
     expect(cfg().promotion.owner).toBe('OPS-AUTHOR-IDENTITY-PROMOTE-W2');
+  });
+
+  it('records the flip-time READING in _flip_evidence, separate from the design rationale', () => {
+    const p = cfg().promotion;
+    // The evidence key exists because status.md is TRIMMED to Old Status/ within 7 days: "the
+    // evidence lives in status.md" would mean it lives only in an archive. The config is what
+    // someone opens when they ask why this is in block mode.
+    expect(typeof p._flip_evidence).toBe('string');
+    expect(p._flip_evidence.length).toBeGreaterThan(200);
+    for (const token of ['commits_in_window', 'in_window_would_be_refused', 'READY']) {
+      expect(p._flip_evidence).toContain(token);
+    }
+    // ...and it must not have been merged into `reason`, which carries rationale, not readings.
+    expect(p.reason).not.toContain('_flip_evidence');
+    expect(p.reason).not.toMatch(/commits_in_window/);
+  });
+
+  it('AC3 — under block, a denied identity is REFUSED with exit 1, not merely logged', () => {
+    // The live-config assertions above are mode-INDEPENDENT: they read a key, they do not run the
+    // gate. Only an exit code proves blocking, and only against a config carrying the flip.
+    const box = sandbox(execFileSync('cat', [LIVE_ALLOWLIST], { encoding: 'utf8' }));
+    try {
+      expect(runGate(box.dir, 'test@test.local')).toMatchObject({
+        token: 'AUTHOR_IDENTITY_VERDICT=FAIL', code: 1,
+      });
+      expect(runGate(box.dir, CANONICAL)).toMatchObject({
+        token: 'AUTHOR_IDENTITY_VERDICT=PASS', code: 0,
+      });
+      expect(runGate(box.dir, MEGATRON)).toMatchObject({
+        token: 'AUTHOR_IDENTITY_VERDICT=PASS', code: 0,
+      });
+    } finally { box.cleanup(); }
   });
 
   it('AC2.8 — the boundary law is present and measure_from is the remediation SHA instant', () => {
