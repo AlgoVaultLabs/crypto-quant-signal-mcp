@@ -63,12 +63,24 @@ fi
 
 hook_block_assert_publishable "$GATE_SCRIPT" 0 || exit 1
 
+# MODE-AGNOSTIC BY CONSTRUCTION (OPS-AUTHOR-IDENTITY-PROMOTE-W2 R3).
+#
+# This comment used to state the gate's MODE — "Ships REPORT-first … does NOT block until
+# promotion.mode flips" — and that sentence went false the moment W2 flipped the config. It was a
+# second copy of a fact the config owns, living in a heredoc that is written into the SHARED
+# pre-commit block, so correcting it would have meant rewriting the one file governing every
+# worktree. Pointing at the SoT instead of restating it means this text can never go stale on mode
+# again, whichever way a future wave flips it.
 read -r -d '' COMMENT <<'EOF' || true
-# Refuses a commit whose AUTHOR EMAIL is not in ops/author-identity-allowlist.json. Ships
-# REPORT-first: a violation prints AUTHOR_IDENTITY_VERDICT=FAIL and ledgers it, but exits 0 and
-# does NOT block until promotion.mode flips (needs BOTH max_violations AND not_before).
+# Refuses a commit whose AUTHOR EMAIL is not in ops/author-identity-allowlist.json. Whether a
+# violation BLOCKS or is merely reported is owned by that file's promotion.mode — read it there;
+# this comment deliberately does not restate its value. Resolved per-worktree at run time from
+# `git rev-parse --show-toplevel`, so each checkout obeys its own tree's copy and a checkout that
+# has not merged a flip keeps the previous behaviour. Missing or empty mode defaults to BLOCK.
 # Retires the class behind 649 test@test.local + 633 megatronwarlord1998@gmail.com commits on
-# public origin/main. Override (report-only): ALGOVAULT_AUTHOR_IDENTITY=warn git commit
+# public origin/main. Override: ALGOVAULT_AUTHOR_IDENTITY=warn git commit — downgrades the EXIT
+# CODE for a FAIL only. It never launders the TOKEN, and it does NOT rescue an INDETERMINATE,
+# which exits 3 and blocks regardless.
 EOF
 
 hook_block_install pre-commit "$BLOCK_NAME" OPS-GIT-IDENTITY-CANONICALIZE-W1 "$GATE_SCRIPT" "$COMMENT" \
