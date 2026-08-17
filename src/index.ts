@@ -100,6 +100,8 @@ import { buildSuggestedX402, isX402NudgeEnabled } from './lib/x402-nudge.js';
 import { runAsBatch, runAsCaller } from './lib/upstream-weight-budget.js';
 import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
+// PRICING-BOT-DELIVERY-METERING-W1 CH3: /api/entitlement/* route registrar.
+import { registerEntitlementRoutes } from './lib/entitlement-api.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
 import {
   TRADE_CALL_DESCRIPTION,
@@ -3531,6 +3533,12 @@ async function startHttp() {
       tier: result.tier,
     });
   });
+
+  // PRICING-BOT-DELIVERY-METERING-W1 CH3: the entitlement routes register HERE, beside
+  // validate-key and behind the same internal-key auth. Their bodies live in
+  // `lib/entitlement-api.ts` because `index.ts` boots the server at import, which makes any
+  // handler closure defined here untestable (CLAUDE.md: make entrypoints test-importable).
+  registerEntitlementRoutes(app);
 
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
