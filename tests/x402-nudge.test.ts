@@ -158,7 +158,13 @@ describe('the nudge noun follows the wall it is attached to', () => {
     );
   });
 
-  it('THE STRUCTURAL LOCK: `wall` is REQUIRED, so a call site that forgets it fails to COMPILE', () => {
+  // TIMEOUT IS EXPLICIT AND LOAD-BEARING. This test invokes the TypeScript compiler, which took
+  // ~2.5s on a warm local machine and blew vitest's 5000ms DEFAULT on the CI runner — failing the
+  // pre-deploy gate and blocking the deploy of the very wave that added it. A test that shells out
+  // to a compiler must own its budget rather than inherit the default meant for pure-function
+  // assertions. Also invokes the LOCAL tsc binary, never `npx`: npx re-resolves (and on a cold
+  // cache can fetch) before it runs, which is a network-shaped variable inside a compile assertion.
+  it('THE STRUCTURAL LOCK: `wall` is REQUIRED, so a call site that forgets it fails to COMPILE', { timeout: 180_000 }, () => {
     // AC (ratified): assert this by compiling, never by review. An OPTIONAL `wall` defaulting to
     // 'monthly' would let a future call site silently re-introduce instance 11; a REQUIRED one makes
     // tsc name the offender. `tsconfig.json` excludes tests/, so this compiles the fixture against
@@ -175,7 +181,8 @@ describe('the nudge noun follows the wall it is attached to', () => {
     ].join('\n'));
     let out = '';
     try {
-      ts.execFileSync('npx', ['tsc', '--noEmit', '--skipLibCheck', '--module', 'node16',
+      const tsc = path.resolve('node_modules/.bin/tsc');
+      ts.execFileSync(tsc, ['--noEmit', '--skipLibCheck', '--module', 'node16',
         '--moduleResolution', 'node16', '--target', 'ES2022', file], { encoding: 'utf8', stdio: 'pipe' });
     } catch (e: unknown) {
       out = String((e as { stdout?: string }).stdout ?? '');
