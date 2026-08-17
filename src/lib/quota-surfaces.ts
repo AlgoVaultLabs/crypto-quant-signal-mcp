@@ -71,10 +71,13 @@ export const CONFORMANCE_CRITERION =
  *   (`_algovault.quota.remaining`, `quota.daily.remaining`). One name, two meanings, is the
  *   single-derivation violation this whole arc exists to retire.
  */
-export const CRITERION_WORKED_EXAMPLES = {
-  admitted: 'warning:tier-warning — composite, one meter per sub-object, binding named',
-  rejected: 'refusal:scan_trade_calls — flat, two meters mixed, `remaining` false of its own pair',
-} as const;
+//
+// Deliberately PROSE, not an exported constant. The first draft exported a
+// `CRITERION_WORKED_EXAMPLES` object and `check-new-dark-exports.mjs` flagged it with zero consumers
+// in src/ — correctly. Explaining it away in ops/dark-exports-config.json would have used the
+// explained-entry mechanism to launder the exact "exported, tested, called by nothing" shape that
+// mechanism exists to make visible. The two readings are documentation; a docblock carries them, and
+// the rows below reference the surfaces by id, which was the only load-bearing link.
 
 /**
  * The declared corpus boundary (ratified 2026-08-16, Q3).

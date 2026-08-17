@@ -10,7 +10,7 @@
     "url": "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/issues"
   },
   "mcpName": "io.github.AlgoVaultFi/crypto-quant-signal-mcp",
-  "description": "The Brain Layer for AI Trading Agents — one MCP call returns a composite trade verdict (direction, confidence, regime) across major crypto perp venues. On-chain Merkle-verified track record.",
+  "description": "The Brain Layer for AI Trading Agents \u2014 one MCP call returns a composite trade verdict (direction, confidence, regime) across major crypto perp venues. On-chain Merkle-verified track record.",
   "main": "dist/index.js",
   "module": "src/index.ts",
   "bin": {
@@ -42,8 +42,10 @@
     "rank:parity:check": "tsc && node scripts/check-rank-metrics-parity.mjs --check",
     "rank:parity:live": "node scripts/check-rank-metrics-parity.mjs --live",
     "scan:digest:parity:check": "tsc && node scripts/check-scan-digest-parity.mjs --check",
+    "quota:surface:check": "tsc && node scripts/check-quota-surface-conformance.mjs",
+    "quota:surface:selftest": "node scripts/check-quota-surface-conformance.mjs --self-test",
     "scan:digest:parity:live": "node scripts/check-scan-digest-parity.mjs --live",
-    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-source-greppable.mjs --check && node scripts/check-monitoring-schedules.mjs && node scripts/check-shared-state.mjs --self-test && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check && npm run entitlement:channels:check && npm run idempotency:helper:check",
+    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-source-greppable.mjs --check && node scripts/check-monitoring-schedules.mjs && node scripts/check-shared-state.mjs --self-test && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/check-quota-surface-conformance.mjs && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check && npm run entitlement:channels:check && npm run idempotency:helper:check",
     "entitlement:channels:check": "node scripts/check-entitlement-channel-drift.mjs",
     "idempotency:helper:check": "node scripts/check-idempotency-helper.mjs"
   },
