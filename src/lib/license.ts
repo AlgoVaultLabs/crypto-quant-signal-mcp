@@ -32,6 +32,9 @@ import { PLANS, FREE_MONTHLY_CALLS, FREE_DAILY_CALLS, DEFAULT_UPGRADE_PLAN, plan
 import { lookupFreeKey, lookupFreeKeyCached, FREE_KEY_PREFIX } from './free-keys-store.js';
 import { loadAllBonuses, persistBonusRemaining, grantBonus } from './referral-store.js';
 import { recordIndeterminate } from './indeterminate-counter.js';
+// AUTH-THREE-STATE-W1 CH1: the ONE credential vocabulary. LEAF (type-only imports of its own), so
+// this consumer edge closes no cycle — same reasoning as `binding-meter.ts` above.
+import { classifyCredential, isRetryable, type CredentialOutcome } from './credential-outcome.js';
 
 // v1.10.3 FREE-UNLOCK-W1: free tier now grants ALL coins + ALL timeframes —
 // the 100-calls/month cap is the primary upsell trigger; funding-arb top-5
@@ -277,7 +280,11 @@ export async function resolveLicense(
 ): Promise<{ license: LicenseInfo; pendingSettlement?: PendingSettlement; x402Downgrade?: X402Downgrade }> {
   // Tier 0 (BOT-W1 / D1-C): internal bypass for AlgoVault Telegram bot
   const bypass = checkInternalBypass(headers);
-  if (bypass) return { license: bypass };
+  // AUTH-THREE-STATE-W1 CH1: a bypass caller IS an established principal — the bypass header is the
+  // credential they presented, just not an API key. Stamped RESOLVED so `withAuthState` has an
+  // outcome to report for exactly the tiers that have no quota to report (CH2), and so the refusal
+  // predicate can never see an unstamped license on the highest-trust path in the system.
+  if (bypass) return { license: { ...bypass, outcome: 'RESOLVED' } };
 
   // Tier 1: x402 payment proof (only if configured)
   if (isX402Configured()) {
@@ -295,14 +302,18 @@ export async function resolveLicense(
       // Unbound callers (HTTP route / webhook authz) keep the prior behavior: grant
       // x402 here; the HTTP route then re-asserts binding + claims the nonce itself.
       if (!opts?.tool) {
-        return { license: { tier: 'x402', key: null }, pendingSettlement };
+        // AUTH-THREE-STATE-W1 CH1: the payment proof IS the credential and it verified — RESOLVED.
+        // The API key is never consulted on this rail, which is why `/x402/*` is unaffected by the
+        // refusal (asserted in CH3 rather than assumed).
+        return { license: { tier: 'x402', key: null, outcome: 'RESOLVED' }, pendingSettlement };
       }
 
       // Bound caller: enforce the effective-price floor for THIS tool (+ timeframe
       // premium) AND claim the nonce BEFORE granting. Any failure → downgrade.
       const downgrade = await bindAndClaimX402(pendingSettlement, opts.tool, opts.timeframe);
       if (!downgrade) {
-        return { license: { tier: 'x402', key: null }, pendingSettlement };
+        // Bound, price-checked and nonce-claimed — same RESOLVED reasoning as the unbound path.
+        return { license: { tier: 'x402', key: null, outcome: 'RESOLVED' }, pendingSettlement };
       }
       // Fall through to API-key/free with the reason; pendingSettlement cleared
       // (no settle/charge) by NOT returning it below.
@@ -408,27 +419,37 @@ let devKeyPrefixWarned = false;
  */
 async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo> {
   const key = extractApiKey(authHeader);
-  if (!key) return { tier: 'free', key: null };
+  if (!key) return { tier: 'free', key: null, outcome: 'ABSENT' };
 
   // REFERRAL-LIGHT-W1 (C2): av_free_ keys resolve via the free-keys store, NEVER
   // Stripe. A KNOWN free key tracks BY KEY (durable identity for the +500 bonus);
   // an UNKNOWN av_free_ key default-denies to keyless free.
   if (key.startsWith(FREE_KEY_PREFIX)) {
     const fk = await lookupFreeKey(key);
-    if (!fk) return { tier: 'free', key: null };
+    // AUTH-THREE-STATE-W1 CH1: a store MISS is now labelled by shape, so a revoked or mistyped
+    // free key is UNKNOWN (refusable) while an `av_free_`-prefixed string that could never have
+    // been minted is MALFORMED (always served).
+    //
+    // ⚠️ A store FAULT is still indistinguishable from a miss on this lane — `lookupFreeKey`
+    // throws on an unreachable DB, which today surfaces as a 500 and therefore never reaches this
+    // classification at all. Making that throw an INDETERMINATE is the right end state (it is the
+    // same law this wave applies to Stripe at the branch below), but it turns a 500 into a served
+    // response, which is a ROUTE BEHAVIOUR CHANGE and CH1's acceptance criteria forbid one. It
+    // lands in CH2 beside the refusal path that gives it somewhere honest to go.
+    if (!fk) return { tier: 'free', key: null, outcome: unresolvedOutcome(key) };
     // OPS-QUOTA-CLAIM-ALIAS-W1 CH1: the adopted bucket is resolved HERE, on the async path that
     // can afford a DB read, and carried on the license so `deriveTrackerKey` stays lookup-free.
     // Spread-on-presence: a key with no `bucket_key` yields a license object with no `bucketKey`,
     // byte-identical to pre-wave for every key issued before this column existed.
     return fk.bucket_key
-      ? { tier: 'free', key, bucketKey: fk.bucket_key }
-      : { tier: 'free', key };
+      ? { tier: 'free', key, bucketKey: fk.bucket_key, outcome: 'RESOLVED' }
+      : { tier: 'free', key, outcome: 'RESOLVED' };
   }
 
   // Try Stripe validation (cached, 5-min TTL)
   const stripeResult = await stripeValidateApiKey(key);
   if (stripeResult.valid && stripeResult.tier) {
-    return { tier: stripeResult.tier, key };
+    return { tier: stripeResult.tier, key, outcome: 'RESOLVED' };
   }
 
 
@@ -459,15 +480,64 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
   // and we do NOT escalate — a guard on a live serving path refuses the operation, it does not
   // take the server down, and it never grants more than it can prove.
   if (stripeResult.indeterminate) {
+    // AUTH-THREE-STATE-W1 CH1 — SHAPE IS THE DISCRIMINANT HERE TOO, and this branch is the one
+    // that makes default-ON refusal safe.
+    //
+    // This test fires BEFORE the not-found return below, and `validateApiKey` answers
+    // `indeterminate` when Stripe is merely UNCONFIGURED as well as when it is unreachable. So a
+    // naive "INDETERMINATE ⇒ refuse" would refuse `Bearer ${env:AV_API_KEY}` — the literal string
+    // our own docs' top failure mode produces — during any Stripe outage, and in every environment
+    // without STRIPE_SECRET_KEY. That is precisely the compat lane the whole default-ON argument
+    // rests on, so it is closed here rather than defended by convention.
+    //
+    // Shape is knowable WITHOUT Stripe: a credential that cannot be one we issued is a client
+    // misconfiguration, and Stripe's health has no bearing on it. It is therefore MALFORMED and
+    // always served, whatever the upstream is doing.
+    //
+    // `key` is PRESERVED on this branch too, so the object is byte-identical to what this branch
+    // has always returned and only `outcome` is added. CH1 changes no behaviour — including which
+    // bucket a caller meters on mid-outage. Dropping the key here would quietly move every
+    // unexpanded-env-var caller from their own bucket to `free:<ipHash>`, which is a metering
+    // change wearing a labelling change, and it would break the key-preservation guard at
+    // `tests/unit/indeterminate-auth.test.ts:92-96` that OPS-ZERO-VS-UNKNOWN-W1 left behind.
+    if (classifyCredential(key) !== 'WELL_FORMED') {
+      return { tier: 'free', key, outcome: 'MALFORMED' };
+    }
     recordIndeterminate('stripe_validate_api_key', 'license resolution could not determine tier');
     // KEY IDENTITY IS PRESERVED. That is the load-bearing half: with `key` retained the caller
     // is metered on their own bucket, not `free:<ipHash>`, so an upstream blip can no longer burn
     // an anonymous ceiling they never bought. The tier is not escalated — we never grant what we
     // cannot prove — and `indeterminate` tells the route to surface a RETRYABLE error instead of
     // presenting a downgrade as settled fact.
-    return { tier: 'free', key, indeterminate: true };
+    //
+    // `indeterminate` is KEPT beside `outcome`, not replaced by it: it is what `recordIndeterminate`
+    // and the OPS-ZERO-VS-UNKNOWN-W1 policy above are written against. This chapter makes that
+    // policy executable — the "RETRYABLE error" the docblock has promised since that wave finally
+    // has a reader in CH2 — it does not rewrite it.
+    return { tier: 'free', key, indeterminate: true, outcome: 'INDETERMINATE', retryable: true };
   }
-  return { tier: 'free', key: null };
+  // AUTH-THREE-STATE-W1 CH1 — THE CORE DEFECT. This return was byte-identical to the three above
+  // it, so "Stripe says this key does not exist" and "no key was sent" were one value. A paying
+  // customer with a typo'd or revoked key landed here and was served the anonymous free tier.
+  return { tier: 'free', key: null, outcome: unresolvedOutcome(key) };
+}
+
+/**
+ * The outcome for a credential the store came back EMPTY on. Shape is the discriminant, and the
+ * asymmetry is deliberate:
+ *
+ * - WELL_FORMED ⇒ `UNKNOWN`. Nobody sends a correctly-shaped 24-hex AlgoVault key by accident, so
+ *   this is a real customer holding a key that does not resolve — the case worth refusing.
+ * - anything else ⇒ `MALFORMED`. It cannot be a key we ever minted, so "not found" tells us
+ *   nothing we did not already know from the shape, and refusing it would break the documented
+ *   unexpanded-`${env:AV_API_KEY}` lane for zero security benefit.
+ *
+ * 🛑 Called only AFTER a lookup returns empty. It must never be used to decide whether to look up:
+ * `tests/security-fix-tier-escalation.test.ts:82-87` pins a Stripe-VALID key that fails the shape
+ * test, and short-circuiting on shape would deny that customer.
+ */
+function unresolvedOutcome(key: string): CredentialOutcome {
+  return classifyCredential(key) === 'WELL_FORMED' ? 'UNKNOWN' : 'MALFORMED';
 }
 
 /**
@@ -476,19 +546,32 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
  */
 function resolveFromApiKey(authHeader?: string): LicenseInfo {
   const key = extractApiKey(authHeader);
-  if (!key) return { tier: 'free', key: null };
+  if (!key) return { tier: 'free', key: null, outcome: 'ABSENT' };
 
   // REFERRAL-LIGHT-W1 (C2): av_free_ keys are free tier — NEVER the prefix-based
   // pro/enterprise escalation below. The sync (stdio) path is cache-only; a cache
   // miss → keyless free (the durable lookup is the async HTTP path that warms it).
   if (key.startsWith(FREE_KEY_PREFIX)) {
     const fk = lookupFreeKeyCached(key);
-    return fk ? { tier: 'free', key } : { tier: 'free', key: null };
+    if (fk) return { tier: 'free', key, outcome: 'RESOLVED' };
+    // AUTH-THREE-STATE-W1 CH1: a cache MISS on this path is not evidence of non-existence — this
+    // lookup is cache-only BY DESIGN and never consults the durable store (that is the async HTTP
+    // path's job, per the note above). Labelling it UNKNOWN would assert a fact we did not
+    // establish, which is the exact error this wave exists to stop, so a well-formed key that
+    // simply is not warm reads INDETERMINATE.
+    //
+    // `key: null` is retained deliberately: the documented stdio behaviour is "miss ⇒ keyless
+    // free", and CH1 changes no behaviour — only what the license can SAY about itself.
+    return classifyCredential(key) === 'WELL_FORMED'
+      ? { tier: 'free', key: null, outcome: 'INDETERMINATE', retryable: true }
+      : { tier: 'free', key: null, outcome: 'MALFORMED' };
   }
 
   // Prefix-based tier detection (backward compat)
+  // The prefix tiering itself is UNCHANGED — deliberate operator-stdio behaviour, HTTP-reachable
+  // only under ALLOW_DEV_KEY_PREFIX=true, pinned by tests/security-fix-tier-escalation.test.ts:89.
   const tier: LicenseTier = key.startsWith('ent_') ? 'enterprise' : key.startsWith('av_starter_') ? 'starter' : 'pro';
-  return { tier, key };
+  return { tier, key, outcome: 'RESOLVED' };
 }
 
 function extractApiKey(authHeader?: string): string | null {

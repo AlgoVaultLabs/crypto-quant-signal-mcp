@@ -723,6 +723,37 @@ export interface LicenseInfo {
    * the exact hole this wave closes.
    */
   bucketKey?: string;
+  /**
+   * AUTH-THREE-STATE-W1 CH1 (ADDITIVE, optional — every existing construction stays valid).
+   *
+   * WHICH of the five credential realities produced this license. Before this wave, "no credential
+   * presented", "an unknown free key", "a key Stripe says does not exist" and "a key we could not
+   * ask about" were ALL `{tier:'free', key:null}` — one object for four facts, so no consumer could
+   * tell them apart and none tried. `indeterminate` above was a partial, single-bit attempt at the
+   * same distinction that nothing ever read; it is retained BESIDE this field rather than replaced,
+   * because it is what `recordIndeterminate` and the OPS-ZERO-VS-UNKNOWN-W1 key-identity policy are
+   * written against.
+   *
+   * Optional at the TYPE level only. Every path through `resolveLicense` stamps it; the optionality
+   * exists so hand-constructed fixtures and any future rail still compile. Consumers MUST project
+   * via `credentialOutcomeOf()` rather than reading this directly, so an unstamped license degrades
+   * to a SERVING outcome and can never cause a refusal.
+   *
+   * The union is re-declared here rather than imported so `types.ts` stays free of any dependency
+   * on `lib/`; `credential-outcome.ts` owns the canonical `CredentialOutcome`, and
+   * `tests/credential-outcome.test.ts` pins the two to the same member set so they cannot drift.
+   */
+  outcome?: 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED';
+  /**
+   * AUTH-THREE-STATE-W1 CH1 (ADDITIVE, optional). True only on `INDETERMINATE` — a retry can
+   * succeed because the answer was never determined, as opposed to `UNKNOWN`, which is settled and
+   * where retrying is pure waste.
+   *
+   * A PROJECTION of `outcome`, never an independent fact: `isRetryable(outcome)` is the single
+   * derivation, and `tests/credential-outcome.test.ts` pins `retryable === isRetryable(outcome)`
+   * across every outcome so the two cannot drift into contradiction.
+   */
+  retryable?: boolean;
 }
 
 // ── x402 Types ──

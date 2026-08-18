@@ -71,7 +71,10 @@ describe('license resolution no longer silently demotes a paying caller', () => 
 
   it('handles indeterminate BEFORE falling through to the free default-deny', () => {
     const iIndet = src.indexOf('stripeResult.indeterminate');
-    const iFree = src.lastIndexOf("return { tier: 'free', key: null };");
+    // AUTH-THREE-STATE-W1 CH1 re-anchored this literal ONLY. The default-deny now carries an
+    // explicit `outcome:` member, so the trailing `};` moved; the ORDERING invariant this test
+    // exists for is unchanged and still asserted below.
+    const iFree = src.lastIndexOf("return { tier: 'free', key: null");
     expect(iIndet).toBeGreaterThan(-1);
     expect(iIndet, 'the indeterminate branch must precede the default-deny or it is unreachable').toBeLessThan(iFree);
   });
@@ -90,7 +93,11 @@ describe('license resolution no longer silently demotes a paying caller', () => 
   })();
 
   it('PRESERVES the key on indeterminate — this is what stops the wrong metering', () => {
-    expect(indeterminateBranch).toMatch(/return \{ tier: 'free', key, indeterminate: true \}/);
+    // AUTH-THREE-STATE-W1 CH1 relaxed the CLOSING delimiter only (`}` → `[,}]`): the return now
+    // also carries `outcome: 'INDETERMINATE', retryable: true`. Everything this test guards is
+    // intact — `key` is still preserved, and the `not.toMatch(/key: null/)` below still holds
+    // across the whole branch, including the MALFORMED early-return this wave added inside it.
+    expect(indeterminateBranch).toMatch(/return \{ tier: 'free', key, indeterminate: true[,}]/);
     expect(indeterminateBranch, 'dropping the key is what metered a paying caller into free:<ipHash>')
       .not.toMatch(/key: null/);
   });

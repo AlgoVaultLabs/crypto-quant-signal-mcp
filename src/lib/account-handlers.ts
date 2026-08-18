@@ -27,6 +27,10 @@ import { renderSiteNav } from './site-nav.js';
 import { renderSigninComponent } from './signin-component.js';
 import { isUnifiedSigninEnabled, isNewSignupEnabled, getAuthProvider } from './auth-providers.js';
 import { resolveLicense } from './license.js';
+// AUTH-THREE-STATE-W1 CH1: the ONE key-shape constant. These two handlers each carried a
+// byte-identical private copy of the regex; a third copy is now a build failure
+// (scripts/check-credential-outcome-conformance.mjs R3) rather than a code-review catch.
+import { AV_KEY_SHAPE } from './credential-outcome.js';
 
 // DESIGN-W10 / C2 / Q-W10-10: REPLACED body-flex-centering with var(--bg) layout.
 // Existing .tabs/.tab/.panel/.subtitle/.footer/.error/.success class blocks PRESERVED
@@ -362,7 +366,7 @@ async function apiKeyExists(apiKey: string): Promise<boolean> {
 export async function accountReferralsHandler(req: Request, res: Response): Promise<void> {
   try {
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : '';
-    if (!/^av_(live|free)_[a-f0-9]{24}$/.test(apiKey)) {
+    if (!AV_KEY_SHAPE.test(apiKey)) {
       res.status(400).send(getAccountErrorPageHtml('Please paste a valid AlgoVault API key (av_live_… or av_free_…).'));
       return;
     }
@@ -394,7 +398,7 @@ export async function accountReferralsHandler(req: Request, res: Response): Prom
 export async function accountPayoutAddressHandler(req: Request, res: Response): Promise<void> {
   try {
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : '';
-    if (!/^av_(live|free)_[a-f0-9]{24}$/.test(apiKey)) {
+    if (!AV_KEY_SHAPE.test(apiKey)) {
       res.status(400).send(getAccountErrorPageHtml('Please paste a valid AlgoVault API key (av_live_… or av_free_…).'));
       return;
     }
