@@ -12,7 +12,7 @@ import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
-import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type { MarketRegimeResult, RegimeType, TrendStrength, CrossVenueFundingSentiment, AdxSlopeCategory, LicenseInfo, ExchangeId, Candle } from '../types.js';
 import type { PriceStructureResult } from '../lib/indicators.js';
@@ -532,7 +532,8 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     timestamp: Math.floor(Date.now() / 1000),
     coin,
     timeframe,
-    _algovault: meta,
+    // AUTH-THREE-STATE-W1 CH2 — see the note at get-trade-call.ts's return site.
+    _algovault: withAuthState(meta, license),
   };
 }
 

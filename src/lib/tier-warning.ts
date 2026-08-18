@@ -13,7 +13,10 @@
  * Thresholds are sourced from `getMonthlyQuota(tier)` in license.ts (single
  * SoT for the quota) so changes to quota tiers propagate automatically.
  */
-import type { AlgoVaultMeta, TierWarning, LicenseTier, MeterReading, QuotaWall } from '../types.js';
+import type { AlgoVaultMeta, TierWarning, LicenseTier, MeterReading, QuotaWall, AuthState, LicenseInfo } from '../types.js';
+// AUTH-THREE-STATE-W1 CH2: auth state projects from the ONE credential vocabulary. LEAF (type-only
+// imports of its own), so this consumer edge closes no cycle.
+import { credentialOutcomeOf, isPresented } from './credential-outcome.js';
 import { recordFunnelEvent } from './performance-db.js';
 import { getRequestSessionId } from './license.js';
 import { SOFT_THRESHOLD, HARD_THRESHOLD } from './activation-thresholds.js';
@@ -299,6 +302,43 @@ export function withQuotaState(
             binding: binding.binding,
           }
         : {}),
+    },
+  };
+}
+
+/**
+ * AUTH-THREE-STATE-W1 CH2 — stamp `_algovault.auth` onto ANY response envelope.
+ *
+ * 🛑 THIS IS DELIBERATELY NOT PART OF `withQuotaState`, AND THE REASON IS RECORDED TWO FUNCTIONS
+ * ABOVE. That helper early-returns the bare meta when `isBotInternal` is true and whenever
+ * `total`/`used`/`resetAtMs` is non-finite — i.e. for the `x402` and `internal` tiers, whose quota
+ * is `Infinity`. Those are precisely the callers who HAVE an auth outcome and have no quota to
+ * report, so hanging auth off the quota helper would drop it exactly where it is least
+ * substitutable. It also reaches only four of the seven live tools: `scan_trade_calls`,
+ * `chat_knowledge` and `search_knowledge` build their `_algovault` by hand.
+ *
+ * That straggler is not hypothetical — `scan-trade-calls.ts:344` carries the confession from the
+ * LAST wave that made this mistake: *"the same defect `withQuotaState` fixed for the other three
+ * tools in the parent wave's CH2, left behind here because this tool builds its `_algovault` by
+ * hand rather than through that helper."* Reusing that placement would reproduce it one wave later
+ * with the evidence already in the source.
+ *
+ * So: no early return on quota state, no early return at all, and a GENERIC meta parameter — the
+ * knowledge tools' envelope is a different shape (`{bundle_version, bundle_generated_at, …}`, its
+ * own snapshot) and must still be able to answer the question. Coverage is 7/7, asserted by test
+ * rather than by inspection.
+ */
+export function withAuthState<T extends object>(
+  meta: T,
+  license: Pick<LicenseInfo, 'key' | 'tier' | 'outcome'>,
+): T & { auth: AuthState } {
+  const outcome = credentialOutcomeOf(license);
+  return {
+    ...meta,
+    auth: {
+      outcome,
+      presented: isPresented(outcome),
+      tier: license.tier,
     },
   };
 }

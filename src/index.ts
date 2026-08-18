@@ -13,7 +13,11 @@ import { McpServer, ResourceTemplate, type ToolCallback } from '@modelcontextpro
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import type { ExchangeId } from './types.js';
+import type { ExchangeId, LicenseInfo } from './types.js';
+// AUTH-THREE-STATE-W1 CH2: the credential gate for /mcp. `decideRefusal` is the pure decision;
+// `credentialOutcomeOf` is the single projection every consumer reads.
+import { decideRefusal } from './lib/credential-refusal.js';
+import { credentialOutcomeOf } from './lib/credential-outcome.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
@@ -374,6 +378,45 @@ export async function handleMcpStateless(
   });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
+}
+
+/**
+ * AUTH-THREE-STATE-W1 CH2 — the `/mcp` credential gate. Returns TRUE when it has refused the
+ * request and written the response; the caller must then return immediately.
+ *
+ * WHY THIS IS EXPORTED, rather than living inline in the route. The refusal decision belongs
+ * immediately after `resolveLicense` inside `app.all('/mcp', …)`, which sits in `startHttp()` —
+ * a function that is NOT exported, and `handleMcpStateless` above has no license in scope. That
+ * makes the branch unreachable from a test as it stands. The alternative — re-implementing the
+ * branch in the test — is forbidden by `src/lib/quota-surfaces.ts:25-26`: *"never a hand-built
+ * mirror of the throw site, because a mirror embeds the very bug it is meant to catch."* So the
+ * DECISION is a pure function in `credential-refusal.ts`, and this is the thin seam that applies
+ * it, driven by `tests/auth-refusal-mcp.test.ts` over a live http.Server exactly as production
+ * calls it. That the route actually INVOKES it is pinned separately by a source-order assertion —
+ * a pure function nobody calls is the same defect one layer up.
+ *
+ * HTTP 200 + a JSON-RPC error, never 401. A 401 with `WWW-Authenticate` starts MCP's OAuth
+ * discovery in conformant clients, and we run no OAuth server — the client would chase a document
+ * that does not exist and surface a worse error than the one being fixed. `index.ts:367` already
+ * pairs a status with a JSON-RPC error body on this route. CH3's plain-REST routes keep their 401;
+ * two surfaces, two right answers.
+ *
+ * POST only. `initialize`, `tools/list` and `tools/call` are all POST, so every JSON-RPC method is
+ * covered; GET/DELETE are transport-level and keep their existing 405 rather than being answered
+ * with a credential verdict they never asked for.
+ */
+export function applyCredentialRefusal(
+  req: import('express').Request,
+  res: import('express').Response,
+  license: LicenseInfo,
+): boolean {
+  if (req.method !== 'POST') return false;
+  const body = req.body as { method?: string; id?: unknown } | undefined;
+  const decision = decideRefusal({ outcome: credentialOutcomeOf(license) }, body?.method);
+  if (!decision.refuse) return false;
+  // Echo the request id per JSON-RPC 2.0; a notification (no id) gets null.
+  res.status(200).json({ jsonrpc: '2.0', id: body?.id ?? null, error: decision.error });
+  return true;
 }
 
 function createServer(): McpServer {
@@ -792,7 +835,7 @@ function createServer(): McpServer {
         const { index, engine } = await getKnowledgeSearch();
         const results = await runAsCaller('search_knowledge', () => engine.query(query, limit ?? 10));
         const bundle = index.getBundle();
-        const response = formatSearchKnowledgeResponse(query, results, bundle);
+        const response = formatSearchKnowledgeResponse(query, results, bundle, license);
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'search_knowledge',
@@ -852,7 +895,7 @@ function createServer(): McpServer {
         // Record AFTER successful LLM call (rate-limit reflects actual usage)
         await rateLimit.record(quotaKey, result.usage);
         const bundle = index.getBundle();
-        const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1));
+        const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1), license);
         // CHAT-USAGE-ANALYTICS-W1: record success event AFTER response built (fire-and-forget)
         recordChatEvent({
           apiKeyId: license.key,
@@ -3472,7 +3515,9 @@ async function startHttp() {
       const result = await chatEngine.chat(question, model ? { model } : undefined);
       await rateLimit.record(quotaKey, result.usage);
       const bundle = index.getBundle();
-      const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1));
+      // AUTH-THREE-STATE-W1 CH2: the license is already resolved for this route (SEC-03), and the
+      // response is `no-store`, so the per-caller auth member is safe to emit on the HTTP twin too.
+      const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1), license);
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
       // CHAT-USAGE-ANALYTICS-W1: record success AFTER res.json (fire-and-forget)
@@ -3570,6 +3615,20 @@ async function startHttp() {
       : await resolveLicense(
           req.headers as Record<string, string | undefined>,
         );
+
+    // AUTH-THREE-STATE-W1 CH2 — THE CREDENTIAL GATE, AND ITS POSITION IS THE CONTRACT.
+    //
+    // It runs on the very next line after the license is resolved, which puts it BEFORE the skill
+    // attribution write, the track-token funnel emit, the `mcp_connect` emit and the
+    // `mcp_tools_list` emit below, and before `handleMcpStateless` dispatches to any tool — so
+    // `trackCall` and every quota debit are downstream of it. A refused call therefore consumes
+    // NOTHING: no request_log row, no quota_usage increment, no funnel row (precedent
+    // tests/entitlement.test.ts:87 — "a refusal claims nothing").
+    //
+    // Moving this below any of those emits would still "work" and would silently start charging
+    // refused callers for the privilege of being refused, which is why the ordering is asserted by
+    // a source-order test rather than left to review.
+    if (applyCredentialRefusal(req, res, license)) return;
 
     // Hash client IP for privacy-safe analytics + the free-tier quota key.
     // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: req.ip (trust proxy=1) via the shared clientIp

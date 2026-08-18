@@ -43,6 +43,10 @@ import { resolveRankBy, rankByTokens } from '../lib/rank-constants.js';
 // creates no cycle. Dark behind X402_NUDGE_ENABLED.
 import { buildSuggestedX402, isX402NudgeEnabled } from '../lib/x402-nudge.js';
 import { bindingMeter } from '../lib/binding-meter.js';
+// AUTH-THREE-STATE-W1 CH2: this tool builds its `_algovault` BY HAND at three sites, which is
+// exactly why the last envelope wave left it behind (see the note at the quota block below). All
+// three are stamped here so the straggler does not recur.
+import { withAuthState } from '../lib/tier-warning.js';
 import {
   SCAN_TRADE_CALLS_DESCRIPTION,
   PARAM_DESC_SCAN_TOP_N,
@@ -220,7 +224,7 @@ export async function runScanTradeCall(
       message: `Unknown rankBy '${String(params.rankBy)}'. Valid lenses: ${lenses.join(', ')}.`,
       valid_lenses: lenses,
       suggested_action: `Pass one of: ${lenses.join(', ')} (or omit for the default 'oi').`,
-      _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
+      _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
     };
   }
 
@@ -309,7 +313,7 @@ export async function runScanTradeCall(
       suggested_action: buildQuotaSuggestedAction(noticeCtx),
       referral_hint: buildReferralHint({ from: 'limit', code: refCode }),
       ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
-      _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
+      _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
     };
   }
 
@@ -375,7 +379,7 @@ export async function runScanTradeCall(
 
   return {
     ...result,
-    _algovault: meta,
+    _algovault: withAuthState(meta, license),
     // Envelope-shared inline proof (live, cached, in-process; fail-open).
     _receipts: formatScanReceipts(getReceiptTrackRecord()),
   };

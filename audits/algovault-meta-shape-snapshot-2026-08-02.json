@@ -1,4 +1,6 @@
 {
+  "superseded_by": "algovault-meta-shape-snapshot-2026-08-18.json",
+  "superseded_reason": "AUTH-THREE-STATE-W1 CH2 added `auth` to AlgoVaultMeta (a tenth allowed key), so this file no longer describes the live shape. ONE snapshot per shape: the knowledge-bundle builder projects every audits/*-shape-snapshot-*.json into response_shapes, and both files carry the SAME `endpoint` string, so leaving this one live would publish two contradictory descriptions of the same block under one doc id. Nothing inside this file was altered \u2014 the two supersession keys are the only addition, which is the mechanism check-shape-snapshot-integrity.mjs:73-76 and tests/unit/knowledge-bundle.test.ts:124 require.",
   "endpoint": "_algovault (MCP tool response envelope metadata block)",
   "snapshot_date": "2026-08-02",
   "_meta": {

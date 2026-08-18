@@ -325,6 +325,48 @@ export interface AlgoVaultMeta {
    * bot-internal traffic. Absent the field, every existing consumer behaves identically.
    */
   quota?: QuotaState;
+  /**
+   * How the caller's credential resolved (AUTH-THREE-STATE-W1 CH2, 2026-08-18).
+   *
+   * THE WORKAROUND THIS RETIRES. A well-formed but non-existent key was served the free tier with
+   * HTTP 200 and no signal of any kind, so the only honest advice we could give a paying customer
+   * whose key had silently stopped working was "read `_algovault.quota.total`, and if it says 200
+   * your key did not work". That is a defect wearing a workaround: it infers auth state from a
+   * QUOTA number, which happens to correlate today and would stop correlating the moment the free
+   * allowance changed. This field states the fact directly.
+   *
+   * Emitted on SERVED responses only (`ABSENT`, `MALFORMED`, `RESOLVED`) — a refused call returns
+   * a JSON-RPC error and has no envelope at all. STRICTLY ADDITIVE: absent the field, every
+   * existing consumer behaves identically.
+   */
+  auth?: AuthState;
+}
+
+/**
+ * The self-describing auth block (AUTH-THREE-STATE-W1 CH2).
+ *
+ * Deliberately three members and no more. It answers "did my key work, and if not, why" and
+ * nothing else — no key material, no customer id, no upstream detail. `outcome` is the SAME
+ * vocabulary the resolver decided with (single derivation), so an agent can branch on it
+ * programmatically instead of pattern-matching prose.
+ */
+export interface AuthState {
+  /**
+   * Normally one of the three SERVED outcomes — a refused call returns a JSON-RPC error and never
+   * reaches an envelope. The two refusing outcomes are in the union anyway, and deliberately: with
+   * `AUTH_STRICT_UNKNOWN=0` an `UNKNOWN` key IS served, and the honest thing for that response to
+   * say is `UNKNOWN`. Narrowing the type would force the field to be omitted in exactly the
+   * configuration where a customer most needs it, which is the silence this field exists to end.
+   */
+  outcome: 'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED';
+  /**
+   * Whether the caller presented a credential at all. This is the member that makes MALFORMED
+   * actionable: `presented: true` with `tier: 'free'` says "you sent something, and it is not a key
+   * we issued" — which for an unexpanded `${env:AV_API_KEY}` is the whole diagnosis.
+   */
+  presented: boolean;
+  /** The tier actually served, so the caller can compare it against the one they are paying for. */
+  tier: LicenseTier;
 }
 
 /**

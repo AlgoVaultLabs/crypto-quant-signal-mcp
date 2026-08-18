@@ -1,4 +1,6 @@
 {
+  "superseded_by": "chat-knowledge-shape-snapshot-2026-08-18.json",
+  "superseded_reason": "AUTH-THREE-STATE-W1 CH2 added `_algovault.auth` to the chat_knowledge envelope so a caller can read whether their API key resolved. Superseded rather than edited in place: this file is the 2026-05-18 attestation and its allowed_keys/error_contract are unchanged history.",
   "endpoint": "/api/chat (HTTP POST) + tools/call name=chat_knowledge (MCP)",
   "wave": "AV-CHAT-MCP-W1 / C3",
   "snapshot_date": "2026-05-18",

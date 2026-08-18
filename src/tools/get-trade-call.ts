@@ -24,7 +24,7 @@ import { recordEmitSuppression } from '../lib/emit-suppressions.js';
 // import of the same module. candle-guard owns TF_INTERVAL_MS outright: this file's private
 // getIntervalMs was a THIRD copy of that table and is deleted below.
 import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from '../lib/candle-guard.js';
-import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { computeOiDelta, DEFAULT_OI_WINDOW_MS } from '../lib/oi-snapshots.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
@@ -985,7 +985,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     timestamp: Math.floor(Date.now() / 1000),
     coin,
     timeframe,
-    _algovault: meta,
+    // AUTH-THREE-STATE-W1 CH2: stamped at the RETURN, not inside the conditional quota block
+    // above — auth is orthogonal to metering and must survive every branch that skips quota.
+    _algovault: withAuthState(meta, license),
   };
 
   // P0 VERDICT-WITH-RECEIPTS-W1: attach the inline-proof block. Single-derivation —

@@ -1,4 +1,6 @@
 {
+  "superseded_by": "search-knowledge-shape-snapshot-2026-08-18.json",
+  "superseded_reason": "AUTH-THREE-STATE-W1 CH2 added `_algovault.auth` to the search_knowledge MCP tool response (the /api/search HTTP twin deliberately does NOT carry it \u2014 it is `public, max-age=300` shared-cacheable and every other member is caller-independent). Superseded rather than edited in place.",
   "endpoint": "/api/search (HTTP POST) + tools/call name=search_knowledge (MCP)",
   "wave": "AV-CHAT-MCP-W1 / C2",
   "snapshot_date": "2026-05-18",
