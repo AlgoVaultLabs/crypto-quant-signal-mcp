@@ -205,7 +205,7 @@ export function projectRegime(ind: RegimeIndicators, currentPrice: number) {
 export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketRegimeResult> {
   const coin = input.coin.toUpperCase();
   const timeframe = input.timeframe || '4h';
-  const license = input.license || { tier: 'free' as const, key: null };
+  const license = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
 
   // Quota tracking (all tiers).
   //

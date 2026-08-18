@@ -153,7 +153,7 @@ function assertQuotaAvailable(license: LicenseInfo): void {
 
 /** get_equity_call orchestrator: quota → normalize → universe → latest verdict → format. */
 export async function getEquityCall(input: { symbol: string; license?: LicenseInfo }): Promise<EquityCallOutput | EquityErrorOutput> {
-  const license = input.license || { tier: 'free' as const, key: null };
+  const license = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
   // QUOTA-CONSISTENCY-COUNT-ALL-W1 (Q2=B): read-only gate here; the charge happens AFTER the
   // verdict, so an error path never charges. PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1 (R-A)
   // removed the non-HOLD condition, mirroring get_trade_call.
@@ -199,7 +199,7 @@ export async function getEquityCall(input: { symbol: string; license?: LicenseIn
 
 /** get_equity_regime orchestrator (default symbol SPY). */
 export async function getEquityRegime(input: { symbol?: string; license?: LicenseInfo }): Promise<EquityRegimeOutput | EquityErrorOutput> {
-  const license = input.license || { tier: 'free' as const, key: null };
+  const license = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
   quotaGate(license);
   const pool = getEquityPool();
   const symbol = normalizeSymbol(input.symbol || 'SPY') || 'SPY';

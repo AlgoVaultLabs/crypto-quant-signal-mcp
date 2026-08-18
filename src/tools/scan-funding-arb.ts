@@ -188,7 +188,7 @@ const URGENCY_DECAY = 0.5;
 export async function scanFundingArb(input: ScanFundingArbInput): Promise<FundingArbResult> {
   const minSpreadBps = input.minSpreadBps ?? 5;
   const requestedLimit = input.limit ?? 10;
-  const license = input.license || { tier: 'free' as const, key: null };
+  const license = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
   const limit = getFundingArbLimit(requestedLimit, license);
 
   // Quota tracking (all tiers).

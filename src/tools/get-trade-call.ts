@@ -479,9 +479,14 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // discriminator to the throw site.
   const quota: TrackCallResult = input.internal
     ? { allowed: true, used: 0, total: 0, remaining: Infinity, overage: 0, limit: null }
-    : checkQuota(input.license || { tier: 'free', key: null });
+    // AUTH-THREE-STATE-W1 CH3: the no-license fallback is stamped ABSENT rather than left
+    // unstamped. `credentialOutcomeOf` would derive the same value, so nothing changes at run
+    // time — what changes is that the literal shape the conformance gate bans (`{tier:'free',
+    // key:null}` with no outcome) no longer exists anywhere in src/, so the ban can be absolute
+    // instead of carrying an exemption for the one site that is actually fine.
+    : checkQuota(input.license || { tier: 'free', key: null, outcome: 'ABSENT' });
   if (!quota.allowed) {
-    const licenseForReset = input.license || { tier: 'free' as const, key: null };
+    const licenseForReset = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
     // OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH2 (instance 9): ONE discriminator, read once and
     // used for BOTH the `wall` noun and the horizon underneath it. Before this, `wall` was derived
     // correctly right here while `resetAtMs` stayed unconditionally monthly — so an agent branching
@@ -845,7 +850,7 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
   // Increment the quota counter on every successful verdict (R-A — HOLD included; see the
   // note further down for why the branch that used to sit here is gone).
   // Internal grid-refresh calls skip the counter entirely.
-  const license = input.license || { tier: 'free' as const, key: null };
+  const license = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
   // OPS-QUOTA-EXHAUSTION-NOTICE-W1: keep the POST-charge meter reading for `_algovault.quota`.
   // `quota` above is the pre-charge `checkQuota` read, so on a billable call it is one behind —
   // an advance-warning field that under-reports by one is exactly the kind of off-by-one a

@@ -242,7 +242,7 @@ export function checkInternalBypass(
     headers['x-algovault-internal-key'] || headers['X-AlgoVault-Internal-Key'];
   if (!supplied) return null;
   if (supplied !== expected) return null;
-  return { tier: 'internal', key: null };
+  return { tier: 'internal', key: null, outcome: 'RESOLVED' };
 }
 
 /**
@@ -284,7 +284,7 @@ export async function resolveLicense(
   // credential they presented, just not an API key. Stamped RESOLVED so `withAuthState` has an
   // outcome to report for exactly the tiers that have no quota to report (CH2), and so the refusal
   // predicate can never see an unstamped license on the highest-trust path in the system.
-  if (bypass) return { license: { ...bypass, outcome: 'RESOLVED' } };
+  if (bypass) return { license: bypass };
 
   // Tier 1: x402 payment proof (only if configured)
   if (isX402Configured()) {

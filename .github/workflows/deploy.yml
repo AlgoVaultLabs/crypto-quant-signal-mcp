@@ -96,6 +96,18 @@ jobs:
       - name: Docs structural drift canary (build_docs --check)
         run: node scripts/build_docs.mjs --check
 
+      # AUTH-THREE-STATE-W1 CH3 — credential-outcome conformance. Four not-found paths once
+      # returned a byte-identical `{tier:'free', key:null}`, so a paying customer with a typo'd or
+      # revoked key was served the anonymous free tier at HTTP 200 with no way to tell. CH1-CH3
+      # made the states distinguishable; this is what makes writing the collapse again a BUILD
+      # failure rather than a code-review catch. Emits CREDENTIAL_OUTCOME_VERDICT and fails CLOSED
+      # (INDETERMINATE = exit 3) on an unreadable or empty corpus. --self-test runs FIRST, so a
+      # gate that has lost its teeth cannot green the build.
+      - name: Credential-outcome conformance gate (fail-closed)
+        run: |
+          node scripts/check-credential-outcome-conformance.mjs --self-test
+          node scripts/check-credential-outcome-conformance.mjs
+
       # build_landing --check also covers build_tools_page + build_channel_pages (both invoked by
       # build:landing) — the /tools index + the 3 channel hub pages (/mcp /rest-api /webhooks) stay
       # in sync with their SoTs (NAV-PLATFORM-GENERATOR-W1 + CHANNEL-HUB-PAGES-GEO-W1).

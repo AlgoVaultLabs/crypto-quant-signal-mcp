@@ -45,9 +45,11 @@
     "quota:surface:check": "tsc && node scripts/check-quota-surface-conformance.mjs",
     "quota:surface:selftest": "node scripts/check-quota-surface-conformance.mjs --self-test",
     "scan:digest:parity:live": "node scripts/check-scan-digest-parity.mjs --live",
-    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-source-greppable.mjs --check && node scripts/check-monitoring-schedules.mjs && node scripts/check-shared-state.mjs --self-test && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/check-quota-surface-conformance.mjs && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check && npm run entitlement:channels:check && npm run idempotency:helper:check",
+    "prepublishOnly": "npm run build && node scripts/snapshot_capabilities.mjs --live && node scripts/check-source-greppable.mjs --check && node scripts/check-monitoring-schedules.mjs && node scripts/check-shared-state.mjs --self-test && node scripts/check-feature-registry-drift.mjs --check && node scripts/check-rank-metrics-parity.mjs --check && node scripts/check-scan-digest-parity.mjs --check && node scripts/check-quota-surface-conformance.mjs && node scripts/build_docs.mjs --check && node scripts/build_nav.mjs --check && node scripts/build_analytics.mjs --check && node scripts/build_asset_versions.mjs --check && npm run entitlement:channels:check && npm run idempotency:helper:check && npm run credential:outcome:check",
     "entitlement:channels:check": "node scripts/check-entitlement-channel-drift.mjs",
-    "idempotency:helper:check": "node scripts/check-idempotency-helper.mjs"
+    "idempotency:helper:check": "node scripts/check-idempotency-helper.mjs",
+    "credential:outcome:check": "node scripts/check-credential-outcome-conformance.mjs",
+    "credential:outcome:selftest": "node scripts/check-credential-outcome-conformance.mjs --self-test"
   },
   "keywords": [
     "mcp",

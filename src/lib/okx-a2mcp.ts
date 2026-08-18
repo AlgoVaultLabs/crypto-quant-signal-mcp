@@ -94,7 +94,7 @@ export interface OkxA2mcpProvider {
 }
 
 /** x402 tier for a paid caller (identical to what resolveLicense returns on a paid x402 call). */
-const X402_LICENSE: LicenseInfo = { tier: 'x402', key: null };
+const X402_LICENSE: LicenseInfo = { tier: 'x402', key: null, outcome: 'RESOLVED' };
 
 /** Build a realistic x402-v2 402 body for an X Layer / USDT0 route (marker-tagged for stub). */
 function buildXLayer402Body(tool: string, payTo: string, stub: boolean): Record<string, unknown> {

@@ -96,7 +96,36 @@
         "message": "string"
       },
       "fires_on": "unexpected error in chat engine path"
-    }
+    },
+    "AUTH_KEY_UNKNOWN": {
+      "http_status": 401,
+      "shape": {
+        "ok": false,
+        "code": "string",
+        "error": "string",
+        "suggested_action": "string"
+      },
+      "surface": "POST /api/chat only. The chat_knowledge MCP tool needs no guard of its own \u2014 MCP tools are reachable ONLY through app.all('/mcp'), which refuses before dispatch, so a second one there would be a duplicate derivation of a decision already made.",
+      "note": "This is the `authRequired` body shape (webhook-api.ts), EXTENDED with new `code` values rather than a second shape invented for this route. A REST surface, so 401 \u2014 /mcp answers 200 + a JSON-RPC error instead, because a 401 there starts MCP OAuth discovery against a server we do not run.",
+      "code": "auth_key_unknown",
+      "fires_on": "a well-formed API key (av_live_/av_free_ + 24 hex) that exists in neither Stripe nor free_keys. NOT retryable \u2014 a settled fact.",
+      "precedes_metering": "Yes. The refusal runs before chatQuotaApiKey/rateLimit.check, so a refused caller is never charged the chat meter for being refused."
+    },
+    "AUTH_UPSTREAM_INDETERMINATE": {
+      "http_status": 401,
+      "shape": {
+        "ok": false,
+        "code": "string",
+        "error": "string",
+        "suggested_action": "string"
+      },
+      "surface": "POST /api/chat only. The chat_knowledge MCP tool needs no guard of its own \u2014 MCP tools are reachable ONLY through app.all('/mcp'), which refuses before dispatch, so a second one there would be a duplicate derivation of a decision already made.",
+      "note": "This is the `authRequired` body shape (webhook-api.ts), EXTENDED with new `code` values rather than a second shape invented for this route. A REST surface, so 401 \u2014 /mcp answers 200 + a JSON-RPC error instead, because a 401 there starts MCP OAuth discovery against a server we do not run.",
+      "code": "auth_upstream_indeterminate",
+      "fires_on": "a well-formed key we could not verify because the billing upstream was unreachable or unconfigured. RETRYABLE \u2014 it is the absence of an answer, never a rejection, and the copy never says 'invalid'.",
+      "precedes_metering": "Yes, same ordering."
+    },
+    "_kill_switch": "AUTH_STRICT_UNKNOWN=0 restores the pre-wave behaviour on every surface at once (both codes above stop firing and the caller is served the free tier). Default is ON."
   },
   "cache_contract": {
     "in_memory_ttl_ms": 86400000,

@@ -60,7 +60,7 @@ import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { BINANCE_OVERRIDES } from '../lib/coin-overrides.js';
 
 // Internal license bypasses free-tier gating
-const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
+const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed', outcome: 'RESOLVED' };
 
 // Per-exchange delay between API calls (ms).
 // OPS-SHADOW-PIPELINE-W1 V2 (2026-06-05): the 12 shadow-venue values are now

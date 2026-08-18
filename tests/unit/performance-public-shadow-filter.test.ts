@@ -128,7 +128,11 @@ describe('/api/performance-shadow endpoint shape — auth-gated, internal keys s
 
   it('auth-gates the route (resolveOwner + authRequired before stats)', () => {
     expect(indexTs).toMatch(/app\.get\('\/api\/performance-shadow', async \(req, res\)/);
-    expect(indexTs).toMatch(/authRequired\(res, 'An API key is required\.'\)/);
+    // AUTH-THREE-STATE-W1 CH3 re-anchored this ONE literal. The gate is unchanged and so is its
+    // message: `refuseOwner` branches on the credential outcome and falls back to exactly this
+    // `authRequired(res, 'An API key is required.')` for ABSENT/MALFORMED. What it adds is that a
+    // caller who DID send a key is no longer told they forgot to.
+    expect(indexTs).toMatch(/refuseOwner\(res, license, 'An API key is required\.'\)/);
   });
 
   it('still emits { venues, updated_at } envelope', () => {

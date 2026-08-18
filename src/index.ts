@@ -16,7 +16,7 @@ import { z } from 'zod';
 import type { ExchangeId, LicenseInfo } from './types.js';
 // AUTH-THREE-STATE-W1 CH2: the credential gate for /mcp. `decideRefusal` is the pure decision;
 // `credentialOutcomeOf` is the single projection every consumer reads.
-import { decideRefusal } from './lib/credential-refusal.js';
+import { decideRefusal, isRefusingOutcome, isStrictUnknownEnabled, refuseCredentialHttp } from './lib/credential-refusal.js';
 import { credentialOutcomeOf } from './lib/credential-outcome.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
@@ -32,7 +32,7 @@ import {
   ADMIN_UNAUTHORIZED_API,
 } from './lib/admin-auth.js';
 import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
-import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
+import { registerWebhookRoutes, resolveOwner, authRequired, refuseOwner } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
 import { startDeliveryWorker, startHealthProbeSweep } from './lib/webhook-delivery.js';
 import { startScanDigestScheduler, stopScanDigestScheduler } from './lib/scan-digest-scheduler.js';
@@ -2819,7 +2819,10 @@ async function startHttp() {
     // (Mr.1 confirmed auth-gate; prior REVERT-DASHBOARD-SHADOW-COPY-W1).
     const { license } = await resolveOwner(req);
     if (!license.key) {
-      return authRequired(res, 'An API key is required.');
+      // AUTH-THREE-STATE-W1 CH3: same owner-resolution and the SAME 401 as the webhook routes
+      // (single source), now branching on outcome so an unresolvable key is not told it forgot to
+      // send one. The ABSENT/MALFORMED message is preserved verbatim.
+      return refuseOwner(res, license, 'An API key is required.');
     }
     try {
       const shadow = await listVenues('shadow');
@@ -3487,6 +3490,26 @@ async function startHttp() {
       // `ip:unknown` quota bucket AND metering paying customers as free. Resolving here (the
       // same helpers /mcp uses) fixes the quota key and the tier together.
       const { license } = await resolveLicense(req.headers as Record<string, string | undefined>);
+      // AUTH-THREE-STATE-W1 CH3 — the chat wall's credential gate.
+      //
+      // `chat_knowledge` (the MCP tool) needs no guard of its own: MCP tools are reachable ONLY
+      // through `app.all('/mcp')`, which refuses before dispatch, so adding a second one here
+      // would be a duplicate derivation of a decision already made. This HTTP twin is the
+      // surface that bypasses that gate entirely, which is why the refusal lands here.
+      //
+      // It precedes the quota-key derivation and the rate-limit check deliberately: refusal comes
+      // before metering, so a refused caller is never charged for being refused. A REST route, so
+      // a 401 — not /mcp's 200 + JSON-RPC error.
+      //
+      // (Identifiers deliberately spelled out in prose rather than in backticks here:
+      // tests/unit/chat-rate-limit.test.ts slices this route from its start to the FIRST
+      // occurrence of the quota-key helper's NAME, so writing that name in a comment above the
+      // line it describes silently shrinks that test's window and reddens it. Caught on the first
+      // suite run after this block landed.)
+      {
+        const outcome = credentialOutcomeOf(license);
+        if (isRefusingOutcome(outcome) && isStrictUnknownEnabled()) return refuseCredentialHttp(res, outcome);
+      }
       const ipHash = hashIp(clientIp(req) || 'unknown');
       const { index, chatEngine, rateLimit, llm } = await getChatStack();
       _analyticsProvider = llm.name;
