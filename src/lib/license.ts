@@ -425,17 +425,32 @@ async function resolveFromApiKeyAsync(authHeader?: string): Promise<LicenseInfo>
   // Stripe. A KNOWN free key tracks BY KEY (durable identity for the +500 bonus);
   // an UNKNOWN av_free_ key default-denies to keyless free.
   if (key.startsWith(FREE_KEY_PREFIX)) {
-    const fk = await lookupFreeKey(key);
-    // AUTH-THREE-STATE-W1 CH1: a store MISS is now labelled by shape, so a revoked or mistyped
-    // free key is UNKNOWN (refusable) while an `av_free_`-prefixed string that could never have
-    // been minted is MALFORMED (always served).
+    // AUTH-THREE-STATE-W1 — A STORE FAULT IS NOT A MISS, on this lane either.
     //
-    // ⚠️ A store FAULT is still indistinguishable from a miss on this lane — `lookupFreeKey`
-    // throws on an unreachable DB, which today surfaces as a 500 and therefore never reaches this
-    // classification at all. Making that throw an INDETERMINATE is the right end state (it is the
-    // same law this wave applies to Stripe at the branch below), but it turns a 500 into a served
-    // response, which is a ROUTE BEHAVIOUR CHANGE and CH1's acceptance criteria forbid one. It
-    // lands in CH2 beside the refusal path that gives it somewhere honest to go.
+    // `lookupFreeKey` THROWS when the store is unreachable, and an unhandled throw here surfaced
+    // as a 500. That is loud rather than silent, so it was never the reported defect — but it left
+    // the free-key lane unable to say the one thing this wave exists to say, and it made the
+    // resolver's answer depend on ambient infrastructure: WITH a database it answers UNKNOWN,
+    // WITHOUT one it dies. CI proved that concretely — a case asserting UNKNOWN passed locally
+    // against SQLite and failed on a runner that has no database at all.
+    //
+    // Same law as the Stripe branch below: could-not-ask is INDETERMINATE and RETRYABLE, never a
+    // settled "no such key". Shape stays the discriminant and is still knowable without the store,
+    // so an `av_free_`-prefixed string that could never have been minted is MALFORMED and served
+    // whatever the store is doing.
+    let fk: Awaited<ReturnType<typeof lookupFreeKey>>;
+    try {
+      fk = await lookupFreeKey(key);
+    } catch (err) {
+      if (classifyCredential(key) !== 'WELL_FORMED') {
+        return { tier: 'free', key, outcome: 'MALFORMED' };
+      }
+      recordIndeterminate('free_key_lookup', 'free-key store unreachable');
+      console.error('[license] free-key lookup failed:', err instanceof Error ? err.message : err);
+      return { tier: 'free', key, indeterminate: true, outcome: 'INDETERMINATE', retryable: true };
+    }
+    // A store MISS is labelled by shape: a revoked or mistyped free key is UNKNOWN (refusable),
+    // while a string that could never have been minted is MALFORMED (always served).
     if (!fk) return { tier: 'free', key: null, outcome: unresolvedOutcome(key) };
     // OPS-QUOTA-CLAIM-ALIAS-W1 CH1: the adopted bucket is resolved HERE, on the async path that
     // can afford a DB read, and carried on the license so `deriveTrackerKey` stays lookup-free.

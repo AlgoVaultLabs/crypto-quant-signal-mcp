@@ -1,6 +1,17 @@
 /**
  * AUTH-THREE-STATE-W1 CH2 — refusal on `/mcp`, and the self-describing envelope.
  *
+ * ONE SEAM, AND ONLY ONE: the free-key STORE's answer. Everything else — the resolver, the
+ * refusal decision, the seam the route calls — is the real thing.
+ *
+ * The first version of this suite mocked nothing at all and read UNKNOWN off a live `av_free_`
+ * miss. That passed locally against SQLite and FAILED IN CI, where there is no database: the
+ * lookup throws, and "the store is down" is not "no such key". The resolver now says
+ * INDETERMINATE there, which is correct — and it means an environment with no database can no
+ * longer produce an UNKNOWN at all. Pinning the STORE's answer (a row, no row, or a fault) is
+ * therefore the minimum needed to make all three outcomes reachable on any machine, and it pins
+ * the one thing that is genuinely ambient rather than anything about the logic under test.
+ *
  * NO STRIPE MOCK, DELIBERATELY. With `STRIPE_SECRET_KEY` unset — the state of every test run and
  * of any environment that has lost its billing config — `validateApiKey` returns
  * `{valid:false, indeterminate:true}` (`stripe.ts:300`). That is not a limitation here, it IS the
@@ -21,7 +32,7 @@
  * the bottom. A pure function nobody calls is the same defect one layer up, and re-implementing
  * the branch here instead would be the hand-built mirror `src/lib/quota-surfaces.ts:25-26` forbids.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +55,15 @@ import { withAuthState } from '../src/lib/tier-warning.js';
 import { formatChatKnowledgeResponse } from '../src/lib/chat-knowledge-formatter.js';
 import { formatSearchKnowledgeResponse } from '../src/lib/search-knowledge-formatter.js';
 import { runScanTradeCall } from '../src/tools/scan-trade-calls.js';
+import { lookupFreeKey } from '../src/lib/free-keys-store.js';
+
+const mockFreeKey = vi.mocked(lookupFreeKey);
+
+// Keep every other export real — only the store's ANSWER is pinned.
+vi.mock('../src/lib/free-keys-store.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/free-keys-store.js')>()),
+  lookupFreeKey: vi.fn(async () => null),
+}));
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HEX24 = (c: string) => c.repeat(24);
@@ -89,6 +109,9 @@ beforeEach(() => {
   toolInvocations = 0;
   delete process.env.AUTH_STRICT_UNKNOWN;
   delete process.env.CQS_API_KEY;
+  // Default: the store answers "no such row" — a FACT, which makes UNKNOWN reachable anywhere.
+  mockFreeKey.mockReset();
+  mockFreeKey.mockResolvedValue(null);
 });
 afterEach(() => { delete process.env.AUTH_STRICT_UNKNOWN; });
 
@@ -159,6 +182,24 @@ describe('refusal', () => {
     // paying customer their key is bad when we simply could not ask.
     expect(r.json?.error?.message?.toLowerCase()).not.toContain('invalid');
     expect(r.json?.error?.data?.suggested_action).toContain('not rejected');
+  });
+
+  it('(4b) a free-key STORE fault is INDETERMINATE, not UNKNOWN — could-not-ask is not "no such key"', async () => {
+    // The lane that took the deploy gate red. `lookupFreeKey` throws when the store is
+    // unreachable; treating that as a miss would refuse a real key PERMANENTLY (not retryable)
+    // for the duration of a database blip — the exact collapse this wave removes from the Stripe
+    // lane, left open on this one.
+    mockFreeKey.mockRejectedValue(new Error('free-key store unreachable'));
+    const r = await post(bearer(UNKNOWN_KEY), call(41));
+    expect(r.json?.error?.code).toBe(-32004);
+    expect(r.json?.error?.data?.retryable).toBe(true);
+  });
+
+  it('(4c) …and a MALFORMED av_free_ string is SERVED even then — shape needs no store', async () => {
+    mockFreeKey.mockRejectedValue(new Error('free-key store unreachable'));
+    const r = await post(bearer('av_free_nothex'), call(42));
+    expect(r.json?.error).toBeUndefined();
+    expect(r.json?.result?.content?.[0]?.text).toBe('pong');
   });
 
   it('(5) UNDER THE SAME OUTAGE, a MALFORMED credential is still SERVED', async () => {
