@@ -14,7 +14,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFile } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -181,5 +181,74 @@ describe('the CLI maps each verdict to the right EXIT CODE (end to end, against 
   it('emits exactly ONE terminal verdict token per run', async () => {
     const { out } = await runGate(['--live', unavailable.base]);
     expect(out.match(/DOCS_SAMPLES_LIVE_VERDICT=[A-Z]+/g)).toHaveLength(1);
+  });
+});
+
+/**
+ * DOCS-SAMPLE-EXECUTABLE-W1 CH3 — the wiring, and the two decisions that must not erode.
+ *
+ * 🛑 ASSERT THE EXEMPTION, DO NOT MERELY DECLARE IT. The inventory row is the first of 65 with no
+ * `host`, and that is deliberate: the canary runs in CI, so there is nothing on a box to reconcile
+ * against. But `owns_row()` reduces to `entries_for_host()`, which falls back to
+ * `row['host'] in labels` — so a hostless row is owned by NO reconciler instance and can never
+ * raise HASH_DRIFT / ORPHAN / DARK / NO_BACKUP. Declared, that is a choice. Undeclared, it is a row
+ * that looks like coverage and is not. If a later wave adds a host, these assertions fire and force
+ * the decision instead of quietly re-orphaning the row.
+ */
+describe('CH3 — the gate is wired, and the inventory row declares why nothing reconciles it', () => {
+  const inventory = JSON.parse(readFileSync(join(ROOT, 'ops/monitoring/monitoring-inventory.json'), 'utf8'));
+  const row = inventory.artifacts.find((r: { id: string }) => r.id === 'docs-samples-live-canary');
+
+  it('the row exists and points at the committed script', () => {
+    expect(row, 'docs-samples-live-canary row is missing from the inventory').toBeTruthy();
+    expect(row.artifact).toBe('scripts/check-docs-samples-live.mjs');
+    expect(row.criticality).toBe('advisory'); // a stale sample is not a prod outage
+  });
+
+  it('carries a reconcile_exempt_reason — an exemption without a reason gets "fixed" by a later wave', () => {
+    expect(typeof row.reconcile_exempt_reason).toBe('string');
+    expect(row.reconcile_exempt_reason.length).toBeGreaterThan(80);
+    // check-monitoring-schedules.mjs:248-249 treats an exemption without a reason as INDETERMINATE.
+    expect(row.reconcile_exempt_reason).toMatch(/not host-installed|no host copy/i);
+  });
+
+  it('stays HOSTLESS — adding a host must trip this, not silently re-orphan the row', () => {
+    expect(row.host, 'row gained a `host`: it is now owned by a reconciler, so the exemption must be removed in the same wave').toBeUndefined();
+    expect(row.installed_at).toBeUndefined();
+    expect(row.schedule).toBeUndefined();   // event-triggered, not cron
+    expect(row.alert_ids).toBeUndefined();  // no alerting leg — see below
+  });
+
+  it('its sha256 matches the committed script', async () => {
+    const { createHash } = await import('node:crypto');
+    const sha = createHash('sha256').update(readFileSync(GATE)).digest('hex');
+    expect(row.sha256, 'inventory sha256 is stale — regenerate it in the same commit as the script').toBe(sha);
+  });
+
+  it('deploy.yml runs the gate and branches on the TOKEN, never the bare exit code', () => {
+    const wf = readFileSync(join(ROOT, '.github/workflows/deploy.yml'), 'utf8');
+    expect(wf).toContain('node scripts/check-docs-samples-live.mjs');
+    expect(wf).toMatch(/DOCS_SAMPLES_LIVE_VERDICT=PASS\)/);
+    expect(wf).toMatch(/DOCS_SAMPLES_LIVE_VERDICT=INDETERMINATE\)/); // fails OPEN, warns, does not block
+  });
+
+  it('prepublishOnly runs the SELF-TEST only, never --live', () => {
+    // A publish must not depend on network reachability.
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    expect(pkg.scripts.prepublishOnly).toContain('docs:samples:selftest');
+    expect(pkg.scripts.prepublishOnly).not.toContain('docs:samples:live');
+    expect(pkg.scripts['docs:samples:selftest']).toContain('--self-test');
+  });
+
+  it('NO Telegram wiring reaches CI — the cooldown cannot survive an ephemeral runner', () => {
+    // send_telegram.sh owns the 24h cooldown via a marker file under /opt/algovault-monitoring.
+    // A GHA runner starts clean every run, so an alert from CI would fire on every failing deploy —
+    // shipping the alert without the safeguard CLAUDE.md requires of it. The named red step is the
+    // signal instead. This assertion keeps the count at zero.
+    const wfDir = join(ROOT, '.github/workflows');
+    const hits = readdirSync(wfDir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .filter((f) => /send_telegram|api\.telegram\.org|TELEGRAM_BOT_TOKEN/i.test(readFileSync(join(wfDir, f), 'utf8')));
+    expect(hits, `a workflow now wires Telegram: ${hits.join(', ')} — the cooldown cannot hold in CI`).toEqual([]);
   });
 });

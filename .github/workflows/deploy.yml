@@ -785,3 +785,38 @@ jobs:
             sleep 5
           done
           node scripts/check-mcp-stateless.mjs
+
+      # DOCS-SAMPLE-EXECUTABLE-W1 CH3 — execute the published docs samples against the live API.
+      #
+      # `build_docs --check` compares BYTES, so a docs partial can assert anything and stay green.
+      # That is how "Streamable HTTP needs a 3-step handshake" survived for months on the public
+      # page while the canary above machine-asserted the opposite on every deploy. This step runs
+      # the samples.
+      #
+      # Gate on the TOKEN, never the bare exit code: the script fails OPEN on transport and on any
+      # 502/503/504 (INDETERMINATE, exit 3), and CLOSED only on a parsed response missing a
+      # documented key (FAIL, exit 1). An advisory canary must not fail a deploy because the
+      # container was still coming up — the health-wait loop above is reused for the same reason.
+      #
+      # No Telegram leg, deliberately: the wrapper's 24h cooldown is a marker file under
+      # /opt/algovault-monitoring, which an ephemeral runner cannot persist, so an alert from here
+      # would ship without the safeguard CLAUDE.md requires of it. This named red step IS the
+      # operator signal, and it prints the diverged sample with its docs-src/ file.
+      - name: Post-deploy docs-sample execution canary (fail-open on transport)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 https://api.algovault.com/health >/dev/null 2>&1; then
+              echo "health OK after ${i} attempt(s)"; break
+            fi
+            sleep 5
+          done
+          set +e
+          node scripts/check-docs-samples-live.mjs | tee /tmp/docs_samples.log
+          set -e
+          TOKEN=$(grep -oE 'DOCS_SAMPLES_LIVE_VERDICT=[A-Z]+' /tmp/docs_samples.log | tail -1)
+          echo "docs-samples verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          case "$TOKEN" in
+            DOCS_SAMPLES_LIVE_VERDICT=PASS) echo "docs samples match the live API" ;;
+            DOCS_SAMPLES_LIVE_VERDICT=INDETERMINATE) echo "::warning::docs-sample canary could not reach the API — not a divergence signal" ;;
+            *) echo "::error::a published docs sample no longer matches the live API — see the probe list above"; exit 1 ;;
+          esac
