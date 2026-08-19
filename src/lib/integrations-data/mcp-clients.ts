@@ -211,7 +211,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
       whatYouGet:
         'Raw JSON-RPC. For developers integrating into bots, scripts, or non-MCP services.',
       walkthroughSummary: 'Plain HTTP / curl &mdash; advanced testing',
-      walkthroughHtml: `      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
+      walkthroughHtml: `      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. The transport is stateless, so a single POST of <em>tools/call</em> works: no <em>initialize</em>, no session id. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the one-shot call, the two <code class="text-xs bg-navy-800 px-1 rounded">Accept</code> types you must send, and the optional session handshake.</p>
       <p><strong>One-shot smoke (free tier, no auth):</strong></p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>

@@ -49,10 +49,17 @@ describe('CH2 — verbatim code reuse from docs (Rule 3, source don’t invent)'
       for (const pre of pres) expect(d.includes(pre)).toBe(true);
     });
   }
-  it('A1 — /mcp reuses the MCP config + handshake; /rest-api reuses x402 (NOT the MCP handshake as its method)', () => {
+  it('A1 — /mcp reuses the MCP config + curl block; /rest-api reuses x402 (NOT the MCP handshake as its method)', () => {
     const mcp = page('mcp');
     expect(mcp).toMatch(/mcpServers/); // #connect-mcp config
-    expect(mcp).toMatch(/initialize/); // #testing-with-curl MCP-over-HTTP handshake
+    // DOCS-SAMPLE-EXECUTABLE-W1: the matcher moved from /initialize/ to the ONE-SHOT block, and
+    // the reason is the point of this wave. The transport is stateless, so the first <pre> in
+    // #testing-with-curl is now a single `tools/call` POST with no handshake — and
+    // build_channel_pages extracts exactly that first block, so `initialize` no longer reaches
+    // this page at all. The INTENT is unchanged and is what this line still asserts: /mcp reuses
+    // the MCP-over-HTTP curl block from docs.html rather than inventing its own.
+    expect(mcp).toMatch(/"method":\s*"tools\/call"/); // #testing-with-curl one-shot MCP-over-HTTP call
+    expect(mcp).toMatch(/text\/event-stream/);        // …carrying both required Accept types
     const rest = page('rest-api');
     expect(rest).toMatch(/x402-fetch|wrapFetchWithPayment/); // #x402 keyless pay-per-call
     // the REST connect CODE must be the x402 block, not the MCP initialize handshake

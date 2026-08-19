@@ -48,6 +48,26 @@
  * before the count and 4 after it, zero other lines touched — verified before regenerating
  * rather than after. The second clause is not decoration: R-B added a SECOND meter, and copy
  * naming only the monthly one would understate the wall a free caller actually hits first.
+ *
+ * FIXTURE MAINTENANCE — DOCS-SAMPLE-EXECUTABLE-W1 (CH1, 2026-08-19): regenerated to absorb the
+ * correction of a FALSE claim in `mcp-clients.ts` `walkthroughHtml`. It told non-MCP integrators
+ * that "Streamable-HTTP MCP requires a 3-step handshake: initialize -> notifications/initialized
+ * -> tools/call". That was true until OPS-MCP-SESSION-RESILIENCE-W1 made the transport stateless;
+ * a single POST of `tools/call` has returned a verdict ever since, and `check-mcp-stateless.mjs`
+ * has been asserting exactly that, green, on every deploy beside a page saying the opposite.
+ * The word-level diff against the old fixture was EXACTLY three contiguous regions, all inside
+ * that one sentence (2837 -> 2858 words), verified BEFORE regenerating rather than after:
+ *   1. "Streamable-HTTP MCP requires"  ->  "The transport is stateless, so"
+ *   2. "3-step handshake: initialize -> notifications/initialized -> tools/call."
+ *        ->  "single POST of tools/call works: no initialize, no session id."
+ *   3. "full sequence.</p>"  ->  "one-shot call, the two Accept types you must send, and the
+ *      optional session handshake.</p>"
+ * Nothing else in the surface moved.
+ *
+ * Worth naming, because it is this wave's whole thesis: this fixture could never have caught the
+ * claim rotting. It asserts BYTES, so it goes red only once someone edits the sentence — it has
+ * no opinion on whether the sentence is TRUE. That hole is what
+ * `scripts/check-docs-samples-live.mjs` (CH2) closes by executing the samples.
  */
 
 import { describe, it, expect } from 'vitest';

@@ -302,29 +302,11 @@ tailwind.config = {
       <div class="ch-code">
 <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 
-# 1. initialize — captures session-id from response headers
-SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $AV_KEY" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
-  | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
-
-# 2. notify "initialized" (required by MCP protocol)
 curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $AV_KEY" \
   -H "Accept: application/json, text/event-stream" \
-  -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
-
-# 3. now call tools/call
-curl -sS -X POST https://api.algovault.com/mcp \
-  -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"BTC","timeframe":"15m","exchange":"BINANCE"}}}'</code></pre>
         <a class="ch-code-ref" href="https://algovault.com/docs.html#testing-with-curl">Full reference in the docs →</a>
       </div>
 

@@ -502,7 +502,7 @@ function renderEmailHtml({ heading, intro, apiKey, tier, referral }: RenderArgs)
   }
 }</pre>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Then ask Claude: <em>"Get me a trade call for SOL on the 5-minute timeframe."</em></p>
-        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Want to test with raw HTTP/curl instead? See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#0969da;text-decoration:none">3-step handshake guide</a> in our docs.</p>
+        <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the <a href="https://algovault.com/docs.html#testing-with-curl" style="color:#0969da;text-decoration:none">curl guide</a> in our docs.</p>
         <p style="font-size:13px;line-height:1.5;color:#1f2328;margin:0 0 12px">Need to find your key later, switch plans, update your card, or cancel? Visit <a href="https://api.algovault.com/account" style="color:#0969da;text-decoration:none">api.algovault.com/account</a>.</p>
         <p style="font-size:13px;line-height:1.5;color:#656d76;margin:0">Questions? Reply to this email or write to <a href="mailto:admin@algovault.com" style="color:#0969da;text-decoration:none">admin@algovault.com</a>.</p>
       </td></tr>
@@ -545,7 +545,7 @@ Terms: ${referral.termsUrl}
 
 Then ask Claude: "Get me a trade call for SOL on the 5-minute timeframe."
 
-Want to test with raw HTTP/curl? See the 3-step handshake guide:
+Prefer raw HTTP/curl? One POST returns a verdict, no handshake needed. See the curl guide:
 https://algovault.com/docs.html#testing-with-curl
 
 Need to find your key later, switch plans, update your card, or cancel?
