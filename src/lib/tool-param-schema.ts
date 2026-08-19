@@ -56,14 +56,25 @@
  */
 
 import type { ExchangeId } from '../types.js';
-import { TIMEFRAMES, PROMOTED_VENUE_IDS } from './capabilities.js';
+import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
 
 /**
- * Every venue `get_trade_call` / `get_trade_signal` / `get_market_regime` accept.
+ * Every venue that has an ADAPTER — the declared set. NOT the set the public API accepts.
  *
- * Order = the published `tools/list` enum order (see the header). EDGEX and WEEX have adapters
- * and are accepted, but are not in the promoted scan universe — which is exactly why the two sets
- * must not be conflated.
+ * Three tiers, and conflating any two of them is how `/docs` came to advertise a retired venue:
+ *
+ *   `ExchangeId`        an adapter exists                        (type-level, 17)
+ *   `VENUE_IDS_ALL`     declared here                            (runtime, 17 — this array)
+ *   `PUBLIC_VENUE_IDS`  promoted → accepted → documented         (runtime, 15 — below)
+ *
+ * EDGEX and WEEX live in the gap. Both have working adapters and both are still SEEDED, so their
+ * history is not orphaned; neither is publicly callable. Order is the published `tools/list` enum
+ * order, which is load-bearing — see the header.
+ *
+ * _(Corrected 2026-08-19 DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1. This previously read
+ * "EDGEX and WEEX have adapters and are accepted", which was true when written and became false
+ * the moment the public enums narrowed. A docblock asserting a fact about a sibling declaration
+ * is the same hand-authored claim this module exists to retire, one level up.)_
  */
 export const VENUE_IDS_ALL = [
   'HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC',
@@ -83,6 +94,38 @@ const _venueIdsCoverExchangeId: _AllVenuesAreExchangeIds = true;
 const _exchangeIdCoversVenueIds: _AllExchangeIdsAreVenues = true;
 void _venueIdsCoverExchangeId;
 void _exchangeIdCoversVenueIds;
+
+/**
+ * The venues the PUBLIC API accepts — and therefore the only ones `/docs` may name.
+ *
+ * WHY THIS EXISTS. `DOCS-PARAM-SCHEMA-PROJECTION-W1` projected `VENUE_IDS_ALL` into the published
+ * parameter tables, so `/docs` began advertising **EDGEX** (`venue_status: retired`, klines
+ * ~200×timeframe stale, WR 25.2% — `INVESTIGATE-EDGEX-WR-W1`) and **WEEX** (`shadow`) as
+ * selectable. A reader picking EDGEX off the table got a stale verdict from a venue we stopped
+ * supporting. The projection was correct; the SET it projected was the wrong one.
+ *
+ * The fix is a SCOPE fix, not a docs filter. Filtering the docs while the API still accepted 17
+ * would have forced `check-docs-samples-live` P7 down from set-equality to a subset check —
+ * weakening a gate shipped two waves ago to hide a scope problem. Narrowing what the API ACCEPTS
+ * makes docs and schema agree at 15 with no filter and no weakened gate.
+ *
+ * 🛑 DERIVED, never subtracted. `PROMOTED_VENUE_IDS` ← `EXCHANGES` is the promotion registry, so a
+ * venue joins the public API, the docs tables and the x402 bazaar listing from ONE registry edit,
+ * and leaves the same way. Writing this as `VENUE_IDS_ALL` minus a hardcoded `['EDGEX','WEEX']`
+ * would look equivalent and re-publish venue 18 the day it is wired — the same defect one layer
+ * down, which is precisely how the first version of this bug was written.
+ */
+export const PUBLIC_VENUE_IDS = PROMOTED_VENUE_IDS;
+
+/**
+ * The same set, shaped for `z.enum`, which requires a non-empty TUPLE while `PROMOTED_VENUE_IDS`
+ * is a readonly array. The cast lives HERE, once, so the three call sites in `src/index.ts` stay
+ * identical to each other — a per-site cast is four places to get the element type wrong, and
+ * widening it to `[string, ...string[]]` (the cast that compiles first) silently erases the
+ * literal union, so every handler's `exchange` degrades to `string` and stops type-checking
+ * against `ExchangeId`. `src/tools/scan-trade-calls.ts:87` uses the same idiom.
+ */
+export const PUBLIC_VENUE_ENUM = PUBLIC_VENUE_IDS as [PromotedVenueId, ...PromotedVenueId[]];
 
 /** `get_market_regime` classifies on the slower candles only — a deliberate subset of TIMEFRAMES. */
 export const REGIME_TIMEFRAMES = ['1h', '4h', '1d'] as const;
@@ -139,15 +182,17 @@ export const PUBLIC_TOOL_ENUM_PARAMS: Readonly<Record<string, Readonly<Record<st
   Object.freeze({
     get_trade_call: Object.freeze({
       timeframe: Object.freeze({ values: TIMEFRAMES }),
-      exchange: Object.freeze({ values: VENUE_IDS_ALL }),
+      exchange: Object.freeze({ values: PUBLIC_VENUE_IDS }),
       assetClass: Object.freeze({ values: ASSET_CLASSES }),
     }),
     get_market_regime: Object.freeze({
       timeframe: Object.freeze({ values: REGIME_TIMEFRAMES, default: REGIME_TIMEFRAME_DEFAULT }),
-      exchange: Object.freeze({ values: VENUE_IDS_ALL, default: REGIME_EXCHANGE_DEFAULT }),
+      exchange: Object.freeze({ values: PUBLIC_VENUE_IDS, default: REGIME_EXCHANGE_DEFAULT }),
     }),
     scan_trade_calls: Object.freeze({
       timeframe: Object.freeze({ values: TIMEFRAMES, default: SCAN_TIMEFRAME_DEFAULT }),
+      // All three tools now resolve to the SAME 15: scan was always the promoted universe, and
+      // the other two narrowed to it. The sets are equal by DERIVATION, not by coincidence.
       exchange: Object.freeze({ values: PROMOTED_VENUE_IDS, default: SCAN_EXCHANGE_DEFAULT }),
       oiChangeWindow: Object.freeze({ values: OI_CHANGE_WINDOWS, default: SCAN_OI_CHANGE_WINDOW_DEFAULT }),
       oiBasis: Object.freeze({ values: OI_BASES, default: SCAN_OI_BASIS_DEFAULT }),

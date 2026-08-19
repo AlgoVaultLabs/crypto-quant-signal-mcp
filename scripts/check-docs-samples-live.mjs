@@ -530,10 +530,21 @@ export function selfTest() {
     // happily with the scoping deliberately broken. Measured, not reasoned about.
     check('bypassed artifact: the response-field tables are NOT read as parameters',
       (gtc || []).some((r) => r.name === 'price'), false);
-    // Per-tool difference survives the round trip — scan's universe is a strict subset.
+    // Per-tool differences survive the round trip. DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1
+    // made the VENUE sets equal by derivation — scan was always the promoted universe and the other
+    // tools narrowed to it — so a strict-subset check now reddens on correct code. Two assertions
+    // replace it: the venue sets must be EQUAL (the new invariant, and the whole point of that
+    // wave), and the TIMEFRAME sets must still differ, which is what actually proves the projection
+    // renders per tool rather than flattening every table to one set.
     const sx = (scan || []).find((r) => r.name === 'exchange');
-    const strictSubset = !!(ex && sx) && sx.values.every((v) => ex.values.includes(v)) && sx.values.length < ex.values.length;
-    check('bypassed artifact: scan_trade_calls venues are a STRICT SUBSET of get_trade_call venues', strictSubset, true);
+    const venuesEqual = !!(ex && sx) && ex.values.length === sx.values.length
+      && ex.values.every((v) => sx.values.includes(v));
+    check('bypassed artifact: scan_trade_calls venues === get_trade_call venues (equal by derivation)', venuesEqual, true);
+    const gtcTf = (gtc || []).find((r) => r.name === 'timeframe');
+    const rgmTf = (renderedParamsFor(rend.html, 'get-market-regime') || []).find((r) => r.name === 'timeframe');
+    const perToolDiffers = !!(gtcTf && rgmTf) && rgmTf.values.length < gtcTf.values.length
+      && rgmTf.values.every((v) => gtcTf.values.includes(v));
+    check('bypassed artifact: get_market_regime timeframes remain a STRICT SUBSET — tables render per tool', perToolDiffers, true);
   }
 
   console.log(`SELF-TEST: ${failed.length === 0 ? 'PASS' : 'FAIL'} (${passed} passed, ${failed.length} failed)`);

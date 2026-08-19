@@ -45,9 +45,10 @@ import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo
 // DOCS-PARAM-SCHEMA-PROJECTION-W1: the accepted-venue set and the regime/assetClass enums are
 // declared ONCE and projected into both the served schema and the /docs parameter table.
 import {
-  VENUE_IDS_ALL, ASSET_CLASSES, REGIME_TIMEFRAMES,
+  PUBLIC_VENUE_ENUM, ASSET_CLASSES, REGIME_TIMEFRAMES,
   REGIME_TIMEFRAME_DEFAULT, REGIME_EXCHANGE_DEFAULT,
 } from './lib/tool-param-schema.js';
+import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
@@ -466,7 +467,7 @@ function createServer(): McpServer {
     coin: z.string().max(20).describe(PARAM_DESC_TRADE_CALL_COIN),
     timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
     includeReasoning: z.boolean().default(true).describe(PARAM_DESC_TRADE_CALL_INCLUDE_REASONING),
-    exchange: z.enum(VENUE_IDS_ALL).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
+    exchange: z.enum(PUBLIC_VENUE_ENUM).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
     assetClass: z.enum(ASSET_CLASSES).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
@@ -635,7 +636,7 @@ function createServer(): McpServer {
     {
       coin: z.string().max(20).describe(PARAM_DESC_REGIME_COIN),
       timeframe: z.enum(REGIME_TIMEFRAMES).default(REGIME_TIMEFRAME_DEFAULT).describe(PARAM_DESC_REGIME_TIMEFRAME),
-      exchange: z.enum(VENUE_IDS_ALL).default(REGIME_EXCHANGE_DEFAULT).describe(PARAM_DESC_REGIME_EXCHANGE),
+      exchange: z.enum(PUBLIC_VENUE_ENUM).default(REGIME_EXCHANGE_DEFAULT).describe(PARAM_DESC_REGIME_EXCHANGE),
     },
     { title: 'Market Regime Classifier', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     async ({ coin, timeframe, exchange }) => {
@@ -692,7 +693,7 @@ function createServer(): McpServer {
       // TRADE-CALL-ROUTING-RESOLVER-W1: additive optional routing params. Symbol-only
       // callers behave exactly as today (daily-bar equity). Naming a crypto venue or a
       // timeframe routes to the perpetual-futures engine via the shared resolver.
-      exchange: z.enum(VENUE_IDS_ALL).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
+      exchange: z.enum(PUBLIC_VENUE_ENUM).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
       timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe('Optional candle timeframe — supplying one routes to the perp call.'),
     },
     { title: 'Equity Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
@@ -3624,7 +3625,7 @@ async function startHttp() {
     // `x402Downgrade.reason` we use below. Non-priced or non-tools/call requests pass
     // no tool → the prior flattened behavior is unchanged.
     const mcpBody = (req.method === 'POST' && req.body && typeof req.body === 'object')
-      ? (req.body as { method?: string; params?: { name?: string; arguments?: { timeframe?: unknown } } })
+      ? (req.body as { method?: string; params?: { name?: string; arguments?: { timeframe?: unknown; exchange?: unknown } } })
       : undefined;
     const callTool = (mcpBody?.method === 'tools/call' && typeof mcpBody.params?.name === 'string')
       ? mcpBody.params.name
@@ -3658,6 +3659,22 @@ async function startHttp() {
     // refused callers for the privilege of being refused, which is why the ordering is asserted by
     // a source-order test rather than left to review.
     if (applyCredentialRefusal(req, res, license)) return;
+
+    // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
+    //
+    // Narrowing the public `exchange` enum 17 -> 15 breaks any caller passing EDGEX/WEEX, and
+    // `request_log` has no `exchange` column, so we could not count them. This is the ONLY seam
+    // that sees the value: Zod validation runs inside the SDK's tool wrapper, so the tool handler
+    // never executes on a rejected call and cannot report it. The request body is already parsed
+    // here (`mcpBody`, for the x402 price binding above), so this reads it and adds no work.
+    //
+    // Position is deliberate: BELOW the credential gate, so a refused caller is not counted —
+    // consistent with 'a refusal claims nothing'. Observation only; it never blocks, and the SDK
+    // still owns the actual rejection.
+    if (callTool) {
+      const venueArg = mcpBody?.params?.arguments?.exchange;
+      if (typeof venueArg === 'string') recordNonPublicVenue(venueArg, callTool, license.tier);
+    }
 
     // Hash client IP for privacy-safe analytics + the free-tier quota key.
     // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: req.ip (trust proxy=1) via the shared clientIp

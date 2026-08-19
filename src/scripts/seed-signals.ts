@@ -185,6 +185,11 @@ function sleep(ms: number): Promise<void> {
  * via SHADOW_VENUE_PERMISSIVE_PASS, so `--exchange-list ASTER,EDGEX` is valid
  * input from the parseArgs perspective.
  */
+// DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1: stays on VENUE_IDS_ALL (17), NOT the public
+// 15. Seeding and backfill must keep covering retired and shadow venues or their history is
+// orphaned the day they leave the public enum — and a venue promoted back would return with a
+// hole in its track record. The asymmetry between what we MEASURE and what we ACCEPT is the
+// point of that wave; do not "tidy" it into agreement.
 export const ALL_EXCHANGE_IDS: ExchangeId[] = [...VENUE_IDS_ALL];
 
 /**

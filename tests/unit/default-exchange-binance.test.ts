@@ -16,7 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
-import { PUBLIC_TOOL_ENUM_PARAMS, VENUE_IDS_ALL } from '../../src/lib/tool-param-schema.js';
+import { PUBLIC_TOOL_ENUM_PARAMS, PUBLIC_VENUE_IDS } from '../../src/lib/tool-param-schema.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,10 +47,14 @@ describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
     // would have made it pass over an empty match instead. The VALUE assertion below is the same
     // contract, and survives the next refactor of how the schema is spelled.
     // The regex also pinned the canonical first five, in order — kept, as a value assertion.
-    expect(VENUE_IDS_ALL.slice(0, 5)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']);
-    expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.exchange.values).toEqual([...VENUE_IDS_ALL]);
+    // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 narrowed the PUBLIC enums from the
+    // declared set (17) to the promoted set (15), removing EDGEX (retired) and WEEX (shadow).
+    // This assertion's contract is unchanged — the enum is optional, has no Zod default, and
+    // still leads with the canonical five — only the SET it names moved.
+    expect(PUBLIC_VENUE_IDS.slice(0, 5)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.exchange.values).toEqual([...PUBLIC_VENUE_IDS]);
     expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.exchange.default).toBeUndefined();
-    expect(src).toMatch(/exchange:\s*z\.enum\(VENUE_IDS_ALL\)\.optional\(\)/);
+    expect(src).toMatch(/exchange:\s*z\.enum\(PUBLIC_VENUE_ENUM\)\.optional\(\)/);
   });
 
   it('TRADE_CALL exchange describe conveys the Binance default venue', () => {
@@ -82,8 +86,8 @@ describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
     // would have made it pass over an empty match instead. The VALUE assertion below is the same
     // contract, and survives the next refactor of how the schema is spelled.
     expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.default).toBe('HL');
-    expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.values).toEqual([...VENUE_IDS_ALL]);
-    expect(regimeBlock).toMatch(/exchange:\s*z\.enum\(VENUE_IDS_ALL\)\.default\(REGIME_EXCHANGE_DEFAULT\)/);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.values).toEqual([...PUBLIC_VENUE_IDS]);
+    expect(regimeBlock).toMatch(/exchange:\s*z\.enum\(PUBLIC_VENUE_ENUM\)\.default\(REGIME_EXCHANGE_DEFAULT\)/);
   });
 
   it('No public-surface file ships the "HL-only TradFi" claim', () => {

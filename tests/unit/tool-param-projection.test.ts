@@ -70,11 +70,18 @@ describe('the accepted-venue set is declared ONCE', () => {
 });
 
 describe('the per-tool difference is preserved, not flattened', () => {
-  it('get_trade_call accepts every venue; scan_trade_calls accepts only the promoted subset', () => {
+  // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 rewrote this from `scan.length < all.length`.
+  // That assertion was correct while get_trade_call accepted the DECLARED set (17) and scan the
+  // PROMOTED set (15); CH1 narrowed the public enums to the promoted set, so the two are now equal
+  // BY DERIVATION and a strict-subset assertion fails on correct code. The test's intent —
+  // per-tool differences survive the projection rather than being flattened — is unchanged and is
+  // still carried by the get_market_regime timeframe-subset case below, which remains a real subset.
+  it('get_trade_call and scan_trade_calls now accept the SAME venue set — equal by derivation', () => {
     const all = PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.exchange.values;
     const scan = PUBLIC_TOOL_ENUM_PARAMS.scan_trade_calls.exchange.values;
-    expect(scan.length).toBeLessThan(all.length);
-    for (const v of scan) expect(all).toContain(v);
+    expect([...all].sort()).toEqual([...scan].sort());
+    expect(all).not.toContain('EDGEX');
+    expect(all).not.toContain('WEEX');
   });
 
   it('get_market_regime takes a deliberate timeframe SUBSET, not the full set', () => {

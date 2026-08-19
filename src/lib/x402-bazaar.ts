@@ -28,7 +28,7 @@
  */
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { PROMOTED_VENUE_IDS } from './capabilities.js';
-import { VENUE_IDS_ALL } from './tool-param-schema.js';
+import { PUBLIC_VENUE_IDS } from './tool-param-schema.js';
 
 /**
  * Tokens that must never appear in any public Bazaar description/example.
@@ -45,12 +45,15 @@ export const FORBIDDEN_BAZAAR_TOKENS: readonly string[] = [
 ] as const;
 
 /**
- * Every supported derivatives venue. DOCS-PARAM-SCHEMA-PROJECTION-W1: this used to be a hand-typed
- * copy whose own comment called itself a mirror — the fourth of four, and mirrors are how the
- * /docs table ended up 12 venues behind the served schema. It now projects from the single
- * declaration, so "mirrors TRADE_CALL_SCHEMA" is a fact rather than an intention.
+ * Every venue this PUBLIC LISTING advertises. DOCS-PARAM-SCHEMA-PROJECTION-W1 made this a
+ * projection instead of a hand-typed copy that called itself a mirror; DOCS-SUPPORT-ANSWERS-AND-
+ * PUBLIC-VENUE-SCOPE-W1 pointed it at the PUBLIC set rather than the declared one.
+ *
+ * The bazaar is a discovery surface an agent shops from, so it must advertise what the API will
+ * actually accept. Listing a venue the tool then rejects with `-32602` is a worse failure here
+ * than in the docs: nobody is reading it, so nobody reports it.
  */
-const VENUE_ENUM = VENUE_IDS_ALL;
+const VENUE_ENUM = PUBLIC_VENUE_IDS;
 
 export interface BazaarRouteSpec {
   toolName: string;

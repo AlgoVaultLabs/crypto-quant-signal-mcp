@@ -69,6 +69,6 @@ describe('TRADE-CALL-ROUTING-RESOLVER-W1 — public input-shape drift canary', (
     // would have made it pass over an empty match instead. The VALUE assertion below is the same
     // contract, and survives the next refactor of how the schema is spelled.
     expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.default).toBe('HL');
-    expect(indexSrc).toMatch(/exchange:\s*z\.enum\(VENUE_IDS_ALL\)\.default\(REGIME_EXCHANGE_DEFAULT\)/);
+    expect(indexSrc).toMatch(/exchange:\s*z\.enum\(PUBLIC_VENUE_ENUM\)\.default\(REGIME_EXCHANGE_DEFAULT\)/);
   });
 });
