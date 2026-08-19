@@ -53,6 +53,7 @@ import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fetch.js';
 import type { LicenseInfo, ExchangeId, VenueStatus } from '../types.js';
+import { VENUE_IDS_ALL } from '../lib/tool-param-schema.js';
 import { listVenues, stampSeedingStarted } from '../lib/venue-store.js';
 import { recordSeedHeartbeat } from '../lib/seed-heartbeats.js';
 import { isTimeframeFaithful, servedTimeframeLabel } from '../lib/tf-support.js';
@@ -179,16 +180,12 @@ function sleep(ms: number): Promise<void> {
  * Mirrors `src/types.ts:95`. Updated when ExchangeId widens (e.g. when a new
  * SHADOW venue is added via a PILOT-ADAPTERS wave).
  *
- * Includes both PROMOTED (5) and SHADOW (12) venues — the meme-liquidity gate
+ * Includes both PROMOTED and SHADOW venues — the meme-liquidity gate
  * in `asset-tiers.ts::isMemeCoinLiquid` short-circuits TRUE for shadow venues
  * via SHADOW_VENUE_PERMISSIVE_PASS, so `--exchange-list ASTER,EDGEX` is valid
  * input from the parseArgs perspective.
  */
-export const ALL_EXCHANGE_IDS: ExchangeId[] = [
-  'HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET',
-  'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX',
-  'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT',
-];
+export const ALL_EXCHANGE_IDS: ExchangeId[] = [...VENUE_IDS_ALL];
 
 /**
  * Parse seed-signals CLI args.

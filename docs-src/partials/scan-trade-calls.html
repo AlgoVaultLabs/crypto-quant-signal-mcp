@@ -9,13 +9,14 @@
         </tr></thead>
         <tbody>
           <tr class="param-row"><td>topN</td><td class="text-gray-400">number</td><td class="text-gray-400">Universe size to evaluate before ranking (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">20</code></td></tr>
-          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval for each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">1h</code></td></tr>
-          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Promoted venue to scan. <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> (default), plus other promoted venues.</td></tr>
+          <!-- SCHEMA:tool-params:scan_trade_calls:start -->
+          <!-- SCHEMA:tool-params:scan_trade_calls:end -->
           <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Universe-selection lens: <code class="text-xs bg-navy-800 px-1 rounded">oi</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">oi_change</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume</code>, &hellip; See <code class="text-xs bg-navy-800 px-1 rounded">/capabilities</code> for the live lens set.</td></tr>
           <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked calls to return (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
           <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop calls below this confidence (0&ndash;100). Optional.</td></tr>
           <tr class="param-row"><td>includeHolds</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include HOLD verdicts in the results. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+          <tr class="param-row"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>minLiquidityUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop assets whose 24h notional volume is below this floor, in USD. Optional.</td></tr>
         </tbody>
       </table>
 

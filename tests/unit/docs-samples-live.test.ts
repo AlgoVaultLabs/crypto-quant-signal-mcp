@@ -48,12 +48,23 @@ function runGate(args: string[] = []): Promise<{ status: number; out: string }> 
 }
 
 /** A stub API the gate can be pointed at with `--live`, so the CLI paths are exercised for real. */
-function stub(handler: (url: string) => { status: number; body: unknown }): Promise<{ base: string; server: Server }> {
+function stub(
+  handler: (url: string, rpcMethod: string | null) => { status: number; body: unknown },
+): Promise<{ base: string; server: Server }> {
   return new Promise((res) => {
     const server = createServer((req, rep) => {
-      const { status, body } = handler(req.url ?? '');
-      rep.writeHead(status, { 'Content-Type': 'application/json' });
-      rep.end(JSON.stringify(body));
+      // P7 POSTs `tools/list` to the same /mcp path P1 and P2 use, so a stub that cannot tell the
+      // two apart answers P7 with P1's payload — no tools array — and the gate correctly reads
+      // "handed input I could not parse" as INDETERMINATE, masking the FAIL under test.
+      let raw = '';
+      req.on('data', (c) => { raw += c; });
+      req.on('end', () => {
+        let rpcMethod: string | null = null;
+        try { rpcMethod = (JSON.parse(raw) as { method?: string }).method ?? null; } catch { /* not JSON-RPC */ }
+        const { status, body } = handler(req.url ?? '', rpcMethod);
+        rep.writeHead(status, { 'Content-Type': 'application/json' });
+        rep.end(JSON.stringify(body));
+      });
     });
     server.listen(0, '127.0.0.1', () => res({ base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server }));
   });
@@ -153,10 +164,19 @@ describe('the CLI maps each verdict to the right EXIT CODE (end to end, against 
   beforeAll(async () => {
     // Every endpoint answers 200 with a well-formed-but-DIVERGENT payload: P1's verdict is missing
     // `confidence`, which is precisely the documented-key drift this gate exists to catch.
-    divergent = await stub(() => ({
-      status: 200,
-      body: { result: { content: [{ text: JSON.stringify({ call: 'HOLD', regime: 'RANGING', price: 1 }) }] } },
-    }));
+    divergent = await stub((_url, rpcMethod) =>
+      rpcMethod === 'tools/list'
+        ? {
+            // Parseable, so P7 is genuinely COMPARING rather than failing open — and divergent, so
+            // the page's projected venue list is caught against it by name.
+            status: 200,
+            body: { result: { tools: [{ name: 'get_trade_call', inputSchema: { properties: { exchange: { type: 'string', enum: ['HL'] } } } }] } },
+          }
+        : {
+            status: 200,
+            body: { result: { content: [{ text: JSON.stringify({ call: 'HOLD', regime: 'RANGING', price: 1 }) }] } },
+          },
+    );
     unavailable = await stub(() => ({ status: 503, body: { error: 'upstream not ready' } }));
   });
   afterAll(() => { divergent?.server.close(); unavailable?.server.close(); });
@@ -165,6 +185,12 @@ describe('the CLI maps each verdict to the right EXIT CODE (end to end, against 
     const { status, out } = await runGate(['--live', divergent.base]);
     expect(out).toContain('DOCS_SAMPLES_LIVE_VERDICT=FAIL');
     expect(out).toMatch(/missing documented key/);
+    // P7 end to end: a served enum that disagrees with the published table is a CONTENT failure —
+    // fails CLOSED, not open — and it NAMES every divergent venue rather than reporting a count.
+    // The stub serves a single venue, so the divergence is on the "advertises what the server
+    // rejects" side; the reverse direction is proven in the gate's own --self-test.
+    expect(out).toMatch(/get_trade_call\.exchange: \/docs advertises \d+ value\(s\) the server REJECTS: .*WHITEBIT/);
+    expect(out).toMatch(/get_market_regime: documented on \/docs but absent from live tools\/list/);
     expect(status).toBe(1);
   });
 

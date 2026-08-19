@@ -16,6 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
+import { PUBLIC_TOOL_ENUM_PARAMS, VENUE_IDS_ALL } from '../../src/lib/tool-param-schema.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,7 +41,16 @@ describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
     expect(src).not.toMatch(/\.default\('BINANCE'\)/);
     // The trade-call exchange is now optional (single-source for get_trade_call AND
     // its get_trade_signal alias — both share TRADE_CALL_SCHEMA).
-    expect(src).toMatch(/exchange:\s*z\.enum\(\['HL',\s*'BINANCE',\s*'BYBIT',\s*'OKX',\s*'BITGET'(?:,\s*'[A-Z]+')*\]\)\.optional\(\)/);
+    // DOCS-PARAM-SCHEMA-PROJECTION-W1 re-pointed this from the SOURCE LITERAL to the declaration
+    // the Zod schema is now built from. The literal is gone, so the old regex asserted nothing —
+    // it failed loudly, which is the good case, but a symbol-shaped rewrite of a sibling guard
+    // would have made it pass over an empty match instead. The VALUE assertion below is the same
+    // contract, and survives the next refactor of how the schema is spelled.
+    // The regex also pinned the canonical first five, in order — kept, as a value assertion.
+    expect(VENUE_IDS_ALL.slice(0, 5)).toEqual(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET']);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.exchange.values).toEqual([...VENUE_IDS_ALL]);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.exchange.default).toBeUndefined();
+    expect(src).toMatch(/exchange:\s*z\.enum\(VENUE_IDS_ALL\)\.optional\(\)/);
   });
 
   it('TRADE_CALL exchange describe conveys the Binance default venue', () => {
@@ -66,7 +76,14 @@ describe('CHANGE-DEFAULT-EXCHANGE-W1 canaries (post-1.11.0 invariants)', () => {
     // The CALL/SIGNAL schema lives at TRADE_CALL_SCHEMA (already covered above);
     // the get_market_regime registration has its own inline exchange Zod field.
     const regimeBlock = src.slice(src.indexOf("'get_market_regime'"));
-    expect(regimeBlock).toMatch(/exchange:\s*z\.enum\(\['HL',\s*'BINANCE',\s*'BYBIT',\s*'OKX',\s*'BITGET'(?:,\s*'[A-Z]+')*\]\)\.default\('HL'\)/);
+    // DOCS-PARAM-SCHEMA-PROJECTION-W1 re-pointed this from the SOURCE LITERAL to the declaration
+    // the Zod schema is now built from. The literal is gone, so the old regex asserted nothing —
+    // it failed loudly, which is the good case, but a symbol-shaped rewrite of a sibling guard
+    // would have made it pass over an empty match instead. The VALUE assertion below is the same
+    // contract, and survives the next refactor of how the schema is spelled.
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.default).toBe('HL');
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.values).toEqual([...VENUE_IDS_ALL]);
+    expect(regimeBlock).toMatch(/exchange:\s*z\.enum\(VENUE_IDS_ALL\)\.default\(REGIME_EXCHANGE_DEFAULT\)/);
   });
 
   it('No public-surface file ships the "HL-only TradFi" claim', () => {

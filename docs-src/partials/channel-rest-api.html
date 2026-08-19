@@ -65,7 +65,8 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>.</p>
       <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
             <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
-      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
+      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. Send a JSON body, read a JSON response &mdash; no JSON-RPC envelope, no dual <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Accept</code> header, no SSE to unwrap.</p>
+      <p class="text-gray-400 text-sm mb-5">Trade calls are served over <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST /mcp</code> and the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/x402/*</code> routes. There is no separate <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/api/trade-call</code> endpoint.</p>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>

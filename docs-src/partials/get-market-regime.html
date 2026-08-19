@@ -1,4 +1,4 @@
-      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across <span data-tr-field="exchange_count">5</span> exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset, on any venue this tool accepts. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -9,8 +9,8 @@
         </tr></thead>
         <tbody>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
-          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+          <!-- SCHEMA:tool-params:get_market_regime:start -->
+          <!-- SCHEMA:tool-params:get_market_regime:end -->
         </tbody>
       </table>
 

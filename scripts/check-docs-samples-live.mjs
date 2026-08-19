@@ -43,13 +43,31 @@
  * VACUITY GUARD AT CONSTRUCTION: we build the corpus from a tree we author, so a probe that fails
  * to resolve means the extractor broke — INDETERMINATE, never PASS.
  *
+ * ── P7: the PARAMETER TABLES, not the code samples ────────────────────────────
+ * DOCS-PARAM-SCHEMA-PROJECTION-W1. P1–P5 prove the docs SAMPLES run. They said nothing about the
+ * parameter tables beside them, and those had drifted further than the prose ever did: the page
+ * listed FIVE venues for `get_trade_call` where `tools/list` published SEVENTEEN, and named `1h`
+ * as scan's timeframe default where the server defaulted to `15m`. Both were hand-typed, so
+ * `build_docs --check` — a byte compare of page against source — was green throughout.
+ *
+ * `build_docs` now PROJECTS those rows from the same declaration the Zod schemas are built from,
+ * which closes the gap at compile time. P7 closes the remaining one: that the page WE PUBLISHED
+ * still matches the schema THE SERVER SERVES. A projection cannot catch a page that was never
+ * rebuilt, or a deploy that shipped a different build than the docs were generated from.
+ *
+ * P7 asserts by IDENTITY, never by count, in both directions — a count cannot tell "17 rendered,
+ * 17 live, matching" from "17 rendered, 17 live, two swapped" — and every failure names the
+ * offending venue, parameter or default. Same rule that retired the `>= 5 blocks` guard above.
+ * It also asserts COMPLETENESS: a served parameter with no documented row fails, because a table
+ * that silently omits a parameter is the same defect as one that misstates it.
+ *
  * Usage:
  *   node scripts/check-docs-samples-live.mjs                      # against https://api.algovault.com
  *   node scripts/check-docs-samples-live.mjs --live http://x:3000 # against another base
  *   node scripts/check-docs-samples-live.mjs --self-test          # offline, proves it can fail
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve, basename } from 'node:path';
 import { realpathSync } from 'node:fs';
 
@@ -225,6 +243,127 @@ export function resolveProbes(calls, probes = PROBES) {
   }));
 }
 
+// ── P7: rendered parameter tables vs the live tool schema ────────────────────
+
+const DOCS_HTML = join(ROOT, 'landing', 'docs.html');
+const TOOL_PARAM_SCHEMA_DIST = join(ROOT, 'dist', 'lib', 'tool-param-schema.js');
+
+/**
+ * The `<section id="…">` slice for one tool, then its FIRST table — the Parameters table.
+ *
+ * Scoping to the first table matters: `get-trade-call` also ships Response-Fields and `_receipts`
+ * tables built from the same `.param-row` class, and a whole-section scan would read `timeframe`
+ * the RESPONSE field as `timeframe` the parameter and then "prove" a documented parameter exists
+ * that the table never listed.
+ */
+export function paramsTableFor(html, anchor) {
+  const si = html.indexOf(`<section id="${anchor}"`);
+  if (si === -1) return null;
+  const nextSection = html.indexOf('<section id="', si + 1);
+  const section = html.slice(si, nextSection === -1 ? undefined : nextSection);
+  const ti = section.indexOf('<table ');
+  if (ti === -1) return null;
+  const te = section.indexOf('</table>', ti);
+  return te === -1 ? null : section.slice(ti, te);
+}
+
+/**
+ * Every documented parameter row for one tool: its name, the enum values rendered into it (null
+ * when the row is hand-authored and non-enum), and the default chip's machine-readable value.
+ */
+export function renderedParamsFor(html, anchor) {
+  const table = paramsTableFor(html, anchor);
+  if (table === null) return null;
+  const rows = [];
+  for (const m of table.matchAll(/<tr class="param-row"([^>]*)>([\s\S]*?)<\/tr>/g)) {
+    const attrs = m[1];
+    const cells = m[2];
+    const name = (cells.match(/<td>([A-Za-z][A-Za-z0-9_]*)<\/td>/) || [])[1];
+    if (!name) continue;
+    const projected = /data-schema-param="/.test(attrs);
+    const values = projected ? [...cells.matchAll(/data-enum-value="([^"]+)"/g)].map((x) => x[1]) : null;
+    const dflt = (attrs.match(/data-schema-default="([^"]*)"/) || [])[1] ?? null;
+    rows.push({ name, values, default: dflt });
+  }
+  return rows;
+}
+
+/** Read the published page + the compiled tool→partial map. Both are artifacts we generate. */
+export function loadRendered(htmlPath = DOCS_HTML, distPath = TOOL_PARAM_SCHEMA_DIST) {
+  if (!existsSync(htmlPath)) return { error: `landing/docs.html is missing (${htmlPath}) — run \`node scripts/build_docs.mjs\`` };
+  if (!existsSync(distPath)) return { error: `${distPath} not found — run \`npm run build\` (tsc) first` };
+  return { html: readFileSync(htmlPath, 'utf8'), distPath };
+}
+
+/**
+ * Pure comparison of the RENDERED table against the SERVED schema, per tool.
+ *
+ * `rendered` : { [tool]: [{ name, values|null, default|null }] }  (from the published page)
+ * `live`     : { [tool]: inputSchema.properties }                 (from a live tools/list)
+ *
+ * Returns a flat list of human-readable failures, each NAMING what diverged. Both directions are
+ * checked — a value on the page but not in the schema is as wrong as the reverse, and a count
+ * check would see neither.
+ */
+export function compareSchemaProjection(rendered, live) {
+  const failures = [];
+  const setDiff = (a, b) => a.filter((x) => !b.includes(x));
+
+  for (const [tool, rows] of Object.entries(rendered)) {
+    const props = live[tool];
+    if (!props) { failures.push(`${tool}: documented on /docs but absent from live tools/list`); continue; }
+    const byName = Object.fromEntries(rows.map((r) => [r.name, r]));
+
+    for (const row of rows) {
+      const prop = props[row.name];
+      if (!prop) { failures.push(`${tool}.${row.name}: documented on /docs but the live schema has no such parameter`); continue; }
+      if (row.values === null) continue;  // hand-authored non-enum row: completeness only
+
+      const liveEnum = Array.isArray(prop.enum) ? prop.enum : null;
+      if (!liveEnum) { failures.push(`${tool}.${row.name}: /docs renders a fixed value list but the live schema declares no enum`); continue; }
+      const missing = setDiff(liveEnum, row.values);
+      const extra = setDiff(row.values, liveEnum);
+      if (missing.length) failures.push(`${tool}.${row.name}: /docs is MISSING ${missing.length} accepted value(s): ${missing.join(', ')}`);
+      if (extra.length) failures.push(`${tool}.${row.name}: /docs advertises ${extra.length} value(s) the server REJECTS: ${extra.join(', ')}`);
+
+      const liveDefault = prop.default === undefined ? null : String(prop.default);
+      if ((row.default ?? null) !== liveDefault) {
+        failures.push(`${tool}.${row.name}: /docs shows default ${row.default === null ? '(none)' : `\`${row.default}\``} but the server defaults to ${liveDefault === null ? '(none)' : `\`${liveDefault}\``}`);
+      }
+    }
+
+    // COMPLETENESS — a served parameter nobody documented. `assetClass` shipped undocumented for
+    // months; without this leg the next one does too, and every other assertion still passes.
+    for (const name of Object.keys(props)) {
+      if (!byName[name]) failures.push(`${tool}.${name}: served by the live schema but has NO row on /docs`);
+    }
+  }
+  return failures;
+}
+
+/** Fetch the live tool list. Returns `{ tools }`, `{ transportError }` or `{ status }` for a 5xx. */
+async function fetchLiveTools(base) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', Accept: ACCEPT_BOTH },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list' }),
+    });
+    if (GATEWAYISH(r.status)) return { status: r.status };
+    const text = await r.text();
+    let json;
+    try { json = parseSse(text); } catch { return { transportError: `tools/list returned unparseable body (${r.status})` }; }
+    const tools = json?.result?.tools;
+    if (!Array.isArray(tools)) return { transportError: `tools/list returned no tools array (${r.status})` };
+    return { tools };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // ── evaluation ───────────────────────────────────────────────────────────────
 
 export const GATEWAYISH = (s) => s >= 502 && s <= 504;
@@ -336,6 +475,67 @@ export function selfTest() {
     check('a host-keyed extractor FAILS the identity guard (naming P5)', dropped.join(','), 'P5');
   }
 
+  // ── P7 — proven fallible on every direction it claims to check ─────────────
+  // Identity, never count: each negative case below keeps the CARDINALITY unchanged where it can,
+  // so a length assertion would pass every one of them.
+  const LIVE3 = { get_trade_call: { exchange: { type: 'string', enum: ['HL', 'BINANCE', 'WHITEBIT'] } } };
+  const row = (over) => [{ name: 'exchange', values: ['HL', 'BINANCE', 'WHITEBIT'], default: null, ...over }];
+
+  check('P7 accepts an exactly-matching set', compareSchemaProjection({ get_trade_call: row({}) }, LIVE3).length, 0);
+  check('P7 is ORDER-INDEPENDENT — a set, not a sequence',
+    compareSchemaProjection({ get_trade_call: row({ values: ['WHITEBIT', 'HL', 'BINANCE'] }) }, LIVE3).length, 0);
+
+  const missOne = compareSchemaProjection({ get_trade_call: row({ values: ['HL', 'BINANCE'] }) }, LIVE3);
+  check('P7 FAILS on a missing venue', missOne.length, 1);
+  check('P7 NAMES the missing venue', /MISSING 1 accepted value\(s\): WHITEBIT$/.test(missOne[0] || ''), true);
+
+  // Same LENGTH as the live enum, one member swapped — the case a count check cannot see at all.
+  const swapped = compareSchemaProjection({ get_trade_call: row({ values: ['HL', 'BINANCE', 'BOGUSVENUE'] }) }, LIVE3);
+  check('P7 FAILS a same-LENGTH swapped set (a count check would pass this)', swapped.length, 2);
+  check('P7 names the missing side', swapped.some((f) => f.includes('MISSING') && f.includes('WHITEBIT')), true);
+  check('P7 names the rejected side', swapped.some((f) => f.includes('REJECTS') && f.includes('BOGUSVENUE')), true);
+
+  const dflt = compareSchemaProjection(
+    { scan_trade_calls: [{ name: 'timeframe', values: ['1h', '15m'], default: '1h' }] },
+    { scan_trade_calls: { timeframe: { type: 'string', enum: ['1h', '15m'], default: '15m' } } },
+  );
+  check('P7 FAILS a stale DEFAULT even when the value set matches', dflt.length, 1);
+  check('P7 names both defaults', /shows default `1h`.*defaults to `15m`/.test(dflt[0] || ''), true);
+
+  check('P7 FAILS a served parameter with no documented row', compareSchemaProjection(
+    { get_trade_call: row({}) },
+    { get_trade_call: { exchange: LIVE3.get_trade_call.exchange, assetClass: { type: 'string', enum: ['perp'] } } },
+  ).length, 1);
+  check('P7 FAILS a documented parameter the server does not serve',
+    compareSchemaProjection({ get_trade_call: [...row({}), { name: 'ghost', values: null, default: null }] }, LIVE3).length, 1);
+
+  // ── the BYPASSED SEAM, again ───────────────────────────────────────────────
+  // Every case above hands `compareSchemaProjection` a hand-built object, so nothing has yet run
+  // the REAL extractor over the REAL published page — exactly the blind spot that let a host-keyed
+  // corpus extractor ship green. Drive it, and assert the ARTIFACT, not just the classifier.
+  const rend = loadRendered();
+  if (rend.error) { failed.push(`bypassed artifact: ${rend.error}`); console.log(`  ✗ bypassed artifact: ${rend.error}`); }
+  else {
+    const gtc = renderedParamsFor(rend.html, 'get-trade-call');
+    const scan = renderedParamsFor(rend.html, 'scan-trade-calls');
+    check('bypassed artifact: get_trade_call parameter table is readable', Array.isArray(gtc) && gtc.length > 0, true);
+    const ex = (gtc || []).find((r) => r.name === 'exchange');
+    check('bypassed artifact: the exchange row is PROJECTED, not hand-typed', Array.isArray(ex && ex.values), true);
+    // Scoped to the FIRST table: `timeframe` is also a RESPONSE field on this page, so a
+    // whole-section scan would read response rows as parameters and then fail P7's completeness
+    // leg against a schema that never had them. The sentinel is `price` — a response field that is
+    // categorically not a parameter, and one the row-name regex definitely matches. An earlier
+    // draft used `_receipts`, which reads as the more obvious choice and is WORSE: the leading
+    // underscore falls outside that regex, so the assertion could never have fired and passed
+    // happily with the scoping deliberately broken. Measured, not reasoned about.
+    check('bypassed artifact: the response-field tables are NOT read as parameters',
+      (gtc || []).some((r) => r.name === 'price'), false);
+    // Per-tool difference survives the round trip — scan's universe is a strict subset.
+    const sx = (scan || []).find((r) => r.name === 'exchange');
+    const strictSubset = !!(ex && sx) && sx.values.every((v) => ex.values.includes(v)) && sx.values.length < ex.values.length;
+    check('bypassed artifact: scan_trade_calls venues are a STRICT SUBSET of get_trade_call venues', strictSubset, true);
+  }
+
   console.log(`SELF-TEST: ${failed.length === 0 ? 'PASS' : 'FAIL'} (${passed} passed, ${failed.length} failed)`);
   return failed.length === 0 ? 0 : 1;
 }
@@ -380,6 +580,43 @@ async function main() {
     const mark = GATEWAYISH(observed.status) ? '~' : failures.length ? '✗' : '✓';
     console.log(`  ${mark} ${probe.id} ${probe.method} ${probe.path} [${observed.status}] — ${probe.what}`);
   }
+
+  // ── P7 — the published parameter tables against the served schema ──────────
+  const loaded = loadRendered();
+  if (loaded.error) emit('INDETERMINATE', `P7: ${loaded.error}`);
+  const schemaMod = await import(pathToFileURL(loaded.distPath).href);
+
+  const rendered = {};
+  const unreadable = [];
+  for (const [tool, partial] of Object.entries(schemaMod.TOOL_DOCS_PARTIAL)) {
+    const rows = renderedParamsFor(loaded.html, partial);
+    if (rows === null || rows.length === 0) { unreadable.push(`${tool} (section #${partial})`); continue; }
+    rendered[tool] = rows;
+  }
+  // VACUITY AT CONSTRUCTION: landing/docs.html is an artifact WE generate, so a tool whose table we
+  // cannot read means the generator or this extractor broke — never "the docs agree".
+  if (unreadable.length) {
+    emit('INDETERMINATE', `P7: no parameter table could be read for ${unreadable.join('; ')} — landing/docs.html is ours, so this is a broken extractor or a stale build, not agreement`);
+  }
+  const enumRows = Object.values(rendered).flat().filter((r) => r.values !== null).length;
+  if (enumRows === 0) {
+    emit('INDETERMINATE', 'P7: zero projected enum parameters found in landing/docs.html — the projection did not render, so there is nothing to compare');
+  }
+
+  const liveTools = await fetchLiveTools(base).catch((e) => ({ transportError: e?.message || String(e) }));
+  const P7 = { id: 'P7', source: 'landing/docs.html', status: 200, failures: [], transportError: null };
+  if (liveTools.transportError) {
+    P7.transportError = liveTools.transportError;
+    P7.status = 0;
+  } else if (liveTools.status) {
+    P7.status = liveTools.status;   // 502/503/504 — the gateway answering, not divergence
+  } else {
+    const live = Object.fromEntries(liveTools.tools.map((t) => [t.name, (t.inputSchema && t.inputSchema.properties) || {}]));
+    P7.failures = compareSchemaProjection(rendered, live);
+  }
+  results.push(P7);
+  const p7mark = P7.transportError || GATEWAYISH(P7.status) ? '~' : P7.failures.length ? '✗' : '✓';
+  console.log(`  ${p7mark} P7 POST /mcp tools/list [${P7.status}] — ${enumRows} projected enum param(s) on /docs match the served schema`);
 
   const { verdict, why } = classify(results);
   emit(verdict, why);

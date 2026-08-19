@@ -28,6 +28,7 @@
  */
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { PROMOTED_VENUE_IDS } from './capabilities.js';
+import { VENUE_IDS_ALL } from './tool-param-schema.js';
 
 /**
  * Tokens that must never appear in any public Bazaar description/example.
@@ -43,11 +44,13 @@ export const FORBIDDEN_BAZAAR_TOKENS: readonly string[] = [
   'internal-only',
 ] as const;
 
-/** All 17 supported derivatives venues (mirrors TRADE_CALL_SCHEMA / regime enum). */
-const VENUE_ENUM = [
-  'HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC',
-  'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT',
-] as const;
+/**
+ * Every supported derivatives venue. DOCS-PARAM-SCHEMA-PROJECTION-W1: this used to be a hand-typed
+ * copy whose own comment called itself a mirror — the fourth of four, and mirrors are how the
+ * /docs table ended up 12 venues behind the served schema. It now projects from the single
+ * declaration, so "mirrors TRADE_CALL_SCHEMA" is a fact rather than an intention.
+ */
+const VENUE_ENUM = VENUE_IDS_ALL;
 
 export interface BazaarRouteSpec {
   toolName: string;
@@ -219,7 +222,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         },
         exchange: {
           type: 'string',
-          enum: [...PROMOTED_VENUE_IDS], // OPS-SCAN-UNIVERSE-EXPAND-W1: derived from EXCHANGES (all 12 promoted)
+          enum: [...PROMOTED_VENUE_IDS], // OPS-SCAN-UNIVERSE-EXPAND-W1: derived from EXCHANGES (every promoted venue)
           default: 'BINANCE',
           description: 'Promoted derivatives venue to scan.',
         },

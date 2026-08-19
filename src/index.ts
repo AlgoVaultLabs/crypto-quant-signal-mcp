@@ -42,6 +42,12 @@ import { buildPublicCtaBlock } from './lib/public-cta.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
+// DOCS-PARAM-SCHEMA-PROJECTION-W1: the accepted-venue set and the regime/assetClass enums are
+// declared ONCE and projected into both the served schema and the /docs parameter table.
+import {
+  VENUE_IDS_ALL, ASSET_CLASSES, REGIME_TIMEFRAMES,
+  REGIME_TIMEFRAME_DEFAULT, REGIME_EXCHANGE_DEFAULT,
+} from './lib/tool-param-schema.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
@@ -460,8 +466,8 @@ function createServer(): McpServer {
     coin: z.string().max(20).describe(PARAM_DESC_TRADE_CALL_COIN),
     timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
     includeReasoning: z.boolean().default(true).describe(PARAM_DESC_TRADE_CALL_INCLUDE_REASONING),
-    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
-    assetClass: z.enum(['perp', 'equity']).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
+    exchange: z.enum(VENUE_IDS_ALL).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
+    assetClass: z.enum(ASSET_CLASSES).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
     return async ({ coin, timeframe, includeReasoning, exchange, assetClass }: { coin: string; timeframe?: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange?: ExchangeId; assetClass?: 'perp' | 'equity' }) => {
@@ -628,8 +634,8 @@ function createServer(): McpServer {
     GET_MARKET_REGIME_DESCRIPTION,
     {
       coin: z.string().max(20).describe(PARAM_DESC_REGIME_COIN),
-      timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe(PARAM_DESC_REGIME_TIMEFRAME),
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).default('HL').describe(PARAM_DESC_REGIME_EXCHANGE),
+      timeframe: z.enum(REGIME_TIMEFRAMES).default(REGIME_TIMEFRAME_DEFAULT).describe(PARAM_DESC_REGIME_TIMEFRAME),
+      exchange: z.enum(VENUE_IDS_ALL).default(REGIME_EXCHANGE_DEFAULT).describe(PARAM_DESC_REGIME_EXCHANGE),
     },
     { title: 'Market Regime Classifier', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     async ({ coin, timeframe, exchange }) => {
@@ -686,7 +692,7 @@ function createServer(): McpServer {
       // TRADE-CALL-ROUTING-RESOLVER-W1: additive optional routing params. Symbol-only
       // callers behave exactly as today (daily-bar equity). Naming a crypto venue or a
       // timeframe routes to the perpetual-futures engine via the shared resolver.
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
+      exchange: z.enum(VENUE_IDS_ALL).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
       timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe('Optional candle timeframe — supplying one routes to the perp call.'),
     },
     { title: 'Equity Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
