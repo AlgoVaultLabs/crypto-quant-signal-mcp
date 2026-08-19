@@ -33,4 +33,42 @@
 // &rarr; the 10 highest-ranked assets, each a get_trade_call verdict
 //    (call, confidence, regime, price, indicators, _algovault)</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">The scan returns counters alongside the results, so you can tell &ldquo;nothing qualified&rdquo; from &ldquo;nothing was scanned&rdquo; without a second call.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>scanned</td><td class="text-gray-400">number</td><td class="text-gray-400">How many assets were evaluated.</td></tr>
+          <tr class="param-row"><td>eligible_non_hold</td><td class="text-gray-400">number</td><td class="text-gray-400">How many produced a BUY or a SELL.</td></tr>
+          <tr class="param-row"><td>holds</td><td class="text-gray-400">number</td><td class="text-gray-400">How many produced a HOLD.</td></tr>
+          <tr class="param-row"><td>errors</td><td class="text-gray-400">number</td><td class="text-gray-400">A <strong class="text-white">count</strong> of venue errors during the scan &mdash; not a detail object.</td></tr>
+          <tr class="param-row"><td>partial</td><td class="text-gray-400">boolean</td><td class="text-gray-400">True when a venue timed out and the scan is therefore incomplete. Treat the counters as a floor.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>calls</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked results. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">call</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code> and <code class="text-xs bg-navy-800 px-1 rounded">regime</code>.</td></tr>
+        </tbody>
+      </table>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "scanned": 30,
+  "eligible_non_hold": 1,
+  "holds": 29,
+  "errors": 0,
+  "partial": false,
+  "calls": [
+    { "coin": "BTC", "timeframe": "1h", "exchange": "BINANCE",
+      "call": "BUY", "confidence": 57, "regime": "TRENDING_UP" }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <h4 class="text-sm font-semibold text-white mb-2">An empty <code class="text-xs bg-navy-800 px-1 rounded">calls</code> array is the ordinary outcome</h4>
+        <p class="text-gray-400 text-sm leading-relaxed mb-3">Most assets are HOLD most of the time, and <code class="text-xs bg-navy-800 px-1 rounded">includeHolds</code> defaults to <code class="text-xs bg-navy-800 px-1 rounded">false</code> &mdash; so a scan that filters every result out is working correctly, not failing. A live 30-asset scan on <code class="text-xs bg-navy-800 px-1 rounded">1h</code> at the time of writing returned <strong class="text-white">29 HOLD</strong> against <strong class="text-white">1</strong> actionable call.</p>
+        <p class="text-gray-400 text-sm leading-relaxed">Read <code class="text-xs bg-navy-800 px-1 rounded">scanned</code> to confirm the universe was evaluated. To widen the result set, lower <code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code>, or set <code class="text-xs bg-navy-800 px-1 rounded">includeHolds: true</code> to see the HOLD verdicts alongside the rest.</p>
+      </div>
       <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan.</p>

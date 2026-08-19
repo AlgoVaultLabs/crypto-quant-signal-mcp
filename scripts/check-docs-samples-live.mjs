@@ -341,6 +341,154 @@ export function compareSchemaProjection(rendered, live) {
   return failures;
 }
 
+/**
+ * The RESPONSE-field table for one tool — the first table after its "Response Fields" heading.
+ *
+ * Scoped past the heading on purpose: the PARAMETER table sits above it in the same section and
+ * uses the same `.param-row` class, so an unscoped read would assert request params exist in a
+ * response. `get-trade-call` also carries `_receipts` and `_algovault.auth` tables BELOW this one;
+ * they document nested shapes, and only the top-level envelope belongs to this leg.
+ */
+export function responseFieldsFor(html, anchor) {
+  const si = html.indexOf(`<section id="${anchor}"`);
+  if (si === -1) return null;
+  const nextSection = html.indexOf('<section id="', si + 1);
+  const section = html.slice(si, nextSection === -1 ? undefined : nextSection);
+  const hi = section.indexOf('>Response Fields<');
+  if (hi === -1) return null;
+  const ti = section.indexOf('<table ', hi);
+  if (ti === -1) return null;
+  const te = section.indexOf('</table>', ti);
+  if (te === -1) return null;
+  const rows = [];
+  for (const m of section.slice(ti, te).matchAll(/<tr class="param-row"([^>]*)>([\s\S]*?)<\/tr>/g)) {
+    const name = (m[2].match(/<td>([A-Za-z_][A-Za-z0-9_]*)<\/td>/) || [])[1];
+    if (name) rows.push({ name, optional: /data-field-optional/.test(m[1]) });
+  }
+  return rows;
+}
+
+/**
+ * Compare the documented envelope against a live response.
+ *
+ * REQUIRED fields must be present. OPTIONAL ones (`data-field-optional`) are legitimately absent —
+ * `reasoning` is suppressed by `includeReasoning: false`, and `closest_tradeable` / `also_see` ship
+ * only on a HOLD. Asserting their presence would redden this leg on the first BUY verdict of the
+ * day, and a leg that fails on healthy output gets quarantined within a week. Their DECLARATION is
+ * still checked: an optional row must be marked, so silently making a required field optional to
+ * dodge a failure shows up as a docs edit rather than a passing gate.
+ */
+export function compareEnvelope(tool, documented, live) {
+  const failures = [];
+  if (!documented || documented.length === 0) return [`${tool}: no Response Fields table could be read from /docs`];
+  const present = new Set(Object.keys(live || {}));
+  const missing = documented.filter((f) => !f.optional && !present.has(f.name)).map((f) => f.name);
+  if (missing.length) {
+    failures.push(`${tool}: /docs documents ${missing.length} response field(s) the live call did not return: ${missing.join(', ')}`);
+  }
+  return failures;
+}
+
+/**
+ * THE ERROR CONTRACT, declared as data so the exemption is visible.
+ *
+ * Each row carries the SHAPE it arrives in, because they differ and that difference is the whole
+ * reason the docs section exists: `-32602` is HTTP 200 + `result.isError` with the code as TEXT and
+ * NO `error` object, while the auth codes are structured `error.code`. A leg that asserted one
+ * shape for all of them would have "verified" a contract nobody can consume.
+ */
+export const ERROR_CONTRACT = [
+  {
+    code: -32602,
+    shape: 'result.isError',
+    what: 'invalid enum value',
+    // A venue outside the public 15 — the refusal CH1 shipped.
+    body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_trade_call', arguments: { coin: 'BTC', exchange: 'EDGEX' } } },
+    accept: ACCEPT_BOTH,
+  },
+  {
+    code: -32003,
+    shape: 'error.code',
+    what: 'well-formed but unissued API key',
+    body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    accept: ACCEPT_BOTH,
+    headers: { Authorization: 'Bearer av_live_000000000000000000000000' },
+  },
+  {
+    code: -32000,
+    shape: 'http406',
+    what: 'incomplete Accept header',
+    body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    accept: 'application/json',
+  },
+  {
+    code: -32004,
+    shape: 'error.code',
+    what: 'credential store unreachable',
+    // DECLARED, not silently skipped. -32004 fires only when the upstream key store is unreachable,
+    // which cannot be induced from outside — and faking it would mean asserting against a stub, i.e.
+    // proving nothing about production. An exemption without a reason is INDETERMINATE, so the
+    // reason lives here in the gate's own data rather than in a comment a reader has to find.
+    documentedOnly: 'not reproducible on demand — requires an upstream credential-store outage; inducing one is not a test',
+  },
+];
+
+/** Every `code` the rendered error table publishes. Identity source for the error leg. */
+export function renderedErrorCodes(html) {
+  const si = html.indexOf('<section id="tools-errors"');
+  if (si === -1) return null;
+  const nextSection = html.indexOf('<section id="', si + 1);
+  const section = html.slice(si, nextSection === -1 ? undefined : nextSection);
+  const codes = [];
+  for (const m of section.matchAll(/<tr class="param-row"[^>]*><td>(-?\d+|HTTP \d+)<\/td>/g)) {
+    codes.push(m[1].startsWith('HTTP') ? -32000 : Number(m[1]));
+  }
+  return codes;
+}
+
+/** Classify one observed error response against the shape its contract row declares. */
+export function classifyErrorShape(row, observed) {
+  const failures = [];
+  const j = observed.json;
+  if (row.shape === 'http406') {
+    if (observed.status !== 406) failures.push(`${row.code} (${row.what}): expected HTTP 406, got ${observed.status}`);
+    if (j?.error?.code !== row.code) failures.push(`${row.code} (${row.what}): expected error.code ${row.code}, got ${j?.error?.code}`);
+    return failures;
+  }
+  if (row.shape === 'error.code') {
+    if (j?.error?.code !== row.code) {
+      failures.push(`${row.code} (${row.what}): expected a JSON-RPC error object with code ${row.code}, got ${j?.error ? `code ${j.error.code}` : 'no error object'}`);
+    }
+    return failures;
+  }
+  // result.isError — the shape the first draft of the docs got wrong.
+  if (j?.error) failures.push(`${row.code} (${row.what}): arrived as a JSON-RPC error object, but /docs documents it as result.isError`);
+  if (j?.result?.isError !== true) failures.push(`${row.code} (${row.what}): expected result.isError === true, got ${j?.result?.isError}`);
+  const text = j?.result?.content?.[0]?.text ?? '';
+  if (!String(text).includes(String(row.code))) failures.push(`${row.code} (${row.what}): code not present in result.content[0].text`);
+  return failures;
+}
+
+/** One live POST to /mcp. Returns `{status, json}`; throws only on transport, which main() catches. */
+async function callLive(base, body, accept, headers = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', Accept: accept, ...headers },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    let json = null;
+    try { json = parseSse(text); } catch { /* non-JSON body */ }
+    return { status: r.status, json };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /** Fetch the live tool list. Returns `{ tools }`, `{ transportError }` or `{ status }` for a 5xx. */
 async function fetchLiveTools(base) {
   const ctrl = new AbortController();
@@ -352,7 +500,7 @@ async function fetchLiveTools(base) {
       headers: { 'Content-Type': 'application/json', Accept: ACCEPT_BOTH },
       body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list' }),
     });
-    if (GATEWAYISH(r.status)) return { status: r.status };
+    if (UNOBSERVABLE(r.status)) return { status: r.status };
     const text = await r.text();
     let json;
     try { json = parseSse(text); } catch { return { transportError: `tools/list returned unparseable body (${r.status})` }; }
@@ -369,6 +517,25 @@ async function fetchLiveTools(base) {
 export const GATEWAYISH = (s) => s >= 502 && s <= 504;
 
 /**
+ * 429 is fail-OPEN, for the same reason 502 is: we did not observe the documented behaviour.
+ *
+ * Measured 2026-08-19 — this gate calls the documented `/api/chat` sample on EVERY deploy, and the
+ * free monthly chat quota is 10. Enough runs in a month and the endpoint answers
+ * `CHAT_QUOTA_EXHAUSTED`, at which point P4 reports the docs as diverged on every subsequent
+ * deploy. The endpoint is healthy; the gate ran out of its own quota. Reporting that as divergence
+ * is a false accusation of exactly the kind the gateway branch already exists to prevent — the
+ * documented keys cannot be present in a response that was never produced.
+ *
+ * 🛑 The remedy is NOT a quota-exempt key for the canary. An instrument that is exempt from the
+ * limits it runs under stops measuring the thing callers experience, and the exemption then hides
+ * a real quota regression. Fail open, stay honest, keep the INDETERMINATE visible in CI.
+ */
+export const QUOTA_REFUSAL = (s) => s === 429;
+
+/** Every status where the app answered but the documented behaviour was NOT exercised. */
+export const UNOBSERVABLE = (s) => GATEWAYISH(s) || QUOTA_REFUSAL(s);
+
+/**
  * Pure classifier over observed results. Exported so `--self-test` drives the REAL logic with
  * synthetic inputs rather than a hand-written stand-in.
  */
@@ -380,6 +547,10 @@ export function classify(results) {
   const gateway = results.filter((r) => GATEWAYISH(r.status));
   if (gateway.length) {
     return { verdict: 'INDETERMINATE', why: `gateway/app not up: ${gateway.map((r) => `${r.id}=${r.status}`).join(', ')} — a 5xx is the gateway answering, not divergence` };
+  }
+  const quota = results.filter((r) => QUOTA_REFUSAL(r.status));
+  if (quota.length) {
+    return { verdict: 'INDETERMINATE', why: `rate-limited, documented behaviour not exercised: ${quota.map((r) => `${r.id}=429`).join(', ')} — this gate consumes a real quota on every deploy; the endpoint is fine` };
   }
   const failed = results.filter((r) => r.failures.length);
   if (failed.length) {
@@ -431,6 +602,10 @@ export function selfTest() {
   check('a clean set is PASS', classify([R()]).verdict, 'PASS');
   check('a missing documented key is FAIL', classify([R({ failures: ['verdict is missing documented key `confidence`'] })]).verdict, 'FAIL');
   check('a 503 is INDETERMINATE, not FAIL', classify([R({ status: 503 })]).verdict, 'INDETERMINATE');
+  check('a 429 is INDETERMINATE — the gate ran out of quota, the docs did not diverge',
+    classify([R({ status: 429 })]).verdict, 'INDETERMINATE');
+  check('a 429 beside a content failure still reads INDETERMINATE — we observed nothing',
+    classify([R({ status: 429, failures: ['missing key'] })]).verdict, 'INDETERMINATE');
   check('a 502 is INDETERMINATE', classify([R({ status: 502 })]).verdict, 'INDETERMINATE');
   check('a 504 is INDETERMINATE', classify([R({ status: 504 })]).verdict, 'INDETERMINATE');
   check('a network error is INDETERMINATE', classify([R({ transportError: 'ECONNREFUSED' })]).verdict, 'INDETERMINATE');
@@ -547,6 +722,57 @@ export function selfTest() {
     check('bypassed artifact: get_market_regime timeframes remain a STRICT SUBSET — tables render per tool', perToolDiffers, true);
   }
 
+  // ── P7-ENV — proven fallible on the required/optional split ────────────────
+  const DOC = [{ name: 'call', optional: false }, { name: 'confidence', optional: false }, { name: 'reasoning', optional: true }];
+  check('P7-ENV accepts a complete response', compareEnvelope('t', DOC, { call: 'BUY', confidence: 7, reasoning: 'x' }).length, 0);
+  check('P7-ENV accepts a response missing an OPTIONAL field — a BUY has no closest_tradeable',
+    compareEnvelope('t', DOC, { call: 'BUY', confidence: 7 }).length, 0);
+  const envMiss = compareEnvelope('t', DOC, { call: 'BUY', reasoning: 'x' });
+  check('P7-ENV FAILS on a missing REQUIRED field', envMiss.length, 1);
+  check('P7-ENV NAMES the missing field', /did not return: confidence$/.test(envMiss[0] || ''), true);
+  check('P7-ENV treats an unreadable table as a failure, never as agreement', compareEnvelope('t', [], {}).length, 1);
+
+  // ── P7-ERR — proven fallible, including the WRONG-SHAPE case ───────────────
+  const R602 = ERROR_CONTRACT.find((r) => r.code === -32602);
+  const R003 = ERROR_CONTRACT.find((r) => r.code === -32003);
+  const ok602 = { status: 200, json: { result: { isError: true, content: [{ text: 'MCP error -32602: Input validation error' }] } } };
+  check('P7-ERR accepts -32602 in its documented result.isError shape', classifyErrorShape(R602, ok602).length, 0);
+  // THE case this leg exists for: the same code arriving in the OTHER shape. The first draft of the
+  // docs described exactly this, and a caller following it reads a failure as a success.
+  const wrong = classifyErrorShape(R602, { status: 200, json: { error: { code: -32602, message: 'x' } } });
+  // Assert the MESSAGES, not the count. An earlier draft expected 2 and got 3 — a guessed number
+  // that says nothing about whether the right thing was detected, and the exact habit the P5 leg
+  // above exists to break.
+  check('P7-ERR FAILS a -32602 presented as a JSON-RPC error object (the wrong-shape case)', wrong.length > 0, true);
+  check('P7-ERR says WHICH shape /docs documents', wrong.some((f) => /documents it as result.isError/.test(f)), true);
+  check('P7-ERR also notes result.isError was not set', wrong.some((f) => /expected result.isError === true/.test(f)), true);
+  check('P7-ERR FAILS a -32602 that returned a normal verdict (gotcha no longer real)',
+    classifyErrorShape(R602, { status: 200, json: { result: { content: [{ text: '{}' }] } } }).length, 2);
+  check('P7-ERR accepts -32003 as a structured error object', classifyErrorShape(R003, { status: 200, json: { error: { code: -32003 } } }).length, 0);
+  check('P7-ERR FAILS -32003 arriving as result.isError — shapes are per-code, not global',
+    classifyErrorShape(R003, { status: 200, json: { result: { isError: true, content: [{ text: '-32003' }] } } }).length, 1);
+  check('P7-ERR declares its one exemption WITH a reason — an undeclared skip is INDETERMINATE',
+    ERROR_CONTRACT.filter((r) => r.documentedOnly).every((r) => typeof r.documentedOnly === 'string' && r.documentedOnly.length > 20), true);
+
+  // ── the BYPASSED SEAM for both new legs ────────────────────────────────────
+  const rend2 = loadRendered();
+  if (rend2.error) { failed.push(`bypassed artifact: ${rend2.error}`); console.log(`  ✗ bypassed artifact: ${rend2.error}`); }
+  else {
+    const gtcFields = responseFieldsFor(rend2.html, 'get-trade-call') || [];
+    const scanFields = responseFieldsFor(rend2.html, 'scan-trade-calls') || [];
+    check('bypassed artifact: get_trade_call response fields are readable', gtcFields.length > 0, true);
+    check('bypassed artifact: scan_trade_calls response fields are readable', scanFields.length > 0, true);
+    // The optional MARKS are the load-bearing half — without them this leg reddens on a BUY verdict.
+    check('bypassed artifact: the three conditional fields are MARKED optional',
+      ['reasoning', 'closest_tradeable', 'also_see'].every((n) => gtcFields.find((f) => f.name === n)?.optional === true), true);
+    // Scoped past the heading: a parameter name must NOT appear as a response field.
+    check('bypassed artifact: the PARAMETER table is not read as the response envelope',
+      scanFields.some((f) => f.name === 'topN'), false);
+    const codes = renderedErrorCodes(rend2.html) || [];
+    check('bypassed artifact: the rendered error table publishes every contract code',
+      [...codes].sort((a, b) => a - b).join(','), [...ERROR_CONTRACT.map((r) => r.code)].sort((a, b) => a - b).join(','));
+  }
+
   console.log(`SELF-TEST: ${failed.length === 0 ? 'PASS' : 'FAIL'} (${passed} passed, ${failed.length} failed)`);
   return failed.length === 0 ? 0 : 1;
 }
@@ -586,9 +812,9 @@ async function main() {
       results.push({ id: probe.id, source: probe.source, status: 0, failures: [], transportError: e?.message || String(e) });
       continue;
     }
-    const failures = GATEWAYISH(observed.status) ? [] : probe.assert(observed);
+    const failures = UNOBSERVABLE(observed.status) ? [] : probe.assert(observed);
     results.push({ id: probe.id, source: probe.source, status: observed.status, failures, transportError: null });
-    const mark = GATEWAYISH(observed.status) ? '~' : failures.length ? '✗' : '✓';
+    const mark = UNOBSERVABLE(observed.status) ? '~' : failures.length ? '✗' : '✓';
     console.log(`  ${mark} ${probe.id} ${probe.method} ${probe.path} [${observed.status}] — ${probe.what}`);
   }
 
@@ -628,6 +854,80 @@ async function main() {
   results.push(P7);
   const p7mark = P7.transportError || GATEWAYISH(P7.status) ? '~' : P7.failures.length ? '✗' : '✓';
   console.log(`  ${p7mark} P7 POST /mcp tools/list [${P7.status}] — ${enumRows} projected enum param(s) on /docs match the served schema`);
+
+  // ── P7-ENV — the documented response envelope against a live response ──────
+  // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH2. A paying integrator had to email to learn
+  // what `scan_trade_calls` returns, because the partial documented 7 request params and ZERO
+  // response fields. Now that it documents them, a rename must fail the day it diverges.
+  const ENVELOPE = [
+    { tool: 'get_trade_call', anchor: 'get-trade-call', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_trade_call', arguments: { coin: 'BTC', timeframe: '1h' } } } },
+    { tool: 'scan_trade_calls', anchor: 'scan-trade-calls', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'scan_trade_calls', arguments: { topN: 5, timeframe: '1h', limit: 3 } } } },
+  ];
+  const documented = {};
+  for (const e of ENVELOPE) {
+    const rows = responseFieldsFor(loaded.html, e.anchor);
+    // Vacuity at CONSTRUCTION again: landing/docs.html is ours, so an unreadable table means the
+    // generator or this extractor broke — never "the envelope agrees".
+    if (!rows || rows.length === 0) {
+      emit('INDETERMINATE', `P7-ENV: no Response Fields table could be read for ${e.tool} (section #${e.anchor}) — landing/docs.html is ours, so this is a broken extractor or a stale build`);
+    }
+    documented[e.tool] = rows;
+  }
+
+  const envRes = { id: 'P7-ENV', source: 'landing/docs.html', status: 200, failures: [], transportError: null };
+  for (const e of ENVELOPE) {
+    let obs;
+    try {
+      obs = await callLive(base, e.body, ACCEPT_BOTH);
+    } catch (err) {
+      envRes.transportError = err?.message || String(err);
+      envRes.status = 0;
+      break;
+    }
+    if (UNOBSERVABLE(obs.status)) { envRes.status = obs.status; break; }
+    let payload = null;
+    try { payload = JSON.parse(obs.json?.result?.content?.[0]?.text ?? 'null'); } catch { /* unparseable */ }
+    if (!payload) { envRes.failures.push(`${e.tool}: live response carried no parseable tool payload`); continue; }
+    envRes.failures.push(...compareEnvelope(e.tool, documented[e.tool], payload));
+  }
+  results.push(envRes);
+  const envMark = envRes.transportError || UNOBSERVABLE(envRes.status) ? '~' : envRes.failures.length ? '✗' : '✓';
+  const envCount = Object.values(documented).flat().length;
+  console.log(`  ${envMark} P7-ENV POST /mcp tools/call [${envRes.status}] — ${envCount} documented response field(s) present on a live response`);
+
+  // ── P7-ERR — every documented error code, each against ITS OWN shape ───────
+  const renderedCodes = renderedErrorCodes(loaded.html);
+  if (!renderedCodes || renderedCodes.length === 0) {
+    emit('INDETERMINATE', 'P7-ERR: no error codes could be read from the rendered #tools-errors table — the section is ours, so this is a broken extractor or a stale build');
+  }
+  const errRes = { id: 'P7-ERR', source: 'landing/docs.html', status: 200, failures: [], transportError: null };
+
+  // Identity both ways, before any network call: a code documented with no contract row cannot be
+  // verified, and a contract row missing from the docs is a rule nobody published.
+  const contractCodes = ERROR_CONTRACT.map((r) => r.code);
+  for (const c of renderedCodes) if (!contractCodes.includes(c)) errRes.failures.push(`${c}: documented on /docs but absent from the gate's ERROR_CONTRACT — unverifiable`);
+  for (const c of contractCodes) if (!renderedCodes.includes(c)) errRes.failures.push(`${c}: in the gate's ERROR_CONTRACT but not documented on /docs`);
+
+  for (const row of ERROR_CONTRACT) {
+    if (row.documentedOnly) {
+      console.log(`  · ${row.code} documented-only — ${row.documentedOnly}`);
+      continue;
+    }
+    let obs;
+    try {
+      obs = await callLive(base, row.body, row.accept, row.headers);
+    } catch (err) {
+      errRes.transportError = err?.message || String(err);
+      errRes.status = 0;
+      break;
+    }
+    if (UNOBSERVABLE(obs.status)) { errRes.status = obs.status; break; }
+    errRes.failures.push(...classifyErrorShape(row, obs));
+  }
+  results.push(errRes);
+  const errMark = errRes.transportError || UNOBSERVABLE(errRes.status) ? '~' : errRes.failures.length ? '✗' : '✓';
+  const live = ERROR_CONTRACT.filter((r) => !r.documentedOnly).length;
+  console.log(`  ${errMark} P7-ERR POST /mcp [${errRes.status}] — ${renderedCodes.length} documented code(s), ${live} reproduced live against their own shape`);
 
   const { verdict, why } = classify(results);
   emit(verdict, why);

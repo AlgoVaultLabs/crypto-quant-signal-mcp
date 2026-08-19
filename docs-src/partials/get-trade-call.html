@@ -58,14 +58,14 @@
           <tr class="param-row"><td>price</td><td class="text-gray-400">number</td><td class="text-gray-400">Mark price at evaluation time, in USD.</td></tr>
           <tr class="param-row"><td>indicators</td><td class="text-gray-400">object</td><td class="text-gray-400">The raw factor readings behind the verdict (funding, open-interest change, 24h volume, trend persistence, breakout state, session).</td></tr>
           <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
-          <tr class="param-row"><td>reasoning</td><td class="text-gray-400">string</td><td class="text-gray-400">Human-readable rationale. Omitted when <code class="text-xs bg-navy-800 px-1 rounded">includeReasoning</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>reasoning</td><td class="text-gray-400">string</td><td class="text-gray-400">Human-readable rationale. Omitted when <code class="text-xs bg-navy-800 px-1 rounded">includeReasoning</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>.</td></tr>
           <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation.</td></tr>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Echo of the resolved asset symbol.</td></tr>
           <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Echo of the resolved candle interval.</td></tr>
           <tr class="param-row"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Call metadata &mdash; server version, canonical tool name, resolved venue and its status, quota state, and the credential-resolution state.</td></tr>
           <tr class="param-row"><td>_receipts</td><td class="text-gray-400">object</td><td class="text-gray-400">The audit trail for this verdict. Documented below.</td></tr>
-          <tr class="param-row"><td>closest_tradeable</td><td class="text-gray-400">object</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. The nearest higher-confidence setup, so an agent can route elsewhere instead of idling: <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>.</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>also_see</td><td class="text-gray-400">array</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. Same shape as <code class="text-xs bg-navy-800 px-1 rounded">closest_tradeable</code>, as a ranked list.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>closest_tradeable</td><td class="text-gray-400">object</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. The nearest higher-confidence setup, so an agent can route elsewhere instead of idling: <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>.</td></tr>
+          <tr class="param-row" data-field-optional="1" style="border-bottom:none"><td>also_see</td><td class="text-gray-400">array</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. Same shape as <code class="text-xs bg-navy-800 px-1 rounded">closest_tradeable</code>, as a ranked list.</td></tr>
         </tbody>
       </table>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_receipts</code> &mdash; the audit trail</h4>
@@ -88,4 +88,32 @@
           <tr class="param-row" style="border-bottom:none"><td>disclaimer</td><td class="text-gray-400">string</td><td class="text-gray-400">Informational-analytics notice carried with every verdict.</td></tr>
         </tbody>
       </table>
-
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_algovault.auth</code> &mdash; what happened to your key</h4>
+      <p class="text-gray-400 text-sm mb-3">Read this before anything else when a paid key seems not to apply. A key that was presented but not accepted still returns a verdict &mdash; on the <strong class="text-white">free tier</strong> &mdash; so the response looks fine and the quota is wrong. This block says so explicitly, and replaces inferring it from the quota numbers.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>outcome</td><td class="text-gray-400">string</td><td class="text-gray-400">How the credential resolved. One of the five below.</td></tr>
+          <tr class="param-row"><td>presented</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Whether an <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header was sent at all &mdash; the difference between &ldquo;no key&rdquo; and &ldquo;a key that did not work&rdquo;.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>tier</td><td class="text-gray-400">string</td><td class="text-gray-400">The tier actually applied to this call. <strong class="text-white">A paid key showing <code class="text-xs bg-navy-800 px-1 rounded">free</code> means it was not applied.</strong></td></tr>
+        </tbody>
+      </table>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">outcome</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-52">Where it surfaces</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>ABSENT</td><td class="text-gray-400">served response</td><td class="text-gray-400">No <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header. Free tier, working as intended.</td></tr>
+          <tr class="param-row"><td>RESOLVED</td><td class="text-gray-400">served response</td><td class="text-gray-400">The key was recognised and its tier applied.</td></tr>
+          <tr class="param-row"><td>MALFORMED</td><td class="text-gray-400">served response</td><td class="text-gray-400">A header was sent but the value is not a key shape. You are served on the free tier &mdash; check for a truncated paste or a stray <code class="text-xs bg-navy-800 px-1 rounded">Bearer</code>.</td></tr>
+          <tr class="param-row"><td>UNKNOWN</td><td class="text-gray-400">refusal &mdash; <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code></td><td class="text-gray-400">Well-formed but not a key we issued. The call is <strong class="text-white">refused</strong> with <code class="text-xs bg-navy-800 px-1 rounded">-32003</code> and <code class="text-xs bg-navy-800 px-1 rounded">retryable: false</code> rather than silently downgraded.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>INDETERMINATE</td><td class="text-gray-400">refusal &mdash; <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code></td><td class="text-gray-400">The key could not be checked right now. Refused with <code class="text-xs bg-navy-800 px-1 rounded">-32004</code> and <code class="text-xs bg-navy-800 px-1 rounded">retryable: true</code> &mdash; the key was <strong class="text-white">not</strong> rejected. Retry shortly.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-5">The three served outcomes appear in <code class="text-xs bg-navy-800 px-1 rounded">_algovault.auth.outcome</code>; the two refusing ones never do, because the call is refused before a verdict exists &mdash; look for them in <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code> instead. See <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</p>

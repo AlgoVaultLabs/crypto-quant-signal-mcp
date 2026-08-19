@@ -453,14 +453,14 @@ tailwind.config = {
           <tr class="param-row"><td>price</td><td class="text-gray-400">number</td><td class="text-gray-400">Mark price at evaluation time, in USD.</td></tr>
           <tr class="param-row"><td>indicators</td><td class="text-gray-400">object</td><td class="text-gray-400">The raw factor readings behind the verdict (funding, open-interest change, 24h volume, trend persistence, breakout state, session).</td></tr>
           <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
-          <tr class="param-row"><td>reasoning</td><td class="text-gray-400">string</td><td class="text-gray-400">Human-readable rationale. Omitted when <code class="text-xs bg-navy-800 px-1 rounded">includeReasoning</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>reasoning</td><td class="text-gray-400">string</td><td class="text-gray-400">Human-readable rationale. Omitted when <code class="text-xs bg-navy-800 px-1 rounded">includeReasoning</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>.</td></tr>
           <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation.</td></tr>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Echo of the resolved asset symbol.</td></tr>
           <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Echo of the resolved candle interval.</td></tr>
           <tr class="param-row"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Call metadata &mdash; server version, canonical tool name, resolved venue and its status, quota state, and the credential-resolution state.</td></tr>
           <tr class="param-row"><td>_receipts</td><td class="text-gray-400">object</td><td class="text-gray-400">The audit trail for this verdict. Documented below.</td></tr>
-          <tr class="param-row"><td>closest_tradeable</td><td class="text-gray-400">object</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. The nearest higher-confidence setup, so an agent can route elsewhere instead of idling: <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>.</td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>also_see</td><td class="text-gray-400">array</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. Same shape as <code class="text-xs bg-navy-800 px-1 rounded">closest_tradeable</code>, as a ranked list.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>closest_tradeable</td><td class="text-gray-400">object</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. The nearest higher-confidence setup, so an agent can route elsewhere instead of idling: <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>.</td></tr>
+          <tr class="param-row" data-field-optional="1" style="border-bottom:none"><td>also_see</td><td class="text-gray-400">array</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. Same shape as <code class="text-xs bg-navy-800 px-1 rounded">closest_tradeable</code>, as a ranked list.</td></tr>
         </tbody>
       </table>
       <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_receipts</code> &mdash; the audit trail</h4>
@@ -483,7 +483,35 @@ tailwind.config = {
           <tr class="param-row" style="border-bottom:none"><td>disclaimer</td><td class="text-gray-400">string</td><td class="text-gray-400">Informational-analytics notice carried with every verdict.</td></tr>
         </tbody>
       </table>
-
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_algovault.auth</code> &mdash; what happened to your key</h4>
+      <p class="text-gray-400 text-sm mb-3">Read this before anything else when a paid key seems not to apply. A key that was presented but not accepted still returns a verdict &mdash; on the <strong class="text-white">free tier</strong> &mdash; so the response looks fine and the quota is wrong. This block says so explicitly, and replaces inferring it from the quota numbers.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>outcome</td><td class="text-gray-400">string</td><td class="text-gray-400">How the credential resolved. One of the five below.</td></tr>
+          <tr class="param-row"><td>presented</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Whether an <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header was sent at all &mdash; the difference between &ldquo;no key&rdquo; and &ldquo;a key that did not work&rdquo;.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>tier</td><td class="text-gray-400">string</td><td class="text-gray-400">The tier actually applied to this call. <strong class="text-white">A paid key showing <code class="text-xs bg-navy-800 px-1 rounded">free</code> means it was not applied.</strong></td></tr>
+        </tbody>
+      </table>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">outcome</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-52">Where it surfaces</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>ABSENT</td><td class="text-gray-400">served response</td><td class="text-gray-400">No <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header. Free tier, working as intended.</td></tr>
+          <tr class="param-row"><td>RESOLVED</td><td class="text-gray-400">served response</td><td class="text-gray-400">The key was recognised and its tier applied.</td></tr>
+          <tr class="param-row"><td>MALFORMED</td><td class="text-gray-400">served response</td><td class="text-gray-400">A header was sent but the value is not a key shape. You are served on the free tier &mdash; check for a truncated paste or a stray <code class="text-xs bg-navy-800 px-1 rounded">Bearer</code>.</td></tr>
+          <tr class="param-row"><td>UNKNOWN</td><td class="text-gray-400">refusal &mdash; <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code></td><td class="text-gray-400">Well-formed but not a key we issued. The call is <strong class="text-white">refused</strong> with <code class="text-xs bg-navy-800 px-1 rounded">-32003</code> and <code class="text-xs bg-navy-800 px-1 rounded">retryable: false</code> rather than silently downgraded.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>INDETERMINATE</td><td class="text-gray-400">refusal &mdash; <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code></td><td class="text-gray-400">The key could not be checked right now. Refused with <code class="text-xs bg-navy-800 px-1 rounded">-32004</code> and <code class="text-xs bg-navy-800 px-1 rounded">retryable: true</code> &mdash; the key was <strong class="text-white">not</strong> rejected. Retry shortly.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-5">The three served outcomes appear in <code class="text-xs bg-navy-800 px-1 rounded">_algovault.auth.outcome</code>; the two refusing ones never do, because the call is refused before a verdict exists &mdash; look for them in <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code> instead. See <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</p>
     </section>
 
     <section id="get-market-regime" class="mb-16">
@@ -623,6 +651,44 @@ tailwind.config = {
 // &rarr; the 10 highest-ranked assets, each a get_trade_call verdict
 //    (call, confidence, regime, price, indicators, _algovault)</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">The scan returns counters alongside the results, so you can tell &ldquo;nothing qualified&rdquo; from &ldquo;nothing was scanned&rdquo; without a second call.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>scanned</td><td class="text-gray-400">number</td><td class="text-gray-400">How many assets were evaluated.</td></tr>
+          <tr class="param-row"><td>eligible_non_hold</td><td class="text-gray-400">number</td><td class="text-gray-400">How many produced a BUY or a SELL.</td></tr>
+          <tr class="param-row"><td>holds</td><td class="text-gray-400">number</td><td class="text-gray-400">How many produced a HOLD.</td></tr>
+          <tr class="param-row"><td>errors</td><td class="text-gray-400">number</td><td class="text-gray-400">A <strong class="text-white">count</strong> of venue errors during the scan &mdash; not a detail object.</td></tr>
+          <tr class="param-row"><td>partial</td><td class="text-gray-400">boolean</td><td class="text-gray-400">True when a venue timed out and the scan is therefore incomplete. Treat the counters as a floor.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>calls</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked results. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">call</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code> and <code class="text-xs bg-navy-800 px-1 rounded">regime</code>.</td></tr>
+        </tbody>
+      </table>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "scanned": 30,
+  "eligible_non_hold": 1,
+  "holds": 29,
+  "errors": 0,
+  "partial": false,
+  "calls": [
+    { "coin": "BTC", "timeframe": "1h", "exchange": "BINANCE",
+      "call": "BUY", "confidence": 57, "regime": "TRENDING_UP" }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <h4 class="text-sm font-semibold text-white mb-2">An empty <code class="text-xs bg-navy-800 px-1 rounded">calls</code> array is the ordinary outcome</h4>
+        <p class="text-gray-400 text-sm leading-relaxed mb-3">Most assets are HOLD most of the time, and <code class="text-xs bg-navy-800 px-1 rounded">includeHolds</code> defaults to <code class="text-xs bg-navy-800 px-1 rounded">false</code> &mdash; so a scan that filters every result out is working correctly, not failing. A live 30-asset scan on <code class="text-xs bg-navy-800 px-1 rounded">1h</code> at the time of writing returned <strong class="text-white">29 HOLD</strong> against <strong class="text-white">1</strong> actionable call.</p>
+        <p class="text-gray-400 text-sm leading-relaxed">Read <code class="text-xs bg-navy-800 px-1 rounded">scanned</code> to confirm the universe was evaluated. To widen the result set, lower <code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code>, or set <code class="text-xs bg-navy-800 px-1 rounded">includeHolds: true</code> to see the HOLD verdicts alongside the rest.</p>
+      </div>
       <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan.</p>
     </section>
 
@@ -747,6 +813,33 @@ tailwind.config = {
       <p class="text-gray-500 text-xs">Cost transparency: <code class="text-xs">chat_knowledge</code> costs about $0.002 per call with prompt caching. Quota resets at the first of each UTC month.</p>
     </section>
 
+    <section id="tools-errors" class="mb-16">
+      <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Errors & troubleshooting</h4>
+      <p class="text-gray-400 text-sm mb-5">Every failure this API can return, what it means, and what to change. Verified against the live server.</p>
+
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <h4 class="text-sm font-semibold text-white mb-2">Failures arrive in two shapes &mdash; check both</h4>
+        <p class="text-gray-400 text-sm leading-relaxed mb-3">Check <code class="text-xs bg-navy-800 px-1 rounded">response.error</code> first. If it is absent, check <code class="text-xs bg-navy-800 px-1 rounded">response.result.isError</code>.</p>
+        <p class="text-gray-400 text-sm leading-relaxed">A <strong class="text-white">parameter validation failure returns HTTP 200</strong> with <code class="text-xs bg-navy-800 px-1 rounded">result.isError: true</code> and the code as plain text inside <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code> &mdash; there is no <code class="text-xs bg-navy-800 px-1 rounded">error</code> object at all. A client that only inspects <code class="text-xs bg-navy-800 px-1 rounded">error</code> reads that failure as a success, then fails again trying to parse the message as a verdict. This is the single most common cause of a working integration appearing broken.</p>
+      </div>
+
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Code</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-56">Where to read it</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">What it means &mdash; and what to do</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>-32602</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">result.isError</code> &mdash; code in <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code></td><td class="text-gray-400">Invalid parameter: a value outside an enum, or a required field missing. The message carries an <code class="text-xs bg-navy-800 px-1 rounded">options</code> array listing exactly what that parameter accepts &mdash; read it rather than guessing.</td></tr>
+          <tr class="param-row"><td>-32003</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">response.error.code</code></td><td class="text-gray-400">The API key was not recognised. Check it on your account page, or drop the <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header entirely to use the free tier. <code class="text-xs bg-navy-800 px-1 rounded">error.data.retryable</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>: retrying will not help.</td></tr>
+          <tr class="param-row"><td>-32004</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">response.error.code</code></td><td class="text-gray-400">The key could not be verified right now &mdash; it was <strong class="text-white">not</strong> rejected. <code class="text-xs bg-navy-800 px-1 rounded">error.data.retryable</code> is <code class="text-xs bg-navy-800 px-1 rounded">true</code>: retry shortly and treat it as transient, never as a bad key.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>HTTP 406</td><td class="text-gray-400">HTTP status, plus <code class="text-xs bg-navy-800 px-1 rounded">error.code</code> <code class="text-xs bg-navy-800 px-1 rounded">-32000</code></td><td class="text-gray-400">The <code class="text-xs bg-navy-800 px-1 rounded">Accept</code> header is incomplete. Send both values: <code class="text-xs bg-navy-800 px-1 rounded">Accept: application/json, text/event-stream</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <p class="text-gray-500 text-xs mb-2">A venue outside the <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> list is a <code class="text-xs bg-navy-800 px-1 rounded">-32602</code>, not an outage. The published list is the set with a live track record; venues without one are not accepted.</p>
+    </section>
+
     <div class="border-t border-white/5 mb-16"></div>
 
     <section id="channels" class="mb-16">
@@ -779,6 +872,41 @@ curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"BTC"}}}' \
   | sed -n 's/^data: //p' | head -1 | jq -r '.result.content[0].text' | jq</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2 mt-6"><strong class="text-gray-300">The same call in Python.</strong> Both parses in one place &mdash; the SSE frame, then the verdict string inside it. No MCP client library, no handshake, no session id.</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">import json, requests
+
+r = requests.post(
+    "https://api.algovault.com/mcp",
+    headers={
+        "Content-Type": "application/json",
+        # both values, or the server answers 406
+        "Accept": "application/json, text/event-stream",
+        # optional — omit entirely to use the free tier
+        # "Authorization": "Bearer av_live_...",
+    },
+    json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+          "params": {"name": "get_trade_call",
+                     "arguments": {"coin": "BTC", "timeframe": "1h"}}},
+    timeout=30,
+)
+
+# 1st parse — the reply is an SSE frame; the payload is the line after "data: "
+envelope = json.loads(next(l[6:] for l in r.text.splitlines() if l.startswith("data: ")))
+
+# failures arrive in TWO shapes — check both before reading a verdict
+if "error" in envelope:
+    raise SystemExit(envelope["error"])                      # -32003 / -32004
+if envelope["result"].get("isError"):
+    raise SystemExit(envelope["result"]["content"][0]["text"])  # -32602, as text
+
+# 2nd parse — the verdict is a JSON *string* inside the tool result
+verdict = json.loads(envelope["result"]["content"][0]["text"])
+
+print(verdict["call"], verdict["confidence"], verdict["regime"])
+print(verdict["_algovault"]["auth"])   # ABSENT / RESOLVED / MALFORMED</code></pre>
       </div>
       <p class="text-gray-400 text-sm mb-4 mt-6"><strong class="text-gray-300">Optional: the full MCP session handshake.</strong> You do not need this to call a tool. It is kept for clients that speak full MCP session semantics. It also reproduces what an MCP client does internally:</p>
 <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
