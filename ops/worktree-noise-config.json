@@ -55,5 +55,20 @@
       "added": "2026-08-20"
     }
   ],
-  "_promotion_note": "CH4 adds the real `promotion` block here (R4.4: max_class_a_stranded + not_before). It is deliberately ABSENT rather than an empty container: every object under ops/*.json keyed `promotion` inherits OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1's contract and must declare an `instrument` (population / written_by / grade / reason), which an empty container cannot do and which CH1 must not pre-empt. CH1's validator ignores unknown top-level keys, so nothing needed reserving. CH4's instrument will be the untracked $GIT_COMMON_DIR run log, NOT this file — a promotion criterion counted in the file the subject edits is grade C."
+  "_promotion_note": "CH1 deliberately shipped NO `promotion` key; CH4 adds it here, which is the only key CH4 may write in this file. Field names reconcile the spec with the estate's canonical shape: the spec calls the time bound `not_before`, `assertPromotionBound` calls it `escalate_after`. ONE field is carried, not both — a date duplicated at two names is a fact that goes stale at one of them.",
+  "promotion": {
+    "max_class_a_stranded": 0,
+    "runs_required": 30,
+    "escalate_after": "2026-09-03",
+    "enforcement": "report",
+    "reason": "REPORT-first with BOTH conditions, because a numeric criterion with no deadline is how a report-only guard becomes permanent, and a deadline with no criterion promotes a guard that has not earned it. Flip to blocking only when 30+ recorded session-end observations show max_class_a_stranded = 0 AND the date has passed. The criterion is a MAX rather than a count or a ratio, which is what makes it ungameable from the inside: extra observations cannot lower a maximum, so a deliberate run can only raise it truthfully or leave it alone.",
+    "owner": "OPS-WORKTREE-WORK-PENDING-PROMOTE-W{NEXT}",
+    "instrument": {
+      "population": "class_a_count observed at session end, one row per fired SessionEnd hook, appended as OBS lines to $GIT_COMMON_DIR/algovault-work-pending.log",
+      "written_by": "scripts/session-end-work-pending.sh (installed as ~/.claude/hooks/algovault-work-pending.sh)",
+      "grade": "D",
+      "reobserve": "bash scripts/lib/worktree-work-pending.sh --all --field class_a_count",
+      "reason": "Grade D, the same shape as gate-staleness: the hook writes the log, and the value is world-state at an instant that is NOT recomputable later — re-running the predicate tomorrow measures tomorrow. But a deliberate invocation cannot MANUFACTURE a violation. The criterion is a maximum over observations, so firing the hook in a clean worktree adds a TRUE sample that cannot lower the max, and firing it in a dirty one raises the max truthfully and DELAYS promotion. There is no invocation that fabricates progress toward the flip. Not grade B: the log is not a cache of anything re-derivable, which is why `rederive` is deliberately absent. Deliberately NOT recorded in this tracked config — a run counter in the file the subject edits would make the hook a generator of the very dirt it reports on, and an instrument the subject can rewrite is grade C."
+    }
+  }
 }
