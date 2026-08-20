@@ -59,6 +59,7 @@ const PARTIALS_DIR = path.join(REPO_ROOT, 'docs-src', 'partials');
 const DOCS_HTML_PATH = path.join(REPO_ROOT, 'landing', 'docs.html');
 
 const SIDEBAR_PLACEHOLDER = '<!--DOCS:SIDEBAR-->';
+const SCROLLSPY_PLACEHOLDER = '<!--DOCS:SCROLLSPY-->';
 const BODY_PLACEHOLDER = '<!--DOCS:BODY-->';
 // OPS-DOCS-JSONLD-TOOLCOUNT-W1: the <head> TechArticle JSON-LD tool clause, derived from the SoT.
 const TECH_ARTICLE_PLACEHOLDER = '__TECH_ARTICLE_TOOLS__';
@@ -86,6 +87,19 @@ function renderAliases(node) {
   return (node.aliases ?? []).map((a) => `<span id="${a}" aria-hidden="true"></span>`).join('');
 }
 
+/**
+ * The anchors that become an `<a class="sidebar-link">` — LEAVES only.
+ *
+ * THE ONE predicate `renderSidebar` and `renderScrollspy` both use, so the spy can only ever
+ * observe things the sidebar actually links. `sidebarEntries()` is the wrong source here and that
+ * is measured, not stylistic: it also returns GROUP nodes (`platform`, …), which render as a
+ * non-link `<div>` header. Observing one gives the spy a target it can never mark — a silent
+ * no-op, and exactly the "dead spy target" this chapter's own test forbids.
+ */
+function sidebarLeafAnchors(flat) {
+  return flat.filter((n) => !n.sidebarHidden && n.body.kind !== 'group').map((n) => n.anchor);
+}
+
 /** Grouped sidebar: group nodes → non-link headers, leaves → sidebar-link, indented by level. */
 function renderSidebar(flat) {
   const lines = [];
@@ -98,6 +112,87 @@ function renderSidebar(flat) {
     }
   }
   return lines.join('\n');
+}
+
+/**
+ * The observed id list actually emitted on a page — read back from the rendered scrollspy.
+ *
+ * Exported so `--check` and `tests/unit/docs-sidebar-nav.test.ts` read it through the SAME parser.
+ * Two independent regexes for one artifact is how a check and its test end up disagreeing about
+ * what shipped.
+ */
+export function renderedScrollspyIds(html) {
+  const m = /var IDS = (\[[^\]]*\]);/.exec(html);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
+
+/**
+ * The scrollspy, generated from the OUTLINE so a new section joins it for free.
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3.
+ *
+ * `IntersectionObserver` appeared NOWHERE in `landing/`, `scripts/` or `src/` before this — no link
+ * was ever marked current, which is the "show me where I am now" half of the reported defect.
+ *
+ * 🛑 THE ID LIST COMES FROM `sidebarEntries()`, NEVER `allAnchorIds()`. `allAnchorIds()` also
+ * returns alias ids and the four `sidebarHidden` nodes (`tools-when-to-use`,
+ * `tools-worked-examples`, `tools-rate-limits`, `tools-errors`). Those have NO sidebar link, so
+ * observing them would produce spy targets with nothing to mark — and would contradict the
+ * dead-target test in the same chapter.
+ *
+ * FAIL-OPEN by construction: everything after the feature check is inside a guard, so a browser
+ * without `IntersectionObserver` renders and navigates exactly as it did before. A navigation
+ * enhancement must never be able to break navigation.
+ */
+function renderScrollspy(flat) {
+  const ids = sidebarLeafAnchors(flat);
+  return `<script>
+/* DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3 — sidebar scrollspy, ids derived from the docs outline. */
+(function () {
+  var IDS = ${JSON.stringify(ids)};
+  if (typeof IntersectionObserver !== 'function') return;   /* fail-open: no observer, no change */
+  var aside = document.querySelector('aside');
+  if (!aside) return;
+  var linkFor = {}, sections = [];
+  IDS.forEach(function (id) {
+    var a = aside.querySelector('a.sidebar-link[href="#' + id + '"]');
+    var el = document.getElementById(id);
+    if (a && el) { linkFor[id] = a; sections.push(id); }
+  });
+  if (!sections.length) return;
+  var onScreen = Object.create(null), active = null;
+
+  /* Bring the active link into the ASIDE's own scroll window — never the page's. scrollIntoView()
+     would scroll ancestors too and yank the reader away from what they are reading. */
+  function reveal(a) {
+    var top = a.offsetTop, bottom = top + a.offsetHeight;
+    if (top < aside.scrollTop) aside.scrollTop = top - 8;
+    else if (bottom > aside.scrollTop + aside.clientHeight) aside.scrollTop = bottom - aside.clientHeight + 8;
+  }
+
+  function mark() {
+    var next = null;
+    for (var i = 0; i < sections.length; i++) { if (onScreen[sections[i]]) { next = sections[i]; break; } }
+    if (!next || next === active) return;
+    if (active && linkFor[active]) {
+      linkFor[active].classList.remove('active');
+      linkFor[active].removeAttribute('aria-current');
+    }
+    active = next;
+    /* aria-current is the REAL state; the colour class is only its visual echo. A colour-only cue
+       is invisible to a screen reader, so both are set together and neither alone. */
+    linkFor[active].classList.add('active');
+    linkFor[active].setAttribute('aria-current', 'true');
+    reveal(linkFor[active]);
+  }
+
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { onScreen[en.target.id] = en.isIntersecting; });
+    mark();
+  }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+  sections.forEach(function (id) { io.observe(document.getElementById(id)); });
+})();
+</script>`;
 }
 
 /** Body: one block per node (outline order); dividers before top-level/H2 groups. */
@@ -371,6 +466,13 @@ function generate(outlineMod, schemaMod) {
     .replace(BODY_PLACEHOLDER, renderBody(flat))
     .replace(TECH_ARTICLE_PLACEHOLDER, outlineMod.techArticleToolClause());
 
+  // The scrollspy is GENERATED (its id list derives from the outline); the aside's own classes are
+  // static in docs-src/template.html, because they depend on nothing.
+  if (!html.includes(SCROLLSPY_PLACEHOLDER)) {
+    throw new Error(`build_docs: docs-src/template.html has no ${SCROLLSPY_PLACEHOLDER} — the scrollspy would land nowhere`);
+  }
+  html = html.replace(SCROLLSPY_PLACEHOLDER, renderScrollspy(flat));
+
   // Projected parameter rows, filled from the SAME declaration the Zod schemas are built from.
   const { html: projected, missing } = fillToolParamRegions(html, schemaMod);
   if (missing.length) {
@@ -464,6 +566,21 @@ async function main() {
       if (markerAnchors.has(anchor)) continue;
       if (!bodyIds.has(anchor)) errors.push(`docs.html body missing id="${anchor}" (dead-link / unrendered section)`);
     }
+    // 2b. the scrollspy is present, and observes EXACTLY the sidebar's anchor set (both directions).
+    // A regeneration that silently dropped it would leave every link unmarked with `--check` green.
+    const spyIds = renderedScrollspyIds(onDisk);
+    if (spyIds === null) {
+      errors.push('docs.html carries no scrollspy id list — the nav enhancement was dropped on a regeneration');
+    } else {
+      // Compared against the LINKS the sidebar actually rendered, not against the outline: a group
+      // node is a sidebar ENTRY but renders as a non-link header, so an outline-level comparison
+      // would demand the spy observe a target it could never mark.
+      const missing = [...sidebarHrefs].filter((a) => !spyIds.includes(a));
+      const extra = spyIds.filter((a) => !sidebarHrefs.has(a));
+      if (missing.length) errors.push(`scrollspy does not observe ${missing.length} linked section(s): ${missing.join(', ')}`);
+      if (extra.length) errors.push(`scrollspy observes ${extra.length} id(s) the sidebar does not link: ${extra.join(', ')}`);
+    }
+
     // 3. no-drift (ignore downstream-filled markers)
     if (blankMarkers(generated, markerNames()) !== blankMarkers(onDisk, markerNames())) {
       errors.push('docs.html DRIFT vs generated (structure/partials changed but not rebuilt) — run `node scripts/build_docs.mjs`');

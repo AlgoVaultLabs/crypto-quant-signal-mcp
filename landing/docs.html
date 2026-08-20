@@ -313,7 +313,11 @@ tailwind.config = {
 <div class="max-w-6xl mx-auto px-6 pt-24 pb-20 flex gap-10">
 
   <!-- Sidebar -->
-  <aside class="hidden lg:block w-52 shrink-0 sticky top-20 self-start">
+  <!-- DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3: `sticky` alone could not hold. With 20 links the
+       aside outgrows the viewport, and a sticky element TALLER than the viewport scrolls away
+       with the page — which is the whole "the sidebar does not follow me" symptom. Capping the
+       height and letting the aside scroll its OWN overflow is what makes `sticky` mean anything. -->
+  <aside class="hidden lg:block w-52 shrink-0 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
     <!-- CHANNEL-HUB-PAGES-GEO-W1 CH4: sidebar realigned to the Platform taxonomy
          (Tools / Channels / Ecosystem / Verify). HTTP API + Rate limits moved from
          Knowledge Tools → Channels; all anchors preserved (no dead links). -->
@@ -2547,6 +2551,54 @@ cfg = gate_api.Configuration(
   scripts/build_asset_versions.mjs; do not hand-write a version here.
 -->
 <script defer src="/js/track-record-proxy.js?v=f485c24a"></script>
+
+<script>
+/* DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3 — sidebar scrollspy, ids derived from the docs outline. */
+(function () {
+  var IDS = ["quick-start","get-trade-call","get-market-regime","scan-funding-arb","scan-trade-calls","chat-knowledge","search-knowledge","mcp","rest-api","webhooks","telegram","connect-mcp","connect-ai-agent","connect-exchange-kit","connect-trading-platform","usage-examples","live-dashboard","verify","pricing","faq"];
+  if (typeof IntersectionObserver !== 'function') return;   /* fail-open: no observer, no change */
+  var aside = document.querySelector('aside');
+  if (!aside) return;
+  var linkFor = {}, sections = [];
+  IDS.forEach(function (id) {
+    var a = aside.querySelector('a.sidebar-link[href="#' + id + '"]');
+    var el = document.getElementById(id);
+    if (a && el) { linkFor[id] = a; sections.push(id); }
+  });
+  if (!sections.length) return;
+  var onScreen = Object.create(null), active = null;
+
+  /* Bring the active link into the ASIDE's own scroll window — never the page's. scrollIntoView()
+     would scroll ancestors too and yank the reader away from what they are reading. */
+  function reveal(a) {
+    var top = a.offsetTop, bottom = top + a.offsetHeight;
+    if (top < aside.scrollTop) aside.scrollTop = top - 8;
+    else if (bottom > aside.scrollTop + aside.clientHeight) aside.scrollTop = bottom - aside.clientHeight + 8;
+  }
+
+  function mark() {
+    var next = null;
+    for (var i = 0; i < sections.length; i++) { if (onScreen[sections[i]]) { next = sections[i]; break; } }
+    if (!next || next === active) return;
+    if (active && linkFor[active]) {
+      linkFor[active].classList.remove('active');
+      linkFor[active].removeAttribute('aria-current');
+    }
+    active = next;
+    /* aria-current is the REAL state; the colour class is only its visual echo. A colour-only cue
+       is invisible to a screen reader, so both are set together and neither alone. */
+    linkFor[active].classList.add('active');
+    linkFor[active].setAttribute('aria-current', 'true');
+    reveal(linkFor[active]);
+  }
+
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { onScreen[en.target.id] = en.isIntersecting; });
+    mark();
+  }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+  sections.forEach(function (id) { io.observe(document.getElementById(id)); });
+})();
+</script>
 
 <footer data-av-brand-footer="desktop" style="padding:44px 80px 56px;border-top:1px solid var(--line);background:oklch(0.13 0.012 265);display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;font-size:13px;color:var(--fg-3)"><div style="display:flex;align-items:center;gap:10px"><img src="/logo.png" alt="AlgoVault" style="width:22px;height:22px;border-radius:6px;object-fit:contain;flex-shrink:0"/><span style="color:var(--fg-2)">Built by AlgoVault Labs</span></div><div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap"><a href="https://algovault.com/" style="color:var(--fg-3);text-decoration:none">Home</a><a href="https://algovault.com/track-record" style="color:var(--fg-3);text-decoration:none">Track Record</a><a href="https://algovault.com/glossary" style="color:var(--fg-3);text-decoration:none">Glossary</a><a href="https://github.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">GitHub</a><a href="https://x.com/AlgoVaultLabs" target="_blank" rel="noopener noreferrer" style="color:var(--fg-3);text-decoration:none">X / Twitter</a><a href="https://api.algovault.com/welcome" style="color:var(--fg-3);text-decoration:none">Signup</a><a href="https://algovault.com/referral" style="color:var(--fg-3);text-decoration:none">Refer &amp; Earn</a><a href="https://algovault.com/contact" style="color:var(--fg-3);text-decoration:none">Contact</a><a href="https://algovault.com/privacy" style="color:var(--fg-3);text-decoration:none">Privacy</a><a href="https://algovault.com/terms" style="color:var(--fg-3);text-decoration:none">Terms</a></div><div data-slot="social-proof-badges" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><a href="https://www.producthunt.com/products/algovault?utm_source=badge-follow&utm_medium=badge&utm_campaign=badge-algovault" target="_blank" rel="noopener noreferrer" style="display:inline-flex;border:1px solid var(--line);border-radius:4px;line-height:0"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1254662&theme=dark&size=small" alt="Algovault - On-chain-verified trade calls for AI agents | Product Hunt" style="width: 86px; height: 32px;" width="86" height="32" /></a></div></footer>
 </body>
