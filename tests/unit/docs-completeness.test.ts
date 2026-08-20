@@ -19,7 +19,7 @@
  * `enum` on the wire).
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RANK_BY_VALUES, RANK_BY_ALIASES, resolveRankBy } from '../../src/lib/rank-constants.js';
@@ -189,5 +189,88 @@ describe('the deferral guard catches a known-bad fixture', () => {
   it('stays silent on the page we actually ship', async () => {
     const { findParamDeferrals } = await import('../../scripts/check-docs-samples-live.mjs');
     expect(findParamDeferrals(DOCS_HTML)).toEqual([]);
+  });
+});
+
+describe('a utility class that is not configured is silently inert', () => {
+  // Found while writing this wave: four new links were authored `class="text-gold hover:underline"`.
+  // `gold` is not a Tailwind built-in and is not in the docs template's `tailwind.config`, so the
+  // class resolved to NOTHING — the links rendered as plain body text and every gate stayed green,
+  // because an unknown utility class is not an error in Tailwind, it is a no-op. The canonical
+  // token is `text-mint-400`, used 180+ times on the page. A colour typo is invisible to `--check`
+  // (the byte comparison passes: the WRONG class is faithfully rendered), so it needs its own guard.
+  const TAILWIND_BUILTIN_COLORS = new Set([
+    'slate', 'gray', 'zinc', 'neutral', 'stone', 'red', 'orange', 'amber', 'yellow', 'lime',
+    'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia',
+    'pink', 'rose', 'black', 'white', 'transparent', 'current', 'inherit',
+  ]);
+
+  // `text-*` and `border-*` are overloaded prefixes: they carry size, alignment, wrap and style
+  // utilities as well as colours. Listing the NON-colour values is what keeps this guard precise —
+  // an earlier draft flagged `text-sm` and `border-b` as unknown colours, which is a guard nobody
+  // would keep.
+  const NON_COLOR = new Set([
+    'xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl', '9xl',
+    'left', 'center', 'right', 'justify', 'start', 'end', 'ellipsis', 'clip', 'wrap', 'nowrap',
+    'balance', 'pretty', 'solid', 'dashed', 'dotted', 'double', 'none', 'hidden', 'collapse',
+    'separate', 'b', 't', 'l', 'r', 'x', 'y', 'opacity',
+  ]);
+
+  /** Colour families the docs template actually configures, read from its own `tailwind.config`. */
+  const configured = (() => {
+    const tpl = read('docs-src/template.html');
+    const i = tpl.indexOf('tailwind.config');
+    const block = tpl.slice(i, tpl.indexOf('</script>', i));
+    const colors = block.slice(block.indexOf('colors:'));
+    return new Set([...colors.matchAll(/([a-z][a-z0-9]*)\s*:\s*\{/g)].map((m) => m[1]));
+  })();
+
+  const unresolved = (token: string): boolean => {
+    const m = /^(?:text|bg|border|from|to|via)-([a-z][a-z0-9]*)(?:-\d{2,3})?$/.exec(token);
+    if (!m) return false;
+    const family = m[1];
+    if (NON_COLOR.has(family)) return false;
+    return !configured.has(family) && !TAILWIND_BUILTIN_COLORS.has(family);
+  };
+
+  it('reads a non-empty colour config — otherwise this whole guard is vacuous', () => {
+    expect(configured.size).toBeGreaterThan(0);
+    expect([...configured]).toContain('mint');
+  });
+
+  // Proves the guard can FAIL, using the exact token this wave shipped by mistake. Without this
+  // case, an over-tightened predicate would make the sweep below pass by checking nothing.
+  it('FIRES on the exact class this wave shipped by mistake', () => {
+    expect(unresolved('text-gold')).toBe(true);
+    expect(unresolved('bg-gold-500')).toBe(true);
+  });
+
+  it('does NOT fire on size, alignment or border-side utilities', () => {
+    for (const t of ['text-sm', 'text-xs', 'text-left', 'text-center', 'border-b', 'border-white', 'text-mint-400', 'bg-navy-800']) {
+      expect(unresolved(t), t).toBe(false);
+    }
+  });
+
+  it('every colour utility used in a partial resolves to a real family', () => {
+    const offenders: string[] = [];
+    for (const f of readdirSync(join(REPO_ROOT, 'docs-src/partials')).filter((n) => n.endsWith('.html'))) {
+      for (const m of read(`docs-src/partials/${f}`).matchAll(/class="([^"]*)"/g)) {
+        for (const token of m[1].split(/\s+/)) {
+          const bare = token.replace(/^(?:hover|focus|active|lg|md|sm|dark):/, '');
+          if (unresolved(bare)) offenders.push(`${f}: ${bare}`);
+        }
+      }
+    }
+    expect([...new Set(offenders)]).toEqual([]);
+  });
+
+  it('inline anchors in partials use the ONE canonical link class', () => {
+    const offenders: string[] = [];
+    for (const f of readdirSync(join(REPO_ROOT, 'docs-src/partials')).filter((n) => n.endsWith('.html'))) {
+      for (const m of read(`docs-src/partials/${f}`).matchAll(/<a\s+href="#[^"]*"\s+class="([^"]*)"/g)) {
+        if (!m[1].includes('text-mint-400')) offenders.push(`${f}: ${m[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
