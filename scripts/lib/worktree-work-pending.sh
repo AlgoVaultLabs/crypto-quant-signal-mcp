@@ -318,10 +318,31 @@ PATHS_A=""     # repo<TAB>worktree<TAB>path
 PATHS_B=""     # repo<TAB>worktree<TAB>path<TAB>reason
 GITIGNORED_A="" # repo<TAB>worktree<TAB>path<TAB>tracked_ignored|ignored_only  (R1.6)
 
+# Return the mtime as a BARE INTEGER, or nothing. Never anything else.
+#
+# `-f` means opposite things on the two stats: BSD `stat -f <fmt>` is a format string, GNU
+# `stat -f` is --file-system. So the BSD-first form does not merely fail on Linux — it can
+# SUCCEED and print something non-numeric, and the caller then feeds that to `$(( ))`.
+#
+# Under `set -u` that is fatal, not cosmetic: bash treats a non-numeric operand as a VARIABLE
+# NAME, hits "unbound variable", and KILLS THE SHELL — so the predicate exits having printed
+# NO VERDICT TOKEN AT ALL, which is the one outcome the token law forbids. Measured on the
+# Postgres CI lane 2026-08-20: every scenario carrying a Class-A path died here, and only
+# those, because nothing else reaches this function.
+#
+# So both forms are tried and the result is VALIDATED. A tool that answers in the wrong
+# format is treated exactly like a tool that failed.
 mtime_of() {
-  # BSD first: macOS is the target host. GNU fallback so a Linux CI run is not silently blind.
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || true
+  local m
+  for m in "$(stat -c %Y "$1" 2>/dev/null || true)" "$(stat -f %m "$1" 2>/dev/null || true)"; do
+    case "$m" in ''|*[!0-9]*) continue ;; *) printf '%s' "$m"; return 0 ;; esac
+  done
+  return 0
 }
+
+# Numeric or nothing, asserted at the point of USE as well as of production — defence in
+# depth, because the caller is the one that dies.
+is_uint() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
 
 census_worktree() {
   local repo="$1" wt="$2" branch="$3"
@@ -379,8 +400,8 @@ census_worktree() {
 "
     fi
     mt="$(mtime_of "$wt/$p")"
-    if [ -n "${mt:-}" ]; then
-      if [ -z "$oldest" ] || [ "$mt" -lt "$oldest" ] 2>/dev/null; then oldest="$mt"; fi
+    if is_uint "${mt:-}"; then
+      if ! is_uint "$oldest" || [ "$mt" -lt "$oldest" ]; then oldest="$mt"; fi
     fi
   done < "$tmp"
   rm -f "$tmp"
@@ -393,8 +414,10 @@ census_worktree() {
   else protected=none
   fi
 
+  # `-` is the honest answer for "no resolvable age", and it is what the column already means
+  # elsewhere. Never let an unvalidated value reach `$(( ))`.
   age="-"
-  if [ -n "$oldest" ]; then age=$(( ( NOW_EPOCH - oldest ) / 3600 )); fi
+  if is_uint "$oldest" && is_uint "$NOW_EPOCH"; then age=$(( ( NOW_EPOCH - oldest ) / 3600 )); fi
 
   ROWS="$ROWS$wt	$repo	$branch	$pending	$protected	$a	$age
 "
@@ -688,6 +711,31 @@ JSON
     "$(printf '%s\n' "$out" | grep -c 'WORK_PENDING_VERDICT=' || true)" "1"
   st_check "projections carry NO verdict line" \
     "$(WORK_PENDING_CONFIG="$T/c-multi.json" WORK_PENDING_STATE_FILE=/nonexistent bash "$SELF" --all --paths class_a 2>/dev/null | grep -c 'WORK_PENDING_VERDICT=' || true)" "0"
+
+  # ── (9b) REGRESSION: a `stat` that answers in the WRONG FORMAT must not kill the run ──
+  # This reproduces the Postgres-lane failure on any platform. A shim `stat` earlier on PATH
+  # prints a non-numeric answer and exits 0 — exactly what GNU `stat -f %m` does — and the
+  # predicate must still emit EXACTLY ONE verdict token. Before the fix it printed none at
+  # all, because `$(( ))` under `set -u` read the string as an unbound variable name and
+  # killed the shell.
+  local SHIM="$T/shim"; mkdir -p "$SHIM"
+  printf '#!/bin/sh\necho "?"\nexit 0\n' > "$SHIM/stat"; chmod +x "$SHIM/stat"
+  out="$(PATH="$SHIM:$PATH" WORK_PENDING_CONFIG="$cfg" WORK_PENDING_STATE_FILE=/nonexistent bash "$SELF" --all 2>/dev/null)"
+  st_check "a wrong-format \`stat\` still yields exactly ONE verdict line" \
+    "$(printf '%s\n' "$out" | grep -c 'WORK_PENDING_VERDICT=' || true)" "1"
+  st_check "...and the run is still PENDING, not a crash" "$(st_verdict "$out")" "PENDING"
+  st_check "...with the age column falling back to '-'" "$(st_field "$out" 7)" "-"
+
+  # A shim that emulates GNU stat EXACTLY: `-c %Y` answers correctly, `-f` is
+  # --file-system and prints something unrelated. This is the real Linux shape, and it
+  # proves the fix does not merely survive it but reads the CORRECT mtime — a guard that
+  # only stopped the crash would leave every age reading "-" on every Linux host.
+  printf '#!/bin/sh\ncase "$1" in\n  -c) echo 1755000000 ;;\n  -f) echo "Block size: 4096" ;;\n  *) echo "?" ;;\nesac\nexit 0\n' > "$SHIM/stat"
+  chmod +x "$SHIM/stat"
+  out="$(PATH="$SHIM:$PATH" WORK_PENDING_CONFIG="$cfg" WORK_PENDING_STATE_FILE=/nonexistent WORK_PENDING_NOW_EPOCH=1755003600 bash "$SELF" --all 2>/dev/null)"
+  st_check "GNU-shaped stat: verdict still emitted exactly once" \
+    "$(printf '%s\n' "$out" | grep -c 'WORK_PENDING_VERDICT=' || true)" "1"
+  st_check "GNU-shaped stat: the age is READ CORRECTLY, not defaulted to '-'" "$(st_field "$out" 7)" "1"
 
   # ── (10) the KNOWN LIMITATION, pinned so it is a decision and not an accident
   local R6="$T/r6"; st_mkrepo "$R6"; st_config "$T/c6.json" "\"$R6\""

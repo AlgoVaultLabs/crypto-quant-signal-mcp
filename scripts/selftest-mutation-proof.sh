@@ -64,6 +64,7 @@ indeterminate-maps-to-exit-0::s|    INDETERMINATE) echo 3 ;;|    INDETERMINATE) 
 expiry-never-lapses::s|if \[ "\$exp" .< "\$today" \]; then return 1; fi|if false; then return 1; fi|::a lapsed exemption still protects
 work-pending-always-NO::s|if \[ "\$a" -gt 0 \]; then pending=YES; else pending=NO; fi|pending=NO|::real work reads as none
 lock-never-detected::s|if is_locked "\$wt";  then protected=lock|if false;  then protected=lock|::a locked worktree reads unprotected
+numeric-guard-disabled::s|^is_uint() .*|is_uint() { return 0; }|::a wrong-format stat is accepted, and $(( )) under set -u then KILLS the shell with no token
 '
 
 # A healthy baseline is a precondition: if the UNMUTATED suite is already red, every mutation
