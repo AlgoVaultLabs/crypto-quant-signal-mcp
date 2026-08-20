@@ -53,6 +53,10 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREDICATE="${ALGOVAULT_WORK_PENDING_PREDICATE:-$SELF_DIR/lib/worktree-work-pending.sh}"
 RETENTION_DAYS="${ALGOVAULT_WIP_RETENTION_DAYS:-30}"
+# Validated because it is caller-supplied and reaches `$(( ))`. Under `set -u` a non-numeric
+# operand is read as a variable name, hits "unbound variable", and KILLS THE SHELL before any
+# verdict is printed — the same defect that took the predicate down on the Linux CI lane.
+case "$RETENTION_DAYS" in ''|*[!0-9]*) RETENTION_DAYS=30 ;; esac
 
 WT=""; MODE="preserve"
 while [ $# -gt 0 ]; do
@@ -166,7 +170,12 @@ preserve() {
   fi
 
   local TMPIDX
-  TMPIDX="$(mktemp -t algovault-wip)" || indet "mktemp-failed"
+  # EXPLICIT template, not `mktemp -t algovault-wip`. BSD accepts a bare prefix; GNU requires
+  # at least three X's and errors with "too few X's in template", so the spec's literal form
+  # would make this primitive return INDETERMINATE on every Linux host. Second BSD/GNU
+  # divergence in this wave after `stat -f`, and neither is visible from macOS — which is why
+  # tests/unit/worktree-work-pending.test.ts now lints for the whole class.
+  TMPIDX="$(mktemp "${TMPDIR:-/tmp}/algovault-wip.XXXXXX")" || indet "mktemp-failed"
   # git REJECTS a zero-byte index file, so the file must not exist. git-stash does exactly
   # this. The trap covers every failure path so a temp index is never leaked.
   rm -f "$TMPIDX"

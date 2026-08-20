@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -358,6 +358,64 @@ describe('worktree-work-pending — falsifiability (R1.7)', () => {
     expect(stdout).not.toContain('SURVIVED ');
     expect(stdout).not.toContain('ANCHOR-LOST');
     expect(status, 'exit 0 would mean the self-test cannot fail').not.toBe(0);
+  });
+});
+
+describe('this wave\'s shell scripts must run on Linux too — CI is the only place this shows', () => {
+  // TWO Linux breaks shipped in this wave before CI caught them, both invisible from macOS:
+  //   `stat -f %m`  — BSD format string; on GNU `-f` is --file-system, so it SUCCEEDS and
+  //                   prints something non-numeric, which `$(( ))` under `set -u` then reads
+  //                   as a variable name, hits "unbound variable", and KILLS THE SHELL — the
+  //                   predicate exited emitting NO verdict token at all.
+  //   `mktemp -t X`  — BSD takes a bare prefix; GNU demands three X's and errors.
+  //
+  // A third would be a pattern, so this closes the class instead of the instances. It is a
+  // static lint on purpose: the behaviour it guards cannot be reproduced on the dev machine.
+  const SHELL_SCRIPTS = [
+    'scripts/lib/worktree-work-pending.sh',
+    'scripts/preserve-pending-work.sh',
+    'scripts/session-end-work-pending.sh',
+    'scripts/selftest-mutation-proof.sh',
+    'scripts/ch2-corroborate.sh',
+    'scripts/ch2-list-shared-state.sh',
+    'scripts/ch3-count-untracked-node-modules.sh',
+    'scripts/ch4-assert-hook-elements-preserved.sh',
+    'scripts/ch5-make-scratch-worktree.sh',
+  ];
+
+  const BSD_ONLY: Array<{ re: RegExp; why: string; unlessAlso?: RegExp }> = [
+    { re: /\bmktemp\s+(-d\s+)?-t\s+[^\s"']*[^X\s"']\s*(\||;|$|\))/m,
+      why: "`mktemp -t <prefix>` — GNU requires >=3 X's. Use an explicit \"${TMPDIR:-/tmp}/name.XXXXXX\" template." },
+    // BSD-ONLY is the class, not "uses stat -f". Offering BOTH forms is the correct fix, so a
+    // file that also carries `stat -c %` is fine; a file with only the BSD form is not.
+    { re: /\bstat\s+-f\s+%/m, unlessAlso: /\bstat\s+-c\s+%/m,
+      why: '`stat -f %…` is a BSD format string; on GNU `-f` is --file-system and prints something else. Offer `stat -c %Y` too, and VALIDATE that the result is numeric.' },
+    { re: /\bsed\s+-i\s+''/m,
+      why: "`sed -i ''` is BSD-only. Write to a new file and move it." },
+    { re: /\breadlink\s+-f\b/m,
+      why: '`readlink -f` is absent on older BSD. Use `cd … && pwd -P`.' },
+  ];
+
+  it.each(SHELL_SCRIPTS)('%s uses no BSD-only construct', { timeout: 120_000 }, (rel) => {
+    const src = readFileSync(join(REPO, rel), 'utf8');
+    // Comments explain these constructs on purpose, so only real code lines are linted.
+    const code = src.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    for (const { re, why, unlessAlso } of BSD_ONLY) {
+      if (unlessAlso && unlessAlso.test(code)) continue;
+      expect(re.test(code), `${rel}: ${why}`).toBe(false);
+    }
+  });
+
+  it('the lint can actually fire', { timeout: 120_000 }, () => {
+    // An assertion that has never failed is not an assertion.
+    const bad = 'TMP=$(mktemp -t algovault-wip)\nm=$(stat -f %m "$1")\n';
+    const hits = BSD_ONLY.filter(({ re, unlessAlso }) => re.test(bad) && !(unlessAlso && unlessAlso.test(bad)));
+    expect(hits.length, 'both known-bad forms must be caught').toBe(2);
+    // ...and the escape hatch must actually excuse a correctly-paired file, or the lint
+    // would just force everyone to delete the BSD fallback that macOS needs.
+    const paired = 'm=$(stat -c %Y "$1") || m=$(stat -f %m "$1")\n';
+    const pairedHits = BSD_ONLY.filter(({ re, unlessAlso }) => re.test(paired) && !(unlessAlso && unlessAlso.test(paired)));
+    expect(pairedHits.length, 'a file offering BOTH forms is not BSD-only').toBe(0);
   });
 });
 
