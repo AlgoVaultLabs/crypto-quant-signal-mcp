@@ -12,12 +12,32 @@
  * artefacts and never to developer-machine state, which is why the 4th writer to pre-push
  * halted every parallel session on 2026-08-01.
  *
- * ── ONLY ONE CHECK BLOCKS ────────────────────────────────────────────────────────────────────
+ * ── WHICH CHECKS BLOCK, AND WHY THAT SET GREW ────────────────────────────────────────────────
  * UNPUBLISHED_DEP blocks, because it IS incident A and it is provably actionable: push the
- * script. Everything else REPORTS. Blocking on the rest would recreate the very deadlock this
- * wave exists to retire — a reconciler that refuses every push until 69 stale worktrees are
+ * script. Most checks REPORT. Blocking on those would recreate the very deadlock this wave
+ * exists to retire — a reconciler that refuses every push until 69 stale worktrees are
  * reclaimed is strictly worse than the problem. Every block prints its exact remediation;
  * blocking without remediation is hostile.
+ *
+ * OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH2 added TWO more blocking checks, and they earn it by
+ * the same test UNPUBLISHED_DEP passes — provably actionable, by editing one local file:
+ *
+ *   SERIALIZATION     — a resource with >=2 writers and no declared way of serializing them.
+ *                       The fix is a four-field declaration in ops/shared-worktree-state.json.
+ *   CI_SERIALIZATION  — a workflow on disk with no registry row, a registry row for a workflow
+ *                       that is not on disk, or a declared group that disagrees with the group
+ *                       actually in the YAML. The fix is one line in one of two files.
+ *
+ * The point of the enumeration clause is that a SEVENTH workflow cannot be added without
+ * declaring how it serializes: the reconciler reads .github/workflows/ from disk, so a new file
+ * announces itself. Detection is strictly weaker than enumeration.
+ *
+ * ── ONE THING THIS RECONCILER DELIBERATELY DOES NOT OWN ──────────────────────────────────────
+ * "Does every workflow HAVE a concurrency group?" is owned by the disk-enumerating canary in
+ * tests/unit/workflow-concurrency.test.ts, which runs inside the pre-push test-gate. This file
+ * owns whether DECLARATION and REALITY AGREE. A workflow that declares a key in the registry and
+ * has no group in its YAML therefore REPORTS here and FAILS there — one control each, neither
+ * duplicating the other, and no gap between them.
  *
  * ── ONE DECISION FUNCTION ────────────────────────────────────────────────────────────────────
  * `evaluate(registry, facts)` is pure. `--check` gathers real facts and calls it; `--self-test`
@@ -39,7 +59,7 @@
  * ALGOVAULT_SHARED_STATE=warn downgrades the EXIT CODE only, never the TOKEN.
  */
 
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
@@ -87,6 +107,69 @@ export function loadRegistry(path = REGISTRY_PATH) {
  *   dbPresent:   boolean,
  * }
  */
+/**
+ * The five declared serialization mechanisms. An unknown value BLOCKS rather than passing:
+ * a typo in `mechanism` would otherwise silently disable the rule for that row, which is the
+ * quietest way for a gate to stop meaning anything.
+ */
+export const SERIALIZATION_MECHANISMS = new Set([
+  'landing-lock',
+  'gha-concurrency',
+  'none-single-writer',
+  'idempotent-composable-write',
+  'append-atomic',
+]);
+
+/**
+ * Parse the TOP-LEVEL `concurrency:` block out of a workflow YAML.
+ *
+ * Deliberately dependency-free, though js-yaml is a real dependency of this repo. This file runs
+ * in the pre-push hook across 51 checkouts, some of which predate any given wave and may have no
+ * usable node_modules; a guard that needs an import it might not have is a guard that turns
+ * INDETERMINATE — and therefore blocks — for reasons unrelated to what it checks. The grammar it
+ * needs is four fixed keys in one block, so a parser is cheaper than the risk.
+ *
+ * Anchored at COLUMN ZERO on purpose: an indented `concurrency:` is a JOB-level block, which is
+ * a different thing, and is reported separately rather than silently read as the workflow's.
+ *
+ * Comment-immune by construction: only `key: value` lines inside the block are read, so the
+ * reasoning comments each workflow carries — which necessarily mention `cancel-in-progress` in
+ * order to explain why it is not set — can never be mistaken for a setting.
+ *
+ * Exported so the CH3 canary consumes THIS parser rather than writing a second one. Two readers
+ * of one grammar drift, and the bug returns in whichever copy nobody is watching.
+ */
+export function parseWorkflowConcurrency(text) {
+  const lines = String(text).split('\n');
+  const strip = (v) => v.replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
+  const out = {
+    present: false,
+    jobLevel: lines.some((l) => /^\s+concurrency:/.test(l)),
+    group: null,
+    queue: null,
+    cancelInProgress: null,
+  };
+  const i = lines.findIndex((l) => /^concurrency:/.test(l));
+  if (i === -1) return out;
+  out.present = true;
+
+  const inline = strip(lines[i].slice('concurrency:'.length));
+  if (inline) { out.group = inline; return out; }
+
+  for (let j = i + 1; j < lines.length; j++) {
+    const l = lines[j];
+    if (/^\s*$/.test(l)) continue;
+    if (!/^\s/.test(l)) break;                       // back to column 0 — the block ended
+    const m = l.match(/^\s+([A-Za-z][A-Za-z-]*):\s*(.*)$/);
+    if (!m) continue;                                // comments and list items are not settings
+    const val = strip(m[2]);
+    if (m[1] === 'group') out.group = val;
+    else if (m[1] === 'queue') out.queue = val;
+    else if (m[1] === 'cancel-in-progress') out.cancelInProgress = val;
+  }
+  return out;
+}
+
 export function evaluate(registry, facts) {
   const findings = [];
   const add = (check, severity, message, remediation = null) =>
@@ -161,6 +244,8 @@ export function evaluate(registry, facts) {
         `(${active.length} ACTIVE, ${missing.length - active.length} RECLAIMABLE) — ` +
         (backstopped
           ? `backstopped by ${(b.backstopped_by ?? []).join(', ')}, so a skip costs defence-in-depth only`
+          : b.report_only
+          ? `REPORT-ONLY block: its absence costs MEASUREMENT, not protection — it blocks nothing anywhere`
           : `NOT backstopped in CI: those checkouts have NO protection from this gate at all`),
       active.length > 0
         ? `git -C <worktree> checkout origin/HEAD -- ${b.script}   # for the ${active.length} ACTIVE one(s)`
@@ -189,6 +274,115 @@ export function evaluate(registry, facts) {
     } else {
       add('CONCURRENT_WRITER', 'ok', `${db.id}: single checkout, no concurrent writer`);
     }
+  }
+
+  // ── SERIALIZATION — a shared resource with >=2 writers must DECLARE how they serialize. ──
+  //
+  // This is the rule the wave exists to install. The registry already enumerated what shared
+  // files CONTAIN and who WRITES them; it had no concept of who may write them AT ONCE, which is
+  // the property the push livelock and the six unserialized workflows both violate.
+  //
+  // It BLOCKS, and it earns that the same way UNPUBLISHED_DEP does: the remediation is a
+  // four-field declaration in one local file, printed in full below.
+  for (const r of registry.resources) {
+    const s = r.serialization;
+    const writers = r.writers ?? [];
+    const fix = `add "serialization": {"mechanism": …, "key": …, "scope": …, "_scope_reason": …} to the '${r.id}' row in ops/shared-worktree-state.json`;
+
+    if (!s || typeof s !== 'object') {
+      add('SERIALIZATION', 'block', `${r.id}: no serialization declared`, fix);
+      continue;
+    }
+    if (!SERIALIZATION_MECHANISMS.has(s.mechanism)) {
+      add('SERIALIZATION', 'block',
+        `${r.id}: unknown serialization mechanism '${s.mechanism}' — a typo here would silently disable this rule for the row`,
+        `use one of: ${[...SERIALIZATION_MECHANISMS].join(' · ')}`);
+      continue;
+    }
+    // `scope` is mandatory and load-bearing: it names the boundary within which the mechanism
+    // holds, which is what stops the guarantee rotting silently when a writer appears outside it.
+    if (!s.scope || !String(s.scope).trim()) {
+      add('SERIALIZATION', 'block', `${r.id}: serialization.scope is missing — a mechanism without a declared boundary is a guarantee nobody can check`, fix);
+      continue;
+    }
+    if (writers.length >= 2 && (s.mechanism === 'none-single-writer' || !s.key)) {
+      add('SERIALIZATION', 'block',
+        `${r.id}: ${writers.length} writers but no serialization key (mechanism '${s.mechanism}') — ${writers.join(', ')}`,
+        fix);
+      continue;
+    }
+    add('SERIALIZATION', 'ok',
+      `${r.id}: ${writers.length} writer(s) · ${s.mechanism}${s.key ? ` (key ${s.key})` : ''} · scope: ${s.scope}`);
+  }
+
+  // ── CI_SERIALIZATION — declaration and reality must agree, in BOTH directions. ───────────
+  //
+  // ENUMERATION, not detection: the workflow list comes from disk, so a 7th workflow announces
+  // itself instead of waiting to be noticed. That clause is the whole reason this is a generator
+  // fix rather than a patch to six files.
+  const wfRows = registry.resources.filter((r) => r.kind === 'ci-workflow');
+  const onDisk = facts.workflows ?? {};
+
+  for (const path of Object.keys(onDisk).sort()) {
+    if (!wfRows.some((r) => r.path === path)) {
+      add('CI_SERIALIZATION', 'block',
+        `${path} is on disk but has NO registry row — an unregistered workflow is an unserialized one`,
+        `add a {"kind": "ci-workflow", "path": "${path}", …} row with a serialization.key to ops/shared-worktree-state.json`);
+    }
+  }
+
+  for (const row of wfRows) {
+    const wf = onDisk[row.path];
+    const key = row.serialization?.key;
+
+    if (!wf) {
+      add('CI_SERIALIZATION', 'block',
+        `${row.id}: registry declares ${row.path}, which is not on disk`,
+        `remove the '${row.id}' row, or restore ${row.path}`);
+      continue;
+    }
+    if (!key) {
+      add('CI_SERIALIZATION', 'block', `${row.id}: no serialization.key declared`,
+        `set serialization.key on the '${row.id}' row to the concurrency group expression`);
+      continue;
+    }
+    // `cancel-in-progress` is checked FIRST and on every workflow, present group or not: it is
+    // the wrong knob for pending-run cancellation, its `false` value is undocumented, and
+    // `queue: max` + `cancel-in-progress: true` is an explicit GitHub validation error.
+    if (wf.cancelInProgress !== null) {
+      add('CI_SERIALIZATION', 'block',
+        `${row.path}: sets cancel-in-progress: ${wf.cancelInProgress} — the knob that governs PENDING runs is queue, not this`,
+        `delete the cancel-in-progress line from ${row.path}`);
+      continue;
+    }
+    if (!wf.present) {
+      // Declared but not applied. This REPORTS rather than blocks; the canary in
+      // tests/unit/workflow-concurrency.test.ts owns "every workflow has a group" and fails there.
+      add('CI_SERIALIZATION', 'report',
+        `${row.path}: registry declares group '${key}' but the file has no top-level concurrency block yet`,
+        `add a top-level block to ${row.path}:  concurrency: { group: ${key}, queue: max }  — and no cancel-in-progress`);
+      continue;
+    }
+    if (wf.group !== key) {
+      add('CI_SERIALIZATION', 'block',
+        `${row.path}: declared group '${key}' but the file says '${wf.group}' — declaration and reality must agree in both directions`,
+        `make them match: edit ${row.path}, or the '${row.id}' serialization.key`);
+      continue;
+    }
+    if (wf.queue !== 'max') {
+      add('CI_SERIALIZATION', 'block',
+        `${row.path}: queue is '${wf.queue ?? '(unset → GitHub default "single")'}' — under 'single' a PENDING run is cancelled when the next one queues, which is a missing run rather than a failed one`,
+        `set  queue: max  in ${row.path}`);
+      continue;
+    }
+    if (wf.jobLevel) {
+      add('CI_SERIALIZATION', 'report',
+        `${row.path}: also declares a JOB-level concurrency block — GitHub does not document how workflow-level and job-level groups interact`,
+        `prefer the workflow-level group alone; a load-bearing safety property must not be rented from undocumented behaviour`);
+      continue;
+    }
+    add('CI_SERIALIZATION', 'ok',
+      `${row.path}: group '${wf.group}' · queue: ${wf.queue} · no cancel-in-progress · target: ${row.contended_target ?? 'none (run-lane dedup only)'}`);
   }
 
   // ── REGISTRY_PARITY — cross-referenced primitives must resolve. ──────────────────────────
@@ -306,7 +500,19 @@ function gatherFacts(registry) {
   const dbRow = registry.resources.find((r) => r.kind === 'sqlite-db');
   const dbPresent = dbRow ? existsSync(dbRow.path.replace('$HOME', homedir())) : false;
 
-  return { ref, worktrees, hookBlocks, reachable, skipLedgerRows, dbPresent };
+  // ENUMERATED FROM DISK, never from the registry — that direction is what lets a 7th workflow
+  // announce itself. Reading the registry's list instead would make the check structurally
+  // incapable of seeing the case it exists for.
+  const wfDir = join(ROOT, '.github', 'workflows');
+  if (!existsSync(wfDir)) throw new Error(`${wfDir} does not exist — cannot enumerate CI workflows`);
+  const workflows = {};
+  for (const f of readdirSync(wfDir).sort()) {
+    if (!/\.ya?ml$/.test(f)) continue;
+    workflows[`.github/workflows/${f}`] = parseWorkflowConcurrency(readFileSync(join(wfDir, f), 'utf8'));
+  }
+  if (Object.keys(workflows).length === 0) throw new Error(`${wfDir} contains no workflow files — refusing to report a pass over an empty corpus`);
+
+  return { ref, worktrees, hookBlocks, reachable, skipLedgerRows, dbPresent, workflows };
 }
 
 // ── reporting ──────────────────────────────────────────────────────────────────────────────
@@ -314,7 +520,10 @@ function gatherFacts(registry) {
 const GLYPH = { ok: '✓', report: '⚠', block: '✖' };
 
 function report(findings) {
-  const order = ['UNPUBLISHED_DEP', 'MISSING_BLOCK', 'ORPHAN_BLOCK', 'UNGUARDED_WORKTREE', 'SKIP_LEDGER_STALE', 'CONCURRENT_WRITER', 'REGISTRY_PARITY'];
+  // Every check name MUST appear here: report() iterates this list, so a name omitted from it
+  // prints nothing at all — a dark check at a green exit code, which is the one outcome the
+  // verdict-token law exists to prevent. Add the name in the SAME edit as the check.
+  const order = ['UNPUBLISHED_DEP', 'SERIALIZATION', 'CI_SERIALIZATION', 'MISSING_BLOCK', 'ORPHAN_BLOCK', 'UNGUARDED_WORKTREE', 'SKIP_LEDGER_STALE', 'CONCURRENT_WRITER', 'REGISTRY_PARITY'];
   for (const check of order) {
     const rows = findings.filter((f) => f.check === check);
     if (rows.length === 0) continue;
@@ -338,13 +547,45 @@ function selfTest() {
   const blockRows = registry.resources.filter((r) => r.kind === 'hook-block');
   assert(blockRows.length > 0, 'the real registry declares no hook-block rows (vacuous corpus)');
 
+  const wfRows = registry.resources.filter((r) => r.kind === 'ci-workflow');
+  assert(wfRows.length > 0, 'the real registry declares no ci-workflow rows (vacuous corpus)');
+  assert(registry.resources.every((r) => r.serialization), 'a registry row is missing serialization — the fixtures below would be vacuous');
+
+  // Fixtures are built from the REAL rows, and the workflow facts are produced by the REAL
+  // parser, not hand-written. A hand-written fixture shape that the shipped extractor never
+  // emits is how a self-test passes while the property it claims to assert is broken.
+  const wfFacts = (overrides = {}) => {
+    const base = {};
+    for (const r of wfRows) {
+      base[r.path] = parseWorkflowConcurrency(
+        `name: x\non:\n  push:\nconcurrency:\n  group: ${r.serialization.key}\n  queue: max\n`);
+    }
+    return { ...base, ...overrides };
+  };
+
   const cleanFacts = {
     worktrees: [{ path: '/w/a', reclaimable: false, scripts: Object.fromEntries(blockRows.map((b) => [b.script, true])) }],
     hookBlocks: Object.fromEntries([...new Set(blockRows.map((b) => b.hook))].map((h) => [h, blockRows.filter((b) => b.hook === h).map((b) => b.block_name)])),
     reachable: Object.fromEntries(blockRows.map((b) => [b.script, 'default'])),
     skipLedgerRows: 0,
     dbPresent: false,
+    workflows: wfFacts(),
   };
+
+  // ── the parser itself, both directions. It is the seam every CI fixture below rides on, so
+  // a self-test that never exercised it would be blind to exactly what it replaces. ──
+  {
+    const p1 = parseWorkflowConcurrency('name: x\nconcurrency:\n  group: G\n  queue: max\njobs:\n  a:\n    runs-on: x\n');
+    assert(p1.present && p1.group === 'G' && p1.queue === 'max' && p1.cancelInProgress === null, 'parser must read a top-level block');
+    const p2 = parseWorkflowConcurrency('name: x\njobs:\n  a:\n    concurrency:\n      group: J\n');
+    assert(!p2.present && p2.jobLevel, 'an indented concurrency is JOB-level and must not be read as the workflow group');
+    const p3 = parseWorkflowConcurrency('name: x\n# cancel-in-progress: true is the wrong knob\nconcurrency:\n  group: G\n  # queue: max keeps pending runs alive\n  queue: max\n');
+    assert(p3.cancelInProgress === null && p3.queue === 'max', 'the parser must be immune to comments mentioning the keys');
+    const p4 = parseWorkflowConcurrency('name: x\nconcurrency: inline-group\n');
+    assert(p4.present && p4.group === 'inline-group', 'the inline scalar form must parse');
+    const p5 = parseWorkflowConcurrency('name: x\non:\n  push:\n');
+    assert(!p5.present && p5.group === null, 'a workflow with no concurrency must report absent, not guess');
+  }
 
   // ── direction 1: a clean machine PASSES ──
   let f = evaluate(registry, cleanFacts);
@@ -394,6 +635,58 @@ function selfTest() {
   const dbShared = { ...cleanFacts, dbPresent: true, worktrees: [cleanFacts.worktrees[0], { path: '/w/b', reclaimable: false, scripts: cleanFacts.worktrees[0].scripts }] };
   assert(evaluate(registry, dbShared).some((x) => x.check === 'CONCURRENT_WRITER' && x.severity === 'report'), 'a shared DB with >1 worktree must REPORT');
 
+  // ── SERIALIZATION, both directions ──
+  const clone = (mut) => { const c = JSON.parse(JSON.stringify(registry)); mut(c); return c; };
+  const blocksOf = (reg, facts, check) =>
+    evaluate(reg, facts).filter((x) => x.check === check && x.severity === 'block');
+
+  assert(blocksOf(registry, cleanFacts, 'SERIALIZATION').length === 0, 'the real registry must not have a serialization block');
+  assert(evaluate(registry, cleanFacts).some((x) => x.check === 'SERIALIZATION' && x.severity === 'ok'), 'a clean registry must emit POSITIVE per-row SERIALIZATION output, never a silent pass');
+
+  const twoWritersNoKey = clone((c) => {
+    const r = c.resources.find((x) => x.kind === 'ledger');
+    r.writers = ['a.sh', 'b.sh'];
+    r.serialization = { mechanism: 'none-single-writer', key: null, scope: 's', _scope_reason: 'r' };
+  });
+  let b = blocksOf(twoWritersNoKey, cleanFacts, 'SERIALIZATION');
+  assert(b.length === 1, `>=2 writers with no serialization key must BLOCK, got ${b.length}`);
+  assert(Boolean(b[0].remediation), 'a blocking finding without remediation is hostile');
+
+  const badMechanism = clone((c) => { c.resources[0].serialization.mechanism = 'landing_lock'; });
+  assert(blocksOf(badMechanism, cleanFacts, 'SERIALIZATION').length === 1, 'an unknown mechanism must BLOCK — a typo must not silently disable the rule');
+
+  const noScope = clone((c) => { c.resources[0].serialization.scope = ''; });
+  assert(blocksOf(noScope, cleanFacts, 'SERIALIZATION').length === 1, 'a missing serialization.scope must BLOCK');
+
+  const noSerialization = clone((c) => { delete c.resources[0].serialization; });
+  assert(blocksOf(noSerialization, cleanFacts, 'SERIALIZATION').length === 1, 'a row with no serialization at all must BLOCK');
+
+  // ── CI_SERIALIZATION, both directions ──
+  assert(blocksOf(registry, cleanFacts, 'CI_SERIALIZATION').length === 0, 'the real registry + matching groups must not block');
+  assert(evaluate(registry, cleanFacts).some((x) => x.check === 'CI_SERIALIZATION' && x.severity === 'ok'), 'a clean CI fixture must emit POSITIVE per-workflow output');
+
+  // THE ENUMERATION CLAUSE — a 7th workflow on disk with no registry row.
+  const seventh = { ...cleanFacts, workflows: wfFacts({ '.github/workflows/brand-new.yml': parseWorkflowConcurrency('name: n\nconcurrency:\n  group: G\n  queue: max\n') }) };
+  assert(blocksOf(registry, seventh, 'CI_SERIALIZATION').length === 1, 'a workflow on disk with NO registry row must BLOCK — this is the clause that makes a 7th workflow unable to land unserialized');
+
+  const vanished = { ...cleanFacts, workflows: Object.fromEntries(Object.entries(cleanFacts.workflows).filter(([k]) => k !== wfRows[0].path)) };
+  assert(blocksOf(registry, vanished, 'CI_SERIALIZATION').length === 1, 'a registry row whose workflow is NOT on disk must BLOCK');
+
+  const mismatch = { ...cleanFacts, workflows: wfFacts({ [wfRows[0].path]: parseWorkflowConcurrency('name: n\nconcurrency:\n  group: SOMETHING-ELSE\n  queue: max\n') }) };
+  assert(blocksOf(registry, mismatch, 'CI_SERIALIZATION').length === 1, 'a declared key that disagrees with the actual group must BLOCK');
+
+  const cip = { ...cleanFacts, workflows: wfFacts({ [wfRows[0].path]: parseWorkflowConcurrency('name: n\nconcurrency:\n  group: ' + wfRows[0].serialization.key + '\n  queue: max\n  cancel-in-progress: true\n') }) };
+  assert(blocksOf(registry, cip, 'CI_SERIALIZATION').length === 1, 'cancel-in-progress set anywhere must BLOCK');
+
+  const singleQueue = { ...cleanFacts, workflows: wfFacts({ [wfRows[0].path]: parseWorkflowConcurrency('name: n\nconcurrency:\n  group: ' + wfRows[0].serialization.key + '\n') }) };
+  assert(blocksOf(registry, singleQueue, 'CI_SERIALIZATION').length === 1, 'an unset queue (GitHub default `single`) must BLOCK — a cancelled PENDING run is a missing run, not a failed one');
+
+  // Declared but not yet applied REPORTS rather than blocks: "does every workflow have a group"
+  // belongs to the disk-enumerating canary, which fails there. One control each, no gap.
+  const notYet = { ...cleanFacts, workflows: wfFacts({ [wfRows[0].path]: parseWorkflowConcurrency('name: n\non:\n  push:\n') }) };
+  assert(blocksOf(registry, notYet, 'CI_SERIALIZATION').length === 0, 'a workflow with no group yet must NOT block here');
+  assert(evaluate(registry, notYet).some((x) => x.check === 'CI_SERIALIZATION' && x.severity === 'report'), 'a workflow with no group yet must REPORT');
+
   // ── the token → EXIT CODE mapping, not just the token ──
   // OPS-TEST-GATE-FAILOPEN-W1 shipped a self-test that asserted verdict TOKENS but never the
   // mapping, so re-coding INDETERMINATE to 0 left it fully green. Assert the mapping.
@@ -403,7 +696,7 @@ function selfTest() {
   assert(mapCode('FAIL', 'warn') === 0 && mapCode('INDETERMINATE', 'warn') === 0, 'warn must downgrade the CODE');
   assert(mapCode('PASS', 'warn') === 0, 'warn must not change PASS');
 
-  console.log(`✓ self-test: ${blockRows.length} registry block rows; clean fixture passes, 7 defect fixtures detected, token→exit mapping asserted.`);
+  console.log(`✓ self-test: ${registry.resources.length} registry rows (${blockRows.length} hook-block, ${wfRows.length} ci-workflow); clean fixture passes, 17 defect fixtures detected across 9 checks, parser asserted both ways, token→exit mapping asserted.`);
 }
 
 // ── main ───────────────────────────────────────────────────────────────────────────────────
@@ -443,7 +736,7 @@ function main() {
   const blocking = findings.filter((f) => f.severity === 'block');
   console.log('');
   if (blocking.length > 0) {
-    console.log(`[shared-state] ${blocking.length} BLOCKING finding(s). Only UNPUBLISHED_DEP blocks — everything else above is a report.`);
+    console.log(`[shared-state] ${blocking.length} BLOCKING finding(s). UNPUBLISHED_DEP, SERIALIZATION and CI_SERIALIZATION block — everything else above is a report.`);
     verdict('FAIL');
     return;
   }
