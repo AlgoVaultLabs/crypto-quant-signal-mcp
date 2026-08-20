@@ -83,6 +83,22 @@ COPY scripts/refresh-knowledge-pages.mjs ./scripts/refresh-knowledge-pages.mjs
 # /app/scripts/funnel-by-channel.mjs` (Path α; reads funnel_events via the
 # container's DATABASE_URL). Stage 2 only — never invoked at build time.
 COPY scripts/funnel-by-channel.mjs ./scripts/funnel-by-channel.mjs
+# OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH3a — the commit this image was BUILT FROM.
+#
+# A BUILD ARG, not a runtime env var. The value is welded to the image, so a container restarted
+# from an old image reports the OLD sha truthfully rather than inheriting the host's current idea
+# of main. That truthfulness is the entire point of the route that reads it.
+#
+# DEFAULT IS EMPTY, and stays empty. An image built without the arg reports `sha: null` — a real,
+# detectable state that the drift canary alerts on. Substituting a plausible value (the package
+# version, a ref name, "unknown") would recreate the exact defect this exists to remove.
+ARG GIT_SHA=
+ARG BUILT_AT=
+ARG GIT_REF=
+ENV GIT_SHA=$GIT_SHA
+ENV BUILT_AT=$BUILT_AT
+ENV GIT_REF=$GIT_REF
+
 EXPOSE 3000
 ENV TRANSPORT=http
 USER node

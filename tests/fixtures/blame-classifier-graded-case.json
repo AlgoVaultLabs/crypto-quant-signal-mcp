@@ -1,0 +1,19 @@
+{
+  "_comment": "GENERATED FROM REAL HISTORY on 2026-08-20 by OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4, never hand-authored. The graded case for the blame classifier: the 2026-08-17 red that halted PRICING-BOT-DELIVERY-METERING-W1. Committed because CI checks out SHALLOW, so a test that reads this range from git passes locally and fails in CI \u2014 which is exactly how it first failed. The live cross-check in the test re-derives these values whenever full history IS present, so this file cannot go stale silently.",
+  "last_green": "9f44c72",
+  "delta_head": "dcdf9f6",
+  "failing_graph": [
+    "tests/x402-nudge.test.ts",
+    "src/lib/x402-nudge.ts"
+  ],
+  "graph_touchers_oldest_first": [
+    "cf2992c"
+  ],
+  "expected_owner_commit": "cf2992c",
+  "expected_owner_wave": "OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1",
+  "spec_graded_owner": "08edfd1",
+  "_spec_divergence": "The chapter grades this case as owner=08edfd1, but 08edfd1 touches NEITHER file in the failing graph; cf2992c modifies both (+28 module, +81 test). 08edfd1 is the commit whose deploy RUN failed at 06:47 \u2014 a weaker criterion than the rule the chapter itself states. Both resolve to the same WAVE, which is the operator-actionable output.",
+  "session_commits": [
+    "dcdf9f6"
+  ]
+}

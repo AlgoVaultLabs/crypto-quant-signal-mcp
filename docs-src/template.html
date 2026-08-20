@@ -43,6 +43,9 @@ tailwind.config = {
   .example-card:hover { transform: translateY(-1px); }
   .param-row td { padding: 8px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
   .param-row td:first-child { font-family: 'SF Mono', monospace; color: #d4b255; font-size: 12px; }
+  /* DOCS-PARAM-SCHEMA-PROJECTION-W1: the last parameter row's hairline sits on the table edge.
+     Positional, not inline — a projected row may now be the last one in any given table. */
+  .param-row:last-child td { border-bottom: none; }
 </style>
 <!-- ANALYTICS:START -->
 <!-- ANALYTICS:END -->

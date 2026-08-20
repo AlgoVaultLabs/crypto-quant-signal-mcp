@@ -40,7 +40,13 @@ describe('referral mint requires an EXISTING principal (SEC-08)', () => {
     expect(code).toContain('async function apiKeyExists(');
     // resolveLicense returns key: null for an unknown av_free_ and a Stripe-invalid av_live_.
     expect(code).toContain('resolveLicense({ authorization:');
-    expect(code).toContain('license.key !== null');
+    // AUTH-THREE-STATE-W1 CH3 re-anchored this ONE literal, and the change strengthens exactly
+    // what SEC-08 is about. `license.key !== null` inferred existence from key-PRESENCE, and
+    // INDETERMINATE deliberately PRESERVES the caller's key (so they meter on their own bucket
+    // during a Stripe outage) — so the old predicate would have answered "this principal exists"
+    // on the strength of a lookup that never completed, and minted a row for it. Existence is now
+    // the resolver's own verdict.
+    expect(code).toContain("credentialOutcomeOf(license) === 'RESOLVED'");
   });
 
   it('BOTH minting handlers gate on it', () => {

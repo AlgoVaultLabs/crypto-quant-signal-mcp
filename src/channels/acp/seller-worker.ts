@@ -38,7 +38,7 @@ import {
 
 /** Paid-tier license for ACP jobs — the ACP escrow IS the payment, so bypass the free quota
  *  counter exactly like the x402/a2mcp channels. Identical to what a paid x402 call resolves. */
-export const ACP_X402_LICENSE: LicenseInfo = { tier: 'x402', key: null };
+export const ACP_X402_LICENSE: LicenseInfo = { tier: 'x402', key: null, outcome: 'RESOLVED' };
 
 /** Per-call price (USD) for a canonical tool from the registry SoT — same schedule as every channel
  *  (get_trade_call 0.02, scan_trade_calls 0.02, scan_funding_arb 0.01). */

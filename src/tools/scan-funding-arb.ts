@@ -2,7 +2,7 @@ import { getAdapter, type ExchangeAdapter } from '../lib/exchange-adapter.js';
 import { getFundingArbLimit, isFreeTier, checkQuota, trackCall, getUpgradeHint, getRequestSessionId, getMonthlyQuota, monthResetAtMs, periodStartMs, utcDayResetAtMs } from '../lib/license.js';
 import { TierLimitReachedError } from '../lib/errors.js';
 import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRODUCT-NUDGE-W1: keyed→code, keyless→null
-import { withTierWarning, withQuotaState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
+import { withTierWarning, withQuotaState, withAuthState, DEFAULT_UPGRADE_URL } from '../lib/tier-warning.js';
 import { PKG_VERSION } from '../lib/pkg-version.js';
 import type {
   FundingArbResult,
@@ -188,7 +188,7 @@ const URGENCY_DECAY = 0.5;
 export async function scanFundingArb(input: ScanFundingArbInput): Promise<FundingArbResult> {
   const minSpreadBps = input.minSpreadBps ?? 5;
   const requestedLimit = input.limit ?? 10;
-  const license = input.license || { tier: 'free' as const, key: null };
+  const license = input.license || { tier: 'free' as const, key: null, outcome: 'ABSENT' as const };
   const limit = getFundingArbLimit(requestedLimit, license);
 
   // Quota tracking (all tiers).
@@ -255,12 +255,16 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
       opportunities: [],
       scannedPairs: 0,
       timestamp: Math.floor(Date.now() / 1000),
-      _algovault: {
+      // AUTH-THREE-STATE-W1 CH2: the fail-soft envelope is hand-built and never passes through
+      // `withQuotaState`, so it needs the auth stamp explicitly. A caller whose key silently did
+      // not work must not get a DIFFERENT answer about their credential just because every funding
+      // feed happened to be empty this cycle.
+      _algovault: withAuthState({
         version: PKG_VERSION,
         tool: 'scan_funding_arb',
         compatible_with: ['crypto-quant-risk-mcp', 'crypto-quant-execution-mcp'],
         session_id: getRequestSessionId() ?? null,
-      },
+      }, license),
     };
   }
 
@@ -499,7 +503,8 @@ export async function scanFundingArb(input: ScanFundingArbInput): Promise<Fundin
     opportunities: capped,
     scannedPairs: fundings.length,
     timestamp: Math.floor(Date.now() / 1000),
-    _algovault: meta,
+    // AUTH-THREE-STATE-W1 CH2 — see the note at get-trade-call.ts's return site.
+    _algovault: withAuthState(meta, license),
   };
 }
 

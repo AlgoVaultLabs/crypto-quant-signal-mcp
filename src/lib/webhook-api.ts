@@ -13,6 +13,11 @@
 import express, { type Express, type Request, type Response, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { resolveLicense, checkQuotaByKey, getUpgradeHint } from './license.js';
+// AUTH-THREE-STATE-W1 CH3: these routes 401 on `!ownerKey`, which is null for a caller who sent
+// NOTHING and for one who sent a key we could not resolve — so the message "An API key is required"
+// was factually wrong for the second. The outcome tells them apart.
+import { credentialOutcomeOf } from './credential-outcome.js';
+import { isRefusingOutcome, isStrictUnknownEnabled, refuseCredentialHttp } from './credential-refusal.js';
 import { webhookEventTypes } from './feature-registry.js';
 import {
   cadenceForTimeframe,
@@ -87,6 +92,30 @@ export function authRequired(
     error,
     suggested_action: 'Create a free API key at https://api.algovault.com/signup and send it as `Authorization: Bearer <key>`.',
   });
+}
+
+/**
+ * AUTH-THREE-STATE-W1 CH3 — the 401 that knows WHICH failure it is.
+ *
+ * `ownerKey` is `license.key ?? null`, which is null for a caller who presented no credential AND
+ * for one whose key did not resolve. Both got "An API key is required to own a webhook
+ * subscription." — a true statement for the first and a false one for the second, which is the same
+ * absent-vs-invalid collapse this wave removes from the resolver, surfacing in the copy layer.
+ *
+ * 🛑 STAYS A 401, and that is not an oversight. These are ordinary REST routes, not MCP: the
+ * `/mcp` surface answers 200 + a JSON-RPC error specifically because a 401 there would start OAuth
+ * discovery in conformant MCP clients against a server we do not run. Here, 401 is simply correct.
+ * Two surfaces, two right answers — do not unify them.
+ *
+ * Only the BODY changes, and only for the two refusing outcomes: `ABSENT` and `MALFORMED` keep
+ * today's message byte-for-byte, so nothing a working caller sees moves. The kill switch is
+ * honoured here too — with `AUTH_STRICT_UNKNOWN=0` every outcome falls back to the incumbent body,
+ * so one lever rolls back every surface rather than leaving REST refusing while /mcp serves.
+ */
+export function refuseOwner(res: Response, license: LicenseInfo, absentMessage?: string): Response {
+  const outcome = credentialOutcomeOf(license);
+  if (isRefusingOutcome(outcome) && isStrictUnknownEnabled()) return refuseCredentialHttp(res, outcome);
+  return absentMessage === undefined ? authRequired(res) : authRequired(res, absentMessage);
 }
 
 /**
@@ -210,7 +239,7 @@ export function registerWebhookRoutes(app: Express): void {
   app.post('/api/webhooks', express.json({ limit: '4kb' }), async (req: Request, res: Response) => {
     try {
       const { license, ownerKey } = await resolveOwner(req);
-      if (!ownerKey) return authRequired(res);
+      if (!ownerKey) return refuseOwner(res, license);
 
       const body = (req.body ?? {}) as Record<string, unknown>;
       const url = typeof body.url === 'string' ? body.url.trim() : '';
@@ -322,7 +351,7 @@ export function registerWebhookRoutes(app: Express): void {
   app.get('/api/webhooks', async (req: Request, res: Response) => {
     try {
       const { license, ownerKey } = await resolveOwner(req);
-      if (!ownerKey) return authRequired(res);
+      if (!ownerKey) return refuseOwner(res, license);
       const subs = await listSubscriptions(ownerKey);
       const quota = checkQuotaByKey(ownerKey, license.tier as LicenseTier);
       return res.json({
@@ -339,8 +368,8 @@ export function registerWebhookRoutes(app: Express): void {
   // DELETE /api/webhooks/:id — owner-scoped delete.
   app.delete('/api/webhooks/:id', async (req: Request, res: Response) => {
     try {
-      const { ownerKey } = await resolveOwner(req);
-      if (!ownerKey) return authRequired(res);
+      const { license, ownerKey } = await resolveOwner(req);
+      if (!ownerKey) return refuseOwner(res, license);
       const id = Number.parseInt(String(req.params.id), 10);
       if (!Number.isInteger(id) || id <= 0) {
         return res.status(400).json({ ok: false, code: 'invalid_id', error: 'id must be a positive integer', suggested_action: 'Use the numeric id returned by POST/GET /api/webhooks.' });
@@ -361,8 +390,8 @@ export function registerWebhookRoutes(app: Express): void {
   // outbound delivery). The general /api/webhooks limiter above also applies.
   app.post('/api/webhooks/:id/test', testLimiter as RequestHandler, async (req: Request, res: Response) => {
     try {
-      const { ownerKey } = await resolveOwner(req);
-      if (!ownerKey) return authRequired(res);
+      const { license, ownerKey } = await resolveOwner(req);
+      if (!ownerKey) return refuseOwner(res, license);
       const id = Number.parseInt(String(req.params.id), 10);
       if (!Number.isInteger(id) || id <= 0) {
         return res.status(400).json({ ok: false, code: 'invalid_id', error: 'id must be a positive integer', suggested_action: 'Use the numeric id returned by POST/GET /api/webhooks.' });

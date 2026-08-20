@@ -85,7 +85,37 @@ jobs:
           # If it is ever isolated too, re-point again; the check is a `grep -L
           # PERFORMANCE_DB_PATH` over the suites importing performance-db.
           npx vitest run tests/agent-session-source-stamp.test.ts >/dev/null 2>&1 || true
-          npx vitest run
+          # OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH2d: vitest no longer DECIDES here. It
+          # writes a machine-readable report and the classifier in the next step renders the
+          # verdict, because vitest's exit 1 encodes BOTH "verified, broken" and "could not verify
+          # in time" — and on 2026-08-17 that ambiguity blocked a finished, merged wave for ~3
+          # days. `|| true` moves the decision one step later; it does NOT relax it. The classifier
+          # blocks on FAIL *and* on INDETERMINATE, and a crashed vitest that writes no report is
+          # INDETERMINATE, which also blocks.
+          npx vitest run --reporter=default --reporter=json --outputFile=.vitest-report.json || true
+
+      # The verdict, not the exit code. PASS / PASS_AFTER_ISOLATION deploy; FAIL and INDETERMINATE
+      # both block, and stay DISTINCT so an operator (and CH4's blame classifier) can tell a
+      # regression from an unfinished measurement.
+      - name: Classify the suite verdict (a timeout is not a regression)
+        id: suite_verdict
+        run: |
+          set +e
+          node scripts/classify-suite-verdict.mjs .vitest-report.json | tee /tmp/suite-verdict.txt
+          V=$(grep '^SUITE_VERDICT=' /tmp/suite-verdict.txt | tail -1 | cut -d= -f2)
+          [ -n "$V" ] || V=INDETERMINATE
+          echo "verdict=$V" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Suite verdict: \`$V\`"
+            echo ''
+            echo '```'
+            cat /tmp/suite-verdict.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$V" in
+            PASS|PASS_AFTER_ISOLATION) echo "deploy permitted on $V"; exit 0 ;;
+            *) echo "deploy BLOCKED on $V"; exit 1 ;;
+          esac
 
       # DOCS-GENERATOR-FROM-NAV-SOT-W1 CH5: docs.html structural drift canary. Fails the push if the
       # docs sidebar / body / anchors have fallen out of sync with the ONE outline SoT
@@ -95,6 +125,18 @@ jobs:
       # emits empty). Makes docs drift + silent section omission structurally impossible.
       - name: Docs structural drift canary (build_docs --check)
         run: node scripts/build_docs.mjs --check
+
+      # AUTH-THREE-STATE-W1 CH3 — credential-outcome conformance. Four not-found paths once
+      # returned a byte-identical `{tier:'free', key:null}`, so a paying customer with a typo'd or
+      # revoked key was served the anonymous free tier at HTTP 200 with no way to tell. CH1-CH3
+      # made the states distinguishable; this is what makes writing the collapse again a BUILD
+      # failure rather than a code-review catch. Emits CREDENTIAL_OUTCOME_VERDICT and fails CLOSED
+      # (INDETERMINATE = exit 3) on an unreadable or empty corpus. --self-test runs FIRST, so a
+      # gate that has lost its teeth cannot green the build.
+      - name: Credential-outcome conformance gate (fail-closed)
+        run: |
+          node scripts/check-credential-outcome-conformance.mjs --self-test
+          node scripts/check-credential-outcome-conformance.mjs
 
       # build_landing --check also covers build_tools_page + build_channel_pages (both invoked by
       # build:landing) — the /tools index + the 3 channel hub pages (/mcp /rest-api /webhooks) stay
@@ -548,7 +590,11 @@ jobs:
           node scripts/check-boot-readiness.mjs --self-test
           node scripts/check-boot-readiness.mjs
 
+      # Gated on the TOKEN, never on a raw exit code. The preceding step already aborts the job on
+      # a blocking verdict — this condition is deliberately redundant, so the dependency is legible
+      # at the step that actually ships code rather than inferred from step ordering.
       - name: Deploy via SSH
+        if: steps.suite_verdict.outputs.verdict == 'PASS' || steps.suite_verdict.outputs.verdict == 'PASS_AFTER_ISOLATION'
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -568,6 +614,34 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             git clean -fd
+
+            # OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH3a — derive the SHA from the TREE
+            # BEING BUILT, at build time, on the machine building it. Never from a trigger event,
+            # never from a ref name.
+            #
+            # `github.sha` is the commit that TRIGGERED the run. The reset above targets
+            # origin/main, a MOVING REF — so if main advances between trigger and reset, this host
+            # builds tree X while github.sha says Y, and baking Y would weld a false provenance
+            # value into the image. That is precisely the defect /api/ops/build exists to remove.
+            # (github.sha appears nowhere else in this workflow; nothing else depends on it.)
+            export GIT_SHA="$(git rev-parse HEAD)"
+            export BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            # The branch this sha sits on, resolved on the build machine from the tree itself.
+            # Informational ONLY — the sha above is never derived from it. A detached HEAD (the
+            # normal state after a reset) yields no branch, and that reports as empty rather than
+            # as a guess: `main` asserted without checking would be the same fabrication this
+            # route exists to remove.
+            export GIT_REF="$(git for-each-ref --format='%(refname:short)' --points-at HEAD 'refs/remotes/origin/*' 2>/dev/null | grep -vE '^origin$|/HEAD$' | head -1)"
+
+            # deploy-and-infra.md: refuse anything that is not an ancestor of the remote default
+            # branch. The reset targets a moving ref, so this deploy does not materialize a PINNED
+            # sha on its own — this assertion closes that gap. CH4's drift classifier uses the
+            # identical predicate, so it is one derivation used twice rather than new surface area.
+            if ! git merge-base --is-ancestor "$GIT_SHA" origin/main; then
+              echo "REFUSING: $GIT_SHA is not an ancestor of origin/main" >&2
+              exit 1
+            fi
+            echo "[provenance] building $GIT_SHA (ancestor of origin/main, built_at $BUILT_AT)"
 
             # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): build-time SoT snapshot injection.
             # Runs AFTER git pull, BEFORE Caddy sync + container restart. Fetches
@@ -773,3 +847,38 @@ jobs:
             sleep 5
           done
           node scripts/check-mcp-stateless.mjs
+
+      # DOCS-SAMPLE-EXECUTABLE-W1 CH3 — execute the published docs samples against the live API.
+      #
+      # `build_docs --check` compares BYTES, so a docs partial can assert anything and stay green.
+      # That is how "Streamable HTTP needs a 3-step handshake" survived for months on the public
+      # page while the canary above machine-asserted the opposite on every deploy. This step runs
+      # the samples.
+      #
+      # Gate on the TOKEN, never the bare exit code: the script fails OPEN on transport and on any
+      # 502/503/504 (INDETERMINATE, exit 3), and CLOSED only on a parsed response missing a
+      # documented key (FAIL, exit 1). An advisory canary must not fail a deploy because the
+      # container was still coming up — the health-wait loop above is reused for the same reason.
+      #
+      # No Telegram leg, deliberately: the wrapper's 24h cooldown is a marker file under
+      # /opt/algovault-monitoring, which an ephemeral runner cannot persist, so an alert from here
+      # would ship without the safeguard CLAUDE.md requires of it. This named red step IS the
+      # operator signal, and it prints the diverged sample with its docs-src/ file.
+      - name: Post-deploy docs-sample execution canary (fail-open on transport)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 https://api.algovault.com/health >/dev/null 2>&1; then
+              echo "health OK after ${i} attempt(s)"; break
+            fi
+            sleep 5
+          done
+          set +e
+          node scripts/check-docs-samples-live.mjs | tee /tmp/docs_samples.log
+          set -e
+          TOKEN=$(grep -oE 'DOCS_SAMPLES_LIVE_VERDICT=[A-Z]+' /tmp/docs_samples.log | tail -1)
+          echo "docs-samples verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          case "$TOKEN" in
+            DOCS_SAMPLES_LIVE_VERDICT=PASS) echo "docs samples match the live API" ;;
+            DOCS_SAMPLES_LIVE_VERDICT=INDETERMINATE) echo "::warning::docs-sample canary could not reach the API — not a divergence signal" ;;
+            *) echo "::error::a published docs sample no longer matches the live API — see the probe list above"; exit 1 ;;
+          esac

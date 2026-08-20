@@ -48,28 +48,34 @@ test('landing/verify.html: C2 dual-render wrappers present (lp-verify-desktop + 
   assert.match(html, /@media \(min-width: ?768px\) \{ ?\.lp-verify-mobile \{ display: none/, 'mobile-swap @media CSS missing');
 });
 
-test('landing/verify.html: C2 7 JSX sections render in canonical order (VHero H1 → VInput → VHowItWorks H2 → VRecent H2 → VFaq H2 → VFooter H3)', async () => {
+test('landing/verify.html: C2 JSX sections render in canonical order (VHero H1 → VInput → VHowItWorks H2 → VFaq H2 → VFooter H3)', async () => {
   const html = await read('landing/verify.html');
   // VHero — H1 "Verify Any AlgoVault Trade Call"
   const hero = html.indexOf('Verify Any AlgoVault');
   // R3-4: VInput label renamed `signal id or call timestamp` → `call id or call timestamp`
   const input = html.indexOf('call id or call timestamp');
   const how = html.indexOf('Hashed first. Outcome second.');
-  const recent = html.indexOf('Recent verifications');
   const faq = html.indexOf('Verification, in detail');
   const footer = html.indexOf('Want to verify in code?');
-  assert.ok(hero > 0 && input > 0 && how > 0 && recent > 0 && faq > 0 && footer > 0,
-    `all 7 sections must be present: hero=${hero} input=${input} how=${how} recent=${recent} faq=${faq} footer=${footer}`);
-  // Order: hero < input < how < recent < faq < footer
-  assert.ok(hero < input && input < how && how < recent && recent < faq && faq < footer,
-    'section order violated: must be VHero → VInput → VHowItWorks → VRecent → VFaq → VFooter');
+  assert.ok(hero > 0 && input > 0 && how > 0 && faq > 0 && footer > 0,
+    `all 6 sections must be present: hero=${hero} input=${input} how=${how} faq=${faq} footer=${footer}`);
+  // Order: hero < input < how < faq < footer
+  assert.ok(hero < input && input < how && how < faq && faq < footer,
+    'section order violated: must be VHero → VInput → VHowItWorks → VFaq → VFooter');
+  // PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1 (2026-08-20): VRecent is DELETED, so its ABSENCE is
+  // the assertion now. Rationale + the reversed ratification are recorded on the C3
+  // Override 2 test below — read that one before restoring anything here.
+  assert.strictEqual(countOcc(html, 'Recent verifications'), 0,
+    'VRecent must stay deleted — a fabricated feed behind a LIVE badge on the verify page');
 });
 
-test('landing/verify.html: C2 H1 + H2 + H3 counts match JSX SoT dual-render + R2-3 additions (2 H1 + 10 H2 + 2 H3)', async () => {
+test('landing/verify.html: C2 H1 + H2 + H3 counts match JSX SoT dual-render + R2-3 additions − VRecent (2 H1 + 8 H2 + 2 H3)', async () => {
   const html = await read('landing/verify.html');
   assert.strictEqual(countOcc(html, /<h1[^>]*>/), 2, 'expected 2 H1 (1 per artboard)');
-  // R2-3 added "How to Verify" + "How It Works" sections (2 new H2s × dual = 4 new); 3 JSX H2s × dual = 6; total 10.
-  assert.strictEqual(countOcc(html, /<h2[^>]*>/), 10, 'expected 10 H2 (3 JSX + 2 R2-3 = 5 × 2 dual-render)');
+  // R2-3 added "How to Verify" + "How It Works" (2 new H2s × dual = 4); 3 JSX H2s × dual = 6;
+  // PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1 then removed VRecent's H2 ("Recent verifications")
+  // from BOTH artboards: 10 − 2 = 8.
+  assert.strictEqual(countOcc(html, /<h2[^>]*>/), 8, 'expected 8 H2 (4 JSX/R2-3 × 2 dual-render, VRecent removed)');
   assert.strictEqual(countOcc(html, /<h3[^>]*>/), 2, 'expected 2 H3 (VFooter × 2 dual-render)');
 });
 
@@ -109,24 +115,48 @@ test('landing/verify.html: C2 W4 endpoint integration preserved — /api/verify-
 
 // ── C3 — Mr.1's 3 surgical overrides ─────────────────────────────────────────
 
-test('landing/verify.html: C3 Override 1 — VRecent eyebrow rename · social proof → · Agent Verification Records', async () => {
+test('landing/verify.html: C3 Override 1 — VRecent eyebrow (· social proof → · Agent Verification Records) is GONE with the section', async () => {
   const html = await read('landing/verify.html');
-  assert.ok(countOcc(html, 'Agent Verification Records') >= 1, 'new eyebrow text missing');
+  // Both eyebrow spellings must now be absent — the section that carried them is deleted.
+  // Asserting only the OLD one would leave the rename half-pinned and let the block return
+  // under its newer label.
+  assert.strictEqual(countOcc(html, 'Agent Verification Records'), 0,
+    'VRecent eyebrow must be 0 — the section was removed by PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1');
   assert.strictEqual(countOcc(html, 'social proof'), 0, 'old eyebrow text must be 0 after rename');
 });
 
-test('landing/verify.html: C3 Override 2 — Q-W9-4 REVERSED by Fix-Forward Fix 5 (ship JSX VRecent 10 rows verbatim per Mr.1 positioning override)', async () => {
+test('landing/verify.html: C3 Override 2 — Fix-Forward Fix 5 REVERSED by PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1 (VRecent deleted, not emptied)', async () => {
   const html = await read('landing/verify.html');
-  // DESIGN-W9-FIX-FORWARD Fix 5 (2026-05-11): Mr.1 reversed Q-W9-4 ratification with positioning
-  // argument "we publish Merkle batches proactively, demo rows showing past published verifications
-  // are factually accurate, not fictional". applyVerifyOverride2VRecentEmpty removed from C3 chain;
-  // JSX VRecent 10 rows ship verbatim. Empty-state shell class no longer present.
-  assert.strictEqual(countOcc(html, 'recent-verifications-empty'), 0, 'empty-state shell class must be 0 after Q-W9-4 reversal');
+  // SUPERSEDED 2026-08-20 PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1: rows cite batch #29 vs
+  // live header #132, and 'anonymous verified ...' asserts a third-party event with no
+  // record — static markup under a pulsing LIVE badge. Q-W9-4 empty state was right;
+  // deletion supersedes both.
+  //
+  // ── Decision history, kept in full because this assertion has now flipped TWICE ───────
+  // Q-W9-4 (2026-05-10) ratified an EMPTY VRecent state.
+  // DESIGN-W9-FIX-FORWARD Fix 5 (2026-05-11) REVERSED that, on Mr.1's positioning argument:
+  //   "we publish Merkle batches proactively, demo rows showing past published verifications
+  //    are factually accurate, not fictional" — so the 10 JSX rows shipped verbatim and this
+  //   test pinned their row anchors as MUST-BE-PRESENT.
+  // PUBLIC-VERIFY-FAKE-FEED-REMOVAL-W1 (2026-08-20) reverses Fix 5 on evidence that defeats
+  // that argument: the rows are STATIC markup — no fetch, no data-binding — under a pulsing
+  // `LIVE · last 10` badge, and all ten cite Merkle batch #29 while the same page's live
+  // header read #132. A fabricated liveness claim on the one surface whose entire argument is
+  // "don't trust — verify". Mr.1 authorised removal of the block, with no replacement.
+  //
+  // The resolution is DELETION, not the Q-W9-4 empty state: an empty styled shell behind a
+  // liveness badge is the same defect with fewer rows. So both the empty-state assertions
+  // BELOW and the row-anchor assertions stay — with the anchors' polarity flipped.
+  assert.strictEqual(countOcc(html, 'recent-verifications-empty'), 0, 'empty-state shell class must be 0 — deleted, not emptied');
   assert.ok(!html.includes('Verifications will appear here once requesters opt in'), 'empty-state copy must be 0');
-  // JSX-default row anchors must be PRESENT (dual-render: 2 instances each)
+  // Row anchors must now be ABSENT. Generalised beyond the three literals so a re-paste with
+  // different sample timestamps cannot slip past; tests/unit/landing-no-fabricated-liveness.test.ts
+  // is the corpus-wide gate for this defect class.
   for (const anchor of ['12s ago', '38s ago', '14m ago']) {
-    assert.ok(countOcc(html, anchor) >= 1, `JSX row anchor "${anchor}" must be present (Fix 5)`);
+    assert.strictEqual(countOcc(html, anchor), 0, `fabricated row anchor "${anchor}" must be 0`);
   }
+  assert.strictEqual(countOcc(html, /\b\d+[smh] ago\b/), 0, 'no relative-timestamp row may return to /verify');
+  assert.strictEqual(countOcc(html, 'LIVE · last 10'), 0, 'the fabricated liveness badge must be 0');
 });
 
 test('landing/verify.html: C3 Override 3 — VFooter contract full EIP-55 + Basescan link wrap', async () => {

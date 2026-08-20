@@ -43,6 +43,9 @@ tailwind.config = {
   .example-card:hover { transform: translateY(-1px); }
   .param-row td { padding: 8px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
   .param-row td:first-child { font-family: 'SF Mono', monospace; color: #d4b255; font-size: 12px; }
+  /* DOCS-PARAM-SCHEMA-PROJECTION-W1: the last parameter row's hairline sits on the table edge.
+     Positional, not inline — a projected row may now be the last one in any given table. */
+  .param-row:last-child td { border-bottom: none; }
 </style>
 <!-- ANALYTICS:START -->
 <!-- Privacy-friendly analytics by Plausible -->
@@ -387,7 +390,7 @@ tailwind.config = {
 
     <section id="get-trade-call" class="mb-16"><span id="get-trade-signal" aria-hidden="true"></span>
       <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Trade Call <span class="text-gray-500 text-sm font-normal">get_trade_call</span></h3>
-      <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning across <span data-tr-field="exchange_count">5</span> exchanges.</p>
+      <p class="text-gray-400 text-sm mb-5">Returns a composite BUY/SELL/HOLD trade call with confidence percentage, regime context, and reasoning. The <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter below lists every venue this tool accepts.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -398,11 +401,15 @@ tailwind.config = {
         </tr></thead>
         <tbody>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <code class="text-xs bg-navy-800 px-1 rounded">BTC</code>, <code class="text-xs bg-navy-800 px-1 rounded">ETH</code>, <code class="text-xs bg-navy-800 px-1 rounded">TSLA</code>, <code class="text-xs bg-navy-800 px-1 rounded">GOLD</code>. <span class="text-red-400 text-xs">Required</span></td></tr>
-          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded">1m</code> <code class="text-xs bg-navy-800 px-1 rounded">3m</code> <code class="text-xs bg-navy-800 px-1 rounded">5m</code> <code class="text-xs bg-navy-800 px-1 rounded">15m</code> <code class="text-xs bg-navy-800 px-1 rounded">30m</code> <code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">2h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">8h</code> <code class="text-xs bg-navy-800 px-1 rounded">12h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">15m</code></td></tr>
-          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">HL</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+          <!-- SCHEMA:tool-params:get_trade_call:start -->
+          <tr class="param-row" data-schema-tool="get_trade_call" data-schema-param="timeframe"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1m">1m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="3m">3m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="5m">5m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="15m">15m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="30m">30m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1h">1h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="2h">2h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="4h">4h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="8h">8h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="12h">12h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1d">1d</code>.</td></tr>
+          <tr class="param-row" data-schema-tool="get_trade_call" data-schema-param="exchange"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Venue to query. Asset availability varies per venue — pass one explicitly to target it. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HL">HL</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINANCE">BINANCE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BYBIT">BYBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="OKX">OKX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITGET">BITGET</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="ASTER">ASTER</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINGX">BINGX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="GATE">GATE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HTX">HTX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="KUCOIN">KUCOIN</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="MEXC">MEXC</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="PHEMEX">PHEMEX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="WHITEBIT">WHITEBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITMART">BITMART</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="XT">XT</code>.</td></tr>
+          <tr class="param-row" data-schema-tool="get_trade_call" data-schema-param="assetClass"><td>assetClass</td><td class="text-gray-400">string</td><td class="text-gray-400">Force the engine instead of letting the router infer it from the symbol. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="perp">perp</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="equity">equity</code>.</td></tr>
+          <!-- SCHEMA:tool-params:get_trade_call:end -->
           <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include human-readable reasoning. Default: <code class="text-xs bg-navy-800 px-1 rounded">true</code></td></tr>
         </tbody>
       </table>
+      <p class="text-gray-500 text-xs mb-5">Omit both <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code> and <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> and the router treats the call as bare: it infers the asset class from the symbol, then applies <code class="text-xs bg-navy-800 px-1 rounded">15m</code> on <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> for a perpetual. Naming either one routes to the perpetual engine explicitly.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Example Response</h3>
       <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5">
@@ -432,11 +439,84 @@ tailwind.config = {
   }
 }</code></pre>
       </div>
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">The example above is abridged. Every response carries these top-level fields.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>call</td><td class="text-gray-400">string</td><td class="text-gray-400">The verdict. <code class="text-xs bg-navy-800 px-1 rounded">BUY</code>, <code class="text-xs bg-navy-800 px-1 rounded">SELL</code> or <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>.</td></tr>
+          <tr class="param-row"><td>confidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Conviction, 0&ndash;100.</td></tr>
+          <tr class="param-row"><td>price</td><td class="text-gray-400">number</td><td class="text-gray-400">Mark price at evaluation time, in USD.</td></tr>
+          <tr class="param-row"><td>indicators</td><td class="text-gray-400">object</td><td class="text-gray-400">The raw factor readings behind the verdict (funding, open-interest change, 24h volume, trend persistence, breakout state, session).</td></tr>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>reasoning</td><td class="text-gray-400">string</td><td class="text-gray-400">Human-readable rationale. Omitted when <code class="text-xs bg-navy-800 px-1 rounded">includeReasoning</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>.</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation.</td></tr>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Echo of the resolved asset symbol.</td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Echo of the resolved candle interval.</td></tr>
+          <tr class="param-row"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Call metadata &mdash; server version, canonical tool name, resolved venue and its status, quota state, and the credential-resolution state.</td></tr>
+          <tr class="param-row"><td>_receipts</td><td class="text-gray-400">object</td><td class="text-gray-400">The audit trail for this verdict. Documented below.</td></tr>
+          <tr class="param-row" data-field-optional="1"><td>closest_tradeable</td><td class="text-gray-400">object</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. The nearest higher-confidence setup, so an agent can route elsewhere instead of idling: <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>.</td></tr>
+          <tr class="param-row" data-field-optional="1" style="border-bottom:none"><td>also_see</td><td class="text-gray-400">array</td><td class="text-gray-400">Present on <code class="text-xs bg-navy-800 px-1 rounded">HOLD</code>. Same shape as <code class="text-xs bg-navy-800 px-1 rounded">closest_tradeable</code>, as a ranked list.</td></tr>
+        </tbody>
+      </table>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_receipts</code> &mdash; the audit trail</h4>
+      <p class="text-gray-400 text-sm mb-3">Ships on every <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> response. It is what makes a verdict checkable rather than merely asserted: the ledger names each factor the engine weighed, which way it pointed, and whether it moved the result.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>verdict</td><td class="text-gray-400">string</td><td class="text-gray-400">The verdict this receipt explains &mdash; equals <code class="text-xs bg-navy-800 px-1 rounded">call</code>.</td></tr>
+          <tr class="param-row"><td>conviction_pct</td><td class="text-gray-400">number</td><td class="text-gray-400">The conviction this receipt explains &mdash; equals <code class="text-xs bg-navy-800 px-1 rounded">confidence</code>.</td></tr>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400">The regime in force when the verdict was computed.</td></tr>
+          <tr class="param-row"><td>factors</td><td class="text-gray-400">array</td><td class="text-gray-400">The headline readings, each <code class="text-xs bg-navy-800 px-1 rounded">factor</code> / <code class="text-xs bg-navy-800 px-1 rounded">direction</code> / <code class="text-xs bg-navy-800 px-1 rounded">value</code>.</td></tr>
+          <tr class="param-row"><td>factor_ledger</td><td class="text-gray-400">array</td><td class="text-gray-400">Every factor the engine weighed, in evaluation order. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">factor</code> (the reading&rsquo;s name), <code class="text-xs bg-navy-800 px-1 rounded">direction</code> (<code class="text-xs bg-navy-800 px-1 rounded">bullish</code> / <code class="text-xs bg-navy-800 px-1 rounded">bearish</code> / <code class="text-xs bg-navy-800 px-1 rounded">neutral</code>), <code class="text-xs bg-navy-800 px-1 rounded">value</code> (the reading, formatted), <code class="text-xs bg-navy-800 px-1 rounded">contributes</code> (boolean &mdash; whether it moved this verdict) and <code class="text-xs bg-navy-800 px-1 rounded">strength</code> (<code class="text-xs bg-navy-800 px-1 rounded">primary</code> / <code class="text-xs bg-navy-800 px-1 rounded">supporting</code> / <code class="text-xs bg-navy-800 px-1 rounded">marginal</code> / <code class="text-xs bg-navy-800 px-1 rounded">none</code>).</td></tr>
+          <tr class="param-row"><td>stripped_remainder</td><td class="text-gray-400">object</td><td class="text-gray-400">What was weighed but not named: <code class="text-xs bg-navy-800 px-1 rounded">count</code>, <code class="text-xs bg-navy-800 px-1 rounded">withheld_term_count</code>, <code class="text-xs bg-navy-800 px-1 rounded">unnameable_this_response</code>, <code class="text-xs bg-navy-800 px-1 rounded">unevaluated_terms</code>, and the <code class="text-xs bg-navy-800 px-1 rounded">net</code> direction of the remainder.</td></tr>
+          <tr class="param-row"><td>track_record</td><td class="text-gray-400">object</td><td class="text-gray-400">The live verdict track record at call time &mdash; <code class="text-xs bg-navy-800 px-1 rounded">pfe_win_rate</code>, sample size <code class="text-xs bg-navy-800 px-1 rounded">n</code>, the rolling <code class="text-xs bg-navy-800 px-1 rounded">window</code>, and <code class="text-xs bg-navy-800 px-1 rounded">as_of</code>.</td></tr>
+          <tr class="param-row"><td>verification_uri</td><td class="text-gray-400">string</td><td class="text-gray-400">Where that track record can be independently checked.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>disclaimer</td><td class="text-gray-400">string</td><td class="text-gray-400">Informational-analytics notice carried with every verdict.</td></tr>
+        </tbody>
+      </table>
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3"><code class="text-sm bg-navy-800 px-1 rounded">_algovault.auth</code> &mdash; what happened to your key</h4>
+      <p class="text-gray-400 text-sm mb-3">Read this before anything else when a paid key seems not to apply. A key that was presented but not accepted still returns a verdict &mdash; on the <strong class="text-white">free tier</strong> &mdash; so the response looks fine and the quota is wrong. This block says so explicitly, and replaces inferring it from the quota numbers.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-3">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>outcome</td><td class="text-gray-400">string</td><td class="text-gray-400">How the credential resolved. One of the five below.</td></tr>
+          <tr class="param-row"><td>presented</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Whether an <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header was sent at all &mdash; the difference between &ldquo;no key&rdquo; and &ldquo;a key that did not work&rdquo;.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>tier</td><td class="text-gray-400">string</td><td class="text-gray-400">The tier actually applied to this call. <strong class="text-white">A paid key showing <code class="text-xs bg-navy-800 px-1 rounded">free</code> means it was not applied.</strong></td></tr>
+        </tbody>
+      </table>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">outcome</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-52">Where it surfaces</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>ABSENT</td><td class="text-gray-400">served response</td><td class="text-gray-400">No <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header. Free tier, working as intended.</td></tr>
+          <tr class="param-row"><td>RESOLVED</td><td class="text-gray-400">served response</td><td class="text-gray-400">The key was recognised and its tier applied.</td></tr>
+          <tr class="param-row"><td>MALFORMED</td><td class="text-gray-400">served response</td><td class="text-gray-400">A header was sent but the value is not a key shape. You are served on the free tier &mdash; check for a truncated paste or a stray <code class="text-xs bg-navy-800 px-1 rounded">Bearer</code>.</td></tr>
+          <tr class="param-row"><td>UNKNOWN</td><td class="text-gray-400">refusal &mdash; <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code></td><td class="text-gray-400">Well-formed but not a key we issued. The call is <strong class="text-white">refused</strong> with <code class="text-xs bg-navy-800 px-1 rounded">-32003</code> and <code class="text-xs bg-navy-800 px-1 rounded">retryable: false</code> rather than silently downgraded.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>INDETERMINATE</td><td class="text-gray-400">refusal &mdash; <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code></td><td class="text-gray-400">The key could not be checked right now. Refused with <code class="text-xs bg-navy-800 px-1 rounded">-32004</code> and <code class="text-xs bg-navy-800 px-1 rounded">retryable: true</code> &mdash; the key was <strong class="text-white">not</strong> rejected. Retry shortly.</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-5">The three served outcomes appear in <code class="text-xs bg-navy-800 px-1 rounded">_algovault.auth.outcome</code>; the two refusing ones never do, because the call is refused before a verdict exists &mdash; look for them in <code class="text-xs bg-navy-800 px-1 rounded">error.data.auth_outcome</code> instead. See <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</p>
     </section>
 
     <section id="get-market-regime" class="mb-16">
       <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Market Regime <span class="text-gray-500 text-sm font-normal">get_market_regime</span></h3>
-      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset across <span data-tr-field="exchange_count">5</span> exchanges. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
+      <p class="text-gray-400 text-sm mb-5">Classifies the current market regime for any asset, on any venue this tool accepts. Returns one of four states: TRENDING_UP, TRENDING_DOWN, RANGING, or VOLATILE.</p>
 
       <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Parameters</h3>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
@@ -447,8 +527,10 @@ tailwind.config = {
         </tr></thead>
         <tbody>
           <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">Asset symbol. <span class="text-red-400 text-xs">Required</span></td></tr>
-          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">1h</code> <code class="text-xs bg-navy-800 px-1 rounded">4h</code> <code class="text-xs bg-navy-800 px-1 rounded">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Exchange to query. <code class="text-xs bg-navy-800 px-1 rounded">HL</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code>, <code class="text-xs bg-navy-800 px-1 rounded">BYBIT</code>, <code class="text-xs bg-navy-800 px-1 rounded">OKX</code>, <code class="text-xs bg-navy-800 px-1 rounded">BITGET</code>. Asset availability varies per venue — pass exchange explicitly to target a specific venue.</td></tr>
+          <!-- SCHEMA:tool-params:get_market_regime:start -->
+          <tr class="param-row" data-schema-tool="get_market_regime" data-schema-param="timeframe" data-schema-default="4h"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1h">1h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="4h">4h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1d">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">4h</code></td></tr>
+          <tr class="param-row" data-schema-tool="get_market_regime" data-schema-param="exchange" data-schema-default="HL"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Venue to query. Asset availability varies per venue — pass one explicitly to target it. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HL">HL</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINANCE">BINANCE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BYBIT">BYBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="OKX">OKX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITGET">BITGET</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="ASTER">ASTER</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINGX">BINGX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="GATE">GATE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HTX">HTX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="KUCOIN">KUCOIN</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="MEXC">MEXC</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="PHEMEX">PHEMEX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="WHITEBIT">WHITEBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITMART">BITMART</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="XT">XT</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">HL</code></td></tr>
+          <!-- SCHEMA:tool-params:get_market_regime:end -->
         </tbody>
       </table>
 
@@ -477,6 +559,26 @@ tailwind.config = {
   }
 }</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400">The classification. <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
+          <tr class="param-row"><td>confidence</td><td class="text-gray-400">number</td><td class="text-gray-400">How strongly the metrics agree on that classification, 0&ndash;100.</td></tr>
+          <tr class="param-row"><td>metrics</td><td class="text-gray-400">object</td><td class="text-gray-400">The readings behind the call &mdash; ADX and its slope with plain-language interpretations, volatility ratio, price structure, pivot quality, trend strength, cross-venue funding sentiment, the underlying session, and per-venue funding under <code class="text-xs bg-navy-800 px-1 rounded">funding_by_venue</code>.</td></tr>
+          <tr class="param-row"><td>suggestion</td><td class="text-gray-400">string</td><td class="text-gray-400">What the regime implies for strategy selection and position sizing, in one paragraph.</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation time.</td></tr>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">The asset evaluated, echoed back.</td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">The candle interval used, echoed back.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; <code class="text-xs bg-navy-800 px-1 rounded">version</code>, <code class="text-xs bg-navy-800 px-1 rounded">tool</code>, <code class="text-xs bg-navy-800 px-1 rounded">compatible_with</code>, <code class="text-xs bg-navy-800 px-1 rounded">session_id</code>, the resolved <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> and its <code class="text-xs bg-navy-800 px-1 rounded">venue_status</code>, your <code class="text-xs bg-navy-800 px-1 rounded">quota</code>, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code> (see <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>).</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="scan-funding-arb" class="mb-16">
@@ -526,6 +628,22 @@ tailwind.config = {
   }
 }</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>opportunities</td><td class="text-gray-400">array</td><td class="text-gray-400">One entry per asset with a cross-venue funding spread, best first. Each carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, the per-venue <code class="text-xs bg-navy-800 px-1 rounded">rates</code>, a <code class="text-xs bg-navy-800 px-1 rounded">bestArb</code> leg (long venue, short venue, spread in bps, annualized percent, and an <code class="text-xs bg-navy-800 px-1 rounded">urgency</code> block counting minutes to the next collection), a <code class="text-xs bg-navy-800 px-1 rounded">conviction</code> block scoring direction consistency and spread persistence over a 24-hour sample, and <code class="text-xs bg-navy-800 px-1 rounded">nextFundingTimes</code> per venue in epoch milliseconds.</td></tr>
+          <tr class="param-row"><td>scannedPairs</td><td class="text-gray-400">number</td><td class="text-gray-400">How many venue pairs were compared to produce the list &mdash; the denominator behind the ranking.</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation time.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; <code class="text-xs bg-navy-800 px-1 rounded">version</code>, <code class="text-xs bg-navy-800 px-1 rounded">tool</code>, <code class="text-xs bg-navy-800 px-1 rounded">compatible_with</code>, <code class="text-xs bg-navy-800 px-1 rounded">session_id</code>, your <code class="text-xs bg-navy-800 px-1 rounded">quota</code>, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code> (see <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>).</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="scan-trade-calls" class="mb-16">
@@ -541,13 +659,41 @@ tailwind.config = {
         </tr></thead>
         <tbody>
           <tr class="param-row"><td>topN</td><td class="text-gray-400">number</td><td class="text-gray-400">Universe size to evaluate before ranking (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">20</code></td></tr>
-          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval for each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">1h</code></td></tr>
-          <tr class="param-row"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Promoted venue to scan. <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code> (default), plus other promoted venues.</td></tr>
-          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Universe-selection lens: <code class="text-xs bg-navy-800 px-1 rounded">oi</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">oi_change</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume</code>, &hellip; See <code class="text-xs bg-navy-800 px-1 rounded">/capabilities</code> for the live lens set.</td></tr>
+          <!-- SCHEMA:tool-params:scan_trade_calls:start -->
+          <tr class="param-row" data-schema-tool="scan_trade_calls" data-schema-param="timeframe" data-schema-default="15m"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">Candle interval. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1m">1m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="3m">3m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="5m">5m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="15m">15m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="30m">30m</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1h">1h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="2h">2h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="4h">4h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="8h">8h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="12h">12h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1d">1d</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">15m</code></td></tr>
+          <tr class="param-row" data-schema-tool="scan_trade_calls" data-schema-param="exchange" data-schema-default="BINANCE"><td>exchange</td><td class="text-gray-400">string</td><td class="text-gray-400">Venue to query. Asset availability varies per venue — pass one explicitly to target it. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HL">HL</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINANCE">BINANCE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BYBIT">BYBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="OKX">OKX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITGET">BITGET</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="ASTER">ASTER</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BINGX">BINGX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="GATE">GATE</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="HTX">HTX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="KUCOIN">KUCOIN</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="MEXC">MEXC</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="PHEMEX">PHEMEX</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="WHITEBIT">WHITEBIT</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="BITMART">BITMART</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="XT">XT</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">BINANCE</code></td></tr>
+          <tr class="param-row" data-schema-tool="scan_trade_calls" data-schema-param="oiChangeWindow" data-schema-default="24h"><td>oiChangeWindow</td><td class="text-gray-400">string</td><td class="text-gray-400">Open-interest delta window for the oi_change lens. Ignored by other lenses. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1h">1h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="4h">4h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="24h">24h</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">24h</code></td></tr>
+          <tr class="param-row" data-schema-tool="scan_trade_calls" data-schema-param="oiBasis" data-schema-default="notional"><td>oiBasis</td><td class="text-gray-400">string</td><td class="text-gray-400">Whether the open-interest delta is measured in notional value or in contract count. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="notional">notional</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="contracts">contracts</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">notional</code></td></tr>
+          <!-- SCHEMA:tool-params:scan_trade_calls:end -->
+          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Which slice of the venue&rsquo;s assets gets evaluated. All nine lenses are listed below, with the short alias each one answers to. Default: <code class="text-xs bg-navy-800 px-1 rounded">oi</code></td></tr>
           <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked calls to return (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
           <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop calls below this confidence (0&ndash;100). Optional.</td></tr>
           <tr class="param-row"><td>includeHolds</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include HOLD verdicts in the results. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
-          <tr class="param-row" style="border-bottom:none"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+          <tr class="param-row"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>minLiquidityUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop assets whose 24h notional volume is below this floor, in USD. Optional.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Ranking lenses</h3>
+      <p class="text-gray-400 text-sm mb-3">Every value <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> accepts. Pass the lens or its alias &mdash; both resolve to the same universe.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Lens</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Alias</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Selects</th>
+        </tr></thead>
+        <tbody>
+          <!-- SCHEMA:tool-closed-set:scan_trade_calls:start -->
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="oi">oi</code> <span class="text-gray-500">(default)</span></td><td class="text-gray-400"><span class="text-gray-600">&mdash;</span></td><td class="text-gray-400">The largest positions on the venue, by open interest. The default, and the deepest book.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="volume">volume</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">vol</code></td><td class="text-gray-400">The most heavily traded assets over the last 24 hours, by notional.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="gainers">gainers</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">gain</code></td><td class="text-gray-400">The strongest 24-hour price gains — momentum that is already running.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="losers">losers</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">lose</code></td><td class="text-gray-400">The steepest 24-hour price falls — where a reversal setup would form.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="movers">movers</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">move</code></td><td class="text-gray-400">The largest absolute 24-hour move in either direction, gainers and losers together.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="funding_positive">funding_positive</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">pfr</code></td><td class="text-gray-400">Where longs are paying shorts most — crowded long positioning.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="funding_negative">funding_negative</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">nfr</code></td><td class="text-gray-400">Where shorts are paying longs most — crowded short positioning.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="volatility">volatility</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">atr</code></td><td class="text-gray-400">The widest ranges, by ATRP — ATR(14) ÷ price × 100 on the scan timeframe.</td></tr>
+          <tr class="param-row" style="border-bottom:none" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="oi_change">oi_change</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">oid</code></td><td class="text-gray-400">The fastest real open-interest change, measured from the stored OI snapshots.</td></tr>
+          <!-- SCHEMA:tool-closed-set:scan_trade_calls:end -->
         </tbody>
       </table>
 
@@ -563,6 +709,44 @@ tailwind.config = {
 })
 // &rarr; the 10 highest-ranked assets, each a get_trade_call verdict
 //    (call, confidence, regime, price, indicators, _algovault)</code></pre>
+      </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">The scan returns counters alongside the results, so you can tell &ldquo;nothing qualified&rdquo; from &ldquo;nothing was scanned&rdquo; without a second call.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Meaning</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>scanned</td><td class="text-gray-400">number</td><td class="text-gray-400">How many assets were evaluated.</td></tr>
+          <tr class="param-row"><td>eligible_non_hold</td><td class="text-gray-400">number</td><td class="text-gray-400">How many produced a BUY or a SELL.</td></tr>
+          <tr class="param-row"><td>holds</td><td class="text-gray-400">number</td><td class="text-gray-400">How many produced a HOLD.</td></tr>
+          <tr class="param-row"><td>errors</td><td class="text-gray-400">number</td><td class="text-gray-400">A <strong class="text-white">count</strong> of venue errors during the scan &mdash; not a detail object.</td></tr>
+          <tr class="param-row"><td>partial</td><td class="text-gray-400">boolean</td><td class="text-gray-400">True when a venue timed out and the scan is therefore incomplete. Treat the counters as a floor.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>calls</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked results. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, <code class="text-xs bg-navy-800 px-1 rounded">timeframe</code>, <code class="text-xs bg-navy-800 px-1 rounded">exchange</code>, <code class="text-xs bg-navy-800 px-1 rounded">call</code>, <code class="text-xs bg-navy-800 px-1 rounded">confidence</code> and <code class="text-xs bg-navy-800 px-1 rounded">regime</code>.</td></tr>
+        </tbody>
+      </table>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">{
+  "scanned": 30,
+  "eligible_non_hold": 1,
+  "holds": 29,
+  "errors": 0,
+  "partial": false,
+  "calls": [
+    { "coin": "BTC", "timeframe": "1h", "exchange": "BINANCE",
+      "call": "BUY", "confidence": 57, "regime": "TRENDING_UP" }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <h4 class="text-sm font-semibold text-white mb-2">An empty <code class="text-xs bg-navy-800 px-1 rounded">calls</code> array is the ordinary outcome</h4>
+        <p class="text-gray-400 text-sm leading-relaxed mb-3">Most assets are HOLD most of the time, and <code class="text-xs bg-navy-800 px-1 rounded">includeHolds</code> defaults to <code class="text-xs bg-navy-800 px-1 rounded">false</code> &mdash; so a scan that filters every result out is working correctly, not failing. A live 30-asset scan on <code class="text-xs bg-navy-800 px-1 rounded">1h</code> at the time of writing returned <strong class="text-white">29 HOLD</strong> against <strong class="text-white">1</strong> actionable call.</p>
+        <p class="text-gray-400 text-sm leading-relaxed">Read <code class="text-xs bg-navy-800 px-1 rounded">scanned</code> to confirm the universe was evaluated. To widen the result set, lower <code class="text-xs bg-navy-800 px-1 rounded">minConfidence</code>, or set <code class="text-xs bg-navy-800 px-1 rounded">includeHolds: true</code> to see the HOLD verdicts alongside the rest.</p>
       </div>
       <p class="text-gray-500 text-xs mt-3">Each result carries the same shape as <a href="#get-trade-call" class="text-mint-400 hover:underline">get_trade_call</a>. Free tier bills only non-HOLD results (min 1); x402 is a flat $0.02/scan.</p>
     </section>
@@ -582,6 +766,23 @@ tailwind.config = {
           <tr class="param-row" style="border-bottom:none"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Optional model override. <code class="text-xs bg-navy-800 px-1 rounded">claude-haiku-4-5-20251001</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">claude-sonnet-4-6</code></td></tr>
         </tbody>
       </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>question</td><td class="text-gray-400">string</td><td class="text-gray-400">Your question, echoed back.</td></tr>
+          <tr class="param-row"><td>answer</td><td class="text-gray-400">string</td><td class="text-gray-400">The synthesized answer, grounded in the knowledge bundle.</td></tr>
+          <tr class="param-row"><td>citations</td><td class="text-gray-400">array</td><td class="text-gray-400">What the answer was built from. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">title</code>, <code class="text-xs bg-navy-800 px-1 rounded">excerpt</code>, <code class="text-xs bg-navy-800 px-1 rounded">source_type</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_url</code>. Check these before acting on the answer.</td></tr>
+          <tr class="param-row"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Which model produced the answer &mdash; the default, or the override you passed.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">bundle_version</code> and <code class="text-xs bg-navy-800 px-1 rounded">bundle_generated_at</code> the answer was grounded in, <code class="text-xs bg-navy-800 px-1 rounded">quota_remaining</code> for the monthly chat allowance, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code>. A chat call refused for quota returns <code class="text-xs bg-navy-800 px-1 rounded">CHAT_QUOTA_EXHAUSTED</code> instead &mdash; see <a href="#tools-errors" class="text-mint-400 hover:underline">Errors &amp; troubleshooting</a>.</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="search-knowledge" class="mb-16"><span id="knowledge-tools-search" aria-hidden="true"></span>
@@ -597,6 +798,22 @@ tailwind.config = {
         <tbody>
           <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language search query (3&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
           <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Your query, echoed back.</td></tr>
+          <tr class="param-row"><td>total_results</td><td class="text-gray-400">number</td><td class="text-gray-400">How many ranked snippets were returned &mdash; at most your <code class="text-xs bg-navy-800 px-1 rounded">limit</code>.</td></tr>
+          <tr class="param-row"><td>results</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked snippets, best first. Each carries <code class="text-xs bg-navy-800 px-1 rounded">id</code>, a BM25 <code class="text-xs bg-navy-800 px-1 rounded">score</code>, <code class="text-xs bg-navy-800 px-1 rounded">title</code>, <code class="text-xs bg-navy-800 px-1 rounded">excerpt</code>, <code class="text-xs bg-navy-800 px-1 rounded">source_type</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_url</code>. Read the excerpt before calling the tool it describes.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">bundle_version</code> and <code class="text-xs bg-navy-800 px-1 rounded">bundle_generated_at</code> searched, plus <code class="text-xs bg-navy-800 px-1 rounded">auth</code>. This tool costs no quota, so it carries no quota block.</td></tr>
         </tbody>
       </table>
     </section>
@@ -688,6 +905,33 @@ tailwind.config = {
       <p class="text-gray-500 text-xs">Cost transparency: <code class="text-xs">chat_knowledge</code> costs about $0.002 per call with prompt caching. Quota resets at the first of each UTC month.</p>
     </section>
 
+    <section id="tools-errors" class="mb-16">
+      <h4 class="text-base font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> Errors & troubleshooting</h4>
+      <p class="text-gray-400 text-sm mb-5">Every failure this API can return, what it means, and what to change. Verified against the live server.</p>
+
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-5">
+        <h4 class="text-sm font-semibold text-white mb-2">Failures arrive in two shapes &mdash; check both</h4>
+        <p class="text-gray-400 text-sm leading-relaxed mb-3">Check <code class="text-xs bg-navy-800 px-1 rounded">response.error</code> first. If it is absent, check <code class="text-xs bg-navy-800 px-1 rounded">response.result.isError</code>.</p>
+        <p class="text-gray-400 text-sm leading-relaxed">A <strong class="text-white">parameter validation failure returns HTTP 200</strong> with <code class="text-xs bg-navy-800 px-1 rounded">result.isError: true</code> and the code as plain text inside <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code> &mdash; there is no <code class="text-xs bg-navy-800 px-1 rounded">error</code> object at all. A client that only inspects <code class="text-xs bg-navy-800 px-1 rounded">error</code> reads that failure as a success, then fails again trying to parse the message as a verdict. This is the single most common cause of a working integration appearing broken.</p>
+      </div>
+
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Code</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-56">Where to read it</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">What it means &mdash; and what to do</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>-32602</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">result.isError</code> &mdash; code in <code class="text-xs bg-navy-800 px-1 rounded">result.content[0].text</code></td><td class="text-gray-400">Invalid parameter: a value outside an enum, or a required field missing. The message carries an <code class="text-xs bg-navy-800 px-1 rounded">options</code> array listing exactly what that parameter accepts &mdash; read it rather than guessing.</td></tr>
+          <tr class="param-row"><td>-32003</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">response.error.code</code></td><td class="text-gray-400">The API key was not recognised. Check it on your account page, or drop the <code class="text-xs bg-navy-800 px-1 rounded">Authorization</code> header entirely to use the free tier. <code class="text-xs bg-navy-800 px-1 rounded">error.data.retryable</code> is <code class="text-xs bg-navy-800 px-1 rounded">false</code>: retrying will not help.</td></tr>
+          <tr class="param-row"><td>-32004</td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">response.error.code</code></td><td class="text-gray-400">The key could not be verified right now &mdash; it was <strong class="text-white">not</strong> rejected. <code class="text-xs bg-navy-800 px-1 rounded">error.data.retryable</code> is <code class="text-xs bg-navy-800 px-1 rounded">true</code>: retry shortly and treat it as transient, never as a bad key.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>HTTP 406</td><td class="text-gray-400">HTTP status, plus <code class="text-xs bg-navy-800 px-1 rounded">error.code</code> <code class="text-xs bg-navy-800 px-1 rounded">-32000</code></td><td class="text-gray-400">The <code class="text-xs bg-navy-800 px-1 rounded">Accept</code> header is incomplete. Send both values: <code class="text-xs bg-navy-800 px-1 rounded">Accept: application/json, text/event-stream</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <p class="text-gray-500 text-xs mb-2">A venue outside the <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> list is a <code class="text-xs bg-navy-800 px-1 rounded">-32602</code>, not an outage. The published list is the set with a live track record; venues without one are not accepted.</p>
+    </section>
+
     <div class="border-t border-white/5 mb-16"></div>
 
     <section id="channels" class="mb-16">
@@ -697,12 +941,71 @@ tailwind.config = {
 
     <section id="mcp" class="mb-16"><span id="testing-with-curl" aria-hidden="true"></span>
       <h3 class="text-lg font-semibold text-white mb-3 mt-2 flex items-center gap-2"><span class="text-mint-400">&#9670;</span> MCP Server</h3>
-      <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) runs the handshake for you &mdash; see <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. To wire a non-MCP system or debug directly, the MCP <em>Streamable HTTP</em> transport needs a 3-step handshake before <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code>:</p>
+      <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) handles the protocol for you. See <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. Wiring a non-MCP system? POST <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code> directly. The transport is stateless, so there is no <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">initialize</code> step and no session id to thread:</p>
 <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 
-# 1. initialize — captures session-id from response headers
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"BTC","timeframe":"15m","exchange":"BINANCE"}}}'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-6">No key? Drop the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Authorization</code> header and the same call runs on the free tier.</p>
+      <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Send both Accept types.</strong> The header must list <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">application/json</code> and <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">text/event-stream</code>. Sending only the first returns:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <pre><code class="text-sm text-gray-300">{"jsonrpc":"2.0","error":{"code":-32000,"message":"Not Acceptable: Client must accept both application/json and text/event-stream"},"id":null}</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Parse twice.</strong> The reply is an SSE frame. The verdict is a JSON <em>string</em> nested at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">result.content[0].text</code>. Strip the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">data:</code> prefix, then decode the inner payload:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"BTC"}}}' \
+  | sed -n 's/^data: //p' | head -1 | jq -r '.result.content[0].text' | jq</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2 mt-6"><strong class="text-gray-300">The same call in Python.</strong> Both parses in one place &mdash; the SSE frame, then the verdict string inside it. No MCP client library, no handshake, no session id.</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">import json, requests
+
+r = requests.post(
+    "https://api.algovault.com/mcp",
+    headers={
+        "Content-Type": "application/json",
+        # both values, or the server answers 406
+        "Accept": "application/json, text/event-stream",
+        # optional — omit entirely to use the free tier
+        # "Authorization": "Bearer av_live_...",
+    },
+    json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+          "params": {"name": "get_trade_call",
+                     "arguments": {"coin": "BTC", "timeframe": "1h"}}},
+    timeout=30,
+)
+
+# 1st parse — the reply is an SSE frame; the payload is the line after "data: "
+envelope = json.loads(next(l[6:] for l in r.text.splitlines() if l.startswith("data: ")))
+
+# failures arrive in TWO shapes — check both before reading a verdict
+if "error" in envelope:
+    raise SystemExit(envelope["error"])                      # -32003 / -32004
+if envelope["result"].get("isError"):
+    raise SystemExit(envelope["result"]["content"][0]["text"])  # -32602, as text
+
+# 2nd parse — the verdict is a JSON *string* inside the tool result
+verdict = json.loads(envelope["result"]["content"][0]["text"])
+
+print(verdict["call"], verdict["confidence"], verdict["regime"])
+print(verdict["_algovault"]["auth"])   # ABSENT / RESOLVED / MALFORMED</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-4 mt-6"><strong class="text-gray-300">Optional: the full MCP session handshake.</strong> You do not need this to call a tool. It is kept for clients that speak full MCP session semantics. It also reproduces what an MCP client does internally:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
+
+# 1. initialize — reads a session id from the response headers, if the server issues one
 SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
@@ -710,7 +1013,7 @@ SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
   | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
 
-# 2. notify "initialized" (required by MCP protocol)
+# 2. notify "initialized"
 curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
@@ -718,7 +1021,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
   -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
 
-# 3. now call tools/call
+# 3. call the tool
 curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
@@ -726,7 +1029,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
   -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
       </div>
-      <p class="text-gray-500 text-xs">Most users won't need this — Claude Desktop / Cursor / Claude Code MCP clients handle the handshake automatically. Use this only for direct integration into a non-MCP system or for debugging.</p>
+      <p class="text-gray-500 text-xs">The stateless server issues no session id, so <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">SESSION_ID</code> stays empty and the header is ignored. Every call above still succeeds.</p>
       <p class="text-gray-400 text-sm mt-6"><a href="https://algovault.com/mcp" class="text-mint-400 hover:underline font-medium">Full MCP Server guide &rarr;</a></p>
     </section>
 
@@ -799,7 +1102,8 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>.</p>
       <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
             <h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
-      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. No streamable-HTTP handshake required &mdash; just <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST</code> with JSON body.</p>
+      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. Send a JSON body, read a JSON response &mdash; no JSON-RPC envelope, no dual <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Accept</code> header, no SSE to unwrap.</p>
+      <p class="text-gray-400 text-sm mb-5">Trade calls are served over <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST /mcp</code> and the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/x402/*</code> routes. There is no separate <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/api/trade-call</code> endpoint.</p>
       <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
         <thead><tr class="border-b border-white/5">
           <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
@@ -1086,7 +1390,7 @@ npx -y @smithery/cli install crypto-quant-signal-mcp --client &lt;client&gt;</co
   <details class="bg-navy-700 border border-white/5 rounded-xl mb-3">
     <summary class="px-5 py-3 text-white text-sm font-medium cursor-pointer">Plain HTTP / curl &mdash; advanced testing</summary>
     <div class="px-5 pb-5 pt-2 text-sm text-gray-300 space-y-3">
-      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. Streamable-HTTP MCP requires a 3-step handshake: <em>initialize</em> &rarr; <em>notifications/initialized</em> &rarr; <em>tools/call</em>. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the full sequence.</p>
+      <p>For non-MCP integrations (bots, scripts, services), call the JSON-RPC endpoint directly. The transport is stateless, so a single POST of <em>tools/call</em> works: no <em>initialize</em>, no session id. See <a href="#testing-with-curl" class="text-mint-400 hover:underline">Testing with raw HTTP / curl</a> for the one-shot call, the two <code class="text-xs bg-navy-800 px-1 rounded">Accept</code> types you must send, and the optional session handshake.</p>
       <p><strong>One-shot smoke (free tier, no auth):</strong></p>
       <div class="code-block bg-navy-800 border border-white/5 rounded-lg p-4">
         <pre><code class="text-xs text-gray-300">curl -sS https://api.algovault.com/health</code></pre>
@@ -2161,7 +2465,7 @@ cfg = gate_api.Configuration(
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance (default for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code>), Hyperliquid (default for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>), Bybit, OKX, or Bitget. Funding arb scans 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Response time depends on the exchange's API latency and the number of assets scanned.
+            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> and Hyperliquid for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code> when you do not name one, or any other venue in that tool&rsquo;s <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter. Funding arb scans 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Response time depends on the exchange's API latency and the number of assets scanned.
           </div>
         </details>
 
@@ -2181,7 +2485,7 @@ cfg = gate_api.Configuration(
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            All perpetuals listed across <span data-tr-field="exchange_count">5</span> exchanges &mdash; Binance, Hyperliquid, Bybit, OKX, and Bitget. This includes standard crypto perps (BTC, ETH, SOL, etc.) and liquidity-filtered meme coins on every venue. TradFi perpetuals (TSLA, XAU, NVDA, SPX, MSTR, COIN, AAPL, and more) are available on multiple venues &mdash; asset availability varies per venue; pass exchange explicitly to target a specific venue. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
+            All perpetuals listed across <span data-tr-field="exchange_count">5</span> exchanges. The <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter on each tool lists every venue it accepts. This includes standard crypto perps (BTC, ETH, SOL, etc.) and liquidity-filtered meme coins on every venue. TradFi perpetuals (TSLA, XAU, NVDA, SPX, MSTR, COIN, AAPL, and more) are available on multiple venues &mdash; asset availability varies per venue; pass exchange explicitly to target a specific venue. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
           </div>
         </details>
 

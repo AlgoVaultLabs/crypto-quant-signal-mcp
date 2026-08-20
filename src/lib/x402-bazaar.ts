@@ -28,6 +28,7 @@
  */
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { PROMOTED_VENUE_IDS } from './capabilities.js';
+import { PUBLIC_VENUE_IDS } from './tool-param-schema.js';
 
 /**
  * Tokens that must never appear in any public Bazaar description/example.
@@ -43,11 +44,16 @@ export const FORBIDDEN_BAZAAR_TOKENS: readonly string[] = [
   'internal-only',
 ] as const;
 
-/** All 17 supported derivatives venues (mirrors TRADE_CALL_SCHEMA / regime enum). */
-const VENUE_ENUM = [
-  'HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC',
-  'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT',
-] as const;
+/**
+ * Every venue this PUBLIC LISTING advertises. DOCS-PARAM-SCHEMA-PROJECTION-W1 made this a
+ * projection instead of a hand-typed copy that called itself a mirror; DOCS-SUPPORT-ANSWERS-AND-
+ * PUBLIC-VENUE-SCOPE-W1 pointed it at the PUBLIC set rather than the declared one.
+ *
+ * The bazaar is a discovery surface an agent shops from, so it must advertise what the API will
+ * actually accept. Listing a venue the tool then rejects with `-32602` is a worse failure here
+ * than in the docs: nobody is reading it, so nobody reports it.
+ */
+const VENUE_ENUM = PUBLIC_VENUE_IDS;
 
 export interface BazaarRouteSpec {
   toolName: string;
@@ -219,7 +225,7 @@ export const BAZAAR_ROUTES: Record<string, BazaarRouteSpec> = {
         },
         exchange: {
           type: 'string',
-          enum: [...PROMOTED_VENUE_IDS], // OPS-SCAN-UNIVERSE-EXPAND-W1: derived from EXCHANGES (all 12 promoted)
+          enum: [...PROMOTED_VENUE_IDS], // OPS-SCAN-UNIVERSE-EXPAND-W1: derived from EXCHANGES (every promoted venue)
           default: 'BINANCE',
           description: 'Promoted derivatives venue to scan.',
         },

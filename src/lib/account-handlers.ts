@@ -27,6 +27,10 @@ import { renderSiteNav } from './site-nav.js';
 import { renderSigninComponent } from './signin-component.js';
 import { isUnifiedSigninEnabled, isNewSignupEnabled, getAuthProvider } from './auth-providers.js';
 import { resolveLicense } from './license.js';
+// AUTH-THREE-STATE-W1 CH1: the ONE key-shape constant. These two handlers each carried a
+// byte-identical private copy of the regex; a third copy is now a build failure
+// (scripts/check-credential-outcome-conformance.mjs R3) rather than a code-review catch.
+import { AV_KEY_SHAPE, credentialOutcomeOf } from './credential-outcome.js';
 
 // DESIGN-W10 / C2 / Q-W10-10: REPLACED body-flex-centering with var(--bg) layout.
 // Existing .tabs/.tab/.panel/.subtitle/.footer/.error/.success class blocks PRESERVED
@@ -355,14 +359,21 @@ async function loadReferralStatsView(
  */
 async function apiKeyExists(apiKey: string): Promise<boolean> {
   const { license } = await resolveLicense({ authorization: `Bearer ${apiKey}` });
-  return license.key !== null;
+  // AUTH-THREE-STATE-W1 CH3: was `license.key !== null`. Identical behaviour today — every path
+  // that returns a non-null key also resolves RESOLVED — but the two questions are not the same
+  // one, and inferring existence from key-presence is what breaks the day an outcome legitimately
+  // carries a key it could not verify. INDETERMINATE already does exactly that: it PRESERVES the
+  // caller's key so they meter on their own bucket during a Stripe outage, so the old predicate
+  // would have answered "this principal exists" on the strength of a lookup that never completed —
+  // and this guard's whole job (SEC-08) is to refuse a mint to a principal we cannot vouch for.
+  return credentialOutcomeOf(license) === 'RESOLVED';
 }
 
 // REFERRAL-LIGHT-W1 (C4): paste-key → the caller's own referral dashboard.
 export async function accountReferralsHandler(req: Request, res: Response): Promise<void> {
   try {
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : '';
-    if (!/^av_(live|free)_[a-f0-9]{24}$/.test(apiKey)) {
+    if (!AV_KEY_SHAPE.test(apiKey)) {
       res.status(400).send(getAccountErrorPageHtml('Please paste a valid AlgoVault API key (av_live_… or av_free_…).'));
       return;
     }
@@ -394,7 +405,7 @@ export async function accountReferralsHandler(req: Request, res: Response): Prom
 export async function accountPayoutAddressHandler(req: Request, res: Response): Promise<void> {
   try {
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : '';
-    if (!/^av_(live|free)_[a-f0-9]{24}$/.test(apiKey)) {
+    if (!AV_KEY_SHAPE.test(apiKey)) {
       res.status(400).send(getAccountErrorPageHtml('Please paste a valid AlgoVault API key (av_live_… or av_free_…).'));
       return;
     }

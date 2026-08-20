@@ -38,11 +38,21 @@ import { buildReferralHint, buildAhaReferral, type ReferralHint } from '../lib/n
 import { shouldShowAhaReferral } from '../lib/aha-event.js';
 import { getTrackRecord } from '../lib/track-record-snapshot.js';
 import { resolveRankBy, rankByTokens } from '../lib/rank-constants.js';
+// DOCS-PARAM-SCHEMA-PROJECTION-W1: the scan lens enums + their defaults are declared once and
+// projected into both this served schema and the /docs parameter table.
+import {
+  OI_CHANGE_WINDOWS, OI_BASES, SCAN_TIMEFRAME_DEFAULT, SCAN_EXCHANGE_DEFAULT,
+  SCAN_OI_CHANGE_WINDOW_DEFAULT, SCAN_OI_BASIS_DEFAULT,
+} from '../lib/tool-param-schema.js';
 // FUNNEL-FIX-AGENT-X402-NUDGE-W1 (Q4): the scanner's own quota wall also offers the x402 branch.
 // x402-nudge is a LEAF (no okx-a2mcp/x402-http-routes import) so this tool handler → x402-nudge
 // creates no cycle. Dark behind X402_NUDGE_ENABLED.
 import { buildSuggestedX402, isX402NudgeEnabled } from '../lib/x402-nudge.js';
 import { bindingMeter } from '../lib/binding-meter.js';
+// AUTH-THREE-STATE-W1 CH2: this tool builds its `_algovault` BY HAND at three sites, which is
+// exactly why the last envelope wave left it behind (see the note at the quota block below). All
+// three are stamped here so the straggler does not recur.
+import { withAuthState } from '../lib/tier-warning.js';
 import {
   SCAN_TRADE_CALLS_DESCRIPTION,
   PARAM_DESC_SCAN_TOP_N,
@@ -72,9 +82,9 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
   topN: z.number().int().min(1).max(100).default(20).describe(PARAM_DESC_SCAN_TOP_N),
   timeframe: z
     .enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'])
-    .default('15m')
+    .default(SCAN_TIMEFRAME_DEFAULT)
     .describe(PARAM_DESC_SCAN_TIMEFRAME),
-  exchange: z.enum(PROMOTED_VENUE_IDS as [PromotedVenueId, ...PromotedVenueId[]]).default('BINANCE').describe(PARAM_DESC_SCAN_EXCHANGE),
+  exchange: z.enum(PROMOTED_VENUE_IDS as [PromotedVenueId, ...PromotedVenueId[]]).default(SCAN_EXCHANGE_DEFAULT).describe(PARAM_DESC_SCAN_EXCHANGE),
   minConfidence: z.number().min(0).max(100).optional().describe(PARAM_DESC_SCAN_MIN_CONFIDENCE),
   includeHolds: z.boolean().default(false).describe(PARAM_DESC_SCAN_INCLUDE_HOLDS),
   limit: z.number().int().min(1).max(100).default(10).describe(PARAM_DESC_SCAN_LIMIT),
@@ -97,10 +107,10 @@ export const SCAN_TRADE_CALLS_SCHEMA = {
   // SCAN-RANKBY-REFINEMENTS-W1 CH1: OI-delta window for the oi_change lens. z.enum
   // rejects an invalid value at the MCP boundary (the same default-deny as exchange/
   // timeframe); default '24h' ⇒ byte-identical when omitted. Ignored by other lenses.
-  oiChangeWindow: z.enum(['1h', '4h', '24h']).default('24h').describe(PARAM_DESC_SCAN_OI_CHANGE_WINDOW),
+  oiChangeWindow: z.enum(OI_CHANGE_WINDOWS).default(SCAN_OI_CHANGE_WINDOW_DEFAULT).describe(PARAM_DESC_SCAN_OI_CHANGE_WINDOW),
   // SCAN-RANKBY-REFINEMENTS-W1 CH3: OI-delta basis for the oi_change lens. z.enum rejects an
   // invalid value at the MCP boundary; default 'notional' ⇒ byte-identical. Ignored by other lenses.
-  oiBasis: z.enum(['notional', 'contracts']).default('notional').describe(PARAM_DESC_SCAN_OI_BASIS),
+  oiBasis: z.enum(OI_BASES).default(SCAN_OI_BASIS_DEFAULT).describe(PARAM_DESC_SCAN_OI_BASIS),
   // FIX-CONVICTION-CALL-POSTS-W1: optional USD liquidity floor on the scan UNIVERSE.
   // `.optional()` with NO default — absent ⇒ no floor ⇒ byte-identical output, the same
   // firewall `minConfidence` uses. It lives here rather than in a consumer because the
@@ -236,7 +246,7 @@ export async function runScanTradeCall(
       message: `Unknown rankBy '${String(params.rankBy)}'. Valid lenses: ${lenses.join(', ')}.`,
       valid_lenses: lenses,
       suggested_action: `Pass one of: ${lenses.join(', ')} (or omit for the default 'oi').`,
-      _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
+      _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
     };
   }
 
@@ -329,7 +339,7 @@ export async function runScanTradeCall(
       suggested_action: buildQuotaSuggestedAction(noticeCtx),
       referral_hint: buildReferralHint({ from: 'limit', code: refCode }),
       ...(suggestedX402 ? { suggested_x402: suggestedX402 } : {}),
-      _algovault: { tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null },
+      _algovault: withAuthState({ tool: 'scan_trade_calls', version: PKG_VERSION, session_id: getRequestSessionId() ?? null }, license),
     };
   }
 
@@ -395,7 +405,7 @@ export async function runScanTradeCall(
 
   return {
     ...result,
-    _algovault: meta,
+    _algovault: withAuthState(meta, license),
     // Envelope-shared inline proof (live, cached, in-process; fail-open).
     _receipts: formatScanReceipts(getReceiptTrackRecord()),
   };

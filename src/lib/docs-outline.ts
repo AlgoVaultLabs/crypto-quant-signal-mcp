@@ -87,6 +87,10 @@ const TOOL_SUBSECTIONS: DocsNode[] = [
   { id: 'tools-when-to-use', level: 4, label: 'When to use which', anchor: 'tools-when-to-use', aliases: ['knowledge-tools-when'], body: { kind: 'partial' }, sidebarHidden: true },
   { id: 'tools-worked-examples', level: 4, label: 'Worked examples', anchor: 'tools-worked-examples', aliases: ['knowledge-tools-examples'], body: { kind: 'partial' }, sidebarHidden: true },
   { id: 'tools-rate-limits', level: 4, label: 'Rate limits & cost', anchor: 'tools-rate-limits', aliases: ['knowledge-tools-quota'], body: { kind: 'partial' }, sidebarHidden: true },
+  // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH2: /docs had NO error anchor at all, so every
+  // failure question reached us by email. Same shape as its siblings above — body-only, not a
+  // sidebar H3.
+  { id: 'tools-errors', level: 4, label: 'Errors & troubleshooting', anchor: 'tools-errors', body: { kind: 'partial' }, sidebarHidden: true },
 ];
 
 /**

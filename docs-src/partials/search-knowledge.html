@@ -11,3 +11,19 @@
           <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
         </tbody>
       </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Your query, echoed back.</td></tr>
+          <tr class="param-row"><td>total_results</td><td class="text-gray-400">number</td><td class="text-gray-400">How many ranked snippets were returned &mdash; at most your <code class="text-xs bg-navy-800 px-1 rounded">limit</code>.</td></tr>
+          <tr class="param-row"><td>results</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked snippets, best first. Each carries <code class="text-xs bg-navy-800 px-1 rounded">id</code>, a BM25 <code class="text-xs bg-navy-800 px-1 rounded">score</code>, <code class="text-xs bg-navy-800 px-1 rounded">title</code>, <code class="text-xs bg-navy-800 px-1 rounded">excerpt</code>, <code class="text-xs bg-navy-800 px-1 rounded">source_type</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_url</code>. Read the excerpt before calling the tool it describes.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">bundle_version</code> and <code class="text-xs bg-navy-800 px-1 rounded">bundle_generated_at</code> searched, plus <code class="text-xs bg-navy-800 px-1 rounded">auth</code>. This tool costs no quota, so it carries no quota block.</td></tr>
+        </tbody>
+      </table>

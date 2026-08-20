@@ -53,6 +53,7 @@ import { hlInfoPost } from '../lib/adapters/hyperliquid.js';
 import { runAsBatch, WeightBudgetSkipError } from '../lib/upstream-weight-budget.js';
 import { upstreamFetch, VENUE_FETCH_CONFIGS } from '../lib/adapters/_upstream-fetch.js';
 import type { LicenseInfo, ExchangeId, VenueStatus } from '../types.js';
+import { VENUE_IDS_ALL } from '../lib/tool-param-schema.js';
 import { listVenues, stampSeedingStarted } from '../lib/venue-store.js';
 import { recordSeedHeartbeat } from '../lib/seed-heartbeats.js';
 import { isTimeframeFaithful, servedTimeframeLabel } from '../lib/tf-support.js';
@@ -60,7 +61,7 @@ import { fetchVenueUniverse } from '../lib/exchange-universe.js';
 import { BINANCE_OVERRIDES } from '../lib/coin-overrides.js';
 
 // Internal license bypasses free-tier gating
-const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed' };
+const INTERNAL_LICENSE: LicenseInfo = { tier: 'pro', key: 'internal-seed', outcome: 'RESOLVED' };
 
 // Per-exchange delay between API calls (ms).
 // OPS-SHADOW-PIPELINE-W1 V2 (2026-06-05): the 12 shadow-venue values are now
@@ -179,16 +180,17 @@ function sleep(ms: number): Promise<void> {
  * Mirrors `src/types.ts:95`. Updated when ExchangeId widens (e.g. when a new
  * SHADOW venue is added via a PILOT-ADAPTERS wave).
  *
- * Includes both PROMOTED (5) and SHADOW (12) venues — the meme-liquidity gate
+ * Includes both PROMOTED and SHADOW venues — the meme-liquidity gate
  * in `asset-tiers.ts::isMemeCoinLiquid` short-circuits TRUE for shadow venues
  * via SHADOW_VENUE_PERMISSIVE_PASS, so `--exchange-list ASTER,EDGEX` is valid
  * input from the parseArgs perspective.
  */
-export const ALL_EXCHANGE_IDS: ExchangeId[] = [
-  'HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET',
-  'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX',
-  'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT',
-];
+// DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1: stays on VENUE_IDS_ALL (17), NOT the public
+// 15. Seeding and backfill must keep covering retired and shadow venues or their history is
+// orphaned the day they leave the public enum — and a venue promoted back would return with a
+// hole in its track record. The asymmetry between what we MEASURE and what we ACCEPT is the
+// point of that wave; do not "tidy" it into agreement.
+export const ALL_EXCHANGE_IDS: ExchangeId[] = [...VENUE_IDS_ALL];
 
 /**
  * Parse seed-signals CLI args.

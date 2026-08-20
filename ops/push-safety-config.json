@@ -5,6 +5,14 @@
 
   "_what_this_does_NOT_protect": "Ordinary pushes. This repo's LAW is auto-commit + auto-push on R-step completion, and merges land on the default branch as plain fast-forwards — a conventional 'no direct pushes to main' hook would halt every wave in the repo, which is a worse outage than the one this arc just retired. The protectable surface is HISTORY DESTRUCTION (non-fast-forward and deletion), nothing else.",
 
+  "_why_never_push_refs": "refs/algovault/wip/* holds AUTO-PRESERVED SNAPSHOTS of uncommitted work — whatever a session had in its tree when it ended, including material nobody chose to commit. This repo is PUBLIC. Measured 2026-08-20 (OPS-WORKTREE-WORK-PENDING-W1 CH5): `git push --mirror origin` put those refs in its push plan, and the only thing that stopped them going out was that local main happened to be non-fast-forward, so the history check refused the mirror for an unrelated reason. That is a rented safety property — the exact pattern the wave that created these refs exists to retire — so it is replaced with a mechanism here. `--mirror` pushes every ref under refs/ by definition and offers no per-ref exclusion, so the control has to live at the push boundary, and this is the ONE pre-push block that reads stdin and therefore the only one that can see which refs are leaving.",
+  "never_push_refs": [
+    {
+      "pattern": "refs/algovault/*",
+      "reason": "local-only WIP snapshots of uncommitted work, minted by scripts/preserve-pending-work.sh. They may contain anything a session had in its tree at exit and are never intended to leave the machine; this repo is public. Matched against BOTH the local and the remote ref, because a crafted refspec can map the namespace onto refs/heads/* and exfiltrate the same content under a different name.",
+      "owner_wave": "OPS-PUSH-SAFETY-WIP-NAMESPACE-W1"
+    }
+  ],
   "protected_refs": [
     {
       "ref": "refs/heads/main",

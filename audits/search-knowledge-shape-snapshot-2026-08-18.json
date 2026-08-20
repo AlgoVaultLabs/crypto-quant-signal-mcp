@@ -1,0 +1,106 @@
+{
+  "endpoint": "tools/call name=search_knowledge (MCP) \u2014 auth state",
+  "wave": "AUTH-THREE-STATE-W1",
+  "snapshot_date": "2026-08-18",
+  "allowed_keys": [
+    "query",
+    "total_results",
+    "results",
+    "_algovault"
+  ],
+  "allowed_keys_nested": {
+    "results[*]": [
+      "id",
+      "score",
+      "source_type",
+      "source_url",
+      "title",
+      "excerpt"
+    ],
+    "_algovault": [
+      "bundle_version",
+      "bundle_generated_at",
+      "auth (MCP tool path only \u2014 see surface_split)"
+    ]
+  },
+  "forbidden_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e_wr",
+    "phase_e_ev",
+    "internal_score_breakdown",
+    "raw_bundle",
+    "raw_score_breakdown",
+    "raw_bm25_idf",
+    "raw_bm25_tf"
+  ],
+  "error_contract": {
+    "QUERY_TOO_SHORT": {
+      "http_status": 400,
+      "shape": {
+        "code": "QUERY_TOO_SHORT",
+        "message": "string"
+      },
+      "fires_on": "query.length < 3"
+    },
+    "QUERY_TOO_LONG": {
+      "http_status": 400,
+      "shape": {
+        "code": "QUERY_TOO_LONG",
+        "message": "string"
+      },
+      "fires_on": "query.length > 500"
+    },
+    "INVALID_QUERY": {
+      "http_status": 400,
+      "shape": {
+        "code": "INVALID_QUERY",
+        "message": "string"
+      },
+      "fires_on": "request body missing query field OR query is not a string"
+    },
+    "INTERNAL_ERROR": {
+      "http_status": 500,
+      "shape": {
+        "code": "INTERNAL_ERROR",
+        "message": "string"
+      },
+      "fires_on": "unexpected error in search engine path"
+    }
+  },
+  "cache_contract": {
+    "in_memory_ttl_ms": 3600000,
+    "in_memory_max_entries": 500,
+    "http_cache_control": "public, max-age=300",
+    "rationale": "Search results are stable across bundle updates within a 5-minute HTTP cache window. In-process LRU+TTL caches per-query at 1h to absorb retry-heavy chat-engine traffic (C3)."
+  },
+  "consumers": [
+    "chat_knowledge MCP tool (AV-CHAT-MCP-W1 / C3 of same wave)",
+    "Cursor IDE / Claude Code / Claude Desktop MCP clients",
+    "third-party MCP clients listing AlgoVault tools",
+    "curl / HTTP-only consumers calling /api/search",
+    "future GEO crawlers / LLM training-data ingest pipelines"
+  ],
+  "drift_check_command": "curl -fsS -X POST https://api.algovault.com/api/search -H 'Content-Type: application/json' -d '{\"query\":\"how do I get a trade signal\"}' | jq -e 'has(\"query\") and has(\"total_results\") and has(\"results\") and has(\"_algovault\") and (has(\"outcome_return_pct\") | not) and (has(\"phase_e_wr\") | not)' > /dev/null && echo DRIFT_CHECK_OK || echo DRIFT_CHECK_FAIL",
+  "supersedes": "audits/search-knowledge-shape-snapshot-2026-05-18.json (AV-CHAT-MCP-W1 / C2)",
+  "supersede_reason": "Adds _algovault.auth on the MCP tool path. One snapshot per shape.",
+  "auth_shape": {
+    "outcome": "'ABSENT' | 'MALFORMED' | 'UNKNOWN' | 'INDETERMINATE' | 'RESOLVED' \u2014 the SAME vocabulary the resolver decided with (single derivation, src/lib/credential-outcome.ts). Normally one of the three SERVED values; the two refusing ones appear only under AUTH_STRICT_UNKNOWN=0, where an UNKNOWN key is served and the honest thing to report is UNKNOWN.",
+    "presented": "boolean \u2014 whether a credential was presented at all. `presented:true` with `tier:'free'` is the whole diagnosis for an unexpanded ${env:AV_API_KEY}.",
+    "tier": "the tier actually served, so a caller can compare it against the one they pay for",
+    "omitted_when": "never on a served response. A REFUSED call (UNKNOWN / INDETERMINATE with the strict switch on) returns a JSON-RPC error and has no envelope at all.",
+    "why_it_exists": "A well-formed but non-existent key was served the free tier with HTTP 200 and no signal, so the only support advice available was 'read _algovault.quota.total, and if it says 200 your key did not work' \u2014 inferring auth state from a QUOTA number, which correlates today and would stop correlating the moment the free allowance changed.",
+    "never_contains": "no key material, no customer id, no upstream/billing detail."
+  },
+  "surface_split": {
+    "search_knowledge (MCP tool)": "carries _algovault.auth. Per-request, never shared-cached.",
+    "POST /api/search (HTTP)": "does NOT carry it, deliberately. This route ships Cache-Control: public, max-age=300 and every other member of its envelope is a property of the knowledge BUNDLE \u2014 identical for every caller. A per-caller member under a `public` freshness label varies along a dimension absent from the cache key, which is the shape that serves one caller's state to the next. The route also resolves no license at all today, so emitting there would mean adding an upstream credential lookup to a public endpoint to report a fact nobody asked it for. The formatter's `license` parameter is OPTIONAL for exactly this reason, which removes the hazard by construction rather than mitigating it.",
+    "consequence": "The HTTP response is byte-identical to pre-wave, so `public, max-age=300` remains correct and is deliberately UNCHANGED."
+  },
+  "changed_this_wave": {
+    "added": [
+      "_algovault.auth on the MCP tool path only \u2014 see surface_split."
+    ],
+    "unchanged": "The /api/search HTTP body and its cache_contract are untouched."
+  }
+}

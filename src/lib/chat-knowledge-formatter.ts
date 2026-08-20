@@ -10,6 +10,8 @@
  */
 import type { ChatResult } from './chat-engine.js';
 import type { KnowledgeBundle } from './knowledge-formatter.js';
+import type { AuthState, LicenseInfo } from '../types.js';
+import { withAuthState } from './tier-warning.js';
 
 export interface ChatKnowledgeResponse {
   question: string;
@@ -25,6 +27,12 @@ export interface ChatKnowledgeResponse {
     bundle_version: string;
     bundle_generated_at: string;
     quota_remaining: number | null;
+    /**
+     * AUTH-THREE-STATE-W1 CH2 (additive). This envelope is NOT `AlgoVaultMeta` — it is its own
+     * shape with its own snapshot — so the member is declared here too rather than inherited.
+     * Coverage is 7/7 live tools, and that includes this one.
+     */
+    auth?: AuthState;
   };
 }
 
@@ -32,7 +40,19 @@ export function formatChatKnowledgeResponse(
   result: ChatResult,
   bundle: KnowledgeBundle | null,
   quotaRemaining: number | null,
+  // OPTIONAL, deliberately, and symmetric with the search formatter. A REQUIRED parameter on a
+  // shared formatter breaks every caller the wave did not update — and `tsc` does not catch it,
+  // because tests are outside the typecheck: making it required turned
+  // `tests/integration/knowledge-flow.test.ts` into a runtime TypeError on the very first suite
+  // run. Optional means a caller that has no license emits the pre-wave envelope, byte-identical,
+  // instead of crashing. Both production call sites DO pass one.
+  license?: Pick<LicenseInfo, 'key' | 'tier' | 'outcome'>,
 ): ChatKnowledgeResponse {
+  const meta = {
+    bundle_version: bundle?.version ?? 'unknown',
+    bundle_generated_at: bundle?.generated_at ?? '',
+    quota_remaining: quotaRemaining,
+  };
   return {
     question: result.question,
     answer: result.answer,
@@ -43,10 +63,9 @@ export function formatChatKnowledgeResponse(
       excerpt: c.excerpt,
     })),
     model: result.model,
-    _algovault: {
-      bundle_version: bundle?.version ?? 'unknown',
-      bundle_generated_at: bundle?.generated_at ?? '',
-      quota_remaining: quotaRemaining,
-    },
+    // The formatter runs PER REQUEST — the chat cache stores the ChatResult, not this envelope —
+    // so a per-caller member is safe here, exactly as `quota_remaining` already is. The HTTP twin
+    // (`POST /api/chat`) is `Cache-Control: no-store`, so no shared cache can cross callers.
+    _algovault: license ? withAuthState(meta, license) : meta,
   };
 }

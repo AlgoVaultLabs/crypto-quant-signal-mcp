@@ -26,7 +26,7 @@
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance (default for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code>), Hyperliquid (default for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code>), Bybit, OKX, or Bitget. Funding arb scans 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Response time depends on the exchange's API latency and the number of assets scanned.
+            Typically 1&ndash;3 seconds. Each call fetches live data from the chosen exchange &mdash; Binance for <code class="text-xs bg-navy-800 px-1 rounded">get_trade_call</code> and Hyperliquid for <code class="text-xs bg-navy-800 px-1 rounded">get_market_regime</code> when you do not name one, or any other venue in that tool&rsquo;s <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter. Funding arb scans 7 venues: Hyperliquid, Binance, Bybit, Gate, KuCoin, Aster, and OKX. Response time depends on the exchange's API latency and the number of assets scanned.
           </div>
         </details>
 
@@ -46,7 +46,7 @@
             <svg class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="px-5 pb-4 text-sm text-gray-400 leading-relaxed">
-            All perpetuals listed across <span data-tr-field="exchange_count">5</span> exchanges &mdash; Binance, Hyperliquid, Bybit, OKX, and Bitget. This includes standard crypto perps (BTC, ETH, SOL, etc.) and liquidity-filtered meme coins on every venue. TradFi perpetuals (TSLA, XAU, NVDA, SPX, MSTR, COIN, AAPL, and more) are available on multiple venues &mdash; asset availability varies per venue; pass exchange explicitly to target a specific venue. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
+            All perpetuals listed across <span data-tr-field="exchange_count">5</span> exchanges. The <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> parameter on each tool lists every venue it accepts. This includes standard crypto perps (BTC, ETH, SOL, etc.) and liquidity-filtered meme coins on every venue. TradFi perpetuals (TSLA, XAU, NVDA, SPX, MSTR, COIN, AAPL, and more) are available on multiple venues &mdash; asset availability varies per venue; pass exchange explicitly to target a specific venue. Low-liquidity meme coins are automatically gated to prevent unreliable trade calls.
           </div>
         </details>
 

@@ -119,6 +119,26 @@ load_protected_refs() {
   ' "$CONFIG_PATH" 2>/dev/null
 }
 
+# Ref NAMESPACES that must never leave this machine, read from the same committed config and
+# under the same rules: pattern in the config, never in this script, and a mandatory `reason`
+# on every row. A DIFFERENT question from `protected_refs` — that one asks "is this push
+# destroying history on a ref we declared?", this one asks "is this content allowed to leave
+# at all?" — so it is loaded and evaluated separately rather than folded into the same list.
+load_never_push_refs() {
+  [ -r "$CONFIG_PATH" ] || return 1
+  command -v node >/dev/null 2>&1 || return 1
+  node -e '
+    const fs = require("fs");
+    const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (!Array.isArray(j.never_push_refs)) process.exit(2);
+    for (const r of j.never_push_refs) {
+      if (!r || typeof r.pattern !== "string" || !r.pattern) process.exit(2);
+      if (typeof r.reason !== "string" || r.reason.trim() === "") process.exit(3); // reason is mandatory
+      console.log(r.pattern + "\t" + r.reason.replace(/\s+/g, " "));
+    }
+  ' "$CONFIG_PATH" 2>/dev/null
+}
+
 is_zero_sha() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }
 is_hex_sha()  { printf '%s' "$1" | grep -qE '^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$'; }
 
@@ -144,7 +164,7 @@ self_test() {
   ff_to="$tip"
 
   local cfg="$tmp/cfg.json"
-  printf '%s\n' '{"protected_refs":[{"ref":"refs/heads/main","reason":"fixture"}]}' >"$cfg"
+  printf '%s\n' '{"protected_refs":[{"ref":"refs/heads/main","reason":"fixture"}],"never_push_refs":[{"pattern":"refs/algovault/*","reason":"fixture: local-only WIP snapshots"}]}' >"$cfg"
 
   run_case() {  # $1 = label, $2 = expected token, $3 = stdin
     cases=$((cases + 1))
@@ -175,6 +195,24 @@ self_test() {
   run_case "unparseable stdin"                      INDETERMINATE "this is not a ref line"
   run_case "malformed sha"                          INDETERMINATE "refs/heads/main deadbeef refs/heads/main $tip"
 
+  # ── never_push_refs: exfiltration of a local-only namespace ──────────────────────────────
+  # The live vector, measured 2026-08-20: `git push --mirror` carries every ref under refs/.
+  run_case "WIP namespace, mirror shape"            FAIL "refs/algovault/wip/r/s/20260820T101500Z $tip refs/algovault/wip/r/s/20260820T101500Z $zero"
+  # A crafted refspec can rename the namespace on the way out; the content still leaves, so
+  # BOTH the local and the remote ref are matched.
+  run_case "WIP namespace remapped onto refs/heads" FAIL "refs/algovault/wip/r/s/t $tip refs/heads/leaked $zero"
+  # MUST-NOT-FIRE. `refs/algovault/*` is a namespace PREFIX, not a substring: a branch merely
+  # named after the org is an ordinary branch and must still push. Without this case the
+  # pattern could tighten into "anything containing algovault" and nobody would notice until a
+  # normal push was refused.
+  run_case "a branch merely NAMED algovault-*"      PASS "refs/heads/algovault-thing $tip refs/heads/algovault-thing $zero"
+  # MULTI-REF. Every case above feeds ONE ref, so none of them can catch a refusal that stops
+  # the scan early — which is exactly the bug a real `git push --mirror` (5 refs on stdin)
+  # exposed after all 11 single-ref cases were green.
+  run_case "multi-ref: earlier refusal must not hide a later one" FAIL \
+"refs/heads/main $base refs/heads/main $rewritten
+refs/algovault/wip/r/s/t $tip refs/algovault/wip/r/s/t $zero"
+
   # Vacuity guard — belongs HERE, where WE built the corpus.
   if [ "$cases" -eq 0 ]; then
     printf '%s\n' "✖ self-test ran ZERO cases — refusing to report success over an empty corpus"
@@ -190,7 +228,8 @@ self_test() {
     printf '%s\n' "✖ self-test: $fails of $cases case(s) failed"
     verdict INDETERMINATE
   fi
-  printf '%s\n' "✓ self-test: $cases/$cases cases — 3 refuse, 5 allow, all three stdin states pinned."
+  printf '%s\n' "✓ self-test: $cases/$cases cases — 6 refuse, 6 allow, all three stdin states pinned,"
+  printf '%s\n' "  and both questions covered: history destruction AND local-only-namespace exfiltration."
   verdict PASS
 }
 
@@ -221,6 +260,36 @@ if [ -z "${PROTECTED//[[:space:]]/}" ]; then
   printf '%s\n' "  cannot fail. If nothing should be protected, retire the block; do not empty the list."
   verdict INDETERMINATE
 fi
+
+NEVER_PUSH="$(load_never_push_refs)" || {
+  printf '%s\n' "✖ push-safety: cannot read never_push_refs from $CONFIG_PATH"
+  printf '%s\n' "  Same rule as the protected set: a guard that cannot load its own declaration has"
+  printf '%s\n' "  verified nothing. A row missing its mandatory 'reason' also lands here."
+  verdict INDETERMINATE
+}
+if [ -z "${NEVER_PUSH//[[:space:]]/}" ]; then
+  printf '%s\n' "✖ push-safety: $CONFIG_PATH declares ZERO never-push namespaces."
+  printf '%s\n' "  Constructed vacuity — we wrote this config, so declaring nothing means we built"
+  printf '%s\n' "  nothing. If no namespace is local-only any more, retire the key; do not empty it."
+  verdict INDETERMINATE
+fi
+
+# Echo the matched row's reason and return 0; return 1 if the ref may leave.
+# `case` globs are used deliberately: `*` spans `/`, so `refs/algovault/*` covers the whole
+# namespace at any depth, while `refs/heads/algovault-anything` does NOT match — the pattern is
+# a namespace prefix, not a substring. Both directions are pinned by --self-test.
+never_push_reason() {
+  local ref="$1" line pat reason
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    pat="${line%%	*}"; reason="${line#*	}"
+    # shellcheck disable=SC2254
+    case "$ref" in $pat) printf '%s' "$reason"; return 0 ;; esac
+  done <<EOF
+$NEVER_PUSH
+EOF
+  return 1
+}
 
 is_protected() {
   local ref="$1" p
@@ -254,6 +323,34 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
   if ! is_zero_sha "$remote_sha" && ! is_hex_sha "$remote_sha"; then
     printf '%s\n' "✖ push-safety: line ${lines} remote sha is not a sha: '$remote_sha'"; verdict INDETERMINATE
+  fi
+
+  # EXFILTRATION CHECK — first, and on BOTH refs. It is independent of fast-forward-ness:
+  # a perfectly clean fast-forward of a local-only namespace is still the content leaving.
+  # `--mirror` is the live vector; it pushes every ref under refs/ and has no per-ref opt-out.
+  leak_ref=""; npr=""
+  for _r in "$local_ref" "$remote_ref"; do
+    if npr="$(never_push_reason "$_r")"; then leak_ref="$_r"; break; fi
+    npr=""
+  done
+  if [ -n "$leak_ref" ]; then
+      printf '%s\n' ""
+      printf '%s\n' "✖ push-safety: REFUSING to push $leak_ref — a local-only namespace"
+      printf '%s\n' "    local  : $local_ref"
+      printf '%s\n' "    remote : $remote_ref"
+      printf '%s\n' "    reason : $npr"
+      printf '%s\n' "    This is NOT a history-destruction refusal — the push may be a clean"
+      printf '%s\n' "    fast-forward. The content itself is not allowed to leave the machine."
+      printf '%s\n' "    If you reached this via 'git push --mirror', that is the vector this"
+      printf '%s\n' "    exists for: --mirror carries every ref under refs/ and cannot exclude one."
+      refused=$((refused + 1))
+      # `continue`, never `break`. An earlier version broke out of the whole loop when the
+      # shared `refused` counter was non-zero — which meant ANY prior refusal (a non-fast-
+      # forward on main, say) aborted the scan before it reached the namespace refs, and the
+      # guard silently under-reported. The self-test could not see it: every case feeds ONE
+      # ref, so no case has a second line to drop. Only a real `git push --mirror` with five
+      # refs on stdin exposed it. Every ref update gets judged, always.
+      continue
   fi
 
   if ! is_protected "$remote_ref"; then

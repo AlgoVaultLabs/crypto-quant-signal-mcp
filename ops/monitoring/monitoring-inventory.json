@@ -1370,6 +1370,67 @@
       ],
       "owner_wave": "OPS-RECALIBRATE-HARNESS-RETIRE-W1",
       "notes": "The RE-HOMED subject of RECALIBRATE_ACCRUAL_STALLED, which retired with closedbar-recalibrate-readiness. That alarm was NOT redundant: OPS-RECALIBRATE-HARNESS-RETIRE-W1's R0 probe 3 ENUMERATED all 61 rows of this file one by one \u2014 enumeration, not a keyword grep, because detection is strictly weaker than enumeration \u2014 and found ZERO other artifacts watching outcome-backfill freshness. Ruled out by READING each file rather than by its name: directional-label-freshness watches directional_labels (a different producer, the labeler); seed-coverage-canary asserts crontab seed lines (config-level, upstream of emission); closedbar-w1-liveness watches dispatch determinism; and the website-drift rows on /api/performance-public are MONOTONIC FLOOR checks, which fire on regression and are structurally blind to a plateau. Deleting the alarm would therefore have opened a silent hole in the series behind the public signal-performance resource. KEY: max(created_at) FILTER (WHERE pfe_return_pct IS NOT NULL) on `signals` \u2014 a producer-side monotonic high-water mark that advances ONLY when backfill-outcomes (crontab 2-59/3) writes, never a rendered artifact. The wave spec asked for 'the producer's own write timestamp'; there is no such column (signals carries outcome_price / outcome_return_pct / pfe_candles / pfe_price / pfe_return_pct and nothing recording WHEN), so the high-water mark is the honest substitute and is the shape directional-label-freshness already proves in production. Breach requires BOTH output stuck (lag > 12h) AND input flowing (>=1 signal emitted in the last 3h), so a legitimate seeding pause \u2014 seed-coverage-canary's subject, a different remedy \u2014 cannot page this. Threshold 12h calibrated against MEASURED live lag 2026-08-13 08:24Z: global 0.70h, per-tf 3m 0.70h / 5m 1.10h / 15m 3.40h / 30m 4.55h. That is ONE sample, not a series, so every run logs lag_h= to build the series a later wave can tighten from; carries a revisit row in `Claude files/defensive-reductions-to-revisit.md`. Pages after 2 consecutive hourly breaches (~13h detection vs the retired alarm's 48h). Reads as aoe_readonly, least privilege, via the host-bash psql pattern. Verdict token OUTCOME_BACKFILL_VERDICT= maps PASS=0/FAIL=0/INDETERMINATE=3. LIVE two-way proof at install: real clock -> lag 0.93h PASS; clock frozen +24h with the input window widened (declared seams only, no code mutation) -> lag 24.94h, day-1 breach held by the sustain gate, day-2 paged under ALGOVAULT_TG_TEST_INERT=1; back on the real clock -> PASS with the streak reset to 0."
+    },
+    {
+      "id": "docs-samples-live-canary",
+      "artifact": "scripts/check-docs-samples-live.mjs",
+      "kind": "executable",
+      "criticality": "advisory",
+      "invoked_by": "github-actions:deploy.yml",
+      "repo_resident": true,
+      "install_state": "installed",
+      "sha256": "fae9aedb33c56067b219eb4cb7038caa054848403c62e261594f7c78edd652b8",
+      "owner_wave": "DOCS-SAMPLE-EXECUTABLE-W1",
+      "reconcile_exempt_reason": "CI-INVOKED, NOT HOST-INSTALLED \u2014 so there is no host copy to reconcile against, and this row carries no `host`, `installed_at`, `schedule` or `alert_ids`. It is the first such row: all 65 others name a host. That matters because `owns_row()` in monitoring-inventory-reconcile.py reduces to `entries_for_host()`, which falls back to `row['host'] in labels` \u2014 a hostless row is owned by NO reconciler instance on either box and can never raise HASH_DRIFT / ORPHAN / DARK / NO_BACKUP, while check-monitoring-schedules.mjs skips it for having no schedule. Unmarked it would satisfy the letter of 'every host-installed monitoring artifact has an inventory row' for an artifact that is not host-installed, while no guard reads it \u2014 a row that looks like coverage and is not. What DOES guard it: the deploy.yml step fails the build on a FAIL token, `check-canaries-wired.mjs` fails the build if nothing invokes the script, and `tests/unit/docs-samples-live.test.ts` asserts this exemption is present AND that the row stays hostless, so a later wave adding a host trips a gate instead of silently re-orphaning it. Alerting is deliberately absent: send_telegram.sh's 24h cooldown is a marker file under /opt/algovault-monitoring that an ephemeral runner cannot persist, so an alert from CI would ship without the safeguard CLAUDE.md requires \u2014 the named red GHA step is the operator signal. If a host cron is ever added for this canary it inherits the reconciler, the cooldown and the alert path that already work, and this exemption should be removed in that same wave."
+    },
+    {
+      "id": "deploy-drift-canary",
+      "artifact": "ops/monitoring/deploy-drift-canary.mjs",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/deploy-drift-canary.mjs",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/deploy-drift-canary.mjs",
+          "schedule": "13,43 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "13,43 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "f9893b56225b50357d6e1376f7802da9fd7d61feac3718853eb6a20f22129277",
+      "owner_wave": "OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1",
+      "alert_ids": [
+        "DEPLOY_DRIFT"
+      ],
+      "notes": "Compares the COMMIT production is running against origin/main, per repo, twice hourly. Signal-MCP provenance comes from CH3's GET /api/ops/build (the container is what actually serves, so a file beside it can be stale in ways the container never notices); the bot's comes from /opt/algovault-bot/DEPLOYED_SHA. origin/main is read with `git ls-remote`, NOT the REST API: this host's IP has already exhausted GitHub's unauthenticated 60/hr budget (measured 403 on 2026-08-20), so a REST reader would have been broken on arrival. Unreadable provenance is DRIFT_INDETERMINATE, never 'in sync'. AUTO-RECOVERY IS DORMANT: re-triggering a workflow needs a credential this host does not have, and the logic stays behind DRIFT_RECOVERY_ARMED (unset) plus its own guards rather than shipping half-armed. Detection and alerting are live."
+    },
+    {
+      "id": "algovault-bot-referral-notify-drain",
+      "artifact": "external:algovault-bot/scripts/referral-notify-drain.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-bot/scripts/referral-notify-drain.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-bot/scripts/referral-notify-drain.sh",
+          "schedule": "*/5 * * * *"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "*/5 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "e265ac70979aa55f2dbd0f9293fe48a8471e18dcd33a703bf1135094819a3c05",
+      "owner_wave": "REFERRAL-PARITY-NOTIFS-W1",
+      "alert_ids": [],
+      "notes": "REGISTERED, NOT RETUNED. Was running on the host with no inventory row, so it was invisible to every schedule and drift check. Its `*/5` schedule VIOLATES the min_offset_minutes=3 rule (offset 0 at :00/:05/...); registering it is what makes that visible at all, and that was this wave's business. Retuning another wave's cadence is NOT \u2014 the legal replacement is the canonical set 13,17,23,27,33,37,43,47,53,57, and the change should be a named decision by REFERRAL-PARITY-NOTIFS-W1. Host sha256 matches the committed file exactly (verified 2026-08-20), so it is unregistered, not drifted.",
+      "exempt_schedule_boundary": {
+        "reason": "REGISTERED BY OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4d; the cadence decision belongs to REFERRAL-PARITY-NOTIFS-W1. The `*/5` schedule genuinely VIOLATES min_offset_minutes=3 (offset 0 at :00/:05/...). This wave's business was making an unregistered host cron checkable AT ALL; retuning another wave's cadence is not. Exempted rather than left red because the boundary gate is asserted by tests/unit/monitoring-schedule-boundary.test.ts over the LIVE inventory \u2014 so a bare registration reds the suite for EVERY wave, inflicting a foreign red instead of reporting a finding. REQUIRED DECISION by REFERRAL-PARITY-NOTIFS-W1: move to a canonical minute \u2014 the legal set is 13,17,23,27,33,37,43,47,53,57 (e.g. `13,23,33,43,53 * * * *` preserves ~5-minute cadence with a legal offset) \u2014 then DELETE this exemption. Recorded 2026-08-20; revisit by 2026-09-19."
+      }
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

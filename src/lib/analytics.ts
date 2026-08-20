@@ -141,6 +141,18 @@ const CREATE_SKILL_INVOCATIONS_INDEX_TS_SQL = `
 // deploy → this CREATE IF NOT EXISTS is a no-op there (schema-as-code parity). The SQLite
 // variant lets unit tests / stdio init create the table so getUsageStats() never throws on a
 // fresh DB (empty table → tgBot null → renderer omits the line).
+// OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1: widen an EXISTING bot_daily_metrics.
+//
+// The CREATE above only ever builds a FRESH database — `CREATE TABLE IF NOT EXISTS` no-ops against
+// prod, where this table has existed since OPS-DIGEST-TGBOT-METRIC-BRIDGE-W1. That is why the six
+// columns added since then each needed a hand-run ALTER over SSH (see the exec site's comment,
+// "Pre-applied on prod PG via SSH"): the code declared them, but nothing in the code could ADD
+// them to the live table. This follows the ALTER pattern this file already uses for request_log,
+// so the column reaches prod the same way it reaches a fresh DB — no SSH step.
+const ALTER_BOT_DEPLOYED_SHA_SQL = process.env.DATABASE_URL
+  ? `ALTER TABLE bot_daily_metrics ADD COLUMN IF NOT EXISTS deployed_sha TEXT;`
+  : `ALTER TABLE bot_daily_metrics ADD COLUMN deployed_sha TEXT;`;
+
 const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
   ? `CREATE TABLE IF NOT EXISTS bot_daily_metrics (
       metric_date DATE PRIMARY KEY,
@@ -162,6 +174,12 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
       plan_units_debited INTEGER NOT NULL DEFAULT 0,
       outbox_pending INTEGER NOT NULL DEFAULT 0,
       walled_paid_now INTEGER NOT NULL DEFAULT 0,
+      -- OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1: the commit the BOT was deployed from.
+      -- The only NULLABLE column here, deliberately. Every other column is a count where 0
+      -- is a true measurement; this one is a fact about the deploy where absence IS the
+      -- finding, and NULL is how the drift canary tells "no provenance recorded" apart
+      -- from "deployed from commit X". A DEFAULT would erase exactly that distinction.
+      deployed_sha TEXT,
       generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );`
   : `CREATE TABLE IF NOT EXISTS bot_daily_metrics (
@@ -184,6 +202,12 @@ const CREATE_BOT_DAILY_METRICS_SQL = process.env.DATABASE_URL
       plan_units_debited INTEGER NOT NULL DEFAULT 0,
       outbox_pending INTEGER NOT NULL DEFAULT 0,
       walled_paid_now INTEGER NOT NULL DEFAULT 0,
+      -- OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1: the commit the BOT was deployed from.
+      -- The only NULLABLE column here, deliberately. Every other column is a count where 0
+      -- is a true measurement; this one is a fact about the deploy where absence IS the
+      -- finding, and NULL is how the drift canary tells "no provenance recorded" apart
+      -- from "deployed from commit X". A DEFAULT would erase exactly that distinction.
+      deployed_sha TEXT,
       generated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );`;
 
@@ -331,6 +355,13 @@ export function initAnalytics(): void {
   } catch {
     // Best-effort — table may already exist (PG IF NOT EXISTS no-ops); a failure here must
     // not break analytics init (the read path treats a missing table as "tgBot null" anyway).
+  }
+  // Separate try/catch: a SQLite "duplicate column" here must not be swallowed by the CREATE's
+  // catch, and vice versa.
+  try {
+    dbExec(ALTER_BOT_DEPLOYED_SHA_SQL);
+  } catch {
+    // Best-effort — PG IF NOT EXISTS no-ops; SQLite throws when the column is already there.
   }
 }
 

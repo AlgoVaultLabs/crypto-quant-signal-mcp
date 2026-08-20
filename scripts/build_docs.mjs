@@ -53,6 +53,7 @@ import { createRequire } from 'node:module';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DOCS_OUTLINE_DIST = path.join(REPO_ROOT, 'dist', 'lib', 'docs-outline.js');
+const TOOL_PARAM_SCHEMA_DIST = path.join(REPO_ROOT, 'dist', 'lib', 'tool-param-schema.js');
 const TEMPLATE_PATH = path.join(REPO_ROOT, 'docs-src', 'template.html');
 const PARTIALS_DIR = path.join(REPO_ROOT, 'docs-src', 'partials');
 const DOCS_HTML_PATH = path.join(REPO_ROOT, 'landing', 'docs.html');
@@ -132,6 +133,153 @@ function renderBody(flat) {
     );
   }
   return parts.join('\n\n');
+}
+
+/**
+ * DOCS-PARAM-SCHEMA-PROJECTION-W1 — the tool-parameter rows THIS builder owns.
+ *
+ * `/docs` told integrators `get_trade_call` accepted five venues while `tools/list` published
+ * seventeen, and named `1h` as scan's timeframe default while the server defaulted to `15m`. Both
+ * rows were hand-typed, so `--check` — which compares BYTES — was green the whole time: a partial
+ * may assert anything at all so long as the rendered page matches its source. These rows now
+ * project from `dist/lib/tool-param-schema.js`, the same declaration the Zod schemas are built
+ * from, so the served enum and the published table cannot disagree.
+ *
+ * 🛑 THESE ARE **NOT** `foreignMarkerRegions`, and registering them there would silently undo the
+ * whole thing. That list means "a DOWNSTREAM builder owns this region", and it has two consumers:
+ * `blankMarkers` (so `--check` ignores the region — the projection would stop being checked) and
+ * `preserveForeignMarkers`, which UNCONDITIONALLY copies the region's existing on-disk content
+ * over the freshly generated one. A projected region on that list is overwritten by its own stale
+ * copy on every run: it renders once, then freezes forever, with a green `--check` reporting no
+ * drift because it is no longer looking. build_docs fills these itself, so it keeps them.
+ *
+ * The `SCHEMA:` prefix is deliberate for the same reason: `BUILD:` is spelled out in three files
+ * as "build_landing fills it", and reusing it for a region this builder owns would invite exactly
+ * the mis-registration above.
+ */
+const schemaMarker = (tool) => ({
+  start: `<!-- SCHEMA:tool-params:${tool}:start -->`,
+  end: `<!-- SCHEMA:tool-params:${tool}:end -->`,
+});
+
+const CODE_CLS = 'text-xs bg-navy-800 px-1 rounded';
+
+/**
+ * One `<tr>` per enum parameter, generic over the schema — this function branches on no parameter
+ * name, so a new enum parameter reaches `/docs` by appearing in the declaration and nowhere else.
+ *
+ * Every accepted value carries `data-enum-value`, which is what makes the rendered page
+ * machine-comparable against live `tools/list` (`check-docs-samples-live.mjs` P7). The `Default:`
+ * chip deliberately does NOT carry it: the default is also one of the accepted values, and tagging
+ * it would double-count that venue and turn a set comparison into a multiset one.
+ */
+export function renderToolParamRows(tool, params, blurbs = {}) {
+  const rows = [];
+  for (const [name, spec] of Object.entries(params)) {
+    const chips = spec.values
+      .map((v) => `<code class="${CODE_CLS}" data-enum-value="${v}">${v}</code>`)
+      .join(' ');
+    const blurb = blurbs[name] ? `${blurbs[name]} ` : '';
+    const dflt = spec.default ? ` Default: <code class="${CODE_CLS}">${spec.default}</code>` : '';
+    // The default is machine-readable on the ROW, not on its chip: the gate compares it against the
+    // served `default`, which is how `1h` on the page survived beside `15m` on the wire for months.
+    const dfltAttr = spec.default ? ` data-schema-default="${spec.default}"` : '';
+    rows.push(
+      `          <tr class="param-row" data-schema-tool="${tool}" data-schema-param="${name}"${dfltAttr}>` +
+        `<td>${name}</td><td class="text-gray-400">string</td>` +
+        `<td class="text-gray-400">${blurb}${chips}.${dflt}</td></tr>`,
+    );
+  }
+  return rows.join('\n');
+}
+
+/**
+ * Fill every `SCHEMA:tool-params:<tool>` region from the compiled declaration.
+ *
+ * A declared tool whose marker is absent from the page is a hard error, not a silent skip: a
+ * projection that lands nowhere is the same failure as a stale hand-typed row, minus the evidence.
+ */
+export function fillToolParamRegions(html, schemaMod) {
+  let out = html;
+  const filled = [];
+  const missing = [];
+  for (const [tool, params] of Object.entries(schemaMod.PUBLIC_TOOL_ENUM_PARAMS)) {
+    const { start, end } = schemaMarker(tool);
+    const si = out.indexOf(start);
+    const ei = out.indexOf(end);
+    if (si === -1 || ei === -1 || ei < si) { missing.push(tool); continue; }
+    const rows = renderToolParamRows(tool, params, schemaMod.PARAM_DOC_BLURB);
+    out = `${out.slice(0, si + start.length)}\n${rows}\n          ${out.slice(ei)}`;
+    filled.push(tool);
+  }
+  return { html: out, filled, missing };
+}
+
+const closedSetMarker = (tool) => ({
+  start: `<!-- SCHEMA:tool-closed-set:${tool}:start -->`,
+  end: `<!-- SCHEMA:tool-closed-set:${tool}:end -->`,
+});
+
+/**
+ * The CLOSED-SET table for one tool: one row per value, its alias, and what it selects.
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1.
+ *
+ * A SEPARATE table from the parameter table above it, and that separation is load-bearing twice:
+ *
+ *   1. `check-docs-samples-live.mjs` `paramsTableFor` reads the FIRST `<table` in a section and
+ *      `responseFieldsFor` reads the first one after the "Response Fields" heading. A lens table
+ *      placed between them is invisible to both, so P7 keeps comparing parameters to parameters.
+ *   2. The rows carry `data-enum-value` (which the CH1 gate asserts by identity) WITHOUT the row
+ *      carrying `data-schema-param`. That matters: `rankBy` is `z.string().max(32)` and publishes
+ *      NO `enum`, so a row advertising itself as schema-projected would make P7 red — correctly —
+ *      on "renders a fixed value list but the live schema declares no enum". The docs enumerate a
+ *      closed set; the API still accepts any string and `resolveRankBy` still owns validity.
+ *
+ * `class="param-row"` is reused for styling only (the template's `.param-row` rules), never as a
+ * parse hook — both readers are table-scoped, so the class cannot be mistaken for a parameter here.
+ */
+export function renderToolClosedSetRows(tool, param, spec, aliasByCanonical) {
+  const alias = aliasByCanonical(spec);
+  const rows = spec.valueSource.map((v, i) => {
+    const isLast = i === spec.valueSource.length - 1;
+    const a = alias[v]
+      ? `<code class="${CODE_CLS}">${alias[v]}</code>`
+      : '<span class="text-gray-600">&mdash;</span>';
+    const dflt = spec.default === v ? ' <span class="text-gray-500">(default)</span>' : '';
+    return (
+      `          <tr class="param-row"${isLast ? ' style="border-bottom:none"' : ''} data-closed-set-tool="${tool}" data-closed-set-param="${param}">` +
+      `<td><code class="${CODE_CLS}" data-enum-value="${v}">${v}</code>${dflt}</td>` +
+      `<td class="text-gray-400">${a}</td>` +
+      `<td class="text-gray-400">${spec.selects[v]}</td></tr>`
+    );
+  });
+  return rows.join('\n');
+}
+
+/**
+ * Fill every `SCHEMA:tool-closed-set:<tool>` region from the compiled declaration.
+ *
+ * Same refusal contract as `fillToolParamRegions`: a declared tool whose marker is absent is a hard
+ * error. A projection that lands nowhere is indistinguishable from a stale hand-typed row, minus
+ * the evidence — which is the defect this whole wave exists to make impossible.
+ */
+export function fillToolClosedSetRegions(html, schemaMod) {
+  let out = html;
+  const filled = [];
+  const missing = [];
+  const decl = schemaMod.PUBLIC_TOOL_CLOSED_SET_PARAMS ?? {};
+  for (const [tool, params] of Object.entries(decl)) {
+    const { start, end } = closedSetMarker(tool);
+    const si = out.indexOf(start);
+    const ei = out.indexOf(end);
+    if (si === -1 || ei === -1 || ei < si) { missing.push(tool); continue; }
+    const body = Object.entries(params)
+      .map(([param, spec]) => renderToolClosedSetRows(tool, param, spec, schemaMod.aliasByCanonical))
+      .join('\n');
+    out = `${out.slice(0, si + start.length)}\n${body}\n          ${out.slice(ei)}`;
+    filled.push(tool);
+  }
+  return { html: out, filled, missing };
 }
 
 /**
@@ -215,13 +363,42 @@ function renderFooterFromSot() {
   return createRequire(import.meta.url)(dist).renderBrandFooter('desktop');
 }
 
-function generate(outlineMod) {
+function generate(outlineMod, schemaMod) {
   const flat = outlineMod.flattenOutline();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf8');
-  const html = template
+  let html = template
     .replace(SIDEBAR_PLACEHOLDER, renderSidebar(flat))
     .replace(BODY_PLACEHOLDER, renderBody(flat))
     .replace(TECH_ARTICLE_PLACEHOLDER, outlineMod.techArticleToolClause());
+
+  // Projected parameter rows, filled from the SAME declaration the Zod schemas are built from.
+  const { html: projected, missing } = fillToolParamRegions(html, schemaMod);
+  if (missing.length) {
+    throw new Error(
+      `build_docs: ${missing.length} declared tool(s) have no SCHEMA:tool-params marker in docs-src/: ` +
+        `${missing.join(', ')} — the projection would land nowhere and the table would silently stay hand-typed`,
+    );
+  }
+  html = projected;
+
+  // Projected CLOSED-SET rows — values fixed at build time although Zod types them permissively.
+  // Coverage first: a lens with no authored `selects` clause would render an empty description on
+  // a public page, which is the same defect as the deferral this wave deletes.
+  const gaps = schemaMod.assertClosedSetCoverage ? schemaMod.assertClosedSetCoverage() : [];
+  if (gaps.length) {
+    throw new Error(
+      `build_docs: ${gaps.length} closed-set value(s) have no authored description: ${gaps.join(', ')} — ` +
+        'add a `selects` clause in tool-param-schema.ts rather than shipping a blank cell',
+    );
+  }
+  const closed = fillToolClosedSetRegions(html, schemaMod);
+  if (closed.missing.length) {
+    throw new Error(
+      `build_docs: ${closed.missing.length} declared tool(s) have no SCHEMA:tool-closed-set marker in docs-src/: ` +
+        `${closed.missing.join(', ')} — the projection would land nowhere`,
+    );
+  }
+  html = closed.html;
 
   const idx = html.lastIndexOf('</body>');
   if (idx === -1) throw new Error('build_docs: template has no </body> to anchor the brand footer');
@@ -233,7 +410,12 @@ async function main() {
     console.error(`build_docs: ${DOCS_OUTLINE_DIST} not found. Run \`npm run build\` (tsc) first.`);
     process.exit(2);
   }
+  if (!fs.existsSync(TOOL_PARAM_SCHEMA_DIST)) {
+    console.error(`build_docs: ${TOOL_PARAM_SCHEMA_DIST} not found. Run \`npm run build\` (tsc) first.`);
+    process.exit(2);
+  }
   const outlineMod = await import(DOCS_OUTLINE_DIST);
+  const schemaMod = await import(TOOL_PARAM_SCHEMA_DIST);
   const { partialIds, markerNames, sidebarEntries, allAnchorIds, toolNodeCount, channelNodeCount, flattenOutline } = outlineMod;
 
   // ── partial coverage (shared by --verify-partials and default write) ──
@@ -253,7 +435,7 @@ async function main() {
     process.exit(1);
   }
 
-  const generated = generate(outlineMod);
+  const generated = generate(outlineMod, schemaMod);
 
   if (checkMode) {
     const errors = [];

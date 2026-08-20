@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { CHANNELS, hostedChannels, channelToolCoverage, channelHref } from '../src/lib/channel-registry.js';
+import { FREE_MONTHLY_CALLS, planCallsLabel } from '../src/lib/plans.js';
 import { buildNavModel, type NavDropdown } from '../src/lib/nav-manifest.js';
 import { existsSync } from 'node:fs';
 
@@ -40,6 +41,24 @@ describe('CH2 — 3 substantial GEO-structured pages', () => {
 
 describe('CH2 — verbatim code reuse from docs (Rule 3, source don’t invent)', () => {
   for (const c of hostedChannels()) {
+    // DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH2 widened this from "the first <pre> is verbatim" to
+    // "the WHOLE projected slice is verbatim". The INTENT is unchanged and is what the describe
+    // text above still states: a channel page never diverges from docs.html. The projection
+    // satisfies it MORE strongly than the excerpt did — the excerpt could only be verbatim about
+    // the one block it kept, and was silent about the two tables it dropped.
+    it(`/${c.slug}: every projected slice is a byte-identical substring of its docs section`, async () => {
+      const h = page(c.slug);
+      const d = docs();
+      const { extractSection } = await import('../scripts/build_channel_pages.mjs');
+      expect(c.docsAnchors.length).toBeGreaterThan(0);
+      for (const anchor of c.docsAnchors) {
+        const slice = extractSection(d, anchor);
+        expect(slice, `${anchor} extracts nothing`).toBeTruthy();
+        expect(d.includes(slice), `${anchor} slice is not verbatim from docs.html`).toBe(true);
+        expect(h.includes(slice), `${anchor} slice is not present on /${c.slug}`).toBe(true);
+      }
+    });
+
     it(`/${c.slug}: ≥1 <pre> code block, verbatim from a docs section`, () => {
       const h = page(c.slug);
       const pres = [...h.matchAll(/<pre[\s\S]*?<\/pre>/g)].map((m) => m[0]);
@@ -48,11 +67,34 @@ describe('CH2 — verbatim code reuse from docs (Rule 3, source don’t invent)'
       // every code block on the page must appear byte-for-byte in docs.html (not invented)
       for (const pre of pres) expect(d.includes(pre)).toBe(true);
     });
+
+    // The completeness half, which is the whole point of the chapter: /rest-api carried 0 tables
+    // while its docs section carried 2, and no upstream edit could have fixed that.
+    it(`/${c.slug}: carries every <table> and <pre> its docs sections carry`, async () => {
+      const h = page(c.slug);
+      const d = docs();
+      const { extractSection } = await import('../scripts/build_channel_pages.mjs');
+      const dropped: string[] = [];
+      for (const anchor of c.docsAnchors) {
+        const slice = extractSection(d, anchor) ?? '';
+        for (const block of [...slice.matchAll(/<table[\s\S]*?<\/table>/g), ...slice.matchAll(/<pre[\s\S]*?<\/pre>/g)]) {
+          if (!h.includes(block[0])) dropped.push(`${anchor}: ${block[0].slice(0, 60)}`);
+        }
+      }
+      expect(dropped).toEqual([]);
+    });
   }
-  it('A1 — /mcp reuses the MCP config + handshake; /rest-api reuses x402 (NOT the MCP handshake as its method)', () => {
+  it('A1 — /mcp reuses the MCP config + curl block; /rest-api reuses x402 (NOT the MCP handshake as its method)', () => {
     const mcp = page('mcp');
     expect(mcp).toMatch(/mcpServers/); // #connect-mcp config
-    expect(mcp).toMatch(/initialize/); // #testing-with-curl MCP-over-HTTP handshake
+    // DOCS-SAMPLE-EXECUTABLE-W1: the matcher moved from /initialize/ to the ONE-SHOT block, and
+    // the reason is the point of this wave. The transport is stateless, so the first <pre> in
+    // #testing-with-curl is now a single `tools/call` POST with no handshake — and
+    // build_channel_pages extracts exactly that first block, so `initialize` no longer reaches
+    // this page at all. The INTENT is unchanged and is what this line still asserts: /mcp reuses
+    // the MCP-over-HTTP curl block from docs.html rather than inventing its own.
+    expect(mcp).toMatch(/"method":\s*"tools\/call"/); // #testing-with-curl one-shot MCP-over-HTTP call
+    expect(mcp).toMatch(/text\/event-stream/);        // …carrying both required Accept types
     const rest = page('rest-api');
     expect(rest).toMatch(/x402-fetch|wrapFetchWithPayment/); // #x402 keyless pay-per-call
     // the REST connect CODE must be the x402 block, not the MCP initialize handshake
@@ -67,13 +109,31 @@ describe('CH2 — Data-Integrity + registry-derived coverage', () => {
       const s = page(c.slug).toLowerCase();
       for (const f of ['outcome_return_pct', 'outcome_price', 'phase e']) expect(s).not.toContain(f);
     });
-    it(`/${c.slug}: no baked track-record numbers (WR% / big call counts) in prose`, () => {
+    it(`/${c.slug}: no baked track-record numbers (WR% / big call counts) in AUTHORED prose`, async () => {
       const doc = new JSDOM(page(c.slug)).window.document;
       // strip nav + code + footer; check the article prose only
       doc.querySelectorAll('nav, script, pre, footer').forEach((e) => e.remove());
-      const prose = doc.querySelector('.ch-wrap')!.textContent!;
+      const wrap = doc.querySelector('.ch-wrap')!;
+      // DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH2. The `.ch-section` region is a byte-identical
+      // projection of docs.html — asserted above, which is what EARNS this exclusion rather than
+      // assuming it — and docs.html carries its own numerical-citation guards. Re-checking it here
+      // with a cruder instrument only produces false positives: measured, the digits it objects to
+      // are `300` (a cache max-age), `402`/`400` (HTTP statuses) and `200`/`100` (call limits).
+      wrap.querySelectorAll('.ch-section').forEach((e) => e.remove());
+      const prose = wrap.textContent!;
       expect(prose).not.toMatch(/\d+(\.\d+)?\s*%/);
-      expect(prose).not.toMatch(/\b\d{3,}\b/);
+      // Every remaining 3+ digit figure must TRACE to a declared source. That is strictly stronger
+      // than the blanket ban it replaces: a baked `494,855` still fails, and a quoted plan limit now
+      // has to PROVE it came from the pricing SoT instead of merely looking plausible.
+      const { ERROR_CONTRACT } = await import('../scripts/check-docs-samples-live.mjs');
+      const sourced = new Set<string>([
+        String(FREE_MONTHLY_CALLS),
+        planCallsLabel('starter'),
+        planCallsLabel('pro'),
+        ...ERROR_CONTRACT.map((r: { code: number }) => String(Math.abs(r.code))),
+      ]);
+      const unsourced = [...new Set(prose.match(/\b[\d,]{3,}\b/g) ?? [])].filter((n) => !sourced.has(n));
+      expect(unsourced, 'figures with no declared source').toEqual([]);
     });
     it(`/${c.slug}: tool-coverage list === channelToolCoverage (registry-derived, no equities)`, () => {
       const doc = new JSDOM(page(c.slug)).window.document;

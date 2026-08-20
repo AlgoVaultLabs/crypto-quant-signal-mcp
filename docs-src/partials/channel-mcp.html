@@ -1,9 +1,68 @@
-      <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) runs the handshake for you &mdash; see <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. To wire a non-MCP system or debug directly, the MCP <em>Streamable HTTP</em> transport needs a 3-step handshake before <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code>:</p>
+      <p class="text-gray-400 text-sm mb-4">Connect over the Model Context Protocol at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">https://api.algovault.com/mcp</code>. Any MCP-compatible client (Claude Desktop, Cursor, Cline, Claude Code) handles the protocol for you. See <a href="#connect-mcp" class="text-mint-400 hover:underline">Connect Your MCP Client</a> for per-client setup. Wiring a non-MCP system? POST <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">tools/call</code> directly. The transport is stateless, so there is no <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">initialize</code> step and no session id to thread:</p>
 <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
         <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
         <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
 
-# 1. initialize — captures session-id from response headers
+curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $AV_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"BTC","timeframe":"15m","exchange":"BINANCE"}}}'</code></pre>
+      </div>
+      <p class="text-gray-500 text-xs mb-6">No key? Drop the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Authorization</code> header and the same call runs on the free tier.</p>
+      <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Send both Accept types.</strong> The header must list <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">application/json</code> and <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">text/event-stream</code>. Sending only the first returns:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <pre><code class="text-sm text-gray-300">{"jsonrpc":"2.0","error":{"code":-32000,"message":"Not Acceptable: Client must accept both application/json and text/event-stream"},"id":null}</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2"><strong class="text-gray-300">Parse twice.</strong> The reply is an SSE frame. The verdict is a JSON <em>string</em> nested at <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">result.content[0].text</code>. Strip the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">data:</code> prefix, then decode the inner payload:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">curl -sS -X POST https://api.algovault.com/mcp \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"BTC"}}}' \
+  | sed -n 's/^data: //p' | head -1 | jq -r '.result.content[0].text' | jq</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-2 mt-6"><strong class="text-gray-300">The same call in Python.</strong> Both parses in one place &mdash; the SSE frame, then the verdict string inside it. No MCP client library, no handshake, no session id.</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector(&#39;code&#39;).textContent);this.textContent=&#39;Copied!&#39;;setTimeout(()=&gt;this.textContent=&#39;Copy&#39;,1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">import json, requests
+
+r = requests.post(
+    "https://api.algovault.com/mcp",
+    headers={
+        "Content-Type": "application/json",
+        # both values, or the server answers 406
+        "Accept": "application/json, text/event-stream",
+        # optional — omit entirely to use the free tier
+        # "Authorization": "Bearer av_live_...",
+    },
+    json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+          "params": {"name": "get_trade_call",
+                     "arguments": {"coin": "BTC", "timeframe": "1h"}}},
+    timeout=30,
+)
+
+# 1st parse — the reply is an SSE frame; the payload is the line after "data: "
+envelope = json.loads(next(l[6:] for l in r.text.splitlines() if l.startswith("data: ")))
+
+# failures arrive in TWO shapes — check both before reading a verdict
+if "error" in envelope:
+    raise SystemExit(envelope["error"])                      # -32003 / -32004
+if envelope["result"].get("isError"):
+    raise SystemExit(envelope["result"]["content"][0]["text"])  # -32602, as text
+
+# 2nd parse — the verdict is a JSON *string* inside the tool result
+verdict = json.loads(envelope["result"]["content"][0]["text"])
+
+print(verdict["call"], verdict["confidence"], verdict["regime"])
+print(verdict["_algovault"]["auth"])   # ABSENT / RESOLVED / MALFORMED</code></pre>
+      </div>
+      <p class="text-gray-400 text-sm mb-4 mt-6"><strong class="text-gray-300">Optional: the full MCP session handshake.</strong> You do not need this to call a tool. It is kept for clients that speak full MCP session semantics. It also reproduces what an MCP client does internally:</p>
+<div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-3">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">AV_KEY="av_live_..."   # paste your API key
+
+# 1. initialize — reads a session id from the response headers, if the server issues one
 SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
@@ -11,7 +70,7 @@ SESSION_ID=$(curl -sS -i -X POST https://api.algovault.com/mcp \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}},"id":1}' \
   | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {gsub(/\r/,""); print $2; exit}')
 
-# 2. notify "initialized" (required by MCP protocol)
+# 2. notify "initialized"
 curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
@@ -19,7 +78,7 @@ curl -sS -X POST https://api.algovault.com/mcp \
   -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' &gt;/dev/null
 
-# 3. now call tools/call
+# 3. call the tool
 curl -sS -X POST https://api.algovault.com/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $AV_KEY" \
@@ -27,5 +86,5 @@ curl -sS -X POST https://api.algovault.com/mcp \
   -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_trade_call","arguments":{"coin":"SOL","timeframe":"5m","exchange":"BINANCE"}},"id":2}'</code></pre>
       </div>
-      <p class="text-gray-500 text-xs">Most users won't need this — Claude Desktop / Cursor / Claude Code MCP clients handle the handshake automatically. Use this only for direct integration into a non-MCP system or for debugging.</p>
+      <p class="text-gray-500 text-xs">The stateless server issues no session id, so <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">SESSION_ID</code> stays empty and the header is ignored. Every call above still succeeds.</p>
       <p class="text-gray-400 text-sm mt-6"><a href="https://algovault.com/mcp" class="text-mint-400 hover:underline font-medium">Full MCP Server guide &rarr;</a></p>

@@ -38,6 +38,11 @@
         "resets_at": "2026-07-30T00:00:00.000Z"
       },
       "binding": "daily"
+    },
+    "auth": {
+      "outcome": "ABSENT",
+      "presented": false,
+      "tier": "free"
     }
   },
   "_receipts": {

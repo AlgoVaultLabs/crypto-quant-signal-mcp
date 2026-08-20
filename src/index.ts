@@ -13,7 +13,11 @@ import { McpServer, ResourceTemplate, type ToolCallback } from '@modelcontextpro
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import type { ExchangeId } from './types.js';
+import type { ExchangeId, LicenseInfo } from './types.js';
+// AUTH-THREE-STATE-W1 CH2: the credential gate for /mcp. `decideRefusal` is the pure decision;
+// `credentialOutcomeOf` is the single projection every consumer reads.
+import { decideRefusal, isRefusingOutcome, isStrictUnknownEnabled, refuseCredentialHttp } from './lib/credential-refusal.js';
+import { credentialOutcomeOf } from './lib/credential-outcome.js';
 import { routeTradeCall } from './tools/trade-call-router.js';
 import { scanFundingArb } from './tools/scan-funding-arb.js';
 import { getMarketRegime } from './tools/get-market-regime.js';
@@ -28,7 +32,7 @@ import {
   ADMIN_UNAUTHORIZED_API,
 } from './lib/admin-auth.js';
 import { closeDb, getConfidenceBands, getHoldStats, getRecentMerkleBatches, MERKLE_BATCHES_PAGE_SIZE, getMerkleBatchSummary, getSignalWithBatch, getSignalByHash, upsertAgentSession, getSampleSignalsFromLatestBatch, getRecentCallsAsync, type RecentCall } from './lib/performance-db.js';
-import { registerWebhookRoutes, resolveOwner, authRequired } from './lib/webhook-api.js';
+import { registerWebhookRoutes, resolveOwner, authRequired, refuseOwner } from './lib/webhook-api.js';
 import { formatShadowVenuePublic, formatVenueForResource } from './lib/venue-public-formatter.js';
 import { startDeliveryWorker, startHealthProbeSweep } from './lib/webhook-delivery.js';
 import { startScanDigestScheduler, stopScanDigestScheduler } from './lib/scan-digest-scheduler.js';
@@ -38,6 +42,13 @@ import { buildPublicCtaBlock } from './lib/public-cta.js';
 import { verifyProof } from './lib/merkle.js';
 import { warmTierCaches } from './lib/asset-tiers.js';
 import { EXCHANGES, EXCHANGE_COUNT, TIMEFRAME_COUNT, getAssetCount, floorRoundTo10 } from './lib/capabilities.js';
+// DOCS-PARAM-SCHEMA-PROJECTION-W1: the accepted-venue set and the regime/assetClass enums are
+// declared ONCE and projected into both the served schema and the /docs parameter table.
+import {
+  PUBLIC_VENUE_ENUM, ASSET_CLASSES, REGIME_TIMEFRAMES,
+  REGIME_TIMEFRAME_DEFAULT, REGIME_EXCHANGE_DEFAULT,
+} from './lib/tool-param-schema.js';
+import { recordNonPublicVenue } from './lib/non-public-venue-counter.js';
 import { VENUE_BRAND_COLORS, venueBrandColor } from './lib/venue-brand-colors.js';
 import { FUNDING_VENUE_COUNT } from './lib/funding-venues.js';
 import { resolveLicense, resolveLicenseSync, requestContext, getRequestLicense, getRequestSessionId, getRequestIpHash, getRequestSource, initQuotaDb, checkQuota, checkInternalBypass, recordAhaMilestoneCrossing, resolveBackgroundPriority, getRequestIsBackground } from './lib/license.js';
@@ -102,6 +113,7 @@ import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
 // PRICING-BOT-DELIVERY-METERING-W1 CH3: /api/entitlement/* route registrar.
 import { registerEntitlementRoutes } from './lib/entitlement-api.js';
+import { registerOpsBuildRoute } from './lib/ops-build-api.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
 import {
   TRADE_CALL_DESCRIPTION,
@@ -376,6 +388,45 @@ export async function handleMcpStateless(
   await transport.handleRequest(req, res, req.body);
 }
 
+/**
+ * AUTH-THREE-STATE-W1 CH2 — the `/mcp` credential gate. Returns TRUE when it has refused the
+ * request and written the response; the caller must then return immediately.
+ *
+ * WHY THIS IS EXPORTED, rather than living inline in the route. The refusal decision belongs
+ * immediately after `resolveLicense` inside `app.all('/mcp', …)`, which sits in `startHttp()` —
+ * a function that is NOT exported, and `handleMcpStateless` above has no license in scope. That
+ * makes the branch unreachable from a test as it stands. The alternative — re-implementing the
+ * branch in the test — is forbidden by `src/lib/quota-surfaces.ts:25-26`: *"never a hand-built
+ * mirror of the throw site, because a mirror embeds the very bug it is meant to catch."* So the
+ * DECISION is a pure function in `credential-refusal.ts`, and this is the thin seam that applies
+ * it, driven by `tests/auth-refusal-mcp.test.ts` over a live http.Server exactly as production
+ * calls it. That the route actually INVOKES it is pinned separately by a source-order assertion —
+ * a pure function nobody calls is the same defect one layer up.
+ *
+ * HTTP 200 + a JSON-RPC error, never 401. A 401 with `WWW-Authenticate` starts MCP's OAuth
+ * discovery in conformant clients, and we run no OAuth server — the client would chase a document
+ * that does not exist and surface a worse error than the one being fixed. `index.ts:367` already
+ * pairs a status with a JSON-RPC error body on this route. CH3's plain-REST routes keep their 401;
+ * two surfaces, two right answers.
+ *
+ * POST only. `initialize`, `tools/list` and `tools/call` are all POST, so every JSON-RPC method is
+ * covered; GET/DELETE are transport-level and keep their existing 405 rather than being answered
+ * with a credential verdict they never asked for.
+ */
+export function applyCredentialRefusal(
+  req: import('express').Request,
+  res: import('express').Response,
+  license: LicenseInfo,
+): boolean {
+  if (req.method !== 'POST') return false;
+  const body = req.body as { method?: string; id?: unknown } | undefined;
+  const decision = decideRefusal({ outcome: credentialOutcomeOf(license) }, body?.method);
+  if (!decision.refuse) return false;
+  // Echo the request id per JSON-RPC 2.0; a notification (no id) gets null.
+  res.status(200).json({ jsonrpc: '2.0', id: body?.id ?? null, error: decision.error });
+  return true;
+}
+
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'crypto-quant-signal-mcp',
@@ -417,8 +468,8 @@ function createServer(): McpServer {
     coin: z.string().max(20).describe(PARAM_DESC_TRADE_CALL_COIN),
     timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe(PARAM_DESC_TRADE_CALL_TIMEFRAME),
     includeReasoning: z.boolean().default(true).describe(PARAM_DESC_TRADE_CALL_INCLUDE_REASONING),
-    exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
-    assetClass: z.enum(['perp', 'equity']).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
+    exchange: z.enum(PUBLIC_VENUE_ENUM).optional().describe(PARAM_DESC_TRADE_CALL_EXCHANGE),
+    assetClass: z.enum(ASSET_CLASSES).optional().describe(PARAM_DESC_TRADE_CALL_ASSET_CLASS),
   };
   function makeTradeCallHandler(toolNameForAnalytics: 'get_trade_call' | 'get_trade_signal') {
     return async ({ coin, timeframe, includeReasoning, exchange, assetClass }: { coin: string; timeframe?: '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d'; includeReasoning: boolean; exchange?: ExchangeId; assetClass?: 'perp' | 'equity' }) => {
@@ -585,8 +636,8 @@ function createServer(): McpServer {
     GET_MARKET_REGIME_DESCRIPTION,
     {
       coin: z.string().max(20).describe(PARAM_DESC_REGIME_COIN),
-      timeframe: z.enum(['1h', '4h', '1d']).default('4h').describe(PARAM_DESC_REGIME_TIMEFRAME),
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).default('HL').describe(PARAM_DESC_REGIME_EXCHANGE),
+      timeframe: z.enum(REGIME_TIMEFRAMES).default(REGIME_TIMEFRAME_DEFAULT).describe(PARAM_DESC_REGIME_TIMEFRAME),
+      exchange: z.enum(PUBLIC_VENUE_ENUM).default(REGIME_EXCHANGE_DEFAULT).describe(PARAM_DESC_REGIME_EXCHANGE),
     },
     { title: 'Market Regime Classifier', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
     async ({ coin, timeframe, exchange }) => {
@@ -643,7 +694,7 @@ function createServer(): McpServer {
       // TRADE-CALL-ROUTING-RESOLVER-W1: additive optional routing params. Symbol-only
       // callers behave exactly as today (daily-bar equity). Naming a crypto venue or a
       // timeframe routes to the perpetual-futures engine via the shared resolver.
-      exchange: z.enum(['HL', 'BINANCE', 'BYBIT', 'OKX', 'BITGET', 'ASTER', 'EDGEX', 'GATE', 'MEXC', 'KUCOIN', 'PHEMEX', 'BINGX', 'HTX', 'WEEX', 'BITMART', 'XT', 'WHITEBIT']).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
+      exchange: z.enum(PUBLIC_VENUE_ENUM).optional().describe('Optional crypto venue — naming one routes to the perp call (prefer get_trade_call).'),
       timeframe: z.enum(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']).optional().describe('Optional candle timeframe — supplying one routes to the perp call.'),
     },
     { title: 'Equity Trade Call', ...PUBLIC_READONLY_TOOL_ANNOTATIONS },
@@ -792,7 +843,7 @@ function createServer(): McpServer {
         const { index, engine } = await getKnowledgeSearch();
         const results = await runAsCaller('search_knowledge', () => engine.query(query, limit ?? 10));
         const bundle = index.getBundle();
-        const response = formatSearchKnowledgeResponse(query, results, bundle);
+        const response = formatSearchKnowledgeResponse(query, results, bundle, license);
         logRequest({
           sessionId: getRequestSessionId(),
           toolName: 'search_knowledge',
@@ -852,7 +903,7 @@ function createServer(): McpServer {
         // Record AFTER successful LLM call (rate-limit reflects actual usage)
         await rateLimit.record(quotaKey, result.usage);
         const bundle = index.getBundle();
-        const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1));
+        const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1), license);
         // CHAT-USAGE-ANALYTICS-W1: record success event AFTER response built (fire-and-forget)
         recordChatEvent({
           apiKeyId: license.key,
@@ -2776,7 +2827,10 @@ async function startHttp() {
     // (Mr.1 confirmed auth-gate; prior REVERT-DASHBOARD-SHADOW-COPY-W1).
     const { license } = await resolveOwner(req);
     if (!license.key) {
-      return authRequired(res, 'An API key is required.');
+      // AUTH-THREE-STATE-W1 CH3: same owner-resolution and the SAME 401 as the webhook routes
+      // (single source), now branching on outcome so an unresolvable key is not told it forgot to
+      // send one. The ABSENT/MALFORMED message is preserved verbatim.
+      return refuseOwner(res, license, 'An API key is required.');
     }
     try {
       const shadow = await listVenues('shadow');
@@ -3444,6 +3498,26 @@ async function startHttp() {
       // `ip:unknown` quota bucket AND metering paying customers as free. Resolving here (the
       // same helpers /mcp uses) fixes the quota key and the tier together.
       const { license } = await resolveLicense(req.headers as Record<string, string | undefined>);
+      // AUTH-THREE-STATE-W1 CH3 — the chat wall's credential gate.
+      //
+      // `chat_knowledge` (the MCP tool) needs no guard of its own: MCP tools are reachable ONLY
+      // through `app.all('/mcp')`, which refuses before dispatch, so adding a second one here
+      // would be a duplicate derivation of a decision already made. This HTTP twin is the
+      // surface that bypasses that gate entirely, which is why the refusal lands here.
+      //
+      // It precedes the quota-key derivation and the rate-limit check deliberately: refusal comes
+      // before metering, so a refused caller is never charged for being refused. A REST route, so
+      // a 401 — not /mcp's 200 + JSON-RPC error.
+      //
+      // (Identifiers deliberately spelled out in prose rather than in backticks here:
+      // tests/unit/chat-rate-limit.test.ts slices this route from its start to the FIRST
+      // occurrence of the quota-key helper's NAME, so writing that name in a comment above the
+      // line it describes silently shrinks that test's window and reddens it. Caught on the first
+      // suite run after this block landed.)
+      {
+        const outcome = credentialOutcomeOf(license);
+        if (isRefusingOutcome(outcome) && isStrictUnknownEnabled()) return refuseCredentialHttp(res, outcome);
+      }
       const ipHash = hashIp(clientIp(req) || 'unknown');
       const { index, chatEngine, rateLimit, llm } = await getChatStack();
       _analyticsProvider = llm.name;
@@ -3472,7 +3546,9 @@ async function startHttp() {
       const result = await chatEngine.chat(question, model ? { model } : undefined);
       await rateLimit.record(quotaKey, result.usage);
       const bundle = index.getBundle();
-      const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1));
+      // AUTH-THREE-STATE-W1 CH2: the license is already resolved for this route (SEC-03), and the
+      // response is `no-store`, so the per-caller auth member is safe to emit on the HTTP twin too.
+      const response = formatChatKnowledgeResponse(result, bundle, Math.max(0, check.remaining - 1), license);
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
       // CHAT-USAGE-ANALYTICS-W1: record success AFTER res.json (fire-and-forget)
@@ -3540,6 +3616,11 @@ async function startHttp() {
   // handler closure defined here untestable (CLAUDE.md: make entrypoints test-importable).
   registerEntitlementRoutes(app);
 
+  // OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH3b: GET /api/ops/build — which COMMIT this
+  // container was built from. Registered here beside the other internal-key routes; the handler
+  // lives in lib/ because index.ts boots the server at import.
+  registerOpsBuildRoute(app);
+
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
     // OPS-X402-MCP-PRICE-BINDING-W1: for a priced `tools/call` POST, bind the x402
@@ -3550,7 +3631,7 @@ async function startHttp() {
     // `x402Downgrade.reason` we use below. Non-priced or non-tools/call requests pass
     // no tool → the prior flattened behavior is unchanged.
     const mcpBody = (req.method === 'POST' && req.body && typeof req.body === 'object')
-      ? (req.body as { method?: string; params?: { name?: string; arguments?: { timeframe?: unknown } } })
+      ? (req.body as { method?: string; params?: { name?: string; arguments?: { timeframe?: unknown; exchange?: unknown } } })
       : undefined;
     const callTool = (mcpBody?.method === 'tools/call' && typeof mcpBody.params?.name === 'string')
       ? mcpBody.params.name
@@ -3570,6 +3651,36 @@ async function startHttp() {
       : await resolveLicense(
           req.headers as Record<string, string | undefined>,
         );
+
+    // AUTH-THREE-STATE-W1 CH2 — THE CREDENTIAL GATE, AND ITS POSITION IS THE CONTRACT.
+    //
+    // It runs on the very next line after the license is resolved, which puts it BEFORE the skill
+    // attribution write, the track-token funnel emit, the `mcp_connect` emit and the
+    // `mcp_tools_list` emit below, and before `handleMcpStateless` dispatches to any tool — so
+    // `trackCall` and every quota debit are downstream of it. A refused call therefore consumes
+    // NOTHING: no request_log row, no quota_usage increment, no funnel row (precedent
+    // tests/entitlement.test.ts:87 — "a refusal claims nothing").
+    //
+    // Moving this below any of those emits would still "work" and would silently start charging
+    // refused callers for the privilege of being refused, which is why the ordering is asserted by
+    // a source-order test rather than left to review.
+    if (applyCredentialRefusal(req, res, license)) return;
+
+    // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH1 — measure the narrow we just shipped.
+    //
+    // Narrowing the public `exchange` enum 17 -> 15 breaks any caller passing EDGEX/WEEX, and
+    // `request_log` has no `exchange` column, so we could not count them. This is the ONLY seam
+    // that sees the value: Zod validation runs inside the SDK's tool wrapper, so the tool handler
+    // never executes on a rejected call and cannot report it. The request body is already parsed
+    // here (`mcpBody`, for the x402 price binding above), so this reads it and adds no work.
+    //
+    // Position is deliberate: BELOW the credential gate, so a refused caller is not counted —
+    // consistent with 'a refusal claims nothing'. Observation only; it never blocks, and the SDK
+    // still owns the actual rejection.
+    if (callTool) {
+      const venueArg = mcpBody?.params?.arguments?.exchange;
+      if (typeof venueArg === 'string') recordNonPublicVenue(venueArg, callTool, license.tier);
+    }
 
     // Hash client IP for privacy-safe analytics + the free-tier quota key.
     // OPS-MCP-DEFENSE-IN-DEPTH-W1 R2: req.ip (trust proxy=1) via the shared clientIp

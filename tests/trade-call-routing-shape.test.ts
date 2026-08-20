@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { PUBLIC_TOOL_ENUM_PARAMS } from '../src/lib/tool-param-schema.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { allToolNames } from '../src/lib/feature-registry.js';
@@ -28,7 +29,14 @@ describe('TRADE-CALL-ROUTING-RESOLVER-W1 — public input-shape drift canary', (
   });
 
   it('get_trade_call gains the additive optional assetClass param', () => {
-    expect(indexSrc).toMatch(/assetClass:\s*z\.enum\(\['perp',\s*'equity'\]\)\.optional\(\)/);
+    // DOCS-PARAM-SCHEMA-PROJECTION-W1 re-pointed this from the SOURCE LITERAL to the declaration
+    // the Zod schema is now built from. The literal is gone, so the old regex asserted nothing —
+    // it failed loudly, which is the good case, but a symbol-shaped rewrite of a sibling guard
+    // would have made it pass over an empty match instead. The VALUE assertion below is the same
+    // contract, and survives the next refactor of how the schema is spelled.
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.assetClass.values).toEqual(['perp', 'equity']);
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_trade_call.assetClass.default).toBeUndefined();   // optional, no Zod default
+    expect(indexSrc).toMatch(/assetClass:\s*z\.enum\(ASSET_CLASSES\)\.optional\(\)/);
     expect(snapshot.tools.get_trade_call.additive_input_keys).toContain('assetClass');
   });
 
@@ -55,6 +63,12 @@ describe('TRADE-CALL-ROUTING-RESOLVER-W1 — public input-shape drift canary', (
   });
 
   it('R3 deferred: the regime pair is unchanged (get_market_regime keeps its HL default)', () => {
-    expect(indexSrc).toMatch(/\.default\('HL'\)/);
+    // DOCS-PARAM-SCHEMA-PROJECTION-W1 re-pointed this from the SOURCE LITERAL to the declaration
+    // the Zod schema is now built from. The literal is gone, so the old regex asserted nothing —
+    // it failed loudly, which is the good case, but a symbol-shaped rewrite of a sibling guard
+    // would have made it pass over an empty match instead. The VALUE assertion below is the same
+    // contract, and survives the next refactor of how the schema is spelled.
+    expect(PUBLIC_TOOL_ENUM_PARAMS.get_market_regime.exchange.default).toBe('HL');
+    expect(indexSrc).toMatch(/exchange:\s*z\.enum\(PUBLIC_VENUE_ENUM\)\.default\(REGIME_EXCHANGE_DEFAULT\)/);
   });
 });
