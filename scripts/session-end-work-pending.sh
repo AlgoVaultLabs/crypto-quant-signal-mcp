@@ -220,9 +220,37 @@ if [ -n "$LOG" ]; then
   [ "$locked" -eq 1 ] && rmdir "$LOCK" 2>/dev/null
 fi
 
-# ── CH5 wiring point ─────────────────────────────────────────────────────────
-# CH5 appends the preserve call HERE — after the report, before exit. Preservation failure is
-# INDETERMINATE, never fatal.
-# [CH5-PRESERVE-CALL]
+# ── CH5: RECOVER, not just detect ────────────────────────────────────────────
+# Detect -> Recover -> Alert -> Escalate. A report alone leaves the stranding on the record
+# exactly where it was: visible and still losable. So the work is made SAFE here, and no
+# alert is raised for it — recovery alerts are noise, and there is nothing for an operator to
+# do about work that has already been preserved. No Telegram on completion.
+#
+# Preservation failure is INDETERMINATE and NEVER fatal: this runs on a live path, the hook's
+# only exit is 0, and a session must never be affected by a snapshot that could not be taken.
+# The forensics go to the log.
+PRESERVE=""
+for cand in \
+  "$PRESERVE_OVERRIDE" \
+  "$PREDICATE_DIR/../preserve-pending-work.sh" \
+  "$CANONICAL_REPO/scripts/preserve-pending-work.sh"
+do
+  [ -n "$cand" ] && [ -r "$cand" ] && { PRESERVE="$cand"; break; }
+done
+
+if [ -z "$PRESERVE" ]; then
+  say "[work-pending]   PRESERVE=INDETERMINATE reason=preserve-script-not-found"
+elif [ "$PENDING" = "YES" ]; then
+  pout="$(ALGOVAULT_WORK_PENDING_PREDICATE="$PREDICATE" WORK_PENDING_CONFIG="$TMP/config.json" \
+          bash "$PRESERVE" --worktree "$WORKTREE" 2>&1)"; prc=$?
+  case "$prc" in
+    0) say "[work-pending]   PRESERVE=PRESERVED $(printf '%s\n' "$pout" | sed -n 's/.*ref=\([^ ]*\).*/\1/p' | head -1)" ;;
+    1) say "[work-pending]   PRESERVE=NOTHING_TO_PRESERVE (healthy no-op)" ;;
+    *) say "[work-pending]   PRESERVE=INDETERMINATE rc=$prc — the session is UNAFFECTED" ;;
+  esac
+  # Full forensics to the log only, never to stdout: a session end is not the place for a
+  # wall of text, but a failure nobody can diagnose later is worse.
+  [ -n "$LOG" ] && printf '%s\n' "$pout" | sed 's/^/    /' >> "$LOG" 2>/dev/null
+fi
 
 finish
