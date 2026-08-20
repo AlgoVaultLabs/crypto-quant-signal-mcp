@@ -351,38 +351,50 @@
     },
     "exempt_paths": [
       {
+        "path": "/Users/tank/code/.worktrees/signal-regime-label-rule-fix-w1-v2",
+        "reason": "OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.3 — de-rents a protection that was a state accident. Measured 2026-08-20 by scripts/lib/worktree-work-pending.sh: work_pending=YES, protected_by=dirty_only, one Class-A path (audits/regime-rule-calibration-2026-08-07.json) whose oldest_class_a_age_hours reads 304. That artefact is a completed calibration sweep, is absent from origin/main, and is not reproducible in place. Until it is committed or preserved, the only thing standing between it and `cc-session.sh clean --force` is that the tree happens to be dirty. Dated deliberately: an exemption with no expiry over an artefact that should simply be committed becomes permanent by neglect.",
+        "expires": "2026-09-19",
+        "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1"
+      },
+      {
+        "path": "/Users/tank/code/cqsm-wt-circle-settle",
+        "reason": "OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.3 — same class as the row above. Measured 2026-08-20: work_pending=YES, protected_by=dirty_only, one Class-A path (audits/OPS-CIRCLE-GATEWAY-TESTNET-SETTLE-W1-proof.json, oldest_class_a_age_hours 789), absent from origin/main. It is the sole surviving record of a one-time on-chain testnet settlement — evidence of an event, so re-running the wave would not reproduce it. Also one of the three live R1-confinement violations, which `git worktree move` refuses while the tree is dirty; that stays true after CH3, because this worktree's dirt is Class-A work and not the node_modules noise CH3 retires.",
+        "expires": "2026-09-19",
+        "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1"
+      },
+      {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir25",
-        "reason": "holds ~1022 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir25 in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~1022 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir25 in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent] _(Re-justified 2026-08-20 OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.3/AC2.3, `du -sh`: the data/ directory this row names EXISTS and is by a wide margin the largest thing in the worktree \u2014 the stated figure is corroborated, not inherited. Nothing here is reproducible from the repo, so `expires: never` stands. The worktree also carries a live `git worktree lock`, so it is doubly protected and its protected_by reads `lock`.)_",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir",
-        "reason": "holds ~389 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~389 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent] _(Re-justified 2026-08-20 OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.3/AC2.3, `du -sh`: data/ EXISTS at the stated order of magnitude. `expires: never` stands; also holds a live worktree lock.)_",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
         "path": "/Users/tank/code/avbot-wt-tgbot-bridge",
-        "reason": "holds ~36 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
-        "expires": "never",
-        "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
+        "reason": "ORPHANED PATH, not a worktree: its .git file names /Users/tank/code/algovault-bot/.git/worktrees/avbot-wt-tgbot-bridge, which does not exist (algovault-bot has no .git/worktrees directory at all and lists exactly one worktree). git cannot resolve it, so no predicate and no reclaim tool can see it — it is protected by UNREACHABILITY, and this row is documentary rather than load-bearing. Payload measured with `du -sh` on 2026-08-20: NO data/ directory exists here; the contents are .venv, .mypy_cache and uv.lock, all REPRODUCIBLE, which is why `expires: never` is downgraded to a date rather than carried on a false premise. _(Corrected 2026-08-20 OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.2. The prior text read: \"holds ~36 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable\". BOTH halves were wrong and the wrong text is kept visible because it IS the lesson: the byte figure matched .mypy_cache, not a data/ that has never existed here, and the dirty=1 premise assumed a worktree git can no longer resolve. Neither error was detectable from the row; both fell out of one `du -sh` and one `git -C`.)_",
+        "expires": "2026-09-19",
+        "owner_wave": "OPS-WORKTREE-ORPHAN-RECLAIM-W{NEXT}"
       },
       {
         "path": "/Users/tank/code/algovault-bot-showcase-enrich",
-        "reason": "holds ~34 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable",
-        "expires": "never",
-        "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
+        "reason": "ORPHANED PATH, not a worktree: its .git file names /Users/tank/code/algovault-bot/.git/worktrees/algovault-bot-showcase-enrich, which does not exist. Same class as avbot-wt-tgbot-bridge above — protected by UNREACHABILITY, this row documentary. Payload measured with `du -sh` on 2026-08-20: NO data/ directory; contents are .venv, .mypy_cache and uv.lock, all REPRODUCIBLE, so `expires: never` is downgraded to a date. _(Corrected 2026-08-20 OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.2. The prior text read: \"holds ~34 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). protected today only by dirty=1, which is a state accident: one git commit makes it reclaimable\". The stated figure matched .mypy_cache. Note the spec that commissioned this correction said FOUR rows carried the mis-description; measured, it is TWO — the four autonomous-optimizer rows have real data/ directories at very nearly the sizes they claim, so they are deliberately left untouched.)_",
+        "expires": "2026-09-19",
+        "owner_wave": "OPS-WORKTREE-ORPHAN-RECLAIM-W{NEXT}"
       },
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/carry",
-        "reason": "holds ~17 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-carry in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~17 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-carry in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent] _(Re-justified 2026-08-20 OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.3/AC2.3, `du -sh`: data/ EXISTS at the stated order of magnitude. `expires: never` stands; also holds a live worktree lock.)_",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
       {
         "path": "/Users/tank/code/.worktrees/autonomous-optimizer/bdir2",
-        "reason": "holds ~15 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir2 in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent]",
+        "reason": "holds ~15 MB of gitignored local-only data/ (at-risk KB excludes reproducible artifacts). merged+clean+pushed, so the reclaim predicate cannot distinguish it from garbage [CH6: relocated from /Users/tank/autonomous-optimizer-wt-bdir2 in the same commit as the move \u2014 an exemption pointing at a path this wave itself moved is the silent no-op R2a exists to prevent] _(Re-justified 2026-08-20 OPS-WORKTREE-WORK-PENDING-W1 CH2 R2.3/AC2.3, `du -sh`: data/ EXISTS at the stated order of magnitude. `expires: never` stands; also holds a live worktree lock.)_",
         "expires": "never",
         "owner_wave": "OPS-WORKTREE-ROOT-CONFINEMENT-W2"
       },
