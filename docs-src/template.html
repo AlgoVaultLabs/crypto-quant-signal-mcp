@@ -307,7 +307,11 @@ tailwind.config = {
 <div class="max-w-6xl mx-auto px-6 pt-24 pb-20 flex gap-10">
 
   <!-- Sidebar -->
-  <aside class="hidden lg:block w-52 shrink-0 sticky top-20 self-start">
+  <!-- DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH3: `sticky` alone could not hold. With 20 links the
+       aside outgrows the viewport, and a sticky element TALLER than the viewport scrolls away
+       with the page — which is the whole "the sidebar does not follow me" symptom. Capping the
+       height and letting the aside scroll its OWN overflow is what makes `sticky` mean anything. -->
+  <aside class="hidden lg:block w-52 shrink-0 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
     <!-- CHANNEL-HUB-PAGES-GEO-W1 CH4: sidebar realigned to the Platform taxonomy
          (Tools / Channels / Ecosystem / Verify). HTTP API + Rate limits moved from
          Knowledge Tools → Channels; all anchors preserved (no dead links). -->
@@ -339,6 +343,8 @@ tailwind.config = {
   scripts/build_asset_versions.mjs; do not hand-write a version here.
 -->
 <script defer src="/js/track-record-proxy.js?v=f485c24a"></script>
+
+<!--DOCS:SCROLLSPY-->
 
 </body>
 </html>
