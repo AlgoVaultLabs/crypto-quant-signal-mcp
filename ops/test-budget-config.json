@@ -173,10 +173,6 @@
       "block": "generator is byte-idempotent under fixed KNOWLEDGE_GENERATED_AT (two runs match)"
     },
     {
-      "file": "tests/unit/push-safety.test.ts",
-      "block": "--self-test passes, is vacuity-guarded, and emits exactly one verdict token"
-    },
-    {
       "file": "tests/unit/session-drift.test.ts",
       "block": "is idempotent and never disturbs the existing test-gate block"
     },

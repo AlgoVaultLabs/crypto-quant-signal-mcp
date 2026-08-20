@@ -56,9 +56,19 @@ function fixture() {
   return { dir, base, tip, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function writeConfig(dir: string, refs: Array<Record<string, string>>) {
+function writeConfig(
+  dir: string,
+  refs: Array<Record<string, string>>,
+  neverPush: Array<Record<string, string>> = [
+    { pattern: 'refs/algovault/*', reason: 'fixture: local-only WIP snapshots' },
+  ],
+) {
   const p = join(dir, 'cfg.json');
-  writeFileSync(p, JSON.stringify({ protected_refs: refs }));
+  // `never_push_refs` is MANDATORY and defaulted here rather than made optional in the guard.
+  // Optional would mean a config that loses the key silently disables the exfiltration check —
+  // the guard would still print PASS having stopped checking. Same rule the sibling
+  // `protected_refs` already follows: a declaration we author, absent, is INDETERMINATE.
+  writeFileSync(p, JSON.stringify({ protected_refs: refs, never_push_refs: neverPush }));
   return p;
 }
 
@@ -75,7 +85,7 @@ function run(dir: string, cfg: string, stdin: string) {
 }
 
 describe('push-safety guard (OPS-AOE-PREPUSH-RESTORE-W1)', () => {
-  it('--self-test passes, is vacuity-guarded, and emits exactly one verdict token', () => {
+  it('--self-test passes, is vacuity-guarded, and emits exactly one verdict token', { timeout: 60_000 }, () => {
     const r = spawnSync('bash', [GUARD, '--self-test'], { encoding: 'utf8' });
     const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
     expect(out, out).toMatch(/PUSH_SAFETY_VERDICT=PASS/);
@@ -202,5 +212,90 @@ describe('push-safety guard (OPS-AOE-PREPUSH-RESTORE-W1)', () => {
       expect(row.ref.length).toBeGreaterThan(0);
       expect((row.reason ?? '').trim().length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('push-safety — local-only namespaces must not leave the machine', () => {
+  // OPS-PUSH-SAFETY-WIP-NAMESPACE-W1. `refs/algovault/wip/*` holds auto-preserved snapshots of
+  // UNCOMMITTED work, and this repo is PUBLIC. Measured 2026-08-20: `git push --mirror` put
+  // those refs in its push plan, and the only thing that stopped them going out was that local
+  // main happened to be non-fast-forward — the history check refusing for an unrelated reason.
+  // A rented safety property, replaced here by a mechanism.
+  const PROT = [{ ref: 'refs/heads/main', reason: 'fixture' }];
+
+  it('REFUSES the mirror shape, even though it is a clean fast-forward', () => {
+    const f = fixture();
+    try {
+      const r = run(f.dir, writeConfig(f.dir, PROT),
+        `refs/algovault/wip/r/s/t ${f.tip} refs/algovault/wip/r/s/t ${ZERO}`);
+      expect(r.token, r.out).toBe('FAIL');
+      // Must not read as a history-destruction refusal: it is a different question, and the
+      // operator needs to know the push was clean and the CONTENT is what is disallowed.
+      expect(r.out).toContain('local-only namespace');
+    } finally { f.cleanup(); }
+  });
+
+  it('REFUSES a crafted refspec that renames the namespace on the way out', () => {
+    const f = fixture();
+    try {
+      const r = run(f.dir, writeConfig(f.dir, PROT),
+        `refs/algovault/wip/r/s/t ${f.tip} refs/heads/leaked ${ZERO}`);
+      expect(r.token, r.out).toBe('FAIL');
+    } finally { f.cleanup(); }
+  });
+
+  it('MUST NOT FIRE on a branch merely named algovault-* — a prefix, not a substring', () => {
+    const f = fixture();
+    try {
+      const r = run(f.dir, writeConfig(f.dir, PROT),
+        `refs/heads/algovault-thing ${f.tip} refs/heads/algovault-thing ${ZERO}`);
+      expect(r.token, r.out).toBe('PASS');
+    } finally { f.cleanup(); }
+  });
+
+  it('an EMPTY never_push_refs is INDETERMINATE — a guard that stopped checking is not a pass', () => {
+    const f = fixture();
+    try {
+      const r = run(f.dir, writeConfig(f.dir, PROT, []),
+        `refs/heads/main ${f.tip} refs/heads/main ${f.base}`);
+      expect(r.token, r.out).toBe('INDETERMINATE');
+    } finally { f.cleanup(); }
+  });
+
+  it('a row missing its mandatory reason is INDETERMINATE', () => {
+    const f = fixture();
+    try {
+      const r = run(f.dir, writeConfig(f.dir, PROT, [{ pattern: 'refs/algovault/*' }]),
+        `refs/heads/main ${f.tip} refs/heads/main ${f.base}`);
+      expect(r.token, r.out).toBe('INDETERMINATE');
+    } finally { f.cleanup(); }
+  });
+
+  it('an EARLIER refusal must not hide a LATER one — every ref update is judged', () => {
+    // The regression that only a real `git push --mirror` could surface. A first version
+    // aborted the scan whenever the shared `refused` counter was non-zero, so a non-fast-
+    // forward on main stopped the loop before it reached the namespace refs and the guard
+    // silently under-reported. Every single-ref case stayed green throughout.
+    const f = fixture();
+    try {
+      const r = run(f.dir, writeConfig(f.dir, PROT),
+        `refs/heads/main ${f.base} refs/heads/main ${f.tip}\n`
+        + `refs/algovault/wip/r/s/t ${f.tip} refs/algovault/wip/r/s/t ${ZERO}`);
+      expect(r.token, r.out).toBe('FAIL');
+      expect(r.out, 'the non-fast-forward must be reported').toContain('NON-FAST-FORWARD');
+      expect(r.out, 'AND the namespace leak must be reported').toContain('local-only namespace');
+      expect(r.out, 'both refusals counted').toMatch(/2 of 2 ref update\(s\) refused/);
+    } finally { f.cleanup(); }
+  });
+
+  it('the COMMITTED config declares the namespace, with a reason on the row', () => {
+    const cfg = JSON.parse(readFileSync(CONFIG, 'utf8'));
+    expect(Array.isArray(cfg.never_push_refs)).toBe(true);
+    expect(cfg.never_push_refs.length).toBeGreaterThan(0);
+    for (const row of cfg.never_push_refs) {
+      expect(typeof row.pattern).toBe('string');
+      expect(row.reason?.trim().length, `row ${row.pattern} needs a reason`).toBeGreaterThan(0);
+    }
+    expect(cfg.never_push_refs.some((r: { pattern: string }) => r.pattern === 'refs/algovault/*')).toBe(true);
   });
 });
