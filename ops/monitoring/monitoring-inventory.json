@@ -44,7 +44,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "7d00bafa4a15891f3770f52b3c1aab11ff564dabe5d832a4529504a31c3686ad",
+      "sha256": "f0bf8d29ef34628273333696fd3bf9551e1ca116d3bf59d67d8c98b8bc6fcb6e",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT",
         "SOT_PARITY_SUSTAINED_DRIFT"

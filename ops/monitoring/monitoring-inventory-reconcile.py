@@ -186,6 +186,22 @@ SYNC_HEARTBEAT_PATH = os.environ.get(
 # two consecutive is the shape of an actual stop.
 SYNC_LIVENESS_MISSED_CYCLES = max(1, int(os.environ.get("SYNC_LIVENESS_MISSED_CYCLES", "2")))
 
+# ── ALERT_EPISODE_AGE (OPS-ALERT-RECOVERY-NOTICE-W1 CH2) ────────────────────────────────────
+# A resolve path fixes "quiet means healed". It does NOT fix "FIRING forever because the reporter
+# died": send_telegram.sh's marker is written on a delivered fire and removed only by a --clear
+# that some caller has to make. If the caller stops running, the marker sits there and the
+# operator's view stays pinned to a condition nobody is measuring any more — the same defect the
+# wave retired, one level up. So: for every ADOPTED alert, assert how long its episode has been
+# open. Unadopted alerts are excluded BY CONSTRUCTION rather than by exception, because nothing
+# clears them yet and reporting their age would be noise about a mechanism they do not use.
+ALERT_REGISTRY_PATH = os.environ.get(
+    "ALERT_REGISTRY_PATH", os.path.join(MONITORING_DIR, "alert-registry.json"))
+ALERT_STATE_DIR = os.environ.get(
+    "ALERT_STATE_DIR", os.path.join(MONITORING_DIR, ".alert-state"))
+# Report from the first tick; page only past this. An episode legitimately stays open while a
+# real condition persists, so the page is for "nobody is clearing this", not "this is broken".
+ALERT_EPISODE_PAGE_DAYS = max(1, int(os.environ.get("ALERT_EPISODE_PAGE_DAYS", "7")))
+
 # ORPHAN scan exclusions. Runtime state, caches, operator backups and — critically —
 # `autopilot-pg-creds` (mode 600), which must never be proposed for commit.
 ORPHAN_EXCLUDE_RE = re.compile(
@@ -693,6 +709,81 @@ def fetch_sot_bytes(url, timeout):
             return resp.read()
     except Exception:
         return None
+
+
+def check_alert_episode_age(registry_path=None, state_dir=None, labels=None, now=None):
+    """For every ADOPTED alert, how long has its FIRING episode been open?
+
+    Verdicts, and only the third is a drift finding:
+      CLEAR              no marker — nothing is firing
+      FIRING             marker present, younger than ALERT_EPISODE_PAGE_DAYS   -> reported
+      FIRING_STALE       marker present and older than that                     -> drift finding
+      COULD_NOT_COMPARE  registry missing/unparseable, or a marker that will not parse
+
+    ABSENT STATE RENDERS AS ABSENT. There is deliberately no `or 0` anywhere below: an
+    unreadable registry reports COULD_NOT_COMPARE, and an unparseable marker reports its own
+    raw value rather than an age. Defaulting either to zero would print "nothing is firing" as
+    a confident fact about a value we do not have, which is the exact shape this estate keeps
+    retiring — and here it would silently certify the very staleness the check exists to find.
+    """
+    labels = labels if labels is not None else HOST_LABELS
+    now = now or datetime.now(timezone.utc)
+    registry_path = registry_path or ALERT_REGISTRY_PATH
+    state_dir = state_dir or ALERT_STATE_DIR
+    host = sorted(labels)[0] if labels else "unknown"
+    probed, findings = [], []
+
+    def out(alert_id, verdict, detail, **kw):
+        r = {"host": host, "alert_id": alert_id, "verdict": verdict, "detail": detail, **kw}
+        probed.append(r)
+        return r
+
+    try:
+        with open(registry_path) as fh:
+            rows = json.load(fh).get("alerts", [])
+    except (OSError, ValueError) as e:
+        out("-", "COULD_NOT_COMPARE", f"alert registry unreadable at {registry_path}: {e}")
+        return {"probed": probed, "findings": findings}
+
+    adopted = [r for r in rows if r.get("adopted") is True and r.get("alert_id")]
+    if not adopted:
+        # VACUITY: a registry with no adopted alert means this check asserts nothing. Say so
+        # rather than printing a clean sweep over an empty set.
+        out("-", "COULD_NOT_COMPARE",
+            f"registry has {len(rows)} row(s) but NONE are adopted — nothing to measure")
+        return {"probed": probed, "findings": findings}
+
+    bound_days = ALERT_EPISODE_PAGE_DAYS
+    for row in adopted:
+        aid = row["alert_id"]
+        marker = os.path.join(state_dir, f"{aid}-last-fired-at")
+        if not os.path.exists(marker):
+            out(aid, "CLEAR", "no marker — not firing", bound_days=bound_days)
+            continue
+        try:
+            with open(marker) as fh:
+                raw = fh.read().strip()
+        except OSError as e:
+            out(aid, "COULD_NOT_COMPARE", f"marker unreadable: {e}", bound_days=bound_days)
+            continue
+        if not raw.isdigit():
+            out(aid, "COULD_NOT_COMPARE",
+                f"marker does not parse as an epoch (raw={raw!r})", bound_days=bound_days)
+            continue
+        opened = datetime.fromtimestamp(int(raw), timezone.utc)
+        age_days = (now - opened).total_seconds() / 86400.0
+        common = {"bound_days": bound_days, "age_days": round(age_days, 2),
+                  "opened_at": opened.strftime("%Y-%m-%dT%H:%M:%SZ")}
+        if age_days >= bound_days:
+            r = out(aid, "FIRING_STALE",
+                    f"episode open {age_days:.1f}d, past the {bound_days}d bound — either the "
+                    f"condition never cleared or nothing is calling --clear for it", **common)
+            findings.append({k: r[k] for k in
+                             ("host", "alert_id", "verdict", "detail", "age_days",
+                              "bound_days", "opened_at")})
+        else:
+            out(aid, "FIRING", f"episode open {age_days:.1f}d (bound {bound_days}d)", **common)
+    return {"probed": probed, "findings": findings}
 
 
 def check_sot_parity(inventory_path, config, labels=None, fetch=None, read_local=None):
@@ -1638,7 +1729,7 @@ def check_cert_expiry_floor(cert_dir=None, floor_days=None, now=None):
 
 def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
              doc_claims_result=None, sot_parity_result=None, cf_results=None,
-             sync_liveness_result=None):
+             sync_liveness_result=None, alert_episode_result=None):
     """`rows` is the OWNED subset — every check here, ORPHAN included, is host-scoped BY DESIGN.
 
     This docstring used to say "ORPHAN alone needs the full set to know what is known". That is
@@ -1674,6 +1765,7 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
         "DOC_PATH_CLAIM": (doc_claims_result or {}).get("findings", []),
         "SOT_PARITY": (sot_parity_result or {}).get("findings", []),
         "SYNC_LIVENESS": (sync_liveness_result or {}).get("findings", []),
+        "ALERT_EPISODE_STALE": (alert_episode_result or {}).get("findings", []),
         "DIVERGENT_COPY": divergent_copy_findings(rows),
     }
 
@@ -1732,9 +1824,11 @@ def main(check_mode=False):
     sot_cfg = load_sot_parity_config()
     sot_parity_result = check_sot_parity(INVENTORY_PATH, sot_cfg, HOST_LABELS)
     sync_liveness_result = check_sync_liveness(owned, host_sync_heartbeat(), HOST_LABELS)
+    alert_episode_result = check_alert_episode_age(labels=HOST_LABELS)
 
     f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result,
-                 doc_claims_result, sot_parity_result, cf_results, sync_liveness_result)
+                 doc_claims_result, sot_parity_result, cf_results, sync_liveness_result,
+                 alert_episode_result)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
     # SYNC_LIVENESS *is* a drift key: a sync that has stopped attempting is operator-action-
     # required, and it is the one condition every other check here is downstream of. Only its
@@ -1799,6 +1893,12 @@ def main(check_mode=False):
         # schedule it came from, on EVERY run and in every verdict. Printing only on STALE would
         # make silence the pass signal — the exact shape this check exists to break, and the one
         # that let a sync's health be inferred from its downstream symptoms instead of measured.
+        # ALERT_EPISODE_AGE: positive output per ADOPTED alert. Note every field renders the
+        # ABSENT value as '-' rather than 0 — an age we do not have must never print as "fresh".
+        for row in alert_episode_result.get("probed", []):
+            log(f"ALERT_EPISODE {row['host']} {row['alert_id']} {row['verdict']} "
+                f"age={row.get('age_days', '-')}d bound={row.get('bound_days', '-')}d "
+                f"opened={row.get('opened_at', '-')} — {row['detail']}")
         for row in sync_liveness_result.get("probed", []):
             log(f"SYNC_LIVENESS {row['host']} {row['verdict']} "
                 f"age={row.get('age_minutes', '-')}m bound={row.get('bound_minutes', '-')}m "
@@ -2519,6 +2619,53 @@ def self_test():
            len(check_cert_expiry_floor(floor_days=99999)["findings"]), len(live["checked"]))
         ck("cert: positive per-cert output carries days_left",
            all("days_left" in r for r in live["checked"]), True)
+
+    # ── ALERT_EPISODE_AGE (OPS-ALERT-RECOVERY-NOTICE-W1 CH2) ──
+    import tempfile as _tf2, json as _j2
+    with _tf2.TemporaryDirectory() as _ad:
+        _reg = os.path.join(_ad, "reg.json"); _st = os.path.join(_ad, "state"); os.makedirs(_st)
+        _NOW2 = datetime(2026, 8, 21, 12, 0, 0, tzinfo=timezone.utc)
+        def _mk(rows):
+            with open(_reg, "w") as fh: _j2.dump({"alerts": rows}, fh)
+        def _run2(): return check_alert_episode_age(_reg, _st, {"signal-1"}, _NOW2)
+        _mk([{"alert_id": "A", "adopted": True}, {"alert_id": "B", "adopted": False}])
+
+        ck("episode: no marker -> CLEAR, and an UNADOPTED alert is not measured at all",
+           [(r["alert_id"], r["verdict"]) for r in _run2()["probed"]], [("A", "CLEAR")])
+
+        with open(os.path.join(_st, "A-last-fired-at"), "w") as fh:
+            fh.write(str(int((_NOW2 - timedelta(days=2)).timestamp())))
+        _r = _run2()
+        ck("episode: a 2d episode is FIRING and reported, not a finding",
+           ([r["verdict"] for r in _r["probed"]], _r["findings"]), (["FIRING"], []))
+
+        with open(os.path.join(_st, "A-last-fired-at"), "w") as fh:
+            fh.write(str(int((_NOW2 - timedelta(days=9)).timestamp())))
+        _r = _run2()
+        ck("episode: a 9d episode is FIRING_STALE and IS a drift finding",
+           ([r["verdict"] for r in _r["probed"]], [f["verdict"] for f in _r["findings"]]),
+           (["FIRING_STALE"], ["FIRING_STALE"]))
+
+        # AC6, the load-bearing one: absent/garbage state must render as ABSENT, never as 0.
+        with open(os.path.join(_st, "A-last-fired-at"), "w") as fh:
+            fh.write("not-an-epoch")
+        _r = _run2()
+        ck("episode: an unparseable marker is COULD_NOT_COMPARE, never a zero-age pass",
+           ([r["verdict"] for r in _r["probed"]], _r["findings"]),
+           (["COULD_NOT_COMPARE"], []))
+        ck("episode: and it carries NO age_days at all — absent renders as absent",
+           ["age_days" in r for r in _r["probed"]], [False])
+        os.remove(os.path.join(_st, "A-last-fired-at"))
+        ck("episode: a CLEAR verdict also carries no age_days",
+           ["age_days" in r for r in _run2()["probed"]], [False])
+
+        ck("episode: an unreadable registry is COULD_NOT_COMPARE, never a clean sweep",
+           [r["verdict"] for r in check_alert_episode_age(_ad + "/nope", _st, {"h"}, _NOW2)["probed"]],
+           ["COULD_NOT_COMPARE"])
+        # VACUITY: a registry with rows but none adopted asserts nothing — say so.
+        _mk([{"alert_id": "B", "adopted": False}])
+        ck("episode: rows but NONE adopted -> COULD_NOT_COMPARE (vacuity), not an all-clear",
+           [r["verdict"] for r in _run2()["probed"]], ["COULD_NOT_COMPARE"])
 
     # ── SYNC_LIVENESS (OPS-MONITORING-INVENTORY-RESTORE-W1) ──
     _SYNC_ROWS = [{"id": "declaration-sync", "artifact": "ops/monitoring/declaration-sync.sh",
