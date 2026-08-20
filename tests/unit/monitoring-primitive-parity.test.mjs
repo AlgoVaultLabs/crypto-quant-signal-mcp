@@ -67,8 +67,8 @@ const hashableHere = (r) =>
   Boolean(r.sha256) && ownedHere(r) && !String(r.artifact ?? '').startsWith('external:');
 
 /** The floor is the point of this test. See COVERAGE_FLOOR below. */
-const COVERAGE_FLOOR = 61; // raised 50 -> 61 (OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4):
-// 68 rows, 7 structurally excluded => 61 hashable. Raise with the inventory; never lower to pass.
+const COVERAGE_FLOOR = 62; // raised 61 -> 62 (OPS-ALERT-RECOVERY-NOTICE-W1 CH2):
+// 69 rows, 7 structurally excluded => 62 hashable. Raise with the inventory; never lower to pass.
 
 test('every registry row committed here matches its ONE canonical sha256', () => {
   const mismatches = [];
