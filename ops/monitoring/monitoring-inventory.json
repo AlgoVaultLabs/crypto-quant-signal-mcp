@@ -74,7 +74,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "b9edd6707e99e0f5a9297d8e01e05fcbe6547b9baec1b648da79c0cad92b9468",
+      "sha256": "867b578b9b96fb1ebf3b0d4a78aaf1a153df6e24ebbfab09ce442161cc3a7d82",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1400,7 +1400,7 @@
       "schedule": "13,43 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "942a719a799bf39acfd91fd66ab17d2b845533a0767d218e4e054c1afdd54c74",
+      "sha256": "244192d275462b59c99c4d96f74d4137501d1dd1253235a4316ccee53c628ca8",
       "owner_wave": "OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1",
       "alert_ids": [
         "DEPLOY_DRIFT"

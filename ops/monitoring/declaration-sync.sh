@@ -209,7 +209,13 @@ verdict() {
     # but this must never be able to change the sync's own verdict or exit code.
     case "$1" in
       SYNCED|UNCHANGED)
-        [ -x "$TG" ] && { "$TG" --clear "$ALERT_ID" "declaration sync verdict=$1" >/dev/null 2>&1 || true; }
+        # `< /dev/null` is LOAD-BEARING, not decoration. The clear path takes its argument
+        # positionally and reads no body, but this runs from cron with whatever stdin the
+        # scheduler handed the job — and an alert wrapper that ever blocks on a read would hang
+        # the sync forever at its own success path, which is the worst possible place for it.
+        # Measured during this wave's own live proof: a stand-in wrapper that did `cat -` hung a
+        # real declaration-sync run on aoe-1 until it was killed. Close the mouth explicitly.
+        [ -x "$TG" ] && { "$TG" --clear "$ALERT_ID" "declaration sync verdict=$1" </dev/null >/dev/null 2>&1 || true; }
         ;;
     esac
   fi

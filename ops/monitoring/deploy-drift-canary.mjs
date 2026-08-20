@@ -391,7 +391,7 @@ function main() {
   // firing, so nothing resolved), and whether the resolution is ANNOUNCED or merely logged is
   // the registry's `announce_resolution` decision, not this canary's.
   if (worst === 'DRIFT_NONE') {
-    const cleared = sh('sh', ['-c', `${WRAP} --clear DEPLOY_DRIFT 'deploy drift verdict=DRIFT_NONE' || true`]);
+    const cleared = sh('sh', ['-c', `${WRAP} --clear DEPLOY_DRIFT 'deploy drift verdict=DRIFT_NONE' </dev/null || true`]);
     log(`deploy-drift: healthy — clear dispatched (ok=${cleared.ok})`);
   }
 
