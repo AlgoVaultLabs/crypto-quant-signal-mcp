@@ -55,21 +55,36 @@ describe('1 — the aside can actually hold position', () => {
   });
 });
 
-const doc = (): Document => new JSDOM(DOCS_HTML).window.document;
+/**
+ * ONE read-only parse of the published page, memoized.
+ *
+ * Not a micro-optimisation — the first draft called this inside a `.filter()` callback, so it
+ * re-parsed a 250 KB document once per sidebar entry (26 times, ~116ms each). That passed locally
+ * at 1.4s and TIMED OUT at 5s on the Postgres lane runner: a latent "works on my machine" failure
+ * that only a slower host surfaces. A read-only DOM is shared; the parses in describe 5 are NOT,
+ * because each needs its own window to run the script against.
+ */
+let _doc: Document | null = null;
+const doc = (): Document => (_doc ??= new JSDOM(DOCS_HTML).window.document);
+
+/** The hrefs the page actually rendered as sidebar links — computed once. */
+let _links: string[] | null = null;
+const renderedLinks = (): string[] =>
+  (_links ??= [...doc().querySelectorAll('aside a.sidebar-link')].map((a) => a.getAttribute('href')!.replace(/^#/, '')));
 
 describe('2 — the observed id set equals the rendered SIDEBAR LINK set, both directions', () => {
+  let _ids: string[] | null = null;
   const observed = (): string[] => {
+    if (_ids) return _ids;
     const m = /var IDS = (\[[^\]]*\]);/.exec(spyScript());
     expect(m, 'the emitted script carries no IDS array').toBeTruthy();
-    return JSON.parse(m![1]);
+    return (_ids = JSON.parse(m![1]));
   };
 
-  // Compared against the LINKS the page actually rendered, not against the generator's own helper —
-  // that would be tautological. It is also the correction this test forced: `sidebarEntries()`
-  // includes GROUP nodes (`platform`, …) which render as a non-link `<div>` header, so the first
-  // draft observed ids that could never be marked. The rendered link set is the real contract.
-  const renderedLinks = (): string[] =>
-    [...doc().querySelectorAll('aside a.sidebar-link')].map((a) => a.getAttribute('href')!.replace(/^#/, ''));
+  // `renderedLinks()` above is compared against the LINKS the page actually rendered, not against
+  // the generator's own helper — that would be tautological. It is also the correction this test
+  // forced: `sidebarEntries()` includes GROUP nodes (`platform`, …) which render as a non-link
+  // `<div>` header, so the first draft observed ids that could never be marked.
 
   it('observes every rendered sidebar link — a new section cannot be silently unobserved', () => {
     expect([...observed()].sort()).toEqual([...renderedLinks()].sort());
