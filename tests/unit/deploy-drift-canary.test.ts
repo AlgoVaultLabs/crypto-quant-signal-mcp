@@ -2,12 +2,19 @@
  * OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4 — the blame classifier, graded against the one
  * case whose answer we actually know, plus the recovery guards.
  *
- * The graded case is NOT a hand-typed fixture. `graphTouchers` is computed by running git over the
- * real DAG at test time, so the test grades the classifier against history rather than against my
- * recollection of it. If someone rewrites that history, this test should notice.
+ * The graded case is NOT hand-authored: it was GENERATED from the real DAG and committed as
+ * tests/fixtures/blame-classifier-graded-case.json, and a live cross-check re-derives it from git
+ * whenever the clone is deep enough — so it grades against history, not against my recollection,
+ * and cannot go stale silently.
+ *
+ * It reads from a committed fixture rather than from git directly because the first version did
+ * read git directly: it passed locally and BLOCKED THE DEPLOY in CI, where the checkout is shallow
+ * and the graded range does not exist. A graded test that only works on a full clone is not graded
+ * where it matters.
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   classifyDrift,
@@ -19,73 +26,91 @@ import {
 
 const REPO = join(__dirname, '..', '..');
 
-/** The last green deploy before the 2026-08-17 red, and the head of the delta that contained it. */
-const LAST_GREEN = '9f44c72';
-const DELTA_HEAD = 'dcdf9f6';
-/** The failing test on 2026-08-17 and its module. This wave must not WRITE these; reading is fine. */
-const FAILING_GRAPH = ['tests/x402-nudge.test.ts', 'src/lib/x402-nudge.ts'];
+/**
+ * The graded case, GENERATED from real history and committed — see the fixture's own _comment.
+ *
+ * It is committed because CI checks out SHALLOW: the first version of this test read the range
+ * straight from git, passed locally, and failed the deploy in CI with "unknown revision". A graded
+ * test that only works on a full clone is not graded where it matters.
+ */
+const FX = JSON.parse(
+  readFileSync(join(REPO, 'tests/fixtures/blame-classifier-graded-case.json'), 'utf8'),
+) as {
+  last_green: string; delta_head: string; failing_graph: string[];
+  graph_touchers_oldest_first: string[]; expected_owner_commit: string;
+  expected_owner_wave: string; spec_graded_owner: string; session_commits: string[];
+};
 
-function realGraphTouchers(): string[] {
+/** True only in a clone deep enough to contain the graded range. */
+function hasDeepHistory(): boolean {
+  try {
+    execFileSync('git', ['cat-file', '-e', `${FX.delta_head}^{commit}`], { cwd: REPO, stdio: 'ignore' });
+    execFileSync('git', ['cat-file', '-e', `${FX.last_green}^{commit}`], { cwd: REPO, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function liveGraphTouchers(): string[] {
   return execFileSync(
     'git',
-    ['log', '--format=%h', '--reverse', `${LAST_GREEN}..${DELTA_HEAD}`, '--', ...FAILING_GRAPH],
+    ['log', '--format=%h', '--reverse', `${FX.last_green}..${FX.delta_head}`, '--', ...FX.failing_graph],
     { cwd: REPO, encoding: 'utf8' },
   )
     .split('\n')
-    .map((s) => s.trim())
+    .map((x) => x.trim())
     .filter(Boolean);
 }
 
+const graded = (over: Record<string, unknown> = {}) =>
+  classifyDrift({
+    prodSha: 'a'.repeat(40),
+    mainHead: 'b'.repeat(40),
+    suiteVerdict: 'FAIL',
+    failingFiles: [FX.failing_graph[0]],
+    graphTouchers: FX.graph_touchers_oldest_first,
+    sessionCommits: FX.session_commits,
+    ...over,
+  });
+
 describe('THE GRADED CASE — 2026-08-17, prod at 9f44c72, main red', () => {
-  it('names another wave as the owner, not the deploying session', { timeout: 60_000 }, () => {
-    const r = classifyDrift({
-      prodSha: 'a'.repeat(40),
-      mainHead: 'b'.repeat(40),
-      suiteVerdict: 'FAIL',
-      failingFiles: ['tests/x402-nudge.test.ts'],
-      graphTouchers: realGraphTouchers(),
-      // PRICING-BOT-DELIVERY-METERING-W1's own commit — the session that was blocked.
-      sessionCommits: ['dcdf9f6'],
-    });
+  it('names another wave as the owner, not the deploying session', () => {
+    const r = graded();
     expect(r.verdict).toBe('DRIFT_BLOCKED_OWNED');
-    expect(r.owner).toBeTruthy();
+    expect(r.owner).toBe(FX.expected_owner_commit);
   });
 
-  it('the owner resolves to OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1', { timeout: 60_000 }, () => {
-    // The wave attribution is the operator-actionable output, and it is what status.md asserted
-    // by hand on the day. This is the assertion that must hold.
-    const owner = classifyDrift({
-      prodSha: 'a'.repeat(40),
-      mainHead: 'b'.repeat(40),
-      suiteVerdict: 'FAIL',
-      failingFiles: ['tests/x402-nudge.test.ts'],
-      graphTouchers: realGraphTouchers(),
-      sessionCommits: ['dcdf9f6'],
-    }).owner as string;
-    const subject = execFileSync('git', ['log', '--format=%s', '-1', owner], { cwd: REPO, encoding: 'utf8' });
-    expect(subject).toContain('OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1');
+  it('the owner resolves to OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1', () => {
+    // The wave attribution is the operator-actionable output, and it is what status.md asserted by
+    // hand on the day. This is the assertion that must hold.
+    expect(FX.expected_owner_wave).toBe('OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1');
   });
 
-  it('THE SPEC GRADE AND THE SPEC RULE DISAGREE, and the rule is the one implemented', { timeout: 60_000 }, () => {
+  it('THE SPEC GRADE AND THE SPEC RULE DISAGREE, and the rule is the one implemented', () => {
     // The chapter grades this case as owner=08edfd1. But 08edfd1 touches NEITHER file in the
     // failing graph, while cf2992c modifies both (+28 in the module, +81 in the test) — and the
     // eventual fix was "the compile-lock test must own its time budget", i.e. the test outgrew it.
-    //
-    // 08edfd1 is simply the commit whose deploy RUN failed at 06:47, which is how it got named in
-    // status.md. That is a weaker criterion than the rule the chapter itself states ("owner = first
-    // commit touching that graph after the last green"). Both resolve to the same WAVE, which is
-    // the output an operator acts on. Pinned here so the divergence is a recorded decision rather
-    // than a silent one.
-    const touchers = realGraphTouchers();
-    expect(touchers).toContain('cf2992c');
-    expect(touchers).not.toContain('08edfd1');
+    // 08edfd1 is the commit whose deploy RUN failed at 06:47, a weaker criterion than the rule the
+    // chapter itself states. Both resolve to the same WAVE. Pinned so the divergence is a recorded
+    // decision rather than a silent one.
+    expect(FX.graph_touchers_oldest_first).toContain('cf2992c');
+    expect(FX.graph_touchers_oldest_first).not.toContain(FX.spec_graded_owner);
+  });
 
-    const touchedBy08 = execFileSync(
-      'git',
-      ['show', '--stat', '--format=', '08edfd1', '--', ...FAILING_GRAPH],
-      { cwd: REPO, encoding: 'utf8' },
-    ).trim();
-    expect(touchedBy08).toBe('');
+  it('the fixture still matches real history (skipped on a shallow clone)', { timeout: 60_000 }, () => {
+    if (!hasDeepHistory()) {
+      // CI checks out shallow. Asserting here would fail for a reason that says nothing about the
+      // classifier — and silently REGENERATING would defeat the point of pinning it.
+      expect(FX.graph_touchers_oldest_first.length).toBeGreaterThan(0);
+      return;
+    }
+    expect(liveGraphTouchers()).toEqual(FX.graph_touchers_oldest_first);
+    const subject = execFileSync('git', ['log', '--format=%s', '-1', FX.expected_owner_commit], {
+      cwd: REPO,
+      encoding: 'utf8',
+    });
+    expect(subject).toContain(FX.expected_owner_wave);
   });
 });
 
