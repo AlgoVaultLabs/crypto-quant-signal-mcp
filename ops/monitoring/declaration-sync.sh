@@ -282,6 +282,51 @@ size_sane() {
   return 0
 }
 
+# ── A SENTINEL ASSIGNED IN A `||` FALLBACK DESTROYS THE DIAGNOSTIC ───────────────────────────
+# (OPS-MONITORING-DECLARATION-SYNC-W1 CH1a.) The fetch used to pass `-f` — bundled in this
+# script's original `-fsS` cluster — together with a `||` fallback:
+#
+#     code=$(curl -sS -f ... -w '%{http_code}' ...) || code=<sentinel>
+#
+# `-f` makes curl exit 22 on any HTTP >= 400, so the `||` fired and OVERWROTE `code` with a
+# sentinel — discarding the status curl had ALREADY captured. One value then encoded six causes
+# with six different remedies, three of them one command apart and one (`connect`) that must
+# never be automated. Measured cost, 2026-08-17: five rows reported the sentinel on both hosts,
+# the operator could not tell an upstream vendor outage from a wrong BASE_URL, and a 3-chapter
+# wave was specced against a condition that had self-healed 70h earlier. The cause was a GitHub
+# platform incident (13:28-21:15Z, raw-content ~50% error at peak) — a fact the sentinel made
+# unreachable from the alert body.
+#
+# `-f` is GONE, so curl reports the real status instead of exiting 22, and the two facts curl
+# knows — its exit status and the HTTP status — are now carried SEPARATELY and BOTH reported.
+# There is no fallback assignment: curl's own `%{http_code}` already prints `000` when no
+# response arrived, and that is curl's measurement, not our sentinel overwriting one.
+#
+# The vocabulary is CLOSED and TOTAL — `curl_<n>` catches every code not named above it, so an
+# outcome can never map to nothing. Each member maps to exactly ONE operator remedy:
+#   http_<code>  status != 200          -> per status: 403 transport/auth, 404 path
+#   dns          curl 6                 -> resolver
+#   connect      curl 7                 -> egress / firewall  ** OPERATOR ONLY, never automated **
+#   timeout      curl 28                -> budget or link
+#   tls          curl 35/60             -> cert store
+#   curl_<n>     any other non-zero     -> keep the NUMBER; never fold it into a bucket
+#   empty_body   200 with a zero-length body -> upstream truncation
+# Callers emit the cause AND both raw values, so a future taxonomy gap is VISIBLE rather than
+# silently absorbed.
+fetch_cause() {   # <http_code> <curl_exit> <body_path> -> cause on stdout; EMPTY means the fetch is good
+  case "$2" in
+    0)      ;;
+    6)      echo "dns";        return 0 ;;
+    7)      echo "connect";    return 0 ;;
+    28)     echo "timeout";    return 0 ;;
+    35|60)  echo "tls";        return 0 ;;
+    *)      echo "curl_$2";    return 0 ;;
+  esac
+  [ "$1" = "200" ]  || { echo "http_$1";   return 0; }
+  [ -s "$3" ]       || { echo "empty_body"; return 0; }
+  echo ""
+}
+
 alert() {   # <body>
   # An unusable wrapper is itself operator-relevant, and piping into a non-existent one produces
   # a broken-pipe smear that reads like a bug in the sync. Say which it is.
@@ -376,6 +421,48 @@ self_test() {
   size_sane  40 100 >/dev/null 2>&1; ck 'a >50% collapse is REFUSED'       "$?" 1
   size_sane 100   0 >/dev/null 2>&1; ck 'no prior file cannot be a shrink' "$?" 0
 
+  # ── fetch_cause(): ONE CASE PER MEMBER OF THE CLOSED TAXONOMY (CH1c) ──────────────────────
+  # The sentinel this wave retired collapsed six causes with six different remedies into one
+  # string. These cases pin every member to exactly one outcome, so a later edit cannot quietly
+  # re-merge two remedies — above all `connect` (operator-only, a firewall is never automated)
+  # with `http_403` (a transport/auth change), which are one command apart and were previously
+  # indistinguishable. Driven entirely through the pure function: no network is touched.
+  ck 'curl 6  -> dns'            "$(fetch_cause 000 6  "$tmp/good.json")"  'dns'
+  ck 'curl 7  -> connect'        "$(fetch_cause 000 7  "$tmp/good.json")"  'connect'
+  ck 'curl 28 -> timeout'        "$(fetch_cause 000 28 "$tmp/good.json")"  'timeout'
+  ck 'curl 35 -> tls'            "$(fetch_cause 000 35 "$tmp/good.json")"  'tls'
+  ck 'curl 60 -> tls'            "$(fetch_cause 000 60 "$tmp/good.json")"  'tls'
+  # An unmapped code keeps its NUMBER. Folding it into a bucket would recreate the sentinel in
+  # miniature — and 22 is exactly the code `-f` used to produce, so it must stay legible.
+  ck 'curl 22 -> curl_22'        "$(fetch_cause 403 22 "$tmp/good.json")"  'curl_22'
+  ck 'curl 99 -> curl_99'        "$(fetch_cause 000 99 "$tmp/good.json")"  'curl_99'
+  # exit 0 + non-200: the half `-f` destroyed. These three have three DIFFERENT remedies.
+  ck 'http 403 survives'         "$(fetch_cause 403 0  "$tmp/good.json")"  'http_403'
+  ck 'http 404 survives'         "$(fetch_cause 404 0  "$tmp/good.json")"  'http_404'
+  ck 'http 500 survives'         "$(fetch_cause 500 0  "$tmp/good.json")"  'http_500'
+  ck '200 + zero-length body'    "$(fetch_cause 200 0  "$tmp/empty.json")" 'empty_body'
+  # The ONLY outcome that may return empty — the success path.
+  ck '200 + real body -> GOOD'   "$(fetch_cause 200 0  "$tmp/good.json")"  ''
+
+  # VACUITY GUARD for the taxonomy itself. Two ways this suite could assert nothing: an empty
+  # case table, or a mapping that returns "" for a FAILURE — which would send the row down the
+  # SUCCESS path and sync an unfetched file. That is strictly worse than the sentinel it
+  # replaced, so it is asserted rather than assumed.
+  local fc_cases='000|6 000|7 000|28 000|35 000|60 000|99 403|22 403|0 404|0 500|0 000|0'
+  local fc_n=0 fc_c fc_http fc_exit
+  for fc_c in $fc_cases; do
+    fc_http=${fc_c%|*}; fc_exit=${fc_c#*|}
+    fc_n=$((fc_n+1)); checks=$((checks+1))
+    if [ -z "$(fetch_cause "$fc_http" "$fc_exit" "$tmp/good.json")" ]; then
+      echo "  ✗ fetch outcome http=$fc_http curl=$fc_exit maps to NO cause — it would take the success path"
+      fails=$((fails+1))
+    fi
+  done
+  checks=$((checks+1))
+  if [ "$fc_n" -eq 0 ]; then
+    echo "  ✗ the fetch-cause case table is EMPTY — this suite would assert nothing"; fails=$((fails+1))
+  fi
+
   # Vacuity guard: in --self-test WE build the corpus, so an empty one is a defect in the TEST.
   # (At runtime an empty corpus would be a FACT about the world — a different question entirely.)
   if [ "${#DECLARATIONS[@]}" -eq 0 ]; then
@@ -437,7 +524,7 @@ self_test() {
     echo "✗ declaration-sync self-test: $fails of $checks check(s) FAILED"
     verdict INDETERMINATE 3
   fi
-  echo "✓ declaration-sync self-test: $checks checks passed (validator refusals both ways, size-collapse guard, declared-set well-formedness)"
+  echo "✓ declaration-sync self-test: $checks checks passed (validator refusals both ways, size-collapse guard, declared-set well-formedness, fetch-cause taxonomy both ways)"
   verdict UNCHANGED 0
 }
 
@@ -504,10 +591,14 @@ for d in "${DECLARATIONS[@]}"; do
   dest="$DEST_DIR/$name"
   cand="$WORK/$name"
 
-  code=$(curl -fsS -o "$cand" -w '%{http_code}' --max-time 30 "$BASE_URL/$name" 2>/dev/null) || code=000
-  if [ "$code" != "200" ] || [ ! -s "$cand" ]; then
-    echo "  ✗ FAILED   $name — fetch returned '$code' (kept the working file)"
-    fail_detail="${fail_detail}${name}: fetch ${code}"$'\n'; failed=$((failed+1)); continue
+  # No `-f`, and NO `||` fallback: both facts curl knows are captured separately and neither is
+  # discarded. `cx` must be read on the very next line — any command in between overwrites $?.
+  code=$(curl -sS -o "$cand" -w '%{http_code}' --max-time 30 "$BASE_URL/$name" 2>/dev/null)
+  cx=$?
+  cause=$(fetch_cause "$code" "$cx" "$cand")
+  if [ -n "$cause" ]; then
+    echo "  ✗ FAILED   $name — fetch $cause (http=$code curl=$cx) (kept the working file)"
+    fail_detail="${fail_detail}${name}: fetch ${cause} (http=${code} curl=${cx})"$'\n'; failed=$((failed+1)); continue
   fi
 
   if ! reason=$(validate_body "$cand" "$key" "$min" 2>&1); then
@@ -564,7 +655,14 @@ echo "  summary: ${changed} synced · ${unchanged} unchanged · ${failed} failed
 
 if [ "$failed" -gt 0 ]; then
   # The wrapper OWNS cooldown + severity gating (CLAUDE.md: consumers must not re-implement them).
-  alert "$failed of ${#DECLARATIONS[@]} declaration(s) could not be synced. The working files were KEPT, so checks still run — against a possibly stale declaration.
+  # THE DENOMINATOR IS THE IN-SCOPE COUNT, NOT THE ARRAY LENGTH (CH1b). `$failed` only ever counts
+  # rows this host actually attempted, so dividing it by ${#DECLARATIONS[@]} understates the blast
+  # radius wherever the declared set is host-scoped. Measured 2026-08-17: aoe-1 has 5 of 10 rows in
+  # scope, so a TOTAL outage there paged as "5 of 10" — reading as half-broken — while signal-1's
+  # genuinely-10-of-10 outage paged identically. An alert that understates its own blast radius is
+  # the same defect class as one that collapses its cause.
+  in_scope=$((failed + unchanged + changed))
+  alert "$failed of $in_scope in-scope declaration(s) could not be synced ($skipped skipped: scoped to another host). The working files were KEPT, so checks still run — against a possibly stale declaration.
 
 $fail_detail"
   verdict FAILED 1
