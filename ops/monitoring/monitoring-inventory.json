@@ -74,7 +74,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "4a4ad517388e27e2c346eef7f2c79ed6d2baa09b762dcb3cafb97f15d60b8ed5",
+      "sha256": "b9edd6707e99e0f5a9297d8e01e05fcbe6547b9baec1b648da79c0cad92b9468",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1400,7 +1400,7 @@
       "schedule": "13,43 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "f9893b56225b50357d6e1376f7802da9fd7d61feac3718853eb6a20f22129277",
+      "sha256": "942a719a799bf39acfd91fd66ab17d2b845533a0767d218e4e054c1afdd54c74",
       "owner_wave": "OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1",
       "alert_ids": [
         "DEPLOY_DRIFT"
@@ -1431,6 +1431,28 @@
       "exempt_schedule_boundary": {
         "reason": "REGISTERED BY OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4d; the cadence decision belongs to REFERRAL-PARITY-NOTIFS-W1. The `*/5` schedule genuinely VIOLATES min_offset_minutes=3 (offset 0 at :00/:05/...). This wave's business was making an unregistered host cron checkable AT ALL; retuning another wave's cadence is not. Exempted rather than left red because the boundary gate is asserted by tests/unit/monitoring-schedule-boundary.test.ts over the LIVE inventory \u2014 so a bare registration reds the suite for EVERY wave, inflicting a foreign red instead of reporting a finding. REQUIRED DECISION by REFERRAL-PARITY-NOTIFS-W1: move to a canonical minute \u2014 the legal set is 13,17,23,27,33,37,43,47,53,57 (e.g. `13,23,33,43,53 * * * *` preserves ~5-minute cadence with a legal offset) \u2014 then DELETE this exemption. Recorded 2026-08-20; revisit by 2026-09-19."
       }
+    },
+    {
+      "id": "alert-registry",
+      "sha256": "37dacd90999ea99cc12e1c0b17fa17f91935dd8415a4ff8a67c2cae29b4bdd58",
+      "repo_path": "ops/monitoring/alert-registry.json",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/alert-registry.json",
+          "install_state": "installed",
+          "installed_wave": "OPS-ALERT-RECOVERY-NOTICE-W1"
+        },
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/alert-registry.json",
+          "install_state": "installed",
+          "installed_wave": "OPS-ALERT-RECOVERY-NOTICE-W1"
+        }
+      ],
+      "install_state": "installed",
+      "exempt_consumers": null,
+      "notes": "CONSUMER REGISTRY for send_telegram.sh alert ids. Read by the wrapper's --clear path to decide announce-vs-silent; every failure mode of that read resolves to SILENT. CLASSIFICATION: this is inert JSON DATA, i.e. a DECLARATION by the project's own artifact/declaration line, and it therefore BELONGS in declaration-sync.sh's DECLARATIONS array so it self-syncs hourly. It is NOT added there in this wave because OPS-ALERT-RECOVERY-NOTICE-W1 CH2's Scope Rule names that array as a hard firewall. Installed by reviewed SSH push here; promoting it to a declared row is OPS-ALERT-REGISTRY-DECLARE-W{NEXT}. Until then it does NOT self-heal on the hosts, which is a real gap and is recorded rather than left to be discovered."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

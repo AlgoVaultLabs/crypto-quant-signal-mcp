@@ -28,7 +28,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -217,7 +217,16 @@ function selfTest() {
   return 0;
 }
 
-if (process.argv.includes('--self-test')) process.exit(selfTest());
+// ── MAIN GUARD (OPS-ALERT-RECOVERY-NOTICE-W1 CH2) ──────────────────────────────────────────
+// This module had NO main guard, so `import { stripComments } from './check-alert-recommended-
+// wave.mjs'` executed the whole gate at import time and exited the importing process — the
+// importer's own output never appeared. Found the moment a second gate tried to reuse
+// stripComments(), which is exactly the reuse this repo wants: a mention in prose is not an
+// emission, and that predicate should have ONE definition. The functions above were always
+// exported for reuse; only the side effect made them unusable.
+const IS_MAIN = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+
+if (IS_MAIN && process.argv.includes('--self-test')) process.exit(selfTest());
 
 const missing = SCANNED.filter((f) => !existsSync(join(REPO, f)));
 if (missing.length > 0) {
@@ -227,6 +236,7 @@ if (missing.length > 0) {
   verdict('INDETERMINATE', 3);
 }
 
+if (IS_MAIN) {
 let allPairs = [];
 for (const rel of SCANNED) {
   const pairs = extractPairs(readFileSync(join(REPO, rel), 'utf8'));
@@ -249,3 +259,4 @@ for (const v of violations) {
 const uniqueWaves = new Set(allPairs.map((p) => p.wave)).size;
 console.log(`  ${allPairs.length} pair(s), ${uniqueWaves} distinct wave(s), ${violations.length} violation(s)`);
 verdict(violations.length === 0 ? 'PASS' : 'FAIL', violations.length === 0 ? 0 : 1);
+}

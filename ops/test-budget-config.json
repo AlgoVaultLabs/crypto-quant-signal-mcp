@@ -21,10 +21,6 @@
       "block": "reports which regions it carried over, so the behaviour is observable"
     },
     {
-      "file": "tests/unit/alert-recommended-wave.test.mjs",
-      "block": "the liveness probe can no longer recommend the basis-flip wave"
-    },
-    {
       "file": "tests/unit/author-identity.test.ts",
       "block": "passes, and its terminal line is the verdict token"
     },

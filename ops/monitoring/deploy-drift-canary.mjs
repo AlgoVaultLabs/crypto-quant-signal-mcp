@@ -380,6 +380,21 @@ function main() {
   }
 
   writeLedger(LEDGER, next);
+
+  // ── ADOPTER (OPS-ALERT-RECOVERY-NOTICE-W1 CH2) ─────────────────────────────────────────────
+  // DEPLOY_DRIFT is ONE alert id across every repo in REPOS, so the resolution belongs here and
+  // NOT in the per-repo DRIFT_NONE branch above: clearing inside the loop would announce
+  // "resolved" while a later repo is still drifting. `worst` is the fold across all of them, so
+  // this fires only when the whole check is green.
+  //
+  // The wrapper owns everything else — it no-ops silently when no marker exists (nothing was
+  // firing, so nothing resolved), and whether the resolution is ANNOUNCED or merely logged is
+  // the registry's `announce_resolution` decision, not this canary's.
+  if (worst === 'DRIFT_NONE') {
+    const cleared = sh('sh', ['-c', `${WRAP} --clear DEPLOY_DRIFT 'deploy drift verdict=DRIFT_NONE' || true`]);
+    log(`deploy-drift: healthy — clear dispatched (ok=${cleared.ok})`);
+  }
+
   console.log(`DRIFT_VERDICT=${worst}`);
   return worst === 'DRIFT_NONE' ? 0 : 0; // detection never fails the scheduler — it REFUSES, it does not THROW
 }

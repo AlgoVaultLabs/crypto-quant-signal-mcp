@@ -1,0 +1,472 @@
+{
+  "_comment": "CONSUMER REGISTRY for send_telegram.sh alert ids (OPS-ALERT-RECOVERY-NOTICE-W1 CH2). CLAUDE.md: a shared primitive used by >=2 hosts gets a registry naming every installation \u2014 DETECTION IS STRICTLY WEAKER THAN ENUMERATION. An alert_id firing from a canary nobody listed is exactly what this file exists to make impossible.",
+  "_announce_resolution_semantics": "FALSE is the default and it is the LAW's default: CLAUDE.md holds that recovery CHATTER is noise and silent recovery with forensics in logs is the norm. TRUE opts a single alert into ONE bounded RESOLVED message per episode \u2014 emitted only on FIRING->CLEAR, only when a fire was actually DELIVERED, cooldown-exempt, and self-limiting because it removes the marker. Every failure mode of this lookup (absent file, absent row, malformed JSON, no python3) resolves to SILENT, so the default survives the mechanism breaking.",
+  "_adopted_vs_announce": "`adopted` = the owner calls --clear on its healthy path at all. `announce_resolution` = that clear is announced rather than silent. They are separate on purpose: an owner may adopt --clear purely for the state hygiene (so a stale marker cannot pin the operator's view) without adding a message.",
+  "_unadopted_behaviour": "Every row with adopted=false behaves EXACTLY as before this wave \u2014 same gates, same order, same log verbs, same exit codes. Adoption is opt-in and byte-identical until opted in.",
+  "_known_divergence": "The autonomous-optimizer repo vendors its own copy of send_telegram.sh at monitoring/aoe-host/send_telegram.sh, pinned by its own test to CANONICAL_SHA256 243ba4a7... \u2014 which is NOT the live canonical. PRE-EXISTING at the time of this wave (the aoe-1 HOST runs canonical, the AOE REPO's vendored copy is two revisions behind) and deliberately not changed here. Recorded rather than silently tolerated; re-vendoring is OPS-AOE-WRAPPER-REVENDOR-W{NEXT}.",
+  "_generated_by": "OPS-ALERT-RECOVERY-NOTICE-W1 CH2 \u2014 union of source call sites and on-disk markers on both hosts, 2026-08-21. NEITHER SOURCE IS COMPLETE ALONE, measured three ways: 14 ids had a live cooldown marker and no discoverable call site; 4 more (incl. the lowercase `gate-shadow-cpu`) had a call site through a $WRAPPER variable and had NEVER fired, so no marker existed either \u2014 those 4 were invisible until the gate's own prove-it-can-fail step exposed the extractor's blind spot. This is the enumeration-beats-detection argument, measured rather than asserted.",
+  "alerts": [
+    {
+      "alert_id": "ACTIVATION_FUNNEL_LEAK_DETECTED",
+      "owner": "ops/monitoring/funnel-leak-detector.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-ACTIVATION_FUNNEL_LEAK_DETECTED-W{NEXT}"
+    },
+    {
+      "alert_id": "ANALYTICS_REGION_DRIFT",
+      "owner": "ops/cron/analytics-drift-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-ANALYTICS_REGION_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED",
+      "owner": "algovault-editorial:lib/anchor-numeric-claims.mjs",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED-W{NEXT}"
+    },
+    {
+      "alert_id": "AUTOPUB_PUBLISH_FAILED",
+      "owner": "algovault-editorial:editorial-publish.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_PUBLISH_FAILED-W{NEXT}"
+    },
+    {
+      "alert_id": "AUTOPUB_UNCLASSIFIED",
+      "owner": "algovault-editorial:lib/drafter.mjs",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_UNCLASSIFIED-W{NEXT}"
+    },
+    {
+      "alert_id": "book_liveness_ceiling",
+      "owner": "ops/monitoring/book-liveness-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-BOOK_LIVENESS_CEILING-W{NEXT}"
+    },
+    {
+      "alert_id": "CANDLE_BASIS_FLIP_READY",
+      "owner": "ops/monitoring/decision-gate-orphan-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-CANDLE_BASIS_FLIP_READY-W{NEXT}"
+    },
+    {
+      "alert_id": "CHECKOUT_PARITY_SIGNAL_MCP",
+      "owner": "ops/cron/checkout-parity.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-CHECKOUT_PARITY_SIGNAL_MCP-W{NEXT}"
+    },
+    {
+      "alert_id": "CLOSEDBAR_DISPATCH_OFFSET_FAULT",
+      "owner": "ops/monitoring/closedbar-w1-liveness.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_OFFSET_FAULT-W{NEXT}"
+    },
+    {
+      "alert_id": "CLOSEDBAR_DISPATCH_RATCHET_REGRESSION",
+      "owner": "ops/monitoring/closedbar-w1-liveness.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_RATCHET_REGRESSION-W{NEXT}"
+    },
+    {
+      "alert_id": "DB_SUPERUSER_DRIFT",
+      "owner": "scripts/db-superuser-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DB_SUPERUSER_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "DEPLOY_DRIFT",
+      "owner": "ops/monitoring/deploy-drift-canary.mjs",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": true,
+      "adoption_note": "deploy-drift-canary.mjs calls --clear on DRIFT_NONE"
+    },
+    {
+      "alert_id": "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
+      "owner": "ops/monitoring/directional-label-freshness.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DIRECTIONAL_LABEL_FRESHNESS_BREACH-W{NEXT}"
+    },
+    {
+      "alert_id": "DOCS_STRUCTURE_DRIFT",
+      "owner": "ops/cron/docs-drift-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DOCS_STRUCTURE_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "EQUITY_LAUNCH_READINESS",
+      "owner": "ops/monitoring/equity-launch-readiness.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-EQUITY_LAUNCH_READINESS-W{NEXT}"
+    },
+    {
+      "alert_id": "FUNNEL_SNAPSHOT_CRON_FAILED",
+      "owner": "scripts/funnel-cron-alert.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-FUNNEL_SNAPSHOT_CRON_FAILED-W{NEXT}"
+    },
+    {
+      "alert_id": "gate-shadow-cpu",
+      "owner": "ops/monitoring/shadow-cpu-gate-48h.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-GATE_SHADOW_CPU-W{NEXT}"
+    },
+    {
+      "alert_id": "HIW_MERKLE_DTRF_EXACT",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-HIW_MERKLE_DTRF_EXACT-W{NEXT}"
+    },
+    {
+      "alert_id": "HOMEPAGE_MERKLE_COUNT_DTRF_EXACT",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-HOMEPAGE_MERKLE_COUNT_DTRF_EXACT-W{NEXT}"
+    },
+    {
+      "alert_id": "KERNEL_STALENESS",
+      "owner": "ops/monitoring/kernel-staleness-canary.sh",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-KERNEL_STALENESS-W{NEXT}"
+    },
+    {
+      "alert_id": "LLM_SPEND_OVER_THRESHOLD",
+      "owner": "ops/monitoring/llm-spend-monitor.py",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-LLM_SPEND_OVER_THRESHOLD-W{NEXT}"
+    },
+    {
+      "alert_id": "LOCKFILE_PIN_UNRESOLVABLE",
+      "owner": "ops/cron/lockfile-resolvability-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-LOCKFILE_PIN_UNRESOLVABLE-W{NEXT}"
+    },
+    {
+      "alert_id": "MONITORING_DECLARATION_SYNC_FAILED",
+      "owner": "ops/monitoring/declaration-sync.sh",
+      "hosts": [
+        "aoe-1",
+        "signal-1"
+      ],
+      "adopted": true,
+      "announce_resolution": true,
+      "adoption_note": "declaration-sync.sh calls --clear on its SYNCED/UNCHANGED terminal paths"
+    },
+    {
+      "alert_id": "MONITORING_INVENTORY_DRIFT",
+      "owner": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "hosts": [
+        "aoe-1",
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-MONITORING_INVENTORY_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "NAV_REGION_DRIFT",
+      "owner": "ops/cron/nav-drift-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-NAV_REGION_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "OPS_EQUITY_ZERO_VERDICT",
+      "owner": "ops/monitoring/equity-verdict-watch.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-OPS_EQUITY_ZERO_VERDICT-W{NEXT}"
+    },
+    {
+      "alert_id": "OPS_TIER_MISCLASSIFICATION",
+      "owner": "ops/monitoring/tier-misclassification-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}"
+    },
+    {
+      "alert_id": "OUTCOME_BACKFILL_STALLED",
+      "owner": "ops/monitoring/outcome-backfill-freshness.py",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}"
+    },
+    {
+      "alert_id": "PAYMENT_DECLINE_DRIFT",
+      "owner": "ops/monitoring/payment-decline-canary.py",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS",
+      "owner": "ops/monitoring/postgres-cpu-snapshot.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-POSTGRES_CPU_DRIFT_CRITICAL_BYPASS-W{NEXT}"
+    },
+    {
+      "alert_id": "POSTGRES_CPU_DRIFT_UNIFIED",
+      "owner": "ops/monitoring/postgres-cpu-snapshot.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-POSTGRES_CPU_DRIFT_UNIFIED-W{NEXT}"
+    },
+    {
+      "alert_id": "QUOTA_EXHAUSTION_HIGH_VOLUME",
+      "owner": "ops/monitoring/quota-exhaustion-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-QUOTA_EXHAUSTION_HIGH_VOLUME-W{NEXT}"
+    },
+    {
+      "alert_id": "RECALIBRATE_READY",
+      "owner": "ops/monitoring/decision-gate-orphan-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-RECALIBRATE_READY-W{NEXT}"
+    },
+    {
+      "alert_id": "REGISTRY_SCHEMA_CONFORMANCE_BREAK",
+      "owner": "ops/monitoring/registry-conformance-canary.py",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-REGISTRY_SCHEMA_CONFORMANCE_BREAK-W{NEXT}"
+    },
+    {
+      "alert_id": "REVENUE_METER_DIVERGENCE",
+      "owner": "ops/monitoring/revenue-meter-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-REVENUE_METER_DIVERGENCE-W{NEXT}"
+    },
+    {
+      "alert_id": "SEED_COVERAGE_GAP",
+      "owner": "ops/cron/seed-coverage-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SEED_COVERAGE_GAP-W{NEXT}"
+    },
+    {
+      "alert_id": "SEED_ORCHESTRATOR_GATE_RED",
+      "owner": "ops/monitoring/seed-orchestrator-gate-48h.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SEED_ORCHESTRATOR_GATE_RED-W{NEXT}"
+    },
+    {
+      "alert_id": "SOT_PARITY_SUSTAINED_DRIFT",
+      "owner": "ops/monitoring/monitoring-inventory-reconcile.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SOT_PARITY_SUSTAINED_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "STRIPE_WEBHOOK_EVENT_DRIFT",
+      "owner": "ops/monitoring/stripe-webhook-events-canary.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-STRIPE_WEBHOOK_EVENT_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "TRACKRECORD_VENUE_DTRF_SET",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-TRACKRECORD_VENUE_DTRF_SET-W{NEXT}"
+    },
+    {
+      "alert_id": "VENUE_SLO_TIER_DRIFT",
+      "owner": "ops/monitoring/venue-slo-tiers-drift-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-VENUE_SLO_TIER_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "WEBHOOK_DELIVERY_DRIFT",
+      "owner": "ops/monitoring/webhook-delivery-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBHOOK_DELIVERY_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "x402-bazaar-delist",
+      "owner": "ops/monitoring/x402-bazaar-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-X402_BAZAAR_DELIST-W{NEXT}"
+    },
+    {
+      "alert_id": "X402_CLAIM_PATH_BROKEN",
+      "owner": "ops/monitoring/x402-claim-liveness-prober.py",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-X402_CLAIM_PATH_BROKEN-W{NEXT}"
+    },
+    {
+      "alert_id": "xrepo_ci_dark",
+      "owner": "ops/cron/xrepo-ci-conclusion-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_DARK-W{NEXT}"
+    },
+    {
+      "alert_id": "xrepo_ci_red",
+      "owner": "ops/cron/xrepo-ci-conclusion-canary.sh",
+      "hosts": [
+        "<never fired on either host>"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_RED-W{NEXT}"
+    }
+  ]
+}

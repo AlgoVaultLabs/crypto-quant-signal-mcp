@@ -69,9 +69,19 @@ test('a comment mentioning a wave is not an emission, and a Rollback pointer is 
   assert.deepEqual(withRollback.map((p) => p.wave), ['OPS-A-W{NEXT}']);
 });
 
-test('the liveness probe can no longer recommend the basis-flip wave', () => {
+test('the liveness probe can no longer recommend the basis-flip wave', { timeout: 5000 }, () => {
   const probe = join(REPO, 'ops', 'monitoring', 'closedbar-w1-liveness.sh');
-  const src = execFileSync('cat', [probe], { encoding: 'utf8' });
+  // Comments are STRIPPED first, for the same reason this module's own extractor strips them:
+  // a mention in prose is not an emission. The probe carries a historical citation explaining
+  // WHY its band is now derived from the bot's live config ("SIGNAL-CLOSEDBAR-FLIP-W1 CH5. This
+  // used to hardcode …"), and this repo records corrections rather than deleting them. The
+  // property under test is that the probe cannot RECOMMEND that wave, which is a statement about
+  // live code, not about its history.
+  // (Unmasked 2026-08-21 OPS-ALERT-RECOVERY-NOTICE-W1 CH2: this file's import of
+  // check-alert-recommended-wave.mjs executed that module's main at load and exited the process,
+  // so only ONE of six tests here ever ran and the file reported green. Adding a main guard to
+  // the module took it to 6 tests and rendered this assertion for the first time.)
+  const src = stripComments(execFileSync('cat', [probe], { encoding: 'utf8' }));
   assert.doesNotMatch(src, /SIGNAL-CLOSEDBAR-FLIP|CLOSEDBAR_FLIP/,
     'the flip wave sets ALGOVAULT_BOT_DISPATCH_OFFSET_PCT=0, which would ratify the very fault ' +
     'this probe detects — it must never be reachable from this alert',

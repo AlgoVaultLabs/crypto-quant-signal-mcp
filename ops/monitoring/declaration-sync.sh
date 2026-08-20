@@ -195,6 +195,23 @@ verdict() {
   if [ "$IN_SELF_TEST" -eq 0 ]; then
     log_line "DECLARATION_SYNC_VERDICT=$1 exit=$2"
     { printf 'verdict=%s\nverdict_at=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$HEARTBEAT"; } 2>/dev/null || true
+    # ── ADOPTER (OPS-ALERT-RECOVERY-NOTICE-W1 CH2) ───────────────────────────────────────────
+    # A healthy terminal verdict is the FIRING -> CLEAR transition for this alert. Before this,
+    # a green run said nothing to the channel, so the operator could not distinguish "healed" from
+    # "still broken, inside its 24h cooldown" from "the sync died" — which is precisely how the
+    # 2026-08-17 episode stayed live in the operator's view for 70 hours after it self-healed.
+    #
+    # ONLY on the healthy verdicts. FAILED alerts on its own path and INDETERMINATE means the run
+    # could not verify anything — clearing on "I don't know" would be the confident wrong answer
+    # this estate keeps retiring.
+    #
+    # Fail-open and non-fatal: `|| true` under a script that is not `set -e` is belt-and-braces,
+    # but this must never be able to change the sync's own verdict or exit code.
+    case "$1" in
+      SYNCED|UNCHANGED)
+        [ -x "$TG" ] && { "$TG" --clear "$ALERT_ID" "declaration sync verdict=$1" >/dev/null 2>&1 || true; }
+        ;;
+    esac
   fi
   echo "DECLARATION_SYNC_VERDICT=$1"
   exit "$2"
