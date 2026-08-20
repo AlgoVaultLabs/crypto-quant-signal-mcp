@@ -242,7 +242,7 @@
       "schedule": null,
       "invoked_by": "called-by:*",
       "install_state": "installed",
-      "sha256": "243fa377e0484bf3d94a450573627b6e8901a04c8d32413ec3645d316a9566a0",
+      "sha256": "b0703b9b072318245df3c1838cb64d31f5c8b47177f9f93329871ffedb849fc1",
       "alert_ids": [],
       "exempt_consumers": [
         {
