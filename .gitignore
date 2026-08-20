@@ -1,4 +1,13 @@
-node_modules/
+# NO TRAILING SLASH, and that one character is the whole point. Per gitignore(5) a pattern
+# ending in `/` matches DIRECTORIES ONLY. A git worktree's `node_modules` is a SYMLINK, which
+# git stores as a blob (mode 120000) and not as a directory, so `node_modules/` never matched
+# it — every such worktree read dirty forever, and that noise was the dominant term in this
+# estate's dirty count. Measured 2026-08-20: of 47 signal-MCP worktrees, 42 hold a real
+# directory (which the slashless form still ignores, asserted in
+# scripts/ch3-count-untracked-node-modules.sh --self-test) and 2 hold a symlink.
+#
+# Do NOT "tidy" the slash back in. [OPS-WORKTREE-WORK-PENDING-W1 CH3 R3.1]
+node_modules
 dist/
 .DS_Store
 .smithery/
