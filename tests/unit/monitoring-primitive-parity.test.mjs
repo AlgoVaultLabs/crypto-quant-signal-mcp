@@ -67,7 +67,8 @@ const hashableHere = (r) =>
   Boolean(r.sha256) && ownedHere(r) && !String(r.artifact ?? '').startsWith('external:');
 
 /** The floor is the point of this test. See COVERAGE_FLOOR below. */
-const COVERAGE_FLOOR = 50;
+const COVERAGE_FLOOR = 61; // raised 50 -> 61 (OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4):
+// 68 rows, 7 structurally excluded => 61 hashable. Raise with the inventory; never lower to pass.
 
 test('every registry row committed here matches its ONE canonical sha256', () => {
   const mismatches = [];
@@ -144,8 +145,15 @@ test('the hash check covers the WHOLE inventory, not the slice one wave cared ab
       `${r.id} is excluded from hash parity for no structural reason (${why})`,
     );
   }
+  // RAISED 6 -> 7 by OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH4d, for
+  // `algovault-bot-referral-notify-drain` — a genuinely `external:` artifact (it lives in the
+  // algovault-bot repo, so this repo cannot hash it). The per-row structural assertion above is
+  // the real guard and still holds for all 7; this cap exists to make such growth a DELIBERATE
+  // act rather than a drift, which is exactly what raising it here records. The row was added
+  // because the script was running on the host with no inventory row at all — moving it from
+  // invisible to structurally-excluded is a coverage GAIN, not a loss.
   assert.ok(
-    excluded.length <= 6,
+    excluded.length <= 7,
     `${excluded.length} rows are excluded from hash parity — that set must stay small and ` +
       'structural. Growth here means coverage is being lost quietly.',
   );
