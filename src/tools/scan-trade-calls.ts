@@ -163,6 +163,22 @@ export interface ScanQuotaExhaustedResponse {
   usage_display: string;
   resets_at: string;
   retry_after_days: number;
+  /**
+   * OPS-QUOTA-METER-SURFACE-CONFORMANCE-W1 CH3 (instance 14, found by the LIVE CAPTURE).
+   *
+   * `quotaNoticeFacts` has always returned both of these and this hand-built envelope dropped them,
+   * so an agent branching on `limit` got `'daily'` from get_trade_call / get_market_regime /
+   * scan_funding_arb and `undefined` from THIS tool for the same wall — and got
+   * `retry_after_days: 1` for a wall that lifts in 12 hours with no hours field to refine it.
+   *
+   * Neither of this wave's own checks could see it: check B scans for emitting primitives and this
+   * envelope routes through the right one, and check A asserted the fields the registry DECLARED
+   * this surface emits rather than the ones its siblings emit. It took a live daily-walled call.
+   * That is precisely the class the standing live-capture requirement exists for.
+   */
+  limit: 'daily' | 'monthly';
+  /** Present ONLY on a daily wall — absence is the signal that days is the right horizon. */
+  retry_after_hours?: number;
   recommended_path: 'subscription' | 'x402';
   suggested_action: string;
   /** REFERRAL-INPRODUCT-NUDGE-W1: the limit moment also carries the structured,
@@ -305,6 +321,10 @@ export async function runScanTradeCall(
       usage_display: facts.usage_display,
       resets_at: facts.resets_at,
       retry_after_days: facts.retry_after_days,
+      // Instance 14: both from the SAME `facts` already computed above — never a second derivation.
+      // Spread-on-presence for the hours field keeps the MONTHLY envelope's key set unchanged.
+      limit: facts.limit,
+      ...(typeof facts.retry_after_hours === 'number' ? { retry_after_hours: facts.retry_after_hours } : {}),
       recommended_path: facts.recommended_path,
       suggested_action: buildQuotaSuggestedAction(noticeCtx),
       referral_hint: buildReferralHint({ from: 'limit', code: refCode }),

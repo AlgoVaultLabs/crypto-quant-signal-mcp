@@ -296,11 +296,11 @@ export const QUOTA_SURFACES: readonly QuotaSurface[] = [
   {
     id: 'refusal:scan_trade_calls',
     module: 'src/tools/scan-trade-calls.ts',
-    primitives: ['quotaNoticeFacts', 'buildQuotaNoticeMessage', 'monthResetAtMs', 'utcDayResetAtMs', 'buildSuggestedX402', 'key:resets_at', 'key:retry_after_days', 'key:quota'],
-    emits: ['resets_at', 'retry_after_days', 'usage_display', 'recommended_path', 'quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at'],
+    primitives: ['quotaNoticeFacts', 'buildQuotaNoticeMessage', 'monthResetAtMs', 'utcDayResetAtMs', 'buildSuggestedX402', 'key:resets_at', 'key:retry_after_days', 'key:quota', 'key:retry_after_hours'],
+    emits: ['limit', 'retry_after_hours', 'resets_at', 'retry_after_days', 'usage_display', 'recommended_path', 'quota.used', 'quota.total', 'quota.remaining', 'quota.resets_at'],
     status: 'conforming',
     meterAware: true,
-    dailyRequiredFields: ['resets_at', 'retry_after_days', 'quota.binding'],
+    dailyRequiredFields: ['limit', 'retry_after_hours', 'resets_at', 'retry_after_days', 'quota.binding'],
     wallDerivedFields: ['resets_at'],
     reason: 'Instance 13 (Q6) — FIXED. The refusal `quota` block is now a COMPOSITE matching `_algovault.quota`: one meter per sub-object, `remaining` true of the pair it sits beside, `binding` naming the governing wall.'
   },
