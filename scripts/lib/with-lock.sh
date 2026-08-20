@@ -284,9 +284,11 @@ algovault_lock_acquire() {  # <name>
   while :; do
     # THE MUTEX. mkdir(2) fails atomically if the directory exists.
     if mkdir "$dir" 2>/dev/null; then
-      algovault_lock__write_holder "$dir"
+      # Marker FIRST: it is what algovault_lock_release keys on, so exporting it before the
+      # (slower) holder write shrinks the window in which a signal could orphan this directory.
       eval "export $marker=\"\$dir\""
       eval "$depth=1"
+      algovault_lock__write_holder "$dir"
       if [ "$reclaimed" -eq 1 ]; then ALGOVAULT_LOCK_VERDICT=RECLAIMED; else ALGOVAULT_LOCK_VERDICT=ACQUIRED; fi
       return 0
     fi
@@ -426,6 +428,21 @@ algovault_lock__main() {
     return 3
   }
 
+  # ── TRAPS ARE ARMED BEFORE THE LOCK IS TAKEN, NOT AFTER ───────────────────────────────────
+  #
+  # Arming them after `algovault_lock_acquire` leaves a window: the lock directory exists, but a
+  # signal arriving before the trap is installed takes bash's DEFAULT action and terminates it
+  # without releasing — an orphaned lock. That window is microseconds on an idle machine and
+  # wide enough to hit reliably under load; it was caught by this wave's own SIGINT test, which
+  # passed in isolation and failed in the full parallel suite. Arming first closes it: releasing
+  # when nothing is held is a no-op, so there is no cost to arming early.
+  #
+  # The irreducible remainder — a signal landing between `mkdir` returning and the marker being
+  # exported one statement later — is covered by stale-holder reclaim (dead pid, then TTL), so
+  # the worst case is self-healing rather than a deadlock.
+  trap 'algovault_lock__interrupt "'"$name"'"' INT TERM
+  trap 'algovault_lock_release "'"$name"'"' EXIT
+
   algovault_lock_acquire "$name" || { algovault_lock__emit "$ALGOVAULT_LOCK_VERDICT"; return 3; }
   mode="$ALGOVAULT_LOCK_VERDICT"
   ALGOVAULT_LOCK__MODE="$mode"
@@ -449,8 +466,6 @@ algovault_lock__main() {
   exec 3<&0
   "$@" <&3 &
   ALGOVAULT_LOCK__CMD_PID=$!
-  trap 'algovault_lock__interrupt "'"$name"'"' INT TERM
-  trap 'algovault_lock_release "'"$name"'"' EXIT
 
   wait "$ALGOVAULT_LOCK__CMD_PID"
   rc=$?
