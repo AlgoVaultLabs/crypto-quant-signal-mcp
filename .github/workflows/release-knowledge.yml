@@ -17,6 +17,35 @@ on:
     tags:
       - 'v*'
 
+# ─── CONCURRENCY — OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH3 ───────────────────────────────────
+#
+# THE GROUP KEY IS A FUNCTION OF THE RESOURCE, NEVER OF THE CONTAINER. That is this repo's
+# existing freshness law ("a freshness key is a function of what it verifies, never of the
+# container holding it") reappearing in a new domain. PER-REF, same reasoning as publish-npm.yml: a cancelled pending run means a release with no
+# knowledge bundle attached, and nothing fails.
+#
+# `queue: max`, never the `single` default: waves cite run IDs as acceptance evidence, and a run
+# cancelled while PENDING is not a failure anywhere — it is simply missing. `max` lets every run
+# survive to a verdict. Proven ACCEPTED and MEASURED on a throwaway branch before any rollout
+# (run 32396494418 validated and ran; two further runs dispatched into the same group both stayed
+# `pending` rather than the earlier one being cancelled, which is `max` behaving as documented and
+# is what the `single` default would NOT have done).
+#
+# The knob that governs PENDING runs is `queue`. The OTHER one is deliberately absent everywhere
+# in this repo: it scopes to the in-progress run, its `false` value appears nowhere in GitHub's
+# documentation, and combining it with `queue: max` is an explicit workflow validation error.
+#
+# Group names are CASE-INSENSITIVE per the docs — never rely on case to distinguish two groups.
+#
+# No job-level concurrency block: GitHub does not document how workflow-level and job-level
+# groups interact, and a load-bearing safety property must never be rented from undocumented
+# behaviour. Declared in ops/shared-worktree-state.json (`ci-workflow-release-knowledge`) and asserted in BOTH
+# directions by scripts/check-shared-state.mjs + tests/unit/workflow-concurrency.test.ts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  queue: max
+
+
 jobs:
   release-knowledge:
     runs-on: ubuntu-latest
