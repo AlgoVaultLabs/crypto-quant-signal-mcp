@@ -20,6 +20,37 @@ on:
       - 'skills/manifest.json'
       - 'integrations/manifest.json'
 
+# ─── CONCURRENCY — OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH3 ───────────────────────────────────
+#
+# THE GROUP KEY IS A FUNCTION OF THE RESOURCE, NEVER OF THE CONTAINER. That is this repo's
+# existing freshness law ("a freshness key is a function of what it verifies, never of the
+# container holding it") reappearing in a new domain. One set of landing surfaces, so ONE global group. This is also the CI writer named in the
+# `ref-main` residual: it commits and pushes to main with a PAT (specifically so the push
+# re-triggers deploy.yml), which means CI can move main underneath a local session and no local
+# lock can prevent it. Hardening that is OPS-CI-MAIN-WRITER-HARDEN-W{NEXT}.
+#
+# `queue: max`, never the `single` default: waves cite run IDs as acceptance evidence, and a run
+# cancelled while PENDING is not a failure anywhere — it is simply missing. `max` lets every run
+# survive to a verdict. Proven ACCEPTED and MEASURED on a throwaway branch before any rollout
+# (run 32396494418 validated and ran; two further runs dispatched into the same group both stayed
+# `pending` rather than the earlier one being cancelled, which is `max` behaving as documented and
+# is what the `single` default would NOT have done).
+#
+# The knob that governs PENDING runs is `queue`. The OTHER one is deliberately absent everywhere
+# in this repo: it scopes to the in-progress run, its `false` value appears nowhere in GitHub's
+# documentation, and combining it with `queue: max` is an explicit workflow validation error.
+#
+# Group names are CASE-INSENSITIVE per the docs — never rely on case to distinguish two groups.
+#
+# No job-level concurrency block: GitHub does not document how workflow-level and job-level
+# groups interact, and a load-bearing safety property must never be rented from undocumented
+# behaviour. Declared in ops/shared-worktree-state.json (`ci-workflow-regenerate-landing`) and asserted in BOTH
+# directions by scripts/check-shared-state.mjs + tests/unit/workflow-concurrency.test.ts.
+concurrency:
+  group: ${{ github.workflow }}
+  queue: max
+
+
 permissions:
   # Default GITHUB_TOKEN is read-only on contents (per GitHub 2023+ org defaults).
   # The "Commit regenerated surfaces" step needs write access to push back to main.

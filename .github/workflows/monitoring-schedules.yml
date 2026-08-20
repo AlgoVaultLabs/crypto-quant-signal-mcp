@@ -42,6 +42,38 @@ on:
       - 'scripts/check-monitoring-schedules.mjs'
   workflow_dispatch:
 
+# ─── CONCURRENCY — OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH3 ───────────────────────────────────
+#
+# THE GROUP KEY IS A FUNCTION OF THE RESOURCE, NEVER OF THE CONTAINER. That is this repo's
+# existing freshness law ("a freshness key is a function of what it verifies, never of the
+# container holding it") reappearing in a new domain. This workflow mutates NOTHING — its own header above says it plainly: no build, no image, no
+# SSH, no deploy, a static lint over committed JSON. So the group buys run-lane dedup only, and
+# the registry records `contended_target: none` rather than inventing one. It is grouped ANYWAY
+# because the enumeration clause is what makes a 7th workflow unable to land unserialized; an
+# exempt workflow is a hole in exactly the rule this wave installs.
+#
+# `queue: max`, never the `single` default: waves cite run IDs as acceptance evidence, and a run
+# cancelled while PENDING is not a failure anywhere — it is simply missing. `max` lets every run
+# survive to a verdict. Proven ACCEPTED and MEASURED on a throwaway branch before any rollout
+# (run 32396494418 validated and ran; two further runs dispatched into the same group both stayed
+# `pending` rather than the earlier one being cancelled, which is `max` behaving as documented and
+# is what the `single` default would NOT have done).
+#
+# The knob that governs PENDING runs is `queue`. The OTHER one is deliberately absent everywhere
+# in this repo: it scopes to the in-progress run, its `false` value appears nowhere in GitHub's
+# documentation, and combining it with `queue: max` is an explicit workflow validation error.
+#
+# Group names are CASE-INSENSITIVE per the docs — never rely on case to distinguish two groups.
+#
+# No job-level concurrency block: GitHub does not document how workflow-level and job-level
+# groups interact, and a load-bearing safety property must never be rented from undocumented
+# behaviour. Declared in ops/shared-worktree-state.json (`ci-workflow-monitoring-schedules`) and asserted in BOTH
+# directions by scripts/check-shared-state.mjs + tests/unit/workflow-concurrency.test.ts.
+concurrency:
+  group: ${{ github.workflow }}
+  queue: max
+
+
 permissions:
   contents: read
 
