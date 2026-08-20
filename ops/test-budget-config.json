@@ -1,0 +1,196 @@
+{
+  "_doc": "OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH2 — config for scripts/check-test-budget.mjs. A test that SPAWNS A PROCESS must declare its own { timeout: N }. The 5,000 ms vitest default is calibrated for pure-function assertions; a test that shells out to a compiler inherits it silently and then fails on a slower CI runner as a TIMEOUT, which reads as a regression and blocks every concurrent wave's deploy. That is not hypothetical: it happened on 2026-08-17 and blocked PRICING-BOT-DELIVERY-METERING-W1's render for ~3 days.",
+  "_scope": "PROCESS SPAWN ONLY — child_process / execFileSync / execSync / spawnSync / spawn(. Deliberately NOT widened to filesystem or network I/O: that is the class with a proven live failure, and a widened detector over ~6,000 tests would red files this wave does not own. Widening is OPS-TEST-BUDGET-WIDEN-W1, once the spawn class is quiet.",
+  "promoteOn": "2026-09-19",
+  "_promoteOn_semantics": "THE GATE ENFORCES THIS DATE ITSELF. Before it, a backlog entry REPORTS. On or after it, a backlog entry FAILS — no human flips a flag, no follow-up wave is required, and the gate warns loudly in its output for the 7 days before. A dated promise living in a comment is prose, and CLAUDE.md is explicit that a rule which has once failed as prose must be retired into a gate or deleted. The nearest precedent, ops/monitoring/sot-parity-config.json, states its promotion criterion as prose to be 'counted by the operator' and names a W{NEXT} owner to flip it — that is the shape this file deliberately does NOT copy.",
+  "owner": "OPS-TEST-BUDGET-BACKFILL-W1",
+  "_owner_semantics": "The wave that owns clearing the backlog below. Named HERE, in the config the gate reads, not only in a follow-up table — a follow-up table is not machine-readable and does not survive the wave that wrote it.",
+  "_backlog_semantics": "SHRINK-ONLY, keyed by file + block title. The gate FAILS if this list GROWS, or if a spawning block appears that is not on it. Without that, report-mode is a permanent hiding place rather than a bounded migration — which would be 'changed-files-only' wearing this file's label. Entries are removed as their owners add an explicit timeout; the list may never gain one.",
+  "_new_and_changed_are_blocking_today": "Independently of promoteOn, any spawning block in a test file that is NEW or MODIFIED versus the merge-base with origin/main FAILS immediately. The backlog grandfathers history; it grants nothing to work being written now.",
+  "backlog": [
+    {
+      "file": "tests/build-docs-foreign-markers.test.ts",
+      "block": "leaves the ANALYTICS region and the canonical /docs nav links intact"
+    },
+    {
+      "file": "tests/build-docs-foreign-markers.test.ts",
+      "block": "is IDEMPOTENT — a second lone run changes nothing"
+    },
+    {
+      "file": "tests/build-docs-foreign-markers.test.ts",
+      "block": "reports which regions it carried over, so the behaviour is observable"
+    },
+    {
+      "file": "tests/unit/alert-recommended-wave.test.mjs",
+      "block": "the liveness probe can no longer recommend the basis-flip wave"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "passes, and its terminal line is the verdict token"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "is not vacuous — it reports a positive assertion count"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "sourcing the script does NOT run the gate — no verdict token is emitted"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "is non-vacuous and judges every identity of record correctly"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "carries a reason on EVERY row — an exemption living only in prose gets \"fixed\" later"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "ships in BLOCK mode with every promotion criterion still intact, never collapsed into one"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "buckets on EPOCH, not on an ISO string — a +08:00 commit before the bound stays before it"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "AC2.2 — the FAIL count is not read from the ledger: a ledger full of FAILs stays READY"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "R2.5 — the INDETERMINATE bar IS read from the ledger, the one thing git cannot see"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "AC2.11 — the flag returns before the gate body: it never evaluates an identity"
+    },
+    {
+      "file": "tests/unit/author-identity.test.ts",
+      "block": "AC3 — under block, a denied identity is REFUSED with exit 1, not merely logged"
+    },
+    {
+      "file": "tests/unit/check-system-map-stripping.test.ts",
+      "block": "a COMMENT mentioning app.get( does not block"
+    },
+    {
+      "file": "tests/unit/check-system-map-stripping.test.ts",
+      "block": "a real setInterval( call BLOCKS"
+    },
+    {
+      "file": "tests/unit/check-system-map-stripping.test.ts",
+      "block": "[skip-map-check] appends MAP_CHECK_MSG_BYPASS"
+    },
+    {
+      "file": "tests/unit/check-system-map-stripping.test.ts",
+      "block": "--self-test passes and is not vacuous"
+    },
+    {
+      "file": "tests/unit/check-system-map.test.ts",
+      "block": "(a) clean diff (no edge signals) + stale system-map.md → exit 0"
+    },
+    {
+      "file": "tests/unit/check-system-map.test.ts",
+      "block": "(b) edge signal (`server.tool(` add) + stale → exit 1 with BLOCK message"
+    },
+    {
+      "file": "tests/unit/check-system-map.test.ts",
+      "block": "(c) edge signal + fresh system-map.md (touched within 10 min) → exit 0"
+    },
+    {
+      "file": "tests/unit/check-system-map.test.ts",
+      "block": "(d) edge signal + stale + [skip-map-check] in commit msg → exit 0"
+    },
+    {
+      "file": "tests/unit/check-system-map.test.ts",
+      "block": "(e) edge signal in `migrations/` (NEW SQL file) + stale → exit 1"
+    },
+    {
+      "file": "tests/unit/checkout-parity-allowlist.test.ts",
+      "block": "the helper: exit 0 and exactly one verdict token"
+    },
+    {
+      "file": "tests/unit/checkout-parity-allowlist.test.ts",
+      "block": "the canary: exit 0 and exactly one verdict token"
+    },
+    {
+      "file": "tests/unit/credential-outcome-conformance.test.ts",
+      "block": "a synthetic collapse drives the real CLI to FAIL at exit 1"
+    },
+    {
+      "file": "tests/unit/credential-outcome-conformance.test.ts",
+      "block": "an EMPTY corpus is INDETERMINATE at exit 3 — fail-closed, never a pass"
+    },
+    {
+      "file": "tests/unit/declaration-sync.test.ts",
+      "block": "PyYAML missing -> INDETERMINATE 3 AND an alert"
+    },
+    {
+      "file": "tests/unit/declaration-sync.test.ts",
+      "block": "the --self-test writes NEITHER the heartbeat NOR the log (it must stay hermetic)"
+    },
+    {
+      "file": "tests/unit/declaration-sync.test.ts",
+      "block": "passes, and reports a non-vacuous check count"
+    },
+    {
+      "file": "tests/unit/erc8004-registration.test.ts",
+      "block": "exits 0 with \"Already registered, skipping\" when ERC8004_AGENT_ID is preset (no RPC, no IPFS)"
+    },
+    {
+      "file": "tests/unit/erc8004-registration.test.ts",
+      "block": "fails fast when --update-uri is set but ERC8004_AGENT_ID is unset"
+    },
+    {
+      "file": "tests/unit/erc8004-registration.test.ts",
+      "block": "does NOT trigger the idempotency-exit when --update-uri is set with ERC8004_AGENT_ID (env var is the OPT-IN here)"
+    },
+    {
+      "file": "tests/unit/hold-billing-claims-guard.test.ts",
+      "block": "emits exactly ONE terminal verdict token (callers gate on the token, not the code)"
+    },
+    {
+      "file": "tests/unit/hook-block.test.mjs",
+      "block": "idempotence keys on <name> ALONE — a NEW wave-id must not append a duplicate (A3)"
+    },
+    {
+      "file": "tests/unit/hook-block.test.mjs",
+      "block": "assert_publishable REFUSES a script unreachable from the remote default ref (incident A)"
+    },
+    {
+      "file": "tests/unit/hook-block.test.mjs",
+      "block": "a missing script SKIPS its own block and still runs LATER blocks — never `exit 0`"
+    },
+    {
+      "file": "tests/unit/install-monitoring-artifact.test.ts",
+      "block": "install FAILS on a first install -> no .bak is left behind"
+    },
+    {
+      "file": "tests/unit/install-monitoring-artifact.test.ts",
+      "block": "sourcing the script does NOT run the installer — no verdict token is emitted"
+    },
+    {
+      "file": "tests/unit/knowledge-bundle.test.ts",
+      "block": "generator is byte-idempotent under fixed KNOWLEDGE_GENERATED_AT (two runs match)"
+    },
+    {
+      "file": "tests/unit/push-safety.test.ts",
+      "block": "--self-test passes, is vacuity-guarded, and emits exactly one verdict token"
+    },
+    {
+      "file": "tests/unit/session-drift.test.ts",
+      "block": "is idempotent and never disturbs the existing test-gate block"
+    },
+    {
+      "file": "tests/unit/snapshot-capabilities.test.mjs",
+      "block": "--check exits 0 when repo is in-sync"
+    },
+    {
+      "file": "tests/unit/test-gate-report-path.test.ts",
+      "block": "precondition: jq is on PATH (the gate fails OPEN without it, which would mask every assertion below)"
+    },
+    {
+      "file": "tests/x402-operator-wallets.test.ts",
+      "block": "AC 7.10 CANARY: every copy of the operator literal repo-wide sits in a DECLARED file"
+    }
+  ]
+}

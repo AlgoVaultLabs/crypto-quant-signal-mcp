@@ -85,7 +85,37 @@ jobs:
           # If it is ever isolated too, re-point again; the check is a `grep -L
           # PERFORMANCE_DB_PATH` over the suites importing performance-db.
           npx vitest run tests/agent-session-source-stamp.test.ts >/dev/null 2>&1 || true
-          npx vitest run
+          # OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH2d: vitest no longer DECIDES here. It
+          # writes a machine-readable report and the classifier in the next step renders the
+          # verdict, because vitest's exit 1 encodes BOTH "verified, broken" and "could not verify
+          # in time" — and on 2026-08-17 that ambiguity blocked a finished, merged wave for ~3
+          # days. `|| true` moves the decision one step later; it does NOT relax it. The classifier
+          # blocks on FAIL *and* on INDETERMINATE, and a crashed vitest that writes no report is
+          # INDETERMINATE, which also blocks.
+          npx vitest run --reporter=default --reporter=json --outputFile=.vitest-report.json || true
+
+      # The verdict, not the exit code. PASS / PASS_AFTER_ISOLATION deploy; FAIL and INDETERMINATE
+      # both block, and stay DISTINCT so an operator (and CH4's blame classifier) can tell a
+      # regression from an unfinished measurement.
+      - name: Classify the suite verdict (a timeout is not a regression)
+        id: suite_verdict
+        run: |
+          set +e
+          node scripts/classify-suite-verdict.mjs .vitest-report.json | tee /tmp/suite-verdict.txt
+          V=$(grep '^SUITE_VERDICT=' /tmp/suite-verdict.txt | tail -1 | cut -d= -f2)
+          [ -n "$V" ] || V=INDETERMINATE
+          echo "verdict=$V" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Suite verdict: \`$V\`"
+            echo ''
+            echo '```'
+            cat /tmp/suite-verdict.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$V" in
+            PASS|PASS_AFTER_ISOLATION) echo "deploy permitted on $V"; exit 0 ;;
+            *) echo "deploy BLOCKED on $V"; exit 1 ;;
+          esac
 
       # DOCS-GENERATOR-FROM-NAV-SOT-W1 CH5: docs.html structural drift canary. Fails the push if the
       # docs sidebar / body / anchors have fallen out of sync with the ONE outline SoT
@@ -560,7 +590,11 @@ jobs:
           node scripts/check-boot-readiness.mjs --self-test
           node scripts/check-boot-readiness.mjs
 
+      # Gated on the TOKEN, never on a raw exit code. The preceding step already aborts the job on
+      # a blocking verdict — this condition is deliberately redundant, so the dependency is legible
+      # at the step that actually ships code rather than inferred from step ordering.
       - name: Deploy via SSH
+        if: steps.suite_verdict.outputs.verdict == 'PASS' || steps.suite_verdict.outputs.verdict == 'PASS_AFTER_ISOLATION'
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
