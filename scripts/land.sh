@@ -66,9 +66,27 @@
 #
 # ─── USAGE ──────────────────────────────────────────────────────────────────────────────────
 #
-#   bash scripts/land.sh                 # land the current branch on its remote
+#   bash scripts/land.sh                 # rebase onto the remote default and fast-forward it
 #   bash scripts/land.sh --remote origin
+#   bash scripts/land.sh --to <branch>   # publish HEAD to some OTHER branch (no rebase; see below)
 #   bash scripts/land.sh --dry-run       # everything except the transfer (no lock is taken)
+#
+# ─── WHAT "LAND" TARGETS, AND WHY IT IS NOT THE CURRENT BRANCH ──────────────────────────────
+#
+# The default target is the REMOTE DEFAULT BRANCH, pushed as `HEAD:<default>`. That is this
+# repo's house landing operation — auto-commit + auto-push, merges arriving as plain
+# fast-forwards — and it is the only target for which the rebase above it makes sense.
+#
+# Pushing the CURRENT BRANCH would be incoherent with rebasing, and the first dogfood run proved
+# it rather than the argument: rebasing onto a moved origin/main rewrites this branch's commits,
+# so pushing it back to its OWN already-published remote ref is a NON-FAST-FORWARD. The retry
+# then re-fetches, rebases again, and is refused again — an unbounded loop dressed as a
+# fail-safe, resolvable only with a force flag this script must never carry. Landing onto the
+# default branch is a fast-forward by construction, because the rebase just made it one.
+#
+# `--to <branch>` publishes HEAD elsewhere and deliberately SKIPS the rebase: rebasing onto the
+# default and then pushing somewhere else is the incoherent combination above. Use it to publish
+# a feature branch; use the default form to land.
 #
 # Portable to macOS bash 3.2.
 
@@ -85,6 +103,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 
 LOCK_NAME="${ALGOVAULT_LAND_LOCK_NAME:-landing}"
 REMOTE="origin"
+TARGET=""
 DRY_RUN=0
 # 3 attempts: the retry exists only for the three out-of-scope cases above, and an unbounded
 # loop is the livelock this wave retires. Exhaustion is a clean non-zero with a token, never a
@@ -95,6 +114,7 @@ BACKOFF_BASE="${ALGOVAULT_LAND_BACKOFF_BASE:-2}"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --remote) REMOTE="${2:-origin}"; shift 2 ;;
+    --to) TARGET="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) sed -n '2,60p' "$0" | sed -e 's/^# \{0,1\}//'; exit 0 ;;
     *) printf '%s\n' "✖ land: unknown argument '$1'"; printf 'LAND_VERDICT=%s\n' INDETERMINATE; exit 3 ;;
@@ -133,18 +153,40 @@ fi
 # Resolve the remote default ref — NEVER hardcode `main`.
 DEFAULT_REF="$(git symbolic-ref --quiet --short "refs/remotes/$REMOTE/HEAD" 2>/dev/null || true)"
 [ -n "$DEFAULT_REF" ] || DEFAULT_REF="$REMOTE/main"
+DEFAULT_BRANCH="${DEFAULT_REF#"$REMOTE"/}"
+
+# Target defaults to the remote default branch. REBASE only when landing there — see the header.
+if [ -z "$TARGET" ]; then TARGET="$DEFAULT_BRANCH"; REBASE=1; else REBASE=0; fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf '%s\n' "[land] DRY RUN — branch=$BRANCH remote=$REMOTE default=$DEFAULT_REF; no lock, no transfer."
+  printf '%s\n' "[land] DRY RUN — branch=$BRANCH remote=$REMOTE default=$DEFAULT_REF target=$TARGET rebase=$REBASE; no lock, no transfer."
   finish LANDED 0
 fi
 
 # ── the critical section ────────────────────────────────────────────────────────────────────
 
+# ARM BEFORE ACQUIRING. A signal arriving between the mkdir and the trap install would otherwise
+# terminate this shell with the lock still held — same window closed in with-lock.sh, same reason.
+#
+# INT/TERM must ABORT the landing, not merely release. The first version released and returned,
+# so bash resumed the loop with the lock gone — and because `git push` ran in the FOREGROUND the
+# trap did not even run until the push finished. Measured: a SIGTERM to a landing mid-gate did
+# nothing for the rest of the gate. The push therefore runs in the background under `wait`, and
+# the handler kills it before releasing.
+on_signal() {
+  [ -n "${PUSH_PID:-}" ] && kill -TERM "$PUSH_PID" 2>/dev/null
+  algovault_lock_release "$LOCK_NAME"
+  trap - EXIT INT TERM
+  printf '%s\n' "" "✖ land: interrupted — lock released, nothing was force-pushed." >&2
+  ATTEMPTS="${ATTEMPTS:-0}"
+  printf 'LAND_ATTEMPTS=%s\n' "$ATTEMPTS"
+  printf 'LAND_VERDICT=%s\n' INDETERMINATE
+  exit 130
+}
+trap on_signal INT TERM
+trap 'algovault_lock_release "$LOCK_NAME"' EXIT
+
 algovault_lock_acquire "$LOCK_NAME" || finish INDETERMINATE 3
-# Release on EVERY exit path. A release wired only to the happy path leaks in proportion to how
-# reliably the code succeeds.
-trap 'algovault_lock_release "$LOCK_NAME"' EXIT INT TERM
 printf 'LANDING_LOCK_VERDICT=%s\n' "$ALGOVAULT_LOCK_VERDICT"
 
 PUSH_OUT="$(mktemp -d "${TMPDIR:-/tmp}/algovault-land.XXXXXX")/push.out"
@@ -158,7 +200,7 @@ while [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; do
     finish INDETERMINATE 3
   fi
 
-  if ! git rebase "$DEFAULT_REF" >/dev/null 2>&1; then
+  if [ "$REBASE" -eq 1 ] && ! git rebase "$DEFAULT_REF" >/dev/null 2>&1; then
     CONFLICTED="$(git diff --name-only --diff-filter=U 2>/dev/null || true)"
     git rebase --abort >/dev/null 2>&1 || true
     printf '%s\n' "✖ land: rebase onto $DEFAULT_REF CONFLICTS. The rebase has been aborted; your branch is untouched."
@@ -170,12 +212,11 @@ while [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; do
 
   # The gate AND the ref transfer both happen inside this call, which is why the lock's scope is
   # the whole of it. No force flag, no verify-skipping flag, no deletion flag — ever.
-  if git push "$REMOTE" "$BRANCH" 2>&1 | tee "$PUSH_OUT"; then
-    PUSH_RC=0
-  else
-    PUSH_RC=1
-  fi
-  # `tee` is the last element of the pipeline, so $? is tee's. Ask git directly.
+  git push "$REMOTE" "HEAD:$TARGET" >"$PUSH_OUT" 2>&1 &
+  PUSH_PID=$!
+  wait "$PUSH_PID"; PUSH_RC=$?
+  PUSH_PID=""
+  cat "$PUSH_OUT"
   if grep -qE '\[rejected\]|error: failed to push|hook declined' "$PUSH_OUT" 2>/dev/null; then
     PUSH_RC=1
   fi
@@ -208,7 +249,7 @@ while [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; do
   sleep "$SLEEP"
 done
 
-printf '%s\n' "✖ land: $MAX_ATTEMPTS attempts exhausted against $DEFAULT_REF."
+printf '%s\n' "✖ land: $MAX_ATTEMPTS attempts exhausted landing HEAD onto $REMOTE/$TARGET."
 printf '%s\n' "    Every attempt was refused non-fast-forward, so a writer outside this lock's scope is"
 printf '%s\n' "    landing faster than this session can rebase. Escalate rather than loop: see the"
 printf '%s\n' "    residual-scope note in this file's header and the ref-main row in"

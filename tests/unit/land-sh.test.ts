@@ -145,6 +145,50 @@ describe('land.sh — the happy path', () => {
   });
 });
 
+describe('land.sh — landing a FEATURE BRANCH onto the default (the dogfood regression)', () => {
+  it('rebases a feature branch onto a moved default and fast-forwards it in ONE attempt', { timeout: 60_000 }, () => {
+    const { bare, paths: [a, b] } = makeEstate(root, 2);
+    // b works on a feature branch that has ALREADY been published to its own remote ref.
+    git(b, 'checkout', '-b', 'feature');
+    commitOn(b, 'b.txt', 'b\n');
+    git(b, 'push', '-u', 'origin', 'feature');
+    // …and meanwhile the default branch moves under it.
+    commitOn(a, 'a.txt', 'a\n');
+    git(a, 'push', 'origin', 'main');
+
+    const r = land(b, lockDir);
+
+    // THE REGRESSION. land.sh used to push the CURRENT BRANCH. Rebasing onto the moved default
+    // rewrites this branch's commits, so pushing it back to its own already-published ref is a
+    // NON-FAST-FORWARD — and the retry re-fetches, rebases and is refused again, forever, with a
+    // force flag the only way out. Landing onto the DEFAULT branch is a fast-forward by
+    // construction, because the rebase just made it one.
+    expect(r.verdict).toBe('LANDED');
+    expect(r.attempts).toBe('1');
+    // The work is on the default branch, on top of the commit that moved it.
+    const log = git(bare, 'log', '--oneline', 'main');
+    expect(log).toMatch(/add b\.txt/);
+    expect(log).toMatch(/add a\.txt/);
+    // …and the stale feature ref was NOT force-updated. land.sh must never rewrite a remote ref.
+    expect(git(bare, 'log', '--oneline', 'feature')).not.toMatch(/add a\.txt/);
+  });
+
+  it('--to <branch> publishes HEAD elsewhere and does NOT rebase', { timeout: 60_000 }, () => {
+    const { bare, paths: [a, b] } = makeEstate(root, 2);
+    commitOn(a, 'a.txt', 'a\n');
+    git(a, 'push', 'origin', 'main');           // default moves
+    git(b, 'checkout', '-b', 'publish-me');
+    commitOn(b, 'b.txt', 'b\n');
+    const headBefore = git(b, 'rev-parse', 'HEAD');
+
+    const r = land(b, lockDir, ['--to', 'publish-me']);
+    expect(r.verdict).toBe('LANDED');
+    // No rebase happened: HEAD is byte-identical, so the branch was published as authored.
+    expect(git(b, 'rev-parse', 'HEAD')).toBe(headBefore);
+    expect(git(bare, 'log', '--oneline', 'publish-me')).not.toMatch(/add a\.txt/);
+  });
+});
+
 describe('land.sh — a conflict is handed back, never auto-resolved', () => {
   it('aborts the rebase, names the conflicted paths, and leaves the branch untouched', { timeout: 60_000 }, () => {
     const { paths: [a, b] } = makeEstate(root, 2);
