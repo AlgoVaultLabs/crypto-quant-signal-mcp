@@ -134,14 +134,24 @@ command -v jq  >/dev/null 2>&1 || indeterminate "jq-absent"
 
 # ── locate the ONE predicate ─────────────────────────────────────────────────
 # Ordered, declared, and degrading to INDETERMINATE rather than to a broken session.
+# An EXPLICIT override is EXCLUSIVE: if it is set and unreadable, that is INDETERMINATE, not
+# a licence to quietly run a different predicate. A caller who pins one and silently gets
+# another is being lied to — and the test for the not-found path was, until now, passing only
+# because the canonical fallback happened to be missing from this machine. A test that passes
+# because the estate is broken stops passing the moment it is fixed, which is exactly what
+# happened here the hour the wave merged.
 PREDICATE=""
-for cand in \
-  "$PREDICATE_OVERRIDE" \
-  "$WORKTREE/scripts/lib/worktree-work-pending.sh" \
-  "$CANONICAL_REPO/scripts/lib/worktree-work-pending.sh"
-do
-  [ -n "$cand" ] && [ -r "$cand" ] && { PREDICATE="$cand"; break; }
-done
+if [ -n "$PREDICATE_OVERRIDE" ]; then
+  [ -r "$PREDICATE_OVERRIDE" ] || indeterminate "pinned-predicate-unreadable: $PREDICATE_OVERRIDE"
+  PREDICATE="$PREDICATE_OVERRIDE"
+else
+  for cand in \
+    "$WORKTREE/scripts/lib/worktree-work-pending.sh" \
+    "$CANONICAL_REPO/scripts/lib/worktree-work-pending.sh"
+  do
+    [ -n "$cand" ] && [ -r "$cand" ] && { PREDICATE="$cand"; break; }
+  done
+fi
 if [ -z "$PREDICATE" ]; then
   # EXPECTED and BOUNDED before this wave merges: the predicate exists only on the wave's
   # branch, so the canonical-primary fallback cannot resolve yet. Degrade LOUDLY and exit 0 —

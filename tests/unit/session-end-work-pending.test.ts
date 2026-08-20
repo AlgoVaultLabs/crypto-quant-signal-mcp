@@ -99,7 +99,12 @@ describe('session-end hook — it must never wedge a session', () => {
     });
   });
 
-  it('exits 0 when the predicate cannot be found — degrades LOUDLY, never fatally', { timeout: 120_000 }, () => {
+  it('a PINNED predicate that is unreadable is INDETERMINATE — never a silent fallback', { timeout: 120_000 }, () => {
+    // This assertion used to pass for the WRONG REASON: the canonical fallback did not exist
+    // on this machine yet, so any missing override fell through to nothing. The hour the wave
+    // merged and the primary checkout was synced, the fallback resolved and the test failed —
+    // a test that only passes while the estate is broken. The hook now treats an explicit
+    // override as EXCLUSIVE, which makes the contract deterministic AND honest.
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       const out = fire(
