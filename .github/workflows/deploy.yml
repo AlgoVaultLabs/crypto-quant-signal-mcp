@@ -626,6 +626,12 @@ jobs:
             # (github.sha appears nowhere else in this workflow; nothing else depends on it.)
             export GIT_SHA="$(git rev-parse HEAD)"
             export BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            # The branch this sha sits on, resolved on the build machine from the tree itself.
+            # Informational ONLY — the sha above is never derived from it. A detached HEAD (the
+            # normal state after a reset) yields no branch, and that reports as empty rather than
+            # as a guess: `main` asserted without checking would be the same fabrication this
+            # route exists to remove.
+            export GIT_REF="$(git for-each-ref --format='%(refname:short)' --points-at HEAD 'refs/remotes/origin/*' 2>/dev/null | grep -vE '^origin$|/HEAD$' | head -1)"
 
             # deploy-and-infra.md: refuse anything that is not an ancestor of the remote default
             # branch. The reset targets a moving ref, so this deploy does not materialize a PINNED

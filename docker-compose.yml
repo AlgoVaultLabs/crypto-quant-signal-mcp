@@ -8,6 +8,7 @@ services:
         # honest. Never defaulted to something plausible.
         GIT_SHA: ${GIT_SHA:-}
         BUILT_AT: ${BUILT_AT:-}
+        GIT_REF: ${GIT_REF:-}
     ports:
       - "127.0.0.1:3000:3000"
     env_file: .env

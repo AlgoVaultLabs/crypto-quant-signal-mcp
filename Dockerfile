@@ -94,8 +94,10 @@ COPY scripts/funnel-by-channel.mjs ./scripts/funnel-by-channel.mjs
 # version, a ref name, "unknown") would recreate the exact defect this exists to remove.
 ARG GIT_SHA=
 ARG BUILT_AT=
+ARG GIT_REF=
 ENV GIT_SHA=$GIT_SHA
 ENV BUILT_AT=$BUILT_AT
+ENV GIT_REF=$GIT_REF
 
 EXPOSE 3000
 ENV TRANSPORT=http
