@@ -1,0 +1,8 @@
+# instrument=5aedc38b339ccc9ef9080982a5fa188593ba7a16 captured=2026-08-20T07:29:05Z
+# OPS-WORKTREE-WORK-PENDING-W1 CH1 R1.8. One "repo<TAB>worktree<TAB>class_a_path" row per
+# Class-A path in the declared estate, captured immediately after the CH1 machinery commit
+# named above and AT that SHA. CH3 compares SETS per repo against this file, never a summed
+# count: offsetting changes cancel in a sum. The instrument is recorded beside the data
+# because a measured baseline without its instrument cannot be compared to anything.
+/Users/tank/code/crypto-quant-signal-mcp	/Users/tank/code/.worktrees/signal-regime-label-rule-fix-w1-v2	audits/regime-rule-calibration-2026-08-07.json
+/Users/tank/code/crypto-quant-signal-mcp	/Users/tank/code/cqsm-wt-circle-settle	audits/OPS-CIRCLE-GATEWAY-TESTNET-SETTLE-W1-proof.json
