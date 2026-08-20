@@ -29,6 +29,11 @@ const GIT_ENV_LEAKS = ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON
 function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
   for (const k of GIT_ENV_LEAKS) delete env[k];
+  // Scrub the AMBIENT lock marker too. When this suite runs under the pre-push gate it is a
+  // descendant of `git push`, which scripts/land.sh spawns while HOLDING the landing lock —
+  // so every child inherits ALGOVAULT_LOCK_HELD_LANDING and a detector honestly answers
+  // ACQUIRED. These cases assert about a SYNTHETIC lock root and must not inherit the real one.
+  for (const k of Object.keys(env)) if (/^ALGOVAULT_LOCK_(HELD|DEPTH)_/.test(k)) delete env[k];
   return env;
 }
 

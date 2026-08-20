@@ -490,7 +490,18 @@ algovault_lock__main() {
 # the suite: an assertion that RAISES is not an assertion.
 
 algovault_lock__self_test() {
-  local pass=0 fail=0 root out rc
+  local pass=0 fail=0 root out rc v
+
+  # ── HERMETICITY: clear any INHERITED lock marker before building fixtures. ────────────────
+  #
+  # Found the hard way. The pre-push test-gate runs the suite from inside `git push`, which
+  # scripts/land.sh spawns while HOLDING the landing lock — so every child of that push inherits
+  # ALGOVAULT_LOCK_HELD_LANDING, and the "--detect OUTSIDE a lock reports BYPASSED" case saw the
+  # ambient marker and correctly answered ACQUIRED. The detector was right; the fixture was not
+  # isolated. A self-test must CONSTRUCT its world, not inherit one, or it measures the harness.
+  for v in $(env | grep -E '^ALGOVAULT_LOCK_(HELD|DEPTH)_' | cut -d= -f1); do
+    unset "$v"
+  done
 
   st_assert() {  # <label> <actual> <expected>
     if [ "$2" = "$3" ]; then
@@ -579,6 +590,13 @@ algovault_lock__self_test() {
   ( algovault_lock__emit TIMEOUT       >/dev/null ); st_assert "TIMEOUT       -> 0 (fail-OPEN)" "$?" "0"
   ( algovault_lock__emit BYPASSED      >/dev/null ); st_assert "BYPASSED      -> 0 (report-only)" "$?" "0"
   ( algovault_lock__emit INDETERMINATE >/dev/null ); st_assert "INDETERMINATE -> 3" "$?" "3"
+
+  # ── 12b. MUST BE HERMETIC — an inherited ambient marker must not change any verdict. This is
+  # the case the pre-push gate found: the suite runs inside land.sh's lock, so every child sees
+  # ALGOVAULT_LOCK_HELD_LANDING unless the fixture clears it.
+  out="$(ALGOVAULT_LOCK_DIR="$root/j" ALGOVAULT_LOCK_HELD_LANDING="/nowhere/landing.lock" \
+        bash "$0" --detect landing 2>/dev/null | grep -oE 'LANDING_LOCK_VERDICT=[A-Z]+' | tail -1)"
+  st_assert "an INHERITED marker pointing at no real lock reports BYPASSED" "$out" "LANDING_LOCK_VERDICT=BYPASSED"
 
   # ── 12. MUST-RELEASE ON INTERRUPT, PROMPTLY.
   #
