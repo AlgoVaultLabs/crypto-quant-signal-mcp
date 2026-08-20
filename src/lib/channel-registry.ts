@@ -8,6 +8,7 @@
 //
 // DATA + TYPES ONLY: imports feature-registry (for tool coverage) — writes no HTML, imports no DOM.
 import { FEATURE_REGISTRY, publicToolNames, type FeatureSpec } from './feature-registry.js';
+import { FREE_MONTHLY_CALLS, planCallsLabel, planPriceLabel } from './plans.js';
 
 const APEX = 'https://algovault.com';
 const TG_BOT = 'https://t.me/algovaultofficialbot'; // the real, grepped handle — never invented.
@@ -46,6 +47,28 @@ export interface ChannelSpec {
  * `docsAnchors` reflect the A1 correction: `#testing-with-curl` is the MCP Streamable-HTTP handshake
  * (→ /mcp), NOT REST; the REST API is `#x402` (keyless pay-per-call) + `#knowledge-tools-api` (API-key /api/*).
  */
+/**
+ * Tool names reaching one reach-flag key — the A3 bridge, taking the KEY rather than the spec.
+ *
+ * `channelToolCoverage` below delegates here, so there is still exactly ONE derivation. The split
+ * exists because the `/rest-api` FAQ answers "which tools work over REST versus MCP" from the
+ * registry, and it has to do that while the `CHANNELS` literal is still being constructed — a
+ * hand-listed answer would be a second source that goes stale the first time a tool changes reach.
+ */
+function toolsReaching(registryChannel: RegistryChannelKey, registry: readonly FeatureSpec[] = FEATURE_REGISTRY): string[] {
+  const pub = new Set(publicToolNames());
+  return registry
+    .filter((f) => f.enabled && pub.has(f.name) && (f.channels as Record<string, boolean>)[registryChannel])
+    .map((f) => f.name);
+}
+
+/** Oxford-comma list, so a derived tool list reads as prose rather than as an array dump. */
+function andList(xs: string[]): string {
+  if (xs.length <= 1) return xs[0] ?? '';
+  if (xs.length === 2) return `${xs[0]} and ${xs[1]}`;
+  return `${xs.slice(0, -1).join(', ')}, and ${xs[xs.length - 1]}`;
+}
+
 export const CHANNELS: ChannelSpec[] = [
   {
     key: 'mcp',
@@ -106,6 +129,30 @@ export const CHANNELS: ChannelSpec[] = [
       {
         q: 'What format are responses in?',
         a: 'JSON. Every response carries the composite verdict plus an _algovault metadata block.',
+      },
+      // DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH2 — the five a paying integrator had to email us for.
+      // Every figure below is INTERPOLATED from the pricing SoT (`plans.ts`) and every tool list is
+      // DERIVED from the feature registry; a hand-typed number here would be a second source that
+      // goes stale the day a price moves, and the FAQ JSON-LD would publish the stale one.
+      {
+        q: 'Should I use an API key or x402?',
+        a: `Two rails, pick one. An API key bills a monthly plan and is sent as an Authorization: Bearer header. x402 pays per call in USDC on Base and needs no account. Choose a key for steady volume, x402 for one-off agent calls. Sign up at ${APEX}/signup, or send an x402 request and let your wallet settle it.`,
+      },
+      {
+        q: 'What are the tiers and limits?',
+        a: `Free gives ${FREE_MONTHLY_CALLS} calls a month. Starter gives ${planCallsLabel('starter')} for ${planPriceLabel('starter')} a month. Pro gives ${planCallsLabel('pro')} for ${planPriceLabel('pro')}. HOLD verdicts are not billed. Read the _algovault.quota block on any response for your live remaining count.`,
+      },
+      {
+        q: 'How do I know my API key is being applied?',
+        a: 'Read _algovault.auth on any response. An outcome of OK, with your paid tier beside it, means the key applied. A paid key reporting tier "free" was NOT applied — the request was served as anonymous. Check the header name and the Bearer prefix, then call again and re-read the block.',
+      },
+      {
+        q: 'What do the error codes mean?',
+        a: `Two shapes, so check both. Code -32602 arrives as HTTP 200 with result.isError set and the code inside the text. Codes -32003 and -32004 arrive as a JSON-RPC error object instead. Check error first, then result.isError. Read the full table at ${APEX}/docs#tools-errors.`,
+      },
+      {
+        q: 'Which tools work over REST, and which need MCP?',
+        a: `REST reaches ${andList(toolsReaching('httpX402'))}. MCP additionally reaches ${andList(toolsReaching('mcp').filter((t) => !toolsReaching('httpX402').includes(t)))}. Use REST for the signal tools from any language; use MCP when you also want the knowledge tools. Full reference at ${APEX}/docs#rest-api.`,
       },
     ],
   },
@@ -174,10 +221,7 @@ export function channelHref(c: ChannelSpec): string {
  * never hand-listed. `registry` injectable for tests.
  */
 export function channelToolCoverage(c: ChannelSpec, registry: readonly FeatureSpec[] = FEATURE_REGISTRY): string[] {
-  const pub = new Set(publicToolNames());
-  return registry
-    .filter((f) => f.enabled && pub.has(f.name) && (f.channels as Record<string, boolean>)[c.registryChannel])
-    .map((f) => f.name);
+  return toolsReaching(c.registryChannel, registry);
 }
 
 /** The set of feature-registry reach-flag keys the CHANNELS SoT covers — the nav drift trap checks against this. */

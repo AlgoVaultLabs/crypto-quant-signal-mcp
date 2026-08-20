@@ -70,6 +70,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve, basename } from 'node:path';
 import { realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PARTIALS = join(ROOT, 'docs-src', 'partials');
@@ -445,6 +446,60 @@ export function missingResponseFieldBlocks(html, anchors) {
     const rows = responseFieldsFor(html, a);
     return !rows || rows.length === 0;
   });
+}
+
+/** A short human label for a dropped block, so the failure names WHAT went missing. */
+function blockLabel(html) {
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim();
+  return text.slice(0, 64) || '(empty block)';
+}
+
+/**
+ * A channel page must carry every `<table>` and every `<pre>` its docs sections carry.
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH2.
+ *
+ * `/rest-api` published **0 tables** while its docs section published **2** — the x402 pricing
+ * table and the `/api/*` endpoint table — because the generator took the first `<pre>` per anchor
+ * and everything else was dropped BY CONSTRUCTION. No upstream edit could have fixed it: the page
+ * could never be more complete than one code block. This leg is the structural guarantee that it
+ * cannot happen again, and it names any block that goes missing rather than reporting a count.
+ */
+export function compareChannelProjection(slug, anchors, docsHtml, pageHtml, extract) {
+  const failures = [];
+  // Vacuity at CONSTRUCTION: a channel with no anchors has nothing to project, and "nothing
+  // dropped" over an empty set is not the same as a complete page.
+  if (!anchors || anchors.length === 0) return [`${slug}: declares NO docs anchors — there is nothing to project, which is not the same as a complete page`];
+  for (const a of anchors) {
+    const slice = extract(docsHtml, a);
+    if (!slice) { failures.push(`${slug}: docs anchor ${a} extracts nothing — the page has no source to project`); continue; }
+    if (!pageHtml.includes(slice)) {
+      failures.push(`${slug}: the ${a} section is not projected VERBATIM onto landing/${slug}.html`);
+    }
+    for (const m of [...slice.matchAll(/<table[\s\S]*?<\/table>/g), ...slice.matchAll(/<pre[\s\S]*?<\/pre>/g)]) {
+      if (!pageHtml.includes(m[0])) failures.push(`${slug}: ${a} DROPPED a block — ${blockLabel(m[0])}`);
+    }
+  }
+  return failures;
+}
+
+/**
+ * The `#testing-with-curl` block leads the MCP channel's curl guidance, and lands on `/mcp` intact.
+ *
+ * Replaces a leg that asserted the FIRST `<pre>` of `landing/mcp.html` contains `curl`. That was
+ * permanently RED on an untouched tree: `pre[0]` is the `mcpServers` JSON config from
+ * `#connect-mcp`, and the curl block is `pre[1]` — the generator reads the first `<pre>` PER
+ * ANCHOR, so page position was never the property worth asserting. Two consecutive specs imported
+ * that leg before it was measured. This asserts the property instead of the position.
+ */
+export function compareCurlBlock(docsHtml, mcpHtml) {
+  const i = docsHtml.indexOf('id="testing-with-curl"');
+  if (i < 0) return ['/mcp: docs.html has no #testing-with-curl anchor — the section this leg guards is gone'];
+  const blk = /<pre[\s\S]*?<\/pre>/.exec(docsHtml.slice(i));
+  if (!blk) return ['/mcp: no <pre> follows #testing-with-curl in docs.html'];
+  const failures = [];
+  if (!blk[0].includes('curl')) failures.push('/mcp: the first block after #testing-with-curl is no longer a curl invocation');
+  if (!mcpHtml.includes(blk[0])) failures.push('/mcp: the #testing-with-curl block is not carried byte-identically on landing/mcp.html');
+  return failures;
 }
 
 /**
@@ -887,6 +942,50 @@ export function selfTest() {
   check('P8-RF FAILS a tool with no Response Fields block', missingResponseFieldBlocks(rfPage, ['a', 'b']).join(','), 'b');
   check('P8-RF FAILS a tool whose section is absent entirely', missingResponseFieldBlocks(rfPage, ['ghost']).join(','), 'ghost');
 
+  // ── P8-CH — proven fallible on a dropped block and on a broken curl leg ────
+  const DOCS_FIX =
+    '<h4 id="x402" class="k">head</h4><p>intro</p>' +
+    '<table><tr><td>price</td></tr></table>' +
+    '<pre><code>curl -sS https://api.example/x</code></pre>' +
+    '<h4 id="next-thing">n</h4>';
+  const sliceOf = (d, a) => {
+    const i = d.indexOf(`id="${a.replace(/^#/, '')}"`);
+    if (i < 0) return null;
+    const after = d.slice(i);
+    const n = after.slice(1).search(/id="[a-z][a-z0-9-]*"/);
+    return n < 0 ? after : after.slice(0, n + 1);
+  };
+  const fullPage = `<html>${sliceOf(DOCS_FIX, '#x402')}</html>`;
+  check('P8-CH accepts a page carrying the whole projected slice',
+    compareChannelProjection('rest-api', ['#x402'], DOCS_FIX, fullPage, sliceOf).length, 0);
+  // THE case this leg exists for: the table silently absent, which is what shipped for months.
+  const noTable = fullPage.replace(/<table[\s\S]*?<\/table>/, '');
+  const dropped = compareChannelProjection('rest-api', ['#x402'], DOCS_FIX, noTable, sliceOf);
+  check('P8-CH FAILS a page that DROPPED a table', dropped.length > 0, true);
+  check('P8-CH NAMES the dropped table, not just a count', dropped.some((f) => /DROPPED a block/.test(f) && /price/.test(f)), true);
+  check('P8-CH FAILS a page missing the slice entirely',
+    compareChannelProjection('rest-api', ['#x402'], DOCS_FIX, '<html></html>', sliceOf).length > 0, true);
+  check('P8-CH treats a channel with NO anchors as a construction fault, never as clean',
+    compareChannelProjection('rest-api', [], DOCS_FIX, fullPage, sliceOf).length, 1);
+  check('P8-CH FAILS an anchor that extracts nothing',
+    compareChannelProjection('rest-api', ['#ghost'], DOCS_FIX, fullPage, sliceOf)
+      .some((f) => /extracts nothing/.test(f)), true);
+
+  const CURLDOCS = '<span id="testing-with-curl"></span><pre><code>curl -sS x</code></pre>';
+  check('P8-CURL accepts the curl block present on /mcp',
+    compareCurlBlock(CURLDOCS, '<html><pre><code>curl -sS x</code></pre></html>').length, 0);
+  check('P8-CURL FAILS when /mcp does not carry the block',
+    compareCurlBlock(CURLDOCS, '<html></html>').some((f) => /not carried byte-identically/.test(f)), true);
+  check('P8-CURL FAILS when the block after the anchor stops being curl',
+    compareCurlBlock('<span id="testing-with-curl"></span><pre><code>npm i x</code></pre>', '<html><pre><code>npm i x</code></pre></html>')
+      .some((f) => /no longer a curl invocation/.test(f)), true);
+  // The leg it replaces asserted pre[0] of the PAGE. Position is not the property: on the real page
+  // pre[0] is the mcpServers JSON and the curl block is pre[1], so that leg was permanently red.
+  check('P8-CURL does not care about the block\'s POSITION on the page',
+    compareCurlBlock(CURLDOCS, '<html><pre><code>{"mcpServers":{}}</code></pre><pre><code>curl -sS x</code></pre></html>').length, 0);
+  check('P8-CURL treats a missing anchor as a failure, never as agreement',
+    compareCurlBlock('<html></html>', '<html></html>').length, 1);
+
   // ── the BYPASSED SEAM for both new legs ────────────────────────────────────
   const rend2 = loadRendered();
   if (rend2.error) { failed.push(`bypassed artifact: ${rend2.error}`); console.log(`  ✗ bypassed artifact: ${rend2.error}`); }
@@ -911,6 +1010,25 @@ export function selfTest() {
     check('bypassed artifact: no lens is rendered TWICE (a self-mapping alias must not duplicate a row)',
       new Set(realLenses || []).size, (realLenses || []).length);
     check('bypassed artifact: the real page carries no parameter deferral', findParamDeferrals(rend2.html).length, 0);
+    // P8-CH's cases above run on synthetic HTML with a synthetic extractor — blind, by construction,
+    // to the real extractor and the real pages. Assert those here.
+    try {
+      const req = createRequire(import.meta.url);
+      const chan = req(join(ROOT, 'dist', 'lib', 'channel-registry.js'));
+      const bcp = req(join(ROOT, 'scripts', 'build_channel_pages.mjs'));
+      const real = [];
+      for (const ch of chan.hostedChannels()) {
+        const f = join(ROOT, 'landing', `${ch.slug}.html`);
+        if (!existsSync(f)) { real.push(`landing/${ch.slug}.html missing`); continue; }
+        real.push(...compareChannelProjection(ch.slug, ch.docsAnchors, rend2.html, readFileSync(f, 'utf8'), bcp.extractSection));
+      }
+      check('bypassed artifact: every REAL channel page carries its whole docs section', real.join('; '), '');
+      check('bypassed artifact: /rest-api really renders BOTH docs tables',
+        (readFileSync(join(ROOT, 'landing', 'rest-api.html'), 'utf8').match(/<table/g) || []).length >= 2, true);
+    } catch (err) {
+      failed.push(`bypassed artifact: channel projection unreadable — ${err?.message || err}`);
+      console.log(`  ✗ bypassed artifact: channel projection unreadable — ${err?.message || err}`);
+    }
   }
 
   console.log(`SELF-TEST: ${failed.length === 0 ? 'PASS' : 'FAIL'} (${passed} passed, ${failed.length} failed)`);
@@ -1038,6 +1156,38 @@ async function main() {
   results.push(p8);
   const p8mark = p8.failures.length ? '✗' : '✓';
   console.log(`  ${p8mark} P8 landing/docs.html [static] — ${closedValues} closed-set value(s), ${deferrals.length} deferral(s), ${toolAnchors.length - bare.length}/${toolAnchors.length} tools documenting their response`);
+
+  // ── P8-CH — a channel page is never thinner than the docs section it projects ──
+  const p8ch = { id: 'P8-CH', source: 'landing/<channel>.html', status: 200, failures: [], transportError: null };
+  let chanMod = null;
+  let bcpMod = null;
+  try {
+    chanMod = await import(pathToFileURL(join(ROOT, 'dist', 'lib', 'channel-registry.js')).href);
+    bcpMod = await import(pathToFileURL(join(ROOT, 'scripts', 'build_channel_pages.mjs')).href);
+  } catch (err) {
+    emit('INDETERMINATE', `P8-CH: could not load the channel registry or its generator (${err?.message || err}) — run \`npm run build\` first`);
+  }
+  const hosted = chanMod.hostedChannels();
+  if (hosted.length === 0) {
+    emit('INDETERMINATE', 'P8-CH: no hosted channels declared — completeness over an empty set is vacuous, not clean');
+  }
+  let projBlocks = 0;
+  for (const ch of hosted) {
+    const pagePath = join(ROOT, 'landing', `${ch.slug}.html`);
+    if (!existsSync(pagePath)) {
+      emit('INDETERMINATE', `P8-CH: landing/${ch.slug}.html is missing — run \`node scripts/build_channel_pages.mjs\``);
+    }
+    const pageHtml = readFileSync(pagePath, 'utf8');
+    p8ch.failures.push(...compareChannelProjection(ch.slug, ch.docsAnchors, loaded.html, pageHtml, bcpMod.extractSection));
+    for (const a of ch.docsAnchors) {
+      const sl = bcpMod.extractSection(loaded.html, a) ?? '';
+      projBlocks += [...sl.matchAll(/<table[\s\S]*?<\/table>/g)].length + [...sl.matchAll(/<pre[\s\S]*?<\/pre>/g)].length;
+    }
+  }
+  p8ch.failures.push(...compareCurlBlock(loaded.html, readFileSync(join(ROOT, 'landing', 'mcp.html'), 'utf8')));
+  results.push(p8ch);
+  const p8chMark = p8ch.failures.length ? '✗' : '✓';
+  console.log(`  ${p8chMark} P8-CH landing/<channel>.html [static] — ${hosted.length} channel page(s), ${projBlocks} projected table/code block(s) all present`);
 
   // ── P7-ENV — the documented response envelope against a live response ──────
   // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH2. A paying integrator had to email to learn

@@ -84,6 +84,46 @@ tailwind.config = {
         "@type": "Answer",
         "text": "JSON. Every response carries the composite verdict plus an _algovault metadata block."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "Should I use an API key or x402?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Two rails, pick one. An API key bills a monthly plan and is sent as an Authorization: Bearer header. x402 pays per call in USDC on Base and needs no account. Choose a key for steady volume, x402 for one-off agent calls. Sign up at https://algovault.com/signup, or send an x402 request and let your wallet settle it."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What are the tiers and limits?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Free gives 200 calls a month. Starter gives 10,000 for $9.99 a month. Pro gives 100,000 for $49. HOLD verdicts are not billed. Read the _algovault.quota block on any response for your live remaining count."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I know my API key is being applied?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Read _algovault.auth on any response. An outcome of OK, with your paid tier beside it, means the key applied. A paid key reporting tier \"free\" was NOT applied — the request was served as anonymous. Check the header name and the Bearer prefix, then call again and re-read the block."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What do the error codes mean?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Two shapes, so check both. Code -32602 arrives as HTTP 200 with result.isError set and the code inside the text. Codes -32003 and -32004 arrive as a JSON-RPC error object instead. Check error first, then result.isError. Read the full table at https://algovault.com/docs#tools-errors."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which tools work over REST, and which need MCP?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "REST reaches get_trade_call, get_market_regime, scan_funding_arb, and scan_trade_calls. MCP additionally reaches chat_knowledge and search_knowledge. Use REST for the signal tools from any language; use MCP when you also want the knowledge tools. Full reference at https://algovault.com/docs#rest-api."
+      }
     }
   ]
 }
@@ -103,10 +143,16 @@ tailwind.config = {
   .ch-summary { font-size: 18px; line-height: 1.6; color: var(--fg, #f5f7fa); border-left: 3px solid var(--mint, oklch(0.86 0.16 165)); padding: 4px 0 4px 18px; margin: 0 0 44px; }
   .ch-wrap h2 { font-family: var(--font-display, 'Inter Tight', sans-serif); font-size: 24px; font-weight: 600; color: var(--fg, #f5f7fa); margin: 44px 0 14px; letter-spacing: -0.01em; }
   .ch-wrap p { font-size: 15.5px; line-height: 1.7; color: var(--fg-2, #d1d5db); margin: 0 0 16px; }
-  .ch-code { margin: 18px 0; }
-  .ch-code pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 16px; margin: 0; }
-  .ch-code pre code { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12.5px; line-height: 1.65; color: var(--fg, #f5f7fa); background: none; }
+  .ch-section { margin: 18px 0; }
+  .ch-section pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 16px; margin: 0; }
+  .ch-section pre code { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12.5px; line-height: 1.65; color: var(--fg, #f5f7fa); background: none; }
   .ch-code-ref { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--mint, oklch(0.86 0.16 165)); text-decoration: none; }
+  .code-block { position: relative; }
+  .code-block .copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 10px; font-size: 11px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #8b949e; cursor: pointer; transition: all 0.15s; }
+  .code-block .copy-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+  .param-row td { padding: 8px 12px; border-bottom: 1px solid #21262d; font-size: 13px; }
+  .param-row td:first-child { font-family: 'SF Mono', monospace; color: #d4b255; font-size: 12px; }
+  .param-row:last-child td { border-bottom: none; }
   .ch-coverage { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
   .ch-coverage li a { display: inline-block; font-family: var(--font-mono, monospace); font-size: 13px; color: var(--fg-2, #d1d5db); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 4px 12px; text-decoration: none; }
   .ch-coverage li a:hover { color: var(--mint, oklch(0.86 0.16 165)); border-color: var(--mint, oklch(0.86 0.16 165)); }
@@ -286,8 +332,25 @@ tailwind.config = {
   <p>Use the REST API for HTTP access without an MCP client — a serverless function, a cron job, a non-MCP agent runtime. Keyless x402 needs no account and settles per call; API-key access suits steady volume. It is a plain request/response API, not the MCP protocol — if your framework speaks MCP, prefer the MCP server for typed tool discovery.</p>
 
   <h2>Connect</h2>
-      <div class="ch-code">
-<pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
+      <div class="ch-section">
+<h4 id="x402" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-2">x402 Pay-Per-Call (USDC on Base)</h4>
+      <p class="text-gray-400 text-sm mb-5 leading-relaxed">No signup. No API key. No billing. Your agent pays per HTTP call with USDC on <a href="https://www.base.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">Base</a> &mdash; the payment receipt <em>is</em> the credential. Works with any x402-compatible client or wallet.</p>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How it works</h4>
+      <div class="bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <ol class="list-decimal pl-5 space-y-2.5">
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Call the endpoint</span><span class="text-gray-400"> &mdash; your agent POSTs to an x402 route (e.g. <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">/x402/get_trade_call</code>) with no payment attached.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Receive a 402 quote</span><span class="text-gray-400"> &mdash; the server replies <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">402 Payment Required</code> with the price, asset (USDC), network (Base), and recipient address.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Sign &amp; retry</span><span class="text-gray-400"> &mdash; your x402 client signs an ERC-3009 <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">transferWithAuthorization</code> and retries with the signed <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">X-PAYMENT</code> header. The facilitator submits it on-chain, so your agent pays no gas.</span></li>
+          <li class="text-gray-300 text-sm leading-relaxed"><span class="font-semibold text-white">Get your verdict</span><span class="text-gray-400"> &mdash; the server verifies the signature and returns the result immediately; settlement confirms on Base in ~2 seconds.</span></li>
+        </ol>
+      </div>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick start (TypeScript)</h4>
+      <p class="text-gray-400 text-sm mb-3 leading-relaxed">The official <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code> client wraps <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">fetch</code> and runs the 402 &rarr; sign &rarr; retry handshake for you. Your wallet just needs USDC on Base.</p>
+      <div class="code-block bg-navy-700 border border-white/5 rounded-xl p-5 mb-6">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        <pre><code class="text-sm text-gray-300">// npm i x402-fetch viem
 import { wrapFetchWithPayment } from "x402-fetch";
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -310,7 +373,51 @@ const res = await fetchWithPay("https://api.algovault.com/x402/get_trade_call", 
 
 const verdict = await res.json();
 console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
+      </div>
+
+      <div class="bg-navy-700 border border-amber-500/30 rounded-xl p-5 mb-6">
+        <h5 class="text-sm font-semibold text-white mb-2">Set <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">content-type</code> exactly once</h5>
+        <p class="text-gray-400 text-sm leading-relaxed mb-2">The two common x402 clients have <span class="font-semibold text-white">opposite</span> requirements, and getting it wrong produces the same <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">400 invalid_content_type</code> <em>after</em> your payment has already verified (you are not charged):</p>
+        <ul class="space-y-1.5 list-disc list-inside">
+          <li class="text-gray-400 text-sm leading-relaxed"><code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">x402-fetch</code> wraps raw <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">fetch</code>, which sends a string body as <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">text/plain</code> &mdash; so you <span class="font-semibold text-white">must</span> pass <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">content-type: application/json</code> yourself, as above.</li>
+          <li class="text-gray-400 text-sm leading-relaxed">Circle's <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded text-emerald-400">GatewayClient.pay()</code> (the Circle Gateway rail advertised on every 402) already sets <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">Content-Type</code> &mdash; so you must <span class="font-semibold text-white">not</span>. Adding your own leaves both capitalisations in the options object; <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">fetch</code> then merges them into <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">application/json, application/json</code>, which no JSON parser accepts. Pass <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">body</code> as a plain object and omit <code class="text-xs bg-navy-800 px-1.5 py-0.5 rounded">headers</code> entirely.</li>
+        </ul>
+      </div>
+
+      <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoints &amp; pricing</h4>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-4">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Endpoint</th>
+          <th class="text-right text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Price / call</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_trade_call</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02 <span class="text-gray-500 text-xs">(HFT 1m&ndash;5m: up to $0.05)</span></td></tr>
+          <tr class="border-b border-white/10"><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/scan_funding_arb</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.01</td></tr>
+          <tr><td class="text-gray-300 text-sm px-4 py-2.5"><code class="text-xs">POST /x402/get_market_regime</code></td><td class="text-right text-white text-sm px-4 py-2.5">$0.02</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-2">Base URL <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded text-emerald-400">https://api.algovault.com</code>.</p>
+      <p class="text-gray-400 text-sm">New to x402? The open protocol spec and client libraries (<code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-fetch</code>, <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">x402-axios</code>) live at <a href="https://x402.org" target="_blank" rel="noopener noreferrer" class="text-mint-400 hover:underline">x402.org</a>.</p>
         <a class="ch-code-ref" href="https://algovault.com/docs.html#x402">Full reference in the docs →</a>
+      </div>
+      <div class="ch-section">
+<h4 id="knowledge-tools-api" class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 mt-8">HTTP API (search &amp; chat)</h4>
+      <p class="text-gray-400 text-sm mb-5">Both tools also expose plain HTTP endpoints for non-MCP consumers. Send a JSON body, read a JSON response &mdash; no JSON-RPC envelope, no dual <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">Accept</code> header, no SSE to unwrap.</p>
+      <p class="text-gray-400 text-sm mb-5">Trade calls are served over <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">POST /mcp</code> and the <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/x402/*</code> routes. There is no separate <code class="text-xs bg-navy-700 px-1.5 py-0.5 rounded">/api/trade-call</code> endpoint.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Endpoint</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3">Body</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-4 py-3 w-44">Cache</th>
+        </tr></thead>
+        <tbody>
+          <tr class="border-b border-white/10"><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/search</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"query": "string", "limit": 10}</code></td><td class="text-gray-400 text-sm px-4 py-3">public, max-age=300</td></tr>
+          <tr><td class="text-white text-sm px-4 py-3 font-medium"><code class="text-xs">POST /api/chat</code></td><td class="text-gray-400 text-sm px-4 py-3"><code class="text-xs">{"question": "string", "model": "..."}</code></td><td class="text-gray-400 text-sm px-4 py-3">no-store (per-user)</td></tr>
+        </tbody>
+      </table>
+      <p class="text-gray-500 text-xs mb-6">Error contract: <code class="text-xs">INVALID_QUERY</code> / <code class="text-xs">QUERY_TOO_SHORT</code> / <code class="text-xs">QUERY_TOO_LONG</code> / <code class="text-xs">INVALID_QUESTION</code> / <code class="text-xs">QUESTION_TOO_SHORT</code> / <code class="text-xs">QUESTION_TOO_LONG</code> / <code class="text-xs">INVALID_MODEL</code> / <code class="text-xs">CHAT_QUOTA_EXHAUSTED</code> / <code class="text-xs">INTERNAL_ERROR</code>. All return JSON <code class="text-xs">{"code": "...", "message": "..."}</code>.</p>
+      <p class="text-gray-400 text-sm mt-8"><a href="https://algovault.com/rest-api" class="text-mint-400 hover:underline font-medium">Full REST API guide &rarr;</a></p>
+        <a class="ch-code-ref" href="https://algovault.com/docs.html#knowledge-tools-api">Full reference in the docs →</a>
       </div>
 
   <h2>Tool coverage</h2>
@@ -327,6 +434,11 @@ console.log(verdict.call, verdict.confidence); // e.g. "BUY" 72</code></pre>
       <details class="ch-faq"><summary>What's the difference between the x402 and /api endpoints?</summary><p>x402 is keyless pay-per-call (USDC on Base) for the signal tools; the /api/* endpoints (for example /api/search and /api/chat) use an API key. Both are plain HTTP.</p></details>
       <details class="ch-faq"><summary>Do I need the MCP handshake for the REST API?</summary><p>No. The REST API is a plain request/response HTTP call — no initialize or session handshake. That handshake belongs to the MCP-over-HTTP transport, not to this channel.</p></details>
       <details class="ch-faq"><summary>What format are responses in?</summary><p>JSON. Every response carries the composite verdict plus an _algovault metadata block.</p></details>
+      <details class="ch-faq"><summary>Should I use an API key or x402?</summary><p>Two rails, pick one. An API key bills a monthly plan and is sent as an Authorization: Bearer header. x402 pays per call in USDC on Base and needs no account. Choose a key for steady volume, x402 for one-off agent calls. Sign up at https://algovault.com/signup, or send an x402 request and let your wallet settle it.</p></details>
+      <details class="ch-faq"><summary>What are the tiers and limits?</summary><p>Free gives 200 calls a month. Starter gives 10,000 for $9.99 a month. Pro gives 100,000 for $49. HOLD verdicts are not billed. Read the _algovault.quota block on any response for your live remaining count.</p></details>
+      <details class="ch-faq"><summary>How do I know my API key is being applied?</summary><p>Read _algovault.auth on any response. An outcome of OK, with your paid tier beside it, means the key applied. A paid key reporting tier &quot;free&quot; was NOT applied — the request was served as anonymous. Check the header name and the Bearer prefix, then call again and re-read the block.</p></details>
+      <details class="ch-faq"><summary>What do the error codes mean?</summary><p>Two shapes, so check both. Code -32602 arrives as HTTP 200 with result.isError set and the code inside the text. Codes -32003 and -32004 arrive as a JSON-RPC error object instead. Check error first, then result.isError. Read the full table at https://algovault.com/docs#tools-errors.</p></details>
+      <details class="ch-faq"><summary>Which tools work over REST, and which need MCP?</summary><p>REST reaches get_trade_call, get_market_regime, scan_funding_arb, and scan_trade_calls. MCP additionally reaches chat_knowledge and search_knowledge. Use REST for the signal tools from any language; use MCP when you also want the knowledge tools. Full reference at https://algovault.com/docs#rest-api.</p></details>
 
   <a class="ch-cta" href="https://algovault.com/tools">Explore the tools →</a>
 </main>

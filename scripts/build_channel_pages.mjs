@@ -27,16 +27,106 @@ const DOCS = 'https://algovault.com/docs.html';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** Extract the FIRST <pre>…</pre> block in a docs.html section (anchor id → next id). Verbatim. */
-function extractFirstPre(docsHtml, anchorId) {
+/**
+ * Trim the tail of a raw section slice so it is well-formed on its own.
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH2.
+ *
+ * A boundary computed from "the next `id=` attribute" lands INSIDE the next block, and the three
+ * things that end up on the wrong side of it are all measured, not hypothetical:
+ *
+ *   `#testing-with-curl`   is the LAST anchor in its parent, so the slice runs through the
+ *   `#knowledge-tools-api` parent's `</section>` — a stray closing tag that, injected into a
+ *                          channel page, closes THAT page's section early. Real DOM corruption.
+ *   `#connect-mcp`         is followed by `<div class="mb-16">` + `<!-- BUILD:connect-ai-agent:start -->`,
+ *                          so the slice ends with the NEXT block's opening tag and marker comment.
+ *
+ * A global open/close tag count does not catch the second case — `<div>` happened to balance across
+ * the whole slice, which is exactly why this trims the TAIL structurally rather than counting.
+ */
+export function trimSliceTail(html) {
+  let s = html;
+  for (;;) {
+    const t = s.replace(/\s+$/, '');
+    // (a) a comment belonging to the next block
+    let m = /<!--(?:(?!-->)[\s\S])*-->$/.exec(t);
+    if (m) { s = t.slice(0, m.index); continue; }
+    // (b) an unmatched CLOSING tag — it belongs to a PARENT the slice never opened
+    m = /<\/([a-z][a-z0-9]*)>$/.exec(t);
+    if (m) {
+      const tag = m[1];
+      const opens = (t.match(new RegExp(`<${tag}\\b`, 'g')) || []).length;
+      const closes = (t.match(new RegExp(`</${tag}>`, 'g')) || []).length;
+      if (closes > opens) { s = t.slice(0, m.index); continue; }
+      return t;
+    }
+    // (c) a trailing OPENING tag with nothing inside it — the next block's container
+    m = /<([a-z][a-z0-9]*)\b[^>]*>$/.exec(t);
+    if (m) { s = t.slice(0, m.index); continue; }
+    return t;
+  }
+}
+
+/**
+ * Extract the WHOLE section body for a docs anchor. Verbatim, byte-identical to `docs.html`.
+ *
+ * Replaces `extractFirstPre`, which returned the first `<pre>` per anchor and therefore dropped
+ * every table BY CONSTRUCTION: `/rest-api` carried 0 tables while its docs section carried 2 (the
+ * x402 pricing table and the `/api/*` endpoint table), and no upstream edit could ever have fixed
+ * that. A page that excerpts can be thinner than its source; a page that projects cannot.
+ *
+ * 🛑 THE BOUNDARY IS THE NEXT `id=` OF **ANY** KIND, NOT THE NEXT `<section>`. `#x402` and
+ * `#knowledge-tools-api` are `<h4>`s INSIDE `<section id="rest-api">`. Widening to a section-level
+ * boundary makes `#x402` swallow `#knowledge-tools-api`, and the `/api/*` table renders TWICE on a
+ * public page. Measured at the any-id boundary they slice cleanly and disjointly: 8,104ch/1 table
+ * and 2,684ch/1 table.
+ *
+ * The START is the enclosing element's opening `<`. The old extractor began immediately AFTER the
+ * `id="…"` attribute — harmless when only a `<pre>` was pulled back out of the slice, and broken
+ * HTML (`' class="text-sm…'`) the moment the slice ITSELF is what gets returned.
+ */
+export function extractSection(docsHtml, anchorId) {
   const id = anchorId.replace(/^#/, ''); // docsAnchors carry the "#"; the id= attribute does not.
-  const start = docsHtml.indexOf(`id="${id}"`);
-  if (start < 0) return null;
-  const after = docsHtml.slice(start + id.length + 5);
-  const nextIdx = after.search(/id="[a-z][a-z0-9-]*"/);
-  const section = nextIdx < 0 ? after : after.slice(0, nextIdx);
-  const m = section.match(/<pre[\s\S]*?<\/pre>/);
-  return m ? m[0] : null;
+  const attr = `id="${id}"`;
+  const at = docsHtml.indexOf(attr);
+  if (at < 0) return null;
+  const open = docsHtml.lastIndexOf('<', at);
+  if (open < 0) return null;
+  const after = docsHtml.slice(at + attr.length);
+  const next = after.search(/id="[a-z][a-z0-9-]*"/);
+  const endAbs = next < 0 ? docsHtml.length : at + attr.length + next;
+  const cut = docsHtml.lastIndexOf('<', endAbs);
+  const raw = docsHtml.slice(open, cut > open ? cut : endAbs);
+  const body = trimSliceTail(raw);
+  return body.trim() ? body : null;
+}
+
+/**
+ * The docs-template CSS rules the PROJECTED content depends on, read from the template itself.
+ *
+ * A whole-section projection brings `.param-row` tables and `.code-block`/`.copy-btn` code blocks
+ * onto a channel page, and those three classes are styled ONLY in `docs-src/template.html`. Copying
+ * the rules into this generator would be a second source that drifts the first time either page is
+ * restyled — so they are extracted, not duplicated.
+ *
+ * Refuses on a short read: if the template stops carrying one of these selectors, the projected
+ * tables render unstyled on three public pages, and a silent partial extraction is exactly how that
+ * would ship unnoticed.
+ */
+function projectedContentCss(templateHtml) {
+  const WANT = ['.code-block', '.param-row'];
+  const rules = templateHtml
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => WANT.some((w) => l.startsWith(w)) && l.endsWith('}'));
+  for (const w of WANT) {
+    if (!rules.some((r) => r.startsWith(w))) {
+      throw new Error(
+        `build_channel_pages: no \`${w}\` rule found in docs-src/template.html — the projected ` +
+          'tables and code blocks would render unstyled on every channel page',
+      );
+    }
+  }
+  return rules.map((r) => `  ${r}`).join('\n');
 }
 
 /** Per-channel SEO keywords (routing/discovery terms — no volatile counts). */
@@ -83,15 +173,16 @@ function faqJsonLd(c) {
 }
 
 function renderChannelPage(c, deps) {
-  const { channelToolCoverage, publicToolEntries, docsHtml, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet } = deps;
+  const { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet } = deps;
   const anchor = c.docsAnchors[0] ?? '';
-  // Verbatim code blocks from the channel's docs sections (Rule 3).
+  // The channel's docs sections, projected WHOLE and verbatim (Rule 3) — tables, notes and
+  // response-field blocks included, not just the first code block.
   const codeBlocks = c.docsAnchors
-    .map((a) => ({ a, pre: extractFirstPre(docsHtml, a) }))
-    .filter((x) => x.pre)
+    .map((a) => ({ a, body: extractSection(docsHtml, a) }))
+    .filter((x) => x.body)
     .map(
       (x) =>
-        `      <div class="ch-code">\n${x.pre}\n        <a class="ch-code-ref" href="${DOCS}${x.a}">Full reference in the docs →</a>\n      </div>`,
+        `      <div class="ch-section">\n${x.body}\n        <a class="ch-code-ref" href="${DOCS}${x.a}">Full reference in the docs →</a>\n      </div>`,
     )
     .join('\n');
 
@@ -162,10 +253,11 @@ ${JSON.stringify({ '@context': 'https://schema.org', '@id': ORG_ID }, null, 2)}
   .ch-summary { font-size: 18px; line-height: 1.6; color: var(--fg, #f5f7fa); border-left: 3px solid var(--mint, oklch(0.86 0.16 165)); padding: 4px 0 4px 18px; margin: 0 0 44px; }
   .ch-wrap h2 { font-family: var(--font-display, 'Inter Tight', sans-serif); font-size: 24px; font-weight: 600; color: var(--fg, #f5f7fa); margin: 44px 0 14px; letter-spacing: -0.01em; }
   .ch-wrap p { font-size: 15.5px; line-height: 1.7; color: var(--fg-2, #d1d5db); margin: 0 0 16px; }
-  .ch-code { margin: 18px 0; }
-  .ch-code pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 16px; margin: 0; }
-  .ch-code pre code { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12.5px; line-height: 1.65; color: var(--fg, #f5f7fa); background: none; }
+  .ch-section { margin: 18px 0; }
+  .ch-section pre { overflow-x: auto; background: oklch(0.13 0.012 265); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 10px; padding: 16px; margin: 0; }
+  .ch-section pre code { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12.5px; line-height: 1.65; color: var(--fg, #f5f7fa); background: none; }
   .ch-code-ref { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--mint, oklch(0.86 0.16 165)); text-decoration: none; }
+${projectedCss}
   .ch-coverage { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
   .ch-coverage li a { display: inline-block; font-family: var(--font-mono, monospace); font-size: 13px; color: var(--fg-2, #d1d5db); border: 1px solid var(--line, rgba(255,255,255,0.08)); border-radius: 999px; padding: 4px 12px; text-decoration: none; }
   .ch-coverage li a:hover { color: var(--mint, oklch(0.86 0.16 165)); border-color: var(--mint, oklch(0.86 0.16 165)); }
@@ -218,7 +310,10 @@ export function buildChannelPages({ check = false, root = REPO_ROOT } = {}) {
   const { renderAnalyticsSnippet } = require(path.join(root, 'dist', 'lib', 'analytics-snippet.js'));
   const { renderBrandFooter } = require(path.join(root, 'dist', 'lib', 'footer-content.js'));
   const docsHtml = fs.readFileSync(path.join(root, 'landing', 'docs.html'), 'utf8');
-  const deps = { channelToolCoverage, publicToolEntries, docsHtml, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet };
+  // The projection brings `.param-row` / `.code-block` content onto these pages; those rules live
+  // only in the docs template, so they are READ from it rather than copied into this file.
+  const projectedCss = projectedContentCss(fs.readFileSync(path.join(root, 'docs-src', 'template.html'), 'utf8'));
+  const deps = { channelToolCoverage, publicToolEntries, docsHtml, projectedCss, renderSiteNav, renderBrandFooter, renderAnalyticsSnippet };
 
   const changed = [];
   const drifted = [];
