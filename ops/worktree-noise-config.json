@@ -55,5 +55,5 @@
       "added": "2026-08-20"
     }
   ],
-  "promotion": {}
+  "_promotion_note": "CH4 adds the real `promotion` block here (R4.4: max_class_a_stranded + not_before). It is deliberately ABSENT rather than an empty container: every object under ops/*.json keyed `promotion` inherits OPS-PROMOTION-INSTRUMENT-INDEPENDENCE-W1's contract and must declare an `instrument` (population / written_by / grade / reason), which an empty container cannot do and which CH1 must not pre-empt. CH1's validator ignores unknown top-level keys, so nothing needed reserving. CH4's instrument will be the untracked $GIT_COMMON_DIR run log, NOT this file — a promotion criterion counted in the file the subject edits is grade C."
 }

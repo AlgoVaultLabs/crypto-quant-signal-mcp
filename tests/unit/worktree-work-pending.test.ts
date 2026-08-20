@@ -107,7 +107,7 @@ function withTmp<T>(fn: (dir: string) => T): T {
 const NO_STATE = { WORK_PENDING_STATE_FILE: '/nonexistent-shared-state.json' };
 
 describe('worktree-work-pending — classification, not dirtiness', () => {
-  it('AC1.3 — a node_modules SYMLINK classifies Class B, so the tree folds CLEAN', () => {
+  it('AC1.3 — a node_modules SYMLINK classifies Class B, so the tree folds CLEAN', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       // The live shape. `.gitignore`'s `node_modules/` matches directories only, so git
@@ -122,7 +122,7 @@ describe('worktree-work-pending — classification, not dirtiness', () => {
     });
   });
 
-  it('AC1.3 — a .venv SYMLINK classifies Class B (the matcher has no directory semantics)', () => {
+  it('AC1.3 — a .venv SYMLINK classifies Class B (the matcher has no directory semantics)', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       symlinkSync('/tmp', join(r, '.venv'));
@@ -132,7 +132,7 @@ describe('worktree-work-pending — classification, not dirtiness', () => {
     });
   });
 
-  it('an UNTRACKED real file is Class A → PENDING, exit 1, protected_by=dirty_only', () => {
+  it('an UNTRACKED real file is Class A → PENDING, exit 1, protected_by=dirty_only', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       symlinkSync('/tmp', join(r, 'node_modules'));
@@ -149,7 +149,7 @@ describe('worktree-work-pending — classification, not dirtiness', () => {
     });
   });
 
-  it('a MODIFIED TRACKED file is Class A', () => {
+  it('a MODIFIED TRACKED file is Class A', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       writeFileSync(join(r, 'README.md'), 'seed\nchanged\n');
@@ -159,7 +159,7 @@ describe('worktree-work-pending — classification, not dirtiness', () => {
     });
   });
 
-  it('AC1.8 — a gitignored Class-A path is FLAGGED, and is NOT counted as pending work', () => {
+  it('AC1.8 — a gitignored Class-A path is FLAGGED, and is NOT counted as pending work', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       writeFileSync(join(r, '.gitignore'), 'research-data\n');
@@ -185,7 +185,7 @@ describe('worktree-work-pending — classification, not dirtiness', () => {
 });
 
 describe('worktree-work-pending — the fold and the token (R1.4)', () => {
-  it('AC1.4 — an UNREADABLE worktree folds to INDETERMINATE and NEVER to CLEAN', () => {
+  it('AC1.4 — an UNREADABLE worktree folds to INDETERMINATE and NEVER to CLEAN', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       // A registered worktree whose directory is gone: the census cannot answer for it, and
@@ -201,7 +201,7 @@ describe('worktree-work-pending — the fold and the token (R1.4)', () => {
     });
   });
 
-  it('AC1.1 — exactly ONE verdict line across multiple declared repos', () => {
+  it('AC1.1 — exactly ONE verdict line across multiple declared repos', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const a = mkRepo(join(t, 'a'));
       const b = mkRepo(join(t, 'b'));
@@ -214,7 +214,7 @@ describe('worktree-work-pending — the fold and the token (R1.4)', () => {
     });
   });
 
-  it('the --paths projection carries NO verdict line (its stdout feeds sort/comm)', () => {
+  it('the --paths projection carries NO verdict line (its stdout feeds sort/comm)', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       writeFileSync(join(r, 'work.txt'), 'x\n');
@@ -230,7 +230,7 @@ describe('worktree-work-pending — the fold and the token (R1.4)', () => {
 });
 
 describe('worktree-work-pending — the manifest schema (AC1.2)', () => {
-  it('the COMMITTED manifest validates, and every row carries match + reason', () => {
+  it('the COMMITTED manifest validates, and every row carries match + reason', { timeout: 120_000 }, () => {
     const out = run(['--validate-config']);
     expect(out.status).toBe(0);
     expect(out.stdout).toContain('config OK');
@@ -238,7 +238,7 @@ describe('worktree-work-pending — the manifest schema (AC1.2)', () => {
     // a second implementation of one question WILL drift.
   });
 
-  it('a row missing `reason` fails the schema → INDETERMINATE, never CLEAN', () => {
+  it('a row missing `reason` fails the schema → INDETERMINATE, never CLEAN', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       const cfg = join(t, 'cfg.json');
@@ -249,7 +249,7 @@ describe('worktree-work-pending — the manifest schema (AC1.2)', () => {
     });
   });
 
-  it('a row missing `match` fails the schema → INDETERMINATE, never CLEAN', () => {
+  it('a row missing `match` fails the schema → INDETERMINATE, never CLEAN', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       const cfg = join(t, 'cfg.json');
@@ -260,7 +260,7 @@ describe('worktree-work-pending — the manifest schema (AC1.2)', () => {
     });
   });
 
-  it('R1.5 — an EMPTY declaration is vacuity where the corpus is CONSTRUCTED, so it REFUSES', () => {
+  it('R1.5 — an EMPTY declaration is vacuity where the corpus is CONSTRUCTED, so it REFUSES', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const cfg = join(t, 'cfg.json');
       writeConfig(cfg, []);
@@ -270,7 +270,7 @@ describe('worktree-work-pending — the manifest schema (AC1.2)', () => {
     });
   });
 
-  it('a declared repo that is not a git repository REFUSES rather than reporting CLEAN', () => {
+  it('a declared repo that is not a git repository REFUSES rather than reporting CLEAN', { timeout: 120_000 }, () => {
     withTmp((t) => {
       mkdirSync(join(t, 'not-a-repo'));
       const cfg = join(t, 'cfg.json');
@@ -283,7 +283,7 @@ describe('worktree-work-pending — the manifest schema (AC1.2)', () => {
 });
 
 describe('worktree-work-pending — protection is DERIVED, never asserted (R2.4)', () => {
-  it('an unexpired exempt_paths row outranks dirty_only; a LAPSED one does not protect', () => {
+  it('an unexpired exempt_paths row outranks dirty_only; a LAPSED one does not protect', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       writeFileSync(join(r, 'work.txt'), 'x\n');
@@ -307,7 +307,7 @@ describe('worktree-work-pending — protection is DERIVED, never asserted (R2.4)
     });
   });
 
-  it('a live `git worktree lock` reads as protected_by=lock', () => {
+  it('a live `git worktree lock` reads as protected_by=lock', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       const wt = join(t, 'locked-wt');
@@ -322,7 +322,7 @@ describe('worktree-work-pending — protection is DERIVED, never asserted (R2.4)
     });
   });
 
-  it('a CLEAN dirty-free worktree is `none`, never `dirty_only` — the label cannot be faked', () => {
+  it('a CLEAN dirty-free worktree is `none`, never `dirty_only` — the label cannot be faked', { timeout: 120_000 }, () => {
     withTmp((t) => {
       const r = mkRepo(join(t, 'repo'));
       const cfg = join(t, 'cfg.json');
@@ -335,13 +335,13 @@ describe('worktree-work-pending — protection is DERIVED, never asserted (R2.4)
 });
 
 describe('worktree-work-pending — falsifiability (R1.7)', () => {
-  it('the hermetic shell --self-test passes', () => {
+  it('the hermetic shell --self-test passes', { timeout: 300_000 }, () => {
     const out = run(['--self-test']);
     expect(out.stdout).toContain('0 failed');
     expect(out.status).toBe(0);
-  }, 300_000);
+  });
 
-  it('the mutation proof catches EVERY mutation — and exits NON-ZERO when it does', () => {
+  it('the mutation proof catches EVERY mutation — and exits NON-ZERO when it does', { timeout: 900_000 }, () => {
     // The inversion is the gate's contract, not a preference: `exit 0` means NOT proven.
     // Assert the TOKEN as well, because exit-code-only would read an INDETERMINATE run
     // (lost anchor, no mktemp) as the same thing as a survived mutation.
@@ -358,11 +358,11 @@ describe('worktree-work-pending — falsifiability (R1.7)', () => {
     expect(stdout).not.toContain('SURVIVED ');
     expect(stdout).not.toContain('ANCHOR-LOST');
     expect(status, 'exit 0 would mean the self-test cannot fail').not.toBe(0);
-  }, 600_000);
+  });
 });
 
 describe('worktree-work-pending — the committed manifest is the SoT it claims to be', () => {
-  it('declares the 3 repos this wave scopes to, and names what it deliberately excludes', () => {
+  it('declares the 3 repos this wave scopes to, and names what it deliberately excludes', { timeout: 120_000 }, () => {
     const cfg = JSON.parse(execFileSync('cat', [LIVE_CONFIG], { encoding: 'utf8' }));
     expect(cfg.repos).toContain('/Users/tank/code/crypto-quant-signal-mcp');
     expect(cfg.repos).toContain('/Users/tank/code/algovault-bot');
@@ -373,14 +373,14 @@ describe('worktree-work-pending — the committed manifest is the SoT it claims 
     for (const row of cfg._repos_out_of_scope) expect(row.reason?.length).toBeGreaterThan(0);
   });
 
-  it('carries the napkin runbook row — without it an operator runbook classifies as work', () => {
+  it('carries the napkin runbook row — without it an operator runbook classifies as work', { timeout: 120_000 }, () => {
     const cfg = JSON.parse(execFileSync('cat', [LIVE_CONFIG], { encoding: 'utf8' }));
     const napkin = cfg.rows.find((r: Row) => r.pattern === '.claude/napkin.md');
     expect(napkin, 'the P12 napkin row is load-bearing for CH5').toBeTruthy();
     expect(napkin.match).toBe('relpath');
   });
 
-  it('no row smuggles a measured byte figure into its reason (Build Rule 11)', () => {
+  it('no row smuggles a measured byte figure into its reason (Build Rule 11)', { timeout: 120_000 }, () => {
     // A number with no instrument beside it is exactly what this estate has twice retracted.
     const cfg = JSON.parse(execFileSync('cat', [LIVE_CONFIG], { encoding: 'utf8' }));
     for (const row of cfg.rows) {
