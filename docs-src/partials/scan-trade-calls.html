@@ -11,12 +11,26 @@
           <tr class="param-row"><td>topN</td><td class="text-gray-400">number</td><td class="text-gray-400">Universe size to evaluate before ranking (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">20</code></td></tr>
           <!-- SCHEMA:tool-params:scan_trade_calls:start -->
           <!-- SCHEMA:tool-params:scan_trade_calls:end -->
-          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Universe-selection lens: <code class="text-xs bg-navy-800 px-1 rounded">oi</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">oi_change</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume</code>, &hellip; See <code class="text-xs bg-navy-800 px-1 rounded">/capabilities</code> for the live lens set.</td></tr>
+          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Which slice of the venue&rsquo;s assets gets evaluated. All nine lenses are listed below, with the short alias each one answers to. Default: <code class="text-xs bg-navy-800 px-1 rounded">oi</code></td></tr>
           <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked calls to return (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
           <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop calls below this confidence (0&ndash;100). Optional.</td></tr>
           <tr class="param-row"><td>includeHolds</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include HOLD verdicts in the results. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
           <tr class="param-row"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
           <tr class="param-row" style="border-bottom:none"><td>minLiquidityUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop assets whose 24h notional volume is below this floor, in USD. Optional.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Ranking lenses</h3>
+      <p class="text-gray-400 text-sm mb-3">Every value <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> accepts. Pass the lens or its alias &mdash; both resolve to the same universe.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Lens</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Alias</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Selects</th>
+        </tr></thead>
+        <tbody>
+          <!-- SCHEMA:tool-closed-set:scan_trade_calls:start -->
+          <!-- SCHEMA:tool-closed-set:scan_trade_calls:end -->
         </tbody>
       </table>
 

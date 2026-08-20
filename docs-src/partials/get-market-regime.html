@@ -39,3 +39,23 @@
   }
 }</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400">The classification. <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
+          <tr class="param-row"><td>confidence</td><td class="text-gray-400">number</td><td class="text-gray-400">How strongly the metrics agree on that classification, 0&ndash;100.</td></tr>
+          <tr class="param-row"><td>metrics</td><td class="text-gray-400">object</td><td class="text-gray-400">The readings behind the call &mdash; ADX and its slope with plain-language interpretations, volatility ratio, price structure, pivot quality, trend strength, cross-venue funding sentiment, the underlying session, and per-venue funding under <code class="text-xs bg-navy-800 px-1 rounded">funding_by_venue</code>.</td></tr>
+          <tr class="param-row"><td>suggestion</td><td class="text-gray-400">string</td><td class="text-gray-400">What the regime implies for strategy selection and position sizing, in one paragraph.</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation time.</td></tr>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">The asset evaluated, echoed back.</td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">The candle interval used, echoed back.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; <code class="text-xs bg-navy-800 px-1 rounded">version</code>, <code class="text-xs bg-navy-800 px-1 rounded">tool</code>, <code class="text-xs bg-navy-800 px-1 rounded">compatible_with</code>, <code class="text-xs bg-navy-800 px-1 rounded">session_id</code>, the resolved <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> and its <code class="text-xs bg-navy-800 px-1 rounded">venue_status</code>, your <code class="text-xs bg-navy-800 px-1 rounded">quota</code>, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code> (see <a href="#tools-errors" class="text-gold hover:underline">Errors &amp; troubleshooting</a>).</td></tr>
+        </tbody>
+      </table>

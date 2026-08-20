@@ -215,6 +215,73 @@ export function fillToolParamRegions(html, schemaMod) {
   return { html: out, filled, missing };
 }
 
+const closedSetMarker = (tool) => ({
+  start: `<!-- SCHEMA:tool-closed-set:${tool}:start -->`,
+  end: `<!-- SCHEMA:tool-closed-set:${tool}:end -->`,
+});
+
+/**
+ * The CLOSED-SET table for one tool: one row per value, its alias, and what it selects.
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1.
+ *
+ * A SEPARATE table from the parameter table above it, and that separation is load-bearing twice:
+ *
+ *   1. `check-docs-samples-live.mjs` `paramsTableFor` reads the FIRST `<table` in a section and
+ *      `responseFieldsFor` reads the first one after the "Response Fields" heading. A lens table
+ *      placed between them is invisible to both, so P7 keeps comparing parameters to parameters.
+ *   2. The rows carry `data-enum-value` (which the CH1 gate asserts by identity) WITHOUT the row
+ *      carrying `data-schema-param`. That matters: `rankBy` is `z.string().max(32)` and publishes
+ *      NO `enum`, so a row advertising itself as schema-projected would make P7 red — correctly —
+ *      on "renders a fixed value list but the live schema declares no enum". The docs enumerate a
+ *      closed set; the API still accepts any string and `resolveRankBy` still owns validity.
+ *
+ * `class="param-row"` is reused for styling only (the template's `.param-row` rules), never as a
+ * parse hook — both readers are table-scoped, so the class cannot be mistaken for a parameter here.
+ */
+export function renderToolClosedSetRows(tool, param, spec, aliasByCanonical) {
+  const alias = aliasByCanonical(spec);
+  const rows = spec.valueSource.map((v, i) => {
+    const isLast = i === spec.valueSource.length - 1;
+    const a = alias[v]
+      ? `<code class="${CODE_CLS}">${alias[v]}</code>`
+      : '<span class="text-gray-600">&mdash;</span>';
+    const dflt = spec.default === v ? ' <span class="text-gray-500">(default)</span>' : '';
+    return (
+      `          <tr class="param-row"${isLast ? ' style="border-bottom:none"' : ''} data-closed-set-tool="${tool}" data-closed-set-param="${param}">` +
+      `<td><code class="${CODE_CLS}" data-enum-value="${v}">${v}</code>${dflt}</td>` +
+      `<td class="text-gray-400">${a}</td>` +
+      `<td class="text-gray-400">${spec.selects[v]}</td></tr>`
+    );
+  });
+  return rows.join('\n');
+}
+
+/**
+ * Fill every `SCHEMA:tool-closed-set:<tool>` region from the compiled declaration.
+ *
+ * Same refusal contract as `fillToolParamRegions`: a declared tool whose marker is absent is a hard
+ * error. A projection that lands nowhere is indistinguishable from a stale hand-typed row, minus
+ * the evidence — which is the defect this whole wave exists to make impossible.
+ */
+export function fillToolClosedSetRegions(html, schemaMod) {
+  let out = html;
+  const filled = [];
+  const missing = [];
+  const decl = schemaMod.PUBLIC_TOOL_CLOSED_SET_PARAMS ?? {};
+  for (const [tool, params] of Object.entries(decl)) {
+    const { start, end } = closedSetMarker(tool);
+    const si = out.indexOf(start);
+    const ei = out.indexOf(end);
+    if (si === -1 || ei === -1 || ei < si) { missing.push(tool); continue; }
+    const body = Object.entries(params)
+      .map(([param, spec]) => renderToolClosedSetRows(tool, param, spec, schemaMod.aliasByCanonical))
+      .join('\n');
+    out = `${out.slice(0, si + start.length)}\n${body}\n          ${out.slice(ei)}`;
+    filled.push(tool);
+  }
+  return { html: out, filled, missing };
+}
+
 /**
  * THE ONE declaration of the regions build_docs does NOT own.
  *
@@ -313,6 +380,25 @@ function generate(outlineMod, schemaMod) {
     );
   }
   html = projected;
+
+  // Projected CLOSED-SET rows — values fixed at build time although Zod types them permissively.
+  // Coverage first: a lens with no authored `selects` clause would render an empty description on
+  // a public page, which is the same defect as the deferral this wave deletes.
+  const gaps = schemaMod.assertClosedSetCoverage ? schemaMod.assertClosedSetCoverage() : [];
+  if (gaps.length) {
+    throw new Error(
+      `build_docs: ${gaps.length} closed-set value(s) have no authored description: ${gaps.join(', ')} — ` +
+        'add a `selects` clause in tool-param-schema.ts rather than shipping a blank cell',
+    );
+  }
+  const closed = fillToolClosedSetRegions(html, schemaMod);
+  if (closed.missing.length) {
+    throw new Error(
+      `build_docs: ${closed.missing.length} declared tool(s) have no SCHEMA:tool-closed-set marker in docs-src/: ` +
+        `${closed.missing.join(', ')} — the projection would land nowhere`,
+    );
+  }
+  html = closed.html;
 
   const idx = html.lastIndexOf('</body>');
   if (idx === -1) throw new Error('build_docs: template has no </body> to anchor the brand footer');

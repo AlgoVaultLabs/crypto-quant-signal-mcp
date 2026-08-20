@@ -11,3 +11,20 @@
           <tr class="param-row" style="border-bottom:none"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Optional model override. <code class="text-xs bg-navy-800 px-1 rounded">claude-haiku-4-5-20251001</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">claude-sonnet-4-6</code></td></tr>
         </tbody>
       </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>question</td><td class="text-gray-400">string</td><td class="text-gray-400">Your question, echoed back.</td></tr>
+          <tr class="param-row"><td>answer</td><td class="text-gray-400">string</td><td class="text-gray-400">The synthesized answer, grounded in the knowledge bundle.</td></tr>
+          <tr class="param-row"><td>citations</td><td class="text-gray-400">array</td><td class="text-gray-400">What the answer was built from. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">title</code>, <code class="text-xs bg-navy-800 px-1 rounded">excerpt</code>, <code class="text-xs bg-navy-800 px-1 rounded">source_type</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_url</code>. Check these before acting on the answer.</td></tr>
+          <tr class="param-row"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Which model produced the answer &mdash; the default, or the override you passed.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">bundle_version</code> and <code class="text-xs bg-navy-800 px-1 rounded">bundle_generated_at</code> the answer was grounded in, <code class="text-xs bg-navy-800 px-1 rounded">quota_remaining</code> for the monthly chat allowance, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code>. A chat call refused for quota returns <code class="text-xs bg-navy-800 px-1 rounded">CHAT_QUOTA_EXHAUSTED</code> instead &mdash; see <a href="#tools-errors" class="text-gold hover:underline">Errors &amp; troubleshooting</a>.</td></tr>
+        </tbody>
+      </table>

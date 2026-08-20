@@ -559,6 +559,26 @@ tailwind.config = {
   }
 }</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>regime</td><td class="text-gray-400">string</td><td class="text-gray-400">The classification. <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_UP</code>, <code class="text-xs bg-navy-800 px-1 rounded">TRENDING_DOWN</code>, <code class="text-xs bg-navy-800 px-1 rounded">RANGING</code> or <code class="text-xs bg-navy-800 px-1 rounded">VOLATILE</code>.</td></tr>
+          <tr class="param-row"><td>confidence</td><td class="text-gray-400">number</td><td class="text-gray-400">How strongly the metrics agree on that classification, 0&ndash;100.</td></tr>
+          <tr class="param-row"><td>metrics</td><td class="text-gray-400">object</td><td class="text-gray-400">The readings behind the call &mdash; ADX and its slope with plain-language interpretations, volatility ratio, price structure, pivot quality, trend strength, cross-venue funding sentiment, the underlying session, and per-venue funding under <code class="text-xs bg-navy-800 px-1 rounded">funding_by_venue</code>.</td></tr>
+          <tr class="param-row"><td>suggestion</td><td class="text-gray-400">string</td><td class="text-gray-400">What the regime implies for strategy selection and position sizing, in one paragraph.</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation time.</td></tr>
+          <tr class="param-row"><td>coin</td><td class="text-gray-400">string</td><td class="text-gray-400">The asset evaluated, echoed back.</td></tr>
+          <tr class="param-row"><td>timeframe</td><td class="text-gray-400">string</td><td class="text-gray-400">The candle interval used, echoed back.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; <code class="text-xs bg-navy-800 px-1 rounded">version</code>, <code class="text-xs bg-navy-800 px-1 rounded">tool</code>, <code class="text-xs bg-navy-800 px-1 rounded">compatible_with</code>, <code class="text-xs bg-navy-800 px-1 rounded">session_id</code>, the resolved <code class="text-xs bg-navy-800 px-1 rounded">exchange</code> and its <code class="text-xs bg-navy-800 px-1 rounded">venue_status</code>, your <code class="text-xs bg-navy-800 px-1 rounded">quota</code>, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code> (see <a href="#tools-errors" class="text-gold hover:underline">Errors &amp; troubleshooting</a>).</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="scan-funding-arb" class="mb-16">
@@ -608,6 +628,22 @@ tailwind.config = {
   }
 }</code></pre>
       </div>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h3>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response. The example above is abridged; every response carries these top-level fields.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>opportunities</td><td class="text-gray-400">array</td><td class="text-gray-400">One entry per asset with a cross-venue funding spread, best first. Each carries <code class="text-xs bg-navy-800 px-1 rounded">coin</code>, the per-venue <code class="text-xs bg-navy-800 px-1 rounded">rates</code>, a <code class="text-xs bg-navy-800 px-1 rounded">bestArb</code> leg (long venue, short venue, spread in bps, annualized percent, and an <code class="text-xs bg-navy-800 px-1 rounded">urgency</code> block counting minutes to the next collection), a <code class="text-xs bg-navy-800 px-1 rounded">conviction</code> block scoring direction consistency and spread persistence over a 24-hour sample, and <code class="text-xs bg-navy-800 px-1 rounded">nextFundingTimes</code> per venue in epoch milliseconds.</td></tr>
+          <tr class="param-row"><td>scannedPairs</td><td class="text-gray-400">number</td><td class="text-gray-400">How many venue pairs were compared to produce the list &mdash; the denominator behind the ranking.</td></tr>
+          <tr class="param-row"><td>timestamp</td><td class="text-gray-400">number</td><td class="text-gray-400">Unix seconds at evaluation time.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; <code class="text-xs bg-navy-800 px-1 rounded">version</code>, <code class="text-xs bg-navy-800 px-1 rounded">tool</code>, <code class="text-xs bg-navy-800 px-1 rounded">compatible_with</code>, <code class="text-xs bg-navy-800 px-1 rounded">session_id</code>, your <code class="text-xs bg-navy-800 px-1 rounded">quota</code>, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code> (see <a href="#tools-errors" class="text-gold hover:underline">Errors &amp; troubleshooting</a>).</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="scan-trade-calls" class="mb-16">
@@ -629,12 +665,35 @@ tailwind.config = {
           <tr class="param-row" data-schema-tool="scan_trade_calls" data-schema-param="oiChangeWindow" data-schema-default="24h"><td>oiChangeWindow</td><td class="text-gray-400">string</td><td class="text-gray-400">Open-interest delta window for the oi_change lens. Ignored by other lenses. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="1h">1h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="4h">4h</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="24h">24h</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">24h</code></td></tr>
           <tr class="param-row" data-schema-tool="scan_trade_calls" data-schema-param="oiBasis" data-schema-default="notional"><td>oiBasis</td><td class="text-gray-400">string</td><td class="text-gray-400">Whether the open-interest delta is measured in notional value or in contract count. <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="notional">notional</code> <code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="contracts">contracts</code>. Default: <code class="text-xs bg-navy-800 px-1 rounded">notional</code></td></tr>
           <!-- SCHEMA:tool-params:scan_trade_calls:end -->
-          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Universe-selection lens: <code class="text-xs bg-navy-800 px-1 rounded">oi</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">oi_change</code>, <code class="text-xs bg-navy-800 px-1 rounded">volume</code>, &hellip; See <code class="text-xs bg-navy-800 px-1 rounded">/capabilities</code> for the live lens set.</td></tr>
+          <tr class="param-row"><td>rankBy</td><td class="text-gray-400">string</td><td class="text-gray-400">Which slice of the venue&rsquo;s assets gets evaluated. All nine lenses are listed below, with the short alias each one answers to. Default: <code class="text-xs bg-navy-800 px-1 rounded">oi</code></td></tr>
           <tr class="param-row"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked calls to return (1&ndash;100). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
           <tr class="param-row"><td>minConfidence</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop calls below this confidence (0&ndash;100). Optional.</td></tr>
           <tr class="param-row"><td>includeHolds</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Include HOLD verdicts in the results. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
           <tr class="param-row"><td>includeReasoning</td><td class="text-gray-400">boolean</td><td class="text-gray-400">Attach human-readable reasoning to each call. Default: <code class="text-xs bg-navy-800 px-1 rounded">false</code></td></tr>
           <tr class="param-row" style="border-bottom:none"><td>minLiquidityUsd</td><td class="text-gray-400">number</td><td class="text-gray-400">Drop assets whose 24h notional volume is below this floor, in USD. Optional.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Ranking lenses</h3>
+      <p class="text-gray-400 text-sm mb-3">Every value <code class="text-xs bg-navy-800 px-1 rounded">rankBy</code> accepts. Pass the lens or its alias &mdash; both resolve to the same universe.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Lens</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-24">Alias</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Selects</th>
+        </tr></thead>
+        <tbody>
+          <!-- SCHEMA:tool-closed-set:scan_trade_calls:start -->
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="oi">oi</code> <span class="text-gray-500">(default)</span></td><td class="text-gray-400"><span class="text-gray-600">&mdash;</span></td><td class="text-gray-400">The largest positions on the venue, by open interest. The default, and the deepest book.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="volume">volume</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">vol</code></td><td class="text-gray-400">The most heavily traded assets over the last 24 hours, by notional.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="gainers">gainers</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">gain</code></td><td class="text-gray-400">The strongest 24-hour price gains — momentum that is already running.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="losers">losers</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">lose</code></td><td class="text-gray-400">The steepest 24-hour price falls — where a reversal setup would form.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="movers">movers</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">move</code></td><td class="text-gray-400">The largest absolute 24-hour move in either direction, gainers and losers together.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="funding_positive">funding_positive</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">pfr</code></td><td class="text-gray-400">Where longs are paying shorts most — crowded long positioning.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="funding_negative">funding_negative</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">nfr</code></td><td class="text-gray-400">Where shorts are paying longs most — crowded short positioning.</td></tr>
+          <tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="volatility">volatility</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">atr</code></td><td class="text-gray-400">The widest ranges, by ATRP — ATR(14) ÷ price × 100 on the scan timeframe.</td></tr>
+          <tr class="param-row" style="border-bottom:none" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code class="text-xs bg-navy-800 px-1 rounded" data-enum-value="oi_change">oi_change</code></td><td class="text-gray-400"><code class="text-xs bg-navy-800 px-1 rounded">oid</code></td><td class="text-gray-400">The fastest real open-interest change, measured from the stored OI snapshots.</td></tr>
+          <!-- SCHEMA:tool-closed-set:scan_trade_calls:end -->
         </tbody>
       </table>
 
@@ -707,6 +766,23 @@ tailwind.config = {
           <tr class="param-row" style="border-bottom:none"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Optional model override. <code class="text-xs bg-navy-800 px-1 rounded">claude-haiku-4-5-20251001</code> (default), <code class="text-xs bg-navy-800 px-1 rounded">claude-sonnet-4-6</code></td></tr>
         </tbody>
       </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>question</td><td class="text-gray-400">string</td><td class="text-gray-400">Your question, echoed back.</td></tr>
+          <tr class="param-row"><td>answer</td><td class="text-gray-400">string</td><td class="text-gray-400">The synthesized answer, grounded in the knowledge bundle.</td></tr>
+          <tr class="param-row"><td>citations</td><td class="text-gray-400">array</td><td class="text-gray-400">What the answer was built from. Each entry carries <code class="text-xs bg-navy-800 px-1 rounded">title</code>, <code class="text-xs bg-navy-800 px-1 rounded">excerpt</code>, <code class="text-xs bg-navy-800 px-1 rounded">source_type</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_url</code>. Check these before acting on the answer.</td></tr>
+          <tr class="param-row"><td>model</td><td class="text-gray-400">string</td><td class="text-gray-400">Which model produced the answer &mdash; the default, or the override you passed.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">bundle_version</code> and <code class="text-xs bg-navy-800 px-1 rounded">bundle_generated_at</code> the answer was grounded in, <code class="text-xs bg-navy-800 px-1 rounded">quota_remaining</code> for the monthly chat allowance, and <code class="text-xs bg-navy-800 px-1 rounded">auth</code>. A chat call refused for quota returns <code class="text-xs bg-navy-800 px-1 rounded">CHAT_QUOTA_EXHAUSTED</code> instead &mdash; see <a href="#tools-errors" class="text-gold hover:underline">Errors &amp; troubleshooting</a>.</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="search-knowledge" class="mb-16"><span id="knowledge-tools-search" aria-hidden="true"></span>
@@ -722,6 +798,22 @@ tailwind.config = {
         <tbody>
           <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Natural-language search query (3&ndash;500 chars). <span class="text-red-400 text-xs">Required</span></td></tr>
           <tr class="param-row" style="border-bottom:none"><td>limit</td><td class="text-gray-400">number</td><td class="text-gray-400">Max ranked results (1&ndash;50). Default: <code class="text-xs bg-navy-800 px-1 rounded">10</code></td></tr>
+        </tbody>
+      </table>
+
+      <h4 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Response Fields</h4>
+      <p class="text-gray-400 text-sm mb-3">Transcribed from a live response.</p>
+      <table class="w-full bg-navy-700 border border-white/5 rounded-xl overflow-hidden mb-5">
+        <thead><tr class="border-b border-white/5">
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-44">Field</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2 w-28">Type</th>
+          <th class="text-left text-xs text-gray-500 uppercase tracking-wider px-3 py-2">Description</th>
+        </tr></thead>
+        <tbody>
+          <tr class="param-row"><td>query</td><td class="text-gray-400">string</td><td class="text-gray-400">Your query, echoed back.</td></tr>
+          <tr class="param-row"><td>total_results</td><td class="text-gray-400">number</td><td class="text-gray-400">How many ranked snippets were returned &mdash; at most your <code class="text-xs bg-navy-800 px-1 rounded">limit</code>.</td></tr>
+          <tr class="param-row"><td>results</td><td class="text-gray-400">array</td><td class="text-gray-400">The ranked snippets, best first. Each carries <code class="text-xs bg-navy-800 px-1 rounded">id</code>, a BM25 <code class="text-xs bg-navy-800 px-1 rounded">score</code>, <code class="text-xs bg-navy-800 px-1 rounded">title</code>, <code class="text-xs bg-navy-800 px-1 rounded">excerpt</code>, <code class="text-xs bg-navy-800 px-1 rounded">source_type</code> and <code class="text-xs bg-navy-800 px-1 rounded">source_url</code>. Read the excerpt before calling the tool it describes.</td></tr>
+          <tr class="param-row" style="border-bottom:none"><td>_algovault</td><td class="text-gray-400">object</td><td class="text-gray-400">Envelope metadata &mdash; the <code class="text-xs bg-navy-800 px-1 rounded">bundle_version</code> and <code class="text-xs bg-navy-800 px-1 rounded">bundle_generated_at</code> searched, plus <code class="text-xs bg-navy-800 px-1 rounded">auth</code>. This tool costs no quota, so it carries no quota block.</td></tr>
         </tbody>
       </table>
     </section>

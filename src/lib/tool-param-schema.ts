@@ -57,6 +57,7 @@
 
 import type { ExchangeId } from '../types.js';
 import { TIMEFRAMES, PROMOTED_VENUE_IDS, type PromotedVenueId } from './capabilities.js';
+import { RANK_BY_VALUES, RANK_BY_ALIASES } from './rank-constants.js';
 
 /**
  * Every venue that has an ADAPTER — the declared set. NOT the set the public API accepts.
@@ -156,6 +157,15 @@ export const SCAN_TIMEFRAME_DEFAULT = '15m' as const;
 export const SCAN_EXCHANGE_DEFAULT = 'BINANCE' as const;
 export const SCAN_OI_CHANGE_WINDOW_DEFAULT = '24h' as const;
 export const SCAN_OI_BASIS_DEFAULT = 'notional' as const;
+/**
+ * `rankBy`'s schema default. Declared HERE with the other schema defaults, not in
+ * `rank-constants.ts` — that module is a read-only SoT this chapter must not write, and this file
+ * is already where the docs-side view of every schema default lives. The binding between this
+ * value and `scan-trade-calls.ts:102`'s `.default('oi')` is the live P7 gate, exactly as it is for
+ * `SCAN_TIMEFRAME_DEFAULT` — which is how a page saying `1h` beside a server saying `15m` was
+ * caught in the first place.
+ */
+export const SCAN_RANK_BY_DEFAULT = 'oi' as const;
 
 /** One projected parameter: the accepted values, and the default the schema declares (if any). */
 export interface EnumParamSpec {
@@ -173,10 +183,11 @@ export interface EnumParamSpec {
  * `docs-src/partials/`, because their prose is written for humans rather than for a model; the
  * live gate asserts separately that none of them can go MISSING.
  *
- * NOTE — `rankBy` is deliberately absent, and that is measured rather than forgotten: it is a
- * bounded `z.string().max(32)`, not an enum, so the bot can forward an alias (`nfr`/`pfr`/…)
- * verbatim with `resolveRankBy` owning which tokens are actually valid. Its docs row points at
- * `/capabilities` for the live lens set, which is the honest rendering of a non-enum parameter.
+ * NOTE — `rankBy` is absent from THIS declaration and present in `PUBLIC_TOOL_CLOSED_SET_PARAMS`
+ * below. It is a bounded `z.string().max(32)`, not an enum, so it has no `enum` on the wire and
+ * must never be projected as one: P7 compares a projected row against the served schema and would
+ * (correctly) red on "renders a fixed value list but the live schema declares no enum".
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1 separates the two questions instead of conflating them.
  */
 export const PUBLIC_TOOL_ENUM_PARAMS: Readonly<Record<string, Readonly<Record<string, EnumParamSpec>>>> =
   Object.freeze({
@@ -228,3 +239,125 @@ export const PARAM_DOC_BLURB: Readonly<Record<string, string>> = Object.freeze({
   oiChangeWindow: 'Open-interest delta window for the oi_change lens. Ignored by other lenses.',
   oiBasis: 'Whether the open-interest delta is measured in notional value or in contract count.',
 });
+
+/**
+ * ── CLOSED SETS: what the docs must ENUMERATE, decoupled from what Zod ACCEPTS ────────────────
+ * DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1.
+ *
+ * THE BUG. `/docs` rendered `rankBy` as *"`oi` (default), `oi_change`, `volume`, … See
+ * `/capabilities` for the live lens set"* — **3 of 9**, with the remainder outsourced to another
+ * endpoint. Five lenses (`gainers`, `losers`, `movers`, `funding_positive`, `funding_negative`)
+ * appeared NOWHERE on the page: measured `grep` count 0. A reader who wanted to rank by funding
+ * had to leave the docs to discover the lens exists.
+ *
+ * WHY THE ENUM PROJECTOR SKIPPED IT. `PUBLIC_TOOL_ENUM_PARAMS` projects Zod enums, and `rankBy` is
+ * deliberately `z.string().max(32)` so the TG bot can forward a raw alias (`nfr`, `pfr`, `atr`)
+ * verbatim and `resolveRankBy` owns validity in ONE place. That is a good decision and this wave
+ * does not touch it — but it meant the one parameter with the largest closed value set was the
+ * only one nothing could project.
+ *
+ * "Closed at build time" and "an enum on the wire" are different questions. Conflating them is why
+ * the table could be correct about three values and silent about six. Two declarations, both
+ * single-derived, is the fix.
+ *
+ * ── valueSource IS THE IMPORTED ARRAY, NOT A COPY ─────────────────────────────
+ * `valueSource` and `aliasSource` hold the imported SoT objects themselves, and
+ * `tests/unit/docs-completeness.test.ts` asserts `=== RANK_BY_VALUES` / `=== RANK_BY_ALIASES` by
+ * REFERENCE. A copied literal — the failure mode that produced the 5-vs-17 venue drift — cannot
+ * pass an identity check no matter how correct it looks on the day it is written.
+ *
+ * Only `selects` is authored, and it is authored because a bare chip list is a schema dump: the
+ * point of the row is what the lens SELECTS. `assertClosedSetCoverage` below makes an unauthored
+ * value a build failure rather than a blank cell.
+ */
+export interface ClosedSetParamSpec {
+  /** THE imported SoT array. Identity-compared in tests — never re-typed here. */
+  readonly valueSource: readonly string[];
+  /** THE imported alias map (alias → canonical). Identity-compared in tests. */
+  readonly aliasSource: Readonly<Record<string, string>>;
+  /** The value the server falls back to when the parameter is omitted. */
+  readonly default?: string;
+  /** What each value SELECTS — one clause per value. Authored; completeness is asserted. */
+  readonly selects: Readonly<Record<string, string>>;
+}
+
+/**
+ * `scan_trade_calls.rankBy` lens copy.
+ *
+ * `volatility` and `oi_change` restate the definitions carried in `rank-constants.ts:25-26`
+ * (ATRP, and a real OI delta over the `oi_snapshots` store) rather than inventing new ones — the
+ * two places must not drift into two different claims about the same lens.
+ */
+const RANK_BY_SELECTS: Readonly<Record<string, string>> = Object.freeze({
+  oi: 'The largest positions on the venue, by open interest. The default, and the deepest book.',
+  volume: 'The most heavily traded assets over the last 24 hours, by notional.',
+  gainers: 'The strongest 24-hour price gains — momentum that is already running.',
+  losers: 'The steepest 24-hour price falls — where a reversal setup would form.',
+  movers: 'The largest absolute 24-hour move in either direction, gainers and losers together.',
+  funding_positive: 'Where longs are paying shorts most — crowded long positioning.',
+  funding_negative: 'Where shorts are paying longs most — crowded short positioning.',
+  volatility: 'The widest ranges, by ATRP — ATR(14) ÷ price × 100 on the scan timeframe.',
+  oi_change: 'The fastest real open-interest change, measured from the stored OI snapshots.',
+});
+
+/**
+ * Every parameter whose valid values are a CLOSED SET at build time although Zod types it
+ * permissively, keyed by the `tools/list` tool name.
+ *
+ * Rendered by `renderToolClosedSetRows` (`scripts/build_docs.mjs`) into a
+ * `SCHEMA:tool-closed-set:<tool>` marker region: one row per value, its alias beside it, and what
+ * it selects. A new lens reaches `/docs` from one `rank-constants.ts` edit plus its `selects`
+ * clause — and shipping the edit WITHOUT the clause is a build error, not a blank cell.
+ */
+export const PUBLIC_TOOL_CLOSED_SET_PARAMS: Readonly<Record<string, Readonly<Record<string, ClosedSetParamSpec>>>> =
+  Object.freeze({
+    scan_trade_calls: Object.freeze({
+      rankBy: Object.freeze({
+        valueSource: RANK_BY_VALUES,
+        aliasSource: RANK_BY_ALIASES,
+        default: SCAN_RANK_BY_DEFAULT,
+        selects: RANK_BY_SELECTS,
+      }),
+    }),
+  });
+
+/**
+ * Canonical value → its short alias, or `null` where it has none.
+ *
+ * THE ONE inversion of `aliasSource`, so the renderer and the tests cannot disagree about the
+ * token math (single-derivation rule). `oi` maps to ITSELF in `RANK_BY_ALIASES`, so it is a
+ * canonical value that is also its own alias: 9 canonical values, 9 alias keys, but only **8
+ * alias-only tokens** and a union of **17**, not 18. A self-mapping alias returns `null` here so
+ * the rendered row shows an em-dash instead of repeating the value in both cells.
+ */
+export function aliasByCanonical(spec: ClosedSetParamSpec): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const v of spec.valueSource) out[v] = null;
+  for (const [alias, canonical] of Object.entries(spec.aliasSource)) {
+    if (alias === canonical) continue;              // `oi` is its own alias — not a second token
+    if (out[canonical] === null) out[canonical] = alias;
+  }
+  return out;
+}
+
+/**
+ * Every value that has no authored `selects` clause, per tool/param — empty when the declaration
+ * is complete.
+ *
+ * `build_docs.mjs` REFUSES to generate on a non-empty result. A lens added to `RANK_BY_VALUES`
+ * without a clause would otherwise render an empty description cell on a public page, which is
+ * the same defect as the deferral this wave deletes: the row exists and says nothing.
+ */
+export function assertClosedSetCoverage(
+  decl: Readonly<Record<string, Readonly<Record<string, ClosedSetParamSpec>>>> = PUBLIC_TOOL_CLOSED_SET_PARAMS,
+): string[] {
+  const gaps: string[] = [];
+  for (const [tool, params] of Object.entries(decl)) {
+    for (const [param, spec] of Object.entries(params)) {
+      for (const v of spec.valueSource) {
+        if (!spec.selects[v]) gaps.push(`${tool}.${param}.${v}`);
+      }
+    }
+  }
+  return gaps;
+}

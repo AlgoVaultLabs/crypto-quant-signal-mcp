@@ -368,6 +368,85 @@ export function responseFieldsFor(html, anchor) {
   return rows;
 }
 
+// ── P8: COMPLETENESS — what the page OMITS, not whether what it shows is right ──────────────
+//
+// DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1. P7 proves every value the page shows matches the served
+// schema. It cannot see a value the page never shows: `rankBy` rendered 3 of 9 lenses and deferred
+// the rest to "… See /capabilities", and five lenses (`gainers`, `losers`, `movers`,
+// `funding_positive`, `funding_negative`) appeared NOWHERE on the page — measured grep count 0,
+// with P7 green throughout. Correctness and completeness are different properties and need
+// different legs.
+//
+// All three legs below are PURE functions over the rendered page, so `--self-test` can prove each
+// one fallible without a network call.
+
+/**
+ * The closed-set values rendered for one tool/param, read by identity from `data-enum-value`.
+ *
+ * Scoped by `data-closed-set-param` rather than by table position: the lens table sits between the
+ * parameter table and the Response-Fields table, and keying on an attribute the generator emits
+ * means inserting another table above it cannot silently change what this reads.
+ */
+export function renderedClosedSetFor(html, tool, param) {
+  const rows = [...html.matchAll(
+    new RegExp(`<tr class="param-row"[^>]*data-closed-set-tool="${tool}"[^>]*data-closed-set-param="${param}"[^>]*>([\\s\\S]*?)</tr>`, 'g'),
+  )];
+  if (rows.length === 0) return null;
+  return rows.flatMap((m) => [...m[1].matchAll(/data-enum-value="([^"]+)"/g)].map((x) => x[1]));
+}
+
+/**
+ * Declared closed set vs rendered page, BY IDENTITY and in both directions.
+ *
+ * Naming the missing member is the whole point. A count cannot tell "9 of 9" from "9 rendered, 9
+ * declared, two swapped", and the CH1 gate this replaces could not fail at all for `oi`, `volume`,
+ * `volatility` or `oi_change` because it fell back to a bare substring match that hit unrelated
+ * prose 117 times.
+ */
+export function compareClosedSet(tool, param, declared, rendered) {
+  if (rendered === null) return [`${tool}.${param}: no closed-set table rendered on /docs — the projection landed nowhere`];
+  const missing = declared.filter((v) => !rendered.includes(v));
+  const extra = rendered.filter((v) => !declared.includes(v));
+  const failures = [];
+  if (missing.length) failures.push(`${tool}.${param}: /docs is MISSING ${missing.length} declared value(s): ${missing.join(', ')}`);
+  if (extra.length) failures.push(`${tool}.${param}: /docs renders ${extra.length} value(s) the declaration does not carry: ${extra.join(', ')}`);
+  return failures;
+}
+
+/**
+ * Every parameter/lens description cell that DEFERS instead of answering.
+ *
+ * The generator guard: re-introducing "… See /capabilities" becomes a build failure rather than
+ * something a reviewer has to notice. Comments are stripped first (Design.md §10
+ * `comment-vs-rendered-DOM-aware-canary`) — a docblock quoting the retired phrase, as
+ * `tool-param-schema.ts` now does when explaining why it was retired, must not trip a canary on
+ * rendered output.
+ *
+ * Scoped to `.param-row` description cells, not the whole page: prose elsewhere may legitimately
+ * point a reader onward. It is a *parameter* answered by a link that is the defect.
+ */
+export function findParamDeferrals(html) {
+  const stripped = html.replace(/<!--[\s\S]*?-->/g, '');
+  const hits = [];
+  for (const m of stripped.matchAll(/<tr class="param-row"[^>]*>([\s\S]*?)<\/tr>/g)) {
+    const cells = [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((c) => c[1]);
+    const name = (cells[0] || '').replace(/<[^>]+>/g, '').trim();
+    for (const cell of cells.slice(1)) {
+      const text = cell.replace(/<[^>]+>/g, ' ').replace(/&hellip;/g, '…').replace(/\s+/g, ' ');
+      if (/(?:…|\.\.\.)\s*See\b/.test(text)) hits.push(`${name || '(unnamed row)'}: ${text.trim().slice(0, 90)}`);
+    }
+  }
+  return hits;
+}
+
+/** Every public tool with NO Response Fields block on the rendered page, named. */
+export function missingResponseFieldBlocks(html, anchors) {
+  return anchors.filter((a) => {
+    const rows = responseFieldsFor(html, a);
+    return !rows || rows.length === 0;
+  });
+}
+
 /**
  * Compare the documented envelope against a live response.
  *
@@ -758,6 +837,56 @@ export function selfTest() {
   check('P7-ERR declares its one exemption WITH a reason — an undeclared skip is INDETERMINATE',
     ERROR_CONTRACT.filter((r) => r.documentedOnly).every((r) => typeof r.documentedOnly === 'string' && r.documentedOnly.length > 20), true);
 
+  // ── P8 — each of the three legs proven fallible ────────────────────────────
+  // DOCS-COMPLETENESS-AND-NAVIGATION-W1 CH1. The leg this replaces could not fail for 4 of 9
+  // lenses (a bare-substring fallback that matched `oi` inside "coin" 117 times), so every case
+  // below drives the real function and asserts the MESSAGE, never a count alone.
+  const LENSES = ['oi', 'volume', 'gainers', 'losers', 'movers', 'funding_positive', 'funding_negative', 'volatility', 'oi_change'];
+  const lensRow = (vals) => vals
+    .map((v) => `<tr class="param-row" data-closed-set-tool="scan_trade_calls" data-closed-set-param="rankBy"><td><code data-enum-value="${v}">${v}</code></td><td>&mdash;</td><td>x</td></tr>`)
+    .join('\n');
+
+  check('P8-SET accepts a render carrying every declared value',
+    compareClosedSet('scan_trade_calls', 'rankBy', LENSES, renderedClosedSetFor(lensRow(LENSES), 'scan_trade_calls', 'rankBy')).length, 0);
+  check('P8-SET is ORDER-INDEPENDENT — a set, not a sequence',
+    compareClosedSet('scan_trade_calls', 'rankBy', LENSES, renderedClosedSetFor(lensRow([...LENSES].reverse()), 'scan_trade_calls', 'rankBy')).length, 0);
+  const lensMiss = compareClosedSet('scan_trade_calls', 'rankBy', LENSES,
+    renderedClosedSetFor(lensRow(LENSES.filter((v) => v !== 'funding_negative')), 'scan_trade_calls', 'rankBy'));
+  check('P8-SET FAILS a render missing one lens', lensMiss.length, 1);
+  check('P8-SET NAMES the missing lens', /MISSING 1 declared value\(s\): funding_negative$/.test(lensMiss[0] || ''), true);
+  // The case the old leg could not see at all: same COUNT, one value swapped.
+  const lensSwap = compareClosedSet('scan_trade_calls', 'rankBy', LENSES,
+    renderedClosedSetFor(lensRow(LENSES.map((v) => (v === 'volatility' ? 'bogus_lens' : v))), 'scan_trade_calls', 'rankBy'));
+  check('P8-SET FAILS a same-LENGTH swapped set (a count check passes this)', lensSwap.length, 2);
+  check('P8-SET names the missing side', lensSwap.some((f) => /MISSING/.test(f) && /volatility/.test(f)), true);
+  check('P8-SET names the undeclared side', lensSwap.some((f) => /does not carry/.test(f) && /bogus_lens/.test(f)), true);
+  check('P8-SET treats an ABSENT table as a failure, never as agreement',
+    compareClosedSet('scan_trade_calls', 'rankBy', LENSES, renderedClosedSetFor('<html></html>', 'scan_trade_calls', 'rankBy')).length, 1);
+
+  check('P8-DEFER accepts a description that answers in place',
+    findParamDeferrals('<tr class="param-row"><td>rankBy</td><td>string</td><td>All nine lenses are listed below.</td></tr>').length, 0);
+  const defHit = findParamDeferrals('<tr class="param-row"><td>rankBy</td><td>string</td><td>Lens: <code>oi</code>, &hellip; See <code>/capabilities</code> for the live set.</td></tr>');
+  check('P8-DEFER FAILS the exact construction this wave deleted', defHit.length, 1);
+  check('P8-DEFER NAMES the deferring parameter', /^rankBy:/.test(defHit[0] || ''), true);
+  check('P8-DEFER catches the ASCII ellipsis too',
+    findParamDeferrals('<tr class="param-row"><td>x</td><td>string</td><td>a, b, ... See /capabilities.</td></tr>').length, 1);
+  // Design.md §10 comment-vs-rendered-DOM: the docblock explaining why the phrase was retired
+  // quotes it verbatim. A canary that trips on its own retirement note gets disabled within a week.
+  // The comment sits INSIDE the description cell and carries a `>`, and both details are the test.
+  // Outside the row, the row-scoped scan never sees it; without a `>`, tag-stripping swallows the
+  // whole comment as if it were one tag. Either way the comment-strip would be dead code that
+  // still LOOKED asserted — the first draft of this case was exactly that, and deleting the strip
+  // left the suite green. A retirement note with an arrow in it is what a developer actually writes.
+  check('P8-DEFER ignores the phrase inside an HTML COMMENT, even one containing a >',
+    findParamDeferrals('<tr class="param-row"><td>rankBy</td><td>string</td><td><!-- was: rankBy -> "&hellip; See /capabilities" --> All nine lenses are listed below.</td></tr>').length, 0);
+  check('P8-DEFER does not fire on the NAME cell or on prose outside a param row',
+    findParamDeferrals('<p>Full list &hellip; See /docs</p>').length, 0);
+
+  const rfPage = '<section id="a"><h3>Response Fields</h3><table ><tr class="param-row"><td>call</td></tr></table></section><section id="b"><p>none</p></section>';
+  check('P8-RF accepts a tool that documents its response', missingResponseFieldBlocks(rfPage, ['a']).length, 0);
+  check('P8-RF FAILS a tool with no Response Fields block', missingResponseFieldBlocks(rfPage, ['a', 'b']).join(','), 'b');
+  check('P8-RF FAILS a tool whose section is absent entirely', missingResponseFieldBlocks(rfPage, ['ghost']).join(','), 'ghost');
+
   // ── the BYPASSED SEAM for both new legs ────────────────────────────────────
   const rend2 = loadRendered();
   if (rend2.error) { failed.push(`bypassed artifact: ${rend2.error}`); console.log(`  ✗ bypassed artifact: ${rend2.error}`); }
@@ -775,6 +904,13 @@ export function selfTest() {
     const codes = renderedErrorCodes(rend2.html) || [];
     check('bypassed artifact: the rendered error table publishes every contract code',
       [...codes].sort((a, b) => a - b).join(','), [...ERROR_CONTRACT.map((r) => r.code)].sort((a, b) => a - b).join(','));
+    // P8's three legs above run entirely on synthetic HTML. That is what makes them provable, and
+    // it is also exactly what they are blind to: the real page. Assert the real artifacts here.
+    const realLenses = renderedClosedSetFor(rend2.html, 'scan_trade_calls', 'rankBy');
+    check('bypassed artifact: the real page renders a closed-set table at all', Array.isArray(realLenses) && realLenses.length > 0, true);
+    check('bypassed artifact: no lens is rendered TWICE (a self-mapping alias must not duplicate a row)',
+      new Set(realLenses || []).size, (realLenses || []).length);
+    check('bypassed artifact: the real page carries no parameter deferral', findParamDeferrals(rend2.html).length, 0);
   }
 
   console.log(`SELF-TEST: ${failed.length === 0 ? 'PASS' : 'FAIL'} (${passed} passed, ${failed.length} failed)`);
@@ -858,6 +994,50 @@ async function main() {
   results.push(P7);
   const p7mark = P7.transportError || GATEWAYISH(P7.status) ? '~' : P7.failures.length ? '✗' : '✓';
   console.log(`  ${p7mark} P7 POST /mcp tools/list [${P7.status}] — ${enumRows} projected enum param(s) on /docs match the served schema`);
+
+  // ── P8 — COMPLETENESS: what the page OMITS ────────────────────────────────
+  // Three legs, all pure over the rendered page: no network, so nothing here can fail open on a
+  // transport blip, and nothing here consumes quota.
+  const p8 = { id: 'P8', source: 'landing/docs.html', status: 200, failures: [], transportError: null };
+
+  // (a) closed sets — every declared value renders, by identity, naming each gap.
+  const closedDecl = schemaMod.PUBLIC_TOOL_CLOSED_SET_PARAMS ?? {};
+  let closedValues = 0;
+  for (const [tool, params] of Object.entries(closedDecl)) {
+    for (const [param, spec] of Object.entries(params)) {
+      const declared = [...spec.valueSource];
+      closedValues += declared.length;
+      p8.failures.push(...compareClosedSet(tool, param, declared, renderedClosedSetFor(loaded.html, tool, param)));
+    }
+  }
+  // Vacuity at CONSTRUCTION: an empty declaration means this leg checked nothing, and a leg that
+  // checked nothing must never report agreement.
+  if (closedValues === 0) {
+    emit('INDETERMINATE', 'P8: the closed-set declaration is empty — there is nothing to compare, which is not the same as agreement');
+  }
+
+  // (b) deferrals — a parameter answered by a pointer instead of an answer.
+  const deferrals = findParamDeferrals(loaded.html);
+  for (const d of deferrals) p8.failures.push(`P8: a parameter description still DEFERS instead of enumerating — ${d}`);
+
+  // (c) response-field coverage — every public tool documents what it returns.
+  // The tool list comes from the SAME nav manifest the outline builds its Tools section from, so a
+  // seventh tool joins this leg by being published, not by anyone remembering to add it here.
+  let navMod = null;
+  try { navMod = await import(pathToFileURL(join(ROOT, 'dist', 'lib', 'nav-manifest.js')).href); }
+  catch (err) { emit('INDETERMINATE', `P8: dist/lib/nav-manifest.js could not be loaded (${err?.message || err}) — run \`npm run build\` first`); }
+  const toolAnchors = navMod.publicToolEntries().map((e) => e.anchor);
+  if (toolAnchors.length === 0) {
+    emit('INDETERMINATE', 'P8: the public tool listing is empty — coverage over an empty set is vacuous, not clean');
+  }
+  const bare = missingResponseFieldBlocks(loaded.html, toolAnchors);
+  if (bare.length) {
+    p8.failures.push(`P8: ${bare.length} of ${toolAnchors.length} public tool(s) document NO response fields: ${bare.join(', ')}`);
+  }
+
+  results.push(p8);
+  const p8mark = p8.failures.length ? '✗' : '✓';
+  console.log(`  ${p8mark} P8 landing/docs.html [static] — ${closedValues} closed-set value(s), ${deferrals.length} deferral(s), ${toolAnchors.length - bare.length}/${toolAnchors.length} tools documenting their response`);
 
   // ── P7-ENV — the documented response envelope against a live response ──────
   // DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1 CH2. A paying integrator had to email to learn
