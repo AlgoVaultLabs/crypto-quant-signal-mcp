@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "_doc": "OPS-WORKTREE-WORK-PENDING-W1 CH1 — the classification manifest consumed by scripts/lib/worktree-work-pending.sh. It answers ONE question: which dirty paths are NOISE (class B) rather than WORK (class A). Anything a row does not match is class A, because the fail-safe direction is to treat an unrecognised path as somebody's unsaved work.",
+  "_match_semantics": "`basename` compares the FINAL path component EXACTLY. This is deliberately NOT gitignore semantics — no trailing-slash form, no directory-only rule — because reusing those would reintroduce, one layer up, the exact defect this wave exists to retire: `.gitignore`'s `node_modules/` matches directories only, and git stores a worktree's node_modules as a SYMLINK, so it never matched. `relpath` compares the whole worktree-relative path exactly. `glob` matches the whole relative path as a shell pattern.",
+  "_reason_policy": "Every row carries its `reason` ON THE ROW, never in prose — an exemption that lives only in a comment gets 'fixed' by a future wave enforcing the contract. No row carries a measured BYTE FIGURE: a reason records the load-bearing PROPERTY (reproducible / regenerable / must-never-be-committed), and a number with no instrument beside it is exactly what this estate has twice had to retract.",
+  "_repos_scope": "The 3 repos this wave declares. `cc-session.sh clean` sweeps every primary on the machine (27 discovered on 2026-08-20), so the scope is DECLARED here rather than inferred, and any corroboration against that tool must be restricted to this set or the two instruments are not comparable.",
+  "_repos_out_of_scope": [
+    { "path": "/Users/tank/code/algovault-skills", "reason": "has worktrees but is outside this wave's declared 3-repo scope; no classification rows have been derived for it. Adopting it is a deliberate act, not a default." },
+    { "path": "/Users/tank/code/algovault-integrations", "reason": "has a worktree root but is outside this wave's declared 3-repo scope; same reasoning as algovault-skills." }
+  ],
+  "repos": [
+    "/Users/tank/code/crypto-quant-signal-mcp",
+    "/Users/tank/code/algovault-bot",
+    "/Users/tank/code/autonomous-optimizer"
+  ],
+  "rows": [
+    {
+      "pattern": "node_modules",
+      "match": "basename",
+      "class": "B",
+      "reason": "untracked ONLY because .gitignore's `node_modules/` carries a trailing slash, which per gitignore(5) matches directories only, and a worktree's entry is a SYMLINK (git stores it as a blob, mode 120000) — never work; reinstallable with `npm ci`",
+      "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1",
+      "added": "2026-08-20"
+    },
+    {
+      "pattern": "uv.lock",
+      "match": "basename",
+      "class": "B",
+      "reason": "regenerable via `uv lock`; recorded here because it is the real untracked payload behind exempt_paths rows that claimed to protect a `data/` directory which does not exist in those worktrees",
+      "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1",
+      "added": "2026-08-20"
+    },
+    {
+      "pattern": ".venv",
+      "match": "basename",
+      "class": "B",
+      "reason": "reproducible environment, rebuilt from the lockfile; classifies B whether it is a directory or a symlink, because the matcher compares the final path component and has no directory semantics",
+      "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1",
+      "added": "2026-08-20"
+    },
+    {
+      "pattern": ".mypy_cache",
+      "match": "basename",
+      "class": "B",
+      "reason": "reproducible type-check cache; its size was once mis-recorded as research `data/` in two exempt_paths rows, which is why it is named explicitly rather than left to fall through to class A",
+      "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1",
+      "added": "2026-08-20"
+    },
+    {
+      "pattern": ".claude/napkin.md",
+      "match": "relpath",
+      "class": "B",
+      "reason": "local-only operator runbook mandated at this exact path by the `napkin` skill; deliberately gitignored in crypto-quant-signal-mcp and MUST NEVER be committed — it names filesystem layout and the production container. Measured 2026-08-20: it is untracked and NOT ignored in autonomous-optimizer, so without this row it classifies A and a preserve step would sweep it into a WIP tree",
+      "owner_wave": "OPS-WORKTREE-WORK-PENDING-W1",
+      "added": "2026-08-20"
+    }
+  ],
+  "promotion": {}
+}
