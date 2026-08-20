@@ -1,6 +1,13 @@
 services:
   mcp-server:
-    build: .
+    build:
+      context: .
+      args:
+        # CH3a: supplied by the deploy script from the HOST's own `git rev-parse HEAD`, taken
+        # AFTER the reset. Empty when built by hand -> the route reports sha: null, which is
+        # honest. Never defaulted to something plausible.
+        GIT_SHA: ${GIT_SHA:-}
+        BUILT_AT: ${BUILT_AT:-}
     ports:
       - "127.0.0.1:3000:3000"
     env_file: .env

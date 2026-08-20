@@ -615,6 +615,28 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            # OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH3a — derive the SHA from the TREE
+            # BEING BUILT, at build time, on the machine building it. Never from a trigger event,
+            # never from a ref name.
+            #
+            # `github.sha` is the commit that TRIGGERED the run. The reset above targets
+            # origin/main, a MOVING REF — so if main advances between trigger and reset, this host
+            # builds tree X while github.sha says Y, and baking Y would weld a false provenance
+            # value into the image. That is precisely the defect /api/ops/build exists to remove.
+            # (github.sha appears nowhere else in this workflow; nothing else depends on it.)
+            export GIT_SHA="$(git rev-parse HEAD)"
+            export BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+            # deploy-and-infra.md: refuse anything that is not an ancestor of the remote default
+            # branch. The reset targets a moving ref, so this deploy does not materialize a PINNED
+            # sha on its own — this assertion closes that gap. CH4's drift classifier uses the
+            # identical predicate, so it is one derivation used twice rather than new surface area.
+            if ! git merge-base --is-ancestor "$GIT_SHA" origin/main; then
+              echo "REFUSING: $GIT_SHA is not an ancestor of origin/main" >&2
+              exit 1
+            fi
+            echo "[provenance] building $GIT_SHA (ancestor of origin/main, built_at $BUILT_AT)"
+
             # OPS-LANDING-AUTO-ALIGN-W1 (2026-05-25): build-time SoT snapshot injection.
             # Runs AFTER git pull, BEFORE Caddy sync + container restart. Fetches
             # /api/performance-public + /api/merkle-batches once; rewrites data-tr-field

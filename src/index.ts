@@ -113,6 +113,7 @@ import { listVenues } from './lib/venue-store.js';
 import { checkBotInternalAuth } from './lib/bot-auth.js';
 // PRICING-BOT-DELIVERY-METERING-W1 CH3: /api/entitlement/* route registrar.
 import { registerEntitlementRoutes } from './lib/entitlement-api.js';
+import { registerOpsBuildRoute } from './lib/ops-build-api.js';
 import { getWelcomePageHtml } from './lib/welcome-page.js';
 import {
   TRADE_CALL_DESCRIPTION,
@@ -3614,6 +3615,11 @@ async function startHttp() {
   // `lib/entitlement-api.ts` because `index.ts` boots the server at import, which makes any
   // handler closure defined here untestable (CLAUDE.md: make entrypoints test-importable).
   registerEntitlementRoutes(app);
+
+  // OPS-DEPLOY-PROVENANCE-AND-VERDICT-CLASS-W1 CH3b: GET /api/ops/build — which COMMIT this
+  // container was built from. Registered here beside the other internal-key routes; the handler
+  // lives in lib/ because index.ts boots the server at import.
+  registerOpsBuildRoute(app);
 
   // MCP endpoint
   app.all('/mcp', express.json(), async (req, res) => {
