@@ -375,7 +375,11 @@ function selfTest() {
   }
 
   console.log(`SELF-TEST: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} passed, ${fail} failed)`);
-  console.log(`TEST_BUDGET_VERDICT=${fail === 0 ? 'PASS' : 'FAIL'}`);
+  // NOT `TEST_BUDGET_VERDICT=`. A self-test evaluates NOTHING about the tree, so emitting the token a
+  // caller gates on would let a run that checked nothing publish a pass — the precise defect this
+  // gate exists to prevent, reproduced by its own harness. The self-test's verdict has its own
+  // name, and callers of the real gate scrape only the token above.
+  console.log(`SELF-TEST-EXIT: ${fail === 0 ? 0 : 1}`);
   return fail === 0 ? 0 : 1;
 }
 

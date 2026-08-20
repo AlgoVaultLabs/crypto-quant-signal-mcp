@@ -124,7 +124,13 @@ export function classifyReport(report) {
 }
 
 export function readReport(path) {
-  if (!path || !existsSync(path)) return { ok: false, reason: `report not found at ${path}` };
+  if (!path) {
+    return {
+      ok: false,
+      reason: 'no report path given (pass it positionally, as --report=PATH, or via VITEST_JSON_REPORT)',
+    };
+  }
+  if (!existsSync(path)) return { ok: false, reason: `report not found at ${path}` };
   let raw;
   try {
     raw = readFileSync(path, 'utf8');
@@ -173,7 +179,15 @@ function emit(verdict, lines) {
 }
 
 function run(argv) {
-  const pathArg = argv.find((a) => !a.startsWith('--')) ?? process.env.VITEST_JSON_REPORT;
+  // Positional is the canonical form (what CI uses). `--report=PATH` is accepted too: the author
+  // of this script reached for that spelling first when running it by hand, which is evidence
+  // enough that the interface invites it. An unknown flag still falls through to INDETERMINATE
+  // rather than being treated as a path — wrong input must never be able to produce a PASS.
+  const flag = argv.find((a) => a.startsWith('--report='));
+  const pathArg =
+    (flag ? flag.slice('--report='.length) : undefined) ??
+    argv.find((a) => !a.startsWith('--')) ??
+    process.env.VITEST_JSON_REPORT;
   const noRetry = argv.includes('--no-retry');
   const r = readReport(pathArg);
   if (!r.ok) {
@@ -271,7 +285,11 @@ function selfTest() {
   t('boundary: a retry that passes yields PASS only for a contention failure', classifyReport(retried.report).verdict, 'PASS');
 
   console.log(`SELF-TEST: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} passed, ${fail} failed)`);
-  console.log(`SUITE_VERDICT=${fail === 0 ? 'PASS' : 'FAIL'}`);
+  // NOT `SUITE_VERDICT=`. A self-test evaluates NOTHING about the tree, so emitting the token a
+  // caller gates on would let a run that checked nothing publish a pass — the precise defect this
+  // gate exists to prevent, reproduced by its own harness. The self-test's verdict has its own
+  // name, and callers of the real gate scrape only the token above.
+  console.log(`SELF-TEST-EXIT: ${fail === 0 ? 0 : 1}`);
   return fail === 0 ? 0 : 1;
 }
 

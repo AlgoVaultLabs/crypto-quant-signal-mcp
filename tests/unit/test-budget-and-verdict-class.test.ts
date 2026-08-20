@@ -183,4 +183,19 @@ describe('the gates run for real', () => {
       expect(out, s).toContain('SELF-TEST: PASS');
     }
   });
+
+  it('NEITHER self-test emits the verdict token it is testing', { timeout: 60_000 }, () => {
+    // Both scripts originally DID. `--self-test` evaluates nothing about the tree, so a token in
+    // that output means a run which checked nothing can publish a pass to anything scraping the
+    // log — the exact defect these gates exist to prevent, reproduced inside their own harness.
+    // The previous assertion (`toContain('SELF-TEST: PASS')`) was satisfied by the broken output,
+    // which is why the leak survived: asserting what SHOULD appear never catches what must not.
+    for (const [s, token] of [
+      ['check-test-budget.mjs', 'TEST_BUDGET_VERDICT='],
+      ['classify-suite-verdict.mjs', 'SUITE_VERDICT='],
+    ]) {
+      const out = execFileSync('node', [`scripts/${s}`, '--self-test'], { cwd: REPO, encoding: 'utf8' });
+      expect(out, `${s} must not emit ${token}`).not.toContain(token);
+    }
+  });
 });
