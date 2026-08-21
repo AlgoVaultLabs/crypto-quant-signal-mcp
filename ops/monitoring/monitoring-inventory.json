@@ -1271,7 +1271,7 @@
       "schedule": "41 9 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "58ce3658a9c3417fe6a3c99de610d7b3c43136fdaa3bdda1439c7bbdfd126966",
+      "sha256": "40b4bd8a740bd1b32fba690c014527820250b2aaa4c7bb6135cc6ece5de700a5",
       "alert_ids": [
         "xrepo_ci_red",
         "xrepo_ci_dark"
@@ -1282,9 +1282,14 @@
           "repo": "AlgoVaultLabs/algovault-skills",
           "workflow": "marketplace-check.yml",
           "label": "Marketplace Health Check"
+        },
+        {
+          "repo": "AlgoVaultLabs/crypto-quant-signal-mcp",
+          "workflow": "regenerate-landing.yml",
+          "label": "Landing Regeneration"
         }
       ],
-      "notes": "Watches CROSS-REPO GitHub Actions conclusions, which this inventory's host-artifact model could not see — and that blind spot is exactly why algovault-skills' Marketplace Health Check ran RED for 40 consecutive runs (2026-06-27 to 2026-08-05) with nobody knowing. Its own alert step was dark by construction: that repo holds no Telegram credentials, so the step resolved both secrets to empty and exit 0'd. DELIBERATELY kind:executable, NOT a new kind:github-workflow. The artifact this row governs is the local script — hashable, schedulable, ORPHAN/HASH_DRIFT-checkable like every other row. A remote workflow is not an artifact we install and the reconciler cannot hash one, so the cross-repo relationship is recorded as the `watches` field rather than by bending `kind`. Adding a watched workflow is a `watches` row, not a code change. NO TOKEN: the watched repos are public, so the workflow-runs REST endpoint reads unauthenticated (verified 2026-08-06) — a canary that needs a credential dies when the credential does, which is the class it exists to catch. Fail-open per ops/cron convention (an infra error exits 0 rather than bouncing the cron) but the XREPO_CI_VERDICT token still distinguishes PASS from INDETERMINATE, so 'all green' can never be confused with 'could not find out'. PROVEN TO FIRE before being called live: driven against a fixture API returning conclusion=failure, it invoked the alerter with alert_id=xrepo_ci_red severity=CRITICAL_PERSISTENT and a body naming the repo, workflow, conclusion and run URL. An empty watch list REFUSES (INDETERMINATE) rather than reporting a confident all-clear over nothing."
+      "notes": "Watches CROSS-REPO GitHub Actions conclusions, which this inventory's host-artifact model could not see — and that blind spot is exactly why algovault-skills' Marketplace Health Check ran RED for 40 consecutive runs (2026-06-27 to 2026-08-05) with nobody knowing. Its own alert step was dark by construction: that repo holds no Telegram credentials, so the step resolved both secrets to empty and exit 0'd. DELIBERATELY kind:executable, NOT a new kind:github-workflow. The artifact this row governs is the local script — hashable, schedulable, ORPHAN/HASH_DRIFT-checkable like every other row. A remote workflow is not an artifact we install and the reconciler cannot hash one, so the cross-repo relationship is recorded as the `watches` field rather than by bending `kind`. Adding a watched workflow is a `watches` row, not a code change. NO TOKEN: the watched repos are public, so the workflow-runs REST endpoint reads unauthenticated (verified 2026-08-06) — a canary that needs a credential dies when the credential does, which is the class it exists to catch. Fail-open per ops/cron convention (an infra error exits 0 rather than bouncing the cron) but the XREPO_CI_VERDICT token still distinguishes PASS from INDETERMINATE, so 'all green' can never be confused with 'could not find out'. PROVEN TO FIRE before being called live: driven against a fixture API returning conclusion=failure, it invoked the alerter with alert_id=xrepo_ci_red severity=CRITICAL_PERSISTENT and a body naming the repo, workflow, conclusion and run URL. An empty watch list REFUSES (INDETERMINATE) rather than reporting a confident all-clear over nothing. SECOND WATCH ROW added 2026-08-21 by OPS-CI-MAIN-WRITER-HARDEN-W1: regenerate-landing.yml is the ONE CI writer of crypto-quant-signal-mcp's `main` (enumerated across all 6 workflows) and it commits README.md, the canonical npm-README SoT. That wave gave it a bounded rebase-retry so it survives losing the race; what it CANNOT make safe is a genuine rebase conflict, which aborts and fails the run by design. This row is what makes that refusal loud - before it, nothing watched that workflow, and it had fired only 12 times in four months, so a red run had months of cover. Its cadence is event-driven (repository_dispatch), so the daily 09:41 slot governs DETECTION LATENCY only, never coverage: the canary reads the last COMPLETED run, never the in-flight one."
     },
     {
       "id": "closedbar-recalibrate-readiness",

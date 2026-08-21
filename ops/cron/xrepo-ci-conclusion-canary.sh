@@ -28,8 +28,17 @@
 # never a laundered PASS — so a caller reading the token can tell "all watched workflows are
 # green" from "I could not find out" (CLAUDE.md verdict-token law).
 #
-# Suggested crontab (daily, off-:00 per snapshot-sampler discipline; the watched workflow
+# Suggested crontab (daily, off-:00 per snapshot-sampler discipline; marketplace-check.yml
 # runs at 08:00 UTC, so 09:41 leaves it time to finish): 41 9 * * *
+#
+# On the SECOND row's cadence (OPS-CI-MAIN-WRITER-HARDEN-W1, 2026-08-21): regenerate-landing.yml
+# is event-driven (repository_dispatch from algovault-skills), not scheduled, so no clock offset
+# can be "after it finishes". That is fine and is worth stating so nobody later tunes the cron
+# hoping to fix it: this canary reads the LAST COMPLETED run, never the in-flight one, so the
+# only thing the schedule governs is DETECTION LATENCY — a red regeneration is surfaced within
+# 24h rather than at the moment it happens. Given that workflow fired 12 times in the four months
+# to 2026-08-21, 24h is far inside the window in which it would otherwise have gone unnoticed
+# indefinitely: before this row, nothing watched it at all.
 set -uo pipefail
 
 SEND="${XREPO_CI_SEND:-/opt/algovault-monitoring/send_telegram.sh}"
@@ -41,7 +50,16 @@ API="${XREPO_CI_API:-https://api.github.com}"
 # `${VAR-default}` NOT `${VAR:-default}`: an EXPLICITLY EMPTY watch list is a config
 # defect and must reach the refusal below, whereas `:-` would silently substitute the
 # default and report a confident all-clear over a list someone had just emptied.
-WATCHED="${XREPO_CI_WATCHED-AlgoVaultLabs/algovault-skills|marketplace-check.yml|Marketplace Health Check}"
+# regenerate-landing.yml is the ONE CI writer of this repo's `main` (enumerated 2026-08-21 across
+# all 6 workflows; publish-npm.yml's `git push` hit is a comment). It commits regenerated landing
+# surfaces AND README.md — the canonical npm-README SoT — and OPS-CI-MAIN-WRITER-HARDEN-W1 gave it
+# a bounded rebase-retry so it survives losing the race. What that hardening CANNOT make safe is a
+# genuine rebase conflict: it aborts and fails the run, deliberately, because auto-resolving would
+# risk authored release copy. This row is what makes that refusal LOUD. Without it the fix would
+# fail loudly into an empty room — the same shape as the 40 unnoticed red runs that produced this
+# script in the first place, one repo over.
+WATCHED="${XREPO_CI_WATCHED-AlgoVaultLabs/algovault-skills|marketplace-check.yml|Marketplace Health Check
+AlgoVaultLabs/crypto-quant-signal-mcp|regenerate-landing.yml|Landing Regeneration}"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG" >/dev/null 2>&1 || true; }
 verdict() { echo "XREPO_CI_VERDICT=$1"; }
