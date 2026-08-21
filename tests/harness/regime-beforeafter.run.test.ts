@@ -17,6 +17,7 @@ import { resolve } from 'node:path';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { runAsBatch } from '../../src/lib/upstream-weight-budget.js';
 import { computeIndicatorScores } from '../../src/tools/get-trade-call.js';
+import { buildFactorLedger, renderVerdictReasoning } from '../../src/lib/verdict-factors.js';
 import type { Candle, ExchangeId, RegimeType } from '../../src/types.js';
 import * as H from './regime-replay.js';
 
@@ -71,6 +72,7 @@ describe.skipIf(!ENABLED)('regime v1 vs v2 (same series, both rules)', () => {
     const shareV2: Record<string, number> = { TRENDING_UP: 0, TRENDING_DOWN: 0, RANGING: 0 };
     const perTf: Record<string, { v1: Record<string, number>; v2: Record<string, number> }> = {};
     const cells: Array<Record<string, unknown>> = [];
+    const withheld: Record<string, { v1: number; v2: number; n: number }> = {};
     let verdictChecked = 0;
     let verdictMoved = 0;
     const movedExamples: string[] = [];
@@ -106,6 +108,27 @@ describe.skipIf(!ENABLED)('regime v1 vs v2 (same series, both rules)', () => {
               // 12 keys moved, ZERO of them `call` or `confidence`.
               if (i % 23 === 0) verdictChecked += 1;
             }
+            // A2 — the SECOND-ORDER copy effect. More RANGING => the regime row cannot name
+            // the EMA term => it folds into the withheld set => the prose more often falls
+            // back to the "N internal factors not shown here" sentence, which is the exact
+            // weak copy SIGNAL-WITHHELD-CATEGORY-COPY-W{NEXT} exists to fix. Measured, not
+            // assumed: if this rises materially the copy wave must be sequenced with or ahead
+            // of this one, or the card a customer reads gets worse even though the label is
+            // more correct.
+            withheld[tf] ??= { v1: 0, v2: 0, n: 0 };
+            for (let i = H.EDGE_DISCARD_BARS; i < candles.length; i += 11) {
+              const start2 = Math.max(0, i - H.PRODUCTION_WINDOW_BARS + 1);
+              const w2 = candles.slice(start2, i + 1);
+              let sc; try { sc = computeIndicatorScores({ candles: w2, fundingRateAnnualized: 0, priceChange: 0, openInterest: 0 }); } catch { continue; }
+              const emaSigned = sc.emaScore !== 0;
+              const agreesV2 = (sc.regime === 'TRENDING_UP' && sc.emaScore > 0) || (sc.regime === 'TRENDING_DOWN' && sc.emaScore < 0) || (sc.regime === 'RANGING' && sc.emaScore === 0);
+              const rv1 = H.legacyRegimeV1(candles, i);
+              const agreesV1 = (rv1 === 'TRENDING_UP' && sc.emaScore > 0) || (rv1 === 'TRENDING_DOWN' && sc.emaScore < 0) || (rv1 === 'RANGING' && sc.emaScore === 0);
+              withheld[tf].n += 1;
+              if (emaSigned && !agreesV1) withheld[tf].v1 += 1;
+              if (emaSigned && !agreesV2) withheld[tf].v2 += 1;
+            }
+
             const c1 = churn(v1); const c2 = churn(v2);
             cells.push({ venue, coin, timeframe: tf, bars: v1.length, v1: c1, v2: c2 });
             console.log(`${venue}/${coin}/${tf}: flips ${c1.flips_per_100.toFixed(2)}→${c2.flips_per_100.toFixed(2)}  dwell ${c1.dwell_p50}→${c2.dwell_p50}  rt ${c1.round_trip?.toFixed(3)}→${c2.round_trip?.toFixed(3)}`);
@@ -133,8 +156,22 @@ describe.skipIf(!ENABLED)('regime v1 vs v2 (same series, both rules)', () => {
         proof: 'STRUCTURAL — deriveVerdict(s: VerdictScoreInputs, g: VerdictGateInputs) and VerdictScoreInputs carries no `regime` field, so the label cannot reach a verdict. Empirical companion: the re-baselined golden fixture moved 12 keys, zero of them `call` or `confidence`.',
         windows_scored: verdictChecked, moved: verdictMoved,
       },
+      I7_ranging_spread_pp: null as number | null,
+      I8_trend_claim_by_tf: null as Record<string, { v1: number; v2: number; exceeds_baseline: boolean }> | null,
+      A2_withheld_lead_pct_by_tf: Object.fromEntries(Object.entries(withheld).map(([k, v]) => [k, { v1: Number((100 * v.v1 / (v.n || 1)).toFixed(1)), v2: Number((100 * v.v2 / (v.n || 1)).toFixed(1)), n: v.n }])),
       matrix: cells,
     };
+    const rgByTf = Object.fromEntries(Object.entries(perTf).map(([k, v]) => {
+      const t1 = Object.values(v.v1).reduce((a, b) => a + b, 0) || 1;
+      const t2 = Object.values(v.v2).reduce((a, b) => a + b, 0) || 1;
+      return [k, { v1: Number((100 * v.v1.RANGING / t1).toFixed(1)), v2: Number((100 * v.v2.RANGING / t2).toFixed(1)) }];
+    }));
+    const v2vals = Object.values(rgByTf).map((x) => x.v2);
+    summary.I7_ranging_spread_pp = Number((Math.max(...v2vals) - Math.min(...v2vals)).toFixed(1));
+    summary.I8_trend_claim_by_tf = Object.fromEntries(Object.entries(rgByTf).map(([k, v]) => {
+      const c1 = Number((100 - v.v1).toFixed(1)); const c2 = Number((100 - v.v2).toFixed(1));
+      return [k, { v1: c1, v2: c2, exceeds_baseline: c2 > c1 }];
+    }));
     mkdirSync(resolve(process.cwd(), 'audits'), { recursive: true });
     writeFileSync(resolve(process.cwd(), 'audits/regime-rule-beforeafter-2026-08-07.json'), JSON.stringify(summary, null, 2));
     console.log(`\n=== SUMMARY (${cells.length} cells) ===`);
