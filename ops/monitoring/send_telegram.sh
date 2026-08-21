@@ -414,6 +414,60 @@ self_test() {
   ck 'unscoped reconcile spares a .count neighbour'      "$([[ -f "$tmp/state/some-canary.count" ]] && echo y || echo n)" 'y'
   ck 'unscoped reconcile spares a .set neighbour'        "$([[ -f "$tmp/state/another-canary.set" ]] && echo y || echo n)" 'y'
 
+  # ── SANDBOX CONTAINMENT — the small honest debt from OPS-ALERT-RECOVERY-NOTICE-W1 ────────
+  # That wave's proof-4 run cleared a REAL `QUOTA_EXHAUSTION_HIGH_VOLUME` marker (13h old) on
+  # signal-1 instead of a sandboxed one, resetting its 24h cooldown. It was disclosed rather than
+  # left to be found, and it failed in the safe direction — the next exhaustion pages sooner, not
+  # later. But the safeguard was PROSE: "use ALGOVAULT_TG_TEST_INERT=1 for ad-hoc runs", addressed
+  # to whoever happened to read it. CLAUDE.md: a rule that has once failed as prose must be retired
+  # into a gate. This is that gate.
+  #
+  # `$decoy` stands in for /opt/algovault-monitoring/.alert-state and is seeded with the exact
+  # marker that was clobbered. Containment is asserted as a CHECKSUM MANIFEST of the whole
+  # directory, not a file-exists probe: a rewritten marker with the same name is the same incident.
+  local decoy manifest_before manifest_after
+  decoy="$tmp/prod-state"
+  mkdir -p "$decoy"
+  seed_decoy() {
+    rm -rf "${decoy:?}"/*
+    echo 1755600000 > "$decoy/QUOTA_EXHAUSTION_HIGH_VOLUME-last-fired-at"
+    echo 1755600001 > "$decoy/AID-last-fired-at"
+    echo keep       > "$decoy/some-canary.count"
+  }
+  # `find | sort` + cksum: names AND contents, so a same-name rewrite is caught.
+  dmanifest() { find "$decoy" -type f | sort | while read -r f; do printf '%s %s\n' "${f##*/}" "$(cksum < "$f")"; done; }
+
+  # (a) THE INCIDENT'S OWN SHAPE — an ad-hoc run under a test context, pointed at production.
+  #     This is what SHOULD have happened in proof-4 and is now asserted rather than remembered.
+  for sub in "--clear QUOTA_EXHAUSTION_HIGH_VOLUME" "--reconcile QUOTA_EXHAUSTION_HIGH_VOLUME" "--reconcile"; do
+    seed_decoy; : > "$tmp/log"; manifest_before=$(dmanifest)
+    # shellcheck disable=SC2086
+    env -u VITEST -u NODE_TEST_CONTEXT ALGOVAULT_TG_TEST_INERT=1 \
+        ALERT_WRAPPER_LOG="$tmp/log" ALERT_WRAPPER_STATE_DIR="$decoy" ALERT_WRAPPER_ENV="$tmp/env" \
+        ALERT_REGISTRY_PATH="$tmp/registry.json" ALERT_WRAPPER_CURL="$tmp/curl-ok" \
+        bash "$me" $sub >/dev/null 2>&1
+    manifest_after=$(dmanifest)
+    ck "test-inert '$sub' leaves production state byte-identical" "$manifest_after" "$manifest_before"
+  done
+
+  # (b) SANDBOX CONTAINMENT — a FULLY LIVE run (not inert) confined by ALERT_WRAPPER_STATE_DIR
+  #     must not reach outside it, for any subcommand.
+  for sub in "--clear AID" "--reconcile AID" "--reconcile"; do
+    seed_decoy; fresh; mark 111; optin
+    echo keep > "$tmp/state/some-canary.count"
+    manifest_before=$(dmanifest)
+    # shellcheck disable=SC2086
+    run "$tmp/state" bash "$me" $sub
+    manifest_after=$(dmanifest)
+    ck "sandboxed '$sub' cannot touch a path outside its state dir" "$manifest_after" "$manifest_before"
+  done
+  # NOT VACUOUS: the last sandboxed --reconcile must genuinely have done its job inside the
+  # sandbox. Without this, a wrapper that did nothing at all would satisfy every check above.
+  ck 'sandbox containment is not vacuous — the run DID act inside the sandbox' \
+     "$(ls "$tmp/state"/*-last-fired-at 2>/dev/null | wc -l | tr -d ' ')" '0'
+  ck '  …and the decoy still holds both of its markers' \
+     "$(ls "$decoy"/*-last-fired-at 2>/dev/null | wc -l | tr -d ' ')" '2'
+
   # ── legacy 3-arg path byte-identical ─────────────────────────────────────
   # The documented verb for each legacy scenario, pinned. Any reordering of the gates, or a new
   # gate slipped in front of one, changes the verb a scenario produces and fails here.
@@ -457,7 +511,7 @@ self_test() {
     echo "ALERT_WRAPPER_VERDICT=FAIL"
     exit 1
   fi
-  echo "SELF-TEST: PASS — $checks checks (transitions both ways, silent-by-default, failed-send retains state, test context cannot clear production state, legacy 3-arg path byte-identical, reconcile emits nothing, seam-blindness guard)"
+  echo "SELF-TEST: PASS — $checks checks (transitions both ways, silent-by-default, failed-send retains state, test context cannot clear production state, legacy 3-arg path byte-identical, reconcile emits nothing, sandbox containment both ways, seam-blindness guard)"
   echo "ALERT_WRAPPER_VERDICT=PASS"
   exit 0
 }

@@ -227,19 +227,55 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
   const rows: Row[] = JSON.parse(readFileSync(INVENTORY, 'utf8')).artifacts;
   const base = (p?: string) => (p ? path.basename(p) : '');
 
-  /** Why this row is NOT required to be synced, or null when it IS required. Structural only. */
-  function exemption(r: Row): string | null {
-    if (r.kind === 'executable') return 'executable artifact — auto-install forbidden';
-    if (/\.(sh|py|mjs|cjs|js|rb|pl)$/i.test(base(r.host_path))) {
-      return 'host file is executable code — auto-install forbidden';
+  /**
+   * EVERY path at which this row has a host copy — `installed_at[].path` first, the row-level
+   * `host_path` as the legacy fallback. WIDENED by OPS-ALERT-REGISTRY-DECLARE-W1 CH2.
+   *
+   * Reading only `r.host_path` is what made this whole describe-block BLIND on 2026-08-21. The
+   * `alert-registry` row expressed its host copy through `installed_at[].path` — a shape the
+   * inventory has always permitted and every multi-host row already uses — and carried no
+   * top-level `host_path`, so `exemption()` classified a file installed on BOTH hosts and read by
+   * two consumers as `'no host copy exists'`. It was the SIXTH instance of the omission this
+   * block exists to end, and it slipped past on the very next declaration created after the
+   * script's header claimed that was "no longer possible to do silently".
+   *
+   * The same missing key simultaneously crashed monitoring-inventory-reconcile.py on both hosts
+   * (`KeyError: 'host_path'`), which is how it was found. `host_path_for()` in that file is the
+   * runtime twin of this function; the two must agree about what "has a host copy" means.
+   */
+  function hostCopies(r: Row): string[] {
+    const out = new Set<string>();
+    for (const e of (r as { installed_at?: { path?: string }[] }).installed_at ?? []) {
+      if (e.path && e.path !== 'n-a') out.add(e.path);
     }
-    if (r.repo) return `owned by repo=${r.repo} — not in this checkout`;
-    if (r.repo_resident) return 'repo_resident — the host consumes it from its git checkout';
-    if (!r.artifact || r.artifact.startsWith('external:')) return 'no in-repo artifact';
-    if (!existsSync(path.join(ROOT, r.artifact))) return `artifact absent: ${r.artifact}`;
-    if (!r.host_path || r.host_path === 'n-a') return 'no host copy exists';
+    if (out.size === 0 && r.host_path && r.host_path !== 'n-a') out.add(r.host_path);
+    return [...out];
+  }
+
+  /**
+   * Why this row is NOT required to be synced, or null when it IS required. Structural only.
+   *
+   * Returns a CODE beside the prose. The prose is for a human reading a failure; the code is what
+   * the "exempt for a real reason" test below verifies against the row. Before CH2 that test
+   * asserted `why.length > 10` — i.e. that somebody typed something, not that the exemption was
+   * TRUE — so `'no host copy exists'` (21 characters) sailed through for a file installed on two
+   * hosts. A guard that measures the length of a claim instead of its truth is the same defect
+   * this wave exists to retire, one level up and inside this very file.
+   */
+  type Exempt = { code: string; why: string };
+  function exemption(r: Row): Exempt | null {
+    const copies = hostCopies(r);
+    if (r.kind === 'executable') return { code: 'kind_executable', why: 'executable artifact — auto-install forbidden' };
+    if (copies.some((p) => /\.(sh|py|mjs|cjs|js|rb|pl)$/i.test(base(p)))) {
+      return { code: 'host_file_is_code', why: 'host file is executable code — auto-install forbidden' };
+    }
+    if (r.repo) return { code: 'other_repo', why: `owned by repo=${r.repo} — not in this checkout` };
+    if (r.repo_resident) return { code: 'repo_resident', why: 'repo_resident — the host consumes it from its git checkout' };
+    if (!r.artifact || r.artifact.startsWith('external:')) return { code: 'no_artifact', why: 'no in-repo artifact' };
+    if (!existsSync(path.join(ROOT, r.artifact))) return { code: 'artifact_absent', why: `artifact absent: ${r.artifact}` };
+    if (copies.length === 0) return { code: 'no_host_copy', why: 'no host copy exists' };
     // Escape hatch for a genuine judgement call — on the ROW, with a reason, never in prose.
-    if (r.sync_exempt_reason) return `declared: ${r.sync_exempt_reason}`;
+    if (r.sync_exempt_reason) return { code: 'declared', why: `declared: ${r.sync_exempt_reason}` };
     return null;
   }
 
@@ -254,9 +290,13 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
   });
 
   it('every host-consumed in-repo declaration is in the declared set', () => {
+    // Names come from `hostCopies`, the same widened resolver `exemption()` uses. Deriving the
+    // NAME from `r.host_path` while deriving the REQUIREMENT from `hostCopies` would reintroduce
+    // the split this wave closed — the row would be correctly required and then reported under an
+    // EMPTY filename, which is a true failure carrying a useless message.
     const missing = required
-      .filter((r) => !declared.includes(base(r.host_path)))
-      .map((r) => `${r.id} (${base(r.host_path)}) <- ${r.artifact}`);
+      .filter((r) => hostCopies(r).some((p) => !declared.includes(base(p))))
+      .map((r) => `${r.id} (${hostCopies(r).map(base).join(', ') || '<no host copy>'}) <- ${r.artifact}`);
     expect(
       missing,
       'These inventory rows are host-consumed in-repo declarations with NO sync path. Add each to '
@@ -266,23 +306,78 @@ describe('the declared set is COMPLETE against the inventory, not just correct',
     ).toEqual([]);
   });
 
-  it('every EXEMPT row is exempt for a structural or declared reason — never by omission', () => {
+  it('every EXEMPT row is exempt for a reason that is TRUE of the row — not merely a long string', () => {
     // The other half. Without this, the check above is satisfiable by weakening `exemption()`.
+    //
+    // REWRITTEN by OPS-ALERT-REGISTRY-DECLARE-W1 CH2. It used to assert `why.length > 10`, which
+    // verifies that somebody typed something — not that the exemption holds. `'no host copy
+    // exists'` is 21 characters, so this test PASSED over the row whose host copies were sitting
+    // on two production boxes.
+    //
+    // Every branch re-derives its claim FROM THE ROW, never through `hostCopies` — deliberately.
+    // Re-deriving through the same helper `exemption()` uses makes the pair self-consistent: a
+    // narrowing of that helper satisfies both halves at once and this test goes green over the
+    // very defect it now exists to catch. Measured: it did exactly that on the first cut.
+    const CODE_EXT = /\.(sh|py|mjs|cjs|js|rb|pl)$/i;
+    /** Independent of hostCopies() ON PURPOSE — see above. */
+    const rawCopies = (r: Row): string[] => [...new Set([
+      ...((r as { installed_at?: { path?: string }[] }).installed_at ?? [])
+        .map((e) => e.path).filter((p): p is string => !!p && p !== 'n-a'),
+      ...(r.host_path && r.host_path !== 'n-a' ? [r.host_path] : []),
+    ])];
+    const seen = new Set<string>();
     for (const r of rows) {
-      const why = exemption(r);
-      if (why === null) continue;
-      expect(why.length, `${r.id} has an empty exemption reason`).toBeGreaterThan(10);
-      if (why.startsWith('declared: ')) {
-        expect(r.sync_exempt_reason!.length, `${r.id}: sync_exempt_reason is not substantive`)
-          .toBeGreaterThan(25);
+      const ex = exemption(r);
+      if (ex === null) continue;
+      seen.add(ex.code);
+      const at = `${r.id} (exempt: ${ex.code})`;
+      switch (ex.code) {
+        case 'kind_executable':
+          expect(r.kind, `${at} — but kind is not 'executable'`).toBe('executable');
+          break;
+        case 'host_file_is_code':
+          expect(rawCopies(r).some((p) => CODE_EXT.test(base(p))),
+            `${at} — but no host copy has an executable extension: ${rawCopies(r).join(', ')}`).toBe(true);
+          break;
+        case 'other_repo':
+          expect(typeof r.repo === 'string' && r.repo.length > 0, `${at} — but 'repo' is not set`).toBe(true);
+          break;
+        case 'repo_resident':
+          expect(r.repo_resident, `${at} — but repo_resident is not truthy`).toBeTruthy();
+          break;
+        case 'no_artifact':
+          expect(!r.artifact || r.artifact.startsWith('external:'),
+            `${at} — but the row HAS an in-repo artifact: ${r.artifact}`).toBe(true);
+          break;
+        case 'artifact_absent':
+          expect(existsSync(path.join(ROOT, r.artifact!)),
+            `${at} — but ${r.artifact} EXISTS in the repo`).toBe(false);
+          break;
+        case 'no_host_copy':
+          // THE ONE THAT WAS FALSE. A row claiming no host copy must have none by ANY expression:
+          // not host_path, and not a single installed_at entry carrying a path.
+          expect(rawCopies(r),
+            `${at} — the claim is FALSE, this row has host copies at: ${rawCopies(r).join(', ')}. `
+              + 'This is exactly how alert-registry.json shipped unwired on 2026-08-20.').toEqual([]);
+          break;
+        case 'declared':
+          expect(typeof r.sync_exempt_reason === 'string', `${at} — no sync_exempt_reason on the row`).toBe(true);
+          expect(r.sync_exempt_reason!.length, `${at}: sync_exempt_reason is not substantive`)
+            .toBeGreaterThan(25);
+          break;
+        default:
+          throw new Error(`${at} — unrecognised exemption code; add its claim assertion here`);
       }
     }
+    // Vacuity guard on THIS test: if the switch never ran, it asserted nothing at all.
+    expect(seen.size, 'no exemption code was exercised — this test asserted nothing')
+      .toBeGreaterThanOrEqual(3);
   });
 
   it('nothing is declared that the inventory does not know about', () => {
     // Reverse direction: a declared file with no inventory row is an artifact this repo installs
     // on two hosts while the registry that governs host artifacts has never heard of it.
-    const known = new Set(rows.map((r) => base(r.host_path)));
+    const known = new Set(rows.flatMap((r) => hostCopies(r).map(base)));
     const orphans = declared.filter((n) => !known.has(n));
     expect(orphans, `declared but absent from the inventory: ${orphans.join(', ')}`).toEqual([]);
   });
@@ -434,7 +529,7 @@ describe('R3 — every precondition that ends the run ALERTS before exiting 3', 
   }
 
   // PyYAML is the 5th path and needs a python3 that imports everything EXCEPT yaml.
-  it('PyYAML missing -> INDETERMINATE 3 AND an alert', () => {
+  it('PyYAML missing -> INDETERMINATE 3 AND an alert', { timeout: 30_000 }, () => {
     const dir = path.join(TMP, 'path-no-yaml');
     mkdirSync(dir, { recursive: true });
     const realPy = execFileSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).trim();
@@ -462,7 +557,7 @@ describe('R3 — every precondition that ends the run ALERTS before exiting 3', 
       .toContain('verdict=INDETERMINATE');
   });
 
-  it('the --self-test writes NEITHER the heartbeat NOR the log (it must stay hermetic)', () => {
+  it('the --self-test writes NEITHER the heartbeat NOR the log (it must stay hermetic)', { timeout: 30_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'declsync-hermetic-'));
     const hb = path.join(dir, 'hb');
     const log = path.join(dir, 'log');
@@ -606,7 +701,7 @@ describe('R3 — LOG= is declared, matching the sibling convention', () => {
 describe('the reconciler self-test actually runs in CI', () => {
   const RECONCILER = path.join(ROOT, 'ops/monitoring/monitoring-inventory-reconcile.py');
 
-  it('passes, and reports a non-vacuous check count', () => {
+  it('passes, and reports a non-vacuous check count', { timeout: 30_000 }, () => {
     let out = '';
     try {
       out = execFileSync('python3', [RECONCILER, '--self-test'], { encoding: 'utf8' });

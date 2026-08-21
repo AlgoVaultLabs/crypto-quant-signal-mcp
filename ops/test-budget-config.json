@@ -117,18 +117,6 @@
       "block": "an EMPTY corpus is INDETERMINATE at exit 3 — fail-closed, never a pass"
     },
     {
-      "file": "tests/unit/declaration-sync.test.ts",
-      "block": "PyYAML missing -> INDETERMINATE 3 AND an alert"
-    },
-    {
-      "file": "tests/unit/declaration-sync.test.ts",
-      "block": "the --self-test writes NEITHER the heartbeat NOR the log (it must stay hermetic)"
-    },
-    {
-      "file": "tests/unit/declaration-sync.test.ts",
-      "block": "passes, and reports a non-vacuous check count"
-    },
-    {
       "file": "tests/unit/erc8004-registration.test.ts",
       "block": "exits 0 with \"Already registered, skipping\" when ERC8004_AGENT_ID is preset (no RPC, no IPFS)"
     },

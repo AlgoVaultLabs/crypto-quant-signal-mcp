@@ -62,6 +62,10 @@ export default defineConfig({
       'tests/unit/alert-recommended-wave.test.mjs',
       'tests/unit/alert-wrapper-clear.test.mjs',
       'tests/unit/alert-registry.test.mjs',
+      // OPS-ALERT-REGISTRY-DECLARE-W1 — node:test consumption-derived declaration-coverage
+      // guard (canonical runner is node:test; exclude from vitest so it doesn't false-fail
+      // "No test suite found").
+      'tests/unit/declaration-coverage.test.mjs',
       'tests/unit/caddy-route-parity.test.mjs',
       // ATTRIBUTION-SRC-COVERAGE-W1 — node:test acquisition `?src=` coverage canary (same
       // node:test ownership; exclude from vitest so it doesn't false-fail "No test suite found").

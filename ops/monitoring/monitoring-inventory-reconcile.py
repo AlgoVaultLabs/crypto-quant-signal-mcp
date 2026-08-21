@@ -394,14 +394,31 @@ def cron_spec_for(crontab_text, host_path):
     return None
 
 
-def check_hash_drift(rows, host_hashes):
+def check_hash_drift(rows, host_hashes, labels=None):
     """repo -> host. Skipped for repo-resident rows: their host_path IS the repo copy, so the
-    comparison is vacuous — reporting them as in-sync would be a lie by construction."""
+    comparison is vacuous — reporting them as in-sync would be a lie by construction.
+
+    Resolves the host filename through `host_path_for`, NOT through `row["host_path"]`. That
+    subscript is what took BOTH hosts down on 2026-08-21: the `alert-registry` row expressed its
+    host copy through `installed_at[].path` — a shape this schema has always permitted, and the
+    shape every multi-host row already uses — and carried no top-level `host_path`, so this line
+    raised `KeyError: 'host_path'` inside `evaluate()`, which has no `except`. The process died
+    before printing its first `CHECK ...: OK`, and nothing watches this script's own liveness, so
+    the outage was silent. `host_path_for` was already in this file and already used correctly by
+    `check_dark` and `check_schedule_drift`; only these two call sites bypassed it. A helper
+    honoured at some call sites and not others is not a design, it is a bug awaiting a trigger.
+    Measured before the change: routing all 77 owned rows across both label sets through the
+    helper produces ZERO basename divergences, so this is strictly a widening.
+    """
+    labels = labels if labels is not None else HOST_LABELS
     out = []
     for r in rows:
         if r.get("install_state") != "installed" or r.get("repo_resident"):
             continue
-        name = os.path.basename(r["host_path"])
+        host_path = host_path_for(r, labels)
+        if not host_path:
+            continue  # no resolvable host copy on this instance — DARK/ORPHAN's business, not ours
+        name = os.path.basename(host_path)
         live = host_hashes.get(name)
         if live is None:
             continue  # absence is DARK/ORPHAN's business, not HASH_DRIFT's
@@ -412,9 +429,20 @@ def check_hash_drift(rows, host_hashes):
     return out
 
 
-def check_orphan(rows, host_hashes):
-    """host -> repo."""
-    known = {os.path.basename(r["host_path"]) for r in rows}
+def check_orphan(rows, host_hashes, labels=None):
+    """host -> repo.
+
+    Same `host_path_for` resolution as `check_hash_drift`, and for the same measured reason — this
+    comprehension was the SECOND site to raise `KeyError: 'host_path'` on 2026-08-21. It is also
+    the more dangerous of the two to get subtly wrong: a row that silently drops out of `known`
+    turns its perfectly authorised file into a reported ORPHAN.
+    """
+    labels = labels if labels is not None else HOST_LABELS
+    known = set()
+    for r in rows:
+        host_path = host_path_for(r, labels)
+        if host_path:
+            known.add(os.path.basename(host_path))
     return sorted(n for n in host_hashes if n not in known)
 
 
@@ -1751,8 +1779,8 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
     """
     labels = labels if labels is not None else HOST_LABELS
     return {
-        "HASH_DRIFT": check_hash_drift(rows, host_hashes),
-        "ORPHAN": check_orphan(rows, host_hashes),
+        "HASH_DRIFT": check_hash_drift(rows, host_hashes, labels),
+        "ORPHAN": check_orphan(rows, host_hashes, labels),
         "DARK": check_dark(rows, crontab_text, labels),
         "SCHEDULE_DRIFT": check_schedule_drift(rows, crontab_text, labels),
         "PENDING_STALE": check_pending_stale(rows),
@@ -1960,6 +1988,31 @@ def self_test():
     ck("absent path -> None", cron_spec_for(CRON, "/opt/algovault-monitoring/nope.sh"), None)
     ck("comment line is not matched", cron_spec_for("# 1 2 3 4 5 /opt/x.py\n", "/opt/x.py"), None)
 
+    # ── 0. host_path RESOLUTION, asserted BEFORE anything that consumes it ────────────────────
+    # Ordered first on purpose. Every check below resolves a host filename through
+    # `host_path_for`, so if it silently returned None for every row the failures downstream would
+    # be an IndexError in an unrelated severity assertion — a wrong diagnosis for the right bug.
+    # These assert the resolved VALUE, so the helper is proven before it is trusted.
+    ia_only = {"id": "reg", "artifact": "ops/monitoring/alert-registry.json",
+               "kind": "declaration-data", "sha256": "c" * 64, "install_state": "installed",
+               "installed_at": [{"host": "signal-1", "path": "/opt/algovault-monitoring/alert-registry.json"},
+                                {"host": "aoe-1", "path": "/opt/algovault-monitoring/alert-registry.json"}]}
+    split = {"id": "s", "host_path": "/opt/legacy/w.sh", "sha256": "e" * 64,
+             "install_state": "installed",
+             "installed_at": [{"host": "signal-1", "path": "/opt/algovault-monitoring/w.sh"},
+                              {"host": "aoe-1", "path": "/opt/other/w-aoe.sh"}]}
+    L = {"signal-1"}
+    ck("installed_at-only row: the path RESOLVES (not merely 'no crash')",
+       host_path_for(ia_only, L), "/opt/algovault-monitoring/alert-registry.json")
+    ck("per-host path wins over the row-level host_path (signal-1)",
+       host_path_for(split, {"signal-1"}), "/opt/algovault-monitoring/w.sh")
+    ck("per-host path wins over the row-level host_path (aoe-1)",
+       host_path_for(split, {"aoe-1"}), "/opt/other/w-aoe.sh")
+    ck("a row owned by NEITHER label falls back to the row-level host_path, never a crash",
+       host_path_for(split, {"nobody"}), "/opt/legacy/w.sh")
+    ck("a row with NEITHER key resolves to None rather than raising",
+       host_path_for({"id": "n"}, L), None)
+
     # ── 1. HASH_DRIFT, both directions ──
     ck("hash match -> clean", check_hash_drift([row()], {"a.py": "a" * 64}), [])
     d = check_hash_drift([row()], {"a.py": "b" * 64})
@@ -1975,6 +2028,29 @@ def self_test():
     # ── 2. ORPHAN, both directions ──
     ck("known file -> no orphan", check_orphan([row()], {"a.py": "x"}), [])
     ck("unknown file -> orphan", check_orphan([row()], {"a.py": "x", "rogue.py": "y"}), ["rogue.py"])
+
+    # ── 2b. THE installed_at-ONLY ROW — the shape that took both hosts down 2026-08-21 ─────────
+    # A row may express its host copy through `installed_at[].path` and carry NO top-level
+    # `host_path`; the schema has always permitted it and every multi-host row already uses it.
+    # `check_hash_drift` and `check_orphan` read `row["host_path"]` directly and raised
+    # `KeyError: 'host_path'` inside `evaluate()`, which has no `except` — so every check on both
+    # hosts died before the first `CHECK ...: OK` line, silently, because nothing watches this
+    # script's own liveness.
+    #
+    # These assert the resolved VALUE, not merely "it did not raise". A no-exception test would
+    # pass against a `host_path_for` that returned None for every row — which is the same outage
+    # one layer down, wearing a green tick.
+    ck("installed_at-only: HASH_DRIFT sees the file and compares it",
+       [d["id"] for d in check_hash_drift([ia_only], {"alert-registry.json": "d" * 64}, L)], ["reg"])
+    ck("installed_at-only: matching hash -> clean, so the compare is real both ways",
+       check_hash_drift([ia_only], {"alert-registry.json": "c" * 64}, L), [])
+    ck("installed_at-only: ORPHAN knows the file — the row authorises it here",
+       check_orphan([ia_only], {"alert-registry.json": "x"}, L), [])
+    ck("installed_at-only: ORPHAN still reports a genuinely unauthorised file",
+       check_orphan([ia_only], {"alert-registry.json": "x", "rogue.py": "y"}, L), ["rogue.py"])
+    ck("a row with NEITHER key is skipped by HASH_DRIFT, not raised",
+       check_hash_drift([{"id": "n", "install_state": "installed", "sha256": "f" * 64}],
+                        {"x": "y"}, L), [])
     for junk in (".drift-canary-state", "send_telegram.sh.bak", "x.sh.disabled-retire-2026",
                  "autopilot-pg-creds", "__pycache__"):
         ck(f"excluded from orphan scan: {junk}", bool(ORPHAN_EXCLUDE_RE.search(junk)), True)
