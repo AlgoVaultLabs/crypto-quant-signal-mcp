@@ -93,7 +93,7 @@ Under the hood, a self-tuning model fuses momentum, trend structure, derivatives
     { "coin": "SOL", "timeframe": "15m", "confidence": 73 }
   ],
   "_algovault": {
-    "version": "1.27.0",
+    "version": "1.28.0",
     "tool": "get_trade_call",
     "compatible_with": ["crypto-quant-risk-mcp", "crypto-quant-backtest-mcp"]
   }
@@ -253,7 +253,16 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 
 ---
 
-## What's new in v1.27.0
+## What's new in v1.28.0
+
+- **🔐 Authentication now tells you what happened.** Every response carries `_algovault.auth`. A well-formed but unrecognised key is refused instead of being quietly served free-tier data, and "malformed", "unknown" and "we couldn't verify" are three distinct outcomes rather than one silent fallback.
+- **🎛️ The published `exchange` list matches what we actually serve.** `get_trade_call`, `get_trade_signal`, `get_market_regime` and `scan_trade_calls` advertise only publicly supported venues, so an agent can trust the enum it reads. **Breaking:** `EDGEX` and `WEEX` are no longer accepted — see *Upgrading from v1.27.x* below.
+- **📘 Two parameters that were always there, now documented.** `assetClass` on the trade-call tools and `minLiquidityUsd` on `scan_trade_calls`. Both project from the live schema, so the docs can't drift from the server — and `_receipts` fields are documented from real responses.
+- **📗 [The docs](https://algovault.com/docs) answer the question instead of pointing at it.** Every `rankBy` lens is documented, REST is as complete as MCP, there's a proper error-code reference, and the copy-paste samples run exactly as written — CI re-checks them against the live API on every deploy.
+
+**Upgrading from v1.27.x** — one breaking change: `EDGEX` and `WEEX` are no longer valid `exchange` values and now return `-32602`. No tool was added or renamed. Check any hard-coded `exchange` value against the published enum, and read `_algovault.auth` if you branch on auth failures.
+
+### v1.27.x highlights (recap)
 
 - **🧮 Counted per call.** Your allowance covers every call the engine answers, on both the MCP and HTTP rails.
 - **📶 A new call ladder.** Free: 200/month plus 100/day. Starter: 10,000/month plus 1,000/day. Pro: 100,000/month plus 10,000/day.
@@ -263,16 +272,6 @@ Pro 6-month is currently $129 — limited-time pricing; subscribe now and renewa
 ### v1.26.0 highlights (recap)
 
 - **💳 Annual plans — prepay a year, save up to 49%.** Starter was **$79/yr** (~$6.58/mo) and Pro was **$299/yr** (~$24.92/mo). **Superseded: annual was retired on 2026-08-09 and replaced by 6-month prepay (see v1.27.0); `?interval=year` now redirects to the 6-month checkout, so existing links still work.**
-
-### v1.25.0 highlights (recap)
-
-- **🎯 Screen the scan universe by liquidity.** `scan_trade_calls` now takes an optional `minLiquidityUsd` floor — filter to names with real depth, by notional open interest or 24h volume. Omit it for no floor.
-- **💳 Charge-correctness on the paid path.** A paid request whose body was dropped could return a defaults-only result. Every payable route now rejects a dropped body, and a rejected request explains why.
-- **⛓️ Pay per call on a second rail.** x402 settlement now runs over Circle Gateway on Optimism alongside Base — point your agent at either advertised rail.
-- **📊 Truer funding comparisons.** Funding rates annualize at each contract's own period, so cross-venue spreads compare like with like.
-
-> New optional parameter — MCP clients cache `tools/list` at session start. Toggle the connector off/on (or restart the MCP connection) to see `minLiquidityUsd`.
-
 
 > **Refresh your MCP client to pick up this release.** MCP clients cache `tools/list` at session start — Claude.ai/Desktop: toggle the connector off+on; Cursor/Cline: restart the MCP server connection.
 
