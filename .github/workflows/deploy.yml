@@ -548,6 +548,21 @@ jobs:
           node scripts/check-shape-snapshot-integrity.mjs --self-test
           node scripts/check-shape-snapshot-integrity.mjs
 
+      # OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (CH3) — a documented surface must RESOLVE.
+      # Three live tool descriptions referred agents to a tool absent from tools/list, and the
+      # bundle documented two retired tools; all were found by hand, and the hand audit still
+      # missed a fourth surface (landing/tools.html) that build_landing --check caught by
+      # accident. This is the OFFLINE half ONLY: deterministic, network-free, resolving against
+      # the DECLARED tool + route sets in-repo. The --live half is deliberately NOT here —
+      # OPS-JSONLD-DEPLOY-GATE-W1 established that a live-fetching check cannot be a fail-close
+      # deploy gate, and that lesson is not being re-learned. Emits
+      # KB_REACHABILITY_VERDICT=PASS|FAIL|INDETERMINATE; exit 3 blocks, because an unreadable
+      # bundle or an empty tool set means it verified NOTHING.
+      - name: Knowledge-bundle reachability gate (offline half, fail-closed)
+        run: |
+          node scripts/check-kb-reachability.mjs --self-test
+          node scripts/check-kb-reachability.mjs --offline
+
       - name: Build-context hygiene gate (fail-closed)
         run: |
           node scripts/check-build-context-hygiene.mjs --self-test

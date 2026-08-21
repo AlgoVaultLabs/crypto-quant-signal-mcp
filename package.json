@@ -57,7 +57,9 @@
     "test:budget:check": "node scripts/check-test-budget.mjs",
     "suite:classify": "node scripts/classify-suite-verdict.mjs",
     "map:shape:check": "bash scripts/check_map_shape.sh --system-map",
-    "map:shape:selftest": "bash scripts/check_map_shape.sh --self-test"
+    "map:shape:selftest": "bash scripts/check_map_shape.sh --self-test",
+    "check:kb-reachability": "node scripts/check-kb-reachability.mjs --offline",
+    "check:kb-reachability:live": "node scripts/check-kb-reachability.mjs --live"
   },
   "keywords": [
     "mcp",
