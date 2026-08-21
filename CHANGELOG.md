@@ -5,6 +5,26 @@ All notable changes to `crypto-quant-signal-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0] - 2026-08-21
+
+### Added
+- `_algovault.auth` on every response: authentication outcome is now reported, not inferred. Absent, malformed, unknown and "could not verify" are distinct states.
+- Documented `assetClass` (`get_trade_call`, `get_trade_signal`) and `minLiquidityUsd` (`scan_trade_calls`), projected from the live schema so the docs cannot drift from the server.
+- An error-code reference and the `scan_trade_calls` response envelope in `/docs`.
+
+### Changed
+- A well-formed but unrecognised API key is now refused. Previously it was served free-tier data, which made a bad key indistinguishable from no key.
+- The published `exchange` enum lists only publicly served venues; retired and shadow venues no longer appear in the schema.
+- `/docs` no longer describes a multi-step handshake for the HTTP transport — it has been stateless for some time, and the samples now run as written.
+
+### Removed
+- **BREAKING** — `EDGEX` and `WEEX` are no longer accepted values for the `exchange` parameter on `get_trade_call`, `get_trade_signal` and `get_market_regime`. Calls passing either now return `-32602 invalid_enum_value`. EDGEX is retired and WEEX was never promoted; the published enum lists only publicly served venues. If you pinned either value, switch to a listed venue. Shipped under a minor because the change went live on the API on 2026-08-19 and neither value was ever documented.
+- The sample activity feed on `/verify`. The page shows verifiable batch data only.
+
+### Fixed
+- A broken distribution badge in the README.
+- `GET /signup` without a plan returned HTTP 400 while serving the correct plan-picker page; it now returns 200.
+
 ## [1.27.0] - 2026-08-10
 
 ### Changed
