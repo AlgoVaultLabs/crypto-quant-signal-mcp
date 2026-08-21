@@ -360,6 +360,22 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   { table: 'agent_sessions', column: 'last_touch_source', type: 'TEXT' },
   // R5 (2026-04-14): regime label for audit round H5
   { table: 'signals', column: 'regime', type: 'TEXT NULL' },
+  // SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2 (2026-08-07): which RULE produced `regime`.
+  //
+  // The label rule changed at 2026-08-07T15:28:44Z. `regime` therefore means two different
+  // things either side of that instant, and three consumers AGGREGATE it
+  // (calibration-audit.ts, audit-thresholds-pertf-from-signals.mjs,
+  // audit-r4-inversion-counterfactual.mjs). An aggregate that mixes v1 and v2 rows compares
+  // two different measurements, and a delta across two instruments is not a delta — so the
+  // boundary is a QUERYABLE COLUMN rather than a sentence in status.md. This repo has four
+  // recorded instances of a boundary declared in prose and then silently violated.
+  //
+  // DEFAULT 1 is deliberate and is what makes the backfill exact rather than a guess: the
+  // schema is pre-applied BEFORE the code deploys, so a row written in between is genuinely
+  // v1 — the old rule was still the thing running. Only the new code writes 2, explicitly.
+  // The VERSION is backfilled; the LABEL never is. Old rows say what the old rule said, and
+  // that is the record.
+  { table: 'signals', column: 'regime_rule_version', type: 'SMALLINT NOT NULL DEFAULT 1' },
   // Merkle proof columns
   { table: 'signals', column: 'signal_hash', type: 'VARCHAR(66)' },
   { table: 'signals', column: 'merkle_batch_id', type: 'INTEGER' },
@@ -1076,6 +1092,19 @@ export async function dbQuery<T = Record<string, unknown>>(sql: string, params: 
   return b.all(sql, ...params) as unknown as T[];
 }
 
+/**
+ * The rule that produced a `signals.regime` value. Bumped ONLY when the label's MEANING
+ * changes, never for a refactor — a version that moves without a meaning change makes every
+ * consumer's version filter useless.
+ *
+ * 1 = the pre-2026-08-07 rule: `emaCross` ANDed with an RSI band, `RANGING` as the fallthrough.
+ * 2 = SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2: separation band + 12-bar confirmation, no RSI term.
+ */
+export const REGIME_RULE_VERSION = 2;
+
+/** The instant rule 2 went live. Declared, not an env toggle — a toggle can be left flipped. */
+export const REGIME_RULE_V2_CUTOVER_UTC = '2026-08-07T15:28:44Z';
+
 export function recordSignal(
   coin: string,
   signal: SignalVerdict,
@@ -1089,9 +1118,10 @@ export function recordSignal(
   const b = getBackend();
   const createdAt = Math.floor(Date.now() / 1000);
   b.run(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, signalHash || null, regime ?? null
+    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime, regime_rule_version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, signalHash || null, regime ?? null,
+    REGIME_RULE_VERSION
   );
   // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): post-insert webhook event hook.
   // Flag-gated (default OFF → zero new behavior); fire-and-forget so it never
