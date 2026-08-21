@@ -79,7 +79,11 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
     expect(reshaped._algovault.repo).toBe('AlgoVaultLabs/crypto-quant-signal-mcp');
   });
 
-  it('generator is byte-idempotent under fixed KNOWLEDGE_GENERATED_AT (two runs match)', () => {
+  // OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1: this block SPAWNS a full `npm run build:knowledge` plus
+  // two shasum processes, so it cannot rely on the 5,000ms default. Declared in the OPTIONS
+  // argument, which is the only place check-test-budget.mjs counts a budget — a `timeout:` in the
+  // body is fixture data, not a declaration.
+  it('generator is byte-idempotent under fixed KNOWLEDGE_GENERATED_AT (two runs match)', { timeout: 120_000 }, () => {
     const firstSha = execSync(`shasum -a 256 "${BUNDLE_LATEST}"`).toString().split(/\s+/)[0];
     buildOnce();
     const secondSha = execSync(`shasum -a 256 "${BUNDLE_LATEST}"`).toString().split(/\s+/)[0];
