@@ -139,8 +139,31 @@ fi
 
 if [ "$RED" -gt 0 ]; then
   MSG="🟡 AlgoVault Alert%0A%0A${RED} cross-repo CI workflow(s) RED${RED_DETAIL}%0A%0AAction: dispatch OPS-XREPO-CI-RED-W{NEXT}%0ASource: ops/cron/xrepo-ci-conclusion-canary.sh"
+# ── THE ALERT INVOCATION — corrected 2026-08-21 (OPS-CI-MAIN-WRITER-HARDEN-W1 CH1, Q3) ──────
+#
+# send_telegram.sh's fire contract is POSITIONAL and always has been:
+#     # Usage: send_telegram.sh <alert_id> <severity> [body_file|-]
+#     ALERT_ID="${1:?alert_id required}"  SEVERITY="${2:?severity required}"  BODY_INPUT="${3:--}"
+#
+# This script called it with ENVIRONMENT variables and one positional, so `$1` was the MESSAGE
+# and `$2` was unset: the wrapper died on `severity required` before reaching any send, and the
+# `|| log "send_telegram.sh failed (fail-open)"` tail swallowed it into a log nobody reads.
+#
+# MEASURED on the live host 2026-08-21: this script's env-var form returns `line 56: 2: severity
+# required` and sends nothing; the positional form reaches the fire path (the wrapper logs
+# `[xrepo_ci_red] SUPPRESSED_TEST_CONTEXT` under ALGOVAULT_TG_TEST_INERT=1, i.e. it parsed the id
+# and severity and stopped only at the deliberate test gate). `xrepo_ci` appears ONCE in the
+# wrapper's entire log. It is the ONLY host caller using the env-var form — every other one of
+# the ~30 is positional.
+#
+# So BOTH of this script's alerts have been dark since its first commit (ad32064,
+# OPS-MARKETPLACE-CANARY-REPAIR-W1, 2026-08-06) — a script written specifically to fix a dark
+# alert, shipping the same class of defect in its own alerter. Found only because
+# OPS-CI-MAIN-WRITER-HARDEN-W1's Q3 made "a positive-output run WHERE THE SCHEDULER INVOKES IT"
+# an acceptance criterion rather than a formality. Running it by hand in a terminal, which is how
+# it had always been checked, hides this completely: the failure is swallowed by the fail-open.
   if [ -x "$SEND" ]; then
-    ALERT_ID="xrepo_ci_red" SEVERITY="CRITICAL_PERSISTENT" "$SEND" "$MSG" >/dev/null 2>&1 || log "send_telegram.sh failed (fail-open)"
+    printf '%s' "$MSG" | "$SEND" "xrepo_ci_red" "CRITICAL_PERSISTENT" - >/dev/null 2>&1 || log "send_telegram.sh failed (fail-open)"
   else
     log "send_telegram.sh not executable at $SEND — alert NOT sent (fail-open)"
     echo "  ! alerter missing at $SEND — a RED workflow went unannounced"
@@ -162,7 +185,8 @@ if [ "$INDET" -gt 0 ]; then
   if [ "$STREAK" -ge 3 ]; then
     MSG="🟡 AlgoVault Alert%0A%0Across-repo CI canary has been UNABLE TO VERIFY for ${STREAK} consecutive runs.%0AIt is dark, not green — no workflow conclusion has been read.%0ALikely cause: GitHub API rate limit (unauthenticated 60/hr per IP, shared with everything else on this host).%0A%0AAction: dispatch OPS-XREPO-CI-CANARY-DARK-W{NEXT}%0ASource: ops/cron/xrepo-ci-conclusion-canary.sh"
     if [ -x "$SEND" ]; then
-      ALERT_ID="xrepo_ci_dark" SEVERITY="CRITICAL_PERSISTENT" "$SEND" "$MSG" >/dev/null 2>&1 || log "send_telegram.sh failed (fail-open)"
+      # Positional, for the same reason as the RED path above.
+      printf '%s' "$MSG" | "$SEND" "xrepo_ci_dark" "CRITICAL_PERSISTENT" - >/dev/null 2>&1 || log "send_telegram.sh failed (fail-open)"
     fi
     log "DARK streak=$STREAK — escalated"
   fi
