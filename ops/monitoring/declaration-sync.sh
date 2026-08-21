@@ -161,7 +161,7 @@ scope_applies() {
 # had simply never been added, which is exactly why the fix is a derived-coverage assertion rather
 # than "add YAML support": a hand-maintained set drifts in whatever format nobody is thinking about.
 DECLARATIONS=(
-  # Every host's reconciler reads these five, so they are `*`.
+  # Every host's reconciler reads these six, so they are `*`.
   "monitoring-inventory.json|artifacts|40|*"
   "doc-host-path-claims.json|claims|1|*"
   "network-posture.json|hosts|1|*"
@@ -170,6 +170,19 @@ DECLARATIONS=(
   # the committed declaration must not itself be configured by a copy nobody keeps current.
   # `enforcement` is a string, so presence-only (0) — there is nothing to count.
   "sot-parity-config.json|enforcement|0|*"
+  # The alert CONSUMER REGISTRY, added by OPS-ALERT-REGISTRY-DECLARE-W1 — same argument one
+  # subject over: the registry that records which alerts exist must not itself be a copy nobody
+  # keeps current. `alerts` is live 46; 30 is a truncation refusal, not a target.
+  # It is `*` on MEASURED evidence, not on assumption. Both hosts' reconcilers OWN this row and
+  # both raised `KeyError: 'host_path'` on it (measured live 2026-08-21 03:25Z, before the
+  # row carried one) — a crash is positive proof the row is read there, which is exactly the
+  # "does this host genuinely consume it" test the ORPHAN note above demands before `*`.
+  # NOTE THE PAIRING, because the two files sit next to each other on the host and a reader
+  # deserves the line stated: alert-registry.json is a DECLARATION (inert JSON, synced here),
+  # while send_telegram.sh — which READS it — is an ARTIFACT (executable, installed by reviewed
+  # SSH and never by this script). This script moves the first and never the second. That is
+  # what keeps the whole mechanism inside CLAUDE.md's no-auto-install rule.
+  "alert-registry.json|alerts|30|*"
   # ── added by OPS-DECLARATION-SYNC-YAML-W1 ──
   # All five are signal-host canary configs: their consumers run only there, and syncing them
   # everywhere makes them ORPHANs on hosts that read them from nowhere (measured — see above).

@@ -74,7 +74,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "867b578b9b96fb1ebf3b0d4a78aaf1a153df6e24ebbfab09ce442161cc3a7d82",
+      "sha256": "f4032786dd31ce4ea3cef73f0856c0ffa99daf2b82e8512bdfcff54f5e78fe77",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1436,6 +1436,7 @@
       "id": "alert-registry",
       "artifact": "ops/monitoring/alert-registry.json",
       "kind": "declaration-data",
+      "host_path": "/opt/algovault-monitoring/alert-registry.json",
       "installed_at": [
         {
           "host": "signal-1",
@@ -1457,7 +1458,7 @@
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
       "divergent_copies": null,
-      "notes": "CONSUMER REGISTRY for send_telegram.sh alert ids. Read by the wrapper's --clear path to decide announce-vs-silent; every failure mode of that read resolves to SILENT. CLASSIFICATION: this is inert JSON DATA, i.e. a DECLARATION by the project's own artifact/declaration line, and it therefore BELONGS in declaration-sync.sh's DECLARATIONS array so it self-syncs hourly. It is NOT added there in this wave because OPS-ALERT-RECOVERY-NOTICE-W1 CH2's Scope Rule names that array as a hard firewall. Installed by reviewed SSH push here; promoting it to a declared row is OPS-ALERT-REGISTRY-DECLARE-W{NEXT}. Until then it does NOT self-heal on the hosts, which is a real gap and is recorded rather than left to be discovered."
+      "notes": "CONSUMER REGISTRY for send_telegram.sh alert ids. Read by the wrapper's --clear path to decide announce-vs-silent; every failure mode of that read resolves to SILENT. CLASSIFICATION: inert JSON DATA, i.e. a DECLARATION by the project's own artifact/declaration line. DECLARED as `alert-registry.json|alerts|30|*` in declaration-sync.sh since OPS-ALERT-REGISTRY-DECLARE-W1 (2026-08-21), so it self-syncs hourly on both hosts and a hand-edited host copy is reverted within the hour. `host_path` was ABSENT on this row from its creation until that same wave, and that absence was not cosmetic: it made tests/unit/declaration-sync.test.ts's `exemption()` classify the row as 'no host copy exists' (the sixth silent omission the completeness assertion was built to end), AND it crashed monitoring-inventory-reconcile.py outright with KeyError: 'host_path' at check_hash_drift/check_orphan, measured live on both hosts. NEVER remove host_path from a row that carries installed_at."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label → address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON — this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
