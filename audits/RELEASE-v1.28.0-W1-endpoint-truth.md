@@ -101,7 +101,7 @@ Window **2026-08-10 15:05 UTC → 2026-08-21**. `status.md` (16 open) + `Old Sta
 
 | Wave | Verified how |
 |---|---|
-| `AUTH-THREE-STATE-W1` (08-18) | live: no key → `auth.outcome ABSENT` (served) · `Bearer garbage` → `MALFORMED` (served, and says so) · `Bearer av_live_0123456789abcdef01234567` → **refused**, `-32003 "That API key was not recognised."`, `auth_outcome: UNKNOWN`, `retryable: false` |
+| `AUTH-THREE-STATE-W1` (08-18) | live: no key → `auth.outcome ABSENT` (served) · `Bearer garbage` → `MALFORMED` (served, and says so) · `Bearer av_live_0123…4567` (synthetic probe value, abbreviated — the full literal is what failed the secret-scan gate and stranded prod at `81cf4f0`; see `scripts/security-canary.mjs` NOT_A_SECRET) → **refused**, `-32003 "That API key was not recognised."`, `auth_outcome: UNKNOWN`, `retryable: false` |
 | `DOCS-SUPPORT-ANSWERS-AND-PUBLIC-VENUE-SCOPE-W1` (08-19) | live enum 15 on 4 tools; `/docs` `id="tools-errors"` present |
 | `DOCS-PARAM-SCHEMA-PROJECTION-W1` (08-19) | `assetClass` + `minLiquidityUsd` present live and in `/docs`; `_receipts` ×2 in `/docs` |
 | `DOCS-SAMPLE-EXECUTABLE-W1` (08-19) | `check-docs-samples-live.mjs` runs at `deploy.yml:920`, token-gated, fail-open on transport |
