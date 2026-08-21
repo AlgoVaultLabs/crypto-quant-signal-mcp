@@ -92,6 +92,13 @@ map_shape_ledger() {   # <event> <reason>
 # LC_ALL=C is set by the caller so `length()` is BYTES, deterministically, on every platform.
 # That is the instrument, and it is recorded beside every number this gate prints.
 #
+# BYTES vs CHARACTERS is not pedantry here — it is a measured, resolved discrepancy. system-map.md
+# line 451 is 852 BYTES and 844 CHARACTERS (8 multi-byte glyphs), and two readings of "the max
+# line" that omit the instrument look exactly like one of them being wrong. The PASS summary
+# therefore says "bytes". The VIOLATION message keeps the word "chars" because that wording is
+# mandated verbatim by the gate's spec (R2) — the number is identical either way at that scale,
+# and diverging from a mandated string to win a nuance is not a trade worth making.
+#
 # Emits, tab-separated:  V <line> <CHECK> <detail>     one per violation
 #                        S <tables> <rows> <maxlen> <maxline>   summary, always last
 read -r -d '' MAP_SHAPE_AWK <<'AWK' || true
@@ -269,7 +276,7 @@ run_gate() {   # <file> <max-line>
   local headroom
   headroom=$(LC_ALL=C awk -v m="$maxlen" -v t="$max" 'BEGIN{printf "%.1f", (t>0)?(100-(m*100/t)):0}')
   echo "[map-shape] $(basename "$file") — $tables table(s), $rows row(s) checked."
-  echo "  LINE_TOO_LONG        0 violations (max observed ${maxlen} chars at line ${maxline}; threshold ${max}; ${headroom}% headroom)"
+  echo "  LINE_TOO_LONG        0 violations (max observed ${maxlen} bytes at line ${maxline}; threshold ${max}; ${headroom}% headroom)"
   echo "  CELL_COUNT_MISMATCH  0 violations (every row matches its own header's column count)"
   echo "  TABLE_INTERRUPTED    0 violations (no prose or blank between any table's first and last row)"
   finish PASS
