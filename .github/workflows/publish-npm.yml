@@ -27,8 +27,15 @@ name: Publish to npm
 # publish and is NOT an auth-path discriminator.
 #
 # Triggers ONLY on tag push (NOT on every commit to main) — keeps the release wave
-# in control of when npm gets a new version. The daily release-wave does
-# `npm version <bump>` + `git push --follow-tags` → this workflow fires.
+# in control of when npm gets a new version.
+#
+# The release ritual LANDS FIRST, then tags the LANDED sha, then pushes the tag alone:
+#   1. scripts/land.sh   2. LANDED=$(git rev-parse HEAD)   3. git tag -a vX.Y.Z "$LANDED"
+#   4. git push origin vX.Y.Z   — refs/tags/* is its own namespace and needs no lock.
+# NOT `git push --follow-tags`: land.sh REBASES, so a tag created before landing points at
+# a rewritten-away commit — and the checkout below takes the TAG TREE, so npm would publish
+# a tree that never landed. scripts/land.sh refuses that ordering outright (LAND_VERDICT=
+# TAGGED). Corrected 2026-08-21, OPS-CI-MAIN-WRITER-HARDEN-W1 CH2 R3 — comment only.
 
 on:
   push:

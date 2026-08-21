@@ -44,7 +44,7 @@
 #
 # ─── VERDICT TOKEN ──────────────────────────────────────────────────────────────────────────
 #
-#   LAND_VERDICT=LANDED | DIRTY | CONFLICT | GATE_BLOCKED | EXHAUSTED | INDETERMINATE
+#   LAND_VERDICT=LANDED | DIRTY | TAGGED | CONFLICT | GATE_BLOCKED | EXHAUSTED | INDETERMINATE
 #   LAND_ATTEMPTS=<n>        # push attempts made; 1 == the lock did its job
 #
 #   exit 0 -> LANDED
@@ -157,6 +157,67 @@ DEFAULT_BRANCH="${DEFAULT_REF#"$REMOTE"/}"
 
 # Target defaults to the remote default branch. REBASE only when landing there — see the header.
 if [ -z "$TARGET" ]; then TARGET="$DEFAULT_BRANCH"; REBASE=1; else REBASE=0; fi
+
+# ── TAG GUARD — OPS-CI-MAIN-WRITER-HARDEN-W1 CH2 R2 ─────────────────────────────────────────
+#
+# THE HAZARD, MEASURED (not theorised): this lander REBASES, and a rebase rewrites the commits
+# unique to this branch. A tag created BEFORE landing therefore ends up pointing at a commit that
+# is no longer on the branch — orphaned, but still perfectly pushable, because `refs/tags/*` is a
+# separate namespace with no fast-forward rule to refuse it. And `.github/workflows/publish-npm.yml`
+# checks out the TAG TREE. So npm would publish a tree that never landed, with nothing failing
+# anywhere. Reproduced 2026-08-21 in a throwaway repo: tag at 9137fb4, HEAD after rebase 38cbb7e,
+# `git merge-base --is-ancestor <tag> HEAD` -> NO.
+#
+# That is the same class as the v1.19.0 frozen npm README and its v1.22.0 recurrence, which the
+# release template already documents. Third occurrence of "the tag is on the wrong commit" is
+# where a rule becomes a gate.
+#
+# WHY THE PREDICATE IS WIDE. The literal reading — refuse only when the remote has ALREADY moved,
+# i.e. only when a rebase would really rewrite something — RACES ITSELF: this lander fetches
+# INSIDE the lock, so the remote can move between this check and the rebase, and the narrow
+# predicate would wave through exactly the case it exists to catch. Measured: a rebase onto an
+# unmoved upstream leaves SHAs untouched, so the narrow predicate is silent in precisely the
+# window where the answer can still change. The wide predicate refuses whenever a tag sits on an
+# unlanded commit and a rebase is possible at all. It is race-immune, and it ENFORCES the correct
+# ordering rather than merely surviving it.
+#
+# It is also correctly SCOPED, and does not fire on routine work in a repo full of tags: an old
+# release tag points at a commit already on the remote default, which is by definition NOT in
+# `$DEFAULT_REF..HEAD`. Only a tag on an unlanded commit trips it. `--to <branch>` sets REBASE=0
+# and skips this entirely, because nothing is rewritten there.
+#
+# Tags are PEELED (`%(*objectname)`), because the release ritual creates ANNOTATED tags: matching
+# on `%(objectname)` alone would compare the tag OBJECT's sha against a commit sha and never fire.
+if [ "$REBASE" -eq 1 ]; then
+  RANGE_SHAS="$(git rev-list "$DEFAULT_REF..HEAD" 2>/dev/null || true)"
+  if [ -n "$RANGE_SHAS" ]; then
+    ORPHANING="$(git for-each-ref --format='%(refname:short) %(objectname) %(*objectname)' refs/tags/ 2>/dev/null |
+      while read -r TAG_NAME TAG_OBJ TAG_PEELED; do
+        TARGET_SHA="${TAG_PEELED:-$TAG_OBJ}"
+        if printf '%s\n' "$RANGE_SHAS" | grep -qxF "$TARGET_SHA"; then
+          printf '%s -> %s\n' "$TAG_NAME" "$TARGET_SHA"
+        fi
+      done)"
+    if [ -n "$ORPHANING" ]; then
+      printf '%s\n' "✖ land: a local tag points at a commit this landing would REBASE, which would orphan it."
+      printf '%s\n' "$ORPHANING" | sed -e 's/^/      /'
+      printf '%s\n' ""
+      printf '%s\n' "    A rebase rewrites the commits unique to this branch. The tag would keep pointing at the"
+      printf '%s\n' "    OLD commit, which is then on no branch — and publish-npm.yml checks out the TAG TREE, so"
+      printf '%s\n' "    npm would publish a tree that never landed. Nothing would fail; it would just be wrong."
+      printf '%s\n' ""
+      printf '%s\n' "    LAND FIRST, THEN TAG THE LANDED SHA:"
+      printf '%s\n' "      1. scripts/land.sh                        # may rebase; no tag exists yet"
+      printf '%s\n' "      2. LANDED=\$(git rev-parse HEAD)           # re-read AFTER landing, never a SHA from before"
+      printf '%s\n' "      3. git tag -a vX.Y.Z -m vX.Y.Z \"\$LANDED\"  # annotate THAT commit"
+      printf '%s\n' "      4. git push origin vX.Y.Z                 # the tag alone; refs/tags/* is its own namespace"
+      printf '%s\n' ""
+      printf '%s\n' "    To recover from here: delete the premature tag (git tag -d <name>), land, then re-tag the"
+      printf '%s\n' "    landed SHA. If it was already pushed, delete it on the remote too before re-tagging."
+      finish TAGGED 1
+    fi
+  fi
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   printf '%s\n' "[land] DRY RUN — branch=$BRANCH remote=$REMOTE default=$DEFAULT_REF target=$TARGET rebase=$REBASE; no lock, no transfer."
