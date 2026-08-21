@@ -87,7 +87,7 @@ prose below the table is fine.
 `;
 
 describe('check_map_shape.sh — verdict token contract', () => {
-  it('always prints exactly one token, as the LAST line of stdout', () => {
+  it('always prints exactly one token, as the LAST line of stdout', { timeout: 15_000 }, () => {
     for (const args of [[fixture('c.md', CLEAN)], ['/nonexistent'], ['--self-test']]) {
       const r = runGate(args);
       expect(r.verdict).toMatch(/^(PASS|FAIL|INDETERMINATE)$/);
@@ -110,11 +110,13 @@ describe('check_map_shape.sh — verdict token contract', () => {
     const r = runGate(byVerdict[verdict]);
     expect(r.verdict).toBe(verdict);
     expect(r.code).toBe(code);
-  });
+    // it.each takes its budget as a trailing number, not an options object. Every block in this
+    // file spawns a subprocess, so none of them may inherit the 5,000ms default.
+  }, 15_000);
 });
 
 describe('check_map_shape.sh — the three checks', () => {
-  it('PASSes a clean table and reports what it actually evaluated', () => {
+  it('PASSes a clean table and reports what it actually evaluated', { timeout: 15_000 }, () => {
     const r = runGate([fixture('clean.md', CLEAN)]);
     expect(r.verdict).toBe('PASS');
     expect(r.code).toBe(0);
@@ -125,14 +127,14 @@ describe('check_map_shape.sh — the three checks', () => {
     expect(r.stdout).toMatch(/2 row\(s\) checked/);
   });
 
-  it('does NOT count an escaped \\| as a column separator', () => {
+  it('does NOT count an escaped \\| as a column separator', { timeout: 15_000 }, () => {
     // The single most important parsing detail: a naive split('|') reproduces the very bug the
     // gate exists to catch. CLEAN's second row carries a legal escaped pipe.
     expect(CLEAN).toContain('shadow\\|enforce');
     expect(runGate([fixture('esc.md', CLEAN)]).verdict).toBe('PASS');
   });
 
-  it('flags LINE_TOO_LONG past the threshold, and honours --max-line', () => {
+  it('flags LINE_TOO_LONG past the threshold, and honours --max-line', { timeout: 15_000 }, () => {
     const long = `| A | B |\n|---|---|\n| ${'x'.repeat(300)} | b |\n`;
     const p = fixture('long.md', long);
     const tight = runGate([p, '--max-line', '100']);
@@ -143,7 +145,7 @@ describe('check_map_shape.sh — the three checks', () => {
     expect(runGate([p, '--max-line', '5000']).verdict).toBe('PASS');
   });
 
-  it('flags CELL_COUNT_MISMATCH on an unescaped union type inside a cell', () => {
+  it('flags CELL_COUNT_MISMATCH on an unescaped union type inside a cell', { timeout: 15_000 }, () => {
     const r = runGate([
       fixture('union.md', "| A | B | C |\n|---|---|---|\n| x | 'daily'|'monthly' | z |\n"),
     ]);
@@ -154,7 +156,7 @@ describe('check_map_shape.sh — the three checks', () => {
     expect(r.stdout).toMatch(/header declares 3/);
   });
 
-  it('flags TABLE_INTERRUPTED when prose splits a table', () => {
+  it('flags TABLE_INTERRUPTED when prose splits a table', { timeout: 15_000 }, () => {
     const r = runGate([
       fixture('split.md', '| A | B |\n|---|---|\n| 1 | 2 |\n\nprose here.\n\n| 3 | 4 |\n'),
     ]);
@@ -166,13 +168,13 @@ describe('check_map_shape.sh — the three checks', () => {
   // The regression that would make AC1 unsatisfiable. Read naively, "a non-row line ends the
   // table, therefore it interrupted it" flags the blank line that terminates EVERY well-formed
   // table. If this test ever goes red, the clean map itself has started failing the gate.
-  it('does NOT flag the blank line that terminates a table', () => {
+  it('does NOT flag the blank line that terminates a table', { timeout: 15_000 }, () => {
     const r = runGate([fixture('term.md', '| A | B |\n|---|---|\n| 1 | 2 |\n\nnext paragraph.\n')]);
     expect(r.verdict).toBe('PASS');
     expect(r.stdout).not.toContain('TABLE_INTERRUPTED  non-row');
   });
 
-  it('does NOT flag two legitimately separate tables', () => {
+  it('does NOT flag two legitimately separate tables', { timeout: 15_000 }, () => {
     const r = runGate([
       fixture('two.md', '| A | B |\n|---|---|\n| 1 | 2 |\n\ntext.\n\n| C | D | E |\n|---|---|---|\n| 3 | 4 | 5 |\n'),
     ]);
@@ -182,13 +184,13 @@ describe('check_map_shape.sh — the three checks', () => {
 });
 
 describe('check_map_shape.sh — vacuity and refusal', () => {
-  it('treats a missing target as INDETERMINATE, never PASS', () => {
+  it('treats a missing target as INDETERMINATE, never PASS', { timeout: 15_000 }, () => {
     const r = runGate([join(dir, 'absent.md')]);
     expect(r.verdict).toBe('INDETERMINATE');
     expect(r.code).toBe(3);
   });
 
-  it('treats a table-less file as INDETERMINATE, never PASS', () => {
+  it('treats a table-less file as INDETERMINATE, never PASS', { timeout: 15_000 }, () => {
     // Input we were HANDED and could not parse is INDETERMINATE. (Empty is only vacuity where
     // WE construct the corpus — that case lives in --self-test's REFUSE branch.)
     const r = runGate([fixture('prose.md', 'just prose.\n\nnothing to parse.\n')]);
@@ -196,20 +198,20 @@ describe('check_map_shape.sh — vacuity and refusal', () => {
     expect(r.code).toBe(3);
   });
 
-  it('rejects a non-numeric --max-line rather than coercing it', () => {
+  it('rejects a non-numeric --max-line rather than coercing it', { timeout: 15_000 }, () => {
     const r = runGate([fixture('c2.md', CLEAN), '--max-line', 'lots']);
     expect(r.verdict).toBe('INDETERMINATE');
     expect(r.code).toBe(3);
   });
 
-  it('ignores pipes and long lines inside fenced code blocks', () => {
+  it('ignores pipes and long lines inside fenced code blocks', { timeout: 15_000 }, () => {
     const body = `| A | B |\n|---|---|\n| 1 | 2 |\n\n\`\`\`\n| a | b | c | d | e |\n${'y'.repeat(300)}\n\`\`\`\n`;
     expect(runGate([fixture('fence.md', body), '--max-line', '100']).verdict).toBe('PASS');
   });
 });
 
 describe('check_map_shape.sh — self-test is real', () => {
-  it('passes, and reports a non-zero scenario count', () => {
+  it('passes, and reports a non-zero scenario count', { timeout: 15_000 }, () => {
     const r = runGate(['--self-test']);
     expect(r.verdict).toBe('PASS');
     expect(r.code).toBe(0);
@@ -223,7 +225,7 @@ describe('check_map_shape.sh — self-test is real', () => {
 });
 
 describe('single-derivation of the target path', () => {
-  it('defines the vault path in exactly ONE place', () => {
+  it('defines the vault path in exactly ONE place', { timeout: 15_000 }, () => {
     expect(existsSync(PATH_LIB)).toBe(true);
     const lib = readFileSync(PATH_LIB, 'utf8');
     expect(lib).toMatch(/ALGOVAULT_SYSTEM_MAP_PATH=/);
@@ -242,13 +244,13 @@ describe('single-derivation of the target path', () => {
     }
   });
 
-  it('both gates consume the shared definition', () => {
+  it('both gates consume the shared definition', { timeout: 15_000 }, () => {
     for (const p of [SCRIPT_PATH, SIBLING]) {
       expect(readFileSync(p, 'utf8')).toContain('lib/system-map-path.sh');
     }
   });
 
-  it('honours an explicit SYSTEM_MAP_PATH without needing the library', () => {
+  it('honours an explicit SYSTEM_MAP_PATH without needing the library', { timeout: 15_000 }, () => {
     // The existing suite for the sibling copies only that one script into a tmp repo. Requiring
     // the library on a path that needs no resolution would have broken it.
     const target = fixture('explicit.md', CLEAN);
@@ -264,7 +266,7 @@ describe('single-derivation of the target path', () => {
 describe('the bypass hatch', () => {
   const failing = '| A | B |\n|---|---|\n| one | two | three |\n';
 
-  it('downgrades the exit code but NEVER launders the token', () => {
+  it('downgrades the exit code but NEVER launders the token', { timeout: 15_000 }, () => {
     const p = fixture('bad.md', failing);
     let code = 0;
     let stdout = '';
@@ -283,7 +285,7 @@ describe('the bypass hatch', () => {
     expect(stdout.trimEnd().split('\n').pop()).toBe('SYSTEM_MAP_SHAPE_VERDICT=FAIL'); // truthful
   });
 
-  it('is TOTAL — it honours the INDETERMINATE path too', () => {
+  it('is TOTAL — it honours the INDETERMINATE path too', { timeout: 15_000 }, () => {
     // A hatch that fails when it is most needed gets replaced by `git commit --no-verify`,
     // which bypasses every hook and writes no ledger row.
     let code = 0;
