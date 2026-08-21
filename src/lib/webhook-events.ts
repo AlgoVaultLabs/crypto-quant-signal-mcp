@@ -17,7 +17,7 @@
  *
  * MUST NOT: perform HTTP (that is webhook-delivery.ts); mutate `signals`.
  */
-import { dbQuery } from './performance-db.js';
+import { dbQuery, REGIME_RULE_VERSION } from './performance-db.js';
 import {
   listActiveSubscriptions,
   enqueueDelivery,
@@ -61,6 +61,24 @@ function envInt(name: string, fallback: number): number {
  * Most recent regime for (coin, timeframe, exchange) from a row OTHER than the
  * one just inserted (excluded by its unique signal_hash). Returns null when
  * there is no prior row or its regime is null.
+ *
+ * ── The version filter IS the cutover mechanism (SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2) ──
+ * The label rule changed on 2026-08-07. Comparing a NEW-rule label against an OLD-rule
+ * stored one would have fired a spurious `regime_shift` for every tuple whose label moved —
+ * measured, 29,252 distinct (coin, timeframe, exchange) tuples carry a regime, and delivery
+ * is ENABLED with a live subscriber. An internal refactor must not manufacture 29k events
+ * that a customer cannot distinguish from a market-wide move.
+ *
+ * Restricting the baseline to rows of the SAME `regime_rule_version` re-seeds each tuple
+ * exactly once, silently: the FIRST v2 evaluation finds no prior v2 row, so `prior` is null
+ * and the caller emits nothing; the SECOND finds the first and behaves normally. It is
+ * per-tuple and SELF-EXPIRING — there is no global blackout window (which only delays the
+ * storm to the moment it lifts) and no runtime toggle (which is how a webhook rail goes
+ * quietly dark when someone forgets to flip it back).
+ *
+ * It also makes the comparison correct in general, not just across this one cutover: two
+ * labels produced by two different rules were never comparable, and a delta across two
+ * instruments is not a delta.
  */
 async function getPreviousRegime(
   coin: string,
@@ -72,9 +90,10 @@ async function getPreviousRegime(
     `SELECT regime FROM signals
        WHERE coin = ? AND timeframe = ? AND exchange = ?
          AND (signal_hash IS NULL OR signal_hash <> ?)
+         AND regime_rule_version = ?
        ORDER BY created_at DESC, id DESC
        LIMIT 1`,
-    [coin, timeframe, exchange, excludeSignalHash ?? '__none__'],
+    [coin, timeframe, exchange, excludeSignalHash ?? '__none__', REGIME_RULE_VERSION],
   );
   if (rows.length === 0) return null;
   return rows[0].regime ?? null;

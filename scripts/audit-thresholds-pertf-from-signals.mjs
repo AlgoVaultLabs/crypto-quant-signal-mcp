@@ -69,8 +69,13 @@ function buildAggregateSQL(windowDays) {
       AVG(outcome_return_pct)::float AS avg_outcome_internal
     FROM signals
     WHERE created_at >= EXTRACT(EPOCH FROM NOW() - INTERVAL '${windowDays} days')
-    GROUP BY timeframe, exchange, signal, regime
-    ORDER BY timeframe, exchange, signal, regime;
+    -- SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2: `regime` means two different things either side of
+    -- 2026-08-07T15:28:44Z (v1 = emaCross AND an RSI band, RANGING as fallthrough; v2 =
+    -- separation band + 12-bar confirmation, no RSI term). Grouping by the version keeps the
+    -- two populations SEPARATE rather than averaging across two instruments, which is not a
+    -- delta. Do not collapse this back without deciding what a mixed cell would mean.
+    GROUP BY timeframe, exchange, signal, regime, regime_rule_version
+    ORDER BY timeframe, exchange, signal, regime, regime_rule_version;
   `;
 }
 

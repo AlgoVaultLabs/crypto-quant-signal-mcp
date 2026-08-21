@@ -521,11 +521,11 @@ x AS (
     CASE WHEN created_at < (SELECT cut FROM bnd) THEN 'train' ELSE 'holdout' END AS split
   FROM base
 )
-SELECT timeframe||'|'||tier||'|'||conf_bin||'|'||regime AS key,
+SELECT timeframe||'|'||tier||'|'||conf_bin||'|'||regime||'|v'||regime_rule_version AS key,
   count(*)::int AS full_n, sum(hit)::int AS full_hits, sum(up)::int AS full_up,
   count(*) FILTER (WHERE split='train')::int AS tr_n, coalesce(sum(hit) FILTER (WHERE split='train'),0)::int AS tr_hits, coalesce(sum(up) FILTER (WHERE split='train'),0)::int AS tr_up,
   count(*) FILTER (WHERE split='holdout')::int AS ho_n, coalesce(sum(hit) FILTER (WHERE split='holdout'),0)::int AS ho_hits, coalesce(sum(up) FILTER (WHERE split='holdout'),0)::int AS ho_up
-FROM x GROUP BY timeframe, tier, conf_bin, regime`;
+FROM x GROUP BY timeframe, tier, conf_bin, regime, regime_rule_version`;
 
 export async function loadCryptoEdgeCells(): Promise<EdgeCell[]> {
   const { dbQuery } = await import('../lib/performance-db.js');
