@@ -31,7 +31,7 @@
 // get_trade_call (canonical, v1.10.0) + get_trade_signal (alias) share
 // TRADE_CALL_DESCRIPTION; the alias appends TRADE_CALL_ALIAS_SUFFIX.
 export const TRADE_CALL_DESCRIPTION =
-  'Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls, for US stocks use get_equity_call. Read-only: reads live exchange APIs, no orders. Verified track record, on-chain verified merkle anchor.';
+  'Returns a composite verdict — BUY SELL HOLD trade call with confidence and market regime — for one crypto or tokenized-stock perpetual futures. One asset only; for a whole-market scan use scan_trade_calls. Read-only: reads live exchange APIs, no orders. Verified track record, on-chain verified merkle anchor.';
 
 // KNOWLEDGE-ARTIFACT-W1 (Q-5, 2026-05-18): suffix literal uses the [ALIAS] tag
 // prefix pattern so future tool aliases follow the same shape.
@@ -42,7 +42,7 @@ export const SCAN_FUNDING_ARB_DESCRIPTION =
   'Ranked cross-venue funding arbitrage across major crypto perpetual futures venues — funding rate spreads, long one venue short another, as a BUY SELL HOLD composite verdict per pair. AI trading signal for crypto quant and Claude trading agents. Trade call via get_trade_call, market regime via get_market_regime. On-chain verified merkle anchor.';
 
 export const GET_MARKET_REGIME_DESCRIPTION =
-  'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. For a US equity use get_equity_regime. Read-only, live exchange APIs. Verified track record, on-chain verified merkle anchor.';
+  'Returns the market regime — TRENDING_UP TRENDING_DOWN RANGING VOLATILE — with confidence and a strategy hint, for one crypto perpetual futures. Composite verdict blends trend ranging and cross-venue funding rate sentiment. Read-only, live exchange APIs. Verified track record, on-chain verified merkle anchor.';
 
 // describe-text for the `search_knowledge` MCP tool. Self-pitching text
 // intentionally instructs the calling LLM to call it BEFORE other tools to
