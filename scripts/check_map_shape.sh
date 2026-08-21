@@ -163,11 +163,21 @@ AWK
 # R2: a message must name the LAW, not just the number. "line 356: 62356 > 1200" teaches
 # nothing and sends the reader to a manual. The remedy is stated inline so the fix needs no
 # lookup — that is what makes this a developer-loop gate with no operator action on any path.
-explain() {   # <CHECK>
+# The LINE_TOO_LONG remedy is TARGET-AWARE, and that is not cosmetic. R2 mandates the
+# map-not-a-log wording verbatim, and system-map.md still gets exactly that text. But this script
+# is file-agnostic by design, and printing "per-wave history belongs in status.md" while checking
+# status.md is advice that contradicts itself — the kind of message that teaches a reader the gate
+# does not know what it is looking at. Mandated text where it applies; honest text everywhere else.
+explain() {   # <CHECK> <basename>
   case "$1" in
     LINE_TOO_LONG)
-      echo "  This file is a MAP, not a log. Per-wave history belongs in status.md."
-      echo "  Move the changelog prose out of the cell; keep the component's role + current edges." ;;
+      if [ "${2:-}" = "system-map.md" ]; then
+        echo "  This file is a MAP, not a log. Per-wave history belongs in status.md."
+        echo "  Move the changelog prose out of the cell; keep the component's role + current edges."
+      else
+        echo "  A line this long is usually accreted history inside a single cell."
+        echo "  Move the narrative out to this file's own log; keep the row's current facts."
+      fi ;;
     CELL_COUNT_MISMATCH)
       echo "  Unescaped | inside a cell creates phantom columns. Escape it as \\| —"
       echo "  most often a TS union written as 'a'|'b' inside backticks." ;;
@@ -262,7 +272,7 @@ run_gate() {   # <file> <max-line>
   if [ "$violations" -gt 0 ]; then
     printf '%s\n' "$out" | grep '^V	' | while IFS=$'\t' read -r _ line check detail; do
       printf '%s:%s  %s  %s\n' "$(basename "$file")" "$line" "$check" "$detail"
-      explain "$check"
+      explain "$check" "$(basename "$file")"
     done
     echo
     echo "[map-shape] $violations violation(s) across $tables table(s), $rows row(s)."

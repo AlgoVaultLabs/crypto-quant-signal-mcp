@@ -145,6 +145,19 @@ describe('check_map_shape.sh — the three checks', () => {
     expect(runGate([p, '--max-line', '5000']).verdict).toBe('PASS');
   });
 
+  it('tailors the LINE_TOO_LONG remedy to the target file', { timeout: 15_000 }, () => {
+    // R2 mandates the map-not-a-log wording, and system-map.md must keep it verbatim. But this
+    // script is file-agnostic, and telling a reader checking status.md that "per-wave history
+    // belongs in status.md" is advice that contradicts itself.
+    const long = `| A | B |\n|---|---|\n| ${'x'.repeat(300)} | b |\n`;
+    const asMap = runGate([fixture('system-map.md', long), '--max-line', '100']);
+    expect(asMap.stdout).toContain('This file is a MAP, not a log.');
+
+    const asOther = runGate([fixture('some-other-doc.md', long), '--max-line', '100']);
+    expect(asOther.stdout).not.toContain('This file is a MAP, not a log.');
+    expect(asOther.stdout).toContain('accreted history inside a single cell');
+  });
+
   it('flags CELL_COUNT_MISMATCH on an unescaped union type inside a cell', { timeout: 15_000 }, () => {
     const r = runGate([
       fixture('union.md', "| A | B | C |\n|---|---|---|\n| x | 'daily'|'monthly' | z |\n"),
