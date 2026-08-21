@@ -143,9 +143,11 @@ describe('CH2 — the label is the band plus K unanimous bars', () => {
 
 describe('CH2 step 6 — RANGING agrees; only a hysteresis hold disagrees', () => {
   it('a RANGING label with a SIGNED emaScore agrees — the >50% case', () => {
-    // Measured 2026-08-21, per-bar, n=11,820: the old predicate disagreed on 53.7% of bars at K=12
-    // because `RANGING && emaScore === 0` needs an exact EMA tie, while the band calls RANGING for
-    // any |sep| < band with sep still non-zero. Widening it took that to 17.2%.
+    // Measured 2026-08-21, per-bar, production's 100-period window, n=5,760: the old predicate
+    // disagreed on 53.6% of bars at K=12 because `RANGING && emaScore === 0` needs an exact EMA
+    // tie, while the band calls RANGING for any |sep| < band with sep still non-zero. Widening it
+    // took that to 4.8% — BELOW the 20.4% the PRE-WAVE rule scored on the same corpus, so the fix
+    // does not merely avoid a regression, it improves on what it replaced.
     for (const emaScore of [100, -100]) {
       const row = regimeRowOf(ledgerInput('RANGING', emaScore));
       expect(row.value).toBe('ranging');

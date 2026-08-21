@@ -44,6 +44,7 @@ import { recordOiScoreShadow } from '../lib/oiscore-shadow.js';
 import { getOiScoreSource } from '../lib/oiscore-source-flag.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
+import { getTrendMode } from '../lib/trend-mode-flag.js';
 
 interface TradeSignalInput {
   coin: string;
@@ -150,6 +151,17 @@ const WEIGHTS = {
 //     consumers today, so `WEIGHTS` is currently code-only and can move only by editing this
 //     file. THE DAY IT IS WIRED INTO THE SCORER, weights become runtime-mutable with no deploy
 //     and no diff, and this verdict expires WITHOUT ANY CODE CHANGE TO OBSERVE.
+//
+// ── DISCHARGED FOR ONE SPECIFIC CHANGE (SIGNAL-TREND-BLINDNESS-FIX-W1 CH3, 2026-08-21) ──
+// CH3's trend mode edits the RSI ladder, so it owes this re-derivation. It is discharged
+// STRUCTURALLY, and the result is stronger than the warning above assumes: trend mode is a SIGN
+// FLIP (`rsiScore = -rsiScore`), and the RSI value set {-100,-80,-40,0,40,80,100} is SYMMETRIC
+// under negation — so the flip is a BIJECTION on that set. The reachable rsiScore values do not
+// change, therefore neither does the reachable raw-score set. Enumerated exhaustively: 155 atom
+// POSITIONS under both flag states, identical; -55 is still an atom and so is +40. The atom map
+// does NOT move for this change. Pinned by tests/unit/scorer-trend-mode.test.ts so the next edit
+// that DOES move it — an asymmetric ladder, a new bucket value, a WEIGHTS change — fails loudly.
+// What moves is the MASS on those atoms, which is emission-weighted and is CH4's to measure.
 //
 // So whoever wires it, or retunes a ladder, OWNS re-deriving this: re-run the atom histogram and
 // the per-candidate counterfactual on the new ladder (§2–§3 of the audit are the template) BEFORE
@@ -322,6 +334,19 @@ export interface IndicatorInputs {
   priceChange: number;
   /** Open interest from the asset context. Not candle-derived. */
   openInterest: number;
+  /**
+   * SIGNAL-TREND-BLINDNESS-FIX-W1 CH3 — is the regime-conditioned RSI polarity ACTIVE?
+   *
+   * OPTIONAL and defaulting to OFF-when-absent, deliberately. `computeIndicatorScores` is a pure
+   * exported function with several test call sites, and per CLAUDE.md an optional TRAILING field
+   * keeps every existing caller assignable instead of forcing an N-site cascade. Absent ⇒ legacy
+   * behaviour, byte-identical. Same shape as `VerdictGateInputs.bookLive`.
+   *
+   * It is PASSED IN rather than read here because this function is pure — "zero I/O, zero
+   * process.env, zero Date.now()" — and it must stay safe to call twice over two candle windows.
+   * The env read happens once, at the caller.
+   */
+  trendMode?: boolean;
 }
 
 /** The five verdict scores plus the candle-derived context the envelope and gates need. */
@@ -382,21 +407,32 @@ export interface IndicatorScores extends VerdictScoreInputs {
  *
  * ── RE-MEASURED 2026-08-21 (SIGNAL-TREND-BLINDNESS-FIX-W1 CH2 step 11): 0.30 STANDS ───────────
  * INSTRUMENT, because a baseline without one is not comparable to anything: 20 Binance perps ×
- * {1h, 4h, 1d}, closed basis, PER-BAR accounting (not per-pair), n = 11,340 bar-observations,
- * measured 2026-08-21. The sweep was pinned against production `classifyRegimeLabel` at K = 12 and
- * reproduced it 57/57 exactly, so it is the same derivation and not a second one.
+ * {1h, 4h, 1d}, closed basis, PER-BAR accounting (not per-pair), fetch lookback = PRODUCTION's 100
+ * periods, n = 5,760 bar-observations, measured 2026-08-21. Pinned against production
+ * `classifyRegimeLabel` at K = 12, 60/60 exact — the same derivation, not a second one.
  *
- *   RANGING share  43.6 / 43.1 / 38.8%  (1h / 4h / 1d)   cross-timeframe spread 4.7pp
+ *   RANGING share  54.1 / 74.0 / 48.9%  (1h / 4h / 1d)   cross-timeframe spread 25.1pp
  *   the figures above this line, from 2026-08-07: 27.8 / 26.7 / 28.2%, spread 1.5pp
  *
- * The PROPERTY reproduces; the LEVEL does not, and that is the design working rather than failing.
- * What was ever claimed here is cross-TIMEFRAME invariance — spread stays 4.7-6.5pp across every
- * K in {4,6,8,10,12}, against 40.9pp for the rejected absolute-bps band. Cross-TIME level stability
- * was never claimed and would be wrong to want: an ATR-scaled band MECHANICALLY widens as
- * volatility rises, and the 14 days between the two measurements contain a +20%/3-day advance and
- * a reversal. Corroborating, from one session: BTC/4h's band read 0.494% at 09:04Z and 0.209%
- * hours later. A high RANGING share is also the SAFE direction — the failure that matters is a
- * label claiming a trend it cannot support — and 57% non-RANGING is ample for CH3's trend mode.
+ * ⚠️ AN EARLIER RUN OF THIS SWEEP REPORTED 43.6 / 43.1 / 38.8% AND A 4.7pp SPREAD. IT WAS INVALID,
+ * and the wrong numbers are kept visible because the error is the lesson. It fetched a 250-period
+ * lookback, but the Binance adapter sends `limit: 200` and the venue returns bars FORWARD from
+ * `startTime` — so every series ENDED ~50 periods in the PAST. Nothing looked wrong: the run was
+ * internally consistent and its PIN passed 57/57. Measured on BTC/4h at ONE instant, the two
+ * lookbacks disagreed on the LABEL itself — 100 gave `sep +4.747% / side +1 / TRENDING_UP`, 250
+ * gave `sep -0.400% / side -1 / TRENDING_DOWN`. Never fetch beyond the adapter's own cap.
+ *
+ * ⚠️ ON THE CORRECTED WINDOW THE INVARIANCE CLAIM DOES NOT REPRODUCE. Spread is 19.2-25.1pp across
+ * K ∈ {4,6,8,10,12} — nowhere near the 1.5pp claimed above, and much closer to the 40.9pp of the
+ * absolute-bps band this coefficient was chosen OVER. A LEVEL that moves with volatility is
+ * expected of an ATR-scaled band; a SPREAD that wide is not, and the spread IS the property 0.30
+ * was selected for. `0.30` is RETAINED for this wave by architect ruling — re-deriving it is a
+ * chapter of work, and it was retained on the belief that the property held — but that belief is
+ * now in doubt and the re-derivation is OWED: `SIGNAL-REGIME-BAND-RECALIBRATE-W{NEXT}`.
+ * Do not cite 1.5pp, or the 4.7pp that replaced it, as a live figure.
+ *
+ * A high RANGING share remains the SAFE direction — the failure that matters is a label claiming a
+ * trend it cannot support — and 26-51% non-RANGING is still ample for CH3's trend mode.
  *
  * The dated revisit marker that stood here is DELETED rather than re-dated (the literal token is
  * deliberately not reproduced — a scanner cannot tell a live marker from a quotation of one). A
@@ -425,13 +461,15 @@ export const REGIME_SEPARATION_ATR_MULT = 0.30;
  * A retune to K = 10 was specified and then REVERSED on the measurement. Same instrument as the
  * band constant above (20 coins × 3 tf, per-bar, n = 11,340):
  *
- *   K   RANGING (1h/4h/1d)        spread   flips/100bar   disagree
- *   10  45.3 / 42.2 / 39.5%       5.9pp    2.74           51.0%
- *   12  43.6 / 43.1 / 38.8%       4.7pp    2.33           54.3%
+ *   K   RANGING (1h/4h/1d)        spread   flips/100bar   disagree (post-step-6)
+ *   10  52.4 / 70.7 / 48.2%       22.5pp   2.24           3.9%
+ *   12  54.1 / 74.0 / 48.9%       25.1pp   1.84           4.8%
  *
- * K = 10 costs +17.6% flips per 100 bars — billed per delivery on the `regime_shift` webhook — and
- * +1.2pp of cross-timeframe spread, to buy 3.3pp of disagreement that CH2 step 6 removes anyway:
- * that disagree rate was dominated by the RANGING-bar predicate bug, not by hysteresis holds.
+ * K = 10 costs +21.7% flips per 100 bars — billed per delivery on the `regime_shift` webhook — to
+ * buy 0.9pp of disagreement. It DOES gain 2.6pp of spread, so it is not dominated; but neither is
+ * it the knee by a clear margin, which is the bar the falsifier set. K = 12 holds.
+ * (Re-measured on production's 100-period window. An earlier stale-window run of this same table
+ * read 2.33/2.74 flips and 54.3%/51.0% disagree — see the correction on the band constant above.)
  *
  * The deeper reason to hold is that the two RANGINGs are not the same failure. The retired rule's
  * RANGING was STRUCTURAL BLINDNESS — RSI 93.8 permanently disqualified TRENDING_UP, so no amount
@@ -532,6 +570,7 @@ export function classifyRegimeLabel(candles: Candle[]): RegimeType {
  */
 export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
   const { candles, fundingRateAnnualized, priceChange, openInterest } = i;
+  const trendMode = i.trendMode === true;
 
   const closes = candles.map(c => c.close);
   const highs = candles.map(c => c.high);
@@ -602,6 +641,36 @@ export function computeIndicatorScores(i: IndicatorInputs): IndicatorScores {
     else if (rsiVal <= 70) rsiScore = -40;
     else if (rsiVal <= 75) rsiScore = -80;
     else rsiScore = -100;
+  }
+
+  // ── SIGNAL-TREND-BLINDNESS-FIX-W1 CH3: TREND MODE, and it is a SIGN FLIP, not a retune ──
+  //
+  // The ladder above is contrarian in every regime, and saturates: RSI > 75 scores -100 at 0.30
+  // weight while a bullish EMA cross scores +100 at 0.10. On BTC 4h through a +20%/3-day advance
+  // that nets -20 before anything else is considered — the strongest available evidence of a bull
+  // market read as the single most bearish input. Mean-reversion with no trend mode, because the
+  // v1.5 refactor deleted the regime branch that would have been one.
+  //
+  // In a CONFIRMED trend the overbought region flips sign WITH the trend. `regime` alone gates it
+  // (get_trade_call emits no trend_strength — a non-RANGING label already implies |sep| > band AND
+  // K unanimous bars, so the strength filter is baked into the label).
+  //
+  // The flip starts at 70, not 75: at 75 a confirmed TRENDING_UP at RSI 72 would still score
+  // -80 x 0.30 = -24, and trend mode would do nothing in precisely the band where trends live.
+  // The 60-70 rung keeps its -40 — 60-70 is not overbought, and leaving it keeps some
+  // mean-reversion character rather than turning the engine into a pure momentum chaser.
+  //
+  // 🔒 NEGATION is why MAX_RAW_SCORE = 89 cannot move. `-x` preserves `|x|`, so the ladder's range
+  // stays exactly [-100, +100] and the theoretical max |rawScore| — 30+10+20+9+20 — is untouched.
+  // That number is the DIVISOR of every published confidence value and every anchored row's
+  // `confidence` field, so LAW 0 forbids moving it. Weight redistribution was considered and
+  // rejected for exactly that reason. Asserted in tests/unit/scorer-trend-mode.test.ts.
+  //
+  // RANGING and VOLATILE are untouched under both flag states: the blast radius is confined to
+  // labels that survived a K-bar confirmation.
+  if (trendMode && rsiVal !== null) {
+    if (regime === 'TRENDING_UP' && rsiVal > 70) rsiScore = -rsiScore;
+    else if (regime === 'TRENDING_DOWN' && rsiVal < 30) rsiScore = -rsiScore;
   }
 
   // EMA cross (10% weight): trend confirmation
@@ -879,6 +948,9 @@ export async function getTradeSignal(input: TradeSignalInput): Promise<TradeCall
     fundingRateAnnualized,
     priceChange,
     openInterest: assetCtx.openInterest,
+    // CH3: read ONCE here, so `computeIndicatorScores` stays pure and both candle bases see the
+    // same value. Default-deny — anything but the exact string 'on' is 'off'.
+    trendMode: getTrendMode() === 'on',
   };
   const liveBasisScores = computeIndicatorScores({ candles, ...indicatorInputs });
 
