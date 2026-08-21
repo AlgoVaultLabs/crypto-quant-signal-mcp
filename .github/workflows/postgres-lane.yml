@@ -94,7 +94,29 @@ jobs:
       DATABASE_URL: postgres://algovault:${{ github.run_id }}@localhost:5432/signal_performance_test
 
     steps:
+      # fetch-depth: 0 is LOAD-BEARING, not hygiene. actions/checkout defaults to depth 1 and
+      # fetches ONLY the pushed ref, so on a BRANCH push `refs/remotes/origin/main` does not
+      # exist in the runner at all. Measured from a real run's own log:
+      #
+      #   fetch --no-tags --prune --depth=1 origin +<sha>:refs/remotes/origin/<branch>
+      #
+      # check-test-budget.mjs asks `git merge-base HEAD origin/main` to decide which test files
+      # this change touched. Without that ref the call throws, changedTestFiles() returns null,
+      # and the gate CORRECTLY answers TEST_BUDGET_VERDICT=INDETERMINATE — it refuses to assume
+      # nothing changed. The gate was never wrong; it was run somewhere it could not see.
+      #
+      # The tell is that the SAME sha produced two verdicts: 602449c passed on `main` (where the
+      # pushed ref IS main, so the ref resolves) and failed on its branch. Identical tree, so the
+      # differing input was the REF, not the code. A depth-1 fetch of main as a second step does
+      # NOT fix it — two shallow tips share no reachable ancestor, so merge-base still fails.
+      #
+      # Cost measured before choosing: 1,412 commits / 158 MB, seconds against a lane that already
+      # stands up Postgres and runs the whole suite. Cheap next to a gate that is dark on every
+      # branch push — which is how a real red gets trained away.
+      # (OPS-TEST-BUDGET-CI-REF-W1)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
