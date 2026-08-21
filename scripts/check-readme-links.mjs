@@ -83,8 +83,19 @@ const TRANSPORT_STATUSES = new Set([408, 425, 429, 503]);
 /**
  * Expected non-200s, keyed by exact URL. EVERY entry carries a measured `reason`.
  *
- * Both of these were measured on the live corpus 2026-08-21, and both are STABLE — reproducible on
- * every probe, not a throttle. That is what separates them from the transport class above.
+ * All of these are STABLE — reproducible on every probe, no `Retry-After`, not a throttle. That is
+ * what separates them from the transport class above, and it is the whole test for membership here.
+ *
+ * ⚠️ AN EXPECTED STATUS IS VANTAGE-DEPENDENT, and this list learned that the expensive way. The
+ * first CI run of this gate went RED on two `basescan.org` URLs that answer **200 from a
+ * residential vantage and 403 from a GitHub-hosted runner** (measured 2026-08-21, run
+ * 32483280669). Step 0 had probed the whole corpus from a laptop and therefore could not see it —
+ * the same instrument error this estate has recorded before: an instrument pointed at the right
+ * subject, from the wrong place, returning a confident answer.
+ *
+ * So `classify` accepts EITHER the allowlisted status or an ordinary 2xx/3xx, rather than
+ * demanding the exemption be hit. An entry here means "this status is also fine", never "this
+ * status is required" — otherwise the gate would red from the vantage where the link is healthy.
  */
 export const EXPECTED_STATUS = new Map([
   [
@@ -94,6 +105,14 @@ export const EXPECTED_STATUS = new Map([
   [
     'https://api.algovault.com/mcp',
     { status: 405, reason: 'the MCP endpoint is POST-only, so a HEAD/GET correctly answers 405 Method Not Allowed. Measured 405 on both verbs 2026-08-21. A 200 here would mean the transport had started answering idempotent verbs, which is itself worth noticing.' },
+  ],
+  [
+    'https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81',
+    { status: 403, reason: 'Basescan blocks datacenter egress: measured 2026-08-21 as 403 from a GitHub-hosted runner (deploy run 32483280669) and 200 from a residential vantage, minutes apart, same URL and same UA. Stable and reproducible per-vantage, with no Retry-After, so it is an expected status rather than the rate-limit class. This is the on-chain track-record address a reader is meant to verify us at, and it resolves fine in a browser — which is the only vantage that matters for a README link.' },
+  ],
+  [
+    'https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544',
+    { status: 403, reason: 'same Basescan datacenter-egress block as the address URL above, measured in the same run. This one is the ERC-8004 agent-identity token (agent_id 44544).' },
   ],
 ]);
 
@@ -345,6 +364,15 @@ async function selfTest() {
     EXPECTED_STATUS.set(`${base}/forbidden`, { status: 403, reason: 'self-test fixture' });
     const allowRun = await run(`[a](${base}/forbidden)`);
     check('allowlisted 403 ⇒ PASS', allowRun.verdict, 'PASS');
+
+    // 3b — an allowlisted URL that answers a healthy 200 from THIS vantage still PASSES. This is
+    // the assertion the first CI run paid for: basescan.org is 403 from a runner and 200 from a
+    // laptop, so an exemption that DEMANDED its status would red the gate from the vantage where
+    // the link is demonstrably fine. An entry means "also fine", never "required".
+    EXPECTED_STATUS.set(`${base}/ok`, { status: 403, reason: 'self-test fixture — allowlisted status not hit from this vantage' });
+    const allowButHealthy = await run(`[a](${base}/ok)`);
+    check('allowlisted URL answering 200 ⇒ PASS', allowButHealthy.verdict, 'PASS');
+    EXPECTED_STATUS.delete(`${base}/ok`);
 
     // 4 — an allowlist entry with NO reason is INDETERMINATE, not a silent pass.
     EXPECTED_STATUS.set(`${base}/forbidden`, { status: 403, reason: '' });
