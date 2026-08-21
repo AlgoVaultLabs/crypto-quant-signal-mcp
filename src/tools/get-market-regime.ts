@@ -7,7 +7,7 @@ import { referralCodeForKey } from '../lib/referral-store.js'; // REFERRAL-INPRO
 import { resolveAssetClass } from '../lib/underlying-type.js';
 import { classifyUnderlyingSession, isClosedState } from '../lib/market-sessions.js';
 import { fetchTradFiFundingByVenue, normalizeTo8h, computeTradFiFundingSentiment, buildFundingByVenue } from '../lib/tradfi-funding.js';
-import { computeSuggestedTimeframes, suggestedActionFor } from '../lib/candle-guard.js';
+import { computeSuggestedTimeframes, suggestedActionFor, intervalMsFor } from '../lib/candle-guard.js';
 import { splitCandleWindow } from '../lib/candle-window.js';
 import { getCandleBasis } from '../lib/candle-basis-flag.js';
 import { getVenueStatus } from '../lib/venue-shadow.js';
@@ -24,12 +24,44 @@ interface MarketRegimeInput {
   license?: LicenseInfo;
 }
 
-// How many candles to fetch per timeframe for 7 days of data
-const CANDLE_COUNTS: Record<string, number> = {
+// How many candles to fetch per timeframe. This is a LOOKBACK WINDOW in bars, never a row
+// limit — it is used only to compute `startTime` below, and `getCandles` has no limit parameter.
+export const CANDLE_COUNTS: Record<string, number> = {
   '1h': 168,  // 7 * 24
   '4h': 42,   // 7 * 6
-  '1d': 30,   // ~30 days for daily
+  // SIGNAL-TREND-BLINDNESS-FIX-W1 CH1: 30 -> 100.
+  //
+  // At 30 this tool was DEAD at 1d on every startTime-honouring venue, and had been since the
+  // CANDLE_BASIS=closed flip. The cause is the venue BOUNDARY BAR, not a limit: Hyperliquid's
+  // candleSnapshot INCLUDES the bar containing `startTime` (window+1 rows) while Binance's
+  // `openTime >= startTime` EXCLUDES it (window rows). Measured with the exact windows this code
+  // computes: 1d -> HL raw 31 / closed 30 (passed with ZERO margin), Binance raw 30 / closed 29
+  // (threw `INSUFFICIENT_CANDLES: 29 / 30`). One bar of venue disagreement against zero headroom.
+  //
+  // 100 matches get_trade_call's flat window, clears REQUIRED_CANDLES by 69 bars under either
+  // venue semantic, and is inside every adapter's own kline cap (the tightest is OKX at 100).
+  //
+  // '1h' and '4h' are deliberately UNTOUCHED. 4h is the default timeframe and 42 -> 100 would move
+  // adx / trend_strength / confidence on the most-used path: Wilder's ADX is a recursive smoother
+  // whose seed residual after k = N-28 steps is (13/14)^k, i.e. 35.4% contamination at 42 bars
+  // against 0.48% at 100. That is a real improvement and a deliberate decision with its own
+  // before/after, not a side effect of a 1d bugfix -> SIGNAL-REGIME-WILDER-SEED-4H-W{NEXT}.
+  '1d': 100,
 };
+
+/**
+ * Bars needed for a FULL ADX-slope regression, and the reason it is not `REQUIRED_CANDLES`.
+ *
+ * `adx()` returns non-null from 29 bars (`indicators.ts:131`, `len < 2 * period + 1`), but it
+ * accumulates at most `slopeLen + 1 = 6` ADX values for the slope fit and reaches that only at
+ * 33 bars. Between 30 and 32 the "slope(5)" is a regression through as few as 3 points.
+ *
+ * This is a CONSTRUCTION-side floor: it asserts that OUR fetch window is big enough. It is
+ * deliberately NOT a serving threshold — `REQUIRED_CANDLES` stays the only refusal, because a
+ * symbol with 30-32 bars is a three-day-old listing, not a defect, and refusing it would be a
+ * coverage regression on exactly the newly-listed path.
+ */
+export const ADX_SLOPE_FLOOR = 33;
 
 // ADX slope thresholds (linear regression slope per bar)
 const ADX_SLOPE_RISING = 0.5;
@@ -244,7 +276,13 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
   const quota = trackCall(license);
 
   const candleCount = CANDLE_COUNTS[timeframe] || 168;
-  const intervalMs = getIntervalMs(timeframe);
+  // SIGNAL-TREND-BLINDNESS-FIX-W1 CH1: the private 3-entry tf->ms table is retired; `intervalMsFor`
+  // (11 entries, src/lib/candle-guard.ts) is the ONE owner. The primitive returns `null` for an
+  // unmapped timeframe and never substitutes a default, so the fallback is CALLER policy — chosen
+  // here as 1h to match get_trade_call:574, because `x402-http-routes.ts:269` forwards `timeframe`
+  // with no zod validation, so an unmapped value reaches BOTH tools in production and they must not
+  // disagree about what it means. The retired table's own fallback was 4h.
+  const intervalMs = intervalMsFor(timeframe) ?? 3_600_000;
   const startTime = Date.now() - candleCount * intervalMs;
 
   const exchange = input.exchange || 'HL';
@@ -307,6 +345,35 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
       suggestedTimeframes,
       suggestedAction: suggestedActionFor(suggestedTimeframes),
     });
+  }
+
+  // ── SIGNAL-TREND-BLINDNESS-FIX-W1 CH1: the CONSTRUCTION-side floor ──
+  //
+  // A guard belongs where the corpus is CONSTRUCTED, not where it is OBSERVED. Two different
+  // failures land in the 30-32 band and must never be conflated:
+  //
+  //   OUR fetch window is too small for this timeframe   -> a defect we own    -> REPORT it
+  //   the SYMBOL is younger than the window we asked for -> not our defect     -> serve, and say so
+  //
+  // The discriminator is whether the venue actually reached back to `startTime`. A symbol with
+  // sufficient history returns its oldest bar at ~`startTime`; a young listing's oldest bar is far
+  // newer. Keyed on the EMITTED window per venue semantic — never on `CANDLE_COUNTS`, which is
+  // blind to BOTH the boundary-bar skew and the closed-basis -1, i.e. blind to exactly the two
+  // things that produced the 1d outage.
+  //
+  // This REPORTS and never refuses. `REQUIRED_CANDLES` above is the only refusal, and it is
+  // unchanged: turning a served 30-32-bar listing into an error would be a coverage regression,
+  // which is the inverse of a bugfix. The 2-interval slack absorbs one boundary bar plus one
+  // exchange gap without calling a healthy window misconfigured.
+  const oldestCandleMs = candles.length > 0 ? candles[0].time : Date.now();
+  const windowReachedBack = oldestCandleMs <= startTime + 2 * intervalMs;
+  const slopeUnderfed = emittedCandles.length < ADX_SLOPE_FLOOR;
+  if (slopeUnderfed && windowReachedBack) {
+    console.error(
+      `[regime] FETCH_WINDOW_UNDERFED ${coin}/${exchange}/${timeframe}: ${emittedCandles.length} ` +
+      `bars emitted after the closed-basis split, ADX-slope floor is ${ADX_SLOPE_FLOOR}. The venue ` +
+      `reached startTime, so the fetch window is misconfigured — this is ours, not a young listing.`,
+    );
   }
 
   // ── Underlying-market session awareness (TRADIFI-SIGNAL-HARDENING-W1) ──
@@ -438,6 +505,14 @@ export async function getMarketRegime(input: MarketRegimeInput): Promise<MarketR
     } else {
       adxSlopeInterpretation = 'Steady — no momentum change';
     }
+  }
+  // CH1 serve-side: a slope fitted to fewer than the full slopeLen+1 window is REPORTED as such,
+  // never silently trusted and never withheld. Marking rides the existing interpretation string,
+  // so no response field is added (`src/types.ts` is out of scope this wave) and no public value
+  // is removed — `adx_slope` itself keeps its number, which Data Integrity requires.
+  if (slopeUnderfed && adxSlope !== null) {
+    adxSlopeInterpretation +=
+      ` (reduced confidence — ${emittedCandles.length} bars available, ${ADX_SLOPE_FLOOR} needed for a full slope window)`;
   }
 
   let volInterpretation = 'Normal';
@@ -674,9 +749,6 @@ function generateSuggestion(
   }
 }
 
-function getIntervalMs(tf: string): number {
-  const map: Record<string, number> = {
-    '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000,
-  };
-  return map[tf] || 14_400_000;
-}
+// getIntervalMs DELETED (SIGNAL-TREND-BLINDNESS-FIX-W1 CH1) — it was the last surviving duplicate
+// of the tf->ms table and the second one retired from this tree. `intervalMsFor` in
+// src/lib/candle-guard.ts is the single owner; callers supply their own fallback. Two tables -> one.
