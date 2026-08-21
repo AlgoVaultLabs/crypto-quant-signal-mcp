@@ -189,7 +189,12 @@ export function backwardRegime(candles: Candle[], i: number): Sample | null {
     .reverse()
     .map((c, k) => ({ ...c, time: win[k].time }));
   const s = classify(reversed);
-  return s ? { index: i, regime: mirrorRegime(s.regime), emaCross: s.emaCross, rsiVal: s.rsiVal } : null;
+  // Mirror `emaCross` alongside `regime`: the sample must be expressed wholly in FORWARD
+  // time, or a forward BULLISH pairs against a backward BULLISH that actually means BEARISH
+  // and no transition ever matches. (Latent until W1-V2 keyed the anchor on the crossover —
+  // the predecessor only ever compared the already-mirrored `regime`.)
+  const mirroredCross = s.emaCross === 'BULLISH' ? 'BEARISH' : s.emaCross === 'BEARISH' ? 'BULLISH' : s.emaCross;
+  return s ? { index: i, regime: mirrorRegime(s.regime), emaCross: mirroredCross, rsiVal: s.rsiVal } : null;
 }
 
 /** Series of live samples over the scorable interior of a candle array. */
@@ -226,6 +231,36 @@ function attribute(prev: Sample, next: Sample): FlipCause {
   if (emaMoved) return 'ema_cross';
   if (bandMoved) return 'rsi_band';
   return 'unknown';
+}
+
+/**
+ * Transitions of the raw EMA CROSSOVER, independent of the label rendered on top of it.
+ *
+ * SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2 split these apart. The closed-form anchor
+ * (`crossoverLagAfterReversal` ≈ 11.64 bars for 9/21) is a property of `sign(ema9 − ema21)`,
+ * which that wave did NOT change — `emaCross` and `emaScore` are untouched. What it changed
+ * is the LABEL rendered from the crossover, which now carries a separation band and a 12-bar
+ * confirmation and therefore has a deliberately DIFFERENT lag.
+ *
+ * So the anchor keys on the crossover and the churn metrics key on the label. Pointing both
+ * at `regime` — as the predecessor did, when they were the same thing — would measure the
+ * new label against the old label's closed form and report a deviation that isn't one.
+ */
+export function emaCrossTransitions(series: Sample[]): Transition[] {
+  const out: Transition[] = [];
+  for (let k = 1; k < series.length; k++) {
+    const prev = series[k - 1].emaCross;
+    const next = series[k].emaCross;
+    if (next !== prev && next !== 'NEUTRAL') {
+      out.push({
+        index: series[k].index,
+        from: prev === 'BULLISH' ? 'TRENDING_UP' : prev === 'BEARISH' ? 'TRENDING_DOWN' : 'RANGING',
+        to: next === 'BULLISH' ? 'TRENDING_UP' : 'TRENDING_DOWN',
+        cause: 'ema_cross',
+      });
+    }
+  }
+  return out;
 }
 
 export function transitionsOf(series: Sample[]): Transition[] {
@@ -383,12 +418,18 @@ export const latencyVerdict = (m: LagMetrics): 'MEASURED' | 'INDETERMINATE' =>
  * vary. This restates the 3-line decision rule over the SAME production primitives with the
  * periods opened up, and is used ONLY to price alternative settings.
  *
- * Every production measurement in this wave still goes through `computeIndicatorScores`
- * verbatim. What makes this variant safe to trust is `sweepMatchesProductionAt921`: at the
- * shipped (9, 21, 14) it must reproduce production's labels EXACTLY, bar for bar. If the rule
- * ever drifts from production, that pin fails and the sweep is known to be stale — the
- * alternative is an unpinned copy that silently diverges, which is how a counterfactual
- * quietly stops describing the thing it is counterfactual to.
+ * ⚠️ RE-FRAMED by SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2. This function is now the FROZEN
+ * REFERENCE IMPLEMENTATION OF THE PRE-WAVE (v1) LABEL RULE — RSI conjunction and all. It is
+ * no longer a parameterisation of production, because production's rule changed: it is a
+ * separation band plus a 12-bar confirmation with no RSI term (`classifyRegimeLabel`).
+ *
+ * Its pin therefore changed with it. `sweepMatchesProductionAt921` asserted "reproduces
+ * production exactly at (9,21,14)"; that assertion is now FALSE BY DESIGN and would have to
+ * be deleted or weakened, either of which loses the guarantee. Instead it is replaced by
+ * `legacyRuleIsFrozen()`, which pins this function against the pre-wave rule's DOCUMENTED
+ * behaviour on constructed fixtures. Keeping it exact is what lets the wave's before/after
+ * comparison run BOTH rules over ONE fetched series — the same instrument on both sides,
+ * rather than two time-separated runs of one instrument.
  */
 export function sweepRegime(closes: number[], fast: number, slow: number, rsiPeriod: number): RegimeType {
   const rsiVal = rsi(closes, rsiPeriod);
@@ -410,17 +451,46 @@ export function sweepRegime(closes: number[], fast: number, slow: number, rsiPer
   return 'RANGING';
 }
 
-/** The pin. Returns the number of bars where the variant and production disagree — must be 0. */
-export function sweepMatchesProductionAt921(candles: Candle[]): number {
-  let mismatches = 0;
-  for (let i = EDGE_DISCARD_BARS; i < candles.length - EDGE_DISCARD_BARS; i++) {
-    const prod = liveRegime(candles, i);
-    if (!prod) continue;
-    const start = Math.max(0, i - PRODUCTION_WINDOW_BARS + 1);
-    const closes = candles.slice(start, i + 1).map((c) => c.close);
-    if (sweepRegime(closes, EMA_FAST, EMA_SLOW, RSI_PERIOD) !== prod.regime) mismatches += 1;
+/**
+ * The v1 label for the window ending at bar `i` — the pre-wave rule, exactly as it shipped.
+ * This is the "before" side of every before/after comparison in
+ * SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2.
+ */
+export function legacyRegimeV1(candles: Candle[], i: number): RegimeType {
+  const start = Math.max(0, i - PRODUCTION_WINDOW_BARS + 1);
+  return sweepRegime(candles.slice(start, i + 1).map((c) => c.close), EMA_FAST, EMA_SLOW, RSI_PERIOD);
+}
+
+/**
+ * The replacement pin. The old one asserted the variant matched PRODUCTION; production has
+ * since changed, so that pin could only be deleted or weakened. This one instead asserts the
+ * two behaviours that DEFINED the v1 rule and motivated replacing it — so the reference stays
+ * honest about what it is a reference TO. Returns a list of violations; empty means frozen.
+ */
+export function legacyRuleIsFrozen(): string[] {
+  const bad: string[] = [];
+  // v1's signature defect: a monotone uptrend pins RSI at 100, fails `rsiVal < 70`, and the
+  // label collapses to RANGING for the ENTIRE trend. 257/257 bars, measured.
+  const up = monotoneSeries(300, 1.0);
+  let ranging = 0;
+  let scored = 0;
+  for (let i = EDGE_DISCARD_BARS; i < up.length - EDGE_DISCARD_BARS; i++) {
+    scored += 1;
+    if (legacyRegimeV1(up, i) === 'RANGING') ranging += 1;
   }
-  return mismatches;
+  if (scored === 0) bad.push('VACUOUS: legacy pin scored zero bars');
+  if (scored > 0 && ranging !== scored) bad.push(`legacy v1 no longer labels a monotone uptrend RANGING throughout (${ranging}/${scored})`);
+  // v1 had NO hysteresis: on a random walk it must flip far more often than K bars apart.
+  const walk = seededWalk(600, 42);
+  let flips = 0;
+  let prev: RegimeType | null = null;
+  for (let i = EDGE_DISCARD_BARS; i < walk.length - EDGE_DISCARD_BARS; i++) {
+    const r = legacyRegimeV1(walk, i);
+    if (prev !== null && r !== prev) flips += 1;
+    prev = r;
+  }
+  if (flips < 20) bad.push(`legacy v1 shows only ${flips} flips on the walk — it is supposed to be the CHURNING rule`);
+  return bad;
 }
 
 /** Flips per 100 bars for an arbitrary (fast, slow) setting — the churn side of the frontier. */

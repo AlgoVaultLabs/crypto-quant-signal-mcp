@@ -11,7 +11,7 @@
     "breakout_pending": "IMMINENT",
     "underlying_session": "ALWAYS_OPEN"
   },
-  "regime": "TRENDING_UP",
+  "regime": "RANGING",
   "reasoning": "<REASONING — owned by verdict-reasoning-golden.test.ts>",
   "timestamp": 1785326760,
   "coin": "BTC",
@@ -48,7 +48,7 @@
   "_receipts": {
     "verdict": "HOLD",
     "conviction_pct": 34,
-    "regime": "TRENDING_UP",
+    "regime": "RANGING",
     "factors": [
       {
         "factor": "trend_persistence",
@@ -82,23 +82,23 @@
         "strength": "none"
       },
       {
-        "factor": "regime",
-        "direction": "bullish",
-        "value": "trending up",
-        "contributes": true,
-        "strength": "primary"
-      },
-      {
         "factor": "price_change_24h",
         "direction": "bearish",
         "value": "down",
         "contributes": true,
-        "strength": "supporting"
+        "strength": "primary"
       },
       {
         "factor": "funding_state",
         "direction": "neutral",
         "value": "+0.0010%",
+        "contributes": true,
+        "strength": "none"
+      },
+      {
+        "factor": "regime",
+        "direction": "neutral",
+        "value": "ranging",
         "contributes": true,
         "strength": "none"
       },
@@ -113,7 +113,9 @@
     "stripped_remainder": {
       "count": 2,
       "withheld_term_count": 2,
-      "unnameable_this_response": [],
+      "unnameable_this_response": [
+        "ema"
+      ],
       "unevaluated_terms": [],
       "net": "bearish"
     },
