@@ -17,7 +17,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getAdapter } from '../../src/lib/exchange-adapter.js';
 import { runAsBatch } from '../../src/lib/upstream-weight-budget.js';
-import { ema, rsi } from '../../src/lib/indicators.js';
+import { ema, atr } from '../../src/lib/indicators.js';
 import type { Candle, ExchangeId, RegimeType } from '../../src/types.js';
 import * as H from './regime-replay.js';
 
@@ -51,22 +51,32 @@ async function fetchSeries(venue: ExchangeId, coin: string, tf: string, tfMs: nu
   return [...cache.values()].sort((a, b) => a.time - b.time);
 }
 
-/** Separation of the EMA pair at the last bar of a window, as a fraction of the slow EMA. */
+/**
+ * Separation of the EMA pair NORMALISED BY ATRP — i.e. in units of the asset's own recent
+ * range. This is the quantity the band is a threshold on, so it is the quantity whose
+ * histogram must be flat where the multiplier lands.
+ */
 function sepAt(candles: Candle[], i: number): number | null {
   const start = Math.max(0, i - H.PRODUCTION_WINDOW_BARS + 1);
-  const closes = candles.slice(start, i + 1).map((c) => c.close);
+  const win = candles.slice(start, i + 1);
+  const closes = win.map((c) => c.close);
   const f = ema(closes, H.EMA_FAST);
   const s = ema(closes, H.EMA_SLOW);
   if (!f || !s) return null;
   const a = f[f.length - 1];
   const b = s[s.length - 1];
   if (isNaN(a) || isNaN(b) || b === 0) return null;
-  return (a - b) / b;
+  const av = atr(win.map((c) => c.high), win.map((c) => c.low), closes, 14);
+  const last = closes[closes.length - 1];
+  if (av === null || !(last > 0)) return null;
+  const atrp = av / last;
+  if (!(atrp > 0)) return null;
+  return ((a - b) / b) / atrp;   // separation measured in ATRs
 }
 
 /** The CANDIDATE rule: separation band + K-bar confirmation, no RSI veto. */
-function candidateSeries(candles: Candle[], bandBps: number, confirmBars: number): RegimeType[] {
-  const band = bandBps / 10_000;
+function candidateSeries(candles: Candle[], bandMult: number, confirmBars: number): RegimeType[] {
+  const band = bandMult;
   const sides: number[] = []; // +1 / -1 / 0 (contested)
   for (let i = 0; i < candles.length; i++) {
     const sep = sepAt(candles, i);
@@ -137,28 +147,28 @@ describe.skipIf(!ENABLED)('regime rule calibration', () => {
     for (const s of series) {
       for (let i = H.EDGE_DISCARD_BARS; i < s.candles.length - H.EDGE_DISCARD_BARS; i++) {
         const v = sepAt(s.candles, i);
-        if (v !== null) allSepBps.push(Math.abs(v) * 10_000);
+        if (v !== null) allSepBps.push(Math.abs(v));
       }
     }
     allSepBps.sort((a, b) => a - b);
     const q = (p: number): number => allSepBps[Math.floor((p / 100) * allSepBps.length)];
-    console.log(`\n=== |sep| DISTRIBUTION (bps), n=${allSepBps.length} ===`);
+    console.log(`\n=== |sep| / ATRP DISTRIBUTION (in ATRs), n=${allSepBps.length} ===`);
     for (const p of [1, 5, 10, 15, 20, 25, 30, 40, 50, 75, 90]) {
-      console.log(`  p${p} = ${q(p).toFixed(1)} bps`);
+      console.log(`  p${p} = ${q(p).toFixed(3)} ATR`);
     }
-    console.log('\n=== LOCAL HISTOGRAM 0-120 bps (flatness check — no cliff edges) ===');
-    for (let lo = 0; lo < 120; lo += 10) {
-      const n = allSepBps.filter((v) => v >= lo && v < lo + 10).length;
+    console.log('\n=== LOCAL HISTOGRAM 0.00-0.60 ATR (flatness — the multiplier must not land on a spike) ===');
+    for (let lo = 0; lo < 0.60; lo += 0.05) {
+      const n = allSepBps.filter((v) => v >= lo && v < lo + 0.05).length;
       const pctOfAll = (100 * n) / allSepBps.length;
-      console.log(`  [${String(lo).padStart(3)},${String(lo + 10).padStart(3)}) bps: ${String(n).padStart(6)}  ${pctOfAll.toFixed(2)}%  ${'#'.repeat(Math.round(pctOfAll))}`);
+      console.log(`  [${lo.toFixed(2)},${(lo + 0.05).toFixed(2)}) ATR: ${String(n).padStart(6)}  ${pctOfAll.toFixed(2)}%  ${'#'.repeat(Math.round(pctOfAll))}`);
     }
 
     // ── 2. ONLY NOW sweep (B, K) ──────────────────────────────────────────
     console.log('\n=== (B,K) SWEEP — lag MEASURED per candidate, not assumed ===');
     console.log('    B    K    lag  dwell_p50  dwell/lag  flips/100  round_trip');
     const rows: Array<Record<string, unknown>> = [];
-    for (const B of [5, 8, 10, 12, 15, 20]) {
-      for (const K of [9, 12, 15]) {
+    for (const B of [0.05, 0.10, 0.15, 0.20, 0.30, 0.45]) {
+      for (const K of [12]) {
         const lag = measuredLag(B, K);
         const agg = { flips: [] as number[], dwell: [] as number[], rt: [] as number[] };
         for (const s of series) {
@@ -178,8 +188,21 @@ describe.skipIf(!ENABLED)('regime rule calibration', () => {
             tot++; if (labels[i]==='TRENDING_UP') up++; else if (labels[i]==='TRENDING_DOWN') dn++; else rg++;
           }
         }
+        const perTf: Record<string, {rg:number; tot:number}> = {};
+        for (const s2 of series) {
+          const labels = candidateSeries(s2.candles, B, K);
+          perTf[s2.tf] ??= {rg:0, tot:0};
+          for (let i = H.EDGE_DISCARD_BARS; i < s2.candles.length - H.EDGE_DISCARD_BARS; i++) {
+            perTf[s2.tf].tot++; if (labels[i]==='RANGING') perTf[s2.tf].rg++;
+          }
+        }
+        const tfShare = Object.fromEntries(Object.entries(perTf).map(([k,v]) => [k, Number((100*v.rg/v.tot).toFixed(1))]));
+        const vals = Object.values(tfShare) as number[];
+        const spread = Math.max(...vals) - Math.min(...vals);
         rows.push({ B, K, lag, dwell_p50: dwell, dwell_over_lag: ratio, flips_per_100: med(agg.flips), round_trip: med(agg.rt),
-                    share_up: up/tot, share_down: dn/tot, share_ranging: rg/tot });
+                    share_up: up/tot, share_down: dn/tot, share_ranging: rg/tot,
+                    ranging_by_tf: tfShare, I7_spread_pp: Number(spread.toFixed(1)),
+                    trend_claim_by_tf: Object.fromEntries(Object.entries(tfShare).map(([k,v]) => [k, Number((100-(v as number)).toFixed(1))])) });
         console.log(
           `  ${String(B).padStart(4)} ${String(K).padStart(4)} ${String(lag ?? '-').padStart(6)} ${String(dwell).padStart(10)} ${ratio.toFixed(3).padStart(10)} ${med(agg.flips).toFixed(2).padStart(10)} ${med(agg.rt).toFixed(3).padStart(11)}`,
         );
@@ -187,9 +210,9 @@ describe.skipIf(!ENABLED)('regime rule calibration', () => {
     }
     mkdirSync(resolve(process.cwd(), 'audits'), { recursive: true });
     writeFileSync(
-      resolve(process.cwd(), 'audits/regime-rule-calibration-fine-2026-08-07.json'),
+      resolve(process.cwd(), 'audits/regime-rule-calibration-atr-2026-08-07.json'),
       JSON.stringify({ sep_percentiles: Object.fromEntries([1, 5, 10, 15, 20, 25, 30, 40, 50, 75, 90].map((p) => [`p${p}`, q(p)])), n_sep_samples: allSepBps.length, sweep: rows }, null, 2),
     );
-    console.log('\nWROTE audits/regime-rule-calibration-fine-2026-08-07.json');
+    console.log('\nWROTE audits/regime-rule-calibration-atr-2026-08-07.json');
   });
 });
