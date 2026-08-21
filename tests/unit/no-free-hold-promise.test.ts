@@ -22,7 +22,7 @@
  * would forbid describing what the code actually does.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..', '..');
@@ -32,7 +32,7 @@ const ROOT = join(__dirname, '..', '..');
  * comment — an exemption that lives only in a comment gets "fixed" by a future wave enforcing
  * the contract (CLAUDE.md).
  */
-const GUARDED: ReadonlyArray<{ path: string; reason: string }> = [
+const GUARDED: ReadonlyArray<{ path: string; reason: string; projectedOnly?: boolean }> = [
   { path: 'landing/index.html', reason: 'the pricing surface itself — both dual-render artboards' },
   { path: 'landing/docs.html', reason: 'generated from docs-src; carried a whole "Free HOLD Policy" section' },
   { path: 'landing/faq.html', reason: 'hand-edited; visible answer + its FAQPage JSON-LD twin' },
@@ -61,9 +61,6 @@ const GUARDED: ReadonlyArray<{ path: string; reason: string }> = [
   // projects every `audits/*-shape-snapshot-*.json` into the PUBLIC knowledge bundle's
   // `response_shapes`, so a stale `error_contract` string here is shipped copy that agents
   // read. All three carried the identical "HOLD verdicts are free and never charged" line.
-  { path: 'audits/get-trade-call-shape-snapshot-2026-08-06.json', reason: 'projected into the public knowledge bundle response_shapes' },
-  { path: 'audits/get-trade-call-shape-snapshot-2026-08-07.json', reason: 'projected into the public knowledge bundle response_shapes' },
-  { path: 'audits/get-trade-call-shape-snapshot-2026-08-08.json', reason: 'projected into the public knowledge bundle response_shapes — the one that actually reached the emitted bundle' },
   { path: 'landing/integrations.html', reason: 'hand-authored client index; carries free-tier allowance copy' },
   { path: 'src/lib/integrations-data/mcp-clients.ts', reason: 'the SoT the docs client table is generated FROM — fixing only the output rots on next build' },
   { path: 'src/lib/landing-content.ts', reason: 'the dual-render copy SoT injected into both index artboards' },
@@ -71,7 +68,43 @@ const GUARDED: ReadonlyArray<{ path: string; reason: string }> = [
   { path: 'src/lib/referral-pages.ts', reason: 'referral landing copy quoting the free allowance' },
   { path: 'src/tools/scan-trade-calls.ts', reason: 'R-G — the batch tool whose per-verdict charge closes the free-HOLD loophole' },
   { path: 'scripts/render-jsx-static.mjs', reason: 'ONE of four copies of the same Offer literal' },
+  ...bundledShapeSnapshots(),
 ];
+
+/**
+ * OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D2) — the audits rows are ENUMERATED, never listed.
+ *
+ * They used to be three hand-written paths, added by PRICING-FLAT-CALL-BILLING-AND-6MONTH-W1
+ * because `build-knowledge-json.mjs` projects every `audits/*-shape-snapshot-*.json` into the
+ * PUBLIC knowledge bundle's `response_shapes`. The classification was right and is unchanged:
+ * these files are BUILD INPUTS, not artefacts, so a stale pricing string in one is shipped copy.
+ *
+ * What was wrong was the LIST. Four x402 snapshots carried
+ * `"no cache — live per-request via the shared core fn (HOLDs free; async settle post-response)"`
+ * into the live bundle for months, simply because nobody added them here — measured 2026-08-21 on
+ * `api.algovault.com/knowledge/latest.json`. A hand-maintained list of a GENERATED corpus can only
+ * ever describe the files someone remembered; enumerating the corpus covers a new snapshot the
+ * moment it is written, which is the property this gate needed and did not have.
+ *
+ * SUPERSEDED files are excluded on purpose — the builder does not project them, so they are
+ * history rather than shipped copy, and holding history to today's pricing law is exactly the
+ * rewrite-the-record failure this wave's Q1 ruling forbids.
+ */
+function bundledShapeSnapshots(): ReadonlyArray<{ path: string; reason: string; projectedOnly: boolean }> {
+  const dir = join(ROOT, 'audits');
+  return readdirSync(dir)
+    .filter((n) => /-shape-snapshot-.*\.json$/.test(n))
+    .filter((n) => {
+      const d = JSON.parse(readFileSync(join(dir, n), 'utf8'));
+      return !(typeof d.superseded_by === 'string' && d.superseded_by.length > 0);
+    })
+    .sort()
+    .map((n) => ({
+      path: `audits/${n}`,
+      reason: 'build input — projected verbatim into the public knowledge bundle response_shapes',
+      projectedOnly: true,
+    }));
+}
 
 /** Phrasings that assert HOLDs cost nothing. Deliberately broad — the claim mutates. */
 const PROMISE_PATTERNS: ReadonlyArray<RegExp> = [
@@ -81,6 +114,14 @@ const PROMISE_PATTERNS: ReadonlyArray<RegExp> = [
   /HOLD-free\s+metering/i,
   /free\s+HOLD\s+policy/i,
   /HOLDs?\s+(?:are\s+)?free\s+at\s+every/i,
+  // OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D2). The six patterns above ALL require specific
+  // connective words, so none of them matches the bare adjacency `HOLDs free` — measured, and it
+  // is the exact string that sat in the public bundle. That is a SECOND hole, independent of the
+  // path list: even had those four snapshots been guarded here, this file would still have passed
+  // them. Borrowed verbatim from scripts/check-hold-billing-claims.mjs's `hold-then-free` rule so
+  // the two guards read one definition of the claim; the 40-char window is what keeps it off the
+  // ratified correction ("HOLD included … are never charged" puts ~88 chars between the two).
+  /HOLDs?\b[^\n]{0,40}?\b(?:free|unmetered|unbilled|not charged|never charged|no quota|billed \$?0)\b/i,
 ];
 
 /** Strip comments so a behaviour note in code is not read as a public claim (the ban-grep law). */
@@ -96,6 +137,36 @@ function read(path: string): string {
   return stripComments(path, readFileSync(join(ROOT, path), 'utf8'));
 }
 
+/**
+ * The EXACT field set `scripts/build-knowledge-json.mjs` projects into `response_shapes`. Sibling
+ * keys stay in the file and never reach a consumer.
+ */
+const PROJECTED_FIELDS = [
+  'endpoint', 'snapshot_date', 'allowed_keys', 'forbidden_keys',
+  'error_contract', 'cache_contract', 'consumers', 'drift_check_command',
+] as const;
+
+/**
+ * For a shape snapshot, the PUBLIC surface is the projected subset — not the file.
+ *
+ * Scanning the whole file is the wrong instrument, and measurably so. Three live snapshots hold a
+ * pre-cutover free-HOLD phrasing in NON-projected keys (`quota_contract`, `param`), and every
+ * corrected snapshot this wave writes quotes the false string it replaced inside `correction_note`.
+ * None of that reaches a consumer, and a gate that demanded their deletion would erase both the
+ * historical record and the explanation of the fix — the "ban-line matching its own literal" trap
+ * that `scripts/check-hold-billing-claims.mjs` documents at length, arriving through a new door.
+ *
+ * The non-projected stale strings are still WRONG as internal records and are flagged as a
+ * follow-up in status.md rather than silently fixed here: rewriting a dated audit record to match
+ * present law is the failure this wave's Q1 ruling forbids.
+ */
+function readProjected(path: string): string {
+  const doc = JSON.parse(readFileSync(join(ROOT, path), 'utf8')) as Record<string, unknown>;
+  return JSON.stringify(Object.fromEntries(
+    PROJECTED_FIELDS.filter((f) => doc[f] !== undefined).map((f) => [f, doc[f]]),
+  ));
+}
+
 describe('no free-HOLD PRICING PROMISE on any public or external surface', () => {
   it('the guarded surface list is non-empty and every file exists (vacuity guard)', () => {
     // If this list silently resolved to nothing, every assertion below would pass over an empty
@@ -106,8 +177,8 @@ describe('no free-HOLD PRICING PROMISE on any public or external surface', () =>
     for (const g of GUARDED) expect(g.reason.length, g.path).toBeGreaterThan(10);
   });
 
-  it.each(GUARDED)('$path carries no free-HOLD promise ($reason)', ({ path }) => {
-    const src = read(path);
+  it.each(GUARDED)('$path carries no free-HOLD promise ($reason)', ({ path, projectedOnly }) => {
+    const src = projectedOnly ? readProjected(path) : read(path);
     expect(src.length, `${path} is empty — the read did not resolve`).toBeGreaterThan(0);
     const hits = PROMISE_PATTERNS.flatMap((re) => {
       const m = src.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'));

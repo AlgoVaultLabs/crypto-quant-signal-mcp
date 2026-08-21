@@ -42,5 +42,7 @@
   ],
   "leak_guard": "tests/x402-http-routes.test.ts (alias GET \u2192 402 with own resource URL + USD Coin requirement + NO bazaar extension) + tests/x402-paid-path.test.ts (unpaid POST \u2192 402, no top-level call/confidence leak; still NOT in HTTP_TOOLS)",
   "drift_check_command": "curl -s -X POST https://api.algovault.com/x402/get_trade_call -H 'Content-Type: application/json' -H 'x-payment: <signed>' -d '{\"coin\":\"BTC\",\"timeframe\":\"4h\",\"exchange\":\"BINANCE\",\"includeReasoning\":true}' | jq 'keys'",
-  "snapshot_date": "2026-06-23"
+  "snapshot_date": "2026-06-23",
+  "superseded_by": "x402-http-get_trade_call-shape-snapshot-2026-08-21.json",
+  "superseded_reason": "OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D2): the cache_contract promised free HOLDs, which the flat-billing cutover made false on both rails. Superseded by a same-endpoint snapshot dated 2026-08-21 carrying the corrected billing contract. Nothing inside this file was altered \u2014 the two supersession keys are the only addition, the mechanism check-shape-snapshot-integrity.mjs and tests/unit/knowledge-bundle.test.ts require. Kept as the record of what was published then."
 }

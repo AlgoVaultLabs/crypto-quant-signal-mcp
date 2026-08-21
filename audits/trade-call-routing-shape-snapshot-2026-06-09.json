@@ -81,5 +81,7 @@
     "get_equity_call",
     "get_trade_call"
   ],
-  "projection_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): scripts/build-knowledge-json.mjs projects this file into the PUBLIC knowledge bundle and reads the field name `snapshot_date`, with a TOTAL per-field fallback. This file carried its date under a different key, so the public bundle advertised snapshot_date:'unknown' (and, where allowed_keys/endpoint were absent, allowed_keys:[] and the filename as the endpoint) with a perfectly green build. Canonical keys added; the original keys are retained so no other reader breaks."
+  "projection_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): scripts/build-knowledge-json.mjs projects this file into the PUBLIC knowledge bundle and reads the field name `snapshot_date`, with a TOTAL per-field fallback. This file carried its date under a different key, so the public bundle advertised snapshot_date:'unknown' (and, where allowed_keys/endpoint were absent, allowed_keys:[] and the filename as the endpoint) with a perfectly green build. Canonical keys added; the original keys are retained so no other reader breaks.",
+  "superseded_by": "trade-call-routing-shape-snapshot-2026-08-21.json",
+  "superseded_reason": "OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D3): allowed_keys named get_equity_call and tools_list_count said 9, so the public bundle published an input contract for a tool absent from the live tools/list. Superseded by a same-endpoint 2026-08-21 snapshot that carries the routing contract forward unchanged and corrects the surface. Nothing inside this file was altered \u2014 the two supersession keys are the only addition; it remains the record of the contract as it stood on 2026-06-09."
 }

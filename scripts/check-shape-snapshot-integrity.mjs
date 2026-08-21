@@ -66,13 +66,27 @@ const FORBIDDEN_NAMES = ['outcome_return_pct', 'outcome_price'];
 /**
  * Validate one snapshot exactly as the builder consumes it.
  * @param {string} name @param {any} d
+ * @param {Set<string>} [known] every filename in audits/. When supplied, superseded_by must RESOLVE.
+ *   Kept as a parameter rather than an fs read so this function stays pure and the self-test can
+ *   build its own corpus — the same reason the rest of the checks take the doc, not the path.
  * @returns {string[]} findings (empty = clean)
  */
-export function validate(name, d) {
+export function validate(name, d, known) {
   const out = [];
   if (typeof d.superseded_by === 'string' && d.superseded_by) {
     // A superseded row is not projected; it only needs to say WHY.
     if (!d.superseded_reason) out.push('superseded_by without superseded_reason — an exemption in prose gets "fixed" by a future wave');
+    // SILENT SHAPE LOSS (OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1, architect-mandated with the Q1
+    // supersession ruling). build-knowledge-json.mjs tests ONLY `typeof superseded_by === 'string'
+    // && length > 0` — it never checks the target exists. So a typo'd or dangling pointer DROPS the
+    // shape from the public bundle with nothing replacing it, and knowledge-bundle.test.ts's
+    // coverage assertion still passes, because a superseded file is not required to be covered.
+    // Both halves of the safety net miss it; the contract is only meaningful if the successor is real.
+    // HONEST SCOPE: all 14 pointers in the corpus resolved when this was added, so this is a FORWARD
+    // GUARD making the shape unwritable, not a remediation of anything.
+    if (known && !known.has(String(d.superseded_by).split('/').pop())) {
+      out.push(`superseded_by "${d.superseded_by}" resolves to no file in audits/ — the builder drops this shape from the public bundle and NOTHING replaces it (silent shape loss)`);
+    }
     return out;
   }
   if (typeof d.endpoint !== 'string' || !d.endpoint.trim()) {
@@ -136,6 +150,17 @@ export function selfTest() {
     const f = validate('t.json', doc);
     if (!f.some((x) => rx.test(x))) fails.push(`did NOT fire on: ${label}`);
   }
+  // ── superseded_by must RESOLVE (the silent-shape-loss guard) ──────────────────────────────
+  const dangling = validate('t.json', { superseded_by: 'nope.json', superseded_reason: 'r' }, new Set(['other.json']));
+  if (!dangling.some((x) => /resolves to no file/.test(x))) fails.push('did NOT fire on: superseded_by pointing at a file that does not exist');
+  const resolving = validate('t.json', { superseded_by: 'other.json', superseded_reason: 'r' }, new Set(['other.json']));
+  if (resolving.length) fails.push('fired on a superseded_by that DOES resolve');
+  const nestedPath = validate('t.json', { superseded_by: 'audits/other.json', superseded_reason: 'r' }, new Set(['other.json']));
+  if (nestedPath.length) fails.push('fired on a resolvable superseded_by written as a path');
+  // Callers that pass no corpus (pure-validate users) must not be broken by the new argument.
+  if (validate('t.json', { superseded_by: 'nope.json', superseded_reason: 'r' }).length) {
+    fails.push('fired on a dangling pointer when NO corpus was supplied — the check must be opt-in');
+  }
   // a superseded row WITH a reason is clean, and is not held to the projected-field rules
   if (validate('s.json', { superseded_by: 'o.json', superseded_reason: 'because' }).length) {
     fails.push('a properly superseded row was reported dirty');
@@ -159,7 +184,7 @@ if (IS_MAIN) {
   if (argv.includes('--self-test')) {
     const f = selfTest();
     if (f.length) { console.error('✖ shape-snapshot self-test FAILED:'); f.forEach((x) => console.error('   - ' + x)); process.exit(1); }
-    console.log('✓ shape-snapshot self-test passed (10 failure modes fire; clean and superseded rows pass; selector rejects the plural near-miss)');
+    console.log('✓ shape-snapshot self-test passed (11 failure modes fire, incl. a dangling superseded_by; clean/superseded/path-form rows pass; corpus-less callers unaffected; selector rejects the plural near-miss)');
     process.exit(0);
   }
   const st = selfTest();
@@ -167,6 +192,9 @@ if (IS_MAIN) {
   if (!existsSync(AUDITS)) emit('INDETERMINATE', 'audits/ unreadable');
 
   const { selected, nearMiss } = corpus();
+  // Every filename in audits/ — a superseding snapshot may legitimately be named anything, so the
+  // resolvability check is against the DIRECTORY, not against the builder-selected subset.
+  const knownFiles = new Set(readdirSync(AUDITS));
   if (!selected.length) emit('INDETERMINATE', 'ZERO snapshots matched the builder selector — the corpus is one WE author, so empty means the scan broke');
 
   const findings = [];
@@ -177,7 +205,7 @@ if (IS_MAIN) {
     let d;
     try { d = JSON.parse(readFileSync(join(AUDITS, f), 'utf8')); }
     catch (e) { findings.push([f, `unparseable JSON: ${e.message}`]); continue; }
-    for (const x of validate(f, d)) findings.push([f, x]);
+    for (const x of validate(f, d, knownFiles)) findings.push([f, x]);
   }
 
   if (findings.length) {
@@ -188,6 +216,6 @@ if (IS_MAIN) {
     console.error('  green build. That is what this gate exists to stop.');
     emit('FAIL', `${findings.length} finding(s)`);
   }
-  console.log(`✓ shape-snapshot integrity: ${selected.length} snapshot(s) declare a real contract (0 near-miss filenames, 0 wrong-typed fields, 0 unexempted empty allow-lists, 0 forbidden field names published).`);
+  console.log(`✓ shape-snapshot integrity: ${selected.length} snapshot(s) declare a real contract (0 near-miss filenames, 0 wrong-typed fields, 0 unexempted empty allow-lists, 0 forbidden field names published, every superseded_by resolves).`);
   emit('PASS');
 }

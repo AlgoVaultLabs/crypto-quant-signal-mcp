@@ -1,0 +1,99 @@
+{
+  "_comment": "OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D3) — successor to trade-call-routing-shape-snapshot-2026-06-09.json. The routing contract itself is UNCHANGED and still live (src/lib/market-route.ts resolveMarketRoute); it is carried forward verbatim below. What drifted is the SURFACE it was documented against: the 2026-06-09 snapshot published allowed_keys [\"get_equity_call\",\"get_trade_call\"] and tools_list_count 9, so the public knowledge bundle documented an input contract for a tool that is not on the live tools/list. Corrected to the live set. The equity route remains implemented and reachable in code; it is simply not exposed as an MCP tool today, so an agent reading this bundle must not be told to call it.",
+  "wave": "TRADE-CALL-ROUTING-RESOLVER-W1",
+  "date": "2026-08-21",
+  "tools_list_count": 7,
+  "no_add_remove_rename": true,
+  "tools": {
+    "get_trade_call": {
+      "aliases": [
+        "get_trade_signal"
+      ],
+      "input_allowed_keys": [
+        "coin",
+        "timeframe",
+        "includeReasoning",
+        "exchange",
+        "assetClass"
+      ],
+      "required_keys": [
+        "coin"
+      ],
+      "additive_input_keys": [
+        "assetClass"
+      ],
+      "sanctioned_default_removals": [
+        "timeframe (was Zod default '15m')",
+        "exchange (was Zod default 'BINANCE')"
+      ],
+      "effective_defaults_preserved_in": "src/lib/market-route.ts resolveMarketRoute (timeframe -> 15m, exchange -> BINANCE) — existing callers unaffected at runtime",
+      "x402": "UNCHANGED — get_trade_call free/un-gated (/x402/get_trade_call -> 404); the get_trade_signal alias stays gated at $0.02"
+    }
+  },
+  "regime_pair_status": "get_market_regime + get_equity_regime UNCHANGED this wave (R3 DEFERRED -> OPS-TRADE-CALL-ROUTING-REGIME-W{NEXT}); regime engines diverge materially (equity regime has no timeframe; crypto regime enum is only 1h/4h/1d)",
+  "forbidden_output_keys": [
+    "outcome_return_pct",
+    "outcome_price",
+    "phase_e",
+    "phase-e",
+    "eligible_non_hold",
+    "descriptionRef"
+  ],
+  "routing_contract": {
+    "engine": "'perp' | 'equity' — resolveMarketRoute (single-derivation; both get_trade_call and get_equity_call dispatch through it, so the model picking either yields the contract-correct engine)",
+    "rule": "assetClass forces the engine; else a named crypto venue OR a named timeframe -> perp; else bare -> equity if the ticker is in the Databento universe, else perp BINANCE 15m",
+    "default_perp_venue": "BINANCE for ALL symbols (venueDefault) — name an exchange to target a specific listing (e.g. BITGET for a tokenized stock)",
+    "miss_path": "an unlisted perp on the resolved venue -> the engine's standard not-found error (TradFiSymbolUnsupportedOnVenueError carrying suggestedVenues for known tokenized stocks)",
+    "membership_source": "the existing equity-universe check (getUniverseEntry) via a lazy TTL cache (isEquityUniverseSymbol); fail-open -> perp"
+  },
+  "additive_only_assertion": "Every input change is additive EXCEPT the 2 sanctioned get_trade_call default-key removals documented above. tools/list stays 9; no rename -> no client cache-refresh notice required.",
+  "consumers": [
+    "MCP tools/list (Claude + agent builders)",
+    "GET /capabilities projection (projectCapabilities)",
+    "x402 HTTP twin POST /x402/get_trade_signal (perp-only, schema UNCHANGED — does not share the Zod schema)"
+  ],
+  "cache_contract": {
+    "description": "clients cache tools/list at session start — additive optional params + reworded descriptions need NO cache-refresh notice (no add/remove/rename)",
+    "_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): was a bare STRING. build-knowledge-json.mjs only projects cache_contract when it is an OBJECT, so the public bundle silently dropped it. Wrapped, preserving the original text verbatim under `description`."
+  },
+  "drift_check_command": "N=$(curl -fsS https://api.algovault.com/capabilities | jq '.tools | length'); test \"$N\" -ge 7 || { echo \"TOOL_COUNT_REGRESSION: $N < 7\"; exit 1; }; curl -fsS https://api.algovault.com/capabilities | jq -e '([.tools[].name] | index(\"get_trade_call\")) and ([.tools[].name] | index(\"get_market_regime\"))' >/dev/null && echo SHAPE_OK",
+  "drift_check_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): was `must == 9`; live /capabilities returns 7 and has since the equity tools were dark-retired (EQUITY_TOOLS_ENABLED default OFF) — an INTENTIONAL state, so an equality assertion on a conditionally-exposed surface is guaranteed to fire on a non-defect. Re-expressed as a FLOOR (>= 7) plus a by-name presence assert on the two tools this snapshot actually documents. A floor catches the real regression (a tool disappearing) without breaking every time a flag flips.",
+  "snapshot_date": "2026-08-21",
+  "endpoint": "POST /mcp (tools/list routing contract)",
+  "allowed_keys": [
+    "get_trade_call",
+    "get_trade_signal",
+    "scan_trade_calls",
+    "scan_funding_arb",
+    "get_market_regime",
+    "search_knowledge",
+    "chat_knowledge"
+  ],
+  "projection_note": "SEC-42 (OPS-AUDIT-REMEDIATION-LOW-W2): scripts/build-knowledge-json.mjs projects this file into the PUBLIC knowledge bundle and reads the field name `snapshot_date`, with a TOTAL per-field fallback. This file carried its date under a different key, so the public bundle advertised snapshot_date:'unknown' (and, where allowed_keys/endpoint were absent, allowed_keys:[] and the filename as the endpoint) with a perfectly green build. Canonical keys added; the original keys are retained so no other reader breaks.",
+  "tools_list_count_note": "The live tools/list set, which is what an agent can actually call. This is a FLOOR-checked observation rather than a promise — see drift_check_command. Superseded snapshots of this endpoint recorded 9, which was true when they were written.",
+  "not_on_live_tool_surface": {
+    "tools": [
+      "get_equity_call",
+      "get_equity_regime"
+    ],
+    "note": "Documented here ONLY so a reader of the superseded snapshots can see why their contract was withdrawn. These names are not on the live tools/list and must not be called; their input contract, retained for the record, is in the superseded 2026-06-09 snapshot.",
+    "withdrawn_input_contract_of_get_equity_call": {
+      "aliases": [],
+      "input_allowed_keys": [
+        "symbol",
+        "exchange",
+        "timeframe"
+      ],
+      "required_keys": [
+        "symbol"
+      ],
+      "additive_input_keys": [
+        "exchange",
+        "timeframe"
+      ],
+      "sanctioned_default_removals": [],
+      "back_compat": "symbol-only callers behave exactly as before (daily-bar equity 1d); a supplied venue/timeframe routes to the perp engine via the resolver"
+    }
+  },
+  "supersedes": "trade-call-routing-shape-snapshot-2026-06-09.json"
+}

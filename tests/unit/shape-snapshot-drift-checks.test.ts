@@ -127,7 +127,23 @@ describe('SEC-42 — the knowledge-bundle projection contract (codified law)', (
   it('no endpoint has two snapshots (winkBM25 rejects a duplicate doc id)', () => {
     const byEndpoint = new Map<string, string[]>();
     for (const f of readdirSync(AUDITS).filter((x) => /-shape-snapshot-.*\.json$/.test(x))) {
-      const e = snap(f).endpoint;
+      const d = snap(f);
+      // OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1. SUPERSEDED snapshots are excluded, because the
+      // invariant is about the BUNDLE, not the directory: build-knowledge-json.mjs:285-315 skips
+      // them, so they can never become a doc id at all.
+      //
+      // Unfiltered, this test flags the exact condition supersession CURES. A successor for the
+      // same endpoint is the ratified way to correct a shape (Q1 ruling, 2026-08-21) — and
+      // audits/algovault-meta-shape-snapshot-2026-08-02.json's own superseded_reason says so:
+      // "both files carry the SAME endpoint string, so leaving this one live would publish two
+      // contradictory descriptions of the same doc id". This test passed before only because
+      // every prior successor happened to REWORD its endpoint (that pair differs by a trailing
+      // " — auth state"), so the collision case had never been exercised. That is luck, not
+      // coverage: the first same-endpoint supersession would have failed a test whose invariant
+      // it actually satisfies, and the tempting "fix" is to reword the endpoint, which would
+      // silently split one contract's history into two lineages.
+      if (typeof d.superseded_by === 'string' && d.superseded_by.length > 0) continue;
+      const e = d.endpoint;
       if (!e) continue;
       byEndpoint.set(e, [...(byEndpoint.get(e) ?? []), f]);
     }

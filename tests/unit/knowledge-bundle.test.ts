@@ -39,6 +39,8 @@ import {
   type KnowledgeBundle,
 } from '../../src/lib/knowledge-formatter.js';
 
+import { liveMcpToolNames } from '../../src/lib/equities/equity-tools-flag.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = join(dirname(__filename), '..', '..');
 const BUNDLE_LATEST = join(REPO_ROOT, 'dist', 'knowledge', 'latest.json');
@@ -148,6 +150,56 @@ describe('KNOWLEDGE-ARTIFACT-W1 canaries (v1.14.0+ invariants)', () => {
       rs.forbidden_keys.includes('outcome_return_pct')
     );
     expect(hasMetadataListing).toBe(true);
+  });
+
+  // ── OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 ─────────────────────────────────────────────────
+  // The bundle republishes dated snapshots under a generated_at refreshed on every build, so
+  // stale content reads as current. These three assert the specific untruths that reached the
+  // live artifact, plus the one thing that must NOT be "fixed".
+
+  it('D2 — no published shape promises a free HOLD (every verdict is metered on both rails)', () => {
+    // Measured on the live bundle 2026-08-21: four x402 shapes carried
+    // "(HOLDs free; async settle post-response)" in cache_contract while
+    // src/lib/call-class.ts states "Post cutover no HOLD is unbilled on any rail" and
+    // src/lib/x402-http-routes.ts had already been corrected on 2026-08-09. A pricing
+    // misstatement a customer could rely on.
+    const claim = /HOLDs?\b[^\n"]{0,40}?\b(?:free|unmetered|unbilled|not charged|never charged|no quota)\b/i;
+    const offenders = bundle.response_shapes
+      .filter((r: any) => claim.test(JSON.stringify(r)))
+      .map((r: any) => r.endpoint);
+    expect(offenders, 'a published response shape claims a HOLD is free').toEqual([]);
+  });
+
+  it('D3 — no published shape documents an MCP tool absent from the live tool set', () => {
+    // The bundle documented `MCP tool get_equity_call` / `get_equity_regime` long after
+    // EQUITY-TOOLS-DARK-RETIRE-W1 took both off tools/list. Enumerated from the artifact and
+    // resolved against the DECLARED live set, so this needs no network and no hardcoded list.
+    const live = new Set(liveMcpToolNames({} as NodeJS.ProcessEnv));
+    expect(live.size, 'the live tool set resolved to nothing — the check would be vacuous').toBeGreaterThan(0);
+    const dangling: string[] = [];
+    for (const r of bundle.response_shapes as any[]) {
+      const ep = String(r.endpoint ?? '');
+      // Only endpoints that NAME an MCP tool — an HTTP route is a different reference class.
+      if (!/\bMCP tools?\b/i.test(ep)) continue;
+      for (const m of ep.match(/\b(?:get|scan|chat|search)_[a-z0-9_]+\b/g) ?? []) {
+        if (!live.has(m)) dangling.push(`${ep} -> ${m}`);
+      }
+    }
+    expect(dangling, 'a published shape documents a tool an agent cannot call').toEqual([]);
+  });
+
+  it('THE FALSE ALARM — forbidden_keys still NAME the internal fields (do NOT "fix" this)', () => {
+    // outcome_return_pct / phase_e / realized / win_rate appear in the public bundle ONLY inside
+    // forbidden_keys and the drift_check_command that greps for them. Naming a field as forbidden
+    // is the Data Integrity law working exactly as designed. Removing them would delete the
+    // assertion that keeps the real fields OUT — so this pins them PRESENT, deliberately.
+    const forbidden = (bundle.response_shapes as any[]).flatMap((r) => r.forbidden_keys ?? []).map(String);
+    for (const name of ['outcome_return_pct', 'phase_e', 'realized', 'win_rate']) {
+      expect(
+        forbidden.some((k) => k.includes(name)),
+        `${name} vanished from every forbidden_keys list — that is a REGRESSION, not a cleanup`,
+      ).toBe(true);
+    }
   });
 
   it('bundle.examples is an empty array (Plan-Mode Q-4: demos live in algovault-skills repo, not signal-MCP)', () => {

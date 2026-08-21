@@ -37,5 +37,7 @@
   ],
   "leak_guard": "assertNoBazaarLeak (declaration) + tests/x402-http-routes.test.ts (no top-level live result on 402; no outcome_return_pct anywhere)",
   "drift_check_command": "curl -s -X POST https://api.algovault.com/x402/scan_funding_arb -H 'Content-Type: application/json' -H 'x-payment: <signed>' -d '{\"minSpreadBps\":5,\"limit\":10}' | jq 'keys'",
-  "snapshot_date": "2026-05-30"
+  "snapshot_date": "2026-05-30",
+  "superseded_by": "x402-http-scan_funding_arb-shape-snapshot-2026-08-21.json",
+  "superseded_reason": "OPS-KNOWLEDGE-BUNDLE-HOLD-PROMISE-W1 (D2): the cache_contract promised free HOLDs, which the flat-billing cutover made false on both rails. Superseded by a same-endpoint snapshot dated 2026-08-21 carrying the corrected billing contract. Nothing inside this file was altered \u2014 the two supersession keys are the only addition, the mechanism check-shape-snapshot-integrity.mjs and tests/unit/knowledge-bundle.test.ts require. Kept as the record of what was published then."
 }
