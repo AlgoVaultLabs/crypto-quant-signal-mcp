@@ -13,6 +13,7 @@
       "writers": [
         "scripts/install_dark_exports_hook.sh",
         "scripts/install_push_safety_hook.sh",
+        "scripts/install_secret_scan_hook.sh",
         "scripts/install_session_drift_hook.sh",
         "scripts/install_shared_state_hook.sh",
         "scripts/install_source_greppable_hook.sh",
@@ -561,6 +562,34 @@
         "scope": "all runs of this workflow, repository-wide",
         "_scope_reason": "One landing, one global group. This is also the CI writer named in ref-main's residual: its push to main is authenticated with a PAT specifically so it re-triggers deploy.yml, which means CI can move main underneath a local session and no local lock can prevent it."
       }
+    },
+    {
+      "id": "block-secret-scan",
+      "path": "$GIT_COMMON_DIR/hooks/pre-push",
+      "kind": "hook-block",
+      "hook": "pre-push",
+      "block_name": "secret-scan",
+      "script": "scripts/security-canary.mjs",
+      "writers": [
+        "scripts/install_secret_scan_hook.sh"
+      ],
+      "consumers": [
+        "$GIT_COMMON_DIR/hooks/pre-push"
+      ],
+      "invariant": "Gate B runs LEFT of the push, on the SAME whole-tree corpus as .github/workflows/deploy.yml, so a green pre-push predicts a green deploy. Before OPS-SECRET-SCAN-PREPUSH-W1 this gate existed only post-push, so its only expression was a stranded production deploy and a DEPLOY_DRIFT page \u2014 four times, most recently deploy run 32488595037 on 2026-08-21. Gates on the SECRET_SCAN_VERDICT token, never the bare exit code.",
+      "severity": "block",
+      "backstopped_by": [
+        ".github/workflows/deploy.yml"
+      ],
+      "sha256": null,
+      "_sha256_reason": "Repo-tracked; git is the integrity mechanism.",
+      "serialization": {
+        "mechanism": "none-single-writer",
+        "key": null,
+        "scope": "the one installer named in writers[], run by hand from a checkout",
+        "_scope_reason": "A hook-block row is written only by its own installer. The FILE those installers share is hook-pre-push, and the contention lives on that row, not on this one."
+      },
+      "_backstopped_by_reason": "deploy.yml:315 is the ONLY other invocation \u2014 measured, not inherited from the row this was templated from. security-canary.mjs is NOT in package.json prepublishOnly, so a skipped block loses the pre-push half outright and the CI half is what remains."
     }
   ],
   "worktree_roots": {

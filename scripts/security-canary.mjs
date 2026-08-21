@@ -144,9 +144,48 @@ function redactLine(line) {
   return line.trim().slice(0, 40).replace(/[^\s=:/@]{6,}/g, '…') + '…[redacted]';
 }
 
+/**
+ * The pii gate's TOKEN. Callers gate on this, never on the bare exit code.
+ *
+ * OPS-SECRET-SCAN-PREPUSH-W1. Emitted exactly once per `gatePii()` run, on every path, because
+ * this gate can no longer be read from its exit status alone: `0` used to encode BOTH "scanned
+ * the tree, clean" AND "scanned nothing, therefore clean". See `corpusVerdict`.
+ */
+const SECRET_SCAN_TOKEN = 'SECRET_SCAN_VERDICT';
+let secretScanVerdictEmitted = false;
+function emitSecretScanVerdict(v) {
+  if (secretScanVerdictEmitted) return; // one run, one verdict
+  secretScanVerdictEmitted = true;
+  // Deliberately NOT routed through log(): the token is the machine-readable contract and must
+  // survive --json, where the prose summary is suppressed.
+  console.log(`${SECRET_SCAN_TOKEN}=${v}`);
+}
+
+/**
+ * VACUITY, decided where the corpus is CONSTRUCTED rather than where it is observed.
+ *
+ * MEASURED 2026-08-21 with a failing `git` on PATH: `sh()` swallows the error and returns '',
+ * so the whole-tree scan reported `in 0 source files` → `✓ PASS pii — clean` → exit 0. A gate
+ * that had verified nothing was indistinguishable from one that had verified everything, and
+ * that is precisely the state a pre-push lane must never reach.
+ *
+ * A tracked git repo ALWAYS has files, so an empty corpus is never a real state here — it is
+ * the instrument failing. Pure on purpose so the self-test can pin all three branches.
+ *
+ * Note the asymmetry with `--diff`, which is deliberately NOT guarded: an empty `git diff` is a
+ * legitimate state (a clean tree), and empty input is only vacuity when you were supposed to
+ * fill it.
+ */
+export function corpusVerdict(trackedCount, scannableCount) {
+  if (trackedCount <= 0) return 'INDETERMINATE'; // git could not enumerate the tree
+  if (scannableCount <= 0) return 'INDETERMINATE'; // every file filtered away — nothing verified
+  return 'PASS';
+}
+
 /** ALL tracked files, minus binaries/lockfiles/test fixtures. Was: 4 dirs × 6 extensions. */
 function secretScanFiles() {
-  return sh('git', ['ls-files']).split('\n')
+  const tracked = sh('git', ['ls-files']).split('\n').filter(Boolean);
+  const files = tracked
     .filter(Boolean)
     .filter((f) => !/\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|eot|pdf|zip|gz|mp4|webm)$/i.test(f))
     .filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(f))
@@ -155,13 +194,41 @@ function secretScanFiles() {
     // corpus), so scanning itself is a guaranteed false positive. The self-test — not the file
     // scan — is what proves the matcher still works, so nothing is lost by skipping it.
     .filter((f) => f !== 'scripts/security-canary.mjs');
+  return { tracked: tracked.length, files };
 }
 
 /**
  * Two-way self-test: the gate must FIRE on the real SEC-02 shape and must NOT fire on the
  * placeholdered form that replaced it. Without this a widened regex can silently stop matching.
  */
-const SELF_TEST_COUNTS = { fire: 0, noFire: 0, leakFire: 0, leakNoFire: 0 };
+const SELF_TEST_COUNTS = { fire: 0, noFire: 0, leakFire: 0, leakNoFire: 0, corpus: 0 };
+
+/**
+ * Two-way self-test for corpusVerdict — the branch that used to fail OPEN.
+ *
+ * Both directions matter and neither is redundant: the INDETERMINATE cases prove the vacuity
+ * guard exists at all, and the PASS case proves it did not simply become "always refuse", which
+ * would wedge every push and get the guard reverted within the hour.
+ */
+function selfTestCorpus() {
+  const cases = [
+    ['git enumerated nothing', 0, 0, 'INDETERMINATE'],
+    // ISOLATES THE FIRST GUARD. Structurally impossible in reality (you cannot filter 5 files out
+    // of 0), and that is exactly why it is here: with only the realistic cases, the scannable<=0
+    // guard MASKS the tracked<=0 guard, and deliberately breaking the latter left the self-test
+    // GREEN. Measured 2026-08-21 while proving this very self-test could fail — the first break
+    // did not go red, and this row is what makes it.
+    ['git enumerated nothing but files appeared anyway', 0, 5, 'INDETERMINATE'],
+    ['every file filtered away', 884, 0, 'INDETERMINATE'],
+    ['negative count (impossible, still not a pass)', -1, -1, 'INDETERMINATE'],
+    ['a real tree', 884, 700, 'PASS'],
+    ['a one-file tree still counts', 1, 1, 'PASS'],
+  ];
+  SELF_TEST_COUNTS.corpus = cases.length;
+  return cases
+    .filter(([, t, f, want]) => corpusVerdict(t, f) !== want)
+    .map(([label, t, f, want]) => `corpusVerdict(${t}, ${f}) = ${corpusVerdict(t, f)}, want ${want} — ${label}`);
+}
 
 /**
  * The INTERNAL-class value-binding matcher. Hoisted to module scope deliberately: the gate
@@ -219,6 +286,11 @@ function selfTestSecrets() {
     'POSTGRES_PASSWORD=hunter2hunter2hunter2',
     'const k = "sk_live_ABCDEFGHIJKLMNOP0123";',
     '-----BEGIN RSA PRIVATE KEY-----',
+    // The REAL bytes of the 2026-08-21 incident, locked in as a regression fixture. This line
+    // shipped in audits/RELEASE-v1.28.0-W1-endpoint-truth.md:104, failed this gate in deploy run
+    // 32488595037, and stranded prod at 81cf4f0 for ~3h. It is the SECOND time an AUTH-THREE-STATE
+    // probe literal did this (the first: run 32281821567, 2026-08-19).
+    '| `AUTH-THREE-STATE-W1` | `Bearer av_live_0123456789abcdef01234567` -> refused, -32003 |',
   ];
   // Every must-not-fire below is a REAL false positive this gate produced on this tree the first
   // time it was widened. They are locked in so a future tightening cannot silently re-block deploys.
@@ -234,6 +306,9 @@ function selfTestSecrets() {
     '# FACILITATOR_PRIVATE_KEY = 0x804B35Ac981Fe0A58540dfBF3E730f6F7BcbF812) had a', // public EVM address (40 hex)
     'const PRIVATE_KEY = process.env.FACILITATOR_PRIVATE_KEY as Hex;',    // env read
     'const API_KEY = process.env.MCP_API_KEY || 0;',                      // env read
+    // The remediated form of the must-fire fixture above. Pinning BOTH is what makes the fix a
+    // convention rather than a one-off edit: abbreviate the probe value, keep the evidence.
+    '| `AUTH-THREE-STATE-W1` | `Bearer av_live_0123\u20264567` -> refused, -32003 |',
     'SECRET=$(docker exec "$MCP" printenv STRIPE_SECRET_KEY 2>/dev/null || true)', // cmd substitution
     '`FACILITATOR_PRIVATE_KEY=0x804B\u2026`) does verify',                 // truncated value in audit prose
   ];
@@ -251,8 +326,11 @@ function gatePii() {
   const stFails = [...selfTestSecrets(), ...selfTestLeakValue()];
   if (stFails.length) {
     stFails.forEach((f) => log('    ✖ self-test: ' + f));
-    record('pii', false, `matcher self-test failed (${stFails.length})`);
-    return false;
+    // A broken matcher means we verified NOTHING, not that we verified and found nothing.
+    // Was `pass:false`/exit 1; both block, but one meaning gets one code (OPS-SECRET-SCAN-PREPUSH-W1).
+    record('pii', null, `matcher self-test failed (${stFails.length})`);
+    emitSecretScanVerdict('INDETERMINATE');
+    return null;
   }
   const hits = [];
   let files;
@@ -264,7 +342,14 @@ function gatePii() {
       if (matchSecret(line)) hits.push(`git-diff: secret-literal → ${redactLine(line)}`);
     });
   } else {
-    files = secretScanFiles();
+    const corpus = secretScanFiles();
+    if (corpusVerdict(corpus.tracked, corpus.files.length) !== 'PASS') {
+      log(`    ⚠ corpus not constructible (${corpus.tracked} tracked, ${corpus.files.length} scannable) — NOT a pass.`);
+      record('pii', null, `corpus not constructible (${corpus.tracked} tracked)`);
+      emitSecretScanVerdict('INDETERMINATE');
+      return null;
+    }
+    files = corpus.files;
     for (const f of files) {
       const abs = join(ROOT, f); if (!existsSync(abs)) continue;
       const txt = readFileSync(abs, 'utf8');
@@ -277,6 +362,7 @@ function gatePii() {
   if (hits.length) { log('    ✖ leak/secret candidates:'); hits.slice(0, 40).forEach((h) => log('      - ' + h)); }
   else log(`    ✓ no outcome_return_pct/Phase-E value-binding or secret literal in ${DIFF_ONLY ? 'git diff' : (files?.length || 0) + ' source files'}.`);
   record('pii', hits.length === 0, hits.length ? `${hits.length} candidate(s)` : 'clean');
+  emitSecretScanVerdict(hits.length === 0 ? 'PASS' : 'FAIL');
   return hits.length === 0;
 }
 
@@ -350,7 +436,8 @@ function gateSsrf() {
 if (argv.includes('--self-test')) {
   const secretFails = selfTestSecrets();
   const leakFails = selfTestLeakValue();
-  const fails = [...secretFails, ...leakFails];
+  const corpusFails = selfTestCorpus();
+  const fails = [...secretFails, ...leakFails, ...corpusFails];
   if (fails.length) { console.error('✖ matcher self-test FAILED:'); fails.forEach((f) => console.error('   - ' + f)); process.exit(1); }
   // Assert the corpora are NON-EMPTY before reporting a pass. A self-test that ran zero
   // assertions prints exactly the same ✓ as one that ran fifty — which is the vacuous-guard
@@ -364,6 +451,7 @@ if (argv.includes('--self-test')) {
   }
   console.log(`✓ secret-matcher self-test passed (${SELF_TEST_COUNTS.fire} must-fire, ${SELF_TEST_COUNTS.noFire} must-not-fire)`);
   console.log(`✓ leak-value self-test passed (${SELF_TEST_COUNTS.leakFire} must-fire, ${SELF_TEST_COUNTS.leakNoFire} must-not-fire)`);
+  console.log(`✓ corpus-vacuity self-test passed (${SELF_TEST_COUNTS.corpus} cases)`);
   process.exit(0);
 }
 
