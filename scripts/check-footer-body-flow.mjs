@@ -10,8 +10,11 @@
  * `<body>` is `display:flex; justify-content:center` (a centering row), the footer becomes a
  * flex ITEM and renders BESIDE the card rather than beneath it. The architect reported it on
  * `/welcome`; measurement found `/contact` had it unreported, and this wave's own R0 found a
- * THIRD — `/signup`, which a live sweep skips because it answers 400 without a ?plan param
- * while still rendering the whole page.
+ * THIRD — `/signup`, which a live sweep skipped because it answered 400 without a ?plan param
+ * while still rendering the whole page. _(That 400 was the DEFECT, not a property of the route:
+ * `RELEASE-v1.28.0-AND-README-LINK-GATE-W1` CH1 flipped it to 200 — the bare page is the plan
+ * picker, not an error. Recorded here because this comment is the earliest written evidence that
+ * someone saw the 400 and filed it as a given; a live sweep no longer skips the route.)_
  *
  * Three pages, one root cause, and none of it was visible to any existing gate:
  * FOOTER-CONTACT-AND-UNIVERSAL-COVERAGE-W1's canary asserts the footer is PRESENT and matches

@@ -34,7 +34,6 @@
   <a href="https://basescan.org/address/0x6485396ac981fe0a58540dfbf3e730f6f7bcbf81"><img src="https://img.shields.io/badge/Track_Record-On--Chain_Verified-blue?logo=ethereum" alt="On-Chain Verified" /></a>
   <a href="https://basescan.org/token/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432?a=44544"><img src="https://img.shields.io/badge/ERC--8004-Verified_Agent-8A2BE2?logo=ethereum" alt="ERC-8004 Verified Agent" /></a>
   <a href="https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp"><img src="https://img.shields.io/github/stars/AlgoVaultLabs/crypto-quant-signal-mcp?style=social" alt="GitHub Repo stars" /></a>
-  <a href="https://smithery.ai/server/@algovault/crypto-quant-signal-mcp"><img src="https://smithery.ai/badge/algovault/crypto-quant-signal-mcp" alt="Smithery" /></a>
 </p>
 
 ---

@@ -1837,7 +1837,23 @@ async function startHttp() {
       if (ref) {
         return res.redirect(302, `https://algovault.com/join?ref=${encodeURIComponent(ref)}`);
       }
-      return res.status(400).send(getSignupPageHtml());
+      // 200, not 400. RELEASE-v1.28.0-AND-README-LINK-GATE-W1 CH1 (architect-approved scope
+      // widening, Q4a). A bare `/signup` is not a failed request — it is the PLAN PICKER, and it
+      // renders the complete, correct page (`<h1>AlgoVault Subscriptions`, Starter, Pro, x402)
+      // with no error copy anywhere in it. `?plan=starter` still 303s to Stripe; this branch is
+      // only ever "the visitor has not chosen yet".
+      //
+      // The 400 shipped in `126ba67` (2026-04-09) and stood for four and a half months on the
+      // primary paid-conversion CTA — `README.md` links here three times, and it is the Sign Up
+      // button in the README header. Crawlers do not index a 400 and an agent fetching it reads
+      // the conversion entry point as broken, so a status code nobody had reason to look at was
+      // quietly suppressing the funnel's front door.
+      //
+      // Found by `scripts/check-readme-links.mjs` on its FIRST live run. Worth recording that a
+      // previous wave's Step-0 also saw it (`scripts/check-footer-body-flow.mjs:13`) and wrote it
+      // down as a property of the route rather than as a defect — which is exactly why the class
+      // needed a gate and not another observant reader.
+      return res.status(200).send(getSignupPageHtml());
     }
 
     try {

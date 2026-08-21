@@ -926,3 +926,37 @@ jobs:
             DOCS_SAMPLES_LIVE_VERDICT=INDETERMINATE) echo "::warning::docs-sample canary could not reach the API — not a divergence signal" ;;
             *) echo "::error::a published docs sample no longer matches the live API — see the probe list above"; exit 1 ;;
           esac
+
+      # RELEASE-v1.28.0-AND-README-LINK-GATE-W1 CH1 R1b.3 — the LIVE README link/badge check.
+      #
+      # README.md is the npm shopfront and the GitHub front page, and until this wave nothing had
+      # ever read a link or an image in it. The Smithery badge it carried returned 500 for three
+      # consecutive days while every gate stayed green, and the primary Sign Up CTA answered 400.
+      #
+      # LIVE here, SELF-TEST ONLY in prepublishOnly, and the split is deliberate: a publish must
+      # never depend on a third party being reachable, while a deploy is exactly where an
+      # outward-facing link is worth re-probing. Same reasoning as the docs-sample canary above.
+      #
+      # Gate on the TOKEN, never the bare exit code. The script fails OPEN on transport — DNS,
+      # timeout, connection reset, and the whole rate-limit/overload class (408/425/429/503, or any
+      # response carrying Retry-After) report INDETERMINATE after one retry. That boundary is not a
+      # relaxation: measured on the real corpus, two github.com URLs answered 429 in a single sweep
+      # while one of them answered 200 on the very next request. Failing a deploy for someone
+      # else's throttle is how a gate earns the reputation that gets it ignored.
+      #
+      # It fails CLOSED on content: a 4xx/5xx from a reachable host is a broken link and reds this
+      # step, naming the URL. No Telegram leg, for the reason the docs-sample canary states — the
+      # cooldown marker lives on /opt/algovault-monitoring and an ephemeral runner cannot persist
+      # it, so this named red step IS the operator signal.
+      - name: Post-deploy README link & badge integrity gate (fail-open on transport)
+        run: |
+          set +e
+          node scripts/check-readme-links.mjs | tee /tmp/readme_links.log
+          set -e
+          TOKEN=$(grep -oE 'README_LINKS_VERDICT=[A-Z]+' /tmp/readme_links.log | tail -1)
+          echo "readme-links verdict: ${TOKEN:-NO_TOKEN_EMITTED}"
+          case "$TOKEN" in
+            README_LINKS_VERDICT=PASS) echo "every README link and image resolves" ;;
+            README_LINKS_VERDICT=INDETERMINATE) echo "::warning::a README link could not be verified (transport/rate-limit) — not a broken-link signal" ;;
+            *) echo "::error::a README link or image is broken — see the named URL(s) above"; exit 1 ;;
+          esac
