@@ -567,14 +567,40 @@ function priceChangeRow(i: FactorLedgerInput): Scored {
  */
 function regimeRow(i: FactorLedgerInput): { scored: Scored; emaNameable: boolean } {
   const ema = i.scores.emaScore;
+  // SIGNAL-TREND-BLINDNESS-FIX-W1 CH2 step 6 — `RANGING` AGREES, unconditionally.
+  //
+  // It used to require `RANGING && ema === 0`. That predicate was written for the OLD axis, where
+  // `RANGING` meant "no EMA-confirmed trend" and could therefore be read as the absence of an EMA
+  // opinion. Under the separation band `RANGING` is a verdict ABOUT that same EMA spread — that its
+  // magnitude sits below the volatility-scaled noise floor — so scoring it as a DISAGREEMENT is a
+  // category error inherited from the retired rule.
+  //
+  // It was also not a rare one. `emaScore === 0` requires `emaCross === 'NEUTRAL'`, i.e. an EXACT
+  // EMA tie, while the band calls `RANGING` whenever `|sep| < band` with `sep` still non-zero — so
+  // EVERY `RANGING` bar disagreed, by construction. Measured 2026-08-21 over 20 coins × {1h,4h,1d},
+  // per-bar, n = 11,340: 54.3% of bar-observations disagreed at K=12. Leaving it would have pushed
+  // the EMA term into `strippedRemainder` on more than half of all public receipts — a reduction of
+  // user-visible data as a side effect of a refactor, which Data Integrity forbids outright.
+  //
+  // The narrow residue that REMAINS a disagreement is the one hysteresis actually creates: a held
+  // `TRENDING_*` label surviving across a fresh opposite cross. That is a real divergence between
+  // the label and the raw cross, and the row should still degrade to context there.
   const agrees =
     (i.regime === 'TRENDING_UP' && ema > 0) ||
     (i.regime === 'TRENDING_DOWN' && ema < 0) ||
-    (i.regime === 'RANGING' && ema === 0);
+    i.regime === 'RANGING';
+  // CH2 step 7 — an unmapped label renders as its OWN lowercased name, never as another label's.
+  // The catch-all used to be `: 'volatile'`, so ANY unmapped regime was published on a public
+  // receipt as the word "volatile" — a collision with a MEANINGFUL label, which is the defect; the
+  // absence of a word never was. Lowercasing cannot be wrong, introduces no new public vocabulary,
+  // and adds nothing to a surface that publicly claims four labels. It does not THROW: a rendering
+  // fault must never take down a live serving path.
   const label =
     i.regime === 'TRENDING_UP' ? 'trending up'
       : i.regime === 'TRENDING_DOWN' ? 'trending down'
-        : i.regime === 'RANGING' ? 'ranging' : 'volatile';
+        : i.regime === 'RANGING' ? 'ranging'
+          : i.regime === 'VOLATILE' ? 'volatile'
+            : String(i.regime).toLowerCase();
 
   // CH2: `contributes` is the DECLARED map's answer, never `ema !== 0`. Regime feeds the
   // EMA weight term as a matter of wiring, whether or not that term scored today — a
@@ -601,7 +627,22 @@ function regimeRow(i: FactorLedgerInput): { scored: Scored; emaNameable: boolean
         factor: 'regime',
         value: label,
         contributes: fieldContributes('regime'),
-        humanFrame: ema === 0 ? 'with no trend structure to lean on' : 'on the moving-average cross',
+        humanFrame:
+          i.regime === 'RANGING'
+            // CH2 step 6: a RANGING bar still carries a signed EMA term — the spread is simply
+            // below the noise floor. Naming that honestly is what keeps the term on the receipt.
+            //
+            // The word "volatility" is DELIBERATELY avoided here. It is `breakout_pending`'s
+            // rendered SUBJECT marker (verdict-reasoning-consistency.test.ts SUBJECTS), so a
+            // regime clause containing it gets parsed as a breakout clause and this row's
+            // direction arrow is attributed to the wrong factor on a PUBLIC receipt. Measured:
+            // an earlier draft read "inside the volatility band" and tripped R5.1/R5.2 with
+            // `"breakout_pending" arrow bullish ≠ ledger neutral`. Subject markers are reserved
+            // vocabulary — check SUBJECTS before wording any humanFrame.
+            ? (ema === 0
+                ? 'with no trend structure to lean on'
+                : 'with the moving averages inside the noise band')
+            : 'on the moving-average cross',
       },
       signedContribution: ema * i.weights.ema,
     },

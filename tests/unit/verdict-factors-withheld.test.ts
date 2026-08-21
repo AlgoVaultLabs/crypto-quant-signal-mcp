@@ -64,9 +64,19 @@ const FIXTURES = [
   sample({ name: 'XRP', ema: -100, rsi: 0, vol: -30, regime: 'TRENDING_DOWN', raw: -27 }),
   sample({ name: 'BTC', ema: 100, rsi: 40, vol: -70, regime: 'TRENDING_UP', raw: 8 }),
   sample({ name: 'SOL', ema: -100, rsi: 0, vol: -30, regime: 'TRENDING_DOWN', raw: -15 }),
-  // The divergence case: regime RANGING while emaScore is signed, which is exactly when
-  // the old implementation folded `ema` into the withheld set and count went to 2.
-  sample({ name: 'DOGE (regime/ema divergence)', ema: -100, rsi: -60, vol: 10, regime: 'RANGING', raw: -8 }),
+  // The divergence case — RE-KEYED by SIGNAL-TREND-BLINDNESS-FIX-W1 CH2 step 6, and the vacuity
+  // guard below is what caught it. This fixture used to be `regime: 'RANGING'` with a signed
+  // emaScore, because under the retired EMA/RSI rule that was the divergence. CH2 widened
+  // `regimeRow`'s `agrees` so RANGING now AGREES — the separation band makes RANGING a verdict
+  // ABOUT the EMA spread (its magnitude is below the volatility floor), not an absence of one —
+  // so the old fixture stopped diverging and the corpus went empty. The guard refused rather than
+  // passing vacuously, which is precisely its job.
+  //
+  // Post-wave the ONLY divergence is a HYSTERESIS HOLD: a confirmed label surviving across a fresh
+  // opposite cross. That is unreachable under the retired rule (TRENDING_UP required emaCross
+  // BULLISH by construction) and is measured at 17.2% of bars at K=12 (per-bar, n=11,820,
+  // 2026-08-21). Re-keyed onto it, so the assertion still exercises a real path.
+  sample({ name: 'DOGE (regime/ema divergence — hysteresis hold)', ema: -100, rsi: -60, vol: 10, regime: 'TRENDING_UP', raw: -8 }),
   // SIGN-FLIP PROBE. The four measured samples all have |rsi+volume| large enough that
   // adding the EMA term (max ±10, the smallest weight) cannot change the sign — so a
   // corpus of only those four CANNOT detect the ema-fold regression, and a RED-VERIFY

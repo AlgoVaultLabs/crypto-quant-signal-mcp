@@ -1099,10 +1099,29 @@ export async function dbQuery<T = Record<string, unknown>>(sql: string, params: 
  *
  * 1 = the pre-2026-08-07 rule: `emaCross` ANDed with an RSI band, `RANGING` as the fallthrough.
  * 2 = SIGNAL-REGIME-LABEL-RULE-FIX-W1-V2: separation band + 12-bar confirmation, no RSI term.
+ *     NEVER LANDED — that branch stayed local-only and is published for the record at
+ *     `origin/signal-regime-label-rule-fix-w1-v2`. No production row carries 2, and CH4 asserts
+ *     that count is 0. The number is burned rather than reused: reusing it would make two
+ *     different corpora indistinguishable to a version filter, which is the whole point of the
+ *     column.
+ * 3 = SIGNAL-TREND-BLINDNESS-FIX-W1: rule 2's axis, consumed from that branch and landed, with
+ *     `regime` additionally read by the scorer (CH3). The axis semantics differ from anything that
+ *     has run in production, so CH4 can partition without inviting an H5 measurement artifact.
  */
-export const REGIME_RULE_VERSION = 2;
+export const REGIME_RULE_VERSION = 3;
 
-/** The instant rule 2 went live. Declared, not an env toggle — a toggle can be left flipped. */
+/**
+ * The instant rule 2 would have gone live. HISTORICAL — rule 2 never landed, so this constant
+ * labels nothing and is kept only so the branch's reasoning survives with it.
+ *
+ * There is deliberately NO `REGIME_RULE_V3_CUTOVER_UTC`, and the asymmetry is the point: a cutover
+ * timestamp solves BACKFILL — labelling rows written before the column existed — and rule 3 has no
+ * such rows. New rows are stamped by the WRITER below, which knows which rule it is running, so the
+ * deploy instant is irrelevant and the schema-applied-before-code window resolves itself: a row
+ * written by v1 code carries v1, full stop. A hardcoded best-estimate would instead be a number
+ * that LIES whenever the deploy slips, with "correct it in status.md" as its only remedy — which is
+ * prose-as-control, the pattern this manual retired.
+ */
 export const REGIME_RULE_V2_CUTOVER_UTC = '2026-08-07T15:28:44Z';
 
 export function recordSignal(

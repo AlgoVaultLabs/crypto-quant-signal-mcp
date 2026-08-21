@@ -82,23 +82,23 @@
         "strength": "none"
       },
       {
+        "factor": "regime",
+        "direction": "bullish",
+        "value": "ranging",
+        "contributes": true,
+        "strength": "primary"
+      },
+      {
         "factor": "price_change_24h",
         "direction": "bearish",
         "value": "down",
         "contributes": true,
-        "strength": "primary"
+        "strength": "supporting"
       },
       {
         "factor": "funding_state",
         "direction": "neutral",
         "value": "+0.0010%",
-        "contributes": true,
-        "strength": "none"
-      },
-      {
-        "factor": "regime",
-        "direction": "neutral",
-        "value": "ranging",
         "contributes": true,
         "strength": "none"
       },
@@ -113,9 +113,7 @@
     "stripped_remainder": {
       "count": 2,
       "withheld_term_count": 2,
-      "unnameable_this_response": [
-        "ema"
-      ],
+      "unnameable_this_response": [],
       "unevaluated_terms": [],
       "net": "bearish"
     },

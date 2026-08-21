@@ -16,7 +16,7 @@
  *
  *   1. All columns present in information_schema → 0 ALTERs
  *   2. Some columns missing → ALTERs only for missing
- *   3. All columns missing (empty schema) → ALTERs for all 13 SIGNAL_MIGRATIONS
+ *   3. All columns missing (empty schema) → one ALTER per declared SIGNAL_MIGRATIONS entry
  *   4. ALTER call uses `IF NOT EXISTS` defense-in-depth
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -24,11 +24,18 @@ import { runPgMigrationsAsync } from '../../src/lib/performance-db.js';
 
 // SIGNAL_MIGRATIONS canonical column list (mirror from performance-db.ts).
 // Test #3 asserts count matches; if SIGNAL_MIGRATIONS is extended, this
-// list MUST be updated to keep the test as a drift guard.
+// list MUST be updated to keep the test as a drift guard. The mirror stays HAND-WRITTEN on
+// purpose — deriving it from the source would make the drift it exists to catch undetectable —
+// but the COUNT below now derives from the mirror, because a second bare literal is a duplicated
+// fact that goes stale silently, which is exactly how this test broke.
 const ALL_SIGNAL_COLS = [
   'outcome_price', 'outcome_return_pct',
   'pfe_return_pct', 'mae_return_pct', 'pfe_price', 'mae_price', 'pfe_candles', 'return_1candle',
   'exchange', 'regime',
+  // SIGNAL-TREND-BLINDNESS-FIX-W1 CH2 (consumed from signal-regime-label-rule-fix-w1-v2): the rule
+  // generation that produced `regime`, so an audit can partition v1 rows from v3 rows instead of
+  // pooling two different engines.
+  'regime_rule_version',
   'signal_hash', 'merkle_batch_id', 'merkle_proof',
   // FUNNEL-FIX-ATTRIBUTION-W1: agent_sessions first/last-touch source (the mock returns these
   // for every table introspect, so "all present" covers both tables).
@@ -94,15 +101,15 @@ describe('OPS-HOUSEKEEPING-W1 Phase B: runPgMigrationsAsync idempotency', () => 
   });
 
   // ── Test 3: Empty schema → all SIGNAL_MIGRATIONS run ──
-  it('empty schema (no migration columns present) → all 22 ALTERs fire', async () => {
+  it('empty schema (no migration columns present) → every declared ALTER fires', async () => {
     const b = mockPg([]); // No migration columns in the table
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const alterCount = await runPgMigrationsAsync(b as any);
     // SIGNAL_MIGRATIONS.length is 22 (13 signals + 2 agent_sessions + 7 webhook_subscriptions;
     // drift guard — update if list grows).
-    expect(alterCount).toBe(22);
+    expect(alterCount).toBe(ALL_SIGNAL_COLS.length);
     expect(b.query).toHaveBeenCalledTimes(3); // 3 distinct tables: signals + agent_sessions + webhook_subscriptions
-    expect(b.execAsync).toHaveBeenCalledTimes(22);
+    expect(b.execAsync).toHaveBeenCalledTimes(ALL_SIGNAL_COLS.length);
   });
 
   // ── Test 4: ALTER calls use `IF NOT EXISTS` defense-in-depth ──

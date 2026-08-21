@@ -27,10 +27,22 @@ async function insertSignalRow(p: {
   coin: string; signal: string; confidence: number; timeframe: string; exchange: string;
   price: number; createdAt: number; signalHash: string | null; regime: string | null;
 }) {
+  // `regime_rule_version` is EXPLICIT, and it has to be. `priorRegimeFor` filters the baseline
+  // lookup on the current REGIME_RULE_VERSION (webhook-events.ts:93), while the column DEFAULTs to
+  // 1 — so a seed that omits it writes a v1 row the lookup is designed never to match, and every
+  // regime_shift assertion silently measures nothing. Stamping the CURRENT version keeps this
+  // testing "a shift between two rows the SAME rule produced", which is the only comparison that
+  // means anything.
+  //
+  // The filter itself is deliberate and worth stating: at a version cutover every tuple's prior
+  // rows belong to the OLD rule, so the lookup returns null and NO regime_shift fires until a
+  // second row lands under the new rule. That suppresses a cutover shift-storm across every
+  // subscribed tuple — comparing a v1 label to a v3 label would be comparing two different engines.
   await perfDb.dbQuery(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-    [p.coin, p.signal, p.confidence, p.timeframe, p.exchange, p.price, p.createdAt, p.signalHash, p.regime],
+    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime, regime_rule_version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    [p.coin, p.signal, p.confidence, p.timeframe, p.exchange, p.price, p.createdAt, p.signalHash, p.regime,
+     perfDb.REGIME_RULE_VERSION],
   );
 }
 

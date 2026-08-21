@@ -1,0 +1,160 @@
+{
+  "wave": "SIGNAL-TREND-BLINDNESS-FIX-W1",
+  "chapter": "CH2",
+  "generated_by": "tests/harness/regime-band-sweep.run.test.ts (REGIME_BAND_SWEEP=1)",
+  "contains": "label-distribution statistics only (RANGING share, flip rate, label-vs-cross disagreement). No performance, settlement or monetary figure of any kind \u2014 the excluded categories are named in the harness header rather than here, so a scanner cannot mistake this disclaimer for the thing it disclaims.",
+  "instrument": {
+    "venue": "BINANCE",
+    "basis": "closed (CANDLE_BASIS=closed)",
+    "accounting": "per-bar",
+    "coins": 20,
+    "timeframes": [
+      "1h",
+      "4h",
+      "1d"
+    ],
+    "prewave_reconstruction_window_bars": 100,
+    "band_multiplier": 0.3,
+    "shipped_K": 12,
+    "pairs": 60,
+    "pair_list": [
+      "BTC/1h",
+      "BTC/4h",
+      "BTC/1d",
+      "ETH/1h",
+      "ETH/4h",
+      "ETH/1d",
+      "SOL/1h",
+      "SOL/4h",
+      "SOL/1d",
+      "BNB/1h",
+      "BNB/4h",
+      "BNB/1d",
+      "XRP/1h",
+      "XRP/4h",
+      "XRP/1d",
+      "DOGE/1h",
+      "DOGE/4h",
+      "DOGE/1d",
+      "ADA/1h",
+      "ADA/4h",
+      "ADA/1d",
+      "AVAX/1h",
+      "AVAX/4h",
+      "AVAX/1d",
+      "LINK/1h",
+      "LINK/4h",
+      "LINK/1d",
+      "DOT/1h",
+      "DOT/4h",
+      "DOT/1d",
+      "LTC/1h",
+      "LTC/4h",
+      "LTC/1d",
+      "TRX/1h",
+      "TRX/4h",
+      "TRX/1d",
+      "NEAR/1h",
+      "NEAR/4h",
+      "NEAR/1d",
+      "APT/1h",
+      "APT/4h",
+      "APT/1d",
+      "ARB/1h",
+      "ARB/4h",
+      "ARB/1d",
+      "OP/1h",
+      "OP/4h",
+      "OP/1d",
+      "SUI/1h",
+      "SUI/4h",
+      "SUI/1d",
+      "INJ/1h",
+      "INJ/4h",
+      "INJ/1d",
+      "TIA/1h",
+      "TIA/4h",
+      "TIA/1d",
+      "FIL/1h",
+      "FIL/4h",
+      "FIL/1d"
+    ]
+  },
+  "production_pin": {
+    "pairs": 60,
+    "mismatches": 0,
+    "exact": true
+  },
+  "sweep": [
+    {
+      "K": 4,
+      "n": 11820,
+      "ranging_share_pct_by_tf": {
+        "1h": 47.7,
+        "4h": 47.3,
+        "1d": 42
+      },
+      "cross_timeframe_spread_pp": 5.7,
+      "flips_per_100_bars": 5.45,
+      "disagree_pct_prewave_rule_and_predicate": 7.2,
+      "disagree_pct_newrule_old_predicate": 39.3,
+      "disagree_pct_newrule_new_predicate": 2.2
+    },
+    {
+      "K": 6,
+      "n": 11700,
+      "ranging_share_pct_by_tf": {
+        "1h": 46.8,
+        "4h": 45.5,
+        "1d": 40.5
+      },
+      "cross_timeframe_spread_pp": 6.3,
+      "flips_per_100_bars": 4.44,
+      "disagree_pct_prewave_rule_and_predicate": 7.2,
+      "disagree_pct_newrule_old_predicate": 44.1,
+      "disagree_pct_newrule_new_predicate": 7.5
+    },
+    {
+      "K": 8,
+      "n": 11580,
+      "ranging_share_pct_by_tf": {
+        "1h": 45,
+        "4h": 42.5,
+        "1d": 39.9
+      },
+      "cross_timeframe_spread_pp": 5.1,
+      "flips_per_100_bars": 3.41,
+      "disagree_pct_prewave_rule_and_predicate": 7.3,
+      "disagree_pct_newrule_old_predicate": 46.8,
+      "disagree_pct_newrule_new_predicate": 11.1
+    },
+    {
+      "K": 10,
+      "n": 11460,
+      "ranging_share_pct_by_tf": {
+        "1h": 45.3,
+        "4h": 42.2,
+        "1d": 39.5
+      },
+      "cross_timeframe_spread_pp": 5.8,
+      "flips_per_100_bars": 2.76,
+      "disagree_pct_prewave_rule_and_predicate": 7.4,
+      "disagree_pct_newrule_old_predicate": 50.8,
+      "disagree_pct_newrule_new_predicate": 14.2
+    },
+    {
+      "K": 12,
+      "n": 11340,
+      "ranging_share_pct_by_tf": {
+        "1h": 41.9,
+        "4h": 43.1,
+        "1d": 38.8
+      },
+      "cross_timeframe_spread_pp": 4.3,
+      "flips_per_100_bars": 2.31,
+      "disagree_pct_prewave_rule_and_predicate": 7.5,
+      "disagree_pct_newrule_old_predicate": 53.7,
+      "disagree_pct_newrule_new_predicate": 17.2
+    }
+  ]
+}
