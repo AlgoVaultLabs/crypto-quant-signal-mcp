@@ -11,15 +11,25 @@
 # hatch for false positives. Commits that touch system-map.md directly
 # (the C3-style backfill case) are exempt automatically.
 #
-# Reads SYSTEM_MAP_PATH env var if set; defaults to the absolute vault
-# path. Tests pass a tmp path via env var.
+# Reads SYSTEM_MAP_PATH env var if set; otherwise the absolute vault path
+# declared in scripts/lib/system-map-path.sh (shared with check_map_shape.sh).
+# Tests pass a tmp path via env var.
 #
 # Maintenance: pattern array below is the SoT for the gate's notion of
 # "edge mutation". Keep aligned with CLAUDE.md Execution flow step 6
 # (which is human-readable; this is machine-readable).
 set -euo pipefail
 
-SYSTEM_MAP_PATH="${SYSTEM_MAP_PATH:-/Users/tank/My Drive/Obsidian Vault/AlgoVault MCP/system-map.md}"
+# SYSTEM_MAP_PATH is resolved from scripts/lib/system-map-path.sh — the ONE definition, shared
+# with scripts/check_map_shape.sh (SYSTEM-MAP-SHAPE-GATE-W1). Two gates now read this same
+# out-of-repo file for two different properties (freshness here, shape there); two copies of
+# one absolute string can disagree about WHICH file after a vault move, and that disagreement
+# surfaces as "the gate passed", never as an error.
+#
+# Resolved LATE (just before first use, below) rather than here, deliberately: the no-signals
+# fast path and BOTH escape hatches must never depend on the library being present, so a
+# worktree that recovered only this script keeps committing normally unless it is a commit
+# that would actually have been gated.
 MAX_AGE_SEC="${SYSTEM_MAP_MAX_AGE_SEC:-600}"   # 10 min default
 
 # ── Edge-mutation signal patterns ──
@@ -155,6 +165,28 @@ if [ ${#HITS[@]} -eq 0 ]; then
 fi
 
 # ── Edge mutation detected — verify system-map.md mtime is fresh ──
+# ── resolve the target from the ONE shared definition ───────────────────────────────────────
+# Only the DEFAULT needs resolving. A caller that set SYSTEM_MAP_PATH has already decided which
+# file this is — the existing suite does exactly that, copying only this script into a tmp repo —
+# so requiring the library there would add a dependency to a path that needs none. The default
+# still lives in exactly ONE place, which is what single-derivation actually asks for.
+#
+# When the default IS needed and the library is missing, this REFUSES rather than guessing: the
+# gate already blocks when it cannot determine freshness, and "cannot determine WHICH file" is
+# the same class. Inlining a second copy of the path as a fallback would defeat the extraction.
+MAP_PATH_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/system-map-path.sh"
+if [ -z "${SYSTEM_MAP_PATH:-}" ] && [ ! -f "$MAP_PATH_LIB" ]; then
+  echo "[system-map gate] BLOCK: scripts/lib/system-map-path.sh missing from this worktree."
+  echo "  Recover:      git checkout origin/main -- scripts/lib/system-map-path.sh"
+  echo "  Escape hatch: ALGOVAULT_SKIP_MAP_CHECK=1 git commit …   (logged to the skip ledger)"
+  exit 1
+fi
+if [ -f "$MAP_PATH_LIB" ]; then
+  # shellcheck source=scripts/lib/system-map-path.sh
+  . "$MAP_PATH_LIB"
+  SYSTEM_MAP_PATH="$ALGOVAULT_SYSTEM_MAP_PATH"
+fi
+
 if [ ! -f "$SYSTEM_MAP_PATH" ]; then
   echo "[system-map gate] BLOCK: SYSTEM_MAP_PATH not found at $SYSTEM_MAP_PATH"
   echo "  Set SYSTEM_MAP_PATH env var to the correct location, or touch the file there."
