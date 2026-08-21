@@ -452,7 +452,7 @@
       "alert_id": "xrepo_ci_dark",
       "owner": "ops/cron/xrepo-ci-conclusion-canary.sh",
       "hosts": [
-        "<never fired on either host>"
+        "signal-1"
       ],
       "adopted": false,
       "announce_resolution": false,
