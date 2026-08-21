@@ -380,7 +380,30 @@ export interface IndicatorScores extends VerdictScoreInputs {
  * timeframe claiming a trend MORE often than the pre-wave rule did, which would make this
  * wave's primary defect worse on that timeframe.
  *
- * TODO: revisit by 2026-08-21
+ * ── RE-MEASURED 2026-08-21 (SIGNAL-TREND-BLINDNESS-FIX-W1 CH2 step 11): 0.30 STANDS ───────────
+ * INSTRUMENT, because a baseline without one is not comparable to anything: 20 Binance perps ×
+ * {1h, 4h, 1d}, closed basis, PER-BAR accounting (not per-pair), n = 11,340 bar-observations,
+ * measured 2026-08-21. The sweep was pinned against production `classifyRegimeLabel` at K = 12 and
+ * reproduced it 57/57 exactly, so it is the same derivation and not a second one.
+ *
+ *   RANGING share  43.6 / 43.1 / 38.8%  (1h / 4h / 1d)   cross-timeframe spread 4.7pp
+ *   the figures above this line, from 2026-08-07: 27.8 / 26.7 / 28.2%, spread 1.5pp
+ *
+ * The PROPERTY reproduces; the LEVEL does not, and that is the design working rather than failing.
+ * What was ever claimed here is cross-TIMEFRAME invariance — spread stays 4.7-6.5pp across every
+ * K in {4,6,8,10,12}, against 40.9pp for the rejected absolute-bps band. Cross-TIME level stability
+ * was never claimed and would be wrong to want: an ATR-scaled band MECHANICALLY widens as
+ * volatility rises, and the 14 days between the two measurements contain a +20%/3-day advance and
+ * a reversal. Corroborating, from one session: BTC/4h's band read 0.494% at 09:04Z and 0.209%
+ * hours later. A high RANGING share is also the SAFE direction — the failure that matters is a
+ * label claiming a trend it cannot support — and 57% non-RANGING is ample for CH3's trend mode.
+ *
+ * The dated revisit marker that stood here is DELETED rather than re-dated (the literal token is
+ * deliberately not reproduced — a scanner cannot tell a live marker from a quotation of one). A
+ * dated marker that has expired once is prose, not a control, and a calendar-triggered gate was
+ * retired by
+ * OPS-TEST-BUDGET-PROMOTION-FIX-W1 for redding the repo on a date. Its replacement is a ticket:
+ * SIGNAL-REGIME-BAND-RECALIBRATE-W{NEXT}.
  */
 export const REGIME_SEPARATION_ATR_MULT = 0.30;
 
@@ -398,7 +421,30 @@ export const REGIME_SEPARATION_ATR_MULT = 0.30;
  * a STRUCTURAL property of the rule rather than a number reached by tuning. Measured
  * achieved ratio at (10, 12): 1.54, against 0.601 before.
  *
- * TODO: revisit by 2026-08-21
+ * ── K = 12 HELD 2026-08-21 (SIGNAL-TREND-BLINDNESS-FIX-W1 CH2 step 3) ────────────────────────
+ * A retune to K = 10 was specified and then REVERSED on the measurement. Same instrument as the
+ * band constant above (20 coins × 3 tf, per-bar, n = 11,340):
+ *
+ *   K   RANGING (1h/4h/1d)        spread   flips/100bar   disagree
+ *   10  45.3 / 42.2 / 39.5%       5.9pp    2.74           51.0%
+ *   12  43.6 / 43.1 / 38.8%       4.7pp    2.33           54.3%
+ *
+ * K = 10 costs +17.6% flips per 100 bars — billed per delivery on the `regime_shift` webhook — and
+ * +1.2pp of cross-timeframe spread, to buy 3.3pp of disagreement that CH2 step 6 removes anyway:
+ * that disagree rate was dominated by the RANGING-bar predicate bug, not by hysteresis holds.
+ *
+ * The deeper reason to hold is that the two RANGINGs are not the same failure. The retired rule's
+ * RANGING was STRUCTURAL BLINDNESS — RSI 93.8 permanently disqualified TRENDING_UP, so no amount
+ * of waiting fixed it. This rule's RANGING is CONFIRMATION LAG, which is what hysteresis is FOR.
+ * Only the first is a bug. K = 10's original basis was a SINGLE wall-clock observation (BTC/4h
+ * sitting at run = 11 against K = 12 at one instant); that tape reversed to side −1 within the same
+ * session. A permanent constant must not be fitted to one bar of one coin at one moment.
+ *
+ * FALSIFIER, so this is a decision and not a preference: the sweep above ran under the PRE-step-6
+ * predicate. Re-report flips/100bar and disagree on the corrected predicate; if K = 10 is still the
+ * knee by a clear margin, take 10 and say so with the numbers.
+ *
+ * The dated revisit marker is DELETED here for the same reason as on the band constant above.
  */
 export const REGIME_CONFIRM_BARS = 12;
 
