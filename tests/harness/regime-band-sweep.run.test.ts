@@ -39,6 +39,20 @@ const TFS: Array<[string, number]> = [['1h', 3_600_000], ['4h', 14_400_000], ['1
 const KS = [4, 6, 8, 10, 12];
 /** Production fetches 100 bars, so a per-bar reconstruction must read the same trailing window. */
 const PROD_WINDOW = 100;
+/**
+ * The FETCH lookback, and it must not exceed the adapter's own kline cap.
+ *
+ * MEASURED 2026-08-21, and it invalidated an earlier run of this harness: Binance's adapter sends
+ * `limit: 200` and the venue returns bars FORWARD from `startTime`, so a 250-period lookback yields
+ * the OLDEST 200 — a window that ENDS ~50 periods in the past. On BTC/4h that inverted the label
+ * against production at the same instant: lookback 100 gave `sep +4.747% / side +1 / TRENDING_UP`
+ * while lookback 250 gave `sep -0.400% / side -1 / TRENDING_DOWN`, because the second was reading
+ * data that stopped ~8 days earlier. Both were internally consistent, so nothing looked wrong.
+ *
+ * Matching production's 100 keeps the sweep measuring the rule production actually runs, and keeps
+ * the PIN below meaningful rather than merely self-consistent.
+ */
+const FETCH_LOOKBACK = PROD_WINDOW;
 
 type Agg = { n: number; rang: number; flips: number; disPre: number; disOldPred: number; disNewPred: number };
 const zero = (): Agg => ({ n: 0, rang: 0, flips: 0, disPre: 0, disOldPred: 0, disNewPred: 0 });
@@ -74,11 +88,11 @@ describe.skipIf(!ENABLED)('CH2 — separation-band K sweep (REGIME_BAND_SWEEP=1)
     for (const coin of COINS) for (const [tf, ms] of TFS) {
       let c: Candle[];
       try {
-        const raw = await ad.getCandles(coin, tf, Date.now() - 250 * ms);
+        const raw = await ad.getCandles(coin, tf, Date.now() - FETCH_LOOKBACK * ms);
         raw.sort((a, b) => a.time - b.time);
         c = splitCandleWindow(raw, ms, Date.now()).closed;
       } catch { continue; }
-      if (c.length < 60) continue;
+      if (c.length < 60) continue;   // a short series cannot carry a K-sweep
       pairs.push(`${coin}/${tf}`);
 
       const closes = c.map(x => x.close);
@@ -147,6 +161,7 @@ describe.skipIf(!ENABLED)('CH2 — separation-band K sweep (REGIME_BAND_SWEEP=1)
         venue: 'BINANCE', basis: 'closed (CANDLE_BASIS=closed)', accounting: 'per-bar',
         coins: COINS.length, timeframes: TFS.map(([t]) => t),
         prewave_reconstruction_window_bars: PROD_WINDOW,
+        fetch_lookback_periods: FETCH_LOOKBACK,
         band_multiplier: REGIME_SEPARATION_ATR_MULT, shipped_K: REGIME_CONFIRM_BARS,
         pairs: pairs.length, pair_list: pairs,
       },
