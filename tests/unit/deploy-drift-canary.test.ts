@@ -55,7 +55,16 @@ function hasDeepHistory(): boolean {
 function liveGraphTouchers(): string[] {
   return execFileSync(
     'git',
-    ['log', '--format=%h', '--reverse', `${FX.last_green}..${FX.delta_head}`, '--', ...FX.failing_graph],
+    // --abbrev=7 is REQUIRED, not stylistic. `%h` honours core.abbrev, which defaults to `auto`
+    // and scales with the repository's object count — so the SAME commit renders 7 chars in a
+    // developer clone and 8 in CI's fully-packed one. The fixture below pins 7-char shas, so
+    // without this the comparison comes down to how the repo happens to be packed.
+    //
+    // It went unnoticed because this test SKIPPED itself on CI's shallow checkout; giving the
+    // Postgres lane full history (OPS-TEST-BUDGET-CI-REF-W1) ran it for the first time and it
+    // failed on `['cf2992cf'] !== ['cf2992c']` — a latent defect surfaced, not a new one. Pinning
+    // the abbreviation length is the same rule as recording an instrument beside a measurement.
+    ['log', '--abbrev=7', '--format=%h', '--reverse', `${FX.last_green}..${FX.delta_head}`, '--', ...FX.failing_graph],
     { cwd: REPO, encoding: 'utf8' },
   )
     .split('\n')
