@@ -180,6 +180,13 @@ jobs:
             .vitest-error-shapes.json
           retention-days: 30
           if-no-files-found: warn
+          # BOTH paths begin with a dot, and actions/upload-artifact@v4 treats a dotfile as HIDDEN
+          # and EXCLUDES it by default. Measured on run 32557412979: the step logged
+          # `include-hidden-files: false` and then "No files were found with the provided path",
+          # while the classifier in the step before had just read .vitest-report.json successfully —
+          # so the files were there and the uploader skipped them. Nothing but a real CI run shows
+          # this: the paths are correct, the YAML is correct, and it fails silently at `warn`.
+          include-hidden-files: true
 
       - name: Docs structural drift canary (build_docs --check)
         run: node scripts/build_docs.mjs --check
