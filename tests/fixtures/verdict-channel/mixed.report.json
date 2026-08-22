@@ -1,1 +1,71 @@
-{"numTotalTestSuites":2,"numPassedTestSuites":0,"numFailedTestSuites":2,"numPendingTestSuites":0,"numTotalTests":2,"numPassedTests":0,"numFailedTests":2,"numPendingTests":0,"numTodoTests":0,"snapshot":{"added":0,"failure":false,"filesAdded":0,"filesRemoved":0,"filesRemovedList":[],"filesUnmatched":0,"filesUpdated":0,"matched":0,"total":0,"unchecked":0,"uncheckedKeysByFile":[],"unmatched":0,"updated":0,"didUpdate":false},"startTime":1787377859791,"success":false,"testResults":[{"assertionResults":[{"ancestorTitles":[],"fullName":"a test whose assertion is genuinely wrong","status":"failed","title":"a test whose assertion is genuinely wrong","duration":5.040666000000016,"failureMessages":["AssertionError: expected { a: 1 } to deeply equal { a: 2 }\n    at /Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/tests/fixtures/verdict-channel/__capture__/assertion.test.ts:2:74\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)"],"meta":{}}],"startTime":1787377860053,"endTime":1787377860058.0408,"status":"failed","message":"","name":"/Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/tests/fixtures/verdict-channel/__capture__/assertion.test.ts"},{"assertionResults":[{"ancestorTitles":[],"fullName":"a test that exceeds its own budget","status":"failed","title":"a test that exceeds its own budget","duration":254.48741700000002,"failureMessages":["Error: STACK_TRACE_ERROR\n    at task (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:638:27)\n    at Object.<anonymous> (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:662:16)\n    at Object.<anonymous> (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:458:28)\n    at chain (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:369:14)\n    at /Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/tests/fixtures/verdict-channel/__capture__/timeout.test.ts:2:1\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at VitestExecutor.runModule (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:397:4)\n    at VitestExecutor.directRequest (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:375:3)\n    at VitestExecutor.cachedRequest (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:189:11)\n    at VitestExecutor.executeId (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:166:10)\n    at collectTests (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1174:4)\n    at startTests (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1817:17)\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26\n    at withEnv (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)\n    at run (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)"],"meta":{}}],"startTime":1787377860048,"endTime":1787377860302.4873,"status":"failed","message":"","name":"/Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/tests/fixtures/verdict-channel/__capture__/timeout.test.ts"}]}
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 2,
+  "numPassedTests": 0,
+  "numFailedTests": 2,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1787377859791,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "a test whose assertion is genuinely wrong",
+          "status": "failed",
+          "title": "a test whose assertion is genuinely wrong",
+          "duration": 5.040666000000016,
+          "failureMessages": [
+            "AssertionError: expected { a: 1 } to deeply equal { a: 2 }\n    at /Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/tests/fixtures/verdict-channel/__capture__/assertion.test.ts:2:74\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)"
+          ],
+          "meta": {}
+        }
+      ],
+      "startTime": 1787377860053,
+      "endTime": 1787377860058.0408,
+      "status": "failed",
+      "message": "",
+      "name": "tests/fixtures/verdict-channel/__capture__/assertion.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "a test that exceeds its own budget",
+          "status": "failed",
+          "title": "a test that exceeds its own budget",
+          "duration": 254.48741700000002,
+          "failureMessages": [
+            "Error: STACK_TRACE_ERROR\n    at task (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:638:27)\n    at Object.<anonymous> (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:662:16)\n    at Object.<anonymous> (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:458:28)\n    at chain (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:369:14)\n    at /Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/tests/fixtures/verdict-channel/__capture__/timeout.test.ts:2:1\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at VitestExecutor.runModule (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:397:4)\n    at VitestExecutor.directRequest (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:375:3)\n    at VitestExecutor.cachedRequest (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:189:11)\n    at VitestExecutor.executeId (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vite-node/dist/client.mjs:166:10)\n    at collectTests (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1174:4)\n    at startTests (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/@vitest/runner/dist/chunk-hooks.js:1817:17)\n    at file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26\n    at withEnv (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)\n    at run (file:///Users/tank/code/.worktrees/crypto-quant-signal-mcp/suite-verdict-reporter-channel-w1/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)"
+          ],
+          "meta": {}
+        }
+      ],
+      "startTime": 1787377860048,
+      "endTime": 1787377860302.4873,
+      "status": "failed",
+      "message": "",
+      "name": "tests/fixtures/verdict-channel/__capture__/timeout.test.ts"
+    }
+  ]
+}

@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -392,6 +392,24 @@ describe('the structured channel — captured artifacts, not transcriptions', ()
     expect(normFile(join(REPO, 'tests/x.test.ts'))).toBe(relPath(join(REPO, 'tests/x.test.ts')));
     expect(errorShape({ name: 'AssertionError', diff: '- 1\n+ 2', expected: '2', actual: '1', message: 'm' }))
       .toEqual({ name: 'AssertionError', hasDiff: true, hasExpected: true, hasActual: true, message: 'm' });
+  });
+
+  it('NO fixture carries a machine-absolute path — the pair must key identically on any runner', () => {
+    // THE BUG THIS PINS, and it only ever showed up on CI. `normFile()` strips the REPO prefix; a
+    // fixture captured on a laptop bakes THAT laptop's absolute path into the report's `name`,
+    // while the sidecar stores repo-relative. On the capture machine both normalise to the same
+    // key and every assertion passes. On the CI runner REPO is /home/runner/..., the Mac prefix
+    // cannot be stripped, the file+name key MISSES, the structured lookup silently falls through
+    // to the string channel — and the captured timeout reads FAIL again, which is the exact defect
+    // this wave exists to remove, reintroduced by its own test data.
+    //
+    // Measured: run 32558592224 went SUITE_VERDICT=FAIL on three assertions for this reason.
+    const dir = join(REPO, 'tests/fixtures/verdict-channel');
+    for (const f of readdirSync(dir)) {
+      const body = readFileSync(join(dir, f), 'utf8');
+      expect(body, `${f} must not embed an absolute path — it will not resolve on another machine`)
+        .not.toMatch(/"\/(Users|home)\//);
+    }
   });
 
   it('the REAL CI-produced sidecar is usable — captured from the runner, not from a local run', () => {
