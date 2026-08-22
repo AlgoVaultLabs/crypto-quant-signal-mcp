@@ -167,7 +167,10 @@ describe('DETECTOR_ENVELOPE — the TS and Python validators agree, byte for byt
     // for pure-function assertions and a cold python3 start blows it on a loaded CI runner.
   }, 20_000);
 
-  it('both sides read the SAME schema file — one SoT, not two copies', () => {
+  // The budget must sit in the OPTIONS ARG, not as a trailing number: check-test-budget.mjs
+  // reads `timeout:` out of the text BEFORE the callback, so `it(name, fn, 20_000)` declares
+  // nothing as far as the gate is concerned and the block silently inherits the 5,000ms default.
+  it('both sides read the SAME schema file — one SoT, not two copies', { timeout: 20_000 }, () => {
     expect(schemaPath()).toBe(path.join(REPO, 'ops/monitoring/detector-envelope.schema.json'));
     const r = spawnSync('python3', ['-c', [
       'import sys,json',
@@ -177,13 +180,13 @@ describe('DETECTOR_ENVELOPE — the TS and Python validators agree, byte for byt
     ].join('\n')], { encoding: 'utf8' });
     expect(r.status).toBe(0);
     expect(path.resolve(r.stdout.trim())).toBe(path.resolve(schemaPath()));
-  }, 20_000);
+  });
 
-  it('the Python consumer self-test passes and prints its token', () => {
+  it('the Python consumer self-test passes and prints its token', { timeout: 20_000 }, () => {
     const r = spawnSync('python3', [PY, '--self-test'], { encoding: 'utf8' });
     expect(r.stdout).toContain('DETECTOR_ENVELOPE_VERDICT=PASS');
     expect(r.status).toBe(0);
-  }, 20_000);
+  });
 });
 
 describe('DETECTOR_ENVELOPE — a schema it cannot read is INDETERMINATE, not permissive', () => {
