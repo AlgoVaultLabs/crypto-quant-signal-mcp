@@ -1540,6 +1540,28 @@
       "alert_ids": [],
       "owner_wave": "OPS-DEPLOY-LABELER-WINDOW-W1",
       "notes": "Counts what the deploy's labeler-preemption policy COSTS. deploy.yml:892 SIGTERMs any in-flight nightly labeler before `docker compose up` \u2014 DELIBERATE, shipped by OPS-LABEL-FRESHNESS-W1 R2 and named in graceful-stop.ts's docstring. 10 of 29 runs (34%) ended early for weeks and NOTHING counted it. criticality ADVISORY and alert_ids EMPTY on purpose: this is DIGEST-ONLY and must never page, because truncation is safe (graceful-stop checkpoints) and self-healing (the rotation sorts a missed venue first next night). SECOND adopter of DETECTOR_ENVELOPE, consumed as shipped \u2014 a truncated run has run_outcome=stopped, which the schema calls non-conclusive, so its verdict is FORCED to INDETERMINATE and a truncation can never render as a capacity finding. Attribution correlates a truncation with an mcp-server container start inside a 900s window read from the journal; 'unattributable-no-recreate' (we looked, it was something else) and 'unattributable-no-journal' (we could not look) are kept DISTINCT, because collapsing them is the same base-rate error that made the prior wave's '10/10 within 90s' figure unusable. Self-test: python3 labeler_truncation_attribution.py --self-test, 20 checks, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE."
+    },
+    {
+      "id": "deploy-labeler-interlock",
+      "artifact": "ops/scripts/deploy-labeler-interlock.sh",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/crypto-quant-signal-mcp/ops/scripts/deploy-labeler-interlock.sh",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/crypto-quant-signal-mcp/ops/scripts/deploy-labeler-interlock.sh"
+        }
+      ],
+      "criticality": "load-bearing",
+      "repo_resident": true,
+      "schedule": null,
+      "invoked_by": "deploy.yml:897 (preempt) + deploy.yml:917 (catchup)",
+      "install_state": "pending",
+      "sha256": "61cbb65e9c7f13a7efb4c36c30cb2615979b51434bb0e51306e789f4492b94a4",
+      "alert_ids": [],
+      "owner_wave": "OPS-DEPLOY-LABELER-WINDOW-W1",
+      "notes": "The deploy/labeler interlock POLICY. The MECHANISM shipped with OPS-LABEL-FRESHNESS-W1 R2 as inline bash in deploy.yml; this wave moved it into a script because inline workflow bash cannot be unit-tested, the labeler's process pattern was a bare literal a rename would silently stop matching, and the old block had only TWO outcomes so a failed `docker exec` printed the same reassuring line as 'nothing running'. RUNS FROM THE DEPLOY CHECKOUT (ops/scripts/** IS in deploy.yml paths-ignore, so editing it alone does not trigger a deploy \u2014 but every deploy's `git reset --hard origin/main` places it before line 897 invokes it, so there is no bootstrap gap). install_state PENDING until the branch lands and the first deploy runs; repo_resident, so no SSH install step exists or is wanted. ALWAYS exits 0 \u2014 a deploy must never be blocked by this script's own bugs; callers read INTERLOCK_VERDICT=PROCEED|DEFERRED|BYPASSED|INDETERMINATE. DEPLOY_HOTFIX=1 is a TOTAL bypass and is ledgered to /var/log/algovault-deploy-interlock.log. The 120s wait is DERIVED (57,194ms max in-flight batch sleep, n=400, + 38,320ms worst per-group, n=466, +25% margin) \u2014 it was 30s, below a single in-flight sleep. Self-test: 18 checks."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

@@ -883,18 +883,18 @@ jobs:
               fi
             done
 
-            # OPS-LABEL-FRESHNESS-W1 R2 (A1): gracefully checkpoint an in-flight nightly labeler
-            # at a venue boundary (per-group committed + DB-state resumable) BEFORE the recreate
-            # decapitates it mid-venue — the same deploy-kill that truncated the 07-23 run at
-            # venue 4 (03:49 OPS-VENUE-GO-LIVE-15-W1 recreate). Best-effort + bounded (≤30s);
-            # NEVER blocks the deploy; only bites during the 02:23–05:53 UTC nightly window
-            # (finds nothing otherwise). The SIGTERM handler ships in this same image.
-            if docker exec crypto-quant-signal-mcp-mcp-server-1 pkill -TERM -f 'dist/scripts/backfill-directional-labels' 2>/dev/null; then
-              echo "[deploy] SIGTERM → in-flight labeler; waiting up to 30s for a boundary checkpoint"
-              for _ in $(seq 1 30); do docker exec crypto-quant-signal-mcp-mcp-server-1 pkill -0 -f 'dist/scripts/backfill-directional-labels' 2>/dev/null || break; sleep 1; done
-            else
-              echo "[deploy] no in-flight labeler to checkpoint"
-            fi
+            # OPS-LABEL-FRESHNESS-W1 R2 (A1) + OPS-DEPLOY-LABELER-WINDOW-W1 CH2.
+            #
+            # Gracefully checkpoint an in-flight nightly labeler at a venue boundary before the
+            # recreate decapitates it mid-venue. The POLICY now lives in a script rather than
+            # inline here, for three reasons: inline bash in a workflow cannot be unit-tested;
+            # the labeler's process pattern was a bare literal that a rename would silently stop
+            # matching with nothing red; and the old block had only TWO outcomes, so a failed
+            # `docker exec` printed the same reassuring line as "nothing was running".
+            #
+            # It NEVER blocks the deploy — it always exits 0 and the caller reads the token.
+            # DEPLOY_HOTFIX=1 bypasses it entirely and ledgers the bypass.
+            bash /opt/crypto-quant-signal-mcp/ops/scripts/deploy-labeler-interlock.sh preempt || true
 
             # --force-recreate defends against env_file race: docker compose
             # only auto-recreates if image OR compose-config mtime changed,
@@ -905,6 +905,16 @@ jobs:
             # after a same-window .env append.
             docker compose up -d --build --force-recreate
             docker compose ps
+
+            # OPS-DEPLOY-LABELER-WINDOW-W1 CH2 — SLO-gated catch-up.
+            #
+            # Preemption above costs zero deploy latency, which is exactly why it survives contact
+            # with an operator in a hurry — so the harm it causes is REPAIRED here rather than
+            # prevented. Runs at most once per preemption, inherits the ORIGINAL run's remaining
+            # budget rather than a fresh one, takes the same flock as the nightly, and is SKIPPED
+            # ENTIRELY when the worst projected lag is already inside SLO (a preemption at venue
+            # 15 of 17 needs no catch-up; running one anyway is recovery chatter).
+            bash /opt/crypto-quant-signal-mcp/ops/scripts/deploy-labeler-interlock.sh catchup || true
 
             # Capture new version after pull
             NEW_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*: *"//;s/".*//' || echo "0.0.0")
