@@ -45,6 +45,7 @@ import { stripComments } from './check-alert-recommended-wave.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const REGISTRY = join(REPO, 'ops', 'monitoring', 'alert-registry.json');
+const INVENTORY = join(REPO, 'ops', 'monitoring', 'monitoring-inventory.json');
 const SCAN_DIRS = ['ops', 'scripts'];
 const SCAN_EXT = /\.(sh|py|mjs)$/;
 /**
@@ -95,6 +96,65 @@ function walk(dir, acc = []) {
     else if (SCAN_EXT.test(e)) acc.push(p);
   }
   return acc;
+}
+
+/**
+ * OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2 — THE SECOND SOURCE.
+ *
+ * This gate derived its corpus from CALL SITES alone, and call-site matching is DETECTION.
+ * Detection is strictly weaker than enumeration, and the measured cost was exact: 14 of the 49
+ * alert ids the inventory declares were invisible here — including
+ * `DIRECTIONAL_LABEL_CAPACITY_SHORTFALL`, the alert whose false page commissioned this very wave.
+ * `directional-label-freshness.py` raises it through a Python `subprocess.run([...])` argv list,
+ * a shape none of the three SHAPES above match.
+ *
+ * THE FIX IS NOT A FOURTH REGEX. A fourth shape would close this hole and leave the next one open
+ * exactly as silently. The corpus is the UNION of what we can detect and what the inventory
+ * DECLARES, and where the two sources disagree that disagreement is REPORTED under its own
+ * verdict — never silently resolved to whichever set is smaller. The registry's own header
+ * already conceded the principle: "NEITHER SOURCE IS COMPLETE ALONE."
+ */
+export function inventoryAlertIds(raw) {
+  const doc = JSON.parse(raw);
+  const rows = Array.isArray(doc.artifacts) ? doc.artifacts : [];
+  const ids = new Set();
+  for (const r of rows) for (const id of (r.alert_ids || [])) if (id) ids.add(id);
+  return ids;
+}
+
+/**
+ * The two derivations, compared. `registered` must be the UNION's superset — an id known to
+ * either source and absent from the registry is exactly the miss this pair exists to make
+ * impossible.
+ */
+export function sourceDelta(detected, declared, registered) {
+  const onlyDetected = [...detected].filter((id) => !declared.has(id)).sort();
+  const onlyDeclared = [...declared].filter((id) => !detected.has(id)).sort();
+  const union = new Set([...detected, ...declared]);
+  const unregistered = [...union].filter((id) => !registered.has(id)).sort();
+  return { onlyDetected, onlyDeclared, union, unregistered, agree: onlyDetected.length === 0 && onlyDeclared.length === 0 };
+}
+
+/**
+ * AC2.7 — a row that has NOT adopted the envelope must name the wave that will migrate it.
+ * `adopted` / `announce_resolution` stay exactly as they were: they answer "does the owner call
+ * --clear" and "is that clear announced", which are different questions from "does this alert
+ * carry a DETECTOR_ENVELOPE". Overloading one boolean with two meanings is the defect this wave
+ * is named after, so conformance gets its own column following the SAME pattern — default false,
+ * a named follow-up wave, and unadopted rows behaving byte-identically to before.
+ */
+export function envelopeViolations(rows) {
+  const out = [];
+  for (const r of rows) {
+    const adopted = r.envelope_adopted === true;
+    if (!adopted && !r.envelope_follow_up_wave) {
+      out.push({ id: r.alert_id, why: 'envelope_adopted is not true and no envelope_follow_up_wave names who will migrate it' });
+    }
+    if (adopted && r.envelope_follow_up_wave) {
+      out.push({ id: r.alert_id, why: 'envelope_adopted is true but it still carries an envelope_follow_up_wave — a closed migration must not keep a pending owner' });
+    }
+  }
+  return out;
 }
 
 export function findUnregistered(raisedByFile, registered) {
@@ -154,13 +214,52 @@ function run() {
     process.exit(3);
   }
 
-  const missing = findUnregistered(raisedByFile, registered);
-  console.log(`  scanned ${raisedByFile.size} file(s); ${raisedAll.size} distinct alert id(s) raised; ${registered.size} registered; ${overlap} matched`);
+  // ── SECOND SOURCE (CH2) — the inventory's DECLARED ids, unioned with what we can detect. ───
+  let declared;
+  try {
+    declared = inventoryAlertIds(readFileSync(INVENTORY, 'utf8'));
+  } catch (e) {
+    // A source we cannot read is INDETERMINATE, never "the other source is enough". Falling back
+    // to the call-site set alone is exactly the silent narrowing this pair exists to prevent.
+    console.log(`  monitoring-inventory.json unreadable (${e.message}) — cannot form the union`);
+    console.log('ALERT_SOURCE_DELTA_VERDICT=INDETERMINATE');
+    console.log('ALERT_REGISTRY_VERDICT=INDETERMINATE');
+    process.exit(3);
+  }
+  // VACUITY GUARD 4 — an inventory that declares no alert ids is a broken read, not a clean tree.
+  if (declared.size === 0) {
+    console.log('  monitoring-inventory.json declares ZERO alert ids — the second source is broken');
+    console.log('ALERT_SOURCE_DELTA_VERDICT=INDETERMINATE');
+    console.log('ALERT_REGISTRY_VERDICT=INDETERMINATE');
+    process.exit(3);
+  }
+
+  const delta = sourceDelta(raisedAll, declared, registered);
+  console.log(`  scanned ${raisedByFile.size} file(s); ${raisedAll.size} alert id(s) DETECTED at call sites; `
+    + `${declared.size} DECLARED in monitoring-inventory.json; union ${delta.union.size}; ${registered.size} registered; ${overlap} matched`);
   const announced = rows.filter((r) => r.announce_resolution === true).length;
   console.log(`  adopted: ${rows.filter((r) => r.adopted === true).length} · announce_resolution: ${announced} (the rest resolve SILENTLY, which is the law's default)`);
-  if (missing.length) {
-    for (const m of missing) console.log(`  ✗ ${m.id} raised in ${m.file} but ABSENT from the registry`);
-    console.log(`  add each to ops/monitoring/alert-registry.json with owner, hosts, adopted and a follow_up_wave`);
+  console.log(`  envelope_adopted: ${rows.filter((r) => r.envelope_adopted === true).length} of ${rows.length}`);
+
+  // The delta is PRINTED whether or not it is a violation — a disagreement nobody sees is a
+  // disagreement silently resolved.
+  console.log(`  source delta: ${delta.onlyDetected.length} detected-only, ${delta.onlyDeclared.length} declared-only`);
+  for (const id of delta.onlyDetected) console.log(`    · ${id} — raised at a call site, not declared on any inventory row`);
+  for (const id of delta.onlyDeclared) console.log(`    · ${id} — declared on an inventory row, invisible to call-site detection`);
+
+  // The delta's OWN verdict, with its own meaning: is the registry the UNION of both sources?
+  // Distinct from ALERT_REGISTRY_VERDICT, which asks whether every raised id is registered.
+  const deltaBad = delta.unregistered.length > 0;
+  for (const id of delta.unregistered) console.log(`  ✗ ${id} is known to a source but ABSENT from the registry`);
+  console.log(`ALERT_SOURCE_DELTA_VERDICT=${deltaBad ? 'FAIL' : 'PASS'}`);
+
+  const missing = findUnregistered(raisedByFile, registered);
+  const envBad = envelopeViolations(rows);
+  for (const m of missing) console.log(`  ✗ ${m.id} raised in ${m.file} but ABSENT from the registry`);
+  for (const v of envBad) console.log(`  ✗ ${v.id}: ${v.why}`);
+  if (missing.length || envBad.length || deltaBad) {
+    console.log('  add each to ops/monitoring/alert-registry.json with owner, hosts, adopted, follow_up_wave,');
+    console.log('  and either envelope_adopted:true or an envelope_follow_up_wave naming the migrating wave');
     console.log('ALERT_REGISTRY_VERDICT=FAIL');
     process.exit(1);
   }
@@ -189,6 +288,40 @@ function selfTest() {
   const reg = new Set(['A_B']);
   ck('an unregistered id is reported', findUnregistered(new Map([['f.sh', new Set(['A_B', 'C_D'])]]), reg).length, 1);
   ck('a registered id is not reported', findUnregistered(new Map([['f.sh', new Set(['A_B'])]]), reg).length, 0);
+
+  // ── OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2 — the SECOND SOURCE and its own verdict. ─────────
+  const INV = JSON.stringify({ artifacts: [
+    { id: 'a', alert_ids: ['DETECTED_AND_DECLARED', 'DECLARED_ONLY'] },
+    { id: 'b', alert_ids: [] },
+    { id: 'c' },
+  ] });
+  ck('inventory ids are extracted from every row', inventoryAlertIds(INV).size, 2);
+  ck('a row with no alert_ids contributes nothing', inventoryAlertIds(INV).has(undefined), false);
+
+  const detected = new Set(['DETECTED_AND_DECLARED', 'DETECTED_ONLY']);
+  const declaredSet = inventoryAlertIds(INV);
+  const dAll = sourceDelta(detected, declaredSet, new Set(['DETECTED_AND_DECLARED', 'DETECTED_ONLY', 'DECLARED_ONLY']));
+  ck('the union is BOTH sources, not the smaller one', dAll.union.size, 3);
+  ck('a detected-only id is named', dAll.onlyDetected.join(','), 'DETECTED_ONLY');
+  ck('a declared-only id is named', dAll.onlyDeclared.join(','), 'DECLARED_ONLY');
+  ck('sources that differ are reported as NOT agreeing', dAll.agree, false);
+  ck('a fully-registered union leaves nothing unregistered', dAll.unregistered.length, 0);
+  // THE MEASURED MISS, as a fixture: an id only the inventory knows, absent from the registry.
+  // Before the union this was invisible and the gate reported PASS — it is what let
+  // DIRECTIONAL_LABEL_CAPACITY_SHORTFALL go unregistered while the wave it commissioned ran.
+  const dMiss = sourceDelta(detected, declaredSet, new Set(['DETECTED_AND_DECLARED', 'DETECTED_ONLY']));
+  ck('a declared-only id missing from the registry IS caught', dMiss.unregistered.join(','), 'DECLARED_ONLY');
+  ck('identical sources agree', sourceDelta(new Set(['X_Y']), new Set(['X_Y']), new Set(['X_Y'])).agree, true);
+
+  ck('an unadopted row with no follow-up wave is a violation',
+    envelopeViolations([{ alert_id: 'A_B', envelope_adopted: false }]).length, 1);
+  ck('an unadopted row that NAMES its migrating wave is fine',
+    envelopeViolations([{ alert_id: 'A_B', envelope_adopted: false, envelope_follow_up_wave: 'OPS-X-W{NEXT}' }]).length, 0);
+  ck('an adopted row is fine', envelopeViolations([{ alert_id: 'A_B', envelope_adopted: true }]).length, 0);
+  ck('an adopted row still carrying a pending owner is a violation',
+    envelopeViolations([{ alert_id: 'A_B', envelope_adopted: true, envelope_follow_up_wave: 'OPS-X-W{NEXT}' }]).length, 1);
+  ck('a MISSING envelope_adopted is treated as not-adopted, never as adopted',
+    envelopeViolations([{ alert_id: 'A_B' }]).length, 1);
 
   // The real registry must be present, non-empty and cover the live tree — a self-test that
   // passes against fixtures while the real corpus is broken is the vacuity this repo keeps
