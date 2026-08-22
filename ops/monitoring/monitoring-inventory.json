@@ -567,7 +567,7 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "2d8a6cb715d893aabdaacd7d6bfe85312b89034e1c358119ed3e975d9babea2a",
+      "sha256": "2feb29c39383f6db7393818f19a9dbebf22c23d499fe4950d53214f853d6028d",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
@@ -1477,7 +1477,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "2fa48587283f7dcb2a70e77b16475d8835ae97ebf50b842f6d2e52393e003249",
+      "sha256": "d1b9a80778c8dd67aec556abbcdb8273b564675ae8cb09dc626e1b8f6f15ed58",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
@@ -1519,6 +1519,27 @@
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-SIGNAL-CONTRACT-W1",
       "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. INSTALLED by CH3, the first adopter, which installed the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted."
+    },
+    {
+      "id": "labeler-truncation-attribution",
+      "artifact": "ops/monitoring/labeler_truncation_attribution.py",
+      "kind": "executable",
+      "host": "204.168.185.24",
+      "host_path": "/opt/algovault-monitoring/labeler_truncation_attribution.py",
+      "installed_at": [
+        {
+          "host": "signal-1",
+          "path": "/opt/algovault-monitoring/labeler_truncation_attribution.py"
+        }
+      ],
+      "criticality": "advisory",
+      "schedule": null,
+      "invoked_by": "imported-by:directional-label-freshness.py",
+      "install_state": "installed",
+      "sha256": "0f5768b45fd2e09df956e3434c5a8e45e03403c373d51ec4983b7e3e18554c8e",
+      "alert_ids": [],
+      "owner_wave": "OPS-DEPLOY-LABELER-WINDOW-W1",
+      "notes": "Counts what the deploy's labeler-preemption policy COSTS. deploy.yml:892 SIGTERMs any in-flight nightly labeler before `docker compose up` \u2014 DELIBERATE, shipped by OPS-LABEL-FRESHNESS-W1 R2 and named in graceful-stop.ts's docstring. 10 of 29 runs (34%) ended early for weeks and NOTHING counted it. criticality ADVISORY and alert_ids EMPTY on purpose: this is DIGEST-ONLY and must never page, because truncation is safe (graceful-stop checkpoints) and self-healing (the rotation sorts a missed venue first next night). SECOND adopter of DETECTOR_ENVELOPE, consumed as shipped \u2014 a truncated run has run_outcome=stopped, which the schema calls non-conclusive, so its verdict is FORCED to INDETERMINATE and a truncation can never render as a capacity finding. Attribution correlates a truncation with an mcp-server container start inside a 900s window read from the journal; 'unattributable-no-recreate' (we looked, it was something else) and 'unattributable-no-journal' (we could not look) are kept DISTINCT, because collapsing them is the same base-rate error that made the prior wave's '10/10 within 90s' figure unusable. Self-test: python3 labeler_truncation_attribution.py --self-test, 20 checks, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",
