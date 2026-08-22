@@ -36,7 +36,7 @@ import {
   PAYMENT_FAILURE_EVENT_TYPES,
 } from '../../src/lib/stripe-payment-failures-store.js';
 import { computeDeclineRates } from '../../src/lib/payment-method-report.js';
-import { dbExec } from '../../src/lib/performance-db.js';
+import { dbExec, dbQuery } from '../../src/lib/performance-db.js';
 
 const PI = 'pi_one_declined_payment';
 const CARD = { type: 'card', card: { brand: 'unionpay', country: 'CN', funding: 'debit' } };
@@ -177,5 +177,155 @@ describe('computeDeclineRates', () => {
     const [r] = computeDeclineRates([{ card_brand: 'visa', n: 18 }], [{ card_brand: 'visa', n: 2 }]);
     expect(r.total_n).toBe(20);
     expect(r.low_confidence).toBe(false);
+  });
+});
+
+/**
+ * OPS-MONITORING-DRIFT-GENERATOR-FIX-W1 — the linkage the table was dropping, and the unit the
+ * R9 floor actually means.
+ *
+ * The fixtures below are CAPTURED, not invented: they are the shapes the live account returned
+ * for the six rows that made `PAYMENT_DECLINE_DRIFT` page on 2026-08-22, fetched from
+ * `GET /v1/events/<id>` on api_version `2026-03-25.dahlia`. All six were ONE customer
+ * (`cus_UuBrP1otU51OBm`), ONE subscription, ONE invoice and ONE PaymentIntent — while the
+ * canary's `COUNT(DISTINCT COALESCE(payment_intent_id, event_id))` scored them as THREE
+ * distinct failed payments and tripped its absolute floor of 3.
+ *
+ * A gate's fixture must be captured from the channel the gate reads. Hand-typing an Invoice
+ * with a top-level `payment_intent` — the shape the previous mapper assumed — is exactly how
+ * this survived: that key does not exist on `dahlia`.
+ */
+const CUS = 'cus_UuBrP1otU51OBm';
+const SUB = 'sub_1TuNZsKGleoEgU2HFOPmRfOT';
+const INV = 'in_1U5cMXKGleoEgU2HSuKXNYbv';
+const LIVE_PI = 'pi_3U5dJUKGleoEgU2H1w4OOSqs';
+
+/** Captured. Note: NO `payment_intent`, NO top-level `subscription`, NO `payments` array. */
+const dahliaInvoiceEvent = (eventId: string, attempt: number) => ({
+  id: eventId,
+  type: 'invoice.payment_failed',
+  created: 1_787_000_000 + attempt,
+  data: {
+    object: {
+      id: INV, object: 'invoice', customer: CUS, amount_due: 999, currency: 'usd',
+      created: 1_787_000_000 + attempt, attempt_count: attempt, billing_reason: 'subscription_cycle',
+      status: 'open',
+      parent: { type: 'subscription_details', quote_details: null,
+        subscription_details: { metadata: {}, subscription: SUB } },
+    },
+  },
+});
+
+const dahliaChargeEvent = (eventId: string, n: number) => ({
+  id: eventId, type: 'charge.failed', created: 1_787_000_100 + n,
+  data: { object: { id: `ch_${n}`, object: 'charge', customer: CUS, payment_intent: LIVE_PI,
+    amount: 999, currency: 'usd', created: 1_787_000_100 + n, failure_code: 'card_declined',
+    decline_code: 'insufficient_funds',
+    outcome: { type: 'issuer_declined', reason: 'insufficient_funds', risk_level: 'normal' },
+    payment_method_details: { type: 'card', card: { brand: 'mastercard', country: 'CH', funding: 'credit' } } } },
+});
+
+const dahliaPiEvent = (eventId: string, n: number) => ({
+  id: eventId, type: 'payment_intent.payment_failed', created: 1_787_000_200 + n,
+  data: { object: { id: LIVE_PI, object: 'payment_intent', customer: CUS, amount: 999,
+    currency: 'usd', created: 1_787_000_200 + n,
+    last_payment_error: { code: 'card_declined', decline_code: 'insufficient_funds',
+      message: 'declined',
+      payment_method: { type: 'card', card: { brand: 'mastercard', country: 'CH', funding: 'credit' } } } } },
+});
+
+describe('🛑 the linkage `dahlia` actually carries', () => {
+  it('an Invoice has NO payment_intent — so the old mapper wrote NULL for every invoice event', () => {
+    const inv = dahliaInvoiceEvent('evt_inv_1', 1).data.object as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(inv, 'payment_intent')).toBe(false);
+    expect(buildPaymentFailureRow(dahliaInvoiceEvent('evt_inv_1', 1))!.paymentIntentId).toBeNull();
+  });
+
+  it('...but it DOES carry the customer, and so do the other two events', () => {
+    expect(buildPaymentFailureRow(dahliaInvoiceEvent('evt_inv_1', 1))!.customerId).toBe(CUS);
+    expect(buildPaymentFailureRow(dahliaChargeEvent('evt_ch_1', 1))!.customerId).toBe(CUS);
+    expect(buildPaymentFailureRow(dahliaPiEvent('evt_pi_1', 1))!.customerId).toBe(CUS);
+  });
+
+  it('reads the subscription from `parent.subscription_details`, where dahlia moved it', () => {
+    const row = buildPaymentFailureRow(dahliaInvoiceEvent('evt_inv_1', 1))!;
+    expect(row.subscriptionId).toBe(SUB);
+    expect(row.invoiceId).toBe(INV);
+  });
+
+  it('still reads a legacy top-level `subscription` / `payment_intent` (pre-basil payloads)', () => {
+    const legacy = {
+      id: 'evt_legacy', type: 'invoice.payment_failed', created: 1,
+      data: { object: { id: 'in_legacy', object: 'invoice', subscription: 'sub_legacy',
+        payment_intent: 'pi_legacy', amount_due: 999, currency: 'usd', created: 1 } },
+    };
+    const row = buildPaymentFailureRow(legacy)!;
+    expect(row.paymentIntentId).toBe('pi_legacy');
+    expect(row.subscriptionId).toBe('sub_legacy');
+  });
+
+  it('prefers the modern `payments[].payment.payment_intent` when a backfill expands it', () => {
+    const expanded = {
+      id: 'evt_expanded', type: 'invoice.payment_failed', created: 1,
+      data: { object: { id: INV, object: 'invoice', customer: CUS, amount_due: 999, currency: 'usd',
+        created: 1, payments: { data: [{ status: 'open', payment: { payment_intent: LIVE_PI } }] } } },
+    };
+    expect(buildPaymentFailureRow(expanded)!.paymentIntentId).toBe(LIVE_PI);
+  });
+
+  it('a charge carries no invoice on dahlia — null, never a fabricated linkage', () => {
+    expect(buildPaymentFailureRow(dahliaChargeEvent('evt_ch_1', 1))!.invoiceId).toBeNull();
+  });
+});
+
+describe('🛑 THE REGRESSION: one dunned customer is ONE failing customer', () => {
+  it('the live six-row episode counts 1 by customer where the old unit counted 3', async () => {
+    // Exactly the live 30d table: 2 invoice retries (NULL PI) + 2 PI failures + 2 charge failures.
+    for (const e of [
+      dahliaInvoiceEvent('evt_1U5dJZKGleoEgU2HUjnGDU0Y', 1),
+      dahliaInvoiceEvent('evt_1U6aJhKGleoEgU2H0EP3m1to', 2),
+      dahliaPiEvent('evt_3U5dJUKGleoEgU2H1MIUjBXZ', 1),
+      dahliaPiEvent('evt_3U5dJUKGleoEgU2H1mWyYxK3', 2),
+      dahliaChargeEvent('evt_3U5dJUKGleoEgU2H1BB6HbtZ', 1),
+      dahliaChargeEvent('evt_3U5dJUKGleoEgU2H1kQ7Rhz5', 2),
+    ]) {
+      expect(await recordPaymentFailure(buildPaymentFailureRow(e)!)).toBe(true);
+    }
+
+    const [rows] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM stripe_payment_failures', []);
+    expect(Number(rows.n)).toBe(6);
+
+    // The OLD unit — the one that paged. Kept as an assertion so the inflation stays visible.
+    const [oldUnit] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(DISTINCT COALESCE(payment_intent_id, event_id)) AS n FROM stripe_payment_failures', []);
+    expect(Number(oldUnit.n)).toBe(3);
+
+    // The unit the floor means.
+    const [newUnit] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(DISTINCT COALESCE(customer_id, payment_intent_id, event_id)) AS n FROM stripe_payment_failures', []);
+    expect(Number(newUnit.n)).toBe(1);
+  });
+
+  it('two genuinely different customers still count as two', async () => {
+    await recordPaymentFailure(buildPaymentFailureRow(dahliaChargeEvent('evt_a', 1))!);
+    await recordPaymentFailure(buildPaymentFailureRow({
+      ...dahliaChargeEvent('evt_b', 2),
+      data: { object: { ...dahliaChargeEvent('evt_b', 2).data.object, customer: 'cus_someone_else',
+        payment_intent: 'pi_someone_else' } },
+    })!);
+    const [n] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(DISTINCT COALESCE(customer_id, payment_intent_id, event_id)) AS n FROM stripe_payment_failures', []);
+    expect(Number(n.n)).toBe(2);
+  });
+
+  it('a row with NO customer falls back to its PI and is never DROPPED', async () => {
+    await recordPaymentFailure({
+      ...buildPaymentFailureRow(dahliaChargeEvent('evt_nocus', 3))!,
+      customerId: null,
+    });
+    const [n] = await dbQuery<{ n: number }>(
+      'SELECT COUNT(DISTINCT COALESCE(customer_id, payment_intent_id, event_id)) AS n FROM stripe_payment_failures', []);
+    expect(Number(n.n)).toBe(1);
   });
 });

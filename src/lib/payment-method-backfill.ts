@@ -117,6 +117,12 @@ export async function backfillPaymentMethodAttribution(
         occurredAt: new Date((createdEpoch ?? 0) * 1000).toISOString(),
         amountUsd: typeof charge.amount === 'number' && currency === 'usd' ? charge.amount / 100 : null,
         tier: str(charge?.metadata?.tier),
+        // The linkage the R9 floor counts over. A backfilled charge carries `customer`; it has
+        // no invoice/subscription reference on the account's api_version, and a fabricated one
+        // would be worse than a null.
+        customerId: str(charge.customer as string | null | undefined),
+        invoiceId: null,
+        subscriptionId: null,
       };
       const [already] = await dbQuery<{ n: unknown }>(
         'SELECT COUNT(*) AS n FROM stripe_payment_failures WHERE event_id = ?', [chargeId],

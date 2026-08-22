@@ -30,10 +30,17 @@ silence means healthy or means the guard was never installed.
   ORPHAN          host -> repo   an artifact under /opt/algovault-monitoring/ absent from the inventory
   DARK            inventory -> crontab   an `installed` row with a `schedule` and no live cron line
   SCHEDULE_DRIFT  crontab -> inventory   the live cron spec != the row's `schedule`
-  PENDING_STALE   inventory      a `pending` / `unclassified` row older than 30d
+  PENDING_STALE   inventory      a `pending` / `unclassified` row older than 30d — UNLESS it
+                                 declares a `blocked_on` condition MEASURED as still unmet, in
+                                 which case it reports BLOCKED and breaches the day the
+                                 condition is MET, at any age (OPS-MONITORING-DRIFT-GENERATOR-FIX-W1)
   REGISTRY_PARITY registry -> host   an `installed_at` entry on THIS host whose live file != the
                                      row's ONE canonical sha256
-  NO_BACKUP       host -> host   a `load-bearing` row installed here with zero `*.bak*` beside it
+  NO_BACKUP       host -> host   a `load-bearing` row installed here with no recoverable backup,
+                                 searched in the artifact's OWN directory (file-granular
+                                 `<artifact>.bak.*`) AND its parent (directory-granular
+                                 `<dir>.bak.*`), for EVERY directory the rows actually name —
+                                 not just MONITORING_DIR (OPS-MONITORING-DRIFT-GENERATOR-FIX-W1)
 
 plus DIVERGENT_COPY, a standing report that cannot self-resolve from a single host.
 
@@ -53,6 +60,13 @@ enumeration, and this check asserts every entry against the single canonical has
 `NO_BACKUP` converts a convention into an assertion. The `.bak.<REASON>` convention existed on
 the signal host and worked — it recovered the very revision a prior wave recorded as
 "permanently unrecoverable". A convention only one host follows is how that premise went wrong.
+
+  🛑 And an assertion is only worth the instrument behind it. Until 2026-08-22 this check
+  scanned MONITORING_DIR only, files only, matching the ARTIFACT's basename — so for a row
+  installed anywhere else it returned a confident zero that no achievable action could clear.
+  See host_backups() for the measurement. The lesson generalises past this check: a drift
+  finding that recurs for days with no available remedy is evidence about the INSTRUMENT
+  before it is evidence about the estate.
 
 ## Deliberately NOT self-healing
 
@@ -75,6 +89,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -277,29 +292,151 @@ def host_crontab():
         return None
 
 
-def host_backups():
-    """Set of `*.bak*` basenames directly under MONITORING_DIR. None on failure (fail-open).
+def backup_search_dirs(rows, labels=None):
+    """The directories NO_BACKUP must actually look in — DERIVED from the rows, never assumed.
 
-    Deliberately a SEPARATE listing from host_listing(): the orphan scan excludes backups by
-    design, and NO_BACKUP needs exactly what that scan throws away.
+    Two directories per artifact, because the estate's own backup convention operates at two
+    granularities and the check must cover both:
+
+      * the artifact's OWN directory, for the per-file `<artifact>.bak.<REASON>-<ts>` convention
+        that a hand-dispatched monitoring install follows; and
+      * its PARENT, for the per-directory `<dir>.bak.<REASON>-<ts>` snapshot a manifest deployer
+        takes when it swaps a whole tree (`/opt/algovault-bot/scripts.bak.PROVENANCE-…`).
+
+    Returned SORTED so the remote command, the local scan and the self-test all see one order.
     """
+    labels = labels if labels is not None else HOST_LABELS
+    dirs = set()
+    for r in rows:
+        if r.get("install_state") != "installed" or r.get("criticality") != "load-bearing":
+            continue
+        if r.get("repo_resident") or not r.get("sha256"):
+            continue
+        for e in entries_for_host(r, labels):
+            p = e.get("path") or ""
+            if not p or not p.startswith("/"):
+                continue
+            own = os.path.dirname(p)
+            if own and own != "/":
+                dirs.add(own)
+                parent = os.path.dirname(own)
+                if parent and parent != "/":
+                    dirs.add(parent)
+    return sorted(dirs)
+
+
+def host_backups(dirs=None):
+    """`{dir: {entry names}}` for every directory NO_BACKUP needs, or `None` per UNLISTABLE dir.
+
+    🛑 THE PREVIOUS IMPLEMENTATION WAS STRUCTURALLY BLIND, AND RETURNED A CONFIDENT ZERO.
+    It scanned `MONITORING_DIR` only, `-type f` only, and matched on the ARTIFACT's basename.
+    Measured 2026-08-22 on signal-1, the row `algovault-bot-referral-notify-drain` failed all
+    three at once: its artifact lives at `/opt/algovault-bot/scripts/referral-notify-drain.sh`
+    (a directory this never listed), its backups are `scripts.bak.PROVENANCE-<ts>` DIRECTORIES
+    (excluded by `-type f`), and they are named for the PARENT dir, not the artifact. 17 such
+    snapshots existed — the newest holding a byte-for-byte copy of the live file — while the
+    check reported "zero backups" every day for 3 consecutive days and paged.
+
+    That is this estate's recorded instrument defect verbatim: "the instrument was structurally
+    incapable of observing the thing it was pointed at, and returned a confident zero" — and it
+    made the alert UNFALSIFIABLE, because no backup taken at the artifact's real location could
+    ever have cleared it. Fifth substrate after the site-scoped Caddy log, the `FRESH` page
+    scrape, the hermetic `--self-test` seam and `ufw`'s `filter/INPUT`.
+
+    Fail-open is now PER DIRECTORY rather than per run: one unlistable directory must not erase
+    the evidence for every other row. `None` for a dir means "could not look", which the caller
+    reports as SKIPPED — never as "no backup found".
+    """
+    dirs = list(dirs or [MONITORING_DIR])
+    if not dirs:
+        return {}
     if _on_host():
-        try:
-            return {p.name for p in Path(MONITORING_DIR).iterdir() if p.is_file() and ".bak" in p.name}
-        except OSError as exc:
-            log(f"HOST_BACKUPS_FAILED(local): {exc} — fail-open")
-            return None
-    cmd = ["ssh", "-i", SSH_KEY, "-o", "ConnectTimeout=15", "-o", "BatchMode=yes", SSH_TARGET,
-           f"find {MONITORING_DIR} -maxdepth 1 -type f -name '*.bak*' -printf '%f\\n'"]
+        out = {}
+        for d in dirs:
+            try:
+                out[d] = {p.name for p in Path(d).iterdir() if ".bak" in p.name}
+            except OSError as exc:
+                log(f"HOST_BACKUPS_FAILED(local {d}): {exc} — fail-open for this directory only")
+                out[d] = None
+        return out
+    # ONE round-trip for every directory. Each dir prints a DIR_OK/DIR_MISSING marker before its
+    # entries so an unlistable directory is distinguishable from an empty one — the whole point.
+    script = "; ".join(
+        f"if [ -d {shlex.quote(d)} ]; then echo \"DIR_OK {d}\"; "
+        f"find {shlex.quote(d)} -maxdepth 1 -mindepth 1 -name '*.bak*' -printf 'E %f\\n' 2>/dev/null; "
+        f"else echo \"DIR_MISSING {d}\"; fi"
+        for d in dirs
+    )
+    cmd = ["ssh", "-i", SSH_KEY, "-o", "ConnectTimeout=15", "-o", "BatchMode=yes", SSH_TARGET, script]
     try:
         r = _run(cmd)
         if r.returncode != 0:
             log(f"HOST_BACKUPS_FAILED(ssh rc={r.returncode}): {r.stderr.strip()[:160]} — fail-open")
             return None
-        return {ln.strip() for ln in r.stdout.splitlines() if ln.strip()}
     except Exception as exc:
         log(f"HOST_BACKUPS_FAILED: {type(exc).__name__}: {exc} — fail-open")
         return None
+    return parse_backup_listing(r.stdout, dirs)
+
+
+def parse_backup_listing(text, dirs):
+    """Pure parser for the remote listing. Exported from the I/O so the self-test can execute it.
+
+    A hermetic self-test is structurally blind to exactly what its own seam replaces, and the
+    seam here IS this parser — so it is a pure function with its own scenarios rather than an
+    inline loop no fixture ever reaches.
+    """
+    out = {d: None for d in dirs}
+    current = None
+    for raw in (text or "").splitlines():
+        ln = raw.rstrip("\n")
+        if ln.startswith("DIR_OK "):
+            current = ln[len("DIR_OK "):]
+            out[current] = set()
+        elif ln.startswith("DIR_MISSING "):
+            out[ln[len("DIR_MISSING "):]] = None
+            current = None
+        elif ln.startswith("E ") and current is not None:
+            name = ln[2:].strip()
+            if name:
+                out[current].add(name)
+    return out
+
+
+def backup_covers(path, listing):
+    """Is `path` covered by a backup? Returns (covered: bool|None, detail: str).
+
+    `None` means the directories that could cover it were UNLISTABLE — report SKIPPED, never a
+    breach, and never a pass. Two granularities are accepted, both measured live on signal-1:
+
+      /opt/algovault-monitoring/send_telegram.sh   <- send_telegram.sh.bak.<REASON>-<ts>   (file)
+      /opt/algovault-bot/scripts/referral-…​.sh     <- ../scripts.bak.PROVENANCE-<ts>/       (dir)
+    """
+    base = os.path.basename(path)
+    own = os.path.dirname(path)
+    parent = os.path.dirname(own)
+    dirname = os.path.basename(own)
+    looked, unlistable = [], []
+
+    for d, want in ((own, base), (parent, dirname)):
+        if not d or not want:
+            continue
+        entries = listing.get(d, None) if isinstance(listing, dict) else None
+        if entries is None:
+            unlistable.append(d)
+            continue
+        looked.append(d)
+        # NEWEST first: these names end in a basic-ISO stamp, so a reverse lexical sort is a
+        # reverse chronological one. The operator needs the backup they would RESTORE, and
+        # naming the oldest of 17 snapshots would be technically true and practically wrong.
+        hit = next((e for e in sorted(entries, reverse=True)
+                    if e.startswith(want + ".") and ".bak" in e), None)
+        if hit:
+            kind = "file" if d == own else "parent-dir"
+            return True, f"{kind} backup {d}/{hit}"
+    if looked:
+        return False, f"no `{base}.bak*` in {own} and no `{dirname}.bak*` in {parent}"
+    return None, f"unlistable: {', '.join(unlistable) or '(no directory derived)'}"
 
 
 def host_sync_heartbeat(path=None):
@@ -475,24 +612,177 @@ def check_schedule_drift(rows, crontab_text, labels=None):
     return out
 
 
-def check_pending_stale(rows, today=None):
-    """inventory. `unclassified` shares the clock — an unowned artifact must not age silently."""
+def _truthy_env(value):
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:@/-]+$")
+
+
+def probe_blocked_condition(cond, runner=None):
+    """Evaluate a row's `blocked_on` condition. Returns (verdict, detail).
+
+    verdict ∈ {"MET", "UNMET", "INDETERMINATE"}.
+
+    🛑 INDETERMINATE MUST NEVER SUPPRESS. A condition we could not evaluate is not a condition
+    we evaluated as still-blocking; the caller falls back to the plain age clock, so the worst a
+    broken probe can do is restore today's behaviour. That asymmetry is the whole safety
+    argument for letting a declaration silence an alarm at all.
+
+    Exactly ONE kind is implemented, deliberately: `container_env`. An unknown kind is
+    INDETERMINATE rather than a parse error, so adding a kind to the JSON before adding it here
+    degrades to "no suppression" instead of crashing the daily run.
+    """
+    if not isinstance(cond, dict):
+        return "INDETERMINATE", "blocked_on is not an object"
+    kind = cond.get("kind")
+    if kind != "container_env":
+        return "INDETERMINATE", f"unsupported blocked_on kind {kind!r} — no suppression"
+    ctr, var = cond.get("container"), cond.get("var")
+    if not isinstance(ctr, str) or not isinstance(var, str) or not ctr or not var:
+        return "INDETERMINATE", "container_env needs both `container` and `var`"
+    # The values come from a committed declaration we author, but a declaration is data and data
+    # reaching a shell is validated at the boundary, not trusted for its provenance.
+    if not _SAFE_TOKEN.match(ctr) or not _SAFE_TOKEN.match(var):
+        return "INDETERMINATE", "container/var failed the safe-token check — refusing to shell out"
+    run = runner or _probe_container_env
+    try:
+        ok, raw = run(ctr, var)
+    except Exception as exc:  # never let a probe break the daily reconcile
+        return "INDETERMINATE", f"probe raised {type(exc).__name__}: {exc}"
+    if not ok:
+        return "INDETERMINATE", f"could not read {var} from {ctr}"
+    met = _truthy_env(raw)
+    return ("MET" if met else "UNMET"), f"{ctr}:{var}={raw.strip() or '<unset>'}"
+
+
+def _probe_container_env(container, var):
+    """(read_ok, raw_value). `printenv` exits 1 on an unset var — that is a READ, not a failure."""
+    argv = ["docker", "exec", container, "printenv", var]
+    if not _on_host():
+        argv = ["ssh", "-i", SSH_KEY, "-o", "ConnectTimeout=15", "-o", "BatchMode=yes", SSH_TARGET,
+                " ".join(shlex.quote(a) for a in argv)]
+    r = _run(argv)
+    if r.returncode == 0:
+        return True, r.stdout
+    if r.returncode == 1 and not (r.stderr or "").strip():
+        return True, ""          # printenv's documented "variable is not set"
+    return False, ""
+
+
+def check_pending_stale(rows, today=None, probe=None):
+    """inventory. `unclassified` shares the clock — an unowned artifact must not age silently.
+
+    🛑 `install_state: pending` CONFLATED TWO DIFFERENT DEBTS, AND ONLY ONE OF THEM HAS A CLOCK.
+    A row nobody has got to is neglect, and 30 days is the right alarm. A row whose install is
+    BLOCKED on a named external condition is not neglect — and paging daily for it asks the
+    operator to do something this estate's own law forbids. Measured: `book-liveness-canary`
+    watches a gate whose kill switch `EMIT_BOOK_LIVENESS_ENABLED` is unset in the live
+    container, so installing it would measure a DARK gate — precisely what "prove a revived
+    guard FIRES before calling it live" exists to prevent. It paged on day 31 and every day
+    after with no action available that was not a lie.
+
+    And it RECURS by construction, because the check is a metronome over a queue: measured on
+    the reconcile log, `nav-drift-canary` tripped at age 31 on 2026-08-12, and
+    `book-liveness-canary` tripped at age 31 on 2026-08-21. Clearing one row only advances the
+    queue to the next one.
+
+    So a row may declare `blocked_on`, and the check gets STRICTER rather than quieter:
+
+      * condition measured UNMET, within `review_by`  -> BLOCKED. Reported every run, no breach.
+      * condition measured MET                        -> BREACH **immediately, at any age**. The
+                                                         debt just became actionable and today's
+                                                         check would not have noticed for weeks.
+      * past `review_by`                              -> BREACH. The block is now the debt.
+      * missing/invalid `review_by`, or the probe is
+        INDETERMINATE / absent                        -> NO suppression; the age clock decides.
+
+    The last line is the load-bearing one. Suppression is EARNED by a positive measurement, and
+    never granted by the mere presence of the field — otherwise `blocked_on` is a mute button
+    that the next wave reaches for, and this manual already records what happens to a control
+    that lives in prose.
+
+    Returns `{"breaches": [...], "probed": [...]}`.
+    """
     today = today or date.today()
-    out = []
+    breaches, probed = [], []
     for r in rows:
         if r.get("install_state") not in ("pending", "unclassified"):
             continue
         since = r.get("pending_since")
+        age = None
+        if since:
+            try:
+                age = (today - date.fromisoformat(since)).days
+            except ValueError:
+                age = None
         if not since:
-            out.append({"id": r["id"], "age_days": None, "state": r["install_state"]})
+            breaches.append({"id": r["id"], "age_days": None, "state": r["install_state"],
+                             "reason": "NO_PENDING_SINCE"})
+            probed.append({"id": r["id"], "verdict": "BREACH", "age_days": None,
+                           "detail": "pending with no `pending_since` — unaged debt"})
             continue
+        if age is None:
+            # Unparseable date: same class as an unreadable input — report, do not invent an age.
+            probed.append({"id": r["id"], "verdict": "INDETERMINATE", "age_days": None,
+                           "detail": f"pending_since {since!r} is not an ISO date"})
+            continue
+
+        cond = r.get("blocked_on")
+        if not isinstance(cond, dict):
+            if age > PENDING_STALE_DAYS:
+                breaches.append({"id": r["id"], "age_days": age, "state": r["install_state"],
+                                 "reason": "AGED"})
+                probed.append({"id": r["id"], "verdict": "BREACH", "age_days": age,
+                               "detail": f"unblocked debt older than {PENDING_STALE_DAYS}d"})
+            else:
+                probed.append({"id": r["id"], "verdict": "OK", "age_days": age,
+                               "detail": f"within the {PENDING_STALE_DAYS}d clock"})
+            continue
+
+        verdict, detail = probe_blocked_condition(cond, probe)
+        review_by = cond.get("review_by")
         try:
-            age = (today - date.fromisoformat(since)).days
+            review_dt = date.fromisoformat(review_by) if isinstance(review_by, str) else None
         except ValueError:
+            review_dt = None
+
+        if verdict == "MET":
+            breaches.append({"id": r["id"], "age_days": age, "state": r["install_state"],
+                             "reason": "UNBLOCKED", "detail": detail})
+            probed.append({"id": r["id"], "verdict": "BREACH", "age_days": age,
+                           "detail": f"UNBLOCKED — {detail}; install is now actionable"})
             continue
+        if review_dt is None:
+            # A block with no review date is not a block. Fall back to the age clock, loudly.
+            if age > PENDING_STALE_DAYS:
+                breaches.append({"id": r["id"], "age_days": age, "state": r["install_state"],
+                                 "reason": "BLOCK_NO_REVIEW_BY"})
+            probed.append({"id": r["id"], "verdict": "BREACH" if age > PENDING_STALE_DAYS else "OK",
+                           "age_days": age,
+                           "detail": f"blocked_on carries no valid `review_by` ({review_by!r}) — "
+                                     f"no suppression, age clock applies"})
+            continue
+        if today > review_dt:
+            breaches.append({"id": r["id"], "age_days": age, "state": r["install_state"],
+                             "reason": "BLOCK_STALE", "review_by": review_by})
+            probed.append({"id": r["id"], "verdict": "BREACH", "age_days": age,
+                           "detail": f"block expired {review_by} — the block is now the debt "
+                                     f"({detail})"})
+            continue
+        if verdict == "UNMET":
+            probed.append({"id": r["id"], "verdict": "BLOCKED", "age_days": age,
+                           "detail": f"{detail}; blocked, review_by {review_by}"})
+            continue
+        # INDETERMINATE inside the review window: no suppression, age clock decides.
         if age > PENDING_STALE_DAYS:
-            out.append({"id": r["id"], "age_days": age, "state": r["install_state"]})
-    return out
+            breaches.append({"id": r["id"], "age_days": age, "state": r["install_state"],
+                             "reason": "BLOCK_UNVERIFIABLE", "detail": detail})
+        probed.append({"id": r["id"], "verdict": "BREACH" if age > PENDING_STALE_DAYS else "OK",
+                       "age_days": age,
+                       "detail": f"blocked_on INDETERMINATE ({detail}) — no suppression, "
+                                 f"age clock applies"})
+    return {"breaches": breaches, "probed": probed}
 
 
 def check_registry_parity(rows, host_hashes, labels=None):
@@ -529,28 +819,37 @@ def check_registry_parity(rows, host_hashes, labels=None):
 
 
 def check_no_backup(rows, backups, labels=None):
-    """host -> host. A `load-bearing` artifact installed here with no `*.bak*` beside it.
+    """host -> host. A `load-bearing` artifact installed here with no recoverable backup.
 
     Detection without recovery is half a guard: the daily reconciler catches a HASH_DRIFT within
     24h, but the backup is what makes that drift REVERSIBLE. Scoped to load-bearing rows so it
     stays an actionable list rather than a wall.
+
+    Returns `{"breaches": [...], "probed": [...]}`. `probed` carries one row per artifact with
+    the directories actually searched and what was found, because "assert POSITIVE per-check
+    output" is the only thing that would have made the blindness above visible from the log.
     """
     labels = labels if labels is not None else HOST_LABELS
     if backups is None:
-        return []
-    out = []
+        return {"breaches": [], "probed": []}
+    breaches, probed = [], []
     for r in rows:
         if r.get("install_state") != "installed" or r.get("criticality") != "load-bearing":
             continue
         if r.get("repo_resident") or not r.get("sha256"):
             continue  # repo-resident rows are recoverable from git; null-sha rows are self-referential
         for e in entries_for_host(r, labels):
-            base = os.path.basename(e.get("path") or "")
-            if not base:
+            path = e.get("path") or ""
+            if not path:
                 continue
-            if not any(b.startswith(base + ".") or b.startswith(base) and ".bak" in b for b in backups):
-                out.append({"id": r["id"], "host": e.get("host"), "artifact": base})
-    return out
+            covered, detail = backup_covers(path, backups)
+            verdict = "OK" if covered else ("SKIPPED" if covered is None else "MISSING")
+            probed.append({"id": r["id"], "host": e.get("host"), "path": path,
+                           "verdict": verdict, "detail": detail})
+            if covered is False:
+                breaches.append({"id": r["id"], "host": e.get("host"),
+                                 "artifact": os.path.basename(path), "detail": detail})
+    return {"breaches": breaches, "probed": probed}
 
 
 def derive_cadence_minutes(expr):
@@ -1757,7 +2056,8 @@ def check_cert_expiry_floor(cert_dir=None, floor_days=None, now=None):
 
 def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture_result=None,
              doc_claims_result=None, sot_parity_result=None, cf_results=None,
-             sync_liveness_result=None, alert_episode_result=None):
+             sync_liveness_result=None, alert_episode_result=None,
+             pending_result=None, no_backup_result=None):
     """`rows` is the OWNED subset — every check here, ORPHAN included, is host-scoped BY DESIGN.
 
     This docstring used to say "ORPHAN alone needs the full set to know what is known". That is
@@ -1783,9 +2083,11 @@ def evaluate(rows, host_hashes, crontab_text, backups=None, labels=None, posture
         "ORPHAN": check_orphan(rows, host_hashes, labels),
         "DARK": check_dark(rows, crontab_text, labels),
         "SCHEDULE_DRIFT": check_schedule_drift(rows, crontab_text, labels),
-        "PENDING_STALE": check_pending_stale(rows),
+        "PENDING_STALE": (pending_result if pending_result is not None
+                          else check_pending_stale(rows))["breaches"],
         "REGISTRY_PARITY": check_registry_parity(rows, host_hashes, labels)["breaches"],
-        "NO_BACKUP": check_no_backup(rows, backups, labels),
+        "NO_BACKUP": (no_backup_result if no_backup_result is not None
+                      else check_no_backup(rows, backups, labels))["breaches"],
         "POSTURE_DRIFT": (posture_result or {}).get("findings", []),
         "ZONE_PROXY_DRIFT": (cf_results or {}).get("zone", {}).get("findings", []),
         "CF_RANGE_DRIFT": (cf_results or {}).get("range", {}).get("findings", []),
@@ -1838,7 +2140,10 @@ def main(check_mode=False):
         log("HOST_UNREACHABLE — cannot reconcile; exit 0 (fail-open, the reconciler must never "
             "be the thing that breaks the box)")
         return 0
-    backups = host_backups()
+    # The search set is DERIVED from the rows this instance owns, so a row installed outside
+    # MONITORING_DIR is looked for where it actually lives. Deriving it from a constant is
+    # what made this check unfalsifiable for `algovault-bot-referral-notify-drain`.
+    backups = host_backups(backup_search_dirs(owned, HOST_LABELS))
 
     posture_result = check_posture_drift(HOST_LABELS)
     _posture_doc = _load_posture()
@@ -1854,9 +2159,16 @@ def main(check_mode=False):
     sync_liveness_result = check_sync_liveness(owned, host_sync_heartbeat(), HOST_LABELS)
     alert_episode_result = check_alert_episode_age(labels=HOST_LABELS)
 
+    # Computed HERE and passed in, for the same reason posture_result and doc_claims_result are:
+    # each probe runs EXACTLY once per invocation, so the findings and the positive per-row lines
+    # below are two projections of ONE derivation and cannot disagree. check_pending_stale now
+    # shells into a container to evaluate `blocked_on`, which makes that no longer merely tidy.
+    pending_result = check_pending_stale(owned)
+    no_backup_result = check_no_backup(owned, backups, HOST_LABELS)
+
     f = evaluate(owned, host_hashes, crontab_text, backups, HOST_LABELS, posture_result,
                  doc_claims_result, sot_parity_result, cf_results, sync_liveness_result,
-                 alert_episode_result)
+                 alert_episode_result, pending_result, no_backup_result)
     # DIVERGENT_COPY is a standing report, not a drift breach — it cannot self-resolve here.
     # SYNC_LIVENESS *is* a drift key: a sync that has stopped attempting is operator-action-
     # required, and it is the one condition every other check here is downstream of. Only its
@@ -1949,8 +2261,23 @@ def main(check_mode=False):
         for k in ("zone", "range", "cert"):
             for sk in cf_results[k]["skipped"]:
                 log(f"CF_CHECK_SKIPPED {k}: {json.dumps(sk)} — fail-open, NOT a pass")
+        # POSITIVE per-artifact accounting for the backup check: the artifact, the verdict, and
+        # WHICH directories were searched. Printing only breaches is how a scan that searched the
+        # wrong directory looked identical to a clean estate for three consecutive paging days.
+        nb = no_backup_result
+        for row in nb["probed"]:
+            log(f"NO_BACKUP {row['host']} {row['id']} {row['verdict']} "
+                f"path={row['path']} — {row['detail']}")
+        # POSITIVE per-row accounting for the pending clock, including every row the new
+        # `blocked_on` path SUPPRESSED. A suppression nobody can see in the log is a mute button.
+        for row in pending_result["probed"]:
+            log(f"PENDING {row['id']} {row['verdict']} age={row.get('age_days', '-')}d "
+                f"— {row['detail']}")
         if backups is None:
             log("NO_BACKUP: SKIPPED — backup listing unavailable (fail-open, not a pass)")
+        elif not nb["probed"]:
+            log("NO_BACKUP: no load-bearing artifact owned by this instance carries an installed "
+                "path — nothing to assert (a reported pass, not a silent one)")
         streak = update_breach_streak(ALERT_ID, drifted)
         log(f"BREACH_STREAK {streak}/{CONSECUTIVE_TO_PAGE}")
         if drifted and streak >= CONSECUTIVE_TO_PAGE:
@@ -2082,16 +2409,69 @@ def self_test():
     ck("moved cron -> SCHEDULE_DRIFT", len(sd), 1)
     ck("drift names both specs", (sd[0]["inventory"], sd[0]["live"]), ("39 0 * * *", "57 0 * * *"))
 
-    # ── 5. PENDING_STALE, both directions ──
+    # ── 5. PENDING_STALE, both directions, plus the `blocked_on` path ──
     T = date(2026, 9, 1)
+    ps = lambda rows, probe=None: check_pending_stale(rows, T, probe)["breaches"]
     ck("fresh pending -> clean",
-       check_pending_stale([row(install_state="pending", pending_since="2026-08-20")], T), [])
+       ps([row(install_state="pending", pending_since="2026-08-20")]), [])
     ck("stale pending -> breach",
-       len(check_pending_stale([row(install_state="pending", pending_since="2026-07-01")], T)), 1)
+       len(ps([row(install_state="pending", pending_since="2026-07-01")])), 1)
     ck("unclassified shares the clock",
-       len(check_pending_stale([row(install_state="unclassified", pending_since="2026-07-01")], T)), 1)
+       len(ps([row(install_state="unclassified", pending_since="2026-07-01")])), 1)
     ck("installed rows are never pending-stale",
-       check_pending_stale([row(pending_since="2020-01-01")], T), [])
+       ps([row(pending_since="2020-01-01")]), [])
+    ck("pending with NO pending_since is unaged debt -> breach",
+       len(ps([row(install_state="pending")])), 1)
+
+    # `blocked_on` — the suppression must be EARNED by a measurement, never by the field's
+    # presence. Every branch below is asserted, because a mute button that silently swallows an
+    # unevaluable condition is strictly worse than the metronome it replaces.
+    blocked = lambda **kw: row(install_state="pending", pending_since="2026-07-01",
+                               blocked_on={"kind": "container_env", "container": "ctr",
+                                           "var": "FLAG", "review_by": "2026-12-01", **kw})
+    unmet = lambda c, v: (True, "")            # printenv read OK, value empty  -> UNMET
+    met = lambda c, v: (True, "1")             # flag flipped                   -> MET
+    unreadable = lambda c, v: (False, "")      # could not read                 -> INDETERMINATE
+    raises = lambda c, v: (_ for _ in ()).throw(RuntimeError("docker gone"))
+
+    ck("THE REGRESSION: an aged row whose block is measured STILL UNMET does not page",
+       ps([blocked()], unmet), [])
+    b = check_pending_stale([blocked()], T, unmet)["probed"]
+    ck("...and it is REPORTED as BLOCKED, never silently absent", (len(b), b[0]["verdict"]), (1, "BLOCKED"))
+    ck("condition MET -> breach IMMEDIATELY, at any age",
+       [x["reason"] for x in check_pending_stale(
+           [row(install_state="pending", pending_since="2026-08-31",
+                blocked_on={"kind": "container_env", "container": "ctr", "var": "FLAG",
+                            "review_by": "2026-12-01"})], T, met)["breaches"]], ["UNBLOCKED"])
+    ck("past review_by -> the block itself is the debt",
+       [x["reason"] for x in ps([blocked(review_by="2026-08-01")], unmet)], ["BLOCK_STALE"])
+    ck("no review_by -> no suppression, the age clock applies",
+       [x["reason"] for x in ps([row(install_state="pending", pending_since="2026-07-01",
+                                     blocked_on={"kind": "container_env", "container": "ctr",
+                                                 "var": "FLAG"})], unmet)], ["BLOCK_NO_REVIEW_BY"])
+    ck("an UNREADABLE condition never suppresses",
+       [x["reason"] for x in ps([blocked()], unreadable)], ["BLOCK_UNVERIFIABLE"])
+    ck("a probe that RAISES never suppresses (and never breaks the run)",
+       [x["reason"] for x in ps([blocked()], raises)], ["BLOCK_UNVERIFIABLE"])
+    ck("an unknown blocked_on kind never suppresses",
+       [x["reason"] for x in ps([row(install_state="pending", pending_since="2026-07-01",
+                                     blocked_on={"kind": "phase_of_the_moon",
+                                                 "review_by": "2026-12-01"})], unmet)],
+       ["BLOCK_UNVERIFIABLE"])
+    ck("a shell-unsafe container name is refused rather than executed",
+       probe_blocked_condition({"kind": "container_env", "container": "a; rm -rf /",
+                                "var": "FLAG"}, met)[0], "INDETERMINATE")
+    ck("blocked_on that is not an object never suppresses",
+       [x["reason"] for x in ps([row(install_state="pending", pending_since="2026-07-01",
+                                     blocked_on="soon")], unmet)], ["AGED"])
+    ck("a BLOCKED row that is still fresh is reported too, not just the aged one",
+       check_pending_stale([row(install_state="pending", pending_since="2026-08-30",
+                                blocked_on={"kind": "container_env", "container": "ctr",
+                                            "var": "FLAG", "review_by": "2026-12-01"})],
+                           T, unmet)["probed"][0]["verdict"], "BLOCKED")
+    ck("truthiness is the documented set, not python truthiness",
+       [_truthy_env(v) for v in ("1", "true", "YES", "on", "", "0", "false", "maybe")],
+       [True, True, True, True, False, False, False, False])
 
     # ── divergent copies are reported until explicitly cleared ──
     ck("unreconciled divergent copy is reported",
@@ -2121,20 +2501,82 @@ def self_test():
     ck("THE REGRESSION: canonical updated, aoe-1 still on the ancestor -> aoe-1 instance breaches",
        len(check_registry_parity([shared()], {"w.sh": "938d" + "0" * 60}, {"aoe-1"})["breaches"]), 1)
 
-    # ── 7. NO_BACKUP — a convention turned into an assertion ──
+    # ── 7. NO_BACKUP — a convention turned into an assertion, over the RIGHT directories ──
+    MON = "/opt/algovault-monitoring"
+    nb = lambda rows, listing, labels=None: check_no_backup(rows, listing, labels or L)["breaches"]
     ck("load-bearing artifact WITH a .bak -> clean",
-       check_no_backup([shared(criticality="load-bearing")],
-                       {"w.sh.bak.PRE-SOMETHING-20260729T000000Z"}, L), [])
+       nb([shared(criticality="load-bearing")],
+          {MON: {"w.sh.bak.PRE-SOMETHING-20260729T000000Z"}}), [])
     ck("load-bearing artifact with NO .bak -> breach",
-       len(check_no_backup([shared(criticality="load-bearing")], set(), L)), 1)
+       len(nb([shared(criticality="load-bearing")], {MON: set()})), 1)
     ck("a backup for a DIFFERENT artifact does not count",
-       len(check_no_backup([shared(criticality="load-bearing")], {"other.sh.bak.X"}, L)), 1)
+       len(nb([shared(criticality="load-bearing")], {MON: {"other.sh.bak.X"}})), 1)
+    ck("a PREFIX collision does not count as a backup (w.sh vs w.sh2)",
+       len(nb([shared(criticality="load-bearing")], {MON: {"w.sh2.bak.X"}})), 1)
     ck("supporting criticality is out of scope (stays actionable, not a wall)",
-       check_no_backup([shared(criticality="supporting")], set(), L), [])
+       nb([shared(criticality="supporting")], {MON: set()}), [])
     ck("repo-resident rows are exempt (git IS the backup)",
-       check_no_backup([shared(criticality="load-bearing", repo_resident=True)], set(), L), [])
+       nb([shared(criticality="load-bearing", repo_resident=True)], {MON: set()}), [])
     ck("unreachable backup listing -> fail-open, NOT a pass",
-       check_no_backup([shared(criticality="load-bearing")], None, L), [])
+       nb([shared(criticality="load-bearing")], None), [])
+
+    # THE REGRESSION, as a fixture captured from the live host (signal-1, 2026-08-22): an
+    # artifact OUTSIDE MONITORING_DIR whose backups are PARENT-DIRECTORY snapshots. Every one of
+    # the three old blindnesses is exercised here — wrong directory, directory-not-file, and
+    # parent-granular naming — and the old implementation failed all three at once.
+    ext = lambda **kw: {"id": "algovault-bot-referral-notify-drain", "host": "signal-1",
+                        "host_path": "/opt/algovault-bot/scripts/referral-notify-drain.sh",
+                        "installed_at": [{"host": "signal-1",
+                                          "path": "/opt/algovault-bot/scripts/referral-notify-drain.sh"}],
+                        "install_state": "installed", "criticality": "load-bearing",
+                        "sha256": "e" * 64, "kind": "executable", **kw}
+    LIVE = {"/opt/algovault-bot/scripts": set(),
+            "/opt/algovault-bot": {"scripts.bak.PROVENANCE-20260821T084448Z",
+                                   "src.bak.PROVENANCE-20260817T064235Z",
+                                   "README.md.bak.PROVENANCE-20260805T054501Z"}}
+    ck("THE REGRESSION: a parent-dir backup outside MONITORING_DIR is FOUND",
+       nb([ext()], LIVE), [])
+    ck("...and the search set is DERIVED to include both directories",
+       backup_search_dirs([ext()], L), ["/opt/algovault-bot", "/opt/algovault-bot/scripts"])
+    ck("...and PROVEN able to fail: strip the parent snapshot and it breaches",
+       len(nb([ext()], {"/opt/algovault-bot/scripts": set(), "/opt/algovault-bot": set()})), 1)
+    ck("...and a snapshot of a DIFFERENT sibling directory does not count",
+       len(nb([ext()], {"/opt/algovault-bot/scripts": set(),
+                        "/opt/algovault-bot": {"src.bak.PROVENANCE-20260817T064235Z"}})), 1)
+    ck("an artifact-granular backup beside it also counts",
+       nb([ext()], {"/opt/algovault-bot/scripts": {"referral-notify-drain.sh.bak.X-20260822T000000Z"},
+                    "/opt/algovault-bot": set()}), [])
+    ck("BOTH directories unlistable -> SKIPPED, never a breach and never a pass",
+       nb([ext()], {"/opt/algovault-bot/scripts": None, "/opt/algovault-bot": None}), [])
+    ck("...and the SKIP is reported per artifact",
+       check_no_backup([ext()], {"/opt/algovault-bot/scripts": None,
+                                 "/opt/algovault-bot": None}, L)["probed"][0]["verdict"], "SKIPPED")
+    ck("one unlistable dir does not erase the OTHER dir's evidence",
+       nb([ext()], {"/opt/algovault-bot/scripts": None,
+                    "/opt/algovault-bot": {"scripts.bak.PROVENANCE-20260821T084448Z"}}), [])
+    ck("positive per-artifact output names the backup it found",
+       "scripts.bak.PROVENANCE-20260821T084448Z" in
+       check_no_backup([ext()], LIVE, L)["probed"][0]["detail"], True)
+    ck("...and names the NEWEST snapshot, the one an operator would restore",
+       check_no_backup([ext()], {"/opt/algovault-bot/scripts": set(),
+                                 "/opt/algovault-bot": {"scripts.bak.PROVENANCE-20260802T083923Z",
+                                                        "scripts.bak.PROVENANCE-20260821T084448Z",
+                                                        "scripts.bak.PROVENANCE-20260816T043154Z"}},
+                       L)["probed"][0]["detail"].endswith("scripts.bak.PROVENANCE-20260821T084448Z"), True)
+
+    # The remote listing's PARSER is the seam a hermetic self-test would otherwise never execute.
+    PARSED = parse_backup_listing(
+        "DIR_OK /opt/algovault-bot\nE scripts.bak.PROVENANCE-1\nE src.bak.PROVENANCE-2\n"
+        "DIR_MISSING /opt/nope\nDIR_OK /opt/empty\n",
+        ["/opt/algovault-bot", "/opt/nope", "/opt/empty", "/opt/never-mentioned"])
+    ck("parser: entries attach to their own directory",
+       PARSED["/opt/algovault-bot"], {"scripts.bak.PROVENANCE-1", "src.bak.PROVENANCE-2"})
+    ck("parser: a MISSING dir is None (unlistable), never an empty set",
+       PARSED["/opt/nope"], None)
+    ck("parser: an EMPTY-but-present dir is a set, never None",
+       PARSED["/opt/empty"], set())
+    ck("parser: a dir the host never answered for stays None",
+       PARSED["/opt/never-mentioned"], None)
 
     # ── 8. host ownership / per-host schedule ──
     ck("row owned via its registry entry", owns_row(shared(), {"aoe-1"}), True)

@@ -8,9 +8,18 @@
   },
   "_install_state_semantics": {
     "installed": "live",
-    "pending": "declared debt; reported not alerted; escalates past 30d",
+    "pending": "declared debt; reported not alerted; escalates past 30d UNLESS the row carries a `blocked_on` condition the reconciler can MEASURE as still-unmet (see _blocked_on_semantics)",
     "unclassified": "present on host, owner unknown, decision required; reported EVERY run",
     "retired": "intentionally stopped, with evidence"
+  },
+  "_blocked_on_semantics": {
+    "_why": "`pending` conflated two debts with one clock: NEGLECT (nobody got to it — 30d is the right alarm) and BLOCKED (the install is gated on a named external condition that has not happened). The metronome pages daily for the second with no action available that is not a lie, and it RECURS by construction — it is a clock over a queue, so clearing one row only advances to the next. Measured on the reconcile log: nav-drift-canary tripped at age 31 on 2026-08-12, book-liveness-canary at age 31 on 2026-08-21.",
+    "kind": "`container_env` is the ONLY implemented kind. An unknown kind is INDETERMINATE, never a parse error, so declaring a kind before implementing it degrades to 'no suppression' rather than breaking the daily run.",
+    "container": "docker container name; validated against a safe-token charset before it ever reaches a shell — a declaration is data, and data reaching a shell is validated at the boundary, not trusted for its provenance.",
+    "var": "env var read with `printenv`. rc=1 with empty stderr is printenv's documented 'not set' and is a READ, not a failure.",
+    "met_when": "`truthy` — the set is exactly {1,true,yes,on}, case-insensitive.",
+    "review_by": "REQUIRED. A block with no review date is not a block: the row falls back to the plain age clock. Past this date the BLOCK ITSELF is the debt and the row breaches regardless of the condition.",
+    "_the_load_bearing_half": "Suppression is EARNED by a positive measurement and never granted by the field's presence. Condition measured UNMET inside the window -> BLOCKED, reported every run, no page. Condition measured MET -> BREACH IMMEDIATELY AT ANY AGE, because the debt just became actionable and the 30d clock would not have noticed for weeks. Probe unreadable / raises / unknown kind -> NO suppression, the age clock decides. So the worst a broken probe can do is restore the old behaviour, and the check gets STRICTER rather than quieter."
   },
   "_decision_gate_semantics": {
     "_why": "OPS-RECALIBRATE-HARNESS-RETIRE-W1 (R6). A DECISION GATE is an instrument built to answer ONE question ONCE — 'is there enough evidence to dispatch wave X yet?' — which fires a once-ever alert behind a marker file and then runs forever. From every other check in this file an ORPHANED gate and a HEALTHY one are byte-identical: installed, hashes match, schedule matches, exits 0. HASH_DRIFT / ORPHAN / DARK / SCHEDULE_DRIFT / NO_BACKUP all PASS on an orphan. Measured: closedbar-recalibrate-readiness was found because it paged; its sibling candle-basis-shadow-report had been orphaned SIX DAYS earlier by the identical mechanism and was found only because someone wrote the spec for the first one. Declaring the lifecycle is what makes the tenth instance announce itself instead of being found by accident.",
@@ -44,7 +53,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "669735f54cfc368f68d4480ec202c7542adf2a49ba78bfa228a77f932e15cc5a",
+      "sha256": "3313542d33125c6c83144c6067a7eeef42a42f1e019ad5aaea951e84617ae1b2",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT",
         "SOT_PARITY_SUSTAINED_DRIFT"
@@ -486,7 +495,7 @@
       "schedule": "53 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "ae0f7c31a1bbaa339eef2c7c8b4d9fcf530aa57773ac5fb460e101acad4cfc19",
+      "sha256": "c711a41a797266d3e2ee9951a4e3fa6b8e8376d3d27ee3e7e62c81340b1f7702",
       "alert_ids": [
         "PAYMENT_DECLINE_DRIFT"
       ],
@@ -706,7 +715,15 @@
       ],
       "owner_wave": "OPS-PFE-METRIC-INTEGRITY-W1",
       "pending_since": "2026-07-21",
-      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot — so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true. Fired once at 2026-07-21T04:02Z (install-time smoke)."
+      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot — so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true — now DECLARED in the `blocked_on` block and evaluated every run by monitoring-inventory-reconcile.py, rather than left as prose for whoever reads the row. Fired once at 2026-07-21T04:02Z (install-time smoke).",
+      "blocked_on": {
+        "kind": "container_env",
+        "container": "crypto-quant-signal-mcp-mcp-server-1",
+        "var": "EMIT_BOOK_LIVENESS_ENABLED",
+        "met_when": "truthy",
+        "review_by": "2026-11-20",
+        "reason": "The UNBLOCK CONDITION already stated in `notes`, moved into DATA so the reconciler can MEASURE it instead of clocking 30 days past a debt nobody can legally discharge. This canary watches the frozen-row + suppression rates of the emit-time book-liveness gate, and both presuppose the gate is ENFORCING. EMIT_BOOK_LIVENESS_ENABLED is unset in the live container (measured 2026-08-22: `docker exec ... printenv` -> rc=1), so the mode is forced 'off' and installing now would measure a DARK gate — exactly what 'prove a revived guard FIRES before calling it live' forbids. While the var stays falsy the row reports BLOCKED and does not page; the DAY it flips truthy the row breaches IMMEDIATELY at any age, which is the half of this that makes it a gate and not a mute button. Past review_by the block itself becomes the debt and breaches regardless."
+      }
     },
     {
       "id": "nav-drift-canary",

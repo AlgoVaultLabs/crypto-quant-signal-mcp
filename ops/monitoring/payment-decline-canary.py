@@ -33,6 +33,32 @@ International, PBOC, MRC — the circulating "98.3%" is fabricated). `DECLINE_RA
 PLACEHOLDER that cannot fire until n >= MIN_N; whoever is present at the first crossing owns
 calibrating it against the observation ledger this canary is accumulating for exactly that.
 
+── 🛑 THE FLOOR COUNTS DISTINCT CUSTOMERS, AND THAT IS THE FIX, NOT A LOOSENING ────────────
+The floor asks "are payments failing SYSTEMICALLY?" Stripe's dunning answers a different
+question very loudly: one unpaid card produces a fresh `invoice.payment_failed` on attempt 1,
+attempt 2, attempt 3 …, plus a `payment_intent.payment_failed` and a `charge.failed` for the
+same money. Any per-EVENT unit therefore reports a systemic outage on the third retry of a
+single customer.
+
+MEASURED on the live account 2026-08-22 — the whole 30-day table, 6 rows:
+
+  cus_UuBrP1otU51OBm · sub_1TuNZs… · in_1U5cMX… · pi_3U5dJU…      <- ONE of each
+    2 x invoice.payment_failed   (attempt_count 1 and 2, payment_intent_id NULL)
+    2 x payment_intent.payment_failed
+    2 x charge.failed
+
+`COUNT(DISTINCT COALESCE(payment_intent_id, event_id))` scored that **3** — the PI, plus each
+NULL-PI invoice retry falling back to its own event_id — and tripped `>= 3`. The COALESCE was
+added so a NULL-PI row would not be silently DROPPED, which was right; but it substitutes a key
+that GUARANTEES distinctness for exactly the row class that most needs deduping. True distinct
+failing customers over the same window: **1**.
+
+`customer` is the unifier: measured on api_version `2026-03-25.dahlia`, it is present on ALL
+THREE subscribed event types, while `invoice` is absent from the Charge and the PaymentIntent
+and `payment_intent` is absent from the Invoice. So the customer is both the only unit every
+event can be attributed to AND the unit the predicate always meant. Rows written before
+`customer_id` existed have NULL, and those fall back to the old key so history is never dropped.
+
 Verdict token: every run prints exactly one terminal `PAYMENT_DECLINE_VERDICT=` line.
 Exit codes: 0 = PASS · 1 = FAIL · 3 = INDETERMINATE.
   3 is the token-law DEFAULT for a NEW gate. The sibling `check-stripe-webhook-events.mjs`
@@ -91,11 +117,33 @@ def log(msg):
 # inside its own bypassed parser). The self-test asserts these artifacts directly.
 
 def build_failure_count_query(days):
-    """Distinct FAILED PAYMENTS in a window — never a row count.
+    """Distinct FAILING CUSTOMERS in a window — never a row count, and never a per-event unit.
 
-    One declined card writes up to two rows (`payment_intent.payment_failed` +
-    `charge.failed`), so COUNT(*) would report double. COALESCE to event_id keeps a row with
-    a NULL payment_intent_id counted rather than silently dropped by COUNT(DISTINCT).
+    The COALESCE chain is ordered by how much deduplication each key buys, strongest first:
+
+      customer_id       one row per human, immune to retries AND to the dual-event fan-out
+      payment_intent_id one row per payment  (pre-linkage rows, and any event with no customer)
+      event_id          one row per event    (last resort; never DROP an unkeyable row)
+
+    Only the first is retry-proof, which is the whole point — see the module header for the
+    measurement that made a single dunned customer read as three failed payments.
+    """
+    if not isinstance(days, int) or days <= 0:
+        raise ValueError("days must be a positive int, got %r" % (days,))
+    return (
+        "SELECT COUNT(DISTINCT COALESCE(customer_id, payment_intent_id, event_id)) "
+        "FROM stripe_payment_failures "
+        "WHERE occurred_at >= NOW() - INTERVAL '%d days'" % days
+    )
+
+
+def build_payment_count_query(days):
+    """The PRIOR unit, kept and REPORTED beside the new one — never silently replaced.
+
+    A threshold change that quietly redefines its own metric is unauditable: the operator would
+    see the alert stop without being able to tell whether the world improved or the ruler was
+    swapped. Both numbers ship in the facts, in the log line and in the alert body, so the gap
+    between them IS the retry-inflation, visible on every run.
     """
     if not isinstance(days, int) or days <= 0:
         raise ValueError("days must be a positive int, got %r" % (days,))
@@ -133,14 +181,22 @@ def parse_count(raw):
     return int(first)
 
 
-def classify(failures_7d, failures_30d, successes_30d):
-    """Pure verdict. Returns (verdict, reasons, facts) — no I/O, no clock."""
+def classify(failures_7d, failures_30d, successes_30d, payments_7d=None, payments_30d=None):
+    """Pure verdict. Returns (verdict, reasons, facts) — no I/O, no clock.
+
+    `failures_*` are DISTINCT CUSTOMERS; `payments_*` are the prior distinct-payment unit,
+    carried for reporting only. Passing them as None keeps every existing caller working and
+    renders as `-`, never as 0 — a number we do not have must not print as a measurement.
+    """
     n = successes_30d + failures_30d
     facts = {
         "n_30d": n,
         "successes_30d": successes_30d,
         "failures_30d": failures_30d,
         "failures_7d": failures_7d,
+        "payments_7d": payments_7d,
+        "payments_30d": payments_30d,
+        "failure_unit": "distinct customers",
         "min_n": MIN_N,
         "rate_predicate": "ACTIVE" if n >= MIN_N else "INERT (n < MIN_N)",
         "decline_rate_pct_30d": (round(failures_30d * 100.0 / n, 1) if n > 0 else None),
@@ -150,8 +206,8 @@ def classify(failures_7d, failures_30d, successes_30d):
     # Absolute floor — live from n=1. This is the only predicate that can fire today.
     if failures_7d >= FLOOR_FAILURES:
         reasons.append(
-            "ABSOLUTE FLOOR breached: %d distinct failed payments in the last %dd (threshold >= %d)"
-            % (failures_7d, FLOOR_WINDOW_DAYS, FLOOR_FAILURES)
+            "ABSOLUTE FLOOR breached: %d distinct CUSTOMERS with a failed payment in the last "
+            "%dd (threshold >= %d)" % (failures_7d, FLOOR_WINDOW_DAYS, FLOOR_FAILURES)
         )
 
     # Rate predicate — structurally inert below MIN_N.
@@ -166,16 +222,28 @@ def classify(failures_7d, failures_30d, successes_30d):
     return ("FAIL" if reasons else "PASS"), reasons, facts
 
 
+def _n(v):
+    """Render an ABSENT number as '-', never as 0. A count we do not have is not a count of 0."""
+    return "-" if v is None else str(v)
+
+
 def build_body(reasons, facts):
     lines = ["🛑 %s" % ALERT_ID]
     lines.extend(reasons)
     lines.append(
-        "Facts — Last %dd: n=%d (%d converted + %d failed payments) · rate=%s · Last %dd failures=%d · rate predicate %s"
+        "Facts — Last %dd: n=%d (%d converted + %d failing customers) · rate=%s · Last %dd failing customers=%d · rate predicate %s"
         % (RATE_WINDOW_DAYS, facts["n_30d"], facts["successes_30d"], facts["failures_30d"],
            ("%.1f%%" % facts["decline_rate_pct_30d"]) if facts["decline_rate_pct_30d"] is not None else "unmeasured",
            FLOOR_WINDOW_DAYS, facts["failures_7d"], facts["rate_predicate"])
     )
-    lines.append("Every count is over DISTINCT payment intents, not rows (one decline can write two rows).")
+    lines.append(
+        "Prior unit for comparison — distinct payments: %s in %dd, %s in %dd. A gap between the "
+        "two is Stripe DUNNING RETRIES on the same card, not extra failing customers."
+        % (_n(facts.get("payments_7d")), FLOOR_WINDOW_DAYS,
+           _n(facts.get("payments_30d")), RATE_WINDOW_DAYS)
+    )
+    lines.append("Every count is over DISTINCT CUSTOMERS, not rows and not payment intents "
+                 "(one declined card writes up to 2 rows per dunning attempt).")
     lines.append("Action: dispatch %s via Cowork → Claude Code" % RECOMMENDED_WAVE)
     return "\n".join(lines)
 
@@ -237,6 +305,10 @@ def main():
         failures_7d = parse_count(_psql(build_failure_count_query(FLOOR_WINDOW_DAYS)))
         failures_30d = parse_count(_psql(build_failure_count_query(RATE_WINDOW_DAYS)))
         successes_30d = parse_count(_psql(build_success_count_query(RATE_WINDOW_DAYS)))
+        # Reported, never predicated on. Unparseable here is NOT indeterminate: the verdict does
+        # not depend on it, so it degrades to '-' rather than escalating a healthy run.
+        payments_7d = parse_count(_psql(build_payment_count_query(FLOOR_WINDOW_DAYS)))
+        payments_30d = parse_count(_psql(build_payment_count_query(RATE_WINDOW_DAYS)))
     except Exception as exc:                                    # noqa: BLE001
         log("DB unreadable: %s" % exc)
         # Fail-open in the sense that we do not crash — but a blind canary ESCALATES. An
@@ -256,15 +328,19 @@ def main():
         print("PAYMENT_DECLINE_VERDICT=INDETERMINATE")
         return EXIT_INDETERMINATE
 
-    verdict, reasons, facts = classify(failures_7d, failures_30d, successes_30d)
+    verdict, reasons, facts = classify(failures_7d, failures_30d, successes_30d,
+                                       payments_7d, payments_30d)
     append_observation(facts)
 
     # POSITIVE per-check output — never "absence of an alert". A row silently skipped by a
     # load error must not look identical to a row that passed.
-    log("Last %dd: n=%d (%d converted + %d failed) rate=%s | Last %dd failures=%d (floor >= %d) | rate predicate %s"
+    log("Last %dd: n=%d (%d converted + %d failing customers) rate=%s | Last %dd failing customers=%d "
+        "(floor >= %d) | prior unit distinct payments: %s in %dd / %s in %dd | rate predicate %s"
         % (RATE_WINDOW_DAYS, facts["n_30d"], facts["successes_30d"], facts["failures_30d"],
            ("%.1f%%" % facts["decline_rate_pct_30d"]) if facts["decline_rate_pct_30d"] is not None else "unmeasured",
-           FLOOR_WINDOW_DAYS, facts["failures_7d"], FLOOR_FAILURES, facts["rate_predicate"]))
+           FLOOR_WINDOW_DAYS, facts["failures_7d"], FLOOR_FAILURES,
+           _n(facts["payments_7d"]), FLOOR_WINDOW_DAYS, _n(facts["payments_30d"]), RATE_WINDOW_DAYS,
+           facts["rate_predicate"]))
 
     if verdict == "FAIL":
         fire(build_body(reasons, facts))
@@ -313,7 +389,24 @@ def self_test():
     # These are the ONLY functions the hermetic seam replaces, so they get asserted directly.
     q7 = build_failure_count_query(7)
     check("failure query counts DISTINCT payments, not rows", "COUNT(DISTINCT" in q7 and "COUNT(*)" not in q7)
-    check("failure query COALESCEs a null payment_intent_id", "COALESCE(payment_intent_id, event_id)" in q7)
+    # FLIPPED, not deleted. The old assertion pinned `COALESCE(payment_intent_id, event_id)` —
+    # the exact expression that scored one dunned customer as three failed payments. The unit is
+    # now the customer, and the OLD unit is retained under its own builder and asserted there, so
+    # the change is visible in the suite rather than silently swapped.
+    check("failure query counts distinct CUSTOMERS first",
+          "COALESCE(customer_id, payment_intent_id, event_id)" in q7)
+    check("...and still never DROPS a row that has neither (event_id is the last resort)",
+          q7.rstrip().count("event_id") == 1 and "COUNT(DISTINCT COALESCE(" in q7)
+    check("the PRIOR unit is retained, not deleted, so the two are comparable on every run",
+          "COALESCE(payment_intent_id, event_id)" in build_payment_count_query(7)
+          and "customer_id" not in build_payment_count_query(7))
+    check("the prior-unit builder carries its own window",
+          "INTERVAL '30 days'" in build_payment_count_query(30))
+    try:
+        build_payment_count_query(0)
+        check("prior-unit builder rejects a bad window", False)
+    except ValueError:
+        check("prior-unit builder rejects a bad window", True)
     check("failure query carries its window", "INTERVAL '7 days'" in q7)
     check("success query targets subscriber_profiles/converted_at",
           "subscriber_profiles" in build_success_count_query(30) and "converted_at" in build_success_count_query(30))
@@ -339,12 +432,39 @@ def self_test():
     body = build_body(r, f)
     check("body names the alert id", ALERT_ID in body)
     check("body carries the templated wave, never a literal W-number", "W{NEXT}" in body)
-    check("body states the distinct-payment semantics", "DISTINCT payment intents" in body)
+    check("body states the distinct-CUSTOMER semantics", "DISTINCT CUSTOMERS" in body)
     check("body carries n alongside every count", "n=5" in body)
+    check("body names dunning retries as the reason the two units can differ",
+          "DUNNING RETRIES" in body)
+
+    # --- THE REGRESSION, as the live 2026-08-22 numbers -----------------------------------
+    # ONE customer / ONE subscription / ONE invoice / ONE PaymentIntent, dunned twice. The old
+    # unit scored 3 and paged; the customer unit scores 1 and must not.
+    v1, r1, f1 = classify(failures_7d=1, failures_30d=1, successes_30d=4,
+                          payments_7d=3, payments_30d=3)
+    check("THE REGRESSION: one dunned customer does NOT trip the floor", v1 == "PASS")
+    check("...while the prior unit would have (3 >= 3)", f1["payments_7d"] >= FLOOR_FAILURES)
+    check("...and both units are carried so the gap is auditable",
+          (f1["failures_7d"], f1["payments_7d"]) == (1, 3))
+    check("...and the facts name their unit rather than leaving it implied",
+          f1["failure_unit"] == "distinct customers")
+
+    # PROVEN able to fail in the other direction: three genuinely distinct customers still page.
+    v2, _, _ = classify(failures_7d=3, failures_30d=3, successes_30d=4, payments_7d=3, payments_30d=3)
+    check("three DISTINCT customers still trip the floor (the alarm is not disarmed)", v2 == "FAIL")
+    v3, _, _ = classify(failures_7d=2, failures_30d=2, successes_30d=4, payments_7d=9, payments_30d=9)
+    check("two customers with nine retries between them do NOT trip it", v3 == "PASS")
+
+    # An absent prior-unit count renders as '-', never as 0 — it is reported, never predicated on.
+    _, r4, f4 = classify(failures_7d=3, failures_30d=3, successes_30d=0,
+                         payments_7d=None, payments_30d=None)
+    check("an absent prior-unit count renders as '-', never 0",
+          "distinct payments: - in 7d" in build_body(r4, f4))
+    check("_n renders a real zero as 0 and an absent value as '-'", (_n(0), _n(None)) == ("0", "-"))
 
     # --- vacuity guard --------------------------------------------------------------------
     # WE built this corpus, so empty here means the suite built nothing — a defect in the test.
-    check("self-test corpus is non-empty (vacuity guard)", len(passed) + len(failed) >= 25)
+    check("self-test corpus is non-empty (vacuity guard)", len(passed) + len(failed) >= 40)
 
     for label in failed:
         sys.stderr.write("  SELF-TEST FAIL: %s\n" % label)
