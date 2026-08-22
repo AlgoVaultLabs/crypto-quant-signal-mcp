@@ -58,6 +58,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detector_envelope as de  # noqa: E402  (host-local sibling; see the inventory row)
+import labeler_truncation_attribution as lta  # noqa: E402  (host-local sibling; see the inventory row)
 
 def load_tiers(path: str | None = None):
     """OPS-LABEL-FRESHNESS-W1 R2 — single-derivation with the labeler. Read the emitted SoT
@@ -434,6 +435,27 @@ def main(argv: list[str]) -> int:
                 # NON-ANSWER, and passing the stale pre-recovery set would let the page name a
                 # venue we may well have just fixed. None => drop nothing, claim nothing.
                 still_breaching = None
+
+    # OPS-DEPLOY-LABELER-WINDOW-W1 CH1 — ONE digest line for the truncation RATE.
+    #
+    # DIGEST-ONLY, never a page. Truncation is safe (graceful-stop checkpoints) and self-healing
+    # (the rotation sorts a missed venue first the next night), so paging on it would be recovery
+    # chatter. But 34% of nights ending early went uncounted for weeks, and a degradation made
+    # SAFE without being made VISIBLE runs until something unrelated trips over it. A single
+    # truncated night is noise; the RATE is the finding.
+    try:
+        runs = lta.parse_runs(Path(lta.LOG_PATH).read_text(errors="replace"))
+        if runs:
+            starts = lta.container_starts((lta._iso(runs[0]["started_at"])).strftime("%Y-%m-%d"))
+            st = lta.summarise(runs, starts)
+            log(f"digest TRUNCATION rate={st['truncation_rate_pct']}% "
+                f"({st['truncated']}/{st['n']} runs over {st['window_days']}d, "
+                f"{st['first_run']}..{st['last_run']}) attributed_to_deploy={st['attributed_to_deploy']} "
+                f"({st['attributed_share_pct']}%)")
+        else:
+            log("digest TRUNCATION INDETERMINATE: parsed zero runs from the labeler log")
+    except Exception as exc:  # fail-open: the truncation line must never break the page path
+        log(f"digest TRUNCATION INDETERMINATE: {exc}")
 
     # Objective #2 backstop: forward the labeler's DETECTOR_ENVELOPE from the last nightly run
     # (the wrapper owns severity/cooldown/DRY_RUN gates). Independent of the page path, but NOT
