@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   classifyDrift,
@@ -22,6 +22,14 @@ import {
   attemptsFor,
   recordAttempt,
   BEHIND_GRACE_MS,
+  BADGE_URL,
+  VERDICTS,
+  HEALTHY_VERDICTS,
+  parseBadgeTitle,
+  parsePathsIgnore,
+  isNonDeployingDelta,
+  matchesPattern,
+  renderAlertBody,
 } from '../../ops/monitoring/deploy-drift-canary.mjs';
 
 const REPO = join(__dirname, '..', '..');
@@ -214,5 +222,111 @@ describe('the canary self-test runs and does not leak a verdict token', () => {
     });
     expect(out).toContain('SELF-TEST: PASS');
     expect(out).not.toContain('DRIFT_VERDICT=');
+  });
+});
+
+/* ══════════════ OPS-DEPLOY-DRIFT-VERDICT-LEG-W1 ══════════════
+ *
+ * The --self-test is hermetic: it feeds classifyDrift a hand-written 3-pattern list. It is
+ * therefore structurally blind to exactly what its own seam replaces — the REAL deploy.yml.
+ * Everything below reads the committed file, so a paths-ignore edit, a workflow rename, or a
+ * pattern shape the matcher does not implement fails HERE rather than going dark on the host.
+ */
+const ROOT = join(__dirname, '../..');
+const DEPLOY_YML = readFileSync(join(ROOT, '.github/workflows/deploy.yml'), 'utf8');
+
+describe('the safety property — a branch-latest signal can never authorise recovery', () => {
+  it('no laneHealth x nonDeploying combination reaches DRIFT_RECOVERABLE', () => {
+    const base = { prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
+    for (const laneHealth of [null, 'passing', 'failing', 'unknown', 'something-new'])
+      for (const nonDeploying of [null, true, false])
+        expect(classifyDrift({ ...base, laneHealth, nonDeploying }).verdict).not.toBe('DRIFT_RECOVERABLE');
+  });
+
+  it('production never supplies the ONE input that could — suiteVerdict is pinned null in main()', () => {
+    const src = readFileSync(join(ROOT, 'ops/monitoring/deploy-drift-canary.mjs'), 'utf8');
+    const mainBody = src.slice(src.indexOf('function main()'));
+    expect(mainBody).toMatch(/suiteVerdict:\s*null,/);
+    // If a future edit reintroduces a per-SHA reader, it must re-argue this property.
+    expect(mainBody).not.toMatch(/suiteVerdict:\s*read/);
+  });
+
+  it('every declared verdict is either healthy or pages — no third, silent category', () => {
+    for (const v of VERDICTS) expect(typeof HEALTHY_VERDICTS.has(v)).toBe('boolean');
+    expect([...HEALTHY_VERDICTS].every((v) => (VERDICTS as readonly string[]).includes(v))).toBe(true);
+  });
+});
+
+describe('the REAL deploy.yml — what the hermetic self-test cannot see', () => {
+  it('paths-ignore parses out of the committed workflow, and is not empty', () => {
+    const got = parsePathsIgnore(DEPLOY_YML);
+    expect(got).not.toBeNull();
+    expect(got!.length).toBeGreaterThan(0);
+    expect(got).toContain('ops/monitoring/**');
+  });
+
+  it('every committed pattern is one the matcher actually implements', () => {
+    // An unimplemented shape makes isNonDeployingDelta return null forever — the leg would go
+    // dark silently while every gate stayed green.
+    for (const pat of parsePathsIgnore(DEPLOY_YML)!)
+      expect(matchesPattern('some/probe/path', pat), `unimplemented pattern: ${pat}`).not.toBeNull();
+  });
+
+  it('REAL HISTORY: aad0e26 (ops/monitoring only) has zero deploy runs and is non-deploying', () => {
+    expect(isNonDeployingDelta(
+      ['ops/monitoring/alert-registry.json', 'ops/monitoring/monitoring-inventory.json'],
+      parsePathsIgnore(DEPLOY_YML),
+    )).toBe(true);
+  });
+
+  it('REAL HISTORY: 2c3a6ea (an audits/ doc) deploys — it is the commit that stranded prod', () => {
+    expect(isNonDeployingDelta(
+      ['audits/RELEASE-v1.28.0-W1-endpoint-truth.md'],
+      parsePathsIgnore(DEPLOY_YML),
+    )).toBe(false);
+  });
+
+  it('the badge points at a workflow that exists — a rename must not dark the leg', () => {
+    const m = /workflows\/([^/]+)\/badge\.svg/.exec(BADGE_URL);
+    expect(m).toBeTruthy();
+    expect(existsSync(join(ROOT, '.github/workflows', m![1])), `${m![1]} does not exist`).toBe(true);
+  });
+
+  it('the badge is pinned to the branch the canary compares against', () => {
+    expect(BADGE_URL).toMatch(/[?&]branch=main(&|$)/);
+  });
+});
+
+describe('the alert body an operator actually reads', () => {
+  const base = { prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40) };
+  const render = (laneHealth: any, nonDeploying: any = null) =>
+    renderAlertBody({
+      repo: 'crypto-quant-signal-mcp',
+      verdict: classifyDrift({ ...base, laneHealth, nonDeploying }),
+      prodSha: base.prodSha, mainHead: base.mainHead, behindMs: 3_600_000, laneHealth,
+    });
+
+  it('a red lane names the lane AND the command that resolves it', () => {
+    const b = render('failing');
+    expect(b).toMatch(/deploy lane RED/);
+    expect(b).toMatch(/next: gh run list --workflow "Deploy to Hetzner"/);
+  });
+
+  it('a green lane with prod behind reads as escalate-worthy, not reassuring', () => {
+    expect(render('passing')).toMatch(/deploy lane GREEN but prod is behind/);
+  });
+
+  it('the loose binding is stated in the BODY, not only in a source comment', () => {
+    expect(render('failing')).toMatch(/latest run on main, NOT necessarily this sha/);
+  });
+
+  it('never emits %0A — send_telegram.sh does its own urlencode and is frozen', () => {
+    for (const lh of ['passing', 'failing', 'unknown']) expect(render(lh)).not.toContain('%0A');
+  });
+
+  it('parseBadgeTitle never invents a pass', () => {
+    expect(parseBadgeTitle('<title>Deploy to Hetzner - passing</title>')).toBe('passing');
+    expect(parseBadgeTitle('<title>Deploy to Hetzner - no status</title>')).toBe('unknown');
+    expect(parseBadgeTitle('')).toBe('unknown');
   });
 });

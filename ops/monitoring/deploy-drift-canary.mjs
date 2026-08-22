@@ -28,16 +28,129 @@
  * forensics in the log. Only operator-action-required drift alerts.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const VERDICTS = /** @type {const} */ ([
   'DRIFT_NONE',
+  'DRIFT_NONE_NON_DEPLOYING',
   'DRIFT_RECOVERABLE',
   'DRIFT_BLOCKED_OWNED',
   'DRIFT_BLOCKED_MINE',
   'DRIFT_INDETERMINATE',
 ]);
+
+/** Verdicts that must NOT page. Folded in main(); the `--clear` adopter runs for all of them. */
+export const HEALTHY_VERDICTS = new Set(['DRIFT_NONE', 'DRIFT_NONE_NON_DEPLOYING']);
+
+/* ───────────────── 4a-bis. is this delta even capable of deploying? ─────────────────
+ *
+ * OPS-DEPLOY-DRIFT-VERDICT-LEG-W1 CH1. `.github/workflows/deploy.yml` carries `paths-ignore`.
+ * A push touching ONLY those paths creates NO workflow run at all — so prod can never equal
+ * main, and the pre-fix canary paged forever about a condition no deploy would ever resolve.
+ *
+ * NOT hypothetical: `aad0e26` (ops/monitoring/** only) has ZERO Deploy runs and sat as the tip
+ * of main 03:34→04:04 UTC on 2026-08-21 — exactly BEHIND_GRACE_MS. It was rescued by an
+ * unrelated commit landing at 04:04, not by anything working.
+ *
+ * THE AGGREGATE TEST IS SOUND, and the reason is worth stating: GitHub evaluates paths-ignore
+ * per PUSH, not per commit. If every file in the aggregate prodSha..mainHead diff is ignored,
+ * then every individual push's file set in that range is a SUBSET of it and is also entirely
+ * ignored — so no run fired for any of them. A mixed delta means some push carried a
+ * non-ignored file, so a run fired, and that is the ordinary path.
+ *
+ * THIS LEG FAILS TOWARD PAGING, ALWAYS. Every "I do not understand this" returns null, never
+ * true. A false `true` SUPPRESSES a real page, which is the one outcome worse than today's
+ * uninformative one.
+ *
+ * It deliberately does NOT own "an ops/monitoring/** change landed but was never installed on
+ * the host". That is HASH_DRIFT / ORPHAN and it belongs to monitoring-inventory-reconcile.py.
+ * Two guards for one property is how they end up disagreeing.
+ */
+
+/**
+ * Extract the `paths-ignore:` list from deploy.yml WITHOUT a YAML dependency (this file imports
+ * node builtins only, by design — it runs from /opt with no node_modules).
+ *
+ * Returns null rather than [] on anything it does not recognise: an empty list would read as
+ * "nothing is ignored", which silently disables the whole leg while looking healthy.
+ */
+export function parsePathsIgnore(yamlText) {
+  if (typeof yamlText !== 'string' || !yamlText.includes('paths-ignore:')) return null;
+  const lines = yamlText.split('\n');
+  const start = lines.findIndex((l) => /^\s*paths-ignore:\s*$/.test(l));
+  if (start < 0) return null; // inline-array form (`paths-ignore: [a, b]`) is NOT handled — say so
+  const keyIndent = lines[start].search(/\S/);
+  const out = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const raw = lines[i];
+    if (/^\s*$/.test(raw)) continue;
+    const indent = raw.search(/\S/);
+    if (indent <= keyIndent) break;            // dedented out of the block
+    const t = raw.trim();
+    if (t.startsWith('#')) continue;           // a comment inside the list
+    if (!t.startsWith('- ')) return null;      // something we do not understand -> refuse
+    let v = t.slice(2).trim();
+    const q = v[0];
+    if (q === "'" || q === '"') {
+      const end = v.lastIndexOf(q);
+      if (end <= 0) return null;
+      v = v.slice(1, end);
+    } else {
+      v = v.split('#')[0].trim();              // trailing comment on an unquoted scalar
+    }
+    if (!v) return null;
+    out.push(v);
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * Does one path match one GitHub filter pattern? Returns null for any pattern shape this does
+ * not implement, so an unknown pattern can never be read as "ignored".
+ *
+ * Implemented: literals, `*` (within a segment), `**` (across segments). NOT implemented:
+ * `!` negation, `?`, `[...]` character classes, `{a,b}` braces — all of which would change the
+ * answer and none of which appear in this repo's list today.
+ */
+export function matchesPattern(path, pattern) {
+  if (/[!?[\]{}]/.test(pattern)) return null;
+  let re = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '*') {
+      if (pattern[i + 1] === '*') { re += '.*'; i++; if (pattern[i + 1] === '/') i++; }
+      else re += '[^/]*';
+    } else re += c.replace(/[.+^$()|\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`).test(path);
+}
+
+/**
+ * Is EVERY changed file ignored? true / false / null (could not determine).
+ *
+ * @param {string[]|null} changedFiles aggregate prodSha..mainHead file list
+ * @param {string[]|null} pathsIgnore  the list read from deploy.yml at the pinned mainHead
+ */
+export function isNonDeployingDelta(changedFiles, pathsIgnore) {
+  if (!Array.isArray(changedFiles) || !Array.isArray(pathsIgnore) || !pathsIgnore.length) return null;
+  // An EMPTY file list is not "everything is ignored" — it means the diff could not be built
+  // (two differing SHAs always differ in at least one file). Vacuity, decided at construction.
+  if (!changedFiles.length) return null;
+  for (const f of changedFiles) {
+    let ignored = false;
+    for (const pat of pathsIgnore) {
+      const m = matchesPattern(f, pat);
+      if (m === null) return null; // a pattern we cannot evaluate poisons the whole answer
+      if (m) { ignored = true; break; }
+    }
+    if (!ignored) return false;    // one deploying file is enough
+  }
+  return true;
+}
+
+export const BADGE_URL =
+  'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main';
 
 /** Behind for longer than this before recovery may act — a deploy in flight is not drift. */
 export const BEHIND_GRACE_MS = 30 * 60 * 1000;
@@ -64,7 +177,8 @@ export const ATTEMPT_COOLDOWN_MS = 20 * 60 * 1000;
  * @param {string[]}    f.sessionCommits     commits the deploying session authored
  */
 export function classifyDrift(f) {
-  const { prodSha, mainHead, suiteVerdict, graphTouchers = [], sessionCommits = [] } = f;
+  const { prodSha, mainHead, suiteVerdict, laneHealth = null, nonDeploying = null,
+    graphTouchers = [], sessionCommits = [] } = f;
 
   // Provenance we could not read is INDETERMINATE, never "in sync". Assuming sync on a missing
   // measurement is how a stale deploy hides: the canary would go quiet precisely when the thing
@@ -73,14 +187,51 @@ export function classifyDrift(f) {
 
   if (prodSha === mainHead) return { verdict: 'DRIFT_NONE', reason: 'in sync' };
 
+  // CH1. Checked BEFORE any lane reasoning: a delta that cannot trigger a deploy is not drift,
+  // and asking "why is the lane red" about it would be answering a question nobody asked. Only
+  // an explicit `true` suppresses; false and null both fall through to the ordinary path.
+  if (nonDeploying === true) {
+    return {
+      verdict: 'DRIFT_NONE_NON_DEPLOYING',
+      reason: 'every file in prod..main is paths-ignore\u0027d in deploy.yml — no run was ever created, so prod CANNOT catch up and this is not drift',
+    };
+  }
+
   if (suiteVerdict === 'PASS' || suiteVerdict === 'PASS_AFTER_ISOLATION') {
     return { verdict: 'DRIFT_RECOVERABLE', reason: `main green (${suiteVerdict}), prod behind` };
   }
 
   if (suiteVerdict !== 'FAIL') {
-    // INDETERMINATE, or no run found. Both mean "we do not know", and an unknown must never be
-    // laundered into either a green or a blame.
-    return { verdict: 'DRIFT_INDETERMINATE', reason: `suite verdict ${suiteVerdict ?? 'unknown'}` };
+    // INDETERMINATE, or no per-SHA run verdict available. Still an unknown, and it is still
+    // never laundered into a green or a blame — but it no longer has to be CONTENTLESS.
+    //
+    // laneHealth is the deploy workflow's LATEST run on main. It is deliberately a separate
+    // field from suiteVerdict, and it is NOT bound to mainHead: the badge carries no SHA
+    // (measured — the only hex in that SVG is path/animation data). So it enriches the REASON
+    // and can never reach DRIFT_RECOVERABLE, which is the one verdict decideRecovery() acts on.
+    const caveat = nonDeploying === null ? '; could not determine whether the delta deploys' : '';
+    if (laneHealth === 'failing') {
+      return {
+        verdict: 'DRIFT_INDETERMINATE',
+        reason: `deploy lane RED — the latest Deploy run on main did not pass${caveat}`,
+        cause: 'lane-red',
+        next: 'gh run list --workflow "Deploy to Hetzner" --limit 3',
+      };
+    }
+    if (laneHealth === 'passing') {
+      return {
+        verdict: 'DRIFT_INDETERMINATE',
+        reason: `deploy lane GREEN but prod is behind — a run may be in flight, or a deploy succeeded without advancing prod${caveat}`,
+        cause: 'lane-green-prod-behind',
+        next: 'gh run list --workflow "Deploy to Hetzner" --limit 3   # if the newest run is green and OLDER than main, prod did not take the deploy',
+      };
+    }
+    return {
+      verdict: 'DRIFT_INDETERMINATE',
+      reason: `deploy lane health unreadable${caveat}`,
+      cause: 'lane-unknown',
+      next: 'curl -sS "https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp/actions/workflows/deploy.yml/badge.svg?branch=main" | grep -o "<title>[^<]*"',
+    };
   }
 
   // Red. Whose?
@@ -210,6 +361,74 @@ function selfTest() {
   t('not past the daily budget', decideRecovery({ ...ok, attemptsToday: 2 }).act, false);
   t('not within cooldown', decideRecovery({ ...ok, msSinceLastAttempt: 60 * 1000 }).act, false);
 
+  /* ── OPS-DEPLOY-DRIFT-VERDICT-LEG-W1 ─────────────────────────────────────────────────── */
+
+  // THE SAFETY PROPERTY. laneHealth is the newest run on the BRANCH and carries no SHA, so it
+  // must never reach DRIFT_RECOVERABLE — the one verdict decideRecovery() acts on. Enumerated
+  // over every lane value AND every nonDeploying value, because a property asserted on one
+  // sample is a sample, not a property.
+  let recoverableLeak = 0;
+  for (const lh of [null, 'passing', 'failing', 'unknown', 'weird-new-state']) {
+    for (const nd of [null, true, false]) {
+      if (classifyDrift({ ...base, laneHealth: lh, nonDeploying: nd }).verdict === 'DRIFT_RECOVERABLE') recoverableLeak++;
+    }
+  }
+  t('no lane/delta combination can ever reach DRIFT_RECOVERABLE', recoverableLeak, 0);
+  // ...and the ONLY thing that still can is a per-SHA green, which production never supplies.
+  t('a per-SHA green still does (pure classifier keeps its contract)',
+    classifyDrift({ ...base, suiteVerdict: 'PASS', laneHealth: 'failing' }).verdict, 'DRIFT_RECOVERABLE');
+
+  t('a non-deploying delta is not drift',
+    classifyDrift({ ...base, nonDeploying: true }).verdict, 'DRIFT_NONE_NON_DEPLOYING');
+  t('non-deploying wins over a red lane (it was never asked to deploy)',
+    classifyDrift({ ...base, nonDeploying: true, laneHealth: 'failing' }).verdict, 'DRIFT_NONE_NON_DEPLOYING');
+  t('a red lane names the cause', classifyDrift({ ...base, laneHealth: 'failing' }).cause, 'lane-red');
+  t('a green lane + behind prod is escalate-worthy, not silent',
+    classifyDrift({ ...base, laneHealth: 'passing' }).cause, 'lane-green-prod-behind');
+  t('an unreadable lane stays honest', classifyDrift({ ...base, laneHealth: 'unknown' }).cause, 'lane-unknown');
+  t('an undetermined delta says so, it does not go quiet',
+    /could not determine whether the delta deploys/.test(classifyDrift({ ...base, laneHealth: 'failing', nonDeploying: null }).reason), true);
+  t('a determined-deploying delta adds no caveat',
+    /could not determine/.test(classifyDrift({ ...base, laneHealth: 'failing', nonDeploying: false }).reason), false);
+
+  t('badge: passing', parseBadgeTitle('<title>Deploy to Hetzner - passing</title>'), 'passing');
+  t('badge: failing', parseBadgeTitle('<title>Deploy to Hetzner - failing</title>'), 'failing');
+  t('badge: no status is UNKNOWN, never a pass', parseBadgeTitle('<title>Deploy to Hetzner - no status</title>'), 'unknown');
+  t('badge: unparseable is UNKNOWN, never a pass', parseBadgeTitle('<svg></svg>'), 'unknown');
+
+  // paths-ignore parsing, against the REAL shape of deploy.yml (comments interleaved, quoted).
+  const yaml = ['on:', '  push:', '    branches: [main]', '    paths-ignore:',
+    "      - 'ops/monitoring/**'", '      # a comment inside the list', "      - 'LICENSE'",
+    '      - Caddyfile', '', 'concurrency:', '  group: x'].join('\n');
+  t('paths-ignore parses past interleaved comments', parsePathsIgnore(yaml), ['ops/monitoring/**', 'LICENSE', 'Caddyfile']);
+  t('an absent block is null, never []', parsePathsIgnore('on:\n  push:\n'), null);
+  t('the inline-array form is REFUSED, not silently misread', parsePathsIgnore('    paths-ignore: [a, b]\n'), null);
+
+  // The two fixtures below are REAL history, and they are the whole point of CH1.
+  const IGN = ['ops/monitoring/**', 'LICENSE', 'Caddyfile'];
+  t('aad0e26 (ops/monitoring only, ZERO deploy runs) is non-deploying',
+    isNonDeployingDelta(['ops/monitoring/alert-registry.json', 'ops/monitoring/monitoring-inventory.json'], IGN), true);
+  t('2c3a6ea (an audits/ doc) DOES deploy — and it is what stranded prod',
+    isNonDeployingDelta(['audits/RELEASE-v1.28.0-W1-endpoint-truth.md'], IGN), false);
+  t('one deploying file in a mixed delta is enough',
+    isNonDeployingDelta(['ops/monitoring/a.json', 'src/index.ts'], IGN), false);
+  t('an empty diff is INCONCLUSIVE, never "all ignored"', isNonDeployingDelta([], IGN), null);
+  t('an unreadable paths-ignore is INCONCLUSIVE', isNonDeployingDelta(['ops/monitoring/a.json'], null), null);
+  t('a pattern shape we do not implement is INCONCLUSIVE, never ignored',
+    isNonDeployingDelta(['a'], ['a{b,c}']), null);
+  t('** does not leak across a sibling prefix', matchesPattern('ops/monitoring-x/a', 'ops/monitoring/**'), false);
+  t('* does not cross a slash', matchesPattern('a/b/c', 'a/*'), false);
+
+  // The rendered BODY, not just the verdict.
+  const body = renderAlertBody({
+    repo: 'crypto-quant-signal-mcp', verdict: classifyDrift({ ...base, laneHealth: 'failing' }),
+    prodSha: 'a'.repeat(40), mainHead: 'b'.repeat(40), behindMs: 60 * 60 * 1000, laneHealth: 'failing',
+  });
+  t('body carries the lane AND its binding caveat', /deploy lane \(latest run on main, NOT necessarily this sha\): failing/.test(body), true);
+  t('body carries the operator\u0027s next command', /next: gh run list --workflow "Deploy to Hetzner"/.test(body), true);
+  t('body uses REAL newlines, never %0A', body.includes('%0A'), false);
+  t('body still leads with the repo', body.split('\n')[0], '🚨 deploy drift — crypto-quant-signal-mcp');
+
   const led = recordAttempt(recordAttempt({}, 'signal', 1e12), 'signal', 1e12);
   t('ledger counts per UTC day', attemptsFor(led, 'signal', 1e12).attemptsToday, 2);
   t('ledger resets on a new day', attemptsFor(led, 'signal', 1e12 + 864e5 * 2).attemptsToday, 0);
@@ -237,6 +456,12 @@ export const REPOS = [
   {
     name: 'crypto-quant-signal-mcp',
     remote: 'https://github.com/AlgoVaultLabs/crypto-quant-signal-mcp.git',
+    // Declared per repo, never assumed for all of them. algovault-bot deliberately has NEITHER:
+    // it has its own deploy path and its own workflow, and inventing a paths-ignore story for
+    // it here would be fiction. Absent => those legs stay null and the repo keeps today's
+    // behaviour exactly.
+    laneBadge: BADGE_URL,
+    deployPathsIgnore: true,
     // Provenance comes from CH3's route, not from a file on disk: the container is the thing
     // actually serving, and a file beside it can be stale in ways the container never notices.
     readProdSha: () => {
@@ -277,29 +502,86 @@ export function readMainHead(remote) {
 }
 
 /**
- * The CI verdict leg. UNAVAILABLE on this host by design, not by omission.
+ * The deploy-lane health leg — token-free, and NOT bound to a SHA.
  *
- * The chapter specified `gh run list --json`. `gh` is not installed here, there is no GitHub token
- * on the box, and the unauthenticated REST fallback returns 403 (rate limit, shared IP). So the
- * verdict is genuinely unreadable, and this returns null — which drives the classifier to
- * DRIFT_INDETERMINATE rather than to a guess. A canary that assumed "probably green" in order to
- * look useful would be strictly worse than one that says it does not know.
+ * WHAT THIS REPLACED, AND WHY NOT A TOKEN. The old readSuiteVerdict() called
+ * `actions/runs?per_page=1` with NO workflow_id, NO head_sha and NO branch filter — the newest
+ * run of ANY workflow on ANY ref. Measured 2026-08-21: at 13:25 that was `Publish to npm
+ * 81cf4f0 failure`, an npm failure with nothing to do with whether prod can deploy; at
+ * 17:03:47Z two runs shared one timestamp so the winner was arbitrary. Handing THAT a token
+ * would have bought confident wrong blame, which is strictly worse than the honest null it
+ * returned. So the fix is not a credential — it is a correctly scoped, unmetered source.
+ *
+ * The badge is metered separately from api.github.com. Measured on signal-1 while REST
+ * `core.remaining` was 0/60: badge HTTP 200. Same trick as OPS-XREPO-CI-CANARY-DARK-W1, and
+ * the same trap it names — `cancelled` renders as `failing`.
+ *
+ * THE BINDING IS LOOSE AND THE NAME SAYS SO. The badge reports the newest run on the BRANCH; it
+ * carries no SHA (measured — the only hex in that SVG is path and animation data). It is
+ * therefore `laneHealth`, never `suiteVerdict`, and classifyDrift can never turn it into
+ * DRIFT_RECOVERABLE. That is asserted by a test, not left to this comment.
+ *
+ * @returns {'passing'|'failing'|'unknown'}
  */
-export function readSuiteVerdict() {
-  if (!process.env.GH_TOKEN) return null;
-  const r = sh('curl', ['-s', '-m', '20', '-H', `Authorization: Bearer ${process.env.GH_TOKEN}`,
-    '-H', 'Accept: application/vnd.github+json',
-    'https://api.github.com/repos/AlgoVaultLabs/crypto-quant-signal-mcp/actions/runs?per_page=1']);
-  if (!r.ok) return null;
-  try {
-    const run = JSON.parse(r.out).workflow_runs?.[0];
-    if (!run || run.status !== 'completed') return null;
-    // CH2 makes the run FAIL on any non-PASS verdict, so a completed success is exactly
-    // SUITE_VERDICT in {PASS, PASS_AFTER_ISOLATION}.
-    return run.conclusion === 'success' ? 'PASS' : 'FAIL';
-  } catch {
-    return null;
+export function parseBadgeTitle(svg) {
+  const m = /<title>([^<]*)<\/title>/.exec(String(svg ?? ''));
+  if (!m) return 'unknown';
+  const state = m[1].split(' - ').pop().trim().toLowerCase();
+  if (state === 'passing') return 'passing';
+  if (state === 'failing') return 'failing';   // `cancelled` also renders here — deliberate
+  return 'unknown';                            // 'no status', 'unknown', anything new
+}
+
+export function readDeployLaneHealth(url = BADGE_URL) {
+  const r = sh('curl', ['-sS', '-m', '20', '-H', 'Cache-Control: no-cache', url]);
+  if (!r.ok || !r.out) return 'unknown';
+  return parseBadgeTitle(r.out);
+}
+
+/* ─────────────── the local, unmetered source for "does this delta deploy?" ─────────────── */
+
+export const MIRROR = '/var/lib/algovault-monitoring/cqsm-mirror.git';
+
+/**
+ * A blob-filtered BARE mirror, refreshed per run. Git protocol, so no REST budget; measured
+ * 2.7 MB for this repo, and `git diff --name-only` needs trees, not blobs.
+ *
+ * NEVER fetch into /opt/crypto-quant-signal-mcp. That is a live deploy root (its HEAD is the
+ * deployed SHA), and an unattended job does not mutate deploy state — detect, alert, escalate.
+ * This mirror is the canary's OWN state, which is why it gets its own inventory row.
+ */
+export function ensureMirror(remote, path = MIRROR) {
+  if (existsSync(`${path}/HEAD`)) {
+    const f = sh('git', ['--git-dir', path, 'fetch', '--quiet', 'origin', '+refs/heads/*:refs/heads/*']);
+    return f.ok ? { ok: true, mode: 'fetch' } : { ok: false, err: `fetch failed: ${f.err ?? ''}`.trim() };
   }
+  try { mkdirSync(dirname(path), { recursive: true }); } catch { /* non-fatal */ }
+  const c = sh('git', ['clone', '--filter=blob:none', '--bare', '--quiet', remote, path]);
+  return c.ok ? { ok: true, mode: 'clone' } : { ok: false, err: `clone failed: ${c.err ?? ''}`.trim() };
+}
+
+/** Aggregate changed-file list, or null. --no-renames keeps it deterministic and blob-free. */
+export function changedFilesBetween(a, b, path = MIRROR) {
+  const r = sh('git', ['--git-dir', path, 'diff', '--no-renames', '--name-only', a, b]);
+  if (!r.ok) return null;
+  const files = r.out.split('\n').filter(Boolean);
+  return files.length ? files : null; // two differing SHAs always differ in >=1 file
+}
+
+/**
+ * deploy.yml's paths-ignore, read AT THE PINNED mainHead SHA.
+ *
+ * Never hardcode the list — a duplicated fact that goes stale silently, and this repo already
+ * deleted one paths-ignore enumeration from CLAUDE.md for exactly that. And never read it by
+ * ref form: a CDN-cached raw read is controlled by a cache-buster or a pinned SHA. mainHead is
+ * already in hand, so it is pinned and the cache question does not arise.
+ */
+export function readPathsIgnoreAt(sha) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha ?? ''))) return null;
+  const r = sh('curl', ['-sS', '-m', '20',
+    `https://raw.githubusercontent.com/AlgoVaultLabs/crypto-quant-signal-mcp/${sha}/.github/workflows/deploy.yml`]);
+  if (!r.ok || !r.out) return null;
+  return parsePathsIgnore(r.out);
 }
 
 const LOG = '/var/log/deploy-drift-canary.log';
@@ -316,6 +598,35 @@ function log(msg) {
   }
 }
 
+/**
+ * The alert BODY, as a pure function so --self-test can assert the rendered text and not merely
+ * the verdict. Reverting a format string once left all nine action-verdict assertions on a
+ * sibling canary GREEN while the body it shipped was misleading — which is exactly how a
+ * misleading body survives every gate.
+ *
+ * REAL NEWLINES, NEVER %0A. send_telegram.sh does its own --data-urlencode, and that wrapper is
+ * frozen (OPS-XREPO-CI-CANARY-DARK-W1 D2 shipped a body rendering literal `%0A` to the operator).
+ */
+export function renderAlertBody({ repo, verdict, prodSha, mainHead, behindMs, laneHealth }) {
+  const lines = [
+    `🚨 deploy drift — ${repo}`,
+    `verdict: ${verdict.verdict}`,
+    `prod: ${prodSha ?? 'UNKNOWN'}`,
+    `main: ${mainHead ?? 'UNKNOWN'}`,
+    `behind: ${Math.round(behindMs / 60000)}m`,
+    `reason: ${verdict.reason}`,
+  ];
+  if (verdict.owner) lines.push(`owner: ${verdict.owner}`);
+  if (laneHealth) {
+    // The caveat is IN THE BODY, not just in a source comment. An operator told the binding is
+    // loose can act on it; one who is not will over-trust a green lane. The badge reports the
+    // newest run on main, which need not be main's CURRENT head.
+    lines.push(`deploy lane (latest run on main, NOT necessarily this sha): ${laneHealth}`);
+  }
+  if (verdict.next) lines.push(`next: ${verdict.next}`);
+  return lines.join('\n');
+}
+
 function main() {
   const now = Date.now();
   const ledger = readLedger(LEDGER);
@@ -328,11 +639,29 @@ function main() {
     const prodSha = prod.ok ? prod.sha : null;
     const mainHead = head.ok ? head.sha : null;
 
+    // Both legs are consulted ONLY when prod is behind; in-sync short-circuits before either
+    // costs a network round-trip.
+    const behind = Boolean(prodSha && mainHead && prodSha !== mainHead);
+    let nonDeploying = null;
+    let laneHealth = null;
+    if (behind && repo.deployPathsIgnore) {
+      const mir = ensureMirror(repo.remote);
+      if (!mir.ok) log(`${repo.name}: mirror unavailable (${mir.err}) — non-deploying test INCONCLUSIVE`);
+      else nonDeploying = isNonDeployingDelta(changedFilesBetween(prodSha, mainHead), readPathsIgnoreAt(mainHead));
+    }
+    if (behind && repo.laneBadge) laneHealth = readDeployLaneHealth(repo.laneBadge);
+
     const verdict = classifyDrift({
       prodSha,
       mainHead,
-      // Only consulted when prod is BEHIND; in-sync short-circuits before this matters.
-      suiteVerdict: prodSha && mainHead && prodSha !== mainHead ? readSuiteVerdict() : null,
+      // suiteVerdict is a PER-SHA verdict and nothing on this host can produce one, so it stays
+      // null in production. It is NOT dead code: it is the only input that can yield
+      // DRIFT_RECOVERABLE, the only verdict decideRecovery() acts on. Keeping it null here is
+      // what makes auto-recovery unreachable BY CONSTRUCTION rather than by luck, and the pure
+      // classifier keeps its full graded contract for the tests.
+      suiteVerdict: null,
+      laneHealth,
+      nonDeploying,
       failingFiles: [],
       graphTouchers: [],
       sessionCommits: [],
@@ -340,11 +669,13 @@ function main() {
 
     // Per-check positive output. A guard that prints nothing when healthy is indistinguishable
     // from a guard that never ran.
-    log(`${repo.name}: prod=${prodSha ? prodSha.slice(0, 7) : 'UNKNOWN'} main=${mainHead ? mainHead.slice(0, 7) : 'UNKNOWN'} -> ${verdict.verdict} (${verdict.reason})`);
+    log(`${repo.name}: prod=${prodSha ? prodSha.slice(0, 7) : 'UNKNOWN'} main=${mainHead ? mainHead.slice(0, 7) : 'UNKNOWN'} lane=${laneHealth ?? 'n-a'} nonDeploying=${nonDeploying === null ? 'unknown' : nonDeploying} -> ${verdict.verdict} (${verdict.reason})`);
 
-    if (verdict.verdict === 'DRIFT_NONE') {
-      // Clear any drift latch: recovery and health are not events.
+    if (HEALTHY_VERDICTS.has(verdict.verdict)) {
+      // Clear any drift latch: recovery and health are not events. NON_DEPLOYING clears it too —
+      // a latch left standing would keep a resolved page's behind-clock running.
       if (next[`${repo.name}:drift`]) next = { ...next, [`${repo.name}:drift`]: undefined };
+      if (verdict.verdict !== 'DRIFT_NONE' && worst === 'DRIFT_NONE') worst = verdict.verdict;
       continue;
     }
     worst = verdict.verdict;
@@ -372,7 +703,7 @@ function main() {
     }
 
     if (behindMs > BEHIND_GRACE_MS) {
-      const body = `🚨 deploy drift — ${repo.name}\nverdict: ${verdict.verdict}\nprod: ${prodSha ?? 'UNKNOWN'}\nmain: ${mainHead ?? 'UNKNOWN'}\nbehind: ${Math.round(behindMs / 60000)}m\nreason: ${verdict.reason}${verdict.owner ? `\nowner: ${verdict.owner}` : ''}`;
+      const body = renderAlertBody({ repo: repo.name, verdict, prodSha, mainHead, behindMs, laneHealth });
       // Fail-open, severity-gated, cooldown'd by the shared wrapper — never a raw Bot API call.
       const sent = sh('sh', ['-c', `printf '%s' ${JSON.stringify(body)} | ${WRAP} DEPLOY_DRIFT CRITICAL_PERSISTENT - || true`]);
       log(`${repo.name}: alert dispatched (ok=${sent.ok})`);
@@ -390,13 +721,13 @@ function main() {
   // The wrapper owns everything else — it no-ops silently when no marker exists (nothing was
   // firing, so nothing resolved), and whether the resolution is ANNOUNCED or merely logged is
   // the registry's `announce_resolution` decision, not this canary's.
-  if (worst === 'DRIFT_NONE') {
-    const cleared = sh('sh', ['-c', `${WRAP} --clear DEPLOY_DRIFT 'deploy drift verdict=DRIFT_NONE' </dev/null || true`]);
+  if (HEALTHY_VERDICTS.has(worst)) {
+    const cleared = sh('sh', ['-c', `${WRAP} --clear DEPLOY_DRIFT 'deploy drift verdict=${worst}' </dev/null || true`]);
     log(`deploy-drift: healthy — clear dispatched (ok=${cleared.ok})`);
   }
 
   console.log(`DRIFT_VERDICT=${worst}`);
-  return worst === 'DRIFT_NONE' ? 0 : 0; // detection never fails the scheduler — it REFUSES, it does not THROW
+  return 0; // detection never fails the scheduler — it REFUSES, it does not THROW
 }
 
 if (process.argv[1] && process.argv[1].endsWith('deploy-drift-canary.mjs')) {
