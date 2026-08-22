@@ -509,6 +509,33 @@ describe('CH3 — the consumer refuses what it cannot stand behind', () => {
     expect(forward(null).sent).toBe(false);
   });
 
+  it('with NO run-id line at all — the real transitional state — it refuses on IDENTITY', { timeout: 30_000 }, () => {
+    // MEASURED on the live host 2026-08-22T09:05:01Z against /var/log/carry-labeler.log: a log
+    // written by the OLD producer has no `[detector-run]` line, so the consumer cannot confirm
+    // the marker describes the current run and refuses before the verdict is consulted. This
+    // pins the honest behaviour — the first version of the comment above claimed the legacy
+    // branch delivered a page in this window, and it does not.
+    const dir = mkdtempSync(path.join(tmpdir(), 'ch3-norun-'));
+    const wrapper = path.join(dir, 'w.sh');
+    const captured = path.join(dir, 'body.txt');
+    writeFileSync(wrapper, `#!/bin/sh\ncat > ${captured}\n`, { mode: 0o755 });
+    const log = path.join(dir, 'l.log');
+    writeFileSync(log, [
+      '[2026-08-22T02:33:26.139Z] DWR backfill start — 13499 groups over 17 venues',
+      '[capacity-shortfall] unreached_in_danger=BINANCE,BITGET,BYBIT count=3 est_venue_min_short=26 budget_min=210 venues=17',
+    ].join('\n'));
+    const driver = [
+      'import importlib.util, json',
+      `spec = importlib.util.spec_from_file_location('dlf', ${JSON.stringify(path.join(PYDIR, 'directional-label-freshness.py'))})`,
+      'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
+      `print(json.dumps({"sent": bool(m.forward_capacity_signal(${JSON.stringify(wrapper)}, ${JSON.stringify(log)}, None))}))`,
+    ].join('\n');
+    const r = spawnSync('python3', ['-c', driver], { encoding: 'utf8' });
+    expect(JSON.parse(r.stdout.trim().split('\n').pop() as string).sent).toBe(false);
+    expect(existsSync(captured)).toBe(false);          // no page
+    expect(r.stderr + r.stdout).toContain('could not determine the current run id');  // but LOUD
+  });
+
   it('the TRANSITIONAL legacy marker is adapted, and can only ever be INDETERMINATE', { timeout: 30_000 }, () => {
     // The consumer installs by reviewed SSH; the producer ships in the container image. In the
     // window between, the host runs the new consumer against the old producer — without this

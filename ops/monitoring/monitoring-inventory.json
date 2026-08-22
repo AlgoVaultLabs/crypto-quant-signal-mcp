@@ -567,7 +567,7 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "c5891d3988cc7c9e0b64f894523114b73764930efd98a668643e392391c449f0",
+      "sha256": "2d8a6cb715d893aabdaacd7d6bfe85312b89034e1c358119ed3e975d9babea2a",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
