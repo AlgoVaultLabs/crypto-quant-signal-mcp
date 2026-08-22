@@ -32,6 +32,8 @@
     "backtest": "npx tsx scripts/backtest.ts",
     "edge:audit:crypto": "node dist/scripts/calibration-audit.js --asset crypto",
     "edge:audit:crypto:edge": "node dist/scripts/calibration-audit.js --asset crypto --edge",
+    "replay:r1": "npx tsx src/scripts/verdict-mix-r1-point.ts",
+    "replay:mix": "npx tsx src/scripts/verdict-mix-report.ts",
     "build:landing": "tsc && node scripts/build_docs.mjs && node scripts/build_landing.mjs",
     "snapshot:capabilities": "tsc && node scripts/snapshot_capabilities.mjs",
     "snapshot:capabilities:live": "tsc && node scripts/snapshot_capabilities.mjs --live",
