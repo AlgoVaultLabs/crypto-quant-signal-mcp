@@ -265,11 +265,19 @@ def forward_capacity_signal(wrapper: str, log_path: str | None = None, still_bre
         # TRANSITIONAL — the legacy `[capacity-shortfall]` marker.
         #
         # This consumer is installed by reviewed SSH; the PRODUCER ships in the container image
-        # and therefore lands on its own deploy cadence. Between the two there is a window where
-        # the host runs the new consumer against a producer that still emits the old marker.
-        # Without this branch that window is a DARK GUARD — the capacity backstop silently pages
-        # nobody while every log line looks healthy, which is the exact failure mode this wave
-        # exists to retire, reintroduced by its own rollout.
+        # and lands on its own deploy cadence. Between the two, the host runs the new consumer
+        # against a producer that still emits the old marker.
+        #
+        # WHAT THIS BRANCH ACTUALLY BUYS, stated precisely because the first version of this
+        # comment overclaimed it. It does NOT deliver a page during that window: a log written
+        # by the old producer carries no `[detector-run] run_id=` line either, so `current` is
+        # None and `decide()` refuses on IDENTITY before the verdict is ever consulted —
+        # MEASURED on the live host against the real 2026-08-22 log, which refused with
+        # "consumer could not determine the current run id". What it buys is that the refusal is
+        # REASONED and LOGGED rather than the consumer falling out at "no envelope found", and
+        # that the moment a run id IS present the marker is adapted rather than dropped. The
+        # window is therefore a VISIBLE INDETERMINATE, not a delivered page and not silence —
+        # which is the contract, not a workaround for it.
         #
         # A legacy marker carries NO run outcome, so we genuinely cannot tell whether the run
         # that wrote it finished. `run_outcome: unknown` is not conclusive, so the contract

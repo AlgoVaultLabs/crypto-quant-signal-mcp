@@ -53,7 +53,7 @@
       "schedule": "57 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "669735f54cfc368f68d4480ec202c7542adf2a49ba78bfa228a77f932e15cc5a",
+      "sha256": "3313542d33125c6c83144c6067a7eeef42a42f1e019ad5aaea951e84617ae1b2",
       "alert_ids": [
         "MONITORING_INVENTORY_DRIFT",
         "SOT_PARITY_SUSTAINED_DRIFT"
@@ -495,7 +495,7 @@
       "schedule": "53 7 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "ae0f7c31a1bbaa339eef2c7c8b4d9fcf530aa57773ac5fb460e101acad4cfc19",
+      "sha256": "c711a41a797266d3e2ee9951a4e3fa6b8e8376d3d27ee3e7e62c81340b1f7702",
       "alert_ids": [
         "PAYMENT_DECLINE_DRIFT"
       ],
@@ -567,7 +567,7 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "c5891d3988cc7c9e0b64f894523114b73764930efd98a668643e392391c449f0",
+      "sha256": "2d8a6cb715d893aabdaacd7d6bfe85312b89034e1c358119ed3e975d9babea2a",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
@@ -715,7 +715,15 @@
       ],
       "owner_wave": "OPS-PFE-METRIC-INTEGRITY-W1",
       "pending_since": "2026-07-21",
-      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot \u2014 so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true. Fired once at 2026-07-21T04:02Z (install-time smoke)."
+      "notes": "R8 RECURRENCE guard (its own docstring), not a one-shot \u2014 so 'retired' would be false. It watches the frozen-row + suppression rates of the emit-time book-liveness gate, and BOTH presuppose the gate is ENFORCING. status.md:1708 records 'The emit gate ships DARK', and EMIT_BOOK_LIVENESS_ENABLED (the kill switch, src/lib/book-liveness.ts:100) is unset in the live container, so the mode is forced 'off'. Installing it now would measure a dark gate. UNBLOCK CONDITION: install when EMIT_BOOK_LIVENESS_ENABLED flips to 1/true \u2014 now DECLARED in the `blocked_on` block and evaluated every run by monitoring-inventory-reconcile.py, rather than left as prose for whoever reads the row. Fired once at 2026-07-21T04:02Z (install-time smoke).",
+      "blocked_on": {
+        "kind": "container_env",
+        "container": "crypto-quant-signal-mcp-mcp-server-1",
+        "var": "EMIT_BOOK_LIVENESS_ENABLED",
+        "met_when": "truthy",
+        "review_by": "2026-11-20",
+        "reason": "The UNBLOCK CONDITION already stated in `notes`, moved into DATA so the reconciler can MEASURE it instead of clocking 30 days past a debt nobody can legally discharge. This canary watches the frozen-row + suppression rates of the emit-time book-liveness gate, and both presuppose the gate is ENFORCING. EMIT_BOOK_LIVENESS_ENABLED is unset in the live container (measured 2026-08-22: `docker exec ... printenv` -> rc=1), so the mode is forced 'off' and installing now would measure a DARK gate \u2014 exactly what 'prove a revived guard FIRES before calling it live' forbids. While the var stays falsy the row reports BLOCKED and does not page; the DAY it flips truthy the row breaches IMMEDIATELY at any age, which is the half of this that makes it a gate and not a mute button. Past review_by the block itself becomes the debt and breaches regardless."
+      }
     },
     {
       "id": "nav-drift-canary",
