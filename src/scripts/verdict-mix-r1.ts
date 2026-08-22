@@ -131,8 +131,17 @@ function main(): number {
   return 1;
 }
 
-// Deliberately NOT `runScript()`: this is a GATE, and its exit code IS its verdict
-// (0 PASS / 1 FAIL / 3 INDETERMINATE). runScript collapses every outcome to 0-or-1, which
-// would erase the INDETERMINATE code. It opens no pool and cannot hang, so the zombie
-// class `script-exit-lifecycle-canary` guards against is not reachable here.
-process.exit(main());
+// GUARDED with the `process.argv[1]` idiom — one of the four spellings
+// `scripts/check-entrypoint-guards.mjs` accepts — rather than `require.main === module`.
+//
+// Not a style choice, and the two nearby gates are why. The entrypoint gate is fail-closed and
+// demands SOME guard, because anything importing this file would otherwise RUN it. But
+// `script-exit-lifecycle-canary` adds: a file guarded with `require.main === module` MUST
+// terminate through `runScript()`. That wrapper exits 0 on return and 1 on throw, so it would
+// map this gate's THREE verdicts (0 PASS / 1 FAIL / 3 INDETERMINATE) onto two — and a FAILING
+// R1 would exit 0, which is precisely the fail-open a verdict-token gate exists to prevent.
+// The argv1 idiom satisfies the entrypoint gate, leaves the exit contract intact, and keeps the
+// file import-safe. This script opens no pool, so the zombie class is unreachable regardless.
+if (process.argv[1]?.endsWith('verdict-mix-r1.ts') || process.argv[1]?.endsWith('verdict-mix-r1.js')) {
+  process.exit(main());
+}
