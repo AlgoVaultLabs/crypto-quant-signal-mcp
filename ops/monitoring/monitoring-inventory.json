@@ -567,7 +567,7 @@
       "schedule": "41 6 * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "7af1fb24590ed4a883ca2b27ba2087c26e2881ed79654777c73866e1d47b84c8",
+      "sha256": "c5891d3988cc7c9e0b64f894523114b73764930efd98a668643e392391c449f0",
       "alert_ids": [
         "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
         "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL"
@@ -1499,11 +1499,11 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "imported-by:directional-label-freshness.py",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "0ec9f061b4887d6f29e345d1d042ade0d8fda7af9215e25bfd52eca14d9b1750",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-SIGNAL-CONTRACT-W1",
-      "notes": "CONSUMER half of the DETECTOR_ENVELOPE contract (CH2). Reads the declaration ops/monitoring/detector-envelope.schema.json, which declaration-sync.sh syncs; this file is an ARTIFACT and is installed by reviewed SSH, never by that script. install_state is 'pending' DELIBERATELY and it is declared debt, not neglect: CH3 is the first adopter and installs it alongside directional-label-freshness.py in one reviewed step with a pre-write backup. Installing a library before its only caller uses it would be an unreviewed privileged mutation with no consumer \u2014 'installed is not working', and a dark artifact exiting 0 is indistinguishable from a healthy one. Self-test: python3 detector_envelope.py --self-test, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE."
+      "notes": "CONSUMER half of the DETECTOR_ENVELOPE contract (CH2). Reads the declaration ops/monitoring/detector-envelope.schema.json, which declaration-sync.sh syncs; this file is an ARTIFACT and is installed by reviewed SSH, never by that script. INSTALLED by CH3, the first adopter, alongside directional-label-freshness.py in one reviewed step with pre-write backups. Installing a library before its only caller uses it would be an unreviewed privileged mutation with no consumer \u2014 'installed is not working', and a dark artifact exiting 0 is indistinguishable from a healthy one. Self-test: python3 detector_envelope.py --self-test, token DETECTOR_ENVELOPE_VERDICT=PASS|FAIL|INDETERMINATE."
     },
     {
       "id": "detector-envelope-schema",
@@ -1514,11 +1514,11 @@
       "criticality": "load-bearing",
       "schedule": null,
       "invoked_by": "called-by:detector_envelope.py",
-      "install_state": "pending",
+      "install_state": "installed",
       "sha256": "2bd26c18fb53ec443fb79493a7f8e455b867ca496bde15508744ffbcf6362e22",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-SIGNAL-CONTRACT-W1",
-      "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. install_state 'pending' until CH3, the first adopter, installs the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted."
+      "notes": "The DETECTOR_ENVELOPE contract \u2014 ONE SoT read by BOTH the TypeScript producer (src/lib/detector-envelope.ts) and the Python consumer (ops/monitoring/detector_envelope.py). It is a DECLARATION: declaration-sync.sh moves it (scope signal-1, its only reader's host); detector_envelope.py beside it is an ARTIFACT installed by reviewed SSH. INSTALLED by CH3, the first adopter, which installed the pair in one reviewed step. criticality load-bearing because a host copy that drifts from this file would let the consumer accept an envelope the producer could not have emitted."
     }
   ],
   "_host_label_semantics": "`host` and `installed_at[].host` are OPAQUE STABLE LABELS (`signal-1`, `aoe-1`), never addresses. Label \u2192 address resolution happens in ~/.ssh/config or the host's own MONITORING_* env, NEVER from this committed JSON \u2014 this repo is PUBLIC. Rows predating OPS-AOE-MONITORING-PARITY-W1 still carry a literal address in `host`; they are NOT retro-scrubbed, because deleting a string from a tracked file does not un-publish it (it persists in git history and in every published image layer). Each reconciler instance declares the labels it owns via MONITORING_HOST_LABELS and evaluates only those rows.",

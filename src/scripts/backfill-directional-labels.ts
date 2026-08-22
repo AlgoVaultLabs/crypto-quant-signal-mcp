@@ -45,6 +45,7 @@ import {
 } from './directional-labeler.js';
 import { sloHoursFor as defaultSloHoursFor } from '../lib/venue-slo-tiers.js';
 import { isStopRequested, installGracefulStop } from '../lib/graceful-stop.js';
+import { buildEnvelope, isConforming, type Verdict } from '../lib/detector-envelope.js';
 
 const DELAY_BETWEEN_FETCHES_MS = 250;
 const FETCH_BUFFER_CANDLES = 2; // pad each fetched range slightly
@@ -368,15 +369,45 @@ export async function runVenueRotation<G extends { exchange: string; coin: strin
 
 /**
  * OPS-LABEL-FRESHNESS-W1 R2 — capacity-honesty. After an SLO-ordered run, quantify whether
- * a venue was left UNREACHED that will breach its OWN tier SLO before the next nightly. If
- * so the budget structurally cannot keep every venue in-SLO — fire the signal AT the shortfall
- * (Objective #2), not two days later via a downstream page. Estimated shortfall = unreached-in-
- * danger count × the median reached-venue minutes (a lower bound; real backlogs are larger).
+ * a venue was left UNREACHED that will breach its OWN tier SLO before the next nightly.
+ *
+ * OPS-MONITORING-SIGNAL-CONTRACT-W1 CH3 — AND SAY SO ONLY WHEN THE RUN EARNED IT.
+ *
+ * THE INCIDENT: on 2026-08-22 this function published `est_venue_min_short=26` as a structural
+ * capacity verdict from a run SIGTERM'd at 46.6 of 210 minutes — 22% of budget, 163 minutes
+ * unspent, 4 of 17 venues reached. It could not have known better: it read only `s.venue` and
+ * `s.elapsedS`, never `s.outcome`, and the emit gate asked "were budgets CONFIGURED" rather than
+ * "did the budget EXPIRE". A run killed 163 minutes early is evidence of nothing about capacity.
+ *
+ * It now derives the RUN OUTCOME and returns a verdict with it. A non-conclusive outcome yields
+ * `INDETERMINATE` — never silence. The truncation stays fully visible; only the conclusion the
+ * run did not reach is withheld. `estVenueMinShort` is still REPORTED, because it is a
+ * measurement; what it may no longer do is arrive labelled as a capacity ceiling.
  */
 export interface CapacityShortfall {
   shortfall: boolean;
   unreachedInDanger: string[];
   estVenueMinShort: number;
+  /** The run's effective outcome, from the per-venue summaries plus the real budget state. */
+  runOutcome: string;
+  /** PASS = measured, in-SLO · FAIL = measured, short · INDETERMINATE = the run did not finish. */
+  verdict: Verdict;
+}
+
+/**
+ * The run's outcome, worst-first. `stopped` dominates everything: a SIGTERM at any venue means
+ * the rotation was decapitated, and whatever the later venues would have done is unknown.
+ */
+export function deriveRunOutcome(summaries: VenueRunSummary[], budgetExpired: boolean): string {
+  if (summaries.some((s) => s.outcome === 'stopped')) return 'stopped';
+  if (budgetExpired || summaries.some((s) => s.outcome === 'global-budget')) return 'global-budget';
+  if (summaries.some((s) => s.outcome === 'venue-error' || s.outcome === 'venue-circuit-break')) {
+    // A poisoned venue yielded early, but the rotation itself ran to completion — the budget
+    // question was still answered. `complete` here would hide it, so it keeps its own name and
+    // the schema decides whether that name is conclusive.
+    return 'venue-circuit-break';
+  }
+  return 'complete';
 }
 export function detectCapacityShortfall(
   summaries: VenueRunSummary[],
@@ -385,6 +416,9 @@ export function detectCapacityShortfall(
   nowSec: number,
   sloHoursFor: (venue: string) => number = defaultSloHoursFor,
   nextRunIntervalH = 24,
+  // TRAILING + OPTIONAL so every existing caller and test keeps working unchanged — the
+  // enum-widening rule: never insert a required param mid-signature.
+  budgetExpired = false,
 ): CapacityShortfall {
   const reached = new Set(summaries.map((s) => s.venue));
   const unreached = venueOrder.filter((v) => !reached.has(v));
@@ -394,10 +428,15 @@ export function detectCapacityShortfall(
   });
   const durations = summaries.map((s) => s.elapsedS / 60).filter((m) => m > 0).sort((a, b) => a - b);
   const median = durations.length ? durations[Math.floor(durations.length / 2)] : 45;
+  const shortfall = inDanger.length > 0;
+  const runOutcome = deriveRunOutcome(summaries, budgetExpired);
+  const conclusive = runOutcome === 'complete' || runOutcome === 'global-budget' || runOutcome === 'venue-budget';
   return {
-    shortfall: inDanger.length > 0,
+    shortfall,
     unreachedInDanger: inDanger,
     estVenueMinShort: Math.round(inDanger.length * median),
+    runOutcome,
+    verdict: conclusive ? (shortfall ? 'FAIL' : 'PASS') : 'INDETERMINATE',
   };
 }
 
@@ -583,6 +622,11 @@ async function main(): Promise<void> {
   const nowSec = Math.floor(Date.now() / 1000);
   const venueOrder = orderVenuesBySloDeadline([...byVenue.keys()], frontier, nowSec);
   const budget = makeBudget(cli);
+  // ONE run identity, PRINTED BY THE PRODUCER — never re-derived by the consumer from a log
+  // timestamp. `budget.startMs` and the `DWR backfill start` line's own `ts()` are milliseconds
+  // apart and differently formatted, so a consumer reconstructing the id would compare two
+  // strings that are never equal and refuse every genuine forward.
+  console.log(`[detector-run] run_id=dwr-${new Date(budget.startMs).toISOString()}`);
   console.log(
     `[${ts()}] DWR backfill start — ${groups.length} groups over ${venueOrder.length} venues ` +
     `(rotation: ${venueOrder.join('>')}), specs=[${cli.specs.map((s) => s.spec).join(', ')}]` +
@@ -642,18 +686,49 @@ async function main(): Promise<void> {
     );
   });
 
-  // Capacity-honesty (Objective #2): if an SLO-ordered run still left a venue UNREACHED that
-  // will breach its own tier SLO before the next nightly, the budget structurally cannot fit —
-  // emit the signal AT the shortfall (freshness runs only). A host consumer (the freshness
-  // canary) forwards it via send_telegram.sh with the severity/cooldown/DRY_RUN gates.
+  // Capacity-honesty (Objective #2), now under the DETECTOR_ENVELOPE contract (CH3).
+  //
+  // The emit gate WAS `if (cli.timeBudgetMin !== undefined)` — "were budgets configured", which
+  // is true on every nightly and says nothing about whether this run finished. It is now the
+  // real question, asked of the real budget: did it EXPIRE. And the envelope is emitted on every
+  // budgeted run, not only on a shortfall, because a run that could not measure must SAY so —
+  // silence is what let a truncated night look like a clean one.
   if (cli.timeBudgetMin !== undefined) {
-    const cap = detectCapacityShortfall(summaries, venueOrder, frontier, nowSec);
-    if (cap.shortfall) {
-      console.log(
-        `[capacity-shortfall] unreached_in_danger=${cap.unreachedInDanger.join(',')} ` +
-        `count=${cap.unreachedInDanger.length} est_venue_min_short=${cap.estVenueMinShort} ` +
-        `budget_min=${cli.timeBudgetMin} venues=${venueOrder.length} recommended_wave=OPS-LABEL-CAPACITY-W{NEXT}`,
-      );
+    const budgetExpired = budget.globalExpired();
+    const cap = detectCapacityShortfall(summaries, venueOrder, frontier, nowSec, defaultSloHoursFor, 24, budgetExpired);
+    const startedAt = new Date(budget.startMs).toISOString();
+    const env = buildEnvelope({
+      detector: 'directional-label-capacity',
+      // The run's IDENTITY, derived from its own start instant — the consumer re-derives the
+      // same string from the log's last `DWR backfill start` line, so a marker from an earlier
+      // run cannot masquerade as this one's.
+      runId: `dwr-${startedAt}`,
+      runStartedAt: startedAt,
+      runOutcome: cap.runOutcome,
+      producedAt: new Date(nowSec * 1000).toISOString(),
+      observationWindow: { from: startedAt, to: new Date(nowSec * 1000).toISOString() },
+      verdict: cap.verdict,
+      // EVIDENCE, not narrative. Every value here is measured by this run, and the schema caps
+      // string values at a word count that no sentence about mechanism can fit inside.
+      evidence: {
+        unreached_in_danger: cap.unreachedInDanger.join(',') || 'none',
+        unreached_count: cap.unreachedInDanger.length,
+        est_venue_min_short: cap.estVenueMinShort,
+        venues_reached: summaries.length,
+        venues_total: venueOrder.length,
+        rotation: venueOrder.join('>'),
+        elapsed_min: Math.round(((Date.now() - budget.startMs) / 60_000) * 10) / 10,
+        budget_min: cli.timeBudgetMin,
+        budget_expired: budgetExpired,
+      },
+    });
+    // Refuse to emit a signal we would ourselves reject. A producer that can publish a
+    // non-conforming envelope makes the consumer's validation the only guard, and one guard is
+    // how the class returns.
+    if (!isConforming(env)) {
+      console.error(`[detector-envelope] REFUSING to emit a non-conforming envelope for ${env.detector}`);
+    } else {
+      console.log(`[detector-envelope] ${JSON.stringify(env)}`);
     }
   }
 

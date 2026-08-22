@@ -53,7 +53,11 @@ import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import detector_envelope as de  # noqa: E402  (host-local sibling; see the inventory row)
 
 def load_tiers(path: str | None = None):
     """OPS-LABEL-FRESHNESS-W1 R2 — single-derivation with the labeler. Read the emitted SoT
@@ -198,38 +202,144 @@ def attempt_recovery(venue: str) -> bool:
     if r.returncode == 0:
         log(f"RECOVERY ran targeted re-label venue={venue} cap={RECOVERY_CAP_MIN}m")
         return True
-    log(f"RECOVERY venue={venue} did-not-run exit={r.returncode} (flock busy or backfill error) — fail-open: {r.stderr.strip()[:160]}")
+    # D4 — 137 is 128+9, SIGKILL. Folding it into "flock busy or backfill error" destroys the
+    # diagnosis at the point of capture: on 2026-08-22 the BYBIT recovery died 137 because a
+    # deploy recreated the container mid-flight, and the log said only that it "did not run".
+    cause = _classify_recovery_exit(r.returncode)
+    log(f"RECOVERY venue={venue} did-not-run exit={r.returncode} ({cause}) — fail-open: {r.stderr.strip()[:160]}")
     return False
 
 
-def forward_capacity_signal(wrapper: str, log_path: str | None = None) -> bool:
-    """Forward the labeler's `[capacity-shortfall]` marker (Objective #2) from the LAST nightly
-    run via the wrapper (which owns severity/cooldown/DRY_RUN). Scoped to the most recent run
-    (after the last 'DWR backfill start'). Fail-open; returns True iff a marker was forwarded."""
+def _classify_recovery_exit(code: int) -> str:
+    """Name the cause instead of a catch-all. A diagnosable cause folded into a bucket is
+    evidence destroyed at the point of capture."""
+    if code == 137:
+        return "SIGKILL (128+9) — the container was stopped mid-run, typically a deploy recreate"
+    if code == 143:
+        return "SIGTERM (128+15) — the process was asked to stop mid-run"
+    if code == 1:
+        return "flock busy or backfill error"
+    return "unclassified non-zero exit"
+
+
+def forward_capacity_signal(wrapper: str, log_path: str | None = None, still_breaching=None) -> bool:
+    """Forward the labeler's DETECTOR_ENVELOPE (Objective #2) from the LAST nightly run.
+
+    OPS-MONITORING-SIGNAL-CONTRACT-W1 CH3 — D2 + D3.
+
+    D2. The body is rendered ENTIRELY from `evidence`. The previous body asserted "SLO-ordered,
+    so majors were served first; the shortfall is the long-tail overflow" — both halves false,
+    and structurally inverted, because majors carry a 24h SLO against long-tail 72h and are
+    therefore the venues the selector is MOST likely to name. Prose in an alert body is a claim
+    nobody re-checks when the code beneath it changes.
+
+    D3. Two refusals, and they are different refusals:
+      * an envelope whose `run_id` is not the CURRENT run is refused by `decide()`;
+      * a venue that this script's own recovery step has already REPAIRED is dropped here, and
+        if nothing is left in danger, nothing is forwarded. On 2026-08-22 the page named BINANCE
+        and BITGET at 06:53:19Z — 8m39s and 49s after this very script repaired them.
+
+    Fail-open; returns True iff a page was forwarded.
+    """
     log_path = log_path or os.environ.get("LF_LABELER_LOG", "/var/log/carry-labeler.log")
     try:
         lines = Path(log_path).read_text(errors="replace").splitlines()[-6000:]
-    except Exception:
+    except Exception as exc:
+        log(f"CAPACITY_SIGNAL FAIL_OPEN: cannot read {log_path}: {exc}")
         return False
+
+    # The CURRENT run id, as the PRODUCER printed it — never re-derived from a log timestamp.
+    run_ids = [l.split("run_id=", 1)[1].strip() for l in lines if "[detector-run] run_id=" in l]
+    current = run_ids[-1] if run_ids else None
+
     starts = [i for i, l in enumerate(lines) if "DWR backfill start" in l]
-    if not starts:
+    scope = lines[starts[-1]:] if starts else lines
+    raw = next((l for l in reversed(scope) if "[detector-envelope]" in l), None)
+    if raw:
+        try:
+            env = json.loads(raw.split("[detector-envelope]", 1)[1].strip())
+        except Exception as exc:
+            log(f"CAPACITY_SIGNAL INDETERMINATE: envelope is not parseable JSON: {exc}")
+            return False
+    else:
+        # TRANSITIONAL — the legacy `[capacity-shortfall]` marker.
+        #
+        # This consumer is installed by reviewed SSH; the PRODUCER ships in the container image
+        # and therefore lands on its own deploy cadence. Between the two there is a window where
+        # the host runs the new consumer against a producer that still emits the old marker.
+        # Without this branch that window is a DARK GUARD — the capacity backstop silently pages
+        # nobody while every log line looks healthy, which is the exact failure mode this wave
+        # exists to retire, reintroduced by its own rollout.
+        #
+        # A legacy marker carries NO run outcome, so we genuinely cannot tell whether the run
+        # that wrote it finished. `run_outcome: unknown` is not conclusive, so the contract
+        # forces INDETERMINATE — the honest answer, and the same one the incident deserved.
+        legacy = next((l for l in reversed(scope) if "[capacity-shortfall]" in l), None)
+        if not legacy:
+            log("CAPACITY_SIGNAL INDETERMINATE: the last run emitted no [detector-envelope] "
+                "and no legacy [capacity-shortfall] line")
+            return False
+        detail = legacy.split("[capacity-shortfall]", 1)[1].strip()
+        ev = {}
+        for tok in detail.split():
+            if "=" in tok:
+                k, v = tok.split("=", 1)
+                ev[k] = v
+        ev.pop("recommended_wave", None)   # a remedy is not a measurement
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        env = {
+            "schema_version": 1, "detector": "directional-label-capacity",
+            "verdict": "INDETERMINATE", "run_id": current or "legacy-marker",
+            "run_started_at": now_iso, "run_outcome": "unknown",
+            "produced_at": now_iso,
+            "observation_window": {"from": now_iso, "to": now_iso},
+            "evidence": ev or {"legacy_marker": "present"},
+        }
+        log("CAPACITY_SIGNAL legacy [capacity-shortfall] marker adapted — run_outcome=unknown, "
+            "so no capacity conclusion is possible from it")
+
+    try:
+        schema = de.load_schema()
+    except Exception as exc:
+        # An unreadable contract is INDETERMINATE, never a permissive default.
+        log(f"CAPACITY_SIGNAL INDETERMINATE: cannot read the envelope schema: {exc}")
         return False
-    marker = next((l for l in lines[starts[-1]:] if "[capacity-shortfall]" in l), None)
-    if not marker:
+
+    decision = de.decide(env, current, schema=schema)
+    if decision.action == de.REFUSE:
+        log(f"CAPACITY_SIGNAL REFUSED ({decision.verdict}): {decision.reason}")
         return False
-    detail = marker.split("[capacity-shortfall]", 1)[1].strip()
+
+    # D3 — drop venues this run's recovery already repaired. `still_breaching is None` means the
+    # caller could not determine the post-recovery set, which is NOT the same as "none healed":
+    # in that case nothing is dropped and the envelope is forwarded as measured.
+    named = [v for v in str(env["evidence"].get("unreached_in_danger", "")).split(",") if v and v != "none"]
+    if still_breaching is not None and named:
+        healed = [v for v in named if v not in still_breaching]
+        remaining = [v for v in named if v in still_breaching]
+        if healed:
+            log(f"CAPACITY_SIGNAL dropped {healed} — repaired by this run's recovery step")
+        if not remaining:
+            log("CAPACITY_SIGNAL REFUSED (PASS): every named venue was repaired before this page")
+            return False
+        env = dict(env)
+        env["evidence"] = dict(env["evidence"])
+        env["evidence"]["unreached_in_danger"] = ",".join(remaining)
+        env["evidence"]["unreached_count"] = len(remaining)
+        env["evidence"]["dropped_after_recovery"] = ",".join(healed) or "none"
+
     body = "\n".join([
-        "🛑 DIRECTIONAL_LABEL_CAPACITY_SHORTFALL",
-        "The nightly labeler could not keep every venue inside its tier SLO within the budget "
-        "(SLO-ordered, so majors were served first; the shortfall is the long-tail overflow).",
-        detail,
-        "Action: dispatch OPS-LABEL-CAPACITY-W{NEXT} via Cowork → Claude Code",
-        "Source log: /var/log/carry-labeler.log",
+        f"{'🛑' if decision.verdict == 'FAIL' else '❓'} DIRECTIONAL_LABEL_CAPACITY_SHORTFALL",
+        de.render_body(env, schema),
+        f"Action: dispatch OPS-LABEL-CAPACITY-W{{NEXT}} via Cowork → Claude Code"
+        if decision.verdict == "FAIL" else
+        "Action: none — the labeler could not complete its measurement; no capacity claim is made",
+        f"Source log: {log_path}",
     ])
     try:
         subprocess.run([wrapper, "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL", "CRITICAL_PERSISTENT", "-"],
                        input=body, text=True, timeout=60)
-        log(f"CAPACITY_SIGNAL_FORWARDED {detail[:120]}")
+        log(f"CAPACITY_SIGNAL_FORWARDED verdict={decision.verdict} run={env['run_id']} outcome={env['run_outcome']}")
         return True
     except Exception as exc:
         log(f"CAPACITY_SIGNAL FAIL_OPEN: {exc}")
@@ -293,6 +403,7 @@ def main(argv: list[str]) -> int:
     # breaching major, then re-census: a major that HEALS drops out of majors_bad here and
     # never pages (silent — recovery alerts are noise). A synthetic --force-stale venue has
     # no real target, so it is skipped (the page path still proves the two-tier contract).
+    still_breaching = {v for v, _ in majors_bad}
     if RECOVERY_ENABLED and majors_bad:
         attempted = [v for v, _ in majors_bad if v != force_stale and attempt_recovery(v)]
         if attempted:
@@ -302,6 +413,8 @@ def main(argv: list[str]) -> int:
                 now = now_epoch()
                 digest, majors_bad, tail_bad = evaluate(rows, force_stale, now)
                 still = {v for v, _ in majors_bad}
+                # D3 — the POST-recovery view is what the capacity page must be judged against.
+                still_breaching = still
                 healed = [v for v in attempted if v not in still]
                 if healed:
                     log(f"RECOVERY_HEALED {healed} — silent, no page")
@@ -309,10 +422,16 @@ def main(argv: list[str]) -> int:
                     log(f"post-recovery digest {line}")
             except Exception as exc:  # verify failed → fall through to the page path on the pre-recovery view
                 log(f"RECOVERY re-census FAIL_OPEN: {exc}")
+                # We attempted repairs and then could not confirm what healed. That is a
+                # NON-ANSWER, and passing the stale pre-recovery set would let the page name a
+                # venue we may well have just fixed. None => drop nothing, claim nothing.
+                still_breaching = None
 
-    # Objective #2 backstop: forward the labeler's `[capacity-shortfall]` marker from the last
-    # nightly run (the wrapper owns severity/cooldown/DRY_RUN gates). Independent of the page path.
-    forward_capacity_signal(wrapper)
+    # Objective #2 backstop: forward the labeler's DETECTOR_ENVELOPE from the last nightly run
+    # (the wrapper owns severity/cooldown/DRY_RUN gates). Independent of the page path, but NOT
+    # independent of the recovery step above — it is handed the POST-recovery breach set so it
+    # cannot page for a venue this same invocation already repaired.
+    forward_capacity_signal(wrapper, still_breaching=still_breaching)
 
     try:
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
