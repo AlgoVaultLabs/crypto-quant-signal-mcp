@@ -41,6 +41,20 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # workflow_dispatch — RELEASE-v1.28.0-AND-README-LINK-GATE-W1.
+  #
+  # The tag-triggered path is and remains canonical. This door exists because a tag-triggered
+  # publish can fail on something that is fixed on `main` but frozen in the tag tree — which is
+  # exactly what happened to v1.28.0: the tag carries a depth-1 checkout, so the publish could
+  # never succeed from it no matter how many times it was re-run, while `main` carries the fix.
+  # The alternative was deleting a tag a published GitHub Release already consumes.
+  #
+  # 🛑 A MANUAL PUBLISH DOOR IS ACCEPTABLE; AN UNGUARDED ONE IS NOT. Dispatched against an
+  # arbitrary ref this would publish a tree that never landed — the hazard CLAUDE.md's REJECTED-B
+  # tag-order LAW was written against, where npm shipped a tag tree that a rebase had orphaned and
+  # nothing failed anywhere. The ancestor-of-`origin/main` guard below is what makes this door
+  # safe, and it fails CLOSED. Do not remove one without removing the other.
+  workflow_dispatch:
 
 # ─── CONCURRENCY — OPS-SERIALIZE-LANDING-AND-DEPLOY-W1 CH3 ───────────────────────────────────
 #
@@ -82,8 +96,50 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — RELEASE-v1.28.0-AND-README-LINK-GATE-W1, completing
+      # OPS-TEST-BUDGET-CI-REF-W1's rollout.
+      #
+      # `prepublishOnly` runs `npm run test:budget:check`, and check-test-budget.mjs asks
+      # `git merge-base HEAD origin/main`. The default depth-1 checkout of a TAG fetches only that
+      # tag, so refs/remotes/origin/main does not exist, the gate correctly answers INDETERMINATE
+      # (exit 3) — and blocks the publish. It is not a false positive: the gate cannot see, and it
+      # says so rather than assuming nothing changed. The defect was this checkout.
+      #
+      # It went unnoticed because `prepublishOnly` runs ONLY on publish, so v1.28.0 was the gate's
+      # first exercise in this lane — three hours after it shipped. Do not "simplify" this line
+      # away; tests/unit/ci-git-context.test.ts now fails if it goes.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 🛑 REFUSE A TREE THAT NEVER LANDED. Fails CLOSED, and runs before install and publish so a
+      # bad ref costs nothing and reaches nothing.
+      #
+      # A publish materializes an explicit committed SHA that is an ancestor of the remote default
+      # branch — the same rule ops/scripts/host-deploy.sh enforces for deploys. The tag-triggered
+      # path gets this for free (scripts/land.sh lands first, then tags the re-read landed SHA);
+      # the workflow_dispatch door does not, so it is asserted here.
+      #
+      # This is the guard for the measured incident behind CLAUDE.md's tag-order LAW: a tag created
+      # BEFORE landing was orphaned by land.sh's rebase, publish-npm.yml checked out the TAG TREE,
+      # and npm published a tree that never landed with nothing failing anywhere. `merge-base
+      # --is-ancestor` is the predicate that would have caught it.
+      - name: Refuse a tree that is not an ancestor of origin/main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          HEAD_SHA=$(git rev-parse HEAD)
+          MAIN_SHA=$(git rev-parse origin/main)
+          echo "HEAD=$HEAD_SHA"
+          echo "origin/main=$MAIN_SHA"
+          if git merge-base --is-ancestor "$HEAD_SHA" "$MAIN_SHA"; then
+            echo "PUBLISH_ANCESTRY_VERDICT=PASS"
+            echo "this tree landed on main — safe to publish"
+          else
+            echo "PUBLISH_ANCESTRY_VERDICT=FAIL"
+            echo "::error::refusing to publish $HEAD_SHA — it is NOT an ancestor of origin/main ($MAIN_SHA). A publish must materialize a landed commit."
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4

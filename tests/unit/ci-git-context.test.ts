@@ -45,9 +45,32 @@ interface Workflow {
   fetchDepths: unknown[];
 }
 
-/** True when any `run:` step invokes the vitest suite. */
+/**
+ * True when the workflow reaches a gate that needs git history — DIRECTLY or through one hop of
+ * package-lifecycle indirection.
+ *
+ * The `npm publish` clause is the second half, and it was added because its absence cost a
+ * release. RELEASE-v1.28.0-AND-README-LINK-GATE-W1: `publish-npm.yml` ran a depth-1 checkout of a
+ * TAG, `check-test-budget.mjs` could not resolve `origin/main`, and it correctly answered
+ * INDETERMINATE — failing `prepublishOnly` at step 19 of 23 and blocking the publish entirely.
+ *
+ * This detector could not see it. The suite is never named in that workflow's own `run:` steps:
+ * it is reached as `npm publish` → `prepublishOnly` → `npm run test:budget:check`, one hop away in
+ * `package.json`. A detector that reads only a workflow's own text is blind to every gate wired
+ * through a lifecycle script — and `prepublishOnly` runs ONLY on publish, so the blind spot's
+ * first exercise is always a release.
+ *
+ * `npm publish` is therefore treated as running the suite, because in this repo it does. If
+ * `prepublishOnly` ever stops invoking a git-dependent gate, delete this clause deliberately
+ * rather than letting it rot — an over-broad predicate here costs one `fetch-depth: 0`, while an
+ * under-broad one costs a release.
+ */
 function runsSuite(raw: string): boolean {
-  return /(^|\s)(npx\s+)?vitest\b/.test(raw) || /npm\s+(run\s+)?test\b/.test(raw);
+  return (
+    /(^|\s)(npx\s+)?vitest\b/.test(raw) ||
+    /npm\s+(run\s+)?test\b/.test(raw) ||
+    /npm\s+publish\b/.test(raw)
+  );
 }
 
 /**
@@ -124,6 +147,35 @@ describe('CI git context — a suite run off main must be able to see main', () 
     expect(lane!.runsSuite).toBe(true);
     expect(lane!.fetchDepths.length).toBeGreaterThan(0);
     expect(lane!.fetchDepths.every((d) => Number(d) === 0)).toBe(true);
+  });
+
+  it('the publish lane keeps its full-history checkout', () => {
+    // Named explicitly, for the same reason postgres-lane.yml is: the generic assertion above
+    // would only show a count going down. This one says which lane and why.
+    //
+    // publish-npm.yml triggers on tags and on workflow_dispatch, so `onlyMain` is false and it
+    // needs full history — and it reaches check-test-budget.mjs through prepublishOnly, where a
+    // missing origin/main is a blocked RELEASE rather than a slow CI run.
+    const publish = workflows.find((w) => w.name === 'publish-npm.yml');
+    expect(publish, 'publish-npm.yml is missing — if it was renamed, re-point this test').toBeTruthy();
+    expect(publish!.runsSuite, 'npm publish runs prepublishOnly, which runs the budget gate').toBe(true);
+    expect(publish!.onlyMain, 'it triggers on tags, so it can run off main').toBe(false);
+    expect(publish!.fetchDepths.length).toBeGreaterThan(0);
+    expect(publish!.fetchDepths.every((d) => Number(d) === 0)).toBe(true);
+  });
+
+  it('a manual publish door cannot ship a tree that never landed', () => {
+    // workflow_dispatch makes publish-npm.yml runnable against an arbitrary ref. That is only
+    // acceptable with the ancestor guard, so the two are pinned together: adding the door without
+    // the guard, or deleting the guard while the door stands, is a red here.
+    const raw = readFileSync(join(WF_DIR, 'publish-npm.yml'), 'utf8');
+    if (/workflow_dispatch/.test(raw)) {
+      expect(raw, 'workflow_dispatch without an ancestor-of-main guard can publish an unlanded tree')
+        .toMatch(/merge-base\s+--is-ancestor/);
+      expect(raw, 'the ancestry guard must emit a verdict token, per the token law').toMatch(
+        /PUBLISH_ANCESTRY_VERDICT=/,
+      );
+    }
   });
 
   it('does NOT force full history on a workflow that only ever runs on main', () => {
