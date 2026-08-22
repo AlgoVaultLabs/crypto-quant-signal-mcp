@@ -21,9 +21,14 @@ import { join } from 'node:path';
 import {
   classifyReport,
   classifyMessage,
+  classifyShape,
   readReport,
+  readSidecar,
+  indexSidecar,
+  normFile,
   isolationRetry,
 } from '../../scripts/classify-suite-verdict.mjs';
+import { errorShape, relPath } from '../../scripts/vitest-error-shape-reporter.mjs';
 import { decide, parseBlock, scan, evaluate, promotionActive, parseConfig } from '../../scripts/check-test-budget.mjs';
 
 const REPO = join(__dirname, '..', '..');
@@ -292,5 +297,130 @@ describe('the gates run for real', () => {
       const out = execFileSync('node', [`scripts/${s}`, '--self-test'], { cwd: REPO, encoding: 'utf8' });
       expect(out, `${s} must not emit ${token}`).not.toContain(token);
     }
+  });
+});
+
+// OPS-SUITE-VERDICT-REPORTER-CHANNEL-W1 CH1 — the structured channel, asserted on CAPTURED artifacts.
+//
+// Every fixture under tests/fixtures/verdict-channel/ was produced by running a real failing test
+// through the real reporters (`--reporter=json` + the error-shape reporter), never hand-typed. That
+// is the rule this wave adds: a gate's fixture is captured from the channel the gate reads.
+//
+// REGENERATE (the sources are intentionally not kept in tests/, so they never join the suite):
+//   mkdir -p /tmp/cap && cat > /tmp/cap/timeout.test.ts <<'EOF'
+//   import { it } from 'vitest';
+//   it('a test that exceeds its own budget', async () => { await new Promise(r => setTimeout(r, 5000)); }, 250);
+//   EOF
+//   VITEST_ERROR_SHAPE_OUT=tests/fixtures/verdict-channel/timeout-only.shapes.json \
+//     npx vitest run <file> --reporter=json --outputFile=tests/fixtures/verdict-channel/timeout-only.report.json \
+//     --reporter=./scripts/vitest-error-shape-reporter.mjs
+describe('the structured channel — captured artifacts, not transcriptions', () => {
+  const FX = join(REPO, 'tests/fixtures/verdict-channel');
+  const load = (label: string) => {
+    const r = readReport(join(FX, `${label}.report.json`)) as { ok: boolean; report?: unknown };
+    const sc = readSidecar(join(FX, `${label}.shapes.json`)) as { ok: boolean; index?: Map<string, unknown[]> };
+    expect(r.ok, `${label}.report.json must be present and parseable`).toBe(true);
+    expect(sc.ok, `${label}.shapes.json must be present and parseable`).toBe(true);
+    return { report: r.report, index: sc.index! };
+  };
+
+  it('THE FIX: a CAPTURED timeout classifies INDETERMINATE, where the string channel says FAIL', () => {
+    const { report, index } = load('timeout-only');
+    // The BEFORE-value, pinned. This is what shipped on 2026-08-20 and it is the defect: a real
+    // timeout read as a regression, blocking a deploy that had nothing wrong with it.
+    expect(classifyReport(report).verdict).toBe('FAIL');
+    expect(classifyReport(report, index).verdict).toBe('INDETERMINATE');
+  });
+
+  it('the JSON report genuinely cannot carry the distinction — this is not a preference', () => {
+    const raw = readFileSync(join(FX, 'timeout-only.report.json'), 'utf8');
+    // Measured on vitest 3.2.4: the timeout message is replaced by a placeholder in the JSON
+    // reporter. If a future vitest starts preserving it, this assertion fails and the sidecar can
+    // be reconsidered — which is the point of asserting it rather than describing it in a comment.
+    expect(raw).not.toMatch(/timed out/i);
+    expect(raw).toContain('STACK_TRACE_ERROR');
+    // ...while the sidecar, reading the source object, has the real thing.
+    const shapes = JSON.parse(readFileSync(join(FX, 'timeout-only.shapes.json'), 'utf8'));
+    expect(shapes.failures[0].errors[0].message).toMatch(/Test timed out in \d+ms/i);
+  });
+
+  it('a CAPTURED assertion failure stays FAIL on both channels', () => {
+    const { report, index } = load('assertion-only');
+    expect(classifyReport(report).verdict).toBe('FAIL');
+    expect(classifyReport(report, index).verdict).toBe('FAIL');
+  });
+
+  it('a CAPTURED mixed run stays FAIL — the diff still wins over the timeout', () => {
+    const { report, index } = load('mixed');
+    expect(classifyReport(report, index).verdict).toBe('FAIL');
+  });
+
+  it('the string patterns are NOT redundant: a collection error has no per-test sidecar entry', () => {
+    const { report, index } = load('collection-error');
+    // Captured, so this is a fact about vitest rather than a claim about it: a file that cannot be
+    // collected produces zero per-test results, so the structured channel has nothing to say and
+    // the string channel is the only cover. Deleting INDETERMINATE_PATTERNS would blind this case.
+    expect(index.size).toBe(0);
+    expect(classifyReport(report, index).verdict).toBe('FAIL');
+  });
+
+  it('a DECLARED sidecar that is absent or unusable REFUSES — it never degrades quietly', () => {
+    expect(readSidecar(join(REPO, 'no/such/sidecar.json')).ok).toBe(false);
+    expect(readSidecar(join(REPO, 'README.md')).ok).toBe(false);        // unparseable
+    expect(readSidecar(join(REPO, 'package.json')).ok).toBe(false);      // parses, wrong shape
+    expect(indexSidecar({ nope: true })).toBeNull();
+  });
+
+  it('the structured fields ALONE cannot identify a timeout — the message is load-bearing', () => {
+    // A plain `throw new Error('boom')` is byte-identical to a timeout in name/diff/expected/actual.
+    // If a future refactor tries to classify on shape alone, this is the assertion that stops it.
+    const thrown = { name: 'Error', hasDiff: false, hasExpected: false, hasActual: false, message: 'boom custom' };
+    const timeout = { name: 'Error', hasDiff: false, hasExpected: false, hasActual: false, message: 'Test timed out in 250ms.' };
+    expect(thrown.name).toBe(timeout.name);
+    expect(classifyShape(thrown)).toBe('assertion');
+    expect(classifyShape(timeout)).toBe('indeterminate');
+    // A real bug with no diff is still a real bug.
+    expect(classifyShape({ name: 'TypeError', message: 'Cannot read properties of null' })).toBe('assertion');
+    // Positive assertion evidence can never be talked out of by message text.
+    expect(classifyShape({ name: 'AssertionError', hasDiff: true, message: 'Test timed out in 250ms.' })).toBe('assertion');
+  });
+
+  it('the reporter normalises paths so a committed fixture is machine-independent', () => {
+    expect(relPath(join(REPO, 'tests/x.test.ts'))).toBe('tests/x.test.ts');
+    expect(normFile(join(REPO, 'tests/x.test.ts'))).toBe('tests/x.test.ts');
+    // Both sides of the join agree, which is what makes file+name a usable key.
+    expect(normFile(join(REPO, 'tests/x.test.ts'))).toBe(relPath(join(REPO, 'tests/x.test.ts')));
+    expect(errorShape({ name: 'AssertionError', diff: '- 1\n+ 2', expected: '2', actual: '1', message: 'm' }))
+      .toEqual({ name: 'AssertionError', hasDiff: true, hasExpected: true, hasActual: true, message: 'm' });
+  });
+
+  it('the REAL CI-produced sidecar is usable — captured from the runner, not from a local run', () => {
+    // tests/fixtures/verdict-channel/ci-green-run.shapes.json is the literal artifact uploaded by
+    // GitHub Actions run 32557946437 (sha 44092c3), downloaded and committed unmodified. It is the
+    // strongest form of this wave's own rule: the fixture comes from the exact channel, on the
+    // exact machine, that the gate reads in production.
+    //
+    // It also pins the green-run shape. A reporter that emitted nothing on a clean run would leave
+    // the sidecar absent, and a DECLARED-but-absent sidecar is INDETERMINATE — which would block
+    // every green deploy. That this file exists and parses is the assertion.
+    const sc = readSidecar(join(REPO, 'tests/fixtures/verdict-channel/ci-green-run.shapes.json')) as {
+      ok: boolean; index?: Map<string, unknown[]>;
+    };
+    expect(sc.ok, 'the sidecar CI actually produced must be usable by the classifier').toBe(true);
+    expect(sc.index!.size).toBe(0);
+    // A green report + a green sidecar is PASS, not INDETERMINATE.
+    expect(classifyReport({ testResults: [{ name: 'f', assertionResults: [{ status: 'passed' }] }] }, sc.index).verdict).toBe('PASS');
+  });
+
+  it('the reporter is registered on the CLI in deploy.yml, NOT in vitest.config.ts', () => {
+    // The wiring assertion. A CLI --reporter REPLACES the config array on vitest 3.2.4, so a
+    // config registration would be dark in CI — and a reporter nothing reads is the
+    // check-canaries-wired hazard. Both halves are pinned here.
+    const wf = readFileSync(join(REPO, '.github/workflows/deploy.yml'), 'utf8');
+    expect(wf).toContain('--reporter=./scripts/vitest-error-shape-reporter.mjs');
+    expect(wf).toContain('--sidecar=.vitest-error-shapes.json');
+    const cfg = readFileSync(join(REPO, 'vitest.config.ts'), 'utf8');
+    const live = cfg.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(live, 'a reporters: key here would un-wire CI — see the comment in that file').not.toMatch(/reporters\s*:/);
   });
 });

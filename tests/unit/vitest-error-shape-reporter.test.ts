@@ -90,11 +90,4 @@ describe('the reporter is wired where it actually runs', () => {
     expect(upload.slice(0, 400)).toContain('if: always()');
   });
 
-  it('LANDING COMMIT 1 IS PRODUCER-ONLY: the classifier does not yet consume the sidecar', () => {
-    // This assertion is deliberately temporary and its removal is the marker of commit 2. It pins
-    // the property that makes this landing safe: the verdict path is untouched, so a reporter bug
-    // cannot reach the gate.
-    const wf = readFileSync(join(REPO, '.github/workflows/deploy.yml'), 'utf8');
-    expect(wf, 'commit 2 flips this — and deletes this assertion with it').not.toContain('--sidecar=');
-  });
 });

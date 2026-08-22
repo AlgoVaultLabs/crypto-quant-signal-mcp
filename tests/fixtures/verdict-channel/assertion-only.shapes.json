@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "failures": [
+    {
+      "file": "tests/fixtures/verdict-channel/__capture__/assertion.test.ts",
+      "name": "a test whose assertion is genuinely wrong",
+      "errors": [
+        {
+          "name": "AssertionError",
+          "hasDiff": true,
+          "hasExpected": true,
+          "hasActual": true,
+          "message": "expected { a: 1 } to deeply equal { a: 2 }"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "failures": [
+    {
+      "file": "tests/fixtures/verdict-channel/__capture__/timeout.test.ts",
+      "name": "a test that exceeds its own budget",
+      "errors": [
+        {
+          "name": "Error",
+          "hasDiff": false,
+          "hasExpected": false,
+          "hasActual": false,
+          "message": "Test timed out in 250ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+        }
+      ]
+    }
+  ]
+}

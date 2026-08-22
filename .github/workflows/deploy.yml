@@ -138,12 +138,17 @@ jobs:
         id: suite_verdict
         run: |
           set +e
-          # NOTE (OPS-SUITE-VERDICT-REPORTER-CHANNEL-W1, LANDING COMMIT 1 of 2): the sidecar is
-          # PRODUCED and UPLOADED above, and deliberately CONSUMED BY NOTHING here. This commit is
-          # producer-only so the verdict path stays byte-identical and no reporter defect can reach
-          # the gate every session deploys through. The consumer flip is the next commit, and it
-          # lands only after a real CI run has produced a sidecar to read.
-          node scripts/classify-suite-verdict.mjs .vitest-report.json | tee /tmp/suite-verdict.txt
+          # `--sidecar=` is the CALLER DECLARING it expects the structured channel. It is never
+          # inferred: a local `npm test` writes no sidecar (the reporter is CI-registered only), so
+          # inferring expectation would false-INDETERMINATE locally, and inferring the other way
+          # would let CI degrade silently to the string channel while reporting green. Declared and
+          # unusable ⇒ INDETERMINATE ⇒ deploy blocked, loudly.
+          #
+          # LANDING COMMIT 2 of 2. Commit 1 shipped the producer consumed by nothing; run
+          # 32557946437 (sha 44092c3) then proved on the real runner that the reporter emits a
+          # well-formed sidecar and that CI retains it. This flip reads what that run produced.
+          node scripts/classify-suite-verdict.mjs .vitest-report.json \
+            --sidecar=.vitest-error-shapes.json | tee /tmp/suite-verdict.txt
           V=$(grep '^SUITE_VERDICT=' /tmp/suite-verdict.txt | tail -1 | cut -d= -f2)
           [ -n "$V" ] || V=INDETERMINATE
           echo "verdict=$V" >> "$GITHUB_OUTPUT"
