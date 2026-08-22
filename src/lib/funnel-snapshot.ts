@@ -232,6 +232,17 @@ export interface FunnelSnapshot {
     automated_count: number | null;
     human_first_call_pct: number | null;
   } | null;
+  /**
+   * OPS-QUOTA-FUNNEL-WALL-SPLIT-W1: the quota stages split by the `meta.limit` discriminator
+   * the refusal path has carried since the flat-billing arc. Three buckets — `daily`,
+   * `monthly`, `unknown` — plus the `free_key_claimed` claim stage and the questions this
+   * panel cannot derive.
+   *
+   * Additive / NON-stage: absent from CANONICAL_STAGE_ORDER, so the 14-stage funnel and its 13
+   * stage_retentions stay byte-stable, and `funnel` gains no key. `null` on query failure
+   * (fail-open).
+   */
+  quota_wall_split: QuotaWallSplit | null;
   warnings: string[]; // non-fatal notes, e.g. "agent_sessions empty — fell back to request_log"
 }
 
@@ -309,6 +320,110 @@ const CANONICAL_STAGE_ORDER: readonly string[] = Object.freeze([
 const BOT_SQLITE_PATH = process.env.ALGOVAULT_BOT_DB_PATH ?? '/var/lib/algovault-bot/state.db';
 const BOT_ALERTS_LOG_PATH = process.env.ALGOVAULT_BOT_ALERTS_LOG ?? '/var/log/algovault-bot/alerts.log';
 const NPM_PACKAGE_NAME = process.env.ALGOVAULT_NPM_PACKAGE_NAME ?? 'crypto-quant-signal-mcp';
+
+// ── Quota-wall discriminator (OPS-QUOTA-FUNNEL-WALL-SPLIT-W1) ──
+
+/**
+ * Which wall a quota refusal names.
+ *
+ * `unknown` is a FIRST-CLASS bucket and is NEVER folded into `monthly`. Rows predating a
+ * stage's discriminator cutover carry no `limit` key at all; bucketing them as `monthly`
+ * manufactures a step change at the cutover — a fabricated movement in the one panel built
+ * to detect movement. It is also a producer-health signal in its own right: `unknown` should
+ * shrink as pre-cutover rows age out of the window, and a GROWING one means a producer
+ * regressed and stopped emitting the discriminator.
+ */
+export type QuotaWallBucket = 'daily' | 'monthly' | 'unknown';
+
+export const QUOTA_WALL_BUCKETS: readonly QuotaWallBucket[] = Object.freeze([
+  'daily',
+  'monthly',
+  'unknown',
+] as const);
+
+/** The quota stages that carry a `meta.limit` discriminator. */
+export const QUOTA_WALL_EVENT_TYPES: readonly string[] = Object.freeze([
+  'quota_hit_soft',
+  'quota_hit_hard',
+  'quota_hit_block',
+]);
+
+/**
+ * The stages the panel pools into ONE quota-crossing population. Matches the canonical
+ * `agent_quota_cross` stage query (`event_type IN ('quota_hit_hard','quota_hit_block')`) exactly,
+ * so a split cell is comparable to the stage it splits. `quota_hit_soft` is an "approaching"
+ * warning, not a wall, and is reported per-stage but never pooled into the crossing.
+ */
+export const POOLED_QUOTA_WALL_EVENT_TYPES: readonly string[] = Object.freeze([
+  'quota_hit_hard',
+  'quota_hit_block',
+]);
+
+/**
+ * THE ONE derivation of the wall bucket. Both readers project from this single value: the
+ * weekly snapshot in this file, and the `/dashboard/funnel` agent funnel in
+ * `funnel-scoreboard.ts`, which imports it. Two independent re-derivations of one
+ * classification drift to contradiction (single-derivation rule) — and this classification
+ * IS the panel, so it gets exactly one home.
+ *
+ * Parsed in JS, never in SQL. This file already parses `meta_json` in JS at three sites
+ * (`getIdentityCoverage`, `getByAuthenticity`, `getBySourceBreakdown`) because PG-only JSON
+ * operators (`->>`, `::jsonb`) break the SQLite lane; this follows that.
+ *
+ * Producers, frozen and read-only this wave: `license.ts` emits `limit: 'monthly'` and
+ * `limit: 'daily'` on its two `quota_hit_block` refusal branches; `tier-warning.ts` emits the
+ * IDENTICAL spelling on `quota_hit_soft`/`quota_hit_hard`. Anything else — missing key, null
+ * meta, malformed JSON, or an unrecognised value — is `unknown`. An unrecognised value is
+ * deliberately NOT coerced into a wall we have not measured.
+ */
+export function classifyQuotaWall(metaJson: string | null | undefined): QuotaWallBucket {
+  if (!metaJson) return 'unknown';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(metaJson);
+  } catch {
+    return 'unknown'; // malformed meta → unknown, exactly as the three sibling parse sites do
+  }
+  if (typeof parsed !== 'object' || parsed === null) return 'unknown';
+  const limit = (parsed as Record<string, unknown>).limit;
+  return limit === 'daily' || limit === 'monthly' ? limit : 'unknown';
+}
+
+/**
+ * Portable SQL PREFILTER matching `classifyQuotaWall`'s non-`unknown` branch. Used ONLY to
+ * bound each stage's cutover instant with a MIN/MAX aggregate, so that deriving an ALL-TIME
+ * boundary does not drag ~100k rows into JS. `LIKE` is standard SQL on both lanes and this is
+ * a substring test, NOT backend-specific JSON SQL.
+ *
+ * It is a prefilter and never the authority. `classifyQuotaWall` decides every bucket, and
+ * `quotaWallPredicatesAgree` cross-checks the two on every window row the split already
+ * parses — so a divergence REPORTS as a warning instead of drifting silently. The colon is
+ * load-bearing: `tier-warning.ts` also emits `monthly_limit`, and `"limit":` does not match
+ * inside `"monthly_limit":`.
+ */
+export const QUOTA_WALL_PRESENT_SQL = `meta_json LIKE '%"limit":%'`;
+
+/** JS twin of `QUOTA_WALL_PRESENT_SQL`, so the two can be asserted equal over a corpus. */
+export function hasQuotaWallLiteral(metaJson: string | null | undefined): boolean {
+  return typeof metaJson === 'string' && metaJson.includes('"limit":');
+}
+
+/**
+ * Do the SQL prefilter and the JS classifier agree that this row carries a discriminator?
+ * Disagreement means the cutover bounds (SQL-derived) and the buckets (JS-derived) describe
+ * different populations — e.g. a producer starts emitting a THIRD wall value. Reported, never
+ * absorbed.
+ */
+export function quotaWallPredicatesAgree(metaJson: string | null | undefined): boolean {
+  return hasQuotaWallLiteral(metaJson) === (classifyQuotaWall(metaJson) !== 'unknown');
+}
+
+/** Normalise a `ts` column to ISO. TIMESTAMPTZ on PG (Date), TEXT on SQLite (ISO string). */
+function tsToIso(value: unknown): string | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 // ── New helpers (ACTIVATION-FUNNEL-AUDIT-W1) ──
 
@@ -728,6 +843,421 @@ async function getBySourceBreakdown(
       `by_source breakdown query failed: ${err instanceof Error ? err.message : String(err)}`,
     );
     return null;
+  }
+}
+
+/** One `funnel_events` row as the wall aggregator needs it. */
+export interface QuotaWallRow {
+  event_type: string;
+  session_id: string | null;
+  meta_json: string | null;
+}
+
+/** Per-bucket counts for one population. */
+export interface QuotaWallCounts {
+  sessions: Record<QuotaWallBucket, number>;
+  rows: Record<QuotaWallBucket, number>;
+  /** Sessions in >1 bucket — why `sessions` does NOT sum to `distinct_sessions`. */
+  multi_bucket_sessions: number;
+  /** Distinct sessions across ALL buckets — the pooled stage count for this population. */
+  distinct_sessions: number;
+}
+
+export interface QuotaWallAggregate {
+  per_stage: Record<string, QuotaWallCounts>;
+  /** Counts over `pooledEventTypes` treated as ONE population (the panel's quota-crossing stage). */
+  pooled: QuotaWallCounts;
+  /** Rows where the SQL prefilter and the JS classifier disagree — a producer-drift signal. */
+  predicate_disagreements: number;
+  /** Distinct quota-stage sessions whose id carries an `av_free_` prefix (keyed-vs-keyless evidence). */
+  keyed_sessions: number;
+  /** Distinct quota-stage sessions seen at all — the denominator for `keyed_sessions`. */
+  observed_sessions: number;
+}
+
+const emptyBucketCounts = (): Record<QuotaWallBucket, number> => ({ daily: 0, monthly: 0, unknown: 0 });
+
+/**
+ * THE ONE aggregation of quota rows into wall buckets. Pure, so both readers share not just the
+ * classifier but the whole reduction: the weekly snapshot (`getQuotaWallSplit`) and the
+ * `/dashboard/funnel` agent funnel (`getAgentFunnel` in `funnel-scoreboard.ts`).
+ *
+ * The two callers pass DIFFERENT row sets on purpose — the dashboard's `all` window is all-time
+ * while the snapshot's is capped at 90 days — so the windows are stated rather than shared. What
+ * must not differ is how a row becomes a bucket, and that is this function.
+ *
+ * `pooledEventTypes` is the subset treated as one population; the panel's quota-crossing stage is
+ * `quota_hit_hard ∪ quota_hit_block`, matching the canonical stage query exactly so a cell is
+ * comparable to the stage it splits.
+ */
+export function aggregateQuotaWallRows(
+  rows: readonly QuotaWallRow[],
+  eventTypes: readonly string[],
+  pooledEventTypes: readonly string[],
+): QuotaWallAggregate {
+  const stageBuckets = new Map<string, Map<string, Set<QuotaWallBucket>>>();
+  const stageRows = new Map<string, Record<QuotaWallBucket, number>>();
+  for (const et of eventTypes) {
+    stageBuckets.set(et, new Map());
+    stageRows.set(et, emptyBucketCounts());
+  }
+  const pooledBuckets = new Map<string, Set<QuotaWallBucket>>();
+  const pooledRows = emptyBucketCounts();
+  const pooled = new Set(pooledEventTypes);
+
+  let predicateDisagreements = 0;
+  let keyedSessions = 0;
+  const observed = new Set<string>();
+
+  for (const r of rows) {
+    const rowCounts = stageRows.get(r.event_type);
+    if (!rowCounts) continue; // outside the declared stage set
+    const bucket = classifyQuotaWall(r.meta_json);
+    rowCounts[bucket] += 1;
+    if (!quotaWallPredicatesAgree(r.meta_json)) predicateDisagreements += 1;
+    if (pooled.has(r.event_type)) pooledRows[bucket] += 1;
+    if (!r.session_id) continue;
+    const seen = stageBuckets.get(r.event_type)!;
+    (seen.get(r.session_id) ?? seen.set(r.session_id, new Set()).get(r.session_id)!).add(bucket);
+    if (pooled.has(r.event_type)) {
+      (pooledBuckets.get(r.session_id) ?? pooledBuckets.set(r.session_id, new Set()).get(r.session_id)!).add(bucket);
+    }
+    if (!observed.has(r.session_id)) {
+      observed.add(r.session_id);
+      if (r.session_id.startsWith('av_free_')) keyedSessions += 1;
+    }
+  }
+
+  const summarize = (
+    buckets: Map<string, Set<QuotaWallBucket>>,
+    rowCounts: Record<QuotaWallBucket, number>,
+  ): QuotaWallCounts => {
+    const sessions = emptyBucketCounts();
+    let multi = 0;
+    for (const seen of buckets.values()) {
+      for (const b of seen) sessions[b] += 1;
+      if (seen.size > 1) multi += 1;
+    }
+    return { sessions, rows: rowCounts, multi_bucket_sessions: multi, distinct_sessions: buckets.size };
+  };
+
+  const perStage: Record<string, QuotaWallCounts> = {};
+  for (const et of eventTypes) perStage[et] = summarize(stageBuckets.get(et)!, stageRows.get(et)!);
+
+  return {
+    per_stage: perStage,
+    pooled: summarize(pooledBuckets, pooledRows),
+    predicate_disagreements: predicateDisagreements,
+    keyed_sessions: keyedSessions,
+    observed_sessions: observed.size,
+  };
+}
+
+/**
+ * The wall MIX — what share of walled sessions hit each wall.
+ *
+ * `unknown` is excluded from the numerator AND the denominator, and `excluded_unknown` records
+ * how many that cost. A rate silently diluted by pre-cutover rows looks fine and is wrong: it
+ * would drift purely as history ages out of the window, with no change in caller behaviour.
+ *
+ * Pure, and shared by both readers so the exclusion cannot be implemented twice and differently.
+ */
+export interface QuotaWallMix {
+  daily_pct: number | null;
+  monthly_pct: number | null;
+  /** daily + monthly. `unknown` is NOT in here — that is the whole point. */
+  denominator: number;
+  excluded_unknown: number;
+  denominator_note: string;
+}
+
+export function computeQuotaWallMix(sessions: Record<QuotaWallBucket, number>): QuotaWallMix {
+  const denominator = sessions.daily + sessions.monthly;
+  return {
+    daily_pct: denominator > 0 ? sessions.daily / denominator : null,
+    monthly_pct: denominator > 0 ? sessions.monthly / denominator : null,
+    denominator,
+    excluded_unknown: sessions.unknown,
+    denominator_note:
+      'denominator = daily + monthly distinct sessions; `unknown` (pre-discriminator rows) is ' +
+      'excluded from BOTH numerator and denominator',
+  };
+}
+
+/**
+ * Per-stage wall split for ONE quota stage. Counts only — no rates.
+ *
+ * Rates and the `n<30` guard deliberately live in `funnel-scoreboard.ts`, beside the
+ * `lowConfidence()` threshold that already exists there. Defining a second `30` here would be
+ * two homes for one threshold, and the pair would drift.
+ */
+export interface QuotaWallStageSplit {
+  event_type: string;
+  /**
+   * DISTINCT sessions per bucket — the RATE basis, and the same unit as the canonical
+   * `COUNT(DISTINCT session_id)` quota stages, so a cell is comparable to its stage.
+   */
+  sessions: Record<QuotaWallBucket, number>;
+  /**
+   * Raw event ROWS per bucket. VOLUME ONLY, never a rate denominator: rows are not
+   * independent — a handful of sessions produce tens of thousands of block rows — so a
+   * row-based rate reports the pacing of a few callers as if it were a population.
+   */
+  rows: Record<QuotaWallBucket, number>;
+  /**
+   * Sessions appearing in MORE THAN ONE bucket (e.g. hit the daily wall on one day and the
+   * monthly wall later). The buckets therefore do NOT sum to the stage total, and that is a
+   * fact about callers rather than a defect — rendered so an operator never reads the
+   * difference as a bug.
+   */
+  multi_bucket_sessions: number;
+  /**
+   * ALL-TIME, data-derived bounds on when this stage began carrying its discriminator. A
+   * property of the PRODUCER, so it is never window-scoped.
+   *
+   * `absent_until` is the latest row carrying NO discriminator — the LOWER bound.
+   * `live_since` is the earliest row carrying one — the UPPER bound.
+   *
+   * The true cutover lies between them. For a sparse stage the gap can be long, because the
+   * first row is a function of TRAFFIC, not of the deploy: the code can ship hours or days
+   * before a caller next trips that wall. Reporting `live_since` alone as "the cutover" would
+   * present a traffic accident as a deploy fact.
+   */
+  discriminator_cutover: { absent_until: string | null; live_since: string | null };
+  /**
+   * True when the requested window opens at or before `absent_until`, i.e. the window still
+   * contains pre-discriminator rows. Cohort-maturity for this cell: a rate over such a window
+   * is diluted by rows that never could have carried a wall, so the panel suppresses it.
+   */
+  window_predates_cutover: boolean;
+}
+
+/** A question the panel is asked but CANNOT derive. Rendered, never omitted. */
+export interface QuotaWallPending {
+  id: string;
+  question: string;
+  blocker: string;
+  evidence: string;
+}
+
+export interface QuotaWallSplit {
+  stages: QuotaWallStageSplit[];
+  /**
+   * `free_key_claimed` — the identity-capture signal. Additive / NON-stage (absent from
+   * CANONICAL_STAGE_ORDER, so the 14-stage funnel and its 13 retentions stay byte-stable).
+   */
+  claim: {
+    claims: number;
+    with_inherited_usage: number;
+    inherited_usage_total: number | null;
+    inherited_usage_max: number | null;
+    first_claim_at: string | null;
+  };
+  pending: QuotaWallPending[];
+  unit_note: string;
+  cutover_note: string;
+}
+
+/**
+ * OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 — split each quota stage by the `meta.limit` discriminator
+ * that `funnel_events` has carried on the refusal path since the flat-billing arc and that
+ * nothing has ever read.
+ *
+ * A wall that clears at midnight and a wall that clears in weeks are different facts about a
+ * caller; averaging them into one number is what this exists to end. Three buckets, `unknown`
+ * first-class among them.
+ *
+ * Portable, following `getBySourceBreakdown` directly: select the window's rows and classify
+ * in JS via the ONE `classifyQuotaWall`. No backend-specific JSON SQL — PG-only operators
+ * break the SQLite lane. Fail-open: null + a warning, never a throw on a serving path.
+ */
+export type QuotaWallQueryFn = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+export async function buildQuotaWallSplit(
+  query: QuotaWallQueryFn,
+  windowFromIso: string,
+  windowToIso: string,
+  warnings: string[],
+): Promise<QuotaWallSplit | null> {
+  const eventTypes = [...QUOTA_WALL_EVENT_TYPES];
+  const placeholders = eventTypes.map(() => '?').join(', ');
+  try {
+    const rows = await query<{ event_type: string; session_id: string | null; meta_json: string | null }>(
+      `SELECT event_type, session_id, meta_json
+         FROM funnel_events
+        WHERE event_type IN (${placeholders})
+          AND ts >= ? AND ts <= ?`,
+      [...eventTypes, windowFromIso, windowToIso],
+    );
+
+    // ALL-TIME cutover bounds. One grouped aggregate rather than dragging every historical row
+    // into JS; `QUOTA_WALL_PRESENT_SQL` is a prefilter and `predicateDisagreements` below keeps
+    // it honest against the JS classifier on every row we DO parse.
+    const bounds = new Map<string, { absent_until: string | null; live_since: string | null }>();
+    try {
+      const boundRows = await query<{ event_type: string; live_since: unknown; absent_until: unknown }>(
+        `SELECT event_type,
+                MIN(CASE WHEN ${QUOTA_WALL_PRESENT_SQL} THEN ts END) AS live_since,
+                MAX(CASE WHEN ${QUOTA_WALL_PRESENT_SQL} THEN NULL ELSE ts END) AS absent_until
+           FROM funnel_events
+          WHERE event_type IN (${placeholders})
+          GROUP BY event_type`,
+        [...eventTypes],
+      );
+      for (const r of boundRows) {
+        bounds.set(r.event_type, {
+          absent_until: tsToIso(r.absent_until),
+          live_since: tsToIso(r.live_since),
+        });
+      }
+    } catch (err) {
+      warnings.push(
+        `quota_wall_split cutover bounds failed (cutovers report null): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // ONE aggregation, shared with `getAgentFunnel` — see `aggregateQuotaWallRows`.
+    const agg = aggregateQuotaWallRows(rows, eventTypes, POOLED_QUOTA_WALL_EVENT_TYPES);
+
+    if (agg.predicate_disagreements > 0) {
+      // A row the SQL prefilter and the JS classifier disagree about means the cutover bounds
+      // and the buckets describe different populations — most likely a producer emitting a
+      // THIRD wall value. Reported loudly; never absorbed into a bucket.
+      warnings.push(
+        `quota_wall_split: SQL prefilter and classifyQuotaWall disagreed on ${agg.predicate_disagreements} row(s) — ` +
+          `cutover bounds may not describe the same population as the buckets (new meta.limit value?)`,
+      );
+    }
+
+    const stages: QuotaWallStageSplit[] = eventTypes.map((et) => {
+      const counts = agg.per_stage[et];
+      const cutover = bounds.get(et) ?? { absent_until: null, live_since: null };
+      return {
+        event_type: et,
+        sessions: counts.sessions,
+        rows: counts.rows,
+        multi_bucket_sessions: counts.multi_bucket_sessions,
+        discriminator_cutover: cutover,
+        window_predates_cutover:
+          cutover.absent_until !== null && windowFromIso <= cutover.absent_until,
+      };
+    });
+
+    return {
+      stages,
+      claim: await getClaimStage(query, windowFromIso, windowToIso, warnings),
+      pending: [
+        {
+          id: 'keyed_vs_keyless',
+          question: 'Do callers who CLAIMED a free key hit the wall differently from anonymous ones?',
+          blocker:
+            '`funnel_events.session_id` never carries an `av_free_` key — it is the resolved analytics ' +
+            'identity (track token / ipHash / uuid), which is a different namespace from the quota key. ' +
+            'There is no join from a walled session to a claimed key.',
+          evidence:
+            `measured live this window: ${agg.keyed_sessions} of ${agg.observed_sessions} distinct quota-stage ` +
+            'sessions carry an `av_free_` prefix',
+        },
+        {
+          id: 'wall_to_paid',
+          question: 'Does a daily wall convert to payment at a different rate than a monthly one?',
+          blocker:
+            '`processed_x402_payments` carries no `session_id` (nonce · tool · amount · created_at · ' +
+            'payer_wallet · settlement_state · rail · settlement_ref), so a payment cannot be attributed ' +
+            'to the wall that preceded it. The existing quota→paid rate is already unit-approximate ' +
+            '(walled SESSIONS vs paying WALLETS); splitting it by wall would multiply that approximation ' +
+            'rather than resolve it.',
+          evidence: 'structural — the join column does not exist on either side',
+        },
+      ],
+      unit_note:
+        'sessions = DISTINCT session_id (the rate basis, same unit as the canonical stages). rows = raw ' +
+        'event count, VOLUME ONLY — never a rate denominator, because a handful of sessions produce most ' +
+        'rows. Buckets do NOT sum to the stage total: a session that hits both walls is counted in both ' +
+        '(see multi_bucket_sessions).',
+      cutover_note:
+        'Each stage carries its OWN bounds, derived from data, never a shared deploy timestamp. The true ' +
+        'cutover lies between absent_until and live_since; live_since is traffic-bounded (the first caller ' +
+        'to trip that wall after the deploy), so it is an upper bound and not the deploy instant.',
+    };
+  } catch (err) {
+    warnings.push(
+      `quota_wall_split query failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * `free_key_claimed` — the claim stage. It had no producer when this split was first specced;
+ * `deferred-signup.ts` now emits it with `{ inherited_from, inherited_usage }`.
+ *
+ * `inherited_usage` is what a claim COSTS: the metered calls a claimed key inherits from the
+ * anonymous bucket it aliases. Reported as a total and a max rather than a mean, because at
+ * single-digit n a mean reads like a population statistic.
+ */
+async function getClaimStage(
+  query: QuotaWallQueryFn,
+  windowFromIso: string,
+  windowToIso: string,
+  warnings: string[],
+): Promise<QuotaWallSplit['claim']> {
+  const empty = {
+    claims: 0,
+    with_inherited_usage: 0,
+    inherited_usage_total: null as number | null,
+    inherited_usage_max: null as number | null,
+    first_claim_at: null as string | null,
+  };
+  try {
+    const rows = await query<{ meta_json: string | null }>(
+      `SELECT meta_json
+         FROM funnel_events
+        WHERE event_type = 'free_key_claimed'
+          AND ts >= ? AND ts <= ?`,
+      [windowFromIso, windowToIso],
+    );
+    let total = 0;
+    let max: number | null = null;
+    let withUsage = 0;
+    for (const r of rows) {
+      let usage: unknown;
+      try {
+        const m = r.meta_json ? (JSON.parse(r.meta_json) as Record<string, unknown>) : {};
+        usage = m.inherited_usage;
+      } catch {
+        /* malformed meta → no usage recorded for this claim */
+      }
+      if (typeof usage === 'number' && Number.isFinite(usage)) {
+        withUsage += 1;
+        total += usage;
+        max = max === null ? usage : Math.max(max, usage);
+      }
+    }
+    // ALL-TIME first claim — this stage's own cutover instant, on the same footing as the
+    // three quota stages' bounds and derived the same way, from data.
+    let firstClaimAt: string | null = null;
+    try {
+      const firstRows = await query<{ first_claim_at: unknown }>(
+        `SELECT MIN(ts) AS first_claim_at FROM funnel_events WHERE event_type = 'free_key_claimed'`,
+        [],
+      );
+      firstClaimAt = tsToIso(firstRows[0]?.first_claim_at);
+    } catch (err) {
+      warnings.push(
+        `claim stage first_claim_at failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return {
+      claims: rows.length,
+      with_inherited_usage: withUsage,
+      inherited_usage_total: withUsage > 0 ? total : null,
+      inherited_usage_max: max,
+      first_claim_at: firstClaimAt,
+    };
+  } catch (err) {
+    warnings.push(`claim stage query failed: ${err instanceof Error ? err.message : String(err)}`);
+    return empty;
   }
 }
 
@@ -1320,6 +1850,9 @@ export async function generateFunnelSnapshot(
   // OPS-ACTIVATION-LEAK-FIX-W1 CH3: cleaned by_authenticity over mcp_connect (additive, non-stage).
   const byAuthenticity = await getByAuthenticity(windowFromIso, windowToIso, windowFromMs, windowToMs, warnings);
 
+  // OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 — additive / NON-stage; `funnel` is untouched.
+  const quotaWallSplit = await buildQuotaWallSplit(dbQuery, windowFromIso, windowToIso, warnings);
+
   return {
     generated_at: new Date().toISOString(),
     window: { from: windowFromIso, to: windowToIso },
@@ -1376,6 +1909,7 @@ export async function generateFunnelSnapshot(
     by_source: bySource,
     identity_coverage: identityCoverage,
     by_authenticity: byAuthenticity,
+    quota_wall_split: quotaWallSplit,
     warnings,
   };
 }

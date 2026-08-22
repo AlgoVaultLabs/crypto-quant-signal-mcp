@@ -34,6 +34,12 @@ import {
   type RetentionSession,
   type FunnelStage,
 } from '../src/lib/funnel-scoreboard.js';
+import {
+  aggregateQuotaWallRows,
+  POOLED_QUOTA_WALL_EVENT_TYPES,
+  QUOTA_WALL_EVENT_TYPES,
+  QUOTA_WALL_PRESENT_SQL,
+} from '../src/lib/funnel-snapshot.js';
 import type { FunnelSnapshot } from '../src/lib/funnel-snapshot.js';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -700,5 +706,285 @@ describe('profilesComposition — folds rows the same way both sides are counted
 
   it('is empty for no rows — a fact, not a failure', () => {
     expect(profilesComposition([])).toEqual([]);
+  });
+});
+
+// ── OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 — the per-cell guard ───────────────────────────────────
+//
+// The failure this exists to prevent is NOT "no guard". It is a guard that is technically
+// present, evaluated on the POOLED number, and therefore passing while the cells it is meant to
+// protect are far too thin to read. The pooled figure clears the floor, the panel looks checked,
+// and a rate computed on n=3 is rendered as fact.
+describe('agent_funnel.quota_wall_split — n<30 applies PER CELL, not to the pooled stage', () => {
+  const D = '{"used":40,"total":40,"limit":"daily"}';
+  const M = '{"used":200,"total":200,"limit":"monthly"}';
+  const U = '{"used":1,"total":2}'; // pre-cutover: no discriminator at all
+
+  /** Build `n` block rows on one wall, each from its own session. */
+  function walled(prefix: string, n: number, meta: string, eventType = 'quota_hit_block') {
+    return Array.from({ length: n }, (_, i) => ({
+      event_type: eventType,
+      session_id: `${prefix}${i}`,
+      meta_json: meta,
+    }));
+  }
+
+  /**
+   * Router for the wall-split queries. `cutover` is the ALL-TIME bounds row; leaving
+   * `absent_until` null means the window is post-cutover, so maturity never masks the n<30
+   * assertion we are actually making.
+   */
+  function wallDeps(
+    rows: Array<{ event_type: string; session_id: string; meta_json: string }>,
+    opts: { pooled: number; activated: number; absentUntil?: string | null } = { pooled: 31, activated: 800 },
+  ) {
+    return funnelDeps((sql) => {
+      if (sql.includes('meta_json') && sql.includes('session_id') && sql.includes('event_type IN')) return rows;
+      if (sql.includes('absent_until')) return [
+        { event_type: 'quota_hit_block', live_since: '2026-08-09T08:35:52.505Z', absent_until: opts.absentUntil ?? null },
+        { event_type: 'quota_hit_hard', live_since: '2026-08-15T22:39:54.582Z', absent_until: opts.absentUntil ?? null },
+        { event_type: 'quota_hit_soft', live_since: '2026-08-15T21:39:50.063Z', absent_until: opts.absentUntil ?? null },
+      ];
+      if (sql.includes("'mcp_connect'")) return [{ c: 1000 }];
+      if (sql.includes('FROM agent_sessions')) return [{ c: opts.activated }];
+      if (sql.includes("'quota_hit_hard','quota_hit_block'")) return [{ c: opts.pooled }];
+      if (sql.includes("'quota_hit_soft'")) return [{ c: 20 }];
+      if (sql.includes('FROM quota_usage')) return [{ c: 10 }];
+      if (sql.includes('COUNT(DISTINCT')) return [{ c: 3 }];
+      if (sql.includes('FROM processed_x402_payments')) return [{ c: 7 }];
+      return [];
+    });
+  }
+
+  it('🎯 pooled n=31 CLEARS the floor while every split cell is suppressed', async () => {
+    // The live 30-day shape measured 2026-08-22: pooled 31, cells daily 14 / monthly 7 /
+    // unknown 21. A guard on the pooled number alone reports GREEN on all three.
+    const a = await getAgentFunnel('30', wallDeps([
+      ...walled('d', 14, D),
+      ...walled('m', 7, M),
+      ...walled('u', 21, U),
+    ]));
+    const s = a.quota_wall_split!;
+    expect(s.pooled_sessions).toBe(31);
+    expect(s.pooled_low_confidence).toBe(false); // the pooled figure PASSES — that is the trap
+
+    const cell = (b: string) => s.cells.find(c => c.bucket === b)!;
+    expect(cell('daily').sessions).toBe(14);
+    expect(cell('monthly').sessions).toBe(7);
+    expect(cell('unknown').sessions).toBe(21);
+
+    // …and every cell is suppressed anyway, because the guard is evaluated per cell.
+    for (const b of ['daily', 'monthly', 'unknown']) {
+      expect(cell(b).activated_to_wall).toBeNull();
+      expect(cell(b).suppressed_reason).not.toBeNull();
+    }
+    expect(cell('daily').low_confidence).toBe(true);
+    expect(cell('daily').suppressed_reason).toContain('n=14');
+    expect(cell('monthly').suppressed_reason).toContain('n=7');
+    // `unknown` is refused a rate on principle, not merely on sample size.
+    expect(cell('unknown').suppressed_reason).toContain('not a wall');
+  });
+
+  it('🎯 a thin cell is suppressed even when the pooled figure is enormous', async () => {
+    // The spec's exact scenario: a daily cell at n=3 hiding behind a pooled figure that clears
+    // 30 comfortably. Nothing about the pooled number may rescue the cell.
+    const a = await getAgentFunnel('30', wallDeps(
+      [...walled('d', 3, D), ...walled('m', 500, M)],
+      { pooled: 503, activated: 4000 },
+    ));
+    const s = a.quota_wall_split!;
+    expect(s.pooled_low_confidence).toBe(false);
+    const daily = s.cells.find(c => c.bucket === 'daily')!;
+    const monthly = s.cells.find(c => c.bucket === 'monthly')!;
+    expect(daily.sessions).toBe(3);
+    expect(daily.low_confidence).toBe(true);
+    expect(daily.activated_to_wall).toBeNull();
+    expect(daily.suppressed_reason).toContain('n=3');
+    // The healthy cell still reports — suppression is per cell, not all-or-nothing.
+    expect(monthly.low_confidence).toBe(false);
+    expect(monthly.activated_to_wall).toBeCloseTo(500 / 4000, 10);
+  });
+
+  it('🎯 the wall MIX excludes unknown from both sides and is guarded on its own n', async () => {
+    const a = await getAgentFunnel('30', wallDeps(
+      [...walled('d', 30, D), ...walled('m', 10, M), ...walled('u', 5000, U)],
+      { pooled: 5040, activated: 9000 },
+    ));
+    const mix = a.quota_wall_split!.mix;
+    expect(mix.denominator).toBe(40); // 30 + 10 — the 5000 unknown are NOT in here
+    expect(mix.excluded_unknown).toBe(5000);
+    expect(mix.suppressed_reason).toBeNull();
+    expect(mix.daily_pct).toBeCloseTo(0.75, 10);
+    expect(mix.monthly_pct).toBeCloseTo(0.25, 10);
+    expect(mix.denominator_note).toContain('excluded from BOTH');
+  });
+
+  it('🎯 a window that still contains pre-cutover rows suppresses the rate rather than diluting it', async () => {
+    // Cohort maturity: the window opens BEFORE the discriminator existed, so a rate over it is
+    // diluted by rows that could never have carried a wall.
+    const a = await getAgentFunnel('30', wallDeps(
+      [...walled('d', 60, D), ...walled('m', 60, M)],
+      { pooled: 120, activated: 800, absentUntil: '2099-01-01T00:00:00.000Z' },
+    ));
+    const s = a.quota_wall_split!;
+    expect(s.stages.every(st => st.window_predates_cutover)).toBe(true);
+    const daily = s.cells.find(c => c.bucket === 'daily')!;
+    expect(daily.low_confidence).toBe(false); // n=60 is plenty…
+    expect(daily.activated_to_wall).toBeNull(); // …and it is STILL suppressed
+    expect(daily.suppressed_reason).toContain('before the discriminator cutover');
+    expect(s.mix.daily_pct).toBeNull();
+  });
+
+  it('🎯 each stage carries its OWN cutover bounds — the three are never collapsed into one', async () => {
+    const a = await getAgentFunnel('30', wallDeps([...walled('d', 5, D)]));
+    const byStage = Object.fromEntries(
+      a.quota_wall_split!.stages.map(s => [s.event_type, s.discriminator_cutover.live_since]),
+    );
+    expect(byStage.quota_hit_block).toBe('2026-08-09T08:35:52.505Z');
+    expect(byStage.quota_hit_soft).toBe('2026-08-15T21:39:50.063Z');
+    expect(byStage.quota_hit_hard).toBe('2026-08-15T22:39:54.582Z');
+    expect(new Set(Object.values(byStage)).size).toBe(3); // three instants, not one
+  });
+
+  it('🎯 the two underivable questions render as PENDING with their blockers named', async () => {
+    const a = await getAgentFunnel('30', wallDeps([...walled('d', 5, D)]));
+    const pending = a.quota_wall_split!.pending;
+    const ids = pending.map(p => p.id);
+    expect(ids).toContain('keyed_vs_keyless');
+    expect(ids).toContain('wall_to_paid');
+    // An operator must be able to tell a missing stage from a zero one, so every pending row
+    // names WHY it cannot be derived and what was measured.
+    for (const p of pending) {
+      expect(p.question.length).toBeGreaterThan(0);
+      expect(p.blocker.length).toBeGreaterThan(0);
+      expect(p.evidence.length).toBeGreaterThan(0);
+    }
+    expect(pending.find(p => p.id === 'keyed_vs_keyless')!.blocker).toContain('av_free_');
+    expect(pending.find(p => p.id === 'wall_to_paid')!.blocker).toContain('session_id');
+  });
+
+  it('🎯 cells do not sum to the pooled stage when a session hits both walls, and that is stated', async () => {
+    const a = await getAgentFunnel('30', wallDeps(
+      [
+        { event_type: 'quota_hit_block', session_id: 'both', meta_json: D },
+        { event_type: 'quota_hit_block', session_id: 'both', meta_json: M },
+        ...walled('m', 40, M),
+      ],
+      { pooled: 41, activated: 800 },
+    ));
+    const s = a.quota_wall_split!;
+    expect(s.multi_bucket_sessions).toBe(1);
+    expect(s.unit_note).toContain('do NOT sum');
+    const sum = s.cells.reduce((n, c) => n + c.sessions, 0);
+    expect(sum).toBeGreaterThan(s.pooled_sessions!); // 42 > 41 — the overlap, rendered not hidden
+  });
+
+  it('🎯 additive only — no existing agent-funnel number moves', async () => {
+    // AC7. The split is a new sibling key; stages, transitions, quota_detail and paid_detail must
+    // be identical to what the panel showed before it existed.
+    const a = await getAgentFunnel('all', wallDeps([...walled('d', 9, D), ...walled('m', 5, M)], { pooled: 10, activated: 800 }));
+    expect(a.stages.map(s => s.count)).toEqual([1000, 800, 10, 3]);
+    expect(a.quota_detail).toEqual({ windowed_hard_block: 10, soft_approaching: 20, all_time_pqls: 10 });
+    expect(a.paid_detail).toMatchObject({ distinct_wallets: 3, payments: 7 });
+    expect(a.transitions[0].rate).toBeCloseTo(0.8);
+    expect(JSON.stringify(a)).not.toMatch(/0x[0-9a-fA-F]{40}/);
+    expect(JSON.stringify(a)).not.toContain('outcome_return_pct');
+  });
+
+  it('🎯 a failed split query fails OPEN — null, never a throw on a serving path', async () => {
+    const deps = funnelDeps((sql) => {
+      if (sql.includes('meta_json') && sql.includes('event_type IN')) throw new Error('boom');
+      if (sql.includes("'mcp_connect'")) return [{ c: 1000 }];
+      if (sql.includes('FROM agent_sessions')) return [{ c: 800 }];
+      if (sql.includes("'quota_hit_hard','quota_hit_block'")) return [{ c: 10 }];
+      return [];
+    });
+    const a = await getAgentFunnel('30', deps);
+    expect(a.quota_wall_split).toBeNull();
+    expect(a.stages.map(s => s.count)[0]).toBe(1000); // the rest of the panel still renders
+  });
+
+  it('🎯 a producer emitting an UNRECOGNISED wall reports it instead of absorbing it', async () => {
+    const a = await getAgentFunnel('30', wallDeps([
+      ...walled('d', 5, D),
+      { event_type: 'quota_hit_block', session_id: 'w1', meta_json: '{"limit":"weekly"}' },
+    ]));
+    const s = a.quota_wall_split!;
+    // The unknown wall is NOT silently counted as monthly…
+    expect(s.cells.find(c => c.bucket === 'monthly')!.sessions).toBe(0);
+    expect(s.cells.find(c => c.bucket === 'unknown')!.sessions).toBe(1);
+    // …and the divergence surfaces on the payload rather than dying in a discarded array.
+    expect(s.warnings.join(' ')).toContain('disagreed on 1 row');
+  });
+});
+
+// ── Bypassed-artifact assertions ──────────────────────────────────────────────────────────
+//
+// Two mutations initially SURVIVED this suite, and both survived for the same reason: the tests
+// substituted the very artifact the mutation lived in. Pooling was asserted against a literal
+// array rather than the shipped constant, and the cutover SQL was never executed because the
+// router stubs its result. A hermetic test is structurally blind to exactly what its own seam
+// replaces — so the bypassed artifacts are asserted directly here.
+describe('quota wall split — the artifacts the stubs bypass', () => {
+  it('🎯 the SHIPPED pooled constant is hard+block, and excludes the soft warning', () => {
+    // `quota_hit_soft` is an "approaching" nudge, not a wall. Pooling it into the crossing would
+    // inflate the stage with sessions that were never refused anything.
+    expect([...POOLED_QUOTA_WALL_EVENT_TYPES]).toEqual(['quota_hit_hard', 'quota_hit_block']);
+    expect(POOLED_QUOTA_WALL_EVENT_TYPES).not.toContain('quota_hit_soft');
+    expect([...QUOTA_WALL_EVENT_TYPES]).toEqual(['quota_hit_soft', 'quota_hit_hard', 'quota_hit_block']);
+    // Every pooled stage must be a declared stage, or it would be aggregated but never bucketed.
+    for (const et of POOLED_QUOTA_WALL_EVENT_TYPES) expect(QUOTA_WALL_EVENT_TYPES).toContain(et);
+  });
+
+  it('🎯 pooling driven by the SHIPPED constant excludes soft sessions from the crossing', () => {
+    // Uses POOLED_QUOTA_WALL_EVENT_TYPES itself, not a literal — so widening the constant to
+    // include `quota_hit_soft` makes this test red instead of silently changing the panel.
+    const agg = aggregateQuotaWallRows(
+      [
+        { event_type: 'quota_hit_block', session_id: 'walled', meta_json: '{"limit":"monthly"}' },
+        { event_type: 'quota_hit_soft', session_id: 'merely-warned', meta_json: '{"limit":"daily"}' },
+      ],
+      QUOTA_WALL_EVENT_TYPES,
+      POOLED_QUOTA_WALL_EVENT_TYPES,
+    );
+    expect(agg.pooled.distinct_sessions).toBe(1); // `merely-warned` was never refused
+    expect(agg.pooled.sessions).toEqual({ daily: 0, monthly: 1, unknown: 0 });
+    expect(agg.per_stage.quota_hit_soft.sessions.daily).toBe(1); // still reported per stage
+  });
+
+  it('🎯 the cutover SQL bounds BOTH sides on the discriminator predicate', async () => {
+    // The router stubs this query's RESULT, so its text is the only part a test can reach — and
+    // an `absent_until` that forgot the predicate would silently report the newest row of ALL
+    // time as "the last row without a discriminator", collapsing every bound.
+    const seen: string[] = [];
+    const deps = funnelDeps((sql) => {
+      seen.push(sql);
+      return [];
+    });
+    await getAgentFunnel('30', deps);
+    const boundsSql = seen.find(s => s.includes('absent_until'));
+    expect(boundsSql).toBeDefined();
+    expect(boundsSql).toContain(QUOTA_WALL_PRESENT_SQL);
+    // MIN(...) = first row WITH the discriminator; MAX(...) = last row WITHOUT it. Both branches
+    // must be predicated, and the MAX branch must invert (THEN NULL ELSE ts).
+    expect(boundsSql).toMatch(new RegExp(`MIN\\(CASE WHEN ${QUOTA_WALL_PRESENT_SQL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} THEN ts END\\)`));
+    expect(boundsSql).toMatch(new RegExp(`MAX\\(CASE WHEN ${QUOTA_WALL_PRESENT_SQL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} THEN NULL ELSE ts END\\)`));
+    expect(boundsSql).toContain('GROUP BY event_type');
+  });
+
+  it('🎯 no backend-specific JSON SQL reaches either lane', async () => {
+    // PG-only JSON operators break the SQLite lane. The split parses meta_json in JS precisely so
+    // both backends run the same query text; this asserts none crept back in.
+    const seen: string[] = [];
+    await getAgentFunnel('30', funnelDeps((sql) => { seen.push(sql); return []; }));
+    const wallSql = seen.filter(s => s.includes('meta_json') || s.includes('funnel_events'));
+    expect(wallSql.length).toBeGreaterThan(0);
+    for (const sql of wallSql) {
+      expect(sql).not.toContain('->>');
+      expect(sql).not.toContain('::jsonb');
+      expect(sql).not.toContain('jsonb_');
+      expect(sql).not.toContain('json_extract'); // the SQLite-only twin
+      expect(sql).not.toContain('FILTER (WHERE'); // PG-only aggregate filter
+    }
   });
 });

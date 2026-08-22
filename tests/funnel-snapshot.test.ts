@@ -21,7 +21,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { generateFunnelSnapshot } from '../src/lib/funnel-snapshot.js';
+import {
+  generateFunnelSnapshot,
+  aggregateQuotaWallRows,
+  classifyQuotaWall,
+  computeQuotaWallMix,
+  hasQuotaWallLiteral,
+  quotaWallPredicatesAgree,
+} from '../src/lib/funnel-snapshot.js';
 import { closeDb, dbQuery, dbRun, recordFunnelEvent } from '../src/lib/performance-db.js';
 import { initAnalytics } from '../src/lib/analytics.js';
 import { ensureProcessedX402PaymentsSchema } from '../src/lib/x402-idempotency-store.js';
@@ -540,3 +547,158 @@ if (SKIP_REASON) {
   // once on suite import so operator knows why it's skipped.
   console.log(`[funnel-snapshot.test] ${SKIP_REASON}`);
 }
+
+// ── OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 — the wall discriminator ───────────────────────────────
+//
+// Plain `describe`, NOT `describeOrSkip`: these exercise pure functions with no DB at all, so
+// they must run in BOTH the SQLite and the Postgres lane. Skipping them when DATABASE_URL is
+// set would leave the classifier — the one derivation both readers project from — unasserted
+// in exactly the lane production runs.
+describe('classifyQuotaWall — the ONE wall derivation', () => {
+  it('🎯 classifies the two shapes the frozen producers actually emit', () => {
+    // license.ts, monthly refusal branch
+    expect(classifyQuotaWall('{"used":200,"total":200,"limit":"monthly"}')).toBe('monthly');
+    // license.ts, daily refusal branch
+    expect(classifyQuotaWall('{"used":40,"total":40,"limit":"daily"}')).toBe('daily');
+    // tier-warning.ts, soft/hard — note it ALSO carries `monthly_limit`
+    expect(
+      classifyQuotaWall('{"current_usage":36,"monthly_limit":40,"ratio":0.9,"limit":"daily"}'),
+    ).toBe('daily');
+  });
+
+  it('🎯 `unknown` is a FIRST-CLASS bucket and is never folded into `monthly`', () => {
+    // Every way a row can fail to name a wall lands in `unknown` — never in a real wall.
+    // Folding any of these into `monthly` would manufacture a step change at the cutover.
+    expect(classifyQuotaWall(null)).toBe('unknown');
+    expect(classifyQuotaWall(undefined)).toBe('unknown');
+    expect(classifyQuotaWall('')).toBe('unknown');
+    expect(classifyQuotaWall('{}')).toBe('unknown');
+    expect(classifyQuotaWall('{"used":1,"total":2}')).toBe('unknown'); // pre-cutover shape
+    expect(classifyQuotaWall('not json at all')).toBe('unknown');
+    expect(classifyQuotaWall('null')).toBe('unknown');
+    expect(classifyQuotaWall('"a string"')).toBe('unknown');
+    expect(classifyQuotaWall('[1,2,3]')).toBe('unknown');
+    // An UNRECOGNISED value is not coerced into a wall we have not measured.
+    expect(classifyQuotaWall('{"limit":"weekly"}')).toBe('unknown');
+    expect(classifyQuotaWall('{"limit":null}')).toBe('unknown');
+    expect(classifyQuotaWall('{"limit":7}')).toBe('unknown');
+  });
+
+  it('🎯 the SQL prefilter and the JS classifier agree across the corpus', () => {
+    // QUOTA_WALL_PRESENT_SQL bounds the cutover; classifyQuotaWall decides the bucket. If the
+    // two ever describe different populations, the bounds stop describing the buckets — so the
+    // agreement is asserted here and re-checked live on every row the split parses.
+    for (const meta of [
+      '{"used":200,"total":200,"limit":"monthly"}',
+      '{"used":40,"total":40,"limit":"daily"}',
+      '{"current_usage":36,"monthly_limit":40,"ratio":0.9,"limit":"monthly"}',
+      '{}',
+      '{"used":1,"total":2}',
+      null,
+      '',
+    ]) {
+      expect(quotaWallPredicatesAgree(meta)).toBe(true);
+    }
+    // The colon is load-bearing: `monthly_limit` must NOT satisfy the prefilter, or every
+    // pre-cutover soft/hard row would be counted as carrying a discriminator.
+    expect(hasQuotaWallLiteral('{"current_usage":36,"monthly_limit":40,"ratio":0.9}')).toBe(false);
+    expect(classifyQuotaWall('{"current_usage":36,"monthly_limit":40,"ratio":0.9}')).toBe('unknown');
+    // And a THIRD wall value is a real disagreement — reported, not absorbed.
+    expect(hasQuotaWallLiteral('{"limit":"weekly"}')).toBe(true);
+    expect(classifyQuotaWall('{"limit":"weekly"}')).toBe('unknown');
+    expect(quotaWallPredicatesAgree('{"limit":"weekly"}')).toBe(false);
+  });
+});
+
+describe('aggregateQuotaWallRows — the ONE reduction', () => {
+  const D = '{"limit":"daily"}';
+  const M = '{"limit":"monthly"}';
+  const U = '{"used":1,"total":2}';
+  const ALL = ['quota_hit_soft', 'quota_hit_hard', 'quota_hit_block'];
+  const POOL = ['quota_hit_hard', 'quota_hit_block'];
+
+  it('🎯 buckets rows and sessions independently, and pools ONLY hard+block', () => {
+    const agg = aggregateQuotaWallRows(
+      [
+        // one session, many block rows on the monthly wall — the real shape: rows ≫ sessions
+        { event_type: 'quota_hit_block', session_id: 's1', meta_json: M },
+        { event_type: 'quota_hit_block', session_id: 's1', meta_json: M },
+        { event_type: 'quota_hit_block', session_id: 's1', meta_json: M },
+        { event_type: 'quota_hit_block', session_id: 's2', meta_json: D },
+        { event_type: 'quota_hit_hard', session_id: 's3', meta_json: D },
+        { event_type: 'quota_hit_soft', session_id: 's4', meta_json: M },
+        { event_type: 'quota_hit_block', session_id: 's5', meta_json: U },
+      ],
+      ALL,
+      POOL,
+    );
+    expect(agg.per_stage.quota_hit_block.rows).toEqual({ daily: 1, monthly: 3, unknown: 1 });
+    expect(agg.per_stage.quota_hit_block.sessions).toEqual({ daily: 1, monthly: 1, unknown: 1 });
+    expect(agg.per_stage.quota_hit_soft.sessions).toEqual({ daily: 0, monthly: 1, unknown: 0 });
+    // soft is an "approaching" warning, not a wall — it must stay OUT of the pooled crossing.
+    expect(agg.pooled.sessions).toEqual({ daily: 2, monthly: 1, unknown: 1 });
+    expect(agg.pooled.distinct_sessions).toBe(4); // s1,s2,s3,s5 — s4 is soft-only
+  });
+
+  it('🎯 a session hitting BOTH walls is counted in both cells, so cells do not sum to the stage', () => {
+    const agg = aggregateQuotaWallRows(
+      [
+        { event_type: 'quota_hit_block', session_id: 'both', meta_json: D },
+        { event_type: 'quota_hit_block', session_id: 'both', meta_json: M },
+        { event_type: 'quota_hit_block', session_id: 'solo', meta_json: M },
+      ],
+      ALL,
+      POOL,
+    );
+    expect(agg.pooled.sessions.daily + agg.pooled.sessions.monthly).toBe(3);
+    expect(agg.pooled.distinct_sessions).toBe(2); // 3 !== 2 — and that is the fact, not a bug
+    expect(agg.pooled.multi_bucket_sessions).toBe(1);
+  });
+
+  it('🎯 counts keyed-vs-keyless sessions live, and reports predicate disagreements', () => {
+    const agg = aggregateQuotaWallRows(
+      [
+        { event_type: 'quota_hit_block', session_id: 'v2:abc', meta_json: M },
+        { event_type: 'quota_hit_block', session_id: 'av_free_zzz', meta_json: D },
+        { event_type: 'quota_hit_block', session_id: 'v2:abc', meta_json: M }, // repeat, not a new session
+        { event_type: 'quota_hit_block', session_id: 'v2:def', meta_json: '{"limit":"weekly"}' },
+      ],
+      ALL,
+      POOL,
+    );
+    expect(agg.observed_sessions).toBe(3);
+    expect(agg.keyed_sessions).toBe(1);
+    expect(agg.predicate_disagreements).toBe(1); // the "weekly" row
+  });
+
+  it('🎯 ignores rows outside the declared stage set', () => {
+    const agg = aggregateQuotaWallRows(
+      [{ event_type: 'mcp_connect', session_id: 's1', meta_json: M }],
+      ALL,
+      POOL,
+    );
+    expect(agg.pooled.distinct_sessions).toBe(0);
+    expect(agg.per_stage.quota_hit_block.rows).toEqual({ daily: 0, monthly: 0, unknown: 0 });
+  });
+});
+
+describe('computeQuotaWallMix — `unknown` excluded from BOTH sides', () => {
+  it('🎯 excludes unknown from numerator AND denominator, and says how many that cost', () => {
+    const mix = computeQuotaWallMix({ daily: 30, monthly: 10, unknown: 960 });
+    // If `unknown` were in the denominator, daily would read 3% instead of 75% — a rate that
+    // would then "improve" purely as pre-cutover rows age out, with no behaviour change at all.
+    expect(mix.denominator).toBe(40);
+    expect(mix.daily_pct).toBeCloseTo(0.75, 10);
+    expect(mix.monthly_pct).toBeCloseTo(0.25, 10);
+    expect(mix.excluded_unknown).toBe(960);
+    expect(mix.daily_pct! + mix.monthly_pct!).toBeCloseTo(1, 10);
+  });
+
+  it('🎯 an all-unknown population yields NO rate rather than a zero', () => {
+    const mix = computeQuotaWallMix({ daily: 0, monthly: 0, unknown: 500 });
+    expect(mix.denominator).toBe(0);
+    expect(mix.daily_pct).toBeNull(); // never 0 — 0 would assert a fact we cannot derive
+    expect(mix.monthly_pct).toBeNull();
+    expect(mix.excluded_unknown).toBe(500);
+  });
+});

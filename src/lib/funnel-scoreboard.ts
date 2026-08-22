@@ -22,7 +22,17 @@
  * Cross-backend note: all bucketing (weekly/daily) is done in JS over raw rows —
  * NO date_trunc/interval/::type (SQLite-incompatible; CLAUDE.md dual-backend rule).
  */
-import { generateFunnelSnapshot, type FunnelSnapshot } from './funnel-snapshot.js';
+import {
+  generateFunnelSnapshot,
+  buildQuotaWallSplit,
+  computeQuotaWallMix,
+  POOLED_QUOTA_WALL_EVENT_TYPES,
+  QUOTA_WALL_BUCKETS,
+  type FunnelSnapshot,
+  type QuotaWallBucket,
+  type QuotaWallMix,
+  type QuotaWallSplit,
+} from './funnel-snapshot.js';
 import { dbQuery } from './performance-db.js';
 import {
   listSubscriberProfiles,
@@ -616,6 +626,151 @@ export interface AgentFunnel {
    *  count; `repeat_payers` = top wallets by call count (truncated, operator-excluded, operator-only). */
   paid_detail: { distinct_wallets: number | null; payments: number | null; repeat_payers: Array<{ wallet: string; calls: number }> };
   paid_note: string;
+  /**
+   * OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 — the quota-crossing stage split by `meta.limit`. Additive:
+   * `stages`, `transitions`, `quota_detail` and `paid_detail` are unchanged, so no existing
+   * number on this panel moves. `null` on query failure (fail-open).
+   */
+  quota_wall_split: AgentQuotaWallSplit | null;
+}
+
+/**
+ * One rendered wall cell. OPS-QUOTA-FUNNEL-WALL-SPLIT-W1.
+ *
+ * `low_confidence` is evaluated PER CELL, never on the pooled stage. With a pooled
+ * quota-crossing comfortably over the floor, a `daily` cell can still sit at single digits —
+ * and a guard applied only to the pooled number would pass while the cell it is protecting is
+ * far too thin to read. That is false confidence produced by a guard that is technically
+ * present, which is worse than no guard, because the panel then looks checked.
+ */
+export interface QuotaWallCell {
+  bucket: QuotaWallBucket;
+  sessions: number;
+  rows: number;
+  /** activated → this wall. `null` when the cell is suppressed — never a number we cannot stand behind. */
+  activated_to_wall: number | null;
+  low_confidence: boolean;
+  suppressed_reason: string | null;
+}
+
+export interface AgentQuotaWallSplit {
+  cells: QuotaWallCell[];
+  /** The existing quota-crossing stage count, shown BESIDE the cells so the contrast is visible. */
+  pooled_sessions: number | null;
+  pooled_low_confidence: boolean;
+  /** Sessions counted in more than one cell — why the cells do not sum to `pooled_sessions`. */
+  multi_bucket_sessions: number;
+  mix: QuotaWallMix & { low_confidence: boolean; suppressed_reason: string | null };
+  /** Per-stage detail incl. each stage's OWN data-derived cutover bounds. */
+  stages: QuotaWallSplit['stages'];
+  claim: QuotaWallSplit['claim'];
+  pending: QuotaWallSplit['pending'];
+  unit_note: string;
+  cutover_note: string;
+  guard_note: string;
+  /**
+   * Non-fatal notes from building this split — a failed cutover-bounds query, or the SQL
+   * prefilter disagreeing with `classifyQuotaWall` (a producer emitting a wall value we do not
+   * recognise). Carried HERE, on the payload, and rendered on the panel.
+   *
+   * `getAgentFunnel`'s own `warnings` array is built and then discarded — it is not part of the
+   * returned shape — so routing these into it would ship the one signal that detects producer
+   * drift as a dark guard. That pre-existing dead array is left untouched: it belongs to the
+   * surface that created it, not to this wave.
+   */
+  warnings: string[];
+}
+
+/**
+ * Build the rendered wall split for the agent funnel.
+ *
+ * The counts come from the SHARED `buildQuotaWallSplit` (one implementation, one classifier);
+ * this function adds only the layer that belongs beside `lowConfidence()` — the per-cell guard
+ * and the rates it gates. Keeping the `n < 30` threshold in exactly one place is the reason the
+ * split is not simply re-derived here.
+ */
+function buildAgentQuotaWallSplit(
+  split: QuotaWallSplit,
+  activated: number | null,
+  pooledSessions: number | null,
+  splitWarnings: readonly string[],
+): AgentQuotaWallSplit {
+  const pooledCounts: Record<QuotaWallBucket, number> = { daily: 0, monthly: 0, unknown: 0 };
+  const pooledRows: Record<QuotaWallBucket, number> = { daily: 0, monthly: 0, unknown: 0 };
+  let multi = 0;
+  for (const s of split.stages) {
+    if (!POOLED_QUOTA_WALL_EVENT_TYPES.includes(s.event_type)) continue;
+    multi = Math.max(multi, s.multi_bucket_sessions);
+    for (const b of QUOTA_WALL_BUCKETS) {
+      pooledCounts[b] += s.sessions[b];
+      pooledRows[b] += s.rows[b];
+    }
+  }
+
+  // A window that still contains pre-discriminator rows makes every rate over it diluted by rows
+  // that could never have carried a wall — cohort-immaturity for this cell. Suppress, don't dilute.
+  const immatureStages = split.stages
+    .filter((s) => POOLED_QUOTA_WALL_EVENT_TYPES.includes(s.event_type) && s.window_predates_cutover)
+    .map((s) => s.event_type);
+  const immature = immatureStages.length > 0;
+  const immatureReason = `window opens before the discriminator cutover for ${immatureStages.join(', ')} — rate would be diluted by pre-cutover rows`;
+
+  const cells: QuotaWallCell[] = QUOTA_WALL_BUCKETS.map((bucket) => {
+    const sessions = pooledCounts[bucket];
+    const low = lowConfidence(sessions);
+    // `unknown` never carries a conversion rate at all: it is not a wall, it is the absence of a
+    // label. Rendering a rate for it would invent the very fact this panel exists to refuse.
+    const notAWall = bucket === 'unknown';
+    const reason = notAWall
+      ? '`unknown` is the absence of a discriminator, not a wall — no rate is derivable'
+      : low
+        ? `n=${sessions} < 30 for this cell (pooled n is not a substitute)`
+        : immature
+          ? immatureReason
+          : null;
+    return {
+      bucket,
+      sessions,
+      rows: pooledRows[bucket],
+      activated_to_wall:
+        reason === null && activated !== null && activated > 0 ? sessions / activated : null,
+      low_confidence: low,
+      suppressed_reason: reason,
+    };
+  });
+
+  const mixBase = computeQuotaWallMix(pooledCounts);
+  const mixLow = lowConfidence(mixBase.denominator);
+  const mixReason = mixLow
+    ? `n=${mixBase.denominator} < 30 across daily+monthly`
+    : immature
+      ? immatureReason
+      : null;
+
+  return {
+    cells,
+    pooled_sessions: pooledSessions,
+    pooled_low_confidence: lowConfidence(pooledSessions),
+    multi_bucket_sessions: multi,
+    mix: {
+      ...mixBase,
+      daily_pct: mixReason === null ? mixBase.daily_pct : null,
+      monthly_pct: mixReason === null ? mixBase.monthly_pct : null,
+      low_confidence: mixLow,
+      suppressed_reason: mixReason,
+    },
+    stages: split.stages,
+    claim: split.claim,
+    pending: split.pending,
+    unit_note: split.unit_note,
+    cutover_note: split.cutover_note,
+    guard_note:
+      'n<30 and cohort-maturity are applied PER CELL, not to the pooled stage. A pooled count can ' +
+      'clear the floor while every split cell sits far below it, so a guard on the pooled number ' +
+      'alone would report confidence the cells cannot carry. Suppressed cells show their n and the ' +
+      'reason, never a number.',
+    warnings: [...splitWarnings],
+  };
 }
 
 /** Agent funnel (MCP/API → x402), windowed. Quota-crossing = distinct sessions that hit the
@@ -649,6 +804,17 @@ export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   const paidPaymentsX402 = await scalar(deps, 'agent_x402_payments',
     `SELECT COUNT(*) AS c FROM processed_x402_payments WHERE created_at >= ?`, [iso], warnings);
   const repeatPayers = await topX402Payers(deps, iso, extClause, extParams, warnings);
+  // OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 — the split the arc has carried unread since flat billing.
+  // Uses THIS funnel's window (all-time for `all`), which the composed snapshot's 90-day cap does
+  // not match — so it is derived here rather than projected from `snap`, over the SHARED builder.
+  const wallWarnings: string[] = [];
+  const wallSplit = await buildQuotaWallSplit(
+    (sql, params) => deps.query(sql, params ?? []),
+    iso,
+    new Date(nowMs).toISOString(),
+    wallWarnings,
+  );
+
   const stages: FunnelStage[] = [
     { key: 'connections', label: 'Connections', sublabel: 'Reach · MCP / API', count: connections },
     { key: 'activated', label: 'Activated', sublabel: 'Value · made ≥1 call', count: activated },
@@ -663,6 +829,9 @@ export async function getAgentFunnel(window: FunnelWindow, deps: ScoreboardDeps 
   return {
     window, stages, transitions, biggest_leak: pickBiggestLeak(transitions, benches),
     quota_detail: { windowed_hard_block: quotaCross, soft_approaching: quotaSoft, all_time_pqls: allTimePqls },
+    quota_wall_split: wallSplit
+      ? buildAgentQuotaWallSplit(wallSplit, activated, quotaCross, wallWarnings)
+      : null,
     paid_detail: { distinct_wallets: paidWalletsX402, payments: paidPaymentsX402, repeat_payers: repeatPayers },
     paid_note: 'Distinct paying WALLETS (COUNT DISTINCT payer_wallet), operator self-settle EXCLUDED (instrumentation_artifact) — the EXACT quota→paid conversion, not payment events. Secondary payment count in paid_detail.payments; unattributable pre-instrumentation rows (empty-string wallet, SEC-49) not counted. Base/USDC rail only — okx a2mcp settlements are not yet in this count (OPS-X402-OKX-METRICS-W1).',
   };
