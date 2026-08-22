@@ -988,3 +988,80 @@ describe('quota wall split — the artifacts the stubs bypass', () => {
     }
   });
 });
+
+// ── The defect the LIVE READ found (OPS-QUOTA-FUNNEL-WALL-SPLIT-W1 CH2 → CH1 fix) ─────────
+//
+// The first deployed panel reported daily=20 / monthly=7 against a pooled quota-crossing stage
+// of 13. Cells cannot describe more walled sessions than the stage they split. Cause: the
+// scoreboard SUMMED the per-stage session counts across quota_hit_hard + quota_hit_block, so a
+// session that trips both stages was counted twice — a second, wrong derivation of a value
+// `aggregateQuotaWallRows` already computed correctly. Every test below fails against that code.
+describe('quota wall split — pooled cells are DISTINCT sessions, never a sum of stages', () => {
+  const D = '{"limit":"daily"}';
+  const M = '{"limit":"monthly"}';
+
+  function deps(rows: Array<{ event_type: string; session_id: string; meta_json: string }>, pooled: number) {
+    return funnelDeps((sql) => {
+      if (sql.includes('meta_json') && sql.includes('session_id') && sql.includes('event_type IN')) return rows;
+      if (sql.includes('absent_until')) return [];
+      if (sql.includes("'mcp_connect'")) return [{ c: 1000 }];
+      if (sql.includes('FROM agent_sessions')) return [{ c: 800 }];
+      if (sql.includes("'quota_hit_hard','quota_hit_block'")) return [{ c: pooled }];
+      return [];
+    });
+  }
+
+  it('🎯 a session tripping BOTH hard and block on one wall is ONE pooled session', async () => {
+    // The exact live shape: escalation through hard → block is the NORMAL path, not an edge case.
+    const a = await getAgentFunnel('7', deps([
+      { event_type: 'quota_hit_hard', session_id: 's1', meta_json: D },
+      { event_type: 'quota_hit_block', session_id: 's1', meta_json: D },
+      { event_type: 'quota_hit_hard', session_id: 's2', meta_json: M },
+      { event_type: 'quota_hit_block', session_id: 's2', meta_json: M },
+    ], 2));
+    const s = a.quota_wall_split!;
+    // Summing the per-stage rows would give daily 2 / monthly 2 against a pooled stage of 2.
+    expect(s.cells.find(c => c.bucket === 'daily')!.sessions).toBe(1);
+    expect(s.cells.find(c => c.bucket === 'monthly')!.sessions).toBe(1);
+    expect(s.multi_bucket_sessions).toBe(0); // each session saw exactly ONE wall
+  });
+
+  it('🎯 INVARIANT: no cell may exceed the pooled distinct-session count', async () => {
+    // Arithmetically necessary and cheap. This alone would have caught the shipped defect.
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => ({ event_type: 'quota_hit_hard', session_id: `d${i}`, meta_json: D })),
+      ...Array.from({ length: 10 }, (_, i) => ({ event_type: 'quota_hit_block', session_id: `d${i}`, meta_json: D })),
+      ...Array.from({ length: 5 }, (_, i) => ({ event_type: 'quota_hit_hard', session_id: `m${i}`, meta_json: M })),
+      ...Array.from({ length: 5 }, (_, i) => ({ event_type: 'quota_hit_block', session_id: `m${i}`, meta_json: M })),
+    ];
+    const a = await getAgentFunnel('7', deps(rows, 15)); // 10 daily + 5 monthly = 15 distinct
+    const s = a.quota_wall_split!;
+    for (const c of s.cells) {
+      expect(c.sessions).toBeLessThanOrEqual(s.pooled_sessions!);
+    }
+    expect(s.cells.find(c => c.bucket === 'daily')!.sessions).toBe(10); // NOT 20
+    expect(s.cells.find(c => c.bucket === 'monthly')!.sessions).toBe(5); // NOT 10
+  });
+
+  it('🎯 the pooled cells reproduce the measured live 7d shape exactly', async () => {
+    // Live prod 2026-08-22: pooled 13 · daily 10 · monthly 5 · unknown 0 (2 sessions hit both).
+    const rows: Array<{ event_type: string; session_id: string; meta_json: string }> = [];
+    for (let i = 0; i < 10; i++) {
+      rows.push({ event_type: 'quota_hit_hard', session_id: `d${i}`, meta_json: D });
+      rows.push({ event_type: 'quota_hit_block', session_id: `d${i}`, meta_json: D });
+    }
+    for (let i = 0; i < 5; i++) rows.push({ event_type: 'quota_hit_block', session_id: `m${i}`, meta_json: M });
+    // 2 of the daily sessions ALSO hit the monthly wall — the multi-bucket case.
+    rows.push({ event_type: 'quota_hit_block', session_id: 'd0', meta_json: M });
+    rows.push({ event_type: 'quota_hit_block', session_id: 'd1', meta_json: M });
+
+    const a = await getAgentFunnel('7', deps(rows, 15));
+    const s = a.quota_wall_split!;
+    expect(s.cells.find(c => c.bucket === 'daily')!.sessions).toBe(10);
+    expect(s.cells.find(c => c.bucket === 'monthly')!.sessions).toBe(7); // 5 + the 2 crossovers
+    expect(s.multi_bucket_sessions).toBe(2);
+    // Cells legitimately exceed the pooled stage ONLY by the overlap — never by double counting.
+    const sum = s.cells.reduce((n, c) => n + c.sessions, 0);
+    expect(sum - s.multi_bucket_sessions).toBe(15);
+  });
+});

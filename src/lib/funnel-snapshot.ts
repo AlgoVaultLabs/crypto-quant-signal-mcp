@@ -1043,6 +1043,19 @@ export interface QuotaWallPending {
 export interface QuotaWallSplit {
   stages: QuotaWallStageSplit[];
   /**
+   * Counts over `POOLED_QUOTA_WALL_EVENT_TYPES` treated as ONE population — the panel's
+   * quota-crossing stage.
+   *
+   * This exists because per-stage counts CANNOT be summed into it. A session that trips
+   * `quota_hit_hard` and then `quota_hit_block` on the same wall is one distinct session in the
+   * pooled cell and appears in BOTH stage rows, so summing double-counts it. Measured live
+   * 2026-08-22: summing gave daily 20 / monthly 7 against a pooled stage of 13, and the panel's
+   * own overlap note is what made the contradiction visible. Deriving it a second time is what
+   * went wrong; `aggregateQuotaWallRows` already computes it once, correctly, and every consumer
+   * projects from that.
+   */
+  pooled: QuotaWallCounts;
+  /**
    * `free_key_claimed` — the identity-capture signal. Additive / NON-stage (absent from
    * CANONICAL_STAGE_ORDER, so the 14-stage funnel and its 13 retentions stay byte-stable).
    */
@@ -1145,6 +1158,7 @@ export async function buildQuotaWallSplit(
 
     return {
       stages,
+      pooled: agg.pooled,
       claim: await getClaimStage(query, windowFromIso, windowToIso, warnings),
       pending: [
         {

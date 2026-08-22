@@ -695,17 +695,14 @@ function buildAgentQuotaWallSplit(
   pooledSessions: number | null,
   splitWarnings: readonly string[],
 ): AgentQuotaWallSplit {
-  const pooledCounts: Record<QuotaWallBucket, number> = { daily: 0, monthly: 0, unknown: 0 };
-  const pooledRows: Record<QuotaWallBucket, number> = { daily: 0, monthly: 0, unknown: 0 };
-  let multi = 0;
-  for (const s of split.stages) {
-    if (!POOLED_QUOTA_WALL_EVENT_TYPES.includes(s.event_type)) continue;
-    multi = Math.max(multi, s.multi_bucket_sessions);
-    for (const b of QUOTA_WALL_BUCKETS) {
-      pooledCounts[b] += s.sessions[b];
-      pooledRows[b] += s.rows[b];
-    }
-  }
+  // Project from the ONE pooled derivation. Do NOT sum the per-stage counts: a session that trips
+  // `quota_hit_hard` and then `quota_hit_block` is ONE distinct pooled session but appears in both
+  // stage rows, so summing double-counts it. Measured live 2026-08-22, summing reported daily 20 /
+  // monthly 7 against a pooled stage of 13 — the cells claimed more walled sessions than the stage
+  // they split, which is arithmetically impossible and was visible on the panel.
+  const pooledCounts: Record<QuotaWallBucket, number> = split.pooled.sessions;
+  const pooledRows: Record<QuotaWallBucket, number> = split.pooled.rows;
+  const multi = split.pooled.multi_bucket_sessions;
 
   // A window that still contains pre-discriminator rows makes every rate over it diluted by rows
   // that could never have carried a wall — cohort-immaturity for this cell. Suppress, don't dilute.
