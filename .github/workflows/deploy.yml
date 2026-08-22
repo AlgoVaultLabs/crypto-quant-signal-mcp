@@ -60,6 +60,19 @@ concurrency:
 
 jobs:
   deploy:
+    # OPS-SUITE-VERDICT-REPORTER-CHANNEL-W1 CH2 — a CEILING, not a budget.
+    #
+    # Measured 2026-08-22 with `gh api repos/AlgoVaultLabs/crypto-quant-signal-mcp/actions/runs/
+    # {id}/jobs` over the 20 most recent SUCCESSFUL `deploy` jobs on main:
+    #   n=20  min=198s  p50=257s  p95=335s  p99=335s  MAX=339s (5.7 min)
+    # 20 minutes is 3.54x that observed max. That is the instrument and the number together — a
+    # baseline without its instrument is meaningless, and this one must never be compared against
+    # a figure taken any other way.
+    #
+    # Chosen to be well clear of a healthy run and still tight enough to kill a hang: the job had
+    # NO ceiling at all before this, so a wedged step ran to GitHub's 6-hour default while every
+    # concurrent session's deploy queued behind it.
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       # ── Pre-deploy gate: catches landing-page drift BEFORE SSH-deploy ──
@@ -192,6 +205,44 @@ jobs:
           # so the files were there and the uploader skipped them. Nothing but a real CI run shows
           # this: the paths are correct, the YAML is correct, and it fails silently at `warn`.
           include-hidden-files: true
+
+      # OPS-SUITE-VERDICT-REPORTER-CHANNEL-W1 CH2 — THE FLOOR PROOF.
+      #
+      # Runs the REAL classifier invocation against the CAPTURED forced-timeout fixture, on the
+      # real runner, and asserts BOTH the emitted token AND the gate's response to it. That proves
+      # the channel, the classifier and the gating decision here, every run, without ever landing a
+      # knowingly-broken test on main to manufacture a live timeout.
+      #
+      # HONEST SCOPE, and it is not softened: this proves the channel, the classifier and the
+      # gate's response on the real runner. It does NOT prove all four links firing SIMULTANEOUSLY
+      # in one live run. That observation is deferred to the next naturally-occurring timeout on
+      # main, and is owned by OPS-VERDICT-PIPELINE-E2E-PROOF-W1 as a CAPTURE task.
+      - name: Verdict-channel floor proof (captured timeout must read INDETERMINATE, and BLOCK)
+        run: |
+          set +e
+          out=$(node scripts/classify-suite-verdict.mjs \
+            tests/fixtures/verdict-channel/timeout-only.report.json \
+            --sidecar=tests/fixtures/verdict-channel/timeout-only.shapes.json \
+            --no-retry 2>&1)
+          rc=$?
+          printf '%s\n' "$out"
+          V=$(printf '%s\n' "$out" | grep '^SUITE_VERDICT=' | tail -1 | cut -d= -f2)
+          if [ "$V" != "INDETERMINATE" ]; then
+            echo "FLOOR FAIL: a captured REAL timeout classified '$V', expected INDETERMINATE."
+            echo "  That is the dark-gate defect this wave removed, back again."
+            exit 1
+          fi
+          if [ "$rc" -ne 3 ]; then
+            echo "FLOOR FAIL: token was INDETERMINATE but exit was $rc, expected 3."
+            echo "  The token->exit mapping is what callers other than this workflow gate on."
+            exit 1
+          fi
+          # The GATE's own response to that token, evaluated with the same case arms the real
+          # verdict step uses. Asserting the token alone would leave the decision unproven.
+          case "$V" in
+            PASS|PASS_AFTER_ISOLATION) echo "FLOOR FAIL: the gate would PERMIT a deploy on '$V'"; exit 1 ;;
+          esac
+          echo "FLOOR OK: token=$V exit=$rc -> deploy correctly BLOCKED on a contention-shaped red."
 
       - name: Docs structural drift canary (build_docs --check)
         run: node scripts/build_docs.mjs --check

@@ -57,3 +57,12 @@ ops/scripts/.disk-forensics-hosts
 # unignored file here WOULD be swept in by `git add -A`, which CLAUDE.md bans for
 # exactly this reason. (OPS-ENDPOINT-TRUTH-VAULT-QUARANTINE-W1)
 /.claude/napkin.md
+
+# OPS-SUITE-VERDICT-REPORTER-CHANNEL-W1 CH2 — CI suite artifacts.
+# Written by the deploy workflow's vitest step and by any deliberate local run that registers the
+# error-shape reporter. No test writes them, so an ordinary `npm test` leaves the tree clean — but
+# a stray 2.5 MB report reaching a commit is cheap to prevent and annoying to undo.
+.vitest-report.json
+.vitest-error-shapes.json
+.vitest-isolation-report.json
+.vitest-isolation-error-shapes.json
