@@ -36,6 +36,10 @@ const ALL_SIGNAL_COLS = [
   // generation that produced `regime`, so an audit can partition v1 rows from v3 rows instead of
   // pooling two different engines.
   'regime_rule_version',
+  // SIGNAL-TREND-MODE-ENABLE-W1 CH1: which VERDICT rule produced `signal`. Its sibling above
+  // records which rule produced the LABEL; this one matters more, because a changed verdict rule
+  // changes which rows EXIST (recordSignal writes non-HOLD only), not merely what one field says.
+  'verdict_rule_version',
   'signal_hash', 'merkle_batch_id', 'merkle_proof',
   // FUNNEL-FIX-ATTRIBUTION-W1: agent_sessions first/last-touch source (the mock returns these
   // for every table introspect, so "all present" covers both tables).

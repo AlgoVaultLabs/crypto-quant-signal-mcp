@@ -14,6 +14,10 @@ import { formatWriteLossLog } from './log-redact.js';
 // it in public copy, and every trade-call test mocks THIS module wholesale — so a
 // constant declared here would arrive `undefined` at the renderer. See funding-window.ts.
 import { FUNDING_Z_MIN_SAMPLES, FUNDING_Z_WINDOW_SECONDS } from './funding-window.js';
+// SIGNAL-TREND-MODE-ENABLE-W1 CH1: the writer stamps which VERDICT rule produced each row, and
+// the stamp is a function of this flag's LIVE value. `trend-mode-flag.ts` imports nothing, so the
+// edge is a leaf and no cycle is introduced. See currentVerdictRuleVersion() below.
+import { getTrendMode } from './trend-mode-flag.js';
 
 /**
  * Resolve the local SQLite DB location AT CONNECT TIME (not once at module
@@ -376,6 +380,29 @@ const SIGNAL_MIGRATIONS: MigrationDescriptor[] = [
   // The VERSION is backfilled; the LABEL never is. Old rows say what the old rule said, and
   // that is the record.
   { table: 'signals', column: 'regime_rule_version', type: 'SMALLINT NOT NULL DEFAULT 1' },
+  // SIGNAL-TREND-MODE-ENABLE-W1 CH1 (2026-08-22): which VERDICT rule produced `signal`.
+  //
+  // The column directly above records which rule produced the LABEL. This one is strictly worse
+  // to be without, because a changed verdict rule does not merely relabel rows — IT CHANGES WHICH
+  // ROWS EXIST. `recordSignal` is reached only for non-HOLD calls at or above
+  // MIN_TRACKABLE_CONFIDENCE (get-trade-call.ts, the `signal !== 'HOLD' && confidence >=` gate),
+  // so flipping TREND_MODE admits a different POPULATION into this table rather than a different
+  // value in one field of the same population. Pooling the two generations would make the track
+  // record a blend of two engines with nothing to separate them — on a record that is
+  // Merkle-anchored and can never be restated.
+  //
+  // DEFAULT 1 is factually correct, not a convenience: every historical row was produced with
+  // TREND_MODE unset. There is no backfill and none is owed.
+  //
+  // Pre-applied to production BEFORE this code landed (CLAUDE.md's pre-apply rule), which is safe
+  // ONLY because the column is NOT NULL DEFAULT — the INSERT the deployed code was already
+  // running kept working unchanged across the ALTER, and any row written in the gap is genuinely
+  // v1. It also closes a real race: runPgMigrationsAsync is fire-and-forget, so without
+  // pre-apply the first INSERT naming this column could beat the background ALTER, throw, and be
+  // swallowed by recordSignal's caller-side catch — silent signal loss. Measured on the live
+  // server: PostgreSQL 16.13, where ADD COLUMN with a NON-VOLATILE default is catalog-only
+  // (PG11+) — no table rewrite and no long lock on 502,806 rows / 608 MB during serving hours.
+  { table: 'signals', column: 'verdict_rule_version', type: 'SMALLINT NOT NULL DEFAULT 1' },
   // Merkle proof columns
   { table: 'signals', column: 'signal_hash', type: 'VARCHAR(66)' },
   { table: 'signals', column: 'merkle_batch_id', type: 'INTEGER' },
@@ -1124,6 +1151,37 @@ export const REGIME_RULE_VERSION = 3;
  */
 export const REGIME_RULE_V2_CUTOVER_UTC = '2026-08-07T15:28:44Z';
 
+/**
+ * The rule that produced a row's VERDICT. A FUNCTION rather than a constant, and that is the
+ * whole point of it.
+ *
+ * 1 = `TREND_MODE` off — the contrarian RSI ladder in every regime. Every row written before
+ *     SIGNAL-TREND-MODE-ENABLE-W1 carries it, correctly, through the column's DEFAULT.
+ * 2 = `TREND_MODE` on — a CONFIRMED trend flips the saturated RSI region's sign. Blast radius is
+ *     one rung of one ladder inside TRENDING_UP / TRENDING_DOWN; RANGING is untouched.
+ *
+ * WHY NOT A BUILD-TIME CONSTANT. `TREND_MODE` is an env var, so it moves with no deploy and no
+ * diff — deliberately, because that is the revert path. A constant baked at build time would keep
+ * stamping 1 while the engine ran rule 2, producing v1-stamped v2 rows: exactly the failure this
+ * column exists to prevent, and undetectable after the fact. `getTrendMode()` reads `process.env`
+ * per call and caches nothing, so this reads the flag's LIVE value at write time.
+ *
+ * WHY NO CUTOVER TIMESTAMP, for the same reason rule 3 above has none: a cutover constant solves
+ * BACKFILL — labelling rows written before the column existed — and there are none to label, since
+ * DEFAULT 1 already labels them correctly. A hardcoded best-estimate instead LIES whenever the
+ * deploy slips, with `status.md` as its only remedy, which is prose-as-control.
+ *
+ * EXTENSION CONTRACT (single-derivation LAW). Every future verdict-rule change adds its case HERE
+ * and ONLY here — a threshold move, a `WEIGHTS` retune, a bucket-ladder edit, and above all an AOE
+ * weight promotion (`src/lib/aoe-config-reader.ts`), which is runtime-mutable by design and so
+ * leaves no diff anywhere to observe. A second site deriving "which verdict rule ran" WILL drift
+ * from this one. Note the limit honestly: an AOE promotion additionally needs an `aoe_config_id`
+ * companion column, because a version number alone cannot say WHICH promoted vector produced a row.
+ */
+export function currentVerdictRuleVersion(): 1 | 2 {
+  return getTrendMode() === 'on' ? 2 : 1;
+}
+
 export function recordSignal(
   coin: string,
   signal: SignalVerdict,
@@ -1137,10 +1195,15 @@ export function recordSignal(
   const b = getBackend();
   const createdAt = Math.floor(Date.now() / 1000);
   b.run(
-    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime, regime_rule_version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO signals (coin, signal, confidence, timeframe, exchange, price_at_signal, created_at, signal_hash, regime, regime_rule_version, verdict_rule_version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     coin, signal, confidence, timeframe, exchange, priceAtSignal, createdAt, signalHash || null, regime ?? null,
-    REGIME_RULE_VERSION
+    REGIME_RULE_VERSION,
+    // Evaluated HERE, at write time, never hoisted to a module constant — see
+    // currentVerdictRuleVersion(). Note what is NOT touched: the Merkle leaf preimage is exactly
+    // (coin, signal, confidence, timeframe, timestamp, price) per hashSignal() in lib/merkle.ts,
+    // so neither this column nor its value can move any anchored root.
+    currentVerdictRuleVersion()
   );
   // CALL-REGIME-WEBHOOK-LAYER-W1 (2026-05-29): post-insert webhook event hook.
   // Flag-gated (default OFF → zero new behavior); fire-and-forget so it never

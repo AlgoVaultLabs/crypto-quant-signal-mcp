@@ -60,6 +60,8 @@ const EXPECTED_MIGRATED_COLUMNS = [
   'return_1candle',
   'exchange',
   'regime',
+  // SIGNAL-TREND-MODE-ENABLE-W1 CH1.
+  'verdict_rule_version',
   'signal_hash',
   'merkle_batch_id',
   'merkle_proof',
