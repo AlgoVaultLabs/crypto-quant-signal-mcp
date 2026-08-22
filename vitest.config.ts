@@ -41,6 +41,25 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // path (`.claude/worktrees/X/tests/…`) cannot match a pattern rooted at `tests/`.
 // Allow-list, not deny-list — a NEW nesting location cannot reintroduce it.
 // Guarded by tests/unit/vitest-discovery-scope.test.ts.
+// OPS-SUITE-VERDICT-REPORTER-CHANNEL-W1 CH1 — THERE IS DELIBERATELY NO `reporters:` KEY HERE.
+//
+// `scripts/vitest-error-shape-reporter.mjs` exists and is load-bearing: it writes the structured
+// error sidecar that `scripts/classify-suite-verdict.mjs` uses to tell a TIMEOUT from an
+// ASSERTION FAILURE. The obvious place to register it is right here. That is measurably WRONG.
+//
+// Measured on vitest 3.2.4 (the lockfile-pinned version CI installs): a CLI `--reporter` flag
+// REPLACES `test.reporters[]` from this file — it does not append to it. Proven both ways:
+// with `reporters: ['default', './x.mjs']` and no CLI flag the custom reporter fires; with the
+// same config plus `--reporter=default --reporter=json` it does NOT.
+//
+// `.github/workflows/deploy.yml` passes exactly those flags. So a reporter registered HERE would
+// run on every developer's `npm test`, pass every self-test, and NEVER RUN IN CI — dark on the one
+// runner that gates the deploy. That is the same class of defect the reporter was written to fix
+// (a gate reading a channel that cannot carry the evidence), reproduced by its own remedy.
+//
+// The reporter is therefore registered ON THE COMMAND LINE in deploy.yml, beside the JSON
+// reporter. If you are here to "fix the missing registration", you would be un-wiring CI.
+
 export default defineConfig({
   test: {
     include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
