@@ -264,12 +264,19 @@ export function enumerateDetectors(root) {
   // this script's own first run — H5 applies to the instrument too):
   //   · inert DATA declarations (.json/.yaml) — not detectors, they page nobody;
   //   · `external:` rows — code owned by ANOTHER repo, absent from this tree BY DESIGN;
-  //   · repo-relative CODE that is genuinely absent — the only class that makes the
+  //   · RETIRED rows — `install_state: retired` means the artifact was deliberately deleted, so
+  //     its absence is the CORRECT state and flagging it is a false positive. This clause was
+  //     added after the census's FIRST COMMITTED RUN reported `candle-basis-shadow-report` and
+  //     `closedbar-recalibrate-readiness` as "provably incomplete enumeration"; both carry
+  //     `retired_at` + `retired_by: OPS-RECALIBRATE-HARNESS-RETIRE-W1`, and both scripts were
+  //     deleted by 799eedb in that same wave. The rows were right and the census was wrong.
+  //   · repo-relative LIVE CODE that is genuinely absent — the only class that makes the
   //     enumeration provably incomplete, and therefore the only one that may FAIL.
   const invByArtifact = new Map();
   const missingArtifacts = [];
   const outOfTree = [];
   const dataDeclarations = [];
+  const retired = [];
   for (const r of inv) {
     if (!r.artifact) continue;
     // Out of tree = an explicit `external:` marker, OR a path whose top-level directory does not
@@ -281,7 +288,14 @@ export function enumerateDetectors(root) {
     }
     if (!CODE_EXT.test(r.artifact) && !/\.ts$/.test(r.artifact)) { dataDeclarations.push({ id: r.id, artifact: r.artifact }); continue; }
     invByArtifact.set(path.basename(r.artifact), r);
-    if (!existsSync(path.join(root, r.artifact))) missingArtifacts.push({ id: r.id, artifact: r.artifact });
+    const present = existsSync(path.join(root, r.artifact));
+    if (r.install_state === 'retired') {
+      // Absence is a retired row's CORRECT state; only record it when it is actually gone, so a
+      // retired-but-still-present artifact keeps its criticality and stays scorable.
+      if (!present) retired.push({ id: r.id, artifact: r.artifact, by: r.retired_by || r.owner_wave || 'an unrecorded wave' });
+      continue;
+    }
+    if (!present) missingArtifacts.push({ id: r.id, artifact: r.artifact });
   }
 
   const alertOwners = new Map();
@@ -339,7 +353,7 @@ export function enumerateDetectors(root) {
   const seenEx = new Set();
   const excludedUniq = excluded.filter((x) => (seenEx.has(x.name) ? false : seenEx.add(x.name)));
   excludedUniq.sort((a, b) => a.name.localeCompare(b.name));
-  return { detectors, excluded: excludedUniq, missingArtifacts, outOfTree, dataDeclarations, invCount: inv.length, regCount: reg.length, s1: s1.length, s3: s3.length };
+  return { detectors, excluded: excludedUniq, missingArtifacts, outOfTree, dataDeclarations, retired, invCount: inv.length, regCount: reg.length, s1: s1.length, s3: s3.length };
 }
 
 export function scoreDetector(source) {
@@ -392,7 +406,8 @@ function emit(r) {
   console.log(`monitoring-census: ${r.rows.length} detector(s) — S1 ${r.s1} file(s) under ${DETECTOR_DIRS.join(' + ')}, `
     + `S2 ${r.invCount} inventory row(s), S3 ${r.s3} marker-producer(s); ${r.regCount} alert-registry row(s)`);
   console.log(`  not scored: ${r.excluded.length} non-detector(s), ${r.dataDeclarations.length} inert data declaration(s), `
-    + `${r.outOfTree.length} external: row(s) owned by another repo`);
+    + `${r.outOfTree.length} external: row(s) owned by another repo, ${r.retired.length} retired row(s)`);
+  for (const x of r.retired) console.log(`  · RETIRED ${x.id.padEnd(38)} artifact deliberately deleted by ${x.by}`);
   console.log('');
   for (const x of r.excluded) console.log(`  · EXCLUDED ${x.name.padEnd(38)} ${x.reason}`);
   console.log('');
