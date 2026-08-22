@@ -49,11 +49,56 @@ const CREATE_STRIPE_PAYMENT_FAILURES_SQL = `
     outcome_seller_message TEXT,
     outcome_risk_level TEXT,
     amount_usd ${PG ? 'NUMERIC' : 'REAL'},
-    tier TEXT
+    tier TEXT,
+    customer_id TEXT,
+    invoice_id TEXT,
+    subscription_id TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_spf_occurred_at ON stripe_payment_failures (occurred_at DESC);
   CREATE INDEX IF NOT EXISTS idx_spf_payment_intent_id ON stripe_payment_failures (payment_intent_id);
+  CREATE INDEX IF NOT EXISTS idx_spf_customer_id ON stripe_payment_failures (customer_id);
 `;
+
+// ── The three linkage columns, added to a table that already exists in PROD ────────────────
+//
+// 🛑 WHY THEY EXIST: without them the table cannot say WHOSE payment failed, and the R9 canary
+// therefore could not tell one dunned customer from three failing ones. Measured on the live
+// account 2026-08-22 — 6 rows over 30d, ALL of them one customer / one subscription / one
+// invoice / one PaymentIntent — while `COUNT(DISTINCT COALESCE(payment_intent_id, event_id))`
+// reported THREE distinct failed payments and tripped the absolute floor of 3.
+//
+// `customer` is the field that makes this recoverable: measured on api_version
+// `2026-03-25.dahlia`, it is present on ALL THREE subscribed event types, while `invoice` is
+// absent from both charge and PI objects and `payment_intent` is absent from the Invoice. So a
+// customer is the only unit every failure event can be attributed to, and it is the unit the
+// floor predicate actually means.
+//
+// Same idempotent-ALTER shape as referral-store.ensureReferralPayoutColumns: PG's ADD COLUMN IF
+// NOT EXISTS is natively idempotent; SQLite has none and needs the PRAGMA pre-check.
+const LINKAGE_COLUMNS = Object.freeze(['customer_id', 'invoice_id', 'subscription_id'] as const);
+
+let _linkageColInit = false;
+export async function ensurePaymentFailureLinkageColumns(): Promise<void> {
+  if (_linkageColInit) return;
+  ensureStripePaymentFailuresSchema();
+  if (PG) {
+    dbExec(LINKAGE_COLUMNS.map(
+      (c) => `ALTER TABLE stripe_payment_failures ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n'));
+  } else {
+    const rows = await dbQuery<{ name: string }>('PRAGMA table_info(stripe_payment_failures)', []);
+    const have = new Set(rows.map((r) => r.name));
+    const missing = LINKAGE_COLUMNS.filter((c) => !have.has(c));
+    if (missing.length) {
+      dbExec(missing.map((c) => `ALTER TABLE stripe_payment_failures ADD COLUMN ${c} TEXT;`).join('\n'));
+    }
+  }
+  _linkageColInit = true;
+}
+
+/** Reset the linkage-column latch — tests only. */
+export function _resetPaymentFailureLinkageInitForTest(): void {
+  _linkageColInit = false;
+}
 
 let _initialized = false;
 
@@ -78,6 +123,11 @@ export interface StripePaymentFailureRow extends PaymentFailureDetail {
   occurredAt: string;
   amountUsd: number | null;
   tier: string | null;
+  /** The ONLY id present on all three subscribed failure events — see LINKAGE_COLUMNS above. */
+  customerId: string | null;
+  /** Present on `invoice.payment_failed` (the object's own id); null elsewhere on `dahlia`. */
+  invoiceId: string | null;
+  subscriptionId: string | null;
 }
 
 /**
@@ -90,15 +140,15 @@ export interface StripePaymentFailureRow extends PaymentFailureDetail {
  * delivery to claim against.
  */
 export async function recordPaymentFailure(row: StripePaymentFailureRow): Promise<boolean> {
-  ensureStripePaymentFailuresSchema();
+  await ensurePaymentFailureLinkageColumns();
   const inserted = await dbQuery<{ event_id: string }>(
     `INSERT INTO stripe_payment_failures (
        event_id, payment_intent_id, source_event_type, occurred_at,
        payment_method_type, card_brand, card_country, card_funding,
        decline_code, failure_code, failure_message,
        outcome_type, outcome_reason, outcome_seller_message, outcome_risk_level,
-       amount_usd, tier
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       amount_usd, tier, customer_id, invoice_id, subscription_id
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (event_id) DO NOTHING
      RETURNING event_id`,
     [
@@ -119,6 +169,9 @@ export async function recordPaymentFailure(row: StripePaymentFailureRow): Promis
       row.outcomeRiskLevel,
       row.amountUsd,
       row.tier,
+      row.customerId,
+      row.invoiceId,
+      row.subscriptionId,
     ],
   );
   return inserted.length > 0;
@@ -160,10 +213,34 @@ export function buildPaymentFailureRow(event: any): StripePaymentFailureRow | nu
   const object = event?.data?.object;
   if (!eventId || !eventType || !object || typeof object !== 'object') return null;
 
-  // Where the PaymentIntent id lives differs per event: a PI event's own `id` IS the PI,
-  // while a Charge and an Invoice both REFERENCE one.
+  // Where the PaymentIntent id lives differs per event: a PI event's own `id` IS the PI, and a
+  // Charge REFERENCES one.
+  //
+  // 🛑 AN INVOICE DOES NOT — MEASURED, not assumed. On the account's live api_version
+  // `2026-03-25.dahlia`, `invoice.payment_failed`'s object has NO `payment_intent` key at all
+  // (`hasOwnProperty` -> false), so the old unconditional `idOf(object.payment_intent)` wrote
+  // NULL for every invoice event. The modern linkage is `payments[].payment.payment_intent`,
+  // which the webhook payload does NOT expand — measured absent on both live events — so it is
+  // read here for the BACKFILL path (which fetches with `expand[]=payments`) and the legacy
+  // `payment_intent` is kept as the fallback for pre-`basil` payloads. On a live webhook this
+  // still resolves to null, and that is exactly why `customerId` below is the load-bearing one.
+  const invoicePaymentIntent = (obj: any): string | null =>
+    idOf(obj?.payments?.data?.[0]?.payment?.payment_intent) ?? idOf(obj?.payment_intent);
   const paymentIntentId =
-    eventType === 'payment_intent.payment_failed' ? idOf(object.id) : idOf(object.payment_intent);
+    eventType === 'payment_intent.payment_failed' ? idOf(object.id)
+      : object.object === 'invoice' ? invoicePaymentIntent(object)
+        : idOf(object.payment_intent);
+
+  // The linkage the metric actually needs. `customer` is present on ALL THREE subscribed event
+  // types (measured on `dahlia`), which is why the R9 floor counts distinct CUSTOMERS: Stripe's
+  // dunning fires a fresh `invoice.payment_failed` per retry attempt, so any per-event unit
+  // makes one unpaid card look like a systemic outage on the third retry.
+  const customerId = idOf(object.customer);
+  const invoiceId = object.object === 'invoice' ? idOf(object.id) : idOf(object.invoice);
+  // `subscription` moved off the Invoice into `parent.subscription_details` — measured absent at
+  // the top level on `dahlia`, present under `parent`. Both are read so neither shape is lost.
+  const subscriptionId =
+    idOf(object.subscription) ?? idOf(object?.parent?.subscription_details?.subscription);
 
   // occurred_at from the Stripe object's OWN timestamp, falling back to the event's.
   // NEVER `now()` — the backfill shares this mapper, and a wall-clock stamp would file
@@ -193,6 +270,9 @@ export function buildPaymentFailureRow(event: any): StripePaymentFailureRow | nu
     occurredAt,
     amountUsd,
     tier: str(object?.metadata?.tier) ?? str(object?.lines?.data?.[0]?.metadata?.tier),
+    customerId,
+    invoiceId,
+    subscriptionId,
   };
 }
 
