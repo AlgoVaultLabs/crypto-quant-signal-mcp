@@ -1,10 +1,10 @@
 {
-  "_comment": "CONSUMER REGISTRY for send_telegram.sh alert ids (OPS-ALERT-RECOVERY-NOTICE-W1 CH2). CLAUDE.md: a shared primitive used by >=2 hosts gets a registry naming every installation \u2014 DETECTION IS STRICTLY WEAKER THAN ENUMERATION. An alert_id firing from a canary nobody listed is exactly what this file exists to make impossible.",
-  "_announce_resolution_semantics": "FALSE is the default and it is the LAW's default: CLAUDE.md holds that recovery CHATTER is noise and silent recovery with forensics in logs is the norm. TRUE opts a single alert into ONE bounded RESOLVED message per episode \u2014 emitted only on FIRING->CLEAR, only when a fire was actually DELIVERED, cooldown-exempt, and self-limiting because it removes the marker. Every failure mode of this lookup (absent file, absent row, malformed JSON, no python3) resolves to SILENT, so the default survives the mechanism breaking.",
+  "_comment": "CONSUMER REGISTRY for send_telegram.sh alert ids (OPS-ALERT-RECOVERY-NOTICE-W1 CH2). CLAUDE.md: a shared primitive used by >=2 hosts gets a registry naming every installation — DETECTION IS STRICTLY WEAKER THAN ENUMERATION. An alert_id firing from a canary nobody listed is exactly what this file exists to make impossible.",
+  "_announce_resolution_semantics": "FALSE is the default and it is the LAW's default: CLAUDE.md holds that recovery CHATTER is noise and silent recovery with forensics in logs is the norm. TRUE opts a single alert into ONE bounded RESOLVED message per episode — emitted only on FIRING->CLEAR, only when a fire was actually DELIVERED, cooldown-exempt, and self-limiting because it removes the marker. Every failure mode of this lookup (absent file, absent row, malformed JSON, no python3) resolves to SILENT, so the default survives the mechanism breaking.",
   "_adopted_vs_announce": "`adopted` = the owner calls --clear on its healthy path at all. `announce_resolution` = that clear is announced rather than silent. They are separate on purpose: an owner may adopt --clear purely for the state hygiene (so a stale marker cannot pin the operator's view) without adding a message.",
-  "_unadopted_behaviour": "Every row with adopted=false behaves EXACTLY as before this wave \u2014 same gates, same order, same log verbs, same exit codes. Adoption is opt-in and byte-identical until opted in.",
-  "_known_divergence": "The autonomous-optimizer repo vendors its own copy of send_telegram.sh at monitoring/aoe-host/send_telegram.sh, pinned by its own test to CANONICAL_SHA256 243ba4a7... \u2014 which is NOT the live canonical. PRE-EXISTING at the time of this wave (the aoe-1 HOST runs canonical, the AOE REPO's vendored copy is two revisions behind) and deliberately not changed here. Recorded rather than silently tolerated; re-vendoring is OPS-AOE-WRAPPER-REVENDOR-W{NEXT}.",
-  "_generated_by": "OPS-ALERT-RECOVERY-NOTICE-W1 CH2 \u2014 union of source call sites and on-disk markers on both hosts, 2026-08-21. NEITHER SOURCE IS COMPLETE ALONE, measured three ways: 14 ids had a live cooldown marker and no discoverable call site; 4 more (incl. the lowercase `gate-shadow-cpu`) had a call site through a $WRAPPER variable and had NEVER fired, so no marker existed either \u2014 those 4 were invisible until the gate's own prove-it-can-fail step exposed the extractor's blind spot. This is the enumeration-beats-detection argument, measured rather than asserted.",
+  "_unadopted_behaviour": "Every row with adopted=false behaves EXACTLY as before this wave — same gates, same order, same log verbs, same exit codes. Adoption is opt-in and byte-identical until opted in.",
+  "_known_divergence": "The autonomous-optimizer repo vendors its own copy of send_telegram.sh at monitoring/aoe-host/send_telegram.sh, pinned by its own test to CANONICAL_SHA256 243ba4a7... — which is NOT the live canonical. PRE-EXISTING at the time of this wave (the aoe-1 HOST runs canonical, the AOE REPO's vendored copy is two revisions behind) and deliberately not changed here. Recorded rather than silently tolerated; re-vendoring is OPS-AOE-WRAPPER-REVENDOR-W{NEXT}.",
+  "_generated_by": "OPS-ALERT-RECOVERY-NOTICE-W1 CH2 — union of source call sites and on-disk markers on both hosts, 2026-08-21. NEITHER SOURCE IS COMPLETE ALONE, measured three ways: 14 ids had a live cooldown marker and no discoverable call site; 4 more (incl. the lowercase `gate-shadow-cpu`) had a call site through a $WRAPPER variable and had NEVER fired, so no marker existed either — those 4 were invisible until the gate's own prove-it-can-fail step exposed the extractor's blind spot. This is the enumeration-beats-detection argument, measured rather than asserted.",
   "alerts": [
     {
       "alert_id": "ACTIVATION_FUNNEL_LEAK_DETECTED",
@@ -14,7 +14,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-ACTIVATION_FUNNEL_LEAK_DETECTED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-ACTIVATION_FUNNEL_LEAK_DETECTED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-ACTIVATION_FUNNEL_LEAK_DETECTED-W{NEXT}"
     },
     {
       "alert_id": "ANALYTICS_REGION_DRIFT",
@@ -24,7 +26,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-ANALYTICS_REGION_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-ANALYTICS_REGION_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-ANALYTICS_REGION_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "AOE_SHADOW_WRITER_STALL_PERSISTENT",
+      "owner": "monitoring/aoe-host/aoe-shadow-writer-stall-canary.py",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AOE_SHADOW_WRITER_STALL_PERSISTENT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AOE_SHADOW_WRITER_STALL_PERSISTENT-W{NEXT}"
     },
     {
       "alert_id": "AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED",
@@ -34,7 +50,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED-W{NEXT}"
     },
     {
       "alert_id": "AUTOPUB_PUBLISH_FAILED",
@@ -44,7 +62,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_PUBLISH_FAILED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_PUBLISH_FAILED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AUTOPUB_PUBLISH_FAILED-W{NEXT}"
     },
     {
       "alert_id": "AUTOPUB_UNCLASSIFIED",
@@ -54,7 +74,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_UNCLASSIFIED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-AUTOPUB_UNCLASSIFIED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-AUTOPUB_UNCLASSIFIED-W{NEXT}"
     },
     {
       "alert_id": "book_liveness_ceiling",
@@ -64,7 +86,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-BOOK_LIVENESS_CEILING-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-BOOK_LIVENESS_CEILING-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-book_liveness_ceiling-W{NEXT}"
     },
     {
       "alert_id": "CANDLE_BASIS_FLIP_READY",
@@ -74,7 +98,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-CANDLE_BASIS_FLIP_READY-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-CANDLE_BASIS_FLIP_READY-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CANDLE_BASIS_FLIP_READY-W{NEXT}"
+    },
+    {
+      "alert_id": "CANDLE_BASIS_SHADOW_STALLED",
+      "owner": "ops/cron/candle-basis-shadow-report.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-CANDLE_BASIS_SHADOW_STALLED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CANDLE_BASIS_SHADOW_STALLED-W{NEXT}"
     },
     {
       "alert_id": "CHECKOUT_PARITY_SIGNAL_MCP",
@@ -84,7 +122,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-CHECKOUT_PARITY_SIGNAL_MCP-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-CHECKOUT_PARITY_SIGNAL_MCP-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CHECKOUT_PARITY_SIGNAL_MCP-W{NEXT}"
     },
     {
       "alert_id": "CLOSEDBAR_DISPATCH_OFFSET_FAULT",
@@ -94,7 +134,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_OFFSET_FAULT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_OFFSET_FAULT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CLOSEDBAR_DISPATCH_OFFSET_FAULT-W{NEXT}"
     },
     {
       "alert_id": "CLOSEDBAR_DISPATCH_RATCHET_REGRESSION",
@@ -104,7 +146,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_RATCHET_REGRESSION-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-CLOSEDBAR_DISPATCH_RATCHET_REGRESSION-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-CLOSEDBAR_DISPATCH_RATCHET_REGRESSION-W{NEXT}"
     },
     {
       "alert_id": "DB_SUPERUSER_DRIFT",
@@ -114,7 +158,33 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-DB_SUPERUSER_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-DB_SUPERUSER_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DB_SUPERUSER_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "DECISION_GATE_ORPHAN_SUSPECTED",
+      "owner": "ops/monitoring/decision-gate-orphan-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DECISION_GATE_ORPHAN_SUSPECTED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DECISION_GATE_ORPHAN_SUSPECTED-W{NEXT}"
+    },
+    {
+      "alert_id": "DECISION_GATE_ORPHANED",
+      "owner": "ops/monitoring/decision-gate-orphan-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DECISION_GATE_ORPHANED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DECISION_GATE_ORPHANED-W{NEXT}"
     },
     {
       "alert_id": "DEPLOY_DRIFT",
@@ -124,7 +194,21 @@
       ],
       "adopted": true,
       "announce_resolution": true,
-      "adoption_note": "deploy-drift-canary.mjs calls --clear on DRIFT_NONE"
+      "adoption_note": "deploy-drift-canary.mjs calls --clear on DRIFT_NONE",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DEPLOY_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "DIRECTIONAL_LABEL_CAPACITY_SHORTFALL",
+      "owner": "ops/monitoring/directional-label-freshness.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-DIRECTIONAL_LABEL_CAPACITY_SHORTFALL-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DIRECTIONAL_LABEL_CAPACITY_SHORTFALL-W{NEXT}"
     },
     {
       "alert_id": "DIRECTIONAL_LABEL_FRESHNESS_BREACH",
@@ -134,7 +218,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-DIRECTIONAL_LABEL_FRESHNESS_BREACH-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-DIRECTIONAL_LABEL_FRESHNESS_BREACH-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DIRECTIONAL_LABEL_FRESHNESS_BREACH-W{NEXT}"
     },
     {
       "alert_id": "DOCS_STRUCTURE_DRIFT",
@@ -144,7 +230,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-DOCS_STRUCTURE_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-DOCS_STRUCTURE_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-DOCS_STRUCTURE_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "EQUITY_LAUNCH_READINESS",
@@ -154,7 +242,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-EQUITY_LAUNCH_READINESS-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-EQUITY_LAUNCH_READINESS-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-EQUITY_LAUNCH_READINESS-W{NEXT}"
     },
     {
       "alert_id": "FUNNEL_SNAPSHOT_CRON_FAILED",
@@ -164,7 +254,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-FUNNEL_SNAPSHOT_CRON_FAILED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-FUNNEL_SNAPSHOT_CRON_FAILED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-FUNNEL_SNAPSHOT_CRON_FAILED-W{NEXT}"
     },
     {
       "alert_id": "gate-shadow-cpu",
@@ -174,7 +266,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-GATE_SHADOW_CPU-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-GATE_SHADOW_CPU-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-gate-shadow-cpu-W{NEXT}"
     },
     {
       "alert_id": "HIW_MERKLE_DTRF_EXACT",
@@ -184,7 +278,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-HIW_MERKLE_DTRF_EXACT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-HIW_MERKLE_DTRF_EXACT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-HIW_MERKLE_DTRF_EXACT-W{NEXT}"
     },
     {
       "alert_id": "HOMEPAGE_MERKLE_COUNT_DTRF_EXACT",
@@ -194,7 +290,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-HOMEPAGE_MERKLE_COUNT_DTRF_EXACT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-HOMEPAGE_MERKLE_COUNT_DTRF_EXACT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-HOMEPAGE_MERKLE_COUNT_DTRF_EXACT-W{NEXT}"
     },
     {
       "alert_id": "KERNEL_STALENESS",
@@ -204,7 +302,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-KERNEL_STALENESS-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-KERNEL_STALENESS-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-KERNEL_STALENESS-W{NEXT}"
     },
     {
       "alert_id": "LLM_SPEND_OVER_THRESHOLD",
@@ -214,7 +314,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-LLM_SPEND_OVER_THRESHOLD-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-LLM_SPEND_OVER_THRESHOLD-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-LLM_SPEND_OVER_THRESHOLD-W{NEXT}"
     },
     {
       "alert_id": "LOCKFILE_PIN_UNRESOLVABLE",
@@ -224,7 +326,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-LOCKFILE_PIN_UNRESOLVABLE-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-LOCKFILE_PIN_UNRESOLVABLE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-LOCKFILE_PIN_UNRESOLVABLE-W{NEXT}"
+    },
+    {
+      "alert_id": "MERKLE_PUBLISH_LIVENESS",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-MERKLE_PUBLISH_LIVENESS-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-MERKLE_PUBLISH_LIVENESS-W{NEXT}"
     },
     {
       "alert_id": "MONITORING_DECLARATION_SYNC_FAILED",
@@ -235,7 +351,9 @@
       ],
       "adopted": true,
       "announce_resolution": true,
-      "adoption_note": "declaration-sync.sh calls --clear on its SYNCED/UNCHANGED terminal paths"
+      "adoption_note": "declaration-sync.sh calls --clear on its SYNCED/UNCHANGED terminal paths",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-MONITORING_DECLARATION_SYNC_FAILED-W{NEXT}"
     },
     {
       "alert_id": "MONITORING_INVENTORY_DRIFT",
@@ -246,7 +364,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-MONITORING_INVENTORY_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-MONITORING_INVENTORY_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-MONITORING_INVENTORY_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "NAV_REGION_DRIFT",
@@ -256,7 +376,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-NAV_REGION_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-NAV_REGION_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-NAV_REGION_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "OPS_EQUITY_ZERO_VERDICT",
@@ -266,7 +388,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-OPS_EQUITY_ZERO_VERDICT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-OPS_EQUITY_ZERO_VERDICT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OPS_EQUITY_ZERO_VERDICT-W{NEXT}"
     },
     {
       "alert_id": "OPS_TIER_MISCLASSIFICATION",
@@ -276,7 +400,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OPS_TIER_MISCLASSIFICATION-W{NEXT}"
     },
     {
       "alert_id": "OUTCOME_BACKFILL_STALLED",
@@ -286,7 +412,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-OUTCOME_BACKFILL_STALLED-W{NEXT}"
     },
     {
       "alert_id": "PAYMENT_DECLINE_DRIFT",
@@ -296,7 +424,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-PAYMENT_DECLINE_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "POSTGRES_CPU_DRIFT_CRITICAL_BYPASS",
@@ -306,7 +436,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-POSTGRES_CPU_DRIFT_CRITICAL_BYPASS-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-POSTGRES_CPU_DRIFT_CRITICAL_BYPASS-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-POSTGRES_CPU_DRIFT_CRITICAL_BYPASS-W{NEXT}"
     },
     {
       "alert_id": "POSTGRES_CPU_DRIFT_UNIFIED",
@@ -316,7 +448,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-POSTGRES_CPU_DRIFT_UNIFIED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-POSTGRES_CPU_DRIFT_UNIFIED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-POSTGRES_CPU_DRIFT_UNIFIED-W{NEXT}"
     },
     {
       "alert_id": "QUOTA_EXHAUSTION_HIGH_VOLUME",
@@ -326,7 +460,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-QUOTA_EXHAUSTION_HIGH_VOLUME-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-QUOTA_EXHAUSTION_HIGH_VOLUME-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-QUOTA_EXHAUSTION_HIGH_VOLUME-W{NEXT}"
+    },
+    {
+      "alert_id": "RECALIBRATE_ACCRUAL_STALLED",
+      "owner": "ops/cron/closedbar-recalibrate-readiness.sh",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-RECALIBRATE_ACCRUAL_STALLED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-RECALIBRATE_ACCRUAL_STALLED-W{NEXT}"
     },
     {
       "alert_id": "RECALIBRATE_READY",
@@ -336,7 +484,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-RECALIBRATE_READY-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-RECALIBRATE_READY-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-RECALIBRATE_READY-W{NEXT}"
     },
     {
       "alert_id": "REGISTRY_SCHEMA_CONFORMANCE_BREAK",
@@ -346,7 +496,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-REGISTRY_SCHEMA_CONFORMANCE_BREAK-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-REGISTRY_SCHEMA_CONFORMANCE_BREAK-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-REGISTRY_SCHEMA_CONFORMANCE_BREAK-W{NEXT}"
     },
     {
       "alert_id": "REVENUE_METER_DIVERGENCE",
@@ -356,7 +508,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-REVENUE_METER_DIVERGENCE-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-REVENUE_METER_DIVERGENCE-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-REVENUE_METER_DIVERGENCE-W{NEXT}"
     },
     {
       "alert_id": "SEED_COVERAGE_GAP",
@@ -366,7 +520,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-SEED_COVERAGE_GAP-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-SEED_COVERAGE_GAP-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SEED_COVERAGE_GAP-W{NEXT}"
     },
     {
       "alert_id": "SEED_ORCHESTRATOR_GATE_RED",
@@ -376,7 +532,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-SEED_ORCHESTRATOR_GATE_RED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-SEED_ORCHESTRATOR_GATE_RED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SEED_ORCHESTRATOR_GATE_RED-W{NEXT}"
+    },
+    {
+      "alert_id": "SNAPSHOT_INJECTOR_HEARTBEAT_FRESH",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-SNAPSHOT_INJECTOR_HEARTBEAT_FRESH-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SNAPSHOT_INJECTOR_HEARTBEAT_FRESH-W{NEXT}"
     },
     {
       "alert_id": "SOT_PARITY_SUSTAINED_DRIFT",
@@ -386,7 +556,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-SOT_PARITY_SUSTAINED_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-SOT_PARITY_SUSTAINED_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-SOT_PARITY_SUSTAINED_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "STRIPE_WEBHOOK_EVENT_DRIFT",
@@ -396,7 +568,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-STRIPE_WEBHOOK_EVENT_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-STRIPE_WEBHOOK_EVENT_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-STRIPE_WEBHOOK_EVENT_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "TRACKRECORD_VENUE_DTRF_SET",
@@ -406,7 +580,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-TRACKRECORD_VENUE_DTRF_SET-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-TRACKRECORD_VENUE_DTRF_SET-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-TRACKRECORD_VENUE_DTRF_SET-W{NEXT}"
     },
     {
       "alert_id": "VENUE_SLO_TIER_DRIFT",
@@ -416,7 +592,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-VENUE_SLO_TIER_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-VENUE_SLO_TIER_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-VENUE_SLO_TIER_DRIFT-W{NEXT}"
+    },
+    {
+      "alert_id": "VERIFY_BAKED_BATCH_COPY_DRIFT",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-VERIFY_BAKED_BATCH_COPY_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-VERIFY_BAKED_BATCH_COPY_DRIFT-W{NEXT}"
     },
     {
       "alert_id": "WEBHOOK_DELIVERY_DRIFT",
@@ -426,17 +616,69 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-WEBHOOK_DELIVERY_DRIFT-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBHOOK_DELIVERY_DRIFT-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-WEBHOOK_DELIVERY_DRIFT-W{NEXT}"
     },
     {
-      "alert_id": "x402-bazaar-delist",
-      "owner": "ops/monitoring/x402-bazaar-canary.py",
+      "alert_id": "WEBSITE_DRIFT_FRESHNESS_SOURCE_INVALID",
+      "owner": "ops/monitoring/website-drift-canary.py",
       "hosts": [
         "signal-1"
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-X402_BAZAAR_DELIST-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBSITE_DRIFT_FRESHNESS_SOURCE_INVALID-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-WEBSITE_DRIFT_FRESHNESS_SOURCE_INVALID-W{NEXT}"
+    },
+    {
+      "alert_id": "WEBSITE_DRIFT_MANIFEST_CONFIG_VIOLATION",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBSITE_DRIFT_MANIFEST_CONFIG_VIOLATION-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-WEBSITE_DRIFT_MANIFEST_CONFIG_VIOLATION-W{NEXT}"
+    },
+    {
+      "alert_id": "WEBSITE_DRIFT_MONOTONIC_REGRESSION",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBSITE_DRIFT_MONOTONIC_REGRESSION-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-WEBSITE_DRIFT_MONOTONIC_REGRESSION-W{NEXT}"
+    },
+    {
+      "alert_id": "WEBSITE_DRIFT_MONOTONIC_STATE_RESET",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBSITE_DRIFT_MONOTONIC_STATE_RESET-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-WEBSITE_DRIFT_MONOTONIC_STATE_RESET-W{NEXT}"
+    },
+    {
+      "alert_id": "WEBSITE_DRIFT_SUSPECTED_UNREGISTERED_MONOTONIC",
+      "owner": "ops/monitoring/website-drift-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-WEBSITE_DRIFT_SUSPECTED_UNREGISTERED_MONOTONIC-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-WEBSITE_DRIFT_SUSPECTED_UNREGISTERED_MONOTONIC-W{NEXT}"
     },
     {
       "alert_id": "X402_CLAIM_PATH_BROKEN",
@@ -446,7 +688,21 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-X402_CLAIM_PATH_BROKEN-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-X402_CLAIM_PATH_BROKEN-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-X402_CLAIM_PATH_BROKEN-W{NEXT}"
+    },
+    {
+      "alert_id": "x402-bazaar-delist",
+      "owner": "ops/monitoring/x402-bazaar-canary.py",
+      "hosts": [
+        "signal-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-X402_BAZAAR_DELIST-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-x402-bazaar-delist-W{NEXT}"
     },
     {
       "alert_id": "xrepo_ci_dark",
@@ -456,7 +712,9 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_DARK-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_DARK-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-xrepo_ci_dark-W{NEXT}"
     },
     {
       "alert_id": "xrepo_ci_red",
@@ -466,7 +724,11 @@
       ],
       "adopted": false,
       "announce_resolution": false,
-      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_RED-W{NEXT}"
+      "follow_up_wave": "OPS-ALERT-ADOPT-XREPO_CI_RED-W{NEXT}",
+      "envelope_adopted": false,
+      "envelope_follow_up_wave": "OPS-ENVELOPE-ADOPT-xrepo_ci_red-W{NEXT}"
     }
-  ]
+  ],
+  "_envelope_conformance": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. envelope_adopted = the owner emits a conforming DETECTOR_ENVELOPE (ops/monitoring/detector-envelope.schema.json) and its consumer gates on the envelope token. It is a SEPARATE column from adopted on purpose: adopted answers \"does the owner call --clear on its healthy path\", which is a different question, and one boolean meaning two things is the defect this wave is named after. Default FALSE, and every false row names the wave that will migrate it — no silent exemptions, and the gate is never warn-moded to accommodate one. Unadopted rows behave EXACTLY as before this wave, inheriting _unadopted_behaviour verbatim.",
+  "_source_union": "OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. This registry is now the UNION of two derivations: call-site detection (scripts/check-alert-registry.mjs SHAPES) and monitoring-inventory.json[].alert_ids. Before the union, 14 declared ids were invisible here — including DIRECTIONAL_LABEL_CAPACITY_SHORTFALL, whose false page commissioned this wave; it is raised through a Python subprocess.run([...]) argv list, a shape call-site detection does not match. The fix is deliberately NOT a fourth regex: ALERT_SOURCE_DELTA_VERDICT reports any disagreement between the sources rather than silently resolving to the smaller set."
 }

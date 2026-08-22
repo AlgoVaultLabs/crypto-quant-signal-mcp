@@ -1,0 +1,49 @@
+{
+  "_comment": "DETECTOR_ENVELOPE — the contract every monitoring detector's signal must satisfy. OPS-MONITORING-SIGNAL-CONTRACT-W1 CH2. THE PRODUCER IS TYPESCRIPT (src/scripts/**) AND THE CONSUMER IS PYTHON (ops/monitoring/**), so this is a JSON DATA CONTRACT read by both sides and NEVER a shared code module — a TS-only helper would leave the Python consumer unconstrained, which is exactly where D2 and D3 lived.",
+  "_generator": "ops/monitoring/detector-envelope.schema.json — hand-maintained SoT; consumers are src/lib/detector-envelope.ts (producer) and ops/monitoring/detector_envelope.py (consumer)",
+  "_naming": "DETECTOR_ENVELOPE, never 'signal envelope'. 'signal' already means a trading signal (the signals table, get_trade_signal) and 'envelope' already means the public tool response shape (tests/get-trade-signal-envelope.test.ts). One word meaning two things is the defect that produced SIGNAL-TREND-BLINDNESS-FIX-W1.",
+
+  "schema_version": 1,
+
+  "required_fields": [
+    "schema_version",
+    "detector",
+    "verdict",
+    "run_id",
+    "run_started_at",
+    "run_outcome",
+    "produced_at",
+    "observation_window",
+    "evidence"
+  ],
+
+  "verdict_values": ["PASS", "FAIL", "INDETERMINATE"],
+  "_verdict_default_doc": "INDETERMINATE is the DEFAULT for any path that did not complete its measurement. A builder that is handed no verdict produces INDETERMINATE, never PASS — 'measured and clean' may never share an output with 'measured nothing'.",
+  "verdict_default": "INDETERMINATE",
+
+  "_run_outcome_doc": "Verbatim from the producer's own enum (VenueRunSummary['outcome'] in src/scripts/backfill-directional-labels.ts). 'unknown' exists for a producer that genuinely cannot report one — it is NOT a synonym for 'complete', and a consumer must treat it as non-conclusive.",
+  "run_outcome_values": [
+    "complete",
+    "venue-budget",
+    "global-budget",
+    "venue-error",
+    "venue-circuit-break",
+    "stopped",
+    "unknown"
+  ],
+  "_run_outcome_conclusive_doc": "Only these outcomes permit a verdict of PASS or FAIL. Any other outcome means the run did not finish the measurement the signal claims to summarise, so the envelope's verdict is forced to INDETERMINATE at BUILD time — the producer cannot emit the false conclusion at all.",
+  "run_outcome_conclusive": ["complete", "venue-budget", "global-budget"],
+
+  "_max_age_doc": "Consumer refusal threshold on produced_at. Sized from the REAL cadence, not from the incident: the nightly labeler starts 02:23 UTC and the freshness canary runs 06:41 UTC, so a legitimate forward is routinely ~3.4-4.3h old. A tighter bound would refuse the normal path. THIS IS NOT THE CONTROL FOR THE 2026-08-22 D3 PAGE — that marker WAS from the most recent run; what made it wrong is that its venues had been repaired since, which is the consumer's re-census duty (CH3), not a staleness bound. Recorded here so a later wave does not tighten this number expecting it to fix D3.",
+  "max_age_seconds": 21600,
+
+  "_evidence_doc": "The measured values the consumer renders. An object of scalars, never prose about mechanism. max_prose_words caps any single string value: a sentence in evidence is the D2 defect ('SLO-ordered, so majors were served first') arriving through the field that exists to prevent it.",
+  "evidence_rules": {
+    "must_be_object": true,
+    "min_keys": 1,
+    "max_prose_words": 7
+  },
+
+  "_observation_window_doc": "The interval the signal describes, as {from, to} ISO-8601 UTC. Without it a consumer cannot tell a signal about the last hour from one about the last month.",
+  "observation_window_fields": ["from", "to"]
+}

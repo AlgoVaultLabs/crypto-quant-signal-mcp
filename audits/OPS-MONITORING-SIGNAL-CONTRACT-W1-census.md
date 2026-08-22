@@ -1,12 +1,20 @@
 # OPS-MONITORING-SIGNAL-CONTRACT-W1 CH1 — monitoring detector census
 
-**Read-only.** Scored by `scripts/monitoring-census.mjs` against `origin/main` @ `86192f6`.
+**Read-only.** Scored by `scripts/monitoring-census.mjs`; base `origin/main` @ `86192f6`. Counts
+refreshed after the §6 correction and after CH2 added two inventory rows of its own.
 Reproduce with `node scripts/monitoring-census.mjs` (table) or `--cite` (one line per failure).
 
 ```
-MONITORING_CENSUS_VERDICT=FAIL          ← 2 inventory rows name an absent artifact (see §6)
+MONITORING_CENSUS_VERDICT=PASS          ← corrected; see §6
 CENSUS_SIZING=CLASS_ESTABLISHED         ← 39/39 detectors fail ≥1 property; threshold is 3
 ```
+
+> ⚠️ **CORRECTION, 2026-08-22, applied during CH2.** The first committed run of this census
+> reported `MONITORING_CENSUS_VERDICT=FAIL` on the claim that two inventory rows named artifacts
+> absent from the tree. **That claim was FALSE and the rows were right.** Both carry
+> `install_state: "retired"`, `retired_at`, and `retired_by: OPS-RECALIBRATE-HARNESS-RETIRE-W1`,
+> and both scripts were deleted by `799eedb` in that same wave — so absence is precisely the state
+> a retired row should be in. The census was treating a correct retirement as a defect. See §6.
 
 > The two tokens are separate on purpose. "The class is real" is not a health verdict about this
 > repo, and overloading one token with two meanings is the defect this wave exists to retire.
@@ -17,10 +25,10 @@ CENSUS_SIZING=CLASS_ESTABLISHED         ← 39/39 detectors fail ≥1 property; 
 
 | Source | Population | Kept | Why the rest were dropped |
 |---|---|---|---|
-| **S1** `ops/monitoring/**` + `ops/cron/**` | 46 code files | 33 | 13 never reach an operator (§2) |
-| **S2** `monitoring-inventory.json` | 69 rows | 5 additional | 11 inert data declarations · 5 `external:` rows owned by another repo · 2 absent (§6) |
+| **S1** `ops/monitoring/**` + `ops/cron/**` | 47 code files | 33 | 14 never reach an operator (§2) |
+| **S2** `monitoring-inventory.json` | 71 rows | 5 additional | 12 inert data declarations · 5 `external:` rows owned by another repo · 2 **retired** (§6) |
 | **S3** `src/scripts/*` marker producers | 1 | 1 | `backfill-directional-labels.ts` — its `[capacity-shortfall]` marker is read by `directional-label-freshness.py` |
-| **Cross-reference** `alert-registry.json` | 46 rows | — | joined for `alert_id` ownership |
+| **Cross-reference** `alert-registry.json` | 60 rows | — | joined for `alert_id` ownership (46 at CH1 time; CH2 closed the 14-id source gap) |
 
 **Total scored: 39 detectors — 27 `load-bearing`, 12 `advisory`.**
 
@@ -46,13 +54,13 @@ test mode.
 
 ## 2. Not scored, and why (never silent)
 
-**13 artifacts reach no operator** — `carry-tracker-publish.sh`, `check-docs-samples-live.mjs`,
+**14 artifacts reach no operator** — `carry-tracker-publish.sh`, `check-docs-samples-live.mjs`,
 `check-stripe-webhook-events.mjs`, `host-deploy.sh`, `injector-target-set.mjs`,
 `install-monitoring-artifact.sh`, `seed-promoted-ramp.sh`, `served-region-check.mjs`,
 `snapshot-landing-daily.sh`, `doc-host-path-claims`-class helpers, plus the 4 hand-exempted.
 These are deploy tools, installers, libraries and snapshot producers — their *callers* page.
 
-**11 inert data declarations** (`monitoring-inventory.json`, `alert-registry.json`,
+**12 inert data declarations** (`monitoring-inventory.json`, `alert-registry.json`,
 `venue-slo-tiers.json`, `network-posture.json`, the `*.yaml` manifests …) — declarations page
 nobody. **5 `external:` rows** are owned by the `algovault-bot` and `autonomous-optimizer` repos
 and are absent from this tree by design.
@@ -207,21 +215,34 @@ after the code beneath it changes: `analytics-drift-canary.sh:49`, `bot-deploy-p
 
 ---
 
-## 6. Two inventory rows name an artifact that is not in the tree
+## 6. ⚠️ The retracted finding — H5 in the instrument, for the third time
 
-This is why `MONITORING_CENSUS_VERDICT=FAIL`: the population the inventory declares is larger
-than the population that exists, so the census cannot claim to have scored all of it.
+**As first published, this section claimed two inventory rows were stale and that the wave's
+enumeration was "provably incomplete". Both halves were wrong.**
 
-| Row `id` | `artifact` | State |
+| Row `id` | `artifact` | Actual state |
 |---|---|---|
-| `candle-basis-shadow-report` | `ops/cron/candle-basis-shadow-report.sh` | absent from the tree; 3 commits in history |
-| `closedbar-recalibrate-readiness` | `ops/cron/closedbar-recalibrate-readiness.sh` | absent from the tree; 4 commits in history |
+| `candle-basis-shadow-report` | `ops/cron/candle-basis-shadow-report.sh` | `install_state: retired`, `retired_at: 2026-08-13T12:46:25Z`, `retired_by: OPS-RECALIBRATE-HARNESS-RETIRE-W1` |
+| `closedbar-recalibrate-readiness` | `ops/cron/closedbar-recalibrate-readiness.sh` | same — retired by the same wave |
 
-Both have real git history, so they were retired without their rows being retired with them —
-or they were moved and the row was not followed. **`monitoring-inventory.json` is CH2's to write
-(`Must NOT write` for CH1), so this is reported, not fixed.** Resolving it is a CH2 precondition:
-a conformance gate over a declared population must not run against a population containing rows
-it cannot resolve.
+Both scripts were deleted by `799eedb` — *"retire two orphaned decision gates as a class"* — and
+both rows were updated to record it, with a `retirement_trigger` explaining what answered each
+gate's question. **That is the convention working exactly as designed.** The census had no notion
+of `install_state`, so it read a correct retirement as a missing artifact and escalated it to a
+terminal FAIL.
+
+The fix is in `scripts/monitoring-census.mjs`: a retired row's artifact is expected to be absent,
+so it is reported under `RETIRED` and never as missing — and, narrowly, a retired row whose
+artifact is *still present* keeps its `criticality` and stays scorable, because dropping it would
+have silently shrunk the population a second way.
+
+**This is the third time H5 landed on this instrument in one chapter** (the first two are in §1:
+scoring inert declarations as detectors, then dropping `postgres-cpu-autopilot.py`). Each time the
+census produced a confident number that was wrong, and each time it was caught by looking at what
+the flagged rows actually said rather than by trusting the tool. The count that survives all three
+corrections is unchanged — 39 detectors, `CLASS_ESTABLISHED` — but the FAIL did not survive, and a
+census shipped on any of the three earlier runs would have carried a false finding into CH2 as a
+precondition.
 
 ---
 
@@ -249,6 +270,8 @@ widened to reach it: every failure in §4 is a specific, cited, reproducible sig
 | AC1.3 | `criticality` beside every row | ✅ §4 |
 | AC1.4 | One concrete false-conclusion scenario per failing detector | ✅ §5 |
 | AC1.5 | Zero writes outside the census script and its artifact | ✅ 3 files: `scripts/monitoring-census.mjs`, this artifact, `tests/unit/monitoring-census.test.ts` |
+
+*(The correction in §6 was applied during CH2 and touches only `scripts/monitoring-census.mjs` and this artifact — still inside CH1's write scope. Factuality outranks the Scope Rule: a false finding in a committed artifact is corrected where it stands, not left to be inherited.)*
 
 **Self-test proven able to fail** — three deliberate mutations, each turning the suite red on
 exactly the assertion it should, judged on printed output rather than exit code:
