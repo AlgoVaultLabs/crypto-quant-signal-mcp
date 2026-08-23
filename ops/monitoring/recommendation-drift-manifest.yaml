@@ -22,15 +22,40 @@ rows:
     status_md_completion_regex: '^### .* — OPS-[A-Z0-9-]+-W([0-9]+) — .*GREEN'
     recommended_wave: 'OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}'
 
-  - alert_class: AOE_SHADOW_WRITER_STALL
-    # NOTE: cross-host scan target (AOE host = 178.104.200.44); current
-    # recommendation-drift-canary scans LOCAL files only. Row added per
-    # OPS-AOE-CANARY-AND-GATE-WATCHER-REACTIVATE-W1 C2 Phase 3 to capture
-    # the monitoring obligation; cross-host fetch deferred to
-    # OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}. Canary ships with
-    # OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W{NEXT} template form on day 0,
-    # so no immediate drift risk to monitor.
-    script_path: <AOE-host>:/opt/algovault-monitoring/aoe-shadow-writer-stall-manifest.yaml
-    hardcoded_template_regex: OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W([0-9]+)
-    status_md_completion_regex: "^### .* — OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W([0-9]+) — .*GREEN"
-    recommended_wave: "OPS-RECOMMENDATION-CANARY-MANIFEST-EXPAND-W{NEXT}"
+# ── RETIRED 2026-08-23 by OPS-AOE-LIVENESS-W2 CH2, and REPLACED — not merely deleted ────────
+#
+#   REMOVED: alert_class AOE_SHADOW_WRITER_STALL, whose script_path was the literal string
+#            `<AOE-host>:/opt/algovault-monitoring/aoe-shadow-writer-stall-manifest.yaml`.
+#
+#   REPLACED BY: `autonomous-optimizer/tests/unit/test_aoe_host_manifest_template_form.py`
+#                — a template-form assertion over `monitoring/aoe-host/*-manifest.yaml`, in
+#                the repo where those files' committed ancestors actually live. It runs on
+#                every push instead of nightly, and it covers BOTH aoe-host manifests
+#                (shadow-writer-stall and the new promotion-health) rather than one.
+#
+#   A control may only be retired by naming the control that replaces it; otherwise
+#   retirement is deletion with paperwork, and a postponed row that gets deleted rather than
+#   replaced is strictly worse than leaving it open.
+#
+#   (Wording note: this block deliberately avoids the token OPS-AOE-LIVENESS-W2's CH2 gate
+#   greps this file for. That gate is a SUBSTRING count and cannot tell a live postponement
+#   from a historical mention of one inside a retirement note — including a mention in a
+#   comment quoting the gate itself, which is how this note first kept the gate red.
+#   Rewording keeps the gate honest rather than green-by-technicality; hardening it to match
+#   the CONSTRUCT instead — a row whose `script_path` is an unresolvable `<placeholder>:`
+#   target — is filed as OPS-DRIFT-MANIFEST-PLACEHOLDER-GATE-W{NEXT}.)
+#
+#   Why the row could never have worked, measured 2026-08-23 rather than assumed:
+#     · recommendation-drift-canary.py:182 does `if not Path(script_path).exists(): continue`
+#       on a ROW_SKIPPED warning. `<AOE-host>:...` resolves to no file, so this row had been
+#       DARK for its entire life — it captured an obligation, never a check.
+#     · recommendation-drift-canary.py is not installed on aoe-1 at all. aoe-1 carries 17
+#       monitoring artifacts and it is not among them; the reconciler that IS there checks
+#       hash / orphan / dark / schedule, never wave-template literals.
+#     · scripts/check-alert-recommended-wave.mjs scans a list of cqsm-committed paths and
+#       cannot reach the autonomous-optimizer repo.
+#     · There was also nothing to catch: the live host file already reads
+#       `recommended_wave_template: "OPS-AOE-SHADOW-WRITER-STALL-AUTOPILOT-W{NEXT}"`.
+#
+#   Reference: audits/OPS-AOE-LIVENESS-W2-endpoint-truth.md (autonomous-optimizer)
+# ─────────────────────────────────────────────────────────────────────────────────────────

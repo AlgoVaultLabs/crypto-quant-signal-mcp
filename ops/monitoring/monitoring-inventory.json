@@ -396,7 +396,7 @@
       "schedule": null,
       "invoked_by": "called-by:recommendation-drift-canary",
       "install_state": "installed",
-      "sha256": "9a0bb01c3034385dbdfba323ce26f6b563747066329fe4ae19c41af1a11ea3eb",
+      "sha256": "265385a019e191d5727346a9c9404ae03b4af9732903a72b7939602cb2656f39",
       "alert_ids": [],
       "owner_wave": "OPS-MONITORING-RECOMMENDATION-RESOLVER-AND-CANARY-W1"
     },
@@ -1016,6 +1016,56 @@
       "notes": "Thresholds for the output-liveness canary. consecutive_zero_threshold=3 spans three publish opportunities on the :47 cron, so one missed fire cannot page \u2014 sized to survive a blip, NOT to survive an outage, which is what 654 silent completions already did."
     },
     {
+      "id": "aoe-promotion-health-canary",
+      "artifact": "monitoring/aoe-host/aoe-promotion-health-canary.py",
+      "repo": "autonomous-optimizer",
+      "kind": "executable",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/aoe-promotion-health-canary.py",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-promotion-health-canary.py"
+        }
+      ],
+      "criticality": "load-bearing",
+      "schedule": "41 * * * *",
+      "invoked_by": "crontab:root",
+      "install_state": "installed",
+      "sha256": "10fd535d9562faa00ab21033f5a3a49c4c45417b655c5f1a8002854aae444e1b",
+      "alert_ids": [
+        "AOE_PROMOTED_KEY_AGE_STALE",
+        "AOE_APPROVED_CANDIDATE_STUCK"
+      ],
+      "owner_wave": "OPS-AOE-LIVENESS-W2",
+      "notes": "Two subjects W1's count-based canary is STRUCTURALLY BLIND to. AOE_PROMOTED_KEY_AGE_STALE: live_serving_count() is a COUNT, so a key that is PRESENT and no longer being refreshed reads as healthy right up until the 25h TTL deletes it. promote_hourly re-publishes every surviving key each hour with a FRESH published_at, so a healthy key is under ~2h old; max_key_age_hours=6 is 6x that cadence and fires ~19h BEFORE the TTL removes the evidence. AOE_APPROVED_CANDIDATE_STUCK: under EDGE_GATE_ENFORCE=1, _publish_allowed fail-CLOSES when the gate can produce no verdict, so an approved candidate stays approved forever — measured 2026-08-23, WHITEBIT/BUY__15m (8742f720) had been HELD on every hourly tick for 579.6h, visible only as one Prefect log line per UTC day. It ALERTS and does not drain: draining deletes the evidence that the pipeline is blocked. NO second Redis client and NO second duckdb client: it calls edge_gate.max_promoted_key_age() (exactly the population live_serving_count() counts, so the two instruments are comparable) and promote_queue_health.approved_queue_census() through ONE docker exec, the same shape as aoe-output-liveness-canary. 4th CODE adopter of DETECTOR_ENVELOPE, consumed as shipped. THE GRADING DECISION worth reading before changing it: a SUCCESSFUL read that finds ZERO keys is PASS, not INDETERMINATE — age over an empty set is undefined and emptiness is already AOE_OUTPUT_LIVENESS_STALLED's subject, so INDETERMINATE here would ship a permanent SECOND page for a condition another alert id owns. That PASS is conditional on carrying evidence.deferred_to=AOE_OUTPUT_LIVENESS_STALLED plus a printed line naming the owner; a bare PASS over an empty set is the vacuous green this arc keeps retiring, and the self-test asserts both. Unreadable (Redis error, probe failure) maps to run_outcome=unknown, which the schema declares non-conclusive, so INDETERMINATE is FORCED at build time. Cron :41 is offset 19 from :00, sits between the 5-min grid fires :38/:43, runs after promote_hourly :35 so it observes a settled tick, and is 6min clear of the :47 output-liveness probe. Self-test: aoe-promotion-health-canary.py --self-test, 47 checks, token DETECTOR_ENVELOPE_VERDICT; proven able to fail in seven directions. Needs host python3 >= 3.11 (datetime.UTC); aoe-1 measured 3.12.3. KNOWN AND DATED: the aoe-prefect-worker image is 2026-08-02 and has no source bind-mount, so the probe's ImportError is CORRECT and the canary reports INDETERMINATE (never health) until the parallel lane's AOE-CELL-DEFINITION rebuild carries Lock A + this wave in. Both verdict paths were nevertheless proven END-TO-END on aoe-1 2026-08-23 against real Redis and the real bank_shadow, via a THROWAWAY container from the same image with the new src bind-mounted read-only — the running production container was NOT mutated. OPS-AOE-DEPLOY-CONFIRM-W{NEXT} verifies the probe goes live after that rebuild."
+    },
+    {
+      "id": "aoe-promotion-health-manifest",
+      "artifact": "monitoring/aoe-host/aoe-promotion-health-manifest.yaml",
+      "repo": "autonomous-optimizer",
+      "kind": "config",
+      "host": "aoe-1",
+      "host_path": "/opt/algovault-monitoring/aoe-promotion-health-manifest.yaml",
+      "installed_at": [
+        {
+          "host": "aoe-1",
+          "path": "/opt/algovault-monitoring/aoe-promotion-health-manifest.yaml"
+        }
+      ],
+      "criticality": "supporting",
+      "schedule": null,
+      "invoked_by": "called-by:aoe-promotion-health-canary",
+      "install_state": "installed",
+      "sha256": "a5003d0793b9bda2ada97f0fdd2cccdb5aa529aa320654b5be3ae5d719a00aad",
+      "alert_ids": [
+        "AOE_PROMOTED_KEY_AGE_STALE",
+        "AOE_APPROVED_CANDIDATE_STUCK"
+      ],
+      "owner_wave": "OPS-AOE-LIVENESS-W2",
+      "notes": "Thresholds for the promotion-health canary; TWO rows, two alert ids, two remedies, one probe. max_key_age_hours=6 is derived from the REAL refresh cadence (promote_hourly re-publishes hourly with a fresh published_at, so a healthy key is under ~2h) and sits well inside the 25h TTL so the alarm fires ~19h before the evidence is deleted; a threshold at or past the TTL could never fire, because the key would already be gone and that is the COUNT alarm's subject. consecutive_breach_threshold=2 on the age row absorbs one lost tick — and a probe blip resolves to INDETERMINATE, which leaves the counter untouched rather than advancing it. The stuck-approved row uses threshold=1 deliberately: its condition is 168h of continuous hold (promote_queue_health.STUCK_APPROVED_HOURS), which is sustained BY DEFINITION, so a confirmation cycle would add 1h of latency and no information. 168h is ~3.4x the longest HEALTHY dwell (48h soak + up to one hourly tick = ~49h), so the normal path cannot page. Both recommended_wave values are the TEMPLATE form and are asserted as such by autonomous-optimizer/tests/unit/test_aoe_host_manifest_template_form.py — the named replacement for the retired cross-host row in recommendation-drift-manifest.yaml."
+    },
+    {
       "id": "network-posture",
       "artifact": "ops/monitoring/network-posture.json",
       "kind": "baseline-data",
@@ -1525,7 +1575,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "95daca8ec06cb7fcffcafa41fd12920667ad494bc616e555aaabccd036b10230",
+      "sha256": "eb32938abe6bfeb7e35cccc3206eb4206aeb81f8cd910fb49682335a903e122f",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",

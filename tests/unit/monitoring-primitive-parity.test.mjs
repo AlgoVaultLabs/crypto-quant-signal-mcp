@@ -162,8 +162,16 @@ test('the hash check covers the WHOLE inventory, not the slice one wave cared ab
   // unhashable. Cross-repo hash parity is what
   // OPS-ALERT-REGISTRY-CROSS-REPO-FLAG-W{NEXT} would have to solve; until it does, `repo`-owned
   // rows are verified by the reconciler ON aoe-1, never from here.
+  //
+  // RAISED 9 -> 11 by OPS-AOE-LIVENESS-W2 CH2, for `aoe-promotion-health-canary` and
+  // `aoe-promotion-health-manifest`. Identical structural ground to the 7 -> 9 raise: both
+  // carry `repo: autonomous-optimizer`, so this checkout cannot hash them, and the per-row
+  // structural assertion above holds for all 11. The alternative was again a canary running
+  // on aoe-1 with no inventory row — invisible rather than merely unhashable. Cross-repo hash
+  // parity remains OPS-ALERT-REGISTRY-CROSS-REPO-FLAG-W{NEXT}'s problem; until then these rows
+  // are verified by the reconciler ON aoe-1, which CAN read them.
   assert.ok(
-    excluded.length <= 9,
+    excluded.length <= 11,
     `${excluded.length} rows are excluded from hash parity — that set must stay small and ` +
       'structural. Growth here means coverage is being lost quietly.',
   );

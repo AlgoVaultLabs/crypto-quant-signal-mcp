@@ -54,6 +54,28 @@
       "envelope_adopted": true
     },
     {
+      "alert_id": "AOE_PROMOTED_KEY_AGE_STALE",
+      "owner": "monitoring/aoe-host/aoe-promotion-health-canary.py",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AOE_PROMOTED_KEY_AGE_STALE-W{NEXT}",
+      "envelope_adopted": true
+    },
+    {
+      "alert_id": "AOE_APPROVED_CANDIDATE_STUCK",
+      "owner": "monitoring/aoe-host/aoe-promotion-health-canary.py",
+      "hosts": [
+        "aoe-1"
+      ],
+      "adopted": false,
+      "announce_resolution": false,
+      "follow_up_wave": "OPS-ALERT-ADOPT-AOE_APPROVED_CANDIDATE_STUCK-W{NEXT}",
+      "envelope_adopted": true
+    },
+    {
       "alert_id": "AUTOPUB_NUMERIC_ANCHOR_UNRESOLVED",
       "owner": "algovault-editorial:lib/anchor-numeric-claims.mjs",
       "hosts": [
