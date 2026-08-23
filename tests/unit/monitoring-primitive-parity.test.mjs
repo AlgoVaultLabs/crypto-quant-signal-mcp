@@ -152,8 +152,18 @@ test('the hash check covers the WHOLE inventory, not the slice one wave cared ab
   // act rather than a drift, which is exactly what raising it here records. The row was added
   // because the script was running on the host with no inventory row at all — moving it from
   // invisible to structurally-excluded is a coverage GAIN, not a loss.
+  //
+  // RAISED 7 -> 9 by OPS-AOE-LIVENESS-W1 CH1, for `aoe-output-liveness-canary` and
+  // `aoe-output-liveness-manifest`. Both carry `repo: autonomous-optimizer` — they live in the
+  // AOE repo and this checkout cannot hash them, exactly like the four `aoe-shadow-writer-*` and
+  // `aoe-host` rows already excluded on the same structural ground. The per-row assertion above
+  // holds for all 9. Same coverage-GAIN argument as the 6 -> 7 raise: the alternative was a
+  // canary running on aoe-1 with no inventory row, which is invisible rather than merely
+  // unhashable. Cross-repo hash parity is what
+  // OPS-ALERT-REGISTRY-CROSS-REPO-FLAG-W{NEXT} would have to solve; until it does, `repo`-owned
+  // rows are verified by the reconciler ON aoe-1, never from here.
   assert.ok(
-    excluded.length <= 7,
+    excluded.length <= 9,
     `${excluded.length} rows are excluded from hash parity — that set must stay small and ` +
       'structural. Growth here means coverage is being lost quietly.',
   );

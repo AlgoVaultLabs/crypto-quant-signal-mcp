@@ -83,7 +83,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "6ae7e33cc4772513343d24994e64576ea64338471691f1761d05c0f0aafb5dff",
+      "sha256": "6eb891a8e9f2a72759034e0b898ae868df99f5063f1bb24d14990f35adf8d221",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
@@ -1525,7 +1525,7 @@
       ],
       "criticality": "medium",
       "install_state": "installed",
-      "sha256": "d1b9a80778c8dd67aec556abbcdb8273b564675ae8cb09dc626e1b8f6f15ed58",
+      "sha256": "95daca8ec06cb7fcffcafa41fd12920667ad494bc616e555aaabccd036b10230",
       "alert_ids": [],
       "exempt_consumers": null,
       "owner_wave": "OPS-ALERT-RECOVERY-NOTICE-W1",
