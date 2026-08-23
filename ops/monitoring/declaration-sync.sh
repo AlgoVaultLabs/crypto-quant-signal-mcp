@@ -190,7 +190,12 @@ DECLARATIONS=(
   # host 2026-08-10, because no sync path reached a .yaml. Live `rows` is 30; floor well below.
   "website-drift-manifest.yaml|rows|20|signal-1"
   "postgres-cpu-autopilot-registry.yaml|classes|3|signal-1"
-  "recommendation-drift-manifest.yaml|rows|2|signal-1"
+  # Floor lowered 2 -> 1 by OPS-AOE-LIVENESS-W2 CH2, which RETIRED the third row
+  # (AOE_SHADOW_WRITER_STALL, a cross-host target that had been dark since it was added). Live
+  # `rows` is now 2, which the old floor would have REFUSED — freezing a healthy declaration on
+  # every host. The floor is a truncation guard, never a policy minimum, so it tracks the live
+  # value from below rather than pinning it from above.
+  "recommendation-drift-manifest.yaml|rows|1|signal-1"
   # JSON, and never synced — the two the "add YAML" framing would have walked straight past.
   "venue-slo-tiers.json|majors|3|signal-1"
   # `baseline-data`: HASH_DRIFT on it is SEVERE because the baseline IS what "normal" means. Note

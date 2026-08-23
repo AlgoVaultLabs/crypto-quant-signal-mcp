@@ -83,7 +83,7 @@
       "schedule": "33 * * * *",
       "invoked_by": "crontab:root",
       "install_state": "installed",
-      "sha256": "6eb891a8e9f2a72759034e0b898ae868df99f5063f1bb24d14990f35adf8d221",
+      "sha256": "a3d1bfd0a05433c0460562a0a1749bbbd09493ec88ed9baa0d8733310cccc6c1",
       "alert_ids": [
         "MONITORING_DECLARATION_SYNC_FAILED"
       ],
